@@ -41,6 +41,7 @@ from app.sep.config import (
     DeliveryPlanInputs,
     HealthReportSettings,
     materialize_delivery_plan_inputs,
+    prefixed_cookie_path,
     sep_settings,
     SEPSettings,
     SyncerExtraKwargs,
@@ -98,6 +99,29 @@ class TestRootPath:
     def test_is_not_hot_reloadable(self):
         """Verify a DB override cannot claim to move a prefix read at construction."""
         assert not is_hot_reloadable(SEPSettings, "ROOT_PATH")
+
+
+class TestPrefixedCookiePath:
+    """Cover anchoring a configured cookie ``Path`` under the URL prefix."""
+
+    def test_leaves_a_path_alone_without_a_prefix(self, mocker):
+        """Emit today's ``Path`` unchanged, which is the regression contract."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="")
+
+        assert prefixed_cookie_path("/api/oauth") == "/api/oauth"
+
+    def test_anchors_a_path_under_the_prefix(self, mocker):
+        """Anchor the path so the browser sends the cookie to prefixed endpoints."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+
+        assert prefixed_cookie_path("/api/oauth") == "/sep/api/oauth"
+
+    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    def test_leaves_an_unset_path_unset(self, mocker, root_path):
+        """Leave ``None`` alone: the browser derives a path that already carries the prefix."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new=root_path)
+
+        assert prefixed_cookie_path(None) is None
 
 
 class TestDiagnosticsDelivery:

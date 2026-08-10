@@ -316,9 +316,11 @@ class CookieOptions(BaseModel):
     :param SAMESITE: SameSite policy for the cookie. Defaults to 'lax'.
     :param SECURE: Whether the cookie should be accessible only via HTTPS.
         Defaults to True.
-    :param PATH: Cookie ``Path`` attribute. When ``None`` (the default), the
-        cookie is not scoped to a specific path and the browser applies its
-        default. When set, the value must start with ``/``.
+    :param PATH: Cookie ``Path`` attribute, stated relative to the application
+        root and anchored under ``ROOT_PATH`` when the cookie is emitted. When
+        ``None`` (the default), the cookie is not scoped to a specific path and
+        the browser applies its default. When set, the value must start with
+        ``/``.
     """
 
     model_config = ConfigDict(
@@ -688,12 +690,9 @@ class SEPSettings(BaseYamlAppSettings):
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
     :param ROOT_PATH: The URL prefix an intermediary proxy serves SEP under, such as
         ``/sep``. Defaults to ``""``, the origin root. Read once when the application
-        is constructed, so it is set through env or YAML only. Cookie paths are not
-        derived from it: a deployment serving SEP's own SPA under a prefix must
-        prefix ``SESSION_REFRESH.PATH`` too, or the browser withholds the refresh
-        cookie from the prefixed endpoint. The side-car, which is what sets this
-        value, ships no SPA and authenticates through the cookie-less
-        ``/api/oauth/session/exchange`` route instead.
+        is constructed, so it is set through env or YAML only. A configured cookie
+        ``Path`` is anchored under it, so ``SESSION_REFRESH.PATH`` is stated
+        prefix-free and reaches the browser prefixed.
     :param SESSION_REFRESH: Cookie configuration options for the SPA
         ``refreshToken`` cookie. The cookie is ``HttpOnly`` and scoped to
         ``/api/oauth`` by default. When overriding ``PATH`` via YAML or env
@@ -932,6 +931,26 @@ class SEPSettings(BaseYamlAppSettings):
 sep_settings: SEPSettings = OverridableSettingsProxy(
     SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
 )
+
+
+def prefixed_cookie_path(path: str | None) -> str | None:
+    """Return a cookie ``Path`` anchored under the configured URL prefix.
+
+    A browser matches ``Path`` against the URL it requests, which carries the
+    prefix, so a root-anchored value would be withheld from every prefixed
+    endpoint, and a cookie the browser never sends is indistinguishable from one
+    that was never set. ``None`` is returned unchanged: with no ``Path``
+    attribute the browser derives one from the request URI, which already
+    carries the prefix.
+
+    :param path: The configured cookie path, or ``None`` to leave the attribute
+        unset.
+    :return: The path to emit, prefixed when both a prefix and a path are
+        configured.
+    """
+    if path is None:
+        return None
+    return f"{sep_settings.ROOT_PATH}{path}"
 
 
 def warn_if_base_url_lacks_root_path(base_url: URL | None, setting_name: str) -> None:
