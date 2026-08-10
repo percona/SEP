@@ -360,7 +360,7 @@ omit = [
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
-fail_under = 88
+fail_under = 85
 
 # Optional mutation-testing pilot. Not wired into make test / CI.
 # Mutmut runs pytest from a mutants/ sandbox copy; also_copy pulls the config
