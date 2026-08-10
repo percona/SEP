@@ -47,7 +47,7 @@ from app.core.settings_override.registry import (
     resolve_nested_field_metadata,
     resolve_nested_value,
 )
-from app.sep.config import SEPSettings, SessionOptions
+from app.sep.config import CookieOptions, SEPSettings
 from app.tasks.config import TasksSettings
 
 
@@ -85,7 +85,7 @@ class _CachedModel(BaseModel):
 
 def test_resolve_field_in_model_exact_match() -> None:
     """An exact attribute-name match returns the canonical name and field."""
-    resolved = _resolve_field_in_model(SessionOptions, "MAX_AGE")
+    resolved = _resolve_field_in_model(CookieOptions, "MAX_AGE")
     assert resolved is not None
     canonical, _ = resolved
     assert canonical == "MAX_AGE"
@@ -113,7 +113,7 @@ def test_resolve_field_in_model_lowercase_fallback() -> None:
 
 def test_resolve_field_in_model_missing_segment() -> None:
     """An unknown segment returns ``None``."""
-    assert _resolve_field_in_model(SessionOptions, "NOPE") is None
+    assert _resolve_field_in_model(CookieOptions, "NOPE") is None
 
 
 def test_resolve_nested_field_single_level() -> None:

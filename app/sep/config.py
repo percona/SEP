@@ -306,22 +306,17 @@ class App(BaseCaseInsensitiveModel):
         raise ValueError(f"No module named {self.celery_module_path}")
 
 
-class SessionOptions(BaseModel):
-    """Configuration options for a SEP session.
+class CookieOptions(BaseModel):
+    """Define the options for an authentication cookie SEP sets.
 
     :param COOKIE_NAME: The key of the authentication cookie. Defaults to "authToken".
-    :type COOKIE_NAME: str
-    :param MAX_AGE: Maximum age of the session cookie. Defaults to 7 days.
-    :type MAX_AGE: TimedeltaSeconds
-    :param SAMESITE: SameSite policy for the session cookie. Defaults to 'lax'.
-    :type SAMESITE: Literal["lax", "strict", "none"]
-    :param SECURE: Whether the session cookie should be accessible only via HTTPS.
+    :param MAX_AGE: Maximum age of the cookie. Defaults to 7 days.
+    :param SAMESITE: SameSite policy for the cookie. Defaults to 'lax'.
+    :param SECURE: Whether the cookie should be accessible only via HTTPS.
         Defaults to True.
-    :type SECURE: bool
     :param PATH: Cookie ``Path`` attribute. When ``None`` (the default), the
         cookie is not scoped to a specific path and the browser applies its
         default. When set, the value must start with ``/``.
-    :type PATH: URIPath | None
     """
 
     model_config = ConfigDict(
@@ -689,7 +684,7 @@ class SEPSettings(BaseYamlAppSettings):
     :cvar SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
         file. Set to ["SEP"].
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
-    :param SESSION_REFRESH: Session configuration options for the SPA
+    :param SESSION_REFRESH: Cookie configuration options for the SPA
         ``refreshToken`` cookie. The cookie is ``HttpOnly`` and scoped to
         ``/api/oauth`` by default. When overriding ``PATH`` via YAML or env
         vars, the value must start with ``/``.
@@ -747,8 +742,8 @@ class SEPSettings(BaseYamlAppSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
-    SESSION_REFRESH: SessionOptions = nested_overridable_field(
-        SessionOptions(
+    SESSION_REFRESH: CookieOptions = nested_overridable_field(
+        CookieOptions(
             COOKIE_NAME="refreshToken",
             PATH="/api/oauth",
         ),
