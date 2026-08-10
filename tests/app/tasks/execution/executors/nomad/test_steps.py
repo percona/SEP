@@ -20,6 +20,11 @@ from pathlib import Path
 
 import pytest
 
+import app.tasks.execution.executors.nomad.steps as steps_module
+from app.tasks.execution.executors.nomad.models import (
+    _ANONYMIZED_STEPS,
+    _STALE_SKIP_TASK_NAME,
+)
 from app.tasks.execution.executors.nomad.steps import (
     NOMAD_STEP_ANONYMIZE,
     NomadStep,
@@ -44,8 +49,6 @@ def test_nomad_step_members_are_literal_wire_values() -> None:
 
 def test_steps_module_imports_only_enum() -> None:
     """Assert steps.py is a pure leaf: only ``enum`` appears in import statements."""
-    import app.tasks.execution.executors.nomad.steps as steps_module
-
     module_file = Path(steps_module.__file__)
     tree = ast.parse(module_file.read_text(encoding="utf-8"))
     imported_modules: set[str] = set()
@@ -80,9 +83,6 @@ def test_anonymized_steps_remain_run_script_and_step1() -> None:
 
 def test_models_anonymized_steps_derived_from_classification() -> None:
     """Assert models._ANONYMIZED_STEPS is built from NOMAD_STEP_ANONYMIZE."""
-    from app.tasks.execution.executors.nomad.models import _ANONYMIZED_STEPS
-    from app.tasks.execution.executors.nomad.steps import NOMAD_STEP_ANONYMIZE
-
     expected = frozenset(
         step.value for step, anonymize in NOMAD_STEP_ANONYMIZE.items() if anonymize
     )
@@ -91,8 +91,5 @@ def test_models_anonymized_steps_derived_from_classification() -> None:
 
 def test_stale_skip_task_name_is_nomad_step() -> None:
     """Assert stale-skip sentinel uses NomadStep.CHECK_STALENESS."""
-    from app.tasks.execution.executors.nomad.models import _STALE_SKIP_TASK_NAME
-    from app.tasks.execution.executors.nomad.steps import NomadStep
-
     assert _STALE_SKIP_TASK_NAME is NomadStep.CHECK_STALENESS
     assert _STALE_SKIP_TASK_NAME == "check-staleness"
