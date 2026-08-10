@@ -23,7 +23,6 @@ from pydantic import TypeAdapter, ValidationError
 from app.core.utils.fields import UTCDatetime
 from app.core.utils.pydantic import CustomFieldMetadata
 from app.sep.apps.field_names import (
-    EXTRA_ARGS_FIELD_NAME,
     RESERVED_EXECUTION_FIELD_NAMES,
 )
 from app.sep.snippets.models.meta import (

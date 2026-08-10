@@ -68,7 +68,6 @@ from app.core.utils.pydantic import (
     loc_to_dot_sep,
 )
 from app.sep.apps.field_names import (
-    EXTRA_ARGS_FIELD_NAME,
     RESERVED_EXECUTION_FIELD_NAMES,
 )
 from app.sep.snippets.models.constants import (

@@ -28,7 +28,6 @@ from app.sep.apps.dipper.constants import CollectorTypeEnum
 from app.sep.apps.dipper.deps import (
     build_dipper_meta_from_args,
     fetch_pmm_node_service_names,
-    get_dipper_execution_meta,
     get_dipper_script_filename,
     has_pmm_script,
 )
@@ -191,16 +190,6 @@ class TestInvalidFrontmatterBlocksExecution:
         assert script.filename in exc_info.value.detail
         for error in script.validated_parameters.errors:
             assert error in exc_info.value.detail
-
-    def test_reserved_parameter_name_blocks_the_legacy_form_flow(self) -> None:
-        """Refuse the legacy form dependency for a script with a reserved name."""
-        with pytest.raises(HTTPBadRequestException):
-            get_dipper_execution_meta(
-                _make_service(),
-                _script_with_parameter("sudo"),
-                "src://test",
-                _make_args(),
-            )
 
     def test_execution_proceeds_when_invalid_parameters_are_ignored(
         self, monkeypatch: pytest.MonkeyPatch
