@@ -19,7 +19,7 @@ import io
 import json
 import os
 import zipfile
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
@@ -112,6 +112,7 @@ class _FakeUploader:
         self.result = result or UploadResult(reference="att-9", detail=_UPLOAD_DETAIL)
         self.error = error
         self.step_observer = step_observer
+        self.plan: DeliveryPlan | None = None
         self.bundle_bytes: bytes | None = None
         self.manifest: dict[str, Any] | None = None
         self.case_ref: str | None = None
@@ -226,6 +227,18 @@ def _fake_tasks_api(
     return _patch_tasks_api(mocker, api)
 
 
+@pytest.fixture(autouse=True)
+def _clear_sep_settings_snapshot() -> Iterator[None]:
+    """Clear the proxy snapshot after each test so a republish cannot leak keys.
+
+    Every send now republishes into the global proxy, and a sibling test's
+    ``mocker.patch.object`` on the wrapped instance would otherwise be shadowed
+    by a leftover snapshot key.
+    """
+    yield
+    sep_settings._set_snapshot({})
+
+
 @pytest_asyncio.fixture(name="send_session")
 async def send_session_fixture(
     mocker: MockerFixture, tmp_path: Path, delivery_plan: DeliveryPlan
@@ -275,10 +288,11 @@ def uploader_fixture(mocker: MockerFixture) -> _FakeUploader:
 
     @asynccontextmanager
     async def _factory(
-        _plan: DeliveryPlan,
+        plan: DeliveryPlan,
         *,
         step_observer: Callable[[StepRecord], None] | None = None,
     ) -> AsyncIterator[_FakeUploader]:
+        fake.plan = plan
         fake.step_observer = step_observer
         try:
             yield fake
@@ -332,20 +346,29 @@ def _unconfigured_skeleton(plan: DeliveryPlan) -> DeliveryPlan:
     )
 
 
-async def _seed_delivery_inputs(session: AsyncSession, secrets: dict[str, str]) -> None:
+async def _seed_delivery_inputs(
+    session: AsyncSession,
+    secrets: dict[str, str],
+    *,
+    endpoint: str | None = None,
+) -> None:
     """Store a delivery-inputs override carrying ``secrets``.
 
     :param session: The database session.
     :param secrets: The secret values keyed by name. The names must be exactly
         the ones the baked skeleton declares, or the materializer drops the row
         while the snapshot is built and delivery stays unconfigured.
+    :param endpoint: Optional receiver base URL stored alongside the secrets.
     """
+    value: dict[str, Any] = {"secrets": secrets}
+    if endpoint is not None:
+        value["endpoint"] = endpoint
     await SettingsOverrideManager.create(
         session,
         SettingOverride(
             setting_class=SettingClassEnum.SEP_SETTINGS,
             key="DIAGNOSTICS_DELIVERY_INPUTS",
-            value={"secrets": secrets},
+            value=value,
         ),
     )
 
