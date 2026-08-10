@@ -76,3 +76,23 @@ def test_anonymized_steps_remain_run_script_and_step1() -> None:
     assert NOMAD_STEP_ANONYMIZE[NomadStep.PREPARE_ENV] is False
     assert NOMAD_STEP_ANONYMIZE[NomadStep.CLEAN_UP] is False
     assert NOMAD_STEP_ANONYMIZE[NomadStep.CHECK_STALENESS] is False
+
+
+def test_models_anonymized_steps_derived_from_classification() -> None:
+    """Assert models._ANONYMIZED_STEPS is built from NOMAD_STEP_ANONYMIZE."""
+    from app.tasks.execution.executors.nomad.models import _ANONYMIZED_STEPS
+    from app.tasks.execution.executors.nomad.steps import NOMAD_STEP_ANONYMIZE
+
+    expected = frozenset(
+        step.value for step, anonymize in NOMAD_STEP_ANONYMIZE.items() if anonymize
+    )
+    assert _ANONYMIZED_STEPS == expected == frozenset({"run-script", "step1"})
+
+
+def test_stale_skip_task_name_is_nomad_step() -> None:
+    """Assert stale-skip sentinel uses NomadStep.CHECK_STALENESS."""
+    from app.tasks.execution.executors.nomad.models import _STALE_SKIP_TASK_NAME
+    from app.tasks.execution.executors.nomad.steps import NomadStep
+
+    assert _STALE_SKIP_TASK_NAME is NomadStep.CHECK_STALENESS
+    assert _STALE_SKIP_TASK_NAME == "check-staleness"
