@@ -60,7 +60,7 @@ build: venv app/
 pack:
 ifndef BUNDLE
 	@echo Exporting bundle
-	@git archive --output=bundle.tgz --format=tar.gz "${RELEASE_VER}" app snippets static templates
+	@git archive --output=bundle.tgz --format=tar.gz "${RELEASE_VER}" app snippets
 else
 	@echo Copying custom bundle "${BUNDLE}"
 	@cp -a "${BUNDLE}" bundle.tgz
@@ -87,7 +87,6 @@ image-sidecar-embedded: pack
 
 format: venv
 	@"${VENV_BIN}"/ruff format .
-	@"${VENV_BIN}"/djlint . --reformat
 
 ruff: venv
 	@"${VENV_BIN}"/ruff check .
@@ -99,11 +98,7 @@ ruff: venv
 typecheck: venv
 	@"${VENV_BIN}"/ty check app
 
-djlint: venv
-	@"${VENV_BIN}"/djlint .
-	@"${VENV_BIN}"/djlint . --check
-
-lint: ruff djlint
+lint: ruff
 
 audit: bandit pip-audit
 
@@ -306,7 +301,6 @@ endif
 			| curl -sSf -k --config - \
 				-X POST "$${JENKINS_URL}/job/SEP/job/$${jenkins_job}/buildWithParameters" \
 				--data-urlencode "releaseTag=$${tag}" \
-				--data-urlencode "notifySlack=true" \
 				--data-urlencode "pushImage=true" \
 				--data-urlencode "pushImageDocker=$(PUSH_IMAGE_DOCKER)" 2>&1; then \
 			echo "    Jenkins build triggered successfully."; \
@@ -364,4 +358,4 @@ lint-pipelines:
 	done; \
 	if [ "$${failures}" -ne 0 ]; then exit 1; fi
 
-.PHONY: venv build pack builder image image-sidecar image-sidecar-embedded format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image image-sidecar image-sidecar-embedded format ruff typecheck lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check

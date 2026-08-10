@@ -151,6 +151,7 @@ export {
   RUNNING_STATUSES,
   useTaskHistoryFiles,
   useTaskFileDownload,
+  useSnippetDownload,
 } from './hooks';
 export type {
   TaskLogsState,
@@ -166,6 +167,7 @@ export type {
   TaskHistoryFilesMap,
   UseTaskHistoryFilesOptions,
   TaskFileDownloadParams,
+  SnippetDownloadParams,
   UseSnippetAppExecutionOptions,
 } from './hooks';
 

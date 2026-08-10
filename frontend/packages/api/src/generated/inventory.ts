@@ -114,7 +114,7 @@ export interface paths {
      *     that has no override row succeeds with 204. Attempting to delete a field
      *     the code declares NOT_OVERRIDABLE responds 409, since it cannot have an
      *     override row in the first place and the operator's intent is
-     *     unsatisfiable. A field only ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withheld
+     *     unsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld
      *     may still carry a row written before the restriction applied, so that
      *     row is deleted normally and only the no-row case answers 409.
      *
@@ -1288,9 +1288,8 @@ export interface components {
      * @description Enumerate settings classes that may have HOT override rows.
      *
      *     The wired classes are ``SEPSettings``, ``TasksSettings``,
-     *     ``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,
-     *     ``AlertSettings``, ``AlertsSettings``, ``AnonymizerSettings`` and
-     *     ``InventorySettings``.
+     *     ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
+     *     ``AlertsSettings``, ``AnonymizerSettings`` and ``InventorySettings``.
      *
      *     To wire a new settings class:
      *
@@ -1310,7 +1309,6 @@ export interface components {
       | 'SEPSettings'
       | 'TasksSettings'
       | 'SnippetsSettings'
-      | 'MessagesSettings'
       | 'Settings'
       | 'AlertSettings'
       | 'AnonymizerSettings'
@@ -1751,7 +1749,9 @@ export interface operations {
         node_type?: string | null;
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -1914,7 +1914,9 @@ export interface operations {
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2051,7 +2053,9 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2180,7 +2184,9 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2252,7 +2258,9 @@ export interface operations {
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2382,7 +2390,9 @@ export interface operations {
         include_tables?: string | null;
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2541,7 +2551,9 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;

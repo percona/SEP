@@ -19,33 +19,22 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Body, Depends, Form
+from fastapi import Body
 
 from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.framework import build_default_task_response, make_task_dep
+from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.apps.mysql_backups.models import BackupType
-from app.sep.apps.mysql_backups.restore.models import (
-    OWNER,
-    RestoreCreate,
-    RestoresResponse,
-)
+from app.sep.apps.mysql_backups.restore.models import RestoreCreate, RestoresResponse
 from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
     RestoreResolved,
 )
-from app.sep.deps import (
-    DefaultContext,
-    ExecutorHostsCtx,
-    get_created_entity,
-    get_tasks_context,
-    InventoryAPI,
-    TaskAPI,
-)
+from app.sep.deps import get_created_entity, InventoryAPI
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
@@ -149,24 +138,6 @@ async def build_restore_payload(
     return write
 
 
-async def build_restore_task_payload(
-    form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build the restore task payload for the legacy Jinja form path.
-
-    Resolves the form's references and feeds the shared pure
-    :func:`build_restore_spec`, the same pair the JSON create route uses, so a
-    form-created task's payload is byte-identical to a JSON-created one.
-
-    :param form: The form-encoded restore create body.
-    :param inventory_api: The Inventory API used to resolve references.
-    :return: The restore ``TaskWrite``.
-    """
-    resolved = await resolve_restore_entities(form, inventory_api)
-    return build_restore_spec(form, resolved)
-
-
 def _extract_restore_config(task: Task) -> tuple[BackupType | None, Any, Any]:
     """Read backup type and destination host/port out of a restore task's config.
 
@@ -259,73 +230,3 @@ def parse_restore_task_data(task: dict[str, Any]) -> dict[str, Any]:
         )
 
     return result
-
-
-RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
-
-
-get_restores_task = make_task_dep(OWNER)
-
-RestoresTask = Annotated[Task, Depends(get_restores_task)]
-
-
-def get_restores_task_info(task: dict[str, Any]) -> dict[str, Any]:
-    """Extract relevant information from a task for the Restores plugin.
-
-    Processes the task data to extract hostname and tables information.
-
-    :param task: The task data retrieved from the Tasks API.
-    :type task: dict[str, Any]
-    :return: A dictionary containing hostname and tables information.
-    :rtype: dict[str, Any]
-    """
-    data = task["data"]
-    meta = data["meta"]
-    task_config = yaml.safe_load(meta["config"])
-    restore_server = task_config["SERVER_LIST"][0]
-
-    return {
-        "hostname": meta["target"],
-        "host": restore_server.get("HOST"),
-        "port": restore_server.get("PORT") or 3306,
-        "backup_type": BackupType(restore_server.get("BACKUP_TYPE")).name,
-        "created_by": task.get("created_by"),
-        "last_updated_by": task.get("last_updated_by"),
-    }
-
-
-async def get_restores_index_context(
-    inventory_api: InventoryAPI,
-    tasks_api: TaskAPI,
-    context: DefaultContext,
-    executor_hosts_ctx: ExecutorHostsCtx,
-) -> dict[str, Any]:
-    """Assemble the context for the Restores plugin index view.
-
-    Retrieves MySQL services and associated tasks, organizing them based on their
-    execution status. Integrates this information into the default context for
-    rendering in templates.
-
-    :param inventory_api: The Inventory API client for fetching service and schema data.
-    :type inventory_api: InventoryAPI
-    :param tasks_api: The TaskAPI client for fetching task data.
-    :type tasks_api: TaskAPI
-    :param context: The default context to be updated with Restores-specific information.
-    :type context: DefaultContext
-    :param executor_hosts_ctx: The executor hosts context for the Restore tasks.
-    :type executor_hosts_ctx: ExecutorHostsCtx
-    :return: An updated context dictionary containing Restores-related data.
-    :rtype: dict[str, Any]
-    """
-    return await get_tasks_context(
-        inventory_api,
-        tasks_api,
-        get_restores_task_info,
-        executor_hosts_ctx,
-        context,
-        OWNER,
-        service_type=ServiceTypeEnum.MYSQL,
-    )
-
-
-RestoresIndexContext = Annotated[dict[str, Any], Depends(get_restores_index_context)]
