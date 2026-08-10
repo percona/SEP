@@ -17,6 +17,7 @@
 
 import importlib.util
 import sys
+from configparser import RawConfigParser
 from pathlib import Path
 
 import pytest
@@ -215,6 +216,22 @@ def test_committed_alembic_ini_matches_discovery():
     assert sync_alembic_version_locations.main(["--check"]) == 0
 
 
+def test_entry_separator_matches_the_committed_version_path_separator():
+    """Split on the character the ini tells Alembic the value is joined with.
+
+    The two are declared independently, and a mismatch is silent: the whole
+    value would parse as one entry, so every configured path would look
+    pruned and the generator would refuse forever.
+    """
+    parser = RawConfigParser()
+    parser.read(_PROJECT_ROOT / "alembic.ini")
+
+    assert (
+        parser.get("sep", "version_path_separator")
+        == sync_alembic_version_locations.ENTRY_SEPARATOR
+    )
+
+
 def _ini_with_entries(*plugins: str) -> str:
     """Return a minimal ini whose ``version_locations`` lists ``plugins``.
 
@@ -231,6 +248,23 @@ def _ini_with_entries(*plugins: str) -> str:
     )
 
 
+@pytest.fixture
+def stripped_tree(tmp_path) -> tuple[Path, Path]:
+    """Return an ini listing ``alpha`` beside an apps root that holds nothing.
+
+    The shape a stripped image leaves behind: the entry is configured but the
+    walk finds no package to rediscover it from.
+
+    :param tmp_path: Pytest temporary directory.
+    :return: The ``alembic.ini`` path and the apps root to scan.
+    """
+    apps_root = tmp_path / "apps"
+    apps_root.mkdir()
+    ini_path = tmp_path / "alembic.ini"
+    ini_path.write_text(_ini_with_entries("alpha"))
+    return ini_path, apps_root
+
+
 class TestCurrentVersionLocations:
     """Cover reading the entries already listed in the ``[sep]`` section."""
 
@@ -238,7 +272,7 @@ class TestCurrentVersionLocations:
         """Return one entry per colon-separated path, in file order."""
         text = _ini_with_entries("zebra", "alpha")
 
-        assert sync_alembic_version_locations.current_version_locations(text) == (
+        assert sync_alembic_version_locations._current_version_locations(text) == (
             "%(here)s/app/sep/migrations/versions",
             "%(here)s/app/sep/apps/zebra/migrations/versions",
             "%(here)s/app/sep/apps/alpha/migrations/versions",
@@ -252,7 +286,7 @@ class TestCurrentVersionLocations:
             "%(here)s/app/sep/apps/alpha/migrations/versions :",
         )
 
-        assert sync_alembic_version_locations.current_version_locations(text) == (
+        assert sync_alembic_version_locations._current_version_locations(text) == (
             "%(here)s/app/sep/migrations/versions",
             "%(here)s/app/sep/apps/alpha/migrations/versions",
         )
@@ -264,12 +298,12 @@ class TestCurrentVersionLocations:
             "version_locations =",
         )
 
-        assert sync_alembic_version_locations.current_version_locations(text) == ()
+        assert sync_alembic_version_locations._current_version_locations(text) == ()
 
     def test_rejects_a_missing_sep_section(self):
         """Raise rather than report an empty list for a malformed ini."""
         with pytest.raises(ValueError, match=r"no \[sep\] section"):
-            sync_alembic_version_locations.current_version_locations(
+            sync_alembic_version_locations._current_version_locations(
                 "[alembic]\ndatabases = sep\n"
             )
 
@@ -280,7 +314,7 @@ class TestCurrentVersionLocations:
             "[other]\nversion_locations = %(here)s/decoy\n\n[post_write_hooks]",
         )
 
-        assert sync_alembic_version_locations.current_version_locations(text) == (
+        assert sync_alembic_version_locations._current_version_locations(text) == (
             "%(here)s/app/sep/migrations/versions",
         )
 
@@ -288,12 +322,9 @@ class TestCurrentVersionLocations:
 class TestRemovalRefusal:
     """Cover the guard that keeps a regeneration from pruning entries."""
 
-    def test_refuses_to_drop_a_configured_entry(self, tmp_path):
+    def test_refuses_to_drop_a_configured_entry(self, stripped_tree):
         """Fail without writing when the walk omits a listed app."""
-        apps_root = tmp_path / "apps"
-        apps_root.mkdir()
-        ini_path = tmp_path / "alembic.ini"
-        ini_path.write_text(_ini_with_entries("alpha"))
+        ini_path, apps_root = stripped_tree
         before = ini_path.read_text()
 
         with pytest.raises(
@@ -306,17 +337,14 @@ class TestRemovalRefusal:
         )
         assert ini_path.read_text() == before
 
-    def test_refuses_a_tree_that_both_adds_and_removes(self, tmp_path):
+    def test_refuses_a_tree_that_both_adds_and_removes(self, stripped_tree):
         """Use a set difference, not a subset test, to spot the removal.
 
         The discovered set is not a subset of the configured one here, so a
         subset test would wave this through and prune ``alpha``.
         """
-        apps_root = tmp_path / "apps"
-        apps_root.mkdir()
+        ini_path, apps_root = stripped_tree
         _migration_plugin(apps_root, "beta")
-        ini_path = tmp_path / "alembic.ini"
-        ini_path.write_text(_ini_with_entries("alpha"))
 
         with pytest.raises(
             sync_alembic_version_locations.VersionLocationsRemovalError
@@ -327,11 +355,9 @@ class TestRemovalRefusal:
             "%(here)s/app/sep/apps/alpha/migrations/versions",
         )
 
-    def test_names_every_removed_entry_in_configuration_order(self, tmp_path):
+    def test_names_every_removed_entry_in_configuration_order(self, stripped_tree):
         """List each pruned entry as the file ordered them."""
-        apps_root = tmp_path / "apps"
-        apps_root.mkdir()
-        ini_path = tmp_path / "alembic.ini"
+        ini_path, apps_root = stripped_tree
         ini_path.write_text(_ini_with_entries("zebra", "alpha"))
 
         with pytest.raises(
@@ -344,58 +370,101 @@ class TestRemovalRefusal:
             "%(here)s/app/sep/apps/alpha/migrations/versions",
         )
 
-    def test_additive_only_change_still_writes(self, tmp_path):
+    def test_additive_only_change_still_writes(self, stripped_tree):
         """Leave the existing add-an-app workflow untouched."""
-        apps_root = tmp_path / "apps"
-        apps_root.mkdir()
+        ini_path, apps_root = stripped_tree
         _migration_plugin(apps_root, "alpha")
         _migration_plugin(apps_root, "beta")
-        ini_path = tmp_path / "alembic.ini"
-        ini_path.write_text(_ini_with_entries("alpha"))
 
         assert sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
         assert "app/sep/apps/beta/migrations/versions" in ini_path.read_text()
 
-    def test_reordering_alone_is_not_a_removal(self, tmp_path):
+    def test_reordering_alone_is_not_a_removal(self, stripped_tree):
         """Compare entry sets, so a re-sorted list writes without refusing."""
-        apps_root = tmp_path / "apps"
-        apps_root.mkdir()
+        ini_path, apps_root = stripped_tree
         _migration_plugin(apps_root, "alpha")
         _migration_plugin(apps_root, "zebra")
-        ini_path = tmp_path / "alembic.ini"
         ini_path.write_text(_ini_with_entries("zebra", "alpha"))
 
         assert sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
 
-    def test_check_reports_the_refusal_instead_of_plain_drift(self, tmp_path):
-        """Refuse under ``--check`` too, so CI sees the pruning attempt."""
-        apps_root = tmp_path / "apps"
-        apps_root.mkdir()
-        ini_path = tmp_path / "alembic.ini"
-        ini_path.write_text(_ini_with_entries("alpha"))
+    def test_check_refuses_a_pruning_tree(self, stripped_tree):
+        """Refuse under ``check`` too, so CI sees the pruning attempt."""
+        ini_path, apps_root = stripped_tree
 
         with pytest.raises(sync_alembic_version_locations.VersionLocationsRemovalError):
             sync_alembic_version_locations.sync_alembic_ini(
                 ini_path, apps_root, check=True
             )
 
-    def test_opt_in_flag_performs_the_removing_write(self, tmp_path):
+    def test_opt_in_flag_performs_the_removing_write(self, stripped_tree):
         """Allow a deliberate deletion of an app's migration chain."""
-        apps_root = tmp_path / "apps"
-        apps_root.mkdir()
-        ini_path = tmp_path / "alembic.ini"
-        ini_path.write_text(_ini_with_entries("alpha"))
+        ini_path, apps_root = stripped_tree
 
         assert sync_alembic_version_locations.sync_alembic_ini(
             ini_path, apps_root, allow_removals=True
         )
         assert "app/sep/apps/alpha/migrations/versions" not in ini_path.read_text()
 
-    def test_malformed_ini_is_still_reported_as_malformed(self, tmp_path):
+    def test_a_cosmetically_different_spelling_is_not_a_removal(self, stripped_tree):
+        """Compare normalised paths, so a trailing slash still writes.
+
+        The spelling names a directory that is present, and refusing it would
+        leave ``--allow-removals`` — the one flag that does disarm the filter
+        — as the only way to run the generator again.
+        """
+        ini_path, apps_root = stripped_tree
+        _migration_plugin(apps_root, "alpha")
+        ini_path.write_text(
+            _ini_with_entries("alpha").replace(
+                "%(here)s/app/sep/apps/alpha/migrations/versions",
+                "%(here)s/./app/sep/apps/alpha/migrations/versions/",
+            )
+        )
+
+        assert sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
+        assert (
+            "version_locations = %(here)s/app/sep/migrations/versions:"
+            "%(here)s/app/sep/apps/alpha/migrations/versions" in ini_path.read_text()
+        )
+
+    def test_duplicate_entries_collapse_without_refusing(self, stripped_tree):
+        """Treat a repeated entry as one, so the write dedupes it silently."""
+        ini_path, apps_root = stripped_tree
+        _migration_plugin(apps_root, "alpha")
+        ini_path.write_text(_ini_with_entries("alpha", "alpha"))
+
+        assert sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
+        assert ini_path.read_text().count("app/sep/apps/alpha/migrations/versions") == 1
+
+    def test_refuses_when_only_the_versions_directory_was_deleted(self, stripped_tree):
+        """Catch a half-deleted package, not just a missing app directory."""
+        ini_path, apps_root = stripped_tree
+        plugin_dir = _migration_plugin(apps_root, "alpha")
+        (plugin_dir / "migrations" / "versions").rmdir()
+
+        with pytest.raises(
+            sync_alembic_version_locations.VersionLocationsRemovalError
+        ) as excinfo:
+            sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
+
+        assert excinfo.value.removed == (
+            "%(here)s/app/sep/apps/alpha/migrations/versions",
+        )
+
+    def test_allowing_removals_under_check_still_writes_nothing(self, stripped_tree):
+        """Keep ``check`` a dry run even when removals are permitted."""
+        ini_path, apps_root = stripped_tree
+        before = ini_path.read_text()
+
+        assert not sync_alembic_version_locations.sync_alembic_ini(
+            ini_path, apps_root, check=True, allow_removals=True
+        )
+        assert ini_path.read_text() == before
+
+    def test_malformed_ini_is_still_reported_as_malformed(self, stripped_tree):
         """Keep the parse errors ahead of the removal check."""
-        apps_root = tmp_path / "apps"
-        apps_root.mkdir()
-        ini_path = tmp_path / "alembic.ini"
+        ini_path, apps_root = stripped_tree
         ini_path.write_text(
             _MINIMAL_INI.replace(
                 "version_locations = %(here)s/app/sep/migrations/versions\n",
@@ -411,12 +480,10 @@ class TestRemovalRefusal:
 class TestRemovalRefusalCli:
     """Cover how the CLI surfaces a refused removal."""
 
-    def test_exits_non_zero_naming_the_removed_entries(self, tmp_path, capsys):
-        """Print the pruned entries and the opt-in flag, not a traceback."""
-        apps_root = tmp_path / "apps"
-        apps_root.mkdir()
-        ini_path = tmp_path / "alembic.ini"
-        ini_path.write_text(_ini_with_entries("alpha"))
+    def test_exits_non_zero_naming_the_removed_entries(self, stripped_tree, capsys):
+        """Print the pruned entries and every way out, not a traceback."""
+        ini_path, apps_root = stripped_tree
+        before = ini_path.read_text()
 
         assert (
             sync_alembic_version_locations.main(
@@ -427,14 +494,13 @@ class TestRemovalRefusalCli:
         err = capsys.readouterr().err
         assert "app/sep/apps/alpha/migrations/versions" in err
         assert "--allow-removals" in err
+        assert "upgrade heads" in err
         assert "Traceback" not in err
+        assert ini_path.read_text() == before
 
-    def test_check_exits_non_zero_on_a_pruning_tree(self, tmp_path, capsys):
+    def test_check_exits_non_zero_on_a_pruning_tree(self, stripped_tree, capsys):
         """Fail ``--check`` when entries would be pruned."""
-        apps_root = tmp_path / "apps"
-        apps_root.mkdir()
-        ini_path = tmp_path / "alembic.ini"
-        ini_path.write_text(_ini_with_entries("alpha"))
+        ini_path, apps_root = stripped_tree
 
         assert (
             sync_alembic_version_locations.main(
@@ -444,12 +510,9 @@ class TestRemovalRefusalCli:
         )
         assert "app/sep/apps/alpha/migrations/versions" in capsys.readouterr().err
 
-    def test_opt_in_flag_writes_and_exits_zero(self, tmp_path):
+    def test_opt_in_flag_writes_and_exits_zero(self, stripped_tree):
         """Let ``--allow-removals`` complete the removing write from the CLI."""
-        apps_root = tmp_path / "apps"
-        apps_root.mkdir()
-        ini_path = tmp_path / "alembic.ini"
-        ini_path.write_text(_ini_with_entries("alpha"))
+        ini_path, apps_root = stripped_tree
 
         assert (
             sync_alembic_version_locations.main(

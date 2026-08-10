@@ -25,15 +25,15 @@ Run without arguments to rewrite in place; run with ``--check`` to fail
 without writing when the committed value has drifted.
 
 A regeneration that would drop an entry already listed in the ini is
-refused unless ``--allow-removals`` is passed: the orphan-head filter in
-``app/sep/migrations/_orphan_heads.py`` reads a configured-but-absent
-location as its evidence that an app was stripped, so silently pruning
-the entry would disarm it.
+refused unless ``--allow-removals`` is passed — see
+``app/sep/migrations/_orphan_heads.py`` for why a configured-but-absent
+location has to survive.
 """
 
 from __future__ import annotations
 
 import argparse
+import posixpath
 import re
 import sys
 from pathlib import Path
@@ -92,7 +92,7 @@ def compute_version_locations(apps_root: Path) -> str:
     for versions_dir in discover_plugin_version_dirs(apps_root):
         plugin_name = Path(versions_dir).parent.parent.name
         entries.append(f"%(here)s/app/sep/apps/{plugin_name}/migrations/versions")
-    return ":".join(entries)
+    return ENTRY_SEPARATOR.join(entries)
 
 
 def _sep_section_bounds(lines: list[str]) -> tuple[int, int]:
@@ -169,7 +169,21 @@ def _locate_version_locations(lines: list[str]) -> tuple[int, int]:
     raise ValueError(msg)
 
 
-def current_version_locations(text: str) -> tuple[str, ...]:
+def _normalize_entry(entry: str) -> str:
+    """Return ``entry`` in the spelling used to compare it with another.
+
+    ``%(here)s`` is left uninterpolated — it behaves as an ordinary leading
+    path component — so the result is only ever a comparison key, never a
+    value written back to the ini.
+
+    :param entry: A single ``version_locations`` entry.
+    :return: The entry with redundant separators and ``.`` segments folded
+        away.
+    """
+    return posixpath.normpath(entry)
+
+
+def _current_version_locations(text: str) -> tuple[str, ...]:
     """Return the entries currently listed in ``[sep] version_locations``.
 
     The raw ``%(here)s`` entries are returned uninterpolated, matching what
@@ -190,20 +204,27 @@ def current_version_locations(text: str) -> tuple[str, ...]:
     )
 
 
-def removed_version_locations(text: str, value: str) -> tuple[str, ...]:
+def _removed_version_locations(text: str, value: str) -> tuple[str, ...]:
     """Return configured entries the computed ``value`` would drop.
 
     A set difference, not a subset test: a tree that adds one app's
-    migration directory while removing another's still prunes.
+    migration directory while removing another's still prunes. Entries are
+    matched on their normalised spelling, so a hand-written trailing slash
+    is a rewrite rather than a removal.
 
     :param text: Full ``alembic.ini`` contents.
     :param value: The computed ``version_locations`` value.
-    :return: Configured entries absent from ``value``, in configuration order.
+    :return: Configured entries absent from ``value``, in configuration order
+        and in their original spelling.
     :raises ValueError: If the ini cannot be parsed for its current entries.
     """
-    discovered = set(value.split(ENTRY_SEPARATOR))
+    discovered = {
+        _normalize_entry(entry) for entry in value.split(ENTRY_SEPARATOR) if entry
+    }
     return tuple(
-        entry for entry in current_version_locations(text) if entry not in discovered
+        entry
+        for entry in _current_version_locations(text)
+        if _normalize_entry(entry) not in discovered
     )
 
 
@@ -257,8 +278,7 @@ def sync_alembic_ini(
 
     Refuses — under ``check`` as well — when the walk would drop an entry
     the ini already lists, unless ``allow_removals`` says the deletion is
-    deliberate. Every caller (the Make targets and the pre-commit hook)
-    goes through this function, so the guard covers all of them.
+    deliberate.
 
     :param ini_path: Path to ``alembic.ini``.
     :param apps_root: Plugin packages directory to scan.
@@ -277,7 +297,7 @@ def sync_alembic_ini(
     with ini_path.open(encoding="utf-8", newline="") as handle:
         original = handle.read()
     if not allow_removals:
-        removed = removed_version_locations(original, value)
+        removed = _removed_version_locations(original, value)
         if removed:
             raise VersionLocationsRemovalError(removed)
     updated = render_sep_version_locations(original, value)
@@ -338,8 +358,12 @@ def main(argv: list[str] | None = None) -> int:
             f"[sep] version_locations entry(ies): {', '.join(exc.removed)}. "
             "A configured location missing from disk is how the orphan-head "
             "filter recognises a stripped app, so removing it silently would "
-            "disarm that check. Restore the migration directory, or re-run "
-            "with `--allow-removals` if the deletion is deliberate.",
+            "disarm that check. Restore the migration directory; or, on a "
+            "tree with an app deliberately stripped, skip this script and "
+            "run `alembic --name sep upgrade heads` directly — leaving the "
+            "entry in place is what arms the filter. Re-run with "
+            "`--allow-removals` only when the migration chain is being "
+            "deleted for good.",
             file=sys.stderr,
         )
         return 1

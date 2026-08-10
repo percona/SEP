@@ -158,24 +158,22 @@ class TestFailClosedDiagnostic:
         assert len(records) == 1
         return records[0].getMessage()
 
-    def test_names_a_pruned_version_locations_entry_as_a_candidate_cause(
-        self, sep_script, caplog
-    ):
-        """Offer a pruned or stale entry alongside skew and squashed revisions."""
-        message = self._read_fail_closed_error(sep_script, caplog)
+    @pytest.mark.parametrize(
+        "cause", ["version skew", "squashed revision", "version_locations"]
+    )
+    def test_offers_each_candidate_cause(self, sep_script, caplog, cause):
+        """Name every explanation an operator has to rule out by hand."""
+        assert cause in self._read_fail_closed_error(sep_script, caplog)
 
-        assert "version_locations" in message
-        assert "pruned" in message
-        assert "version skew" in message
-
-    def test_no_longer_rules_out_a_stripped_app(self, sep_script, caplog):
-        """Drop the claim that the cause cannot be a stripped app."""
+    def test_does_not_rule_out_a_stripped_app(self, sep_script, caplog):
+        """Leave a stripped app in play: a pruned entry hides the evidence."""
         message = self._read_fail_closed_error(sep_script, caplog)
 
         assert "not a stripped app" not in message
 
-    def test_still_names_the_unresolved_revision(self, sep_script, caplog):
-        """Keep the offending id in the message operators act on."""
+    def test_names_what_the_operator_has_to_look_at(self, sep_script, caplog):
+        """Point at the offending revision and the table recording it."""
         message = self._read_fail_closed_error(sep_script, caplog)
 
         assert UNKNOWN_REVISION in message
+        assert "alembic_version_sep" in message
