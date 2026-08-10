@@ -14,7 +14,7 @@ Customer-facing documentation of how data moves through the **Services Enablemen
 | [`exports/sep-task-execution-dfd.pdf`](exports/sep-task-execution-dfd.pdf) | Exported PDF — main DFD (regenerate after `.mmd` changes) |
 | [`exports/sep-task-execution-sequence.pdf`](exports/sep-task-execution-sequence.pdf) | Exported PDF — sequence diagram |
 
-**Last diagram export:** regenerate the affected PDF whenever its `.mmd` source changes (see [Export PDF](#export-pdf)).
+**Last diagram export:** regenerate both PDFs after editing `.mmd` files (see [Export PDF](#export-pdf)).
 
 ## Legend
 
