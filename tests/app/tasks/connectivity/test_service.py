@@ -15,14 +15,17 @@
 
 """Test the connectivity check service function."""
 
+import ast
 import json
 from itertools import product
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+import app.tasks.connectivity.service as connectivity_service
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.tasks import hook_resolver
 from app.tasks.connectivity.constants import (
@@ -40,6 +43,7 @@ from app.tasks.connectivity.service import (
     POLL_INTERVAL,
 )
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
+from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
@@ -63,6 +67,24 @@ CONNECT_START_CALL = 3
 # 2 post-terminal-sync (SUCCESS, no logs), 3-4 ``_fetch_fresh_task_history``
 # retries (empty, then populated).
 FRESH_FETCH_POPULATE_CALL = 4
+
+
+def test_connectivity_run_script_lookups_use_nomad_step() -> None:
+    """Assert service.py run-script dict/log lookups reference NomadStep."""
+    source = Path(connectivity_service.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    # Collect attribute loads of the form NomadStep.<member>
+    nomad_step_attrs: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "NomadStep"
+        ):
+            nomad_step_attrs.add(node.attr)
+    assert "RUN_SCRIPT" in nomad_step_attrs
+    # Ensure the wire value is still the expected step name.
+    assert NomadStep.RUN_SCRIPT == "run-script"
 
 
 @pytest.fixture(autouse=True)
