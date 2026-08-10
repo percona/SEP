@@ -66,12 +66,20 @@ The resolution order is: an explicitly-set canonical environment variable, then 
 file of that name, then the value derived from the raw `SEP_*` input.
 
 **To keep the database password out of the environment, mount all three
-`{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` files.** A file supplies exactly the
-one canonical name it is named for: the fan-out of a single password to all three
-services happens only through the `SEP_DB_PASSWORD` input, which is an
-environment variable and so the very thing this mount avoids. Mounting
+`{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` files.** A password file supplies
+exactly the one canonical name it is named for: the fan-out of a single password
+to all three services happens only through the `SEP_DB_PASSWORD` input, which is
+an environment variable and so the very thing this mount avoids. Mounting
 `SEP__DATABASE__PASSWORD` alone leaves `InventorySettings` and `TasksSettings`
 with no password at all.
+
+**`SEP__DATABASE__HOST` and `SEP__DATABASE__PORT` are the exception — they move
+every service, not just SEP.** Unlike a password file, these two seed the
+`SEP_DB_HOST` / `SEP_DB_PORT` shell inputs, which the migrate wait loops read and
+which all three services derive their host and port from. Mounting
+`SEP__DATABASE__HOST` alone therefore also sets `INVENTORY__DATABASE__HOST` and
+`TASKS__DATABASE__HOST`. To point only SEP at a different database, set the
+per-service canonical variables explicitly rather than mounting the SEP file.
 
 The celery-beat store needs no file of its own: it follows `SEP__DATABASE__*`, so
 the mounted `SEP__DATABASE__PASSWORD` reaches it through the same settings
