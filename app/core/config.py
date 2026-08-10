@@ -899,7 +899,7 @@ def create_app(
 ) -> FastAPI:
     """Create and configure the FastAPI app.
 
-    :param routers: Routers to include to created app.
+    :param routers: Routers to include in the created app.
     :param lifespan: Lifespan context manager for the FastAPI app, if any. Defaults to
         None.
     :param backend_cors_origins: A list of allowed origins for the CORSMiddleware.
