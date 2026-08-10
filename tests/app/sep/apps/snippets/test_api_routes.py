@@ -27,11 +27,9 @@ import app.sep.apps.snippets.extra_routes as snippets_extra_routes
 import app.sep.snippets.models.responses as snippets_models
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
-    get_api_authenticated_user,
     get_current_user,
     get_session,
     require_bearer_for_unsafe_methods,
-    validate_csrf,
 )
 from app.sep.main import sep_app
 from app.sep.snippets.config import snippets_settings
@@ -1722,10 +1720,8 @@ class TestSnippetsApiNestedFilenameContract:
 @pytest.fixture
 def test_client(regular_user, session, snippets_dir):
     """Return a TestClient sharing the in-memory session and snippets dir."""
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}

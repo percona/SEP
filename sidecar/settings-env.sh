@@ -109,34 +109,12 @@ if [[ -n ${SEP_DB_PASSWORD:-} ]]; then
     export_canonical TASKS__DATABASE__PASSWORD "$SEP_DB_PASSWORD"
 fi
 
-# Resolved through the same order the canonical exports follow, so the beat store
-# and SEP__DATABASE__PASSWORD cannot disagree about which password is in force.
-sep_db_password="${SEP__DATABASE__PASSWORD:-}"
-if [[ -z $sep_db_password ]]; then
-    if secret_file_supplies SEP__DATABASE__PASSWORD; then
-        sep_db_password="$(read_secret_file SEP__DATABASE__PASSWORD)"
-    else
-        sep_db_password="${SEP_DB_PASSWORD:-}"
-    fi
-fi
-
-if [[ -n ${CELERY__BEAT_DBURI:-} ]]; then
-    export CELERY__BEAT_DBURI
-elif secret_file_supplies CELERY__BEAT_DBURI; then
+# Cleared for the same reason export_canonical clears a deferred name: the beat
+# store is never exported here, so an inherited empty string would outrank both a
+# mounted CELERY__BEAT_DBURI and the derived default -- and an empty URL fails
+# settings validation rather than falling through to either.
+if [[ -z ${CELERY__BEAT_DBURI:-} ]]; then
     unset CELERY__BEAT_DBURI
-else
-    # Deriving puts a file-supplied password back into the environment inside the
-    # URI. Refusing to derive is worse -- celery-beat would get a password-less
-    # URI -- so a mounted CELERY__BEAT_DBURI is the deployment's way out.
-    if [[ -n $sep_db_password ]]; then
-        # Percent-encoded via the environment rather than argv, which is readable
-        # by every process in the container's PID namespace.
-        beat_userinfo="sep:$(SEP_BEAT_PASSWORD="$sep_db_password" python3 -c \
-            'import os, urllib.parse; print(urllib.parse.quote(os.environ["SEP_BEAT_PASSWORD"], safe=""))')"
-    else
-        beat_userinfo="sep"
-    fi
-    export CELERY__BEAT_DBURI="postgresql://${beat_userinfo}@${SEP_DB_HOST}:${SEP_DB_PORT}/sep"
 fi
 
 if [[ -n ${SEP_GRAFANA_TOKEN:-} ]]; then

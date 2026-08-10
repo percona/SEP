@@ -17,9 +17,8 @@
 
 The registry discovers this app through ``backup_mongo``'s ``child_apps`` rather
 than a ``settings.yaml`` entry, so it is mounted and toggled exactly with its
-parent: its JSON router serves at ``/api/apps/backup_mongo/restore/`` while the
-existing Jinja UI keeps serving at ``/backup_mongo/restores/`` via the threaded
-``jinja_router``. A restore is a task group (parent config plus restore / pbm-list
+parent: its JSON router serves at ``/api/apps/backup_mongo/restore/``.
+A restore is a task group (parent config plus restore / pbm-list
 / optional force-resync legs), so its ``update`` / ``delete`` act on the whole
 cascade — the framework's single-task derived routes would orphan or stale the
 legs — leaving only ``schema`` and ``execute`` derived; the union list, the
@@ -28,8 +27,7 @@ sibling-aggregating detail, and the cascade create / update / delete ride
 routes win. Because ``backup_mongo`` is a ``schema=`` app, the sibling-tab
 ``RelatedApp`` lives on its ``AppSchema`` (in ``backup_mongo/schema.py``), not
 here. A child has no ``settings.yaml`` entry to stamp its identity, so ``key`` /
-``name`` / ``uri_path`` are set explicitly; ``uri_path`` preserves the Jinja route
-the ``pbm_restores_*`` handlers build their redirects against.
+``name`` / ``uri_path`` are set explicitly.
 """
 
 from app.sep.apps.backup_mongo.restore.api_routes import router as restore_custom_router
@@ -38,7 +36,6 @@ from app.sep.apps.backup_mongo.restore.deps import (
     get_restores_task,
 )
 from app.sep.apps.backup_mongo.restore.models import OWNER, RestoreTaskResponse
-from app.sep.apps.backup_mongo.restore.routes import router as jinja_router
 from app.sep.apps.backup_mongo.restore.schema import restore_mongo_schema
 from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp
 
@@ -66,5 +63,4 @@ app = TaskExecutionApp(
         delete=False,
     ),
     extra_routes=(restore_custom_router,),
-    jinja_router=jinja_router,
 )

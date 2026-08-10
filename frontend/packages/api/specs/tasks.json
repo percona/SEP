@@ -642,12 +642,11 @@
         "type": "string"
       },
       "SettingClassEnum": {
-        "description": "Enumerate settings classes that may have HOT override rows.\n\nThe wired classes are ``SEPSettings``, ``TasksSettings``,\n``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,\n``AlertSettings``, ``AlertsSettings``, ``AnonymizerSettings`` and\n``InventorySettings``.\n\nTo wire a new settings class:\n\n1. Add a member here whose value matches the Pydantic class ``__name__``.\n2. Generate an Alembic migration on every consumer track that extends the\n   ``CHECK`` constraint on ``settingoverride.setting_class``. The column\n   uses ``native_enum=False`` so the value list lives in a constraint,\n   not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.\n   Note that the column and ``CHECK`` constraint persist the enum member\n   *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member\n   *value* (the Pydantic class name, e.g. ``SEPSettings``).\n3. Wire a ``ProxyEntry`` for the new class in the relevant service's\n   lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).",
+        "description": "Enumerate settings classes that may have HOT override rows.\n\nThe wired classes are ``SEPSettings``, ``TasksSettings``,\n``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,\n``AlertsSettings``, ``AnonymizerSettings`` and ``InventorySettings``.\n\nTo wire a new settings class:\n\n1. Add a member here whose value matches the Pydantic class ``__name__``.\n2. Generate an Alembic migration on every consumer track that extends the\n   ``CHECK`` constraint on ``settingoverride.setting_class``. The column\n   uses ``native_enum=False`` so the value list lives in a constraint,\n   not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.\n   Note that the column and ``CHECK`` constraint persist the enum member\n   *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member\n   *value* (the Pydantic class name, e.g. ``SEPSettings``).\n3. Wire a ``ProxyEntry`` for the new class in the relevant service's\n   lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).",
         "enum": [
           "SEPSettings",
           "TasksSettings",
           "SnippetsSettings",
-          "MessagesSettings",
           "Settings",
           "AlertSettings",
           "AnonymizerSettings",

@@ -377,7 +377,6 @@ def _synthesize_legacy_app(plugin: App, auto_key: str) -> BaseApp:
         nav_icon=plugin.nav_icon,
         enabled=plugin.enabled,
         api_router=api_router,
-        jinja_router=import_var(plugin.router_path),
     )
 
 

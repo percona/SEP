@@ -64,7 +64,6 @@ from app.sep.apps.topology.topology import (
 from app.sep.deps import (
     ApiCurrentUser,
     InventoryAPI,
-    IsCsrfValidated,
     TaskAPI,
 )
 from app.tasks.models import TaskHistoryStatusEnum
@@ -149,12 +148,7 @@ def _select_topology_targets(
     return list(available_hosts.keys())[:shards]
 
 
-@router.post(
-    "/collect",
-    dependencies=[IsCsrfValidated],
-    response_model=TopologyCollectResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-)
+@router.post("/collect", status_code=status.HTTP_202_ACCEPTED)
 async def topology_collect(
     body: TopologyCollectWrite,
     inventory_api: InventoryAPI,
@@ -309,7 +303,7 @@ def _is_terminal_task_status(status_value: Any) -> bool:
         return False
 
 
-@router.get("/result", response_model=TopologyResultResponse)
+@router.get("/result")
 async def topology_result(
     tasks_api: TaskAPI,
     current_user: ApiCurrentUser,

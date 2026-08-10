@@ -36,7 +36,7 @@ from app.core.settings_override.api.routes import (
 )
 from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
-from app.sep.middleware.messages.config import messages_settings, MessagesSettings
+from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
 LIST_URL = "/settings/"
 
@@ -89,9 +89,9 @@ def app_owned_client_fixture(
 
     core_classes: list[ClassEntry] = [
         (
-            SettingClassEnum.MESSAGES_SETTINGS,
-            MessagesSettings,
-            messages_settings,
+            SettingClassEnum.SNIPPETS_SETTINGS,
+            SnippetsSettings,
+            snippets_settings,
         ),
     ]
     app_owned: list[AppOwnedClassEntry] = [
@@ -132,9 +132,9 @@ def core_only_client_fixture(
     router = build_settings_router(
         classes=[
             (
-                SettingClassEnum.MESSAGES_SETTINGS,
-                MessagesSettings,
-                messages_settings,
+                SettingClassEnum.SNIPPETS_SETTINGS,
+                SnippetsSettings,
+                snippets_settings,
             ),
         ],
         session_dep=session_dep,
@@ -156,10 +156,10 @@ class TestBuildSettingsRouterAppOwned:
         assert response.status_code == status.HTTP_200_OK
         groups = {group["setting_class"]: group for group in response.json()["groups"]}
         assert set(groups) == {
-            SettingClassEnum.MESSAGES_SETTINGS.value,
+            SettingClassEnum.SNIPPETS_SETTINGS.value,
             SettingClassEnum.ALERT_SETTINGS.value,
         }
-        core = groups[SettingClassEnum.MESSAGES_SETTINGS.value]
+        core = groups[SettingClassEnum.SNIPPETS_SETTINGS.value]
         assert core["is_app_owned"] is False
         assert core["app_id"] is None
 
@@ -176,7 +176,7 @@ class TestBuildSettingsRouterAppOwned:
         response = core_only_client.get(LIST_URL)
         assert response.status_code == status.HTTP_200_OK
         group = response.json()["groups"][0]
-        assert group["setting_class"] == SettingClassEnum.MESSAGES_SETTINGS.value
+        assert group["setting_class"] == SettingClassEnum.SNIPPETS_SETTINGS.value
         assert group["is_app_owned"] is False
         assert group["app_id"] is None
         assert group["app_display_name"] is None

@@ -357,7 +357,7 @@ def is_hot_reloadable(
 
     Accepts any Pydantic ``BaseModel`` subclass, not just ``BaseYamlSettings``:
     the nested-override resolver consults this predicate against nested
-    submodels (e.g. ``SessionOptions``) when classifying leaf fields.
+    submodels (e.g. ``CookieOptions``) when classifying leaf fields.
 
     The policy gate, however, only answers for a top-level settings class: it
     keys the allowlist on the class ``__name__`` and the key as spelled, and a

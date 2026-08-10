@@ -40,6 +40,7 @@ from app.core.alerts.config import AlertSettings
 from app.core.auth.config import AuthSettings
 from app.core.config import (
     _sanitize_client_kwargs,
+    _SEPDatabaseSettings,
     BaseYamlAppSettings,
     create_app,
     default_lifespan,
@@ -54,8 +55,6 @@ from app.inventory.config import InventorySettings
 from app.sep.apps.alerts.config import AlertsSettings
 from app.sep.apps.atw.config import AtwSettings
 from app.sep.config import SEPSettings
-from app.sep.middleware.messages.config import MessagesSettings
-from app.sep.middleware.messages.models import MessageLevel
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
@@ -515,14 +514,6 @@ SECRET_FILE_MATRIX = [
         id="AtwSettings",
     ),
     pytest.param(
-        MessagesSettings,
-        "SEP__MESSAGES__LEVEL",
-        str(MessageLevel.ERROR.value),
-        MessageLevel.ERROR,
-        lambda s: s.LEVEL,
-        id="MessagesSettings",
-    ),
-    pytest.param(
         SnippetsSettings,
         "SEP__SNIPPETS__PREVIEW_MAX_CHARS",
         "123",
@@ -917,22 +908,253 @@ def test_env_var_beats_secret_file_for_the_yaml_profile(tmp_path, monkeypatch):
     assert from_env.yaml_data == baseline.yaml_data
 
 
+CELERY_PROFILE_BLOCK = "  CELERY:\n    BROKER_URL: redis://127.0.0.1:6379/0\n"
+"""A minimal ``CELERY`` block, since ``Settings.CELERY`` carries no default."""
+
+SEP_POSTGRES_PROFILE_BLOCK = """\
+  SEP:
+    DATABASE:
+      ENGINE: postgresql
+      HOST: pmm-server
+      NAME: sep
+      PORT: 5432
+      USER: sep
+"""
+"""The embedded profile's SEP database block, which the beat store derives from."""
+
+SEP_SQLITE_PROFILE_BLOCK = "  SEP:\n    DATABASE:\n      NAME: sep.db\n"
+"""A SQLite SEP database block, whose derived store nulls ``beat_schema``."""
+
+DERIVED_BEAT_DBURI = "postgresql+psycopg2://sep@pmm-server:5432/sep"
+"""The store :data:`SEP_POSTGRES_PROFILE_BLOCK` derives with no password supplied."""
+
+
+def _use_profile(tmp_path, monkeypatch, body):
+    """Write a settings profile into ``tmp_path`` and make it the process's profile.
+
+    ``PreEnvSettings.SETTINGS_FILE`` is the relative ``settings.yaml``, reopened per
+    instantiation, so the copy in the working directory is what a freshly
+    constructed class reads.
+
+    :param tmp_path: The directory to write the profile into.
+    :param monkeypatch: The working-directory patcher.
+    :param body: The ``default:`` block's body, already indented.
+    """
+    (tmp_path / "settings.yaml").write_text(f"default:\n{body}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+
+def _mounted_secrets(tmp_path, **files):
+    """Write the named secret files into a subdirectory and return it.
+
+    The subdirectory keeps the profile out of the mounted set, since both live in
+    the same temporary directory.
+
+    :param tmp_path: The per-test temporary directory.
+    :param files: Each canonical name a file supplies, mapped to its contents.
+    :return: The directory to pass as ``_secrets_dir``.
+    """
+    directory = tmp_path / "secrets"
+    directory.mkdir(exist_ok=True)
+    for name, content in files.items():
+        (directory / name).write_text(content, encoding="utf-8")
+    return directory
+
+
+class TestDerivedBeatStoreDefault:
+    """Cover the beat-store URI ``Settings`` derives from the SEP database."""
+
+    @pytest.fixture
+    def _postgres_profile(self, tmp_path, monkeypatch):
+        """Install the PostgreSQL SEP profile the derivation cases start from.
+
+        The cases that vary the profile call ``_use_profile`` themselves, which
+        overwrites this one, so requesting the fixture is what marks a case as
+        using the default arrangement.
+        """
+        _use_profile(
+            tmp_path, monkeypatch, CELERY_PROFILE_BLOCK + SEP_POSTGRES_PROFILE_BLOCK
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_derives_the_store_from_the_sep_database(self):
+        """Resolve the beat store from the SEP database when nothing configures it."""
+        assert Settings().CELERY.beat_dburi == DERIVED_BEAT_DBURI
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_environment_variable_outranks_the_derived_store(self, monkeypatch):
+        """Prefer an explicit ``CELERY__BEAT_DBURI`` set in the environment."""
+        monkeypatch.setenv("CELERY__BEAT_DBURI", "postgresql://envwins@host:5432/beat")
+
+        assert (
+            Settings().CELERY.beat_dburi
+            == "postgresql+psycopg2://envwins@host:5432/beat"
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_an_init_keyword_outranks_the_environment(self, monkeypatch):
+        """Prefer a ``CELERY`` init keyword, the highest-priority settings source.
+
+        The keyword and the environment name the store in different key cases, so
+        a derived value contributed unconditionally would seed the keyword's case
+        ahead of the environment's and hand the fold to the lower-ranked source.
+        """
+        monkeypatch.setenv("CELERY__BEAT_DBURI", "postgresql://envloses@host:5432/beat")
+
+        resolved = Settings(
+            CELERY={
+                "BROKER_URL": "redis://127.0.0.1:6379/0",
+                "BEAT_DBURI": "postgresql://initwins@host:5432/beat",
+            }
+        )
+
+        assert (
+            resolved.CELERY.beat_dburi
+            == "postgresql+psycopg2://initwins@host:5432/beat"
+        )
+
+    def test_yaml_profile_outranks_the_derived_store(self, tmp_path, monkeypatch):
+        """Prefer a profile's own ``BEAT_DBURI``, which is a configured value."""
+        _use_profile(
+            tmp_path,
+            monkeypatch,
+            CELERY_PROFILE_BLOCK
+            + "    BEAT_DBURI: postgresql://profile@elsewhere:5432/beat\n"
+            + SEP_POSTGRES_PROFILE_BLOCK,
+        )
+
+        assert (
+            Settings().CELERY.beat_dburi
+            == "postgresql+psycopg2://profile@elsewhere:5432/beat"
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_secret_file_outranks_the_derived_store(self, tmp_path):
+        """Prefer a mounted ``CELERY__BEAT_DBURI``, which targets a separate store."""
+        secrets_dir = _mounted_secrets(
+            tmp_path, CELERY__BEAT_DBURI="postgresql://mounted:y@beatstore:5432/beat"
+        )
+
+        assert (
+            Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi
+            == "postgresql+psycopg2://mounted:y@beatstore:5432/beat"
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_mounted_password_reaches_the_derived_store(self, tmp_path):
+        """Carry a mounted password into the store without exporting it anywhere."""
+        secrets_dir = _mounted_secrets(tmp_path, SEP__DATABASE__PASSWORD="pw")
+
+        assert (
+            Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi
+            == "postgresql+psycopg2://sep:pw@pmm-server:5432/sep"
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_reserved_password_characters_are_percent_encoded(self, tmp_path):
+        """Encode a password carrying URI syntax, which would corrupt the authority."""
+        secrets_dir = _mounted_secrets(tmp_path, SEP__DATABASE__PASSWORD="p@ss:w/rd")
+
+        assert (
+            Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi
+            == "postgresql+psycopg2://sep:p%40ss%3Aw%2Frd@pmm-server:5432/sep"
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_an_empty_password_file_yields_a_passwordless_store(self, tmp_path):
+        """Omit the password entirely for a blank mount, as an empty secret is falsy."""
+        secrets_dir = _mounted_secrets(tmp_path, SEP__DATABASE__PASSWORD="")
+
+        assert Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi == (
+            DERIVED_BEAT_DBURI
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_dotenv_password_reaches_the_derived_store(self, tmp_path):
+        """Read the password from the caller's ``_env_file``, which the probe inherits."""
+        env_file = tmp_path / "dotenv"
+        env_file.write_text("SEP__DATABASE__PASSWORD=from-dotenv\n", encoding="utf-8")
+
+        assert (
+            Settings(_env_file=env_file).CELERY.beat_dburi
+            == "postgresql+psycopg2://sep:from-dotenv@pmm-server:5432/sep"
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_a_suppressed_dotenv_still_resolves_the_derived_store(self):
+        """Propagate ``_env_file=None`` to the probe, which then reads no dotenv."""
+        assert Settings(_env_file=None).CELERY.beat_dburi == DERIVED_BEAT_DBURI
+
+    def test_an_unconfigured_sep_database_falls_back_to_the_field_default(
+        self, tmp_path, monkeypatch
+    ):
+        """Resolve the probe's own default when the profile configures no SEP database."""
+        _use_profile(tmp_path, monkeypatch, CELERY_PROFILE_BLOCK)
+
+        assert Settings().CELERY.beat_dburi == "sqlite:///sep.db"
+
+    def test_a_sqlite_store_still_nulls_the_beat_schema(self, tmp_path, monkeypatch):
+        """Clear ``beat_schema`` for a SQLite-derived store, as the validator does.
+
+        The derived value enters as source data rather than as a post-construction
+        assignment, so ``CeleryOptions``' own validators still see it.
+        """
+        _use_profile(
+            tmp_path,
+            monkeypatch,
+            CELERY_PROFILE_BLOCK + "    BEAT_SCHEMA: sep\n" + SEP_SQLITE_PROFILE_BLOCK,
+        )
+
+        resolved = Settings().CELERY
+
+        assert resolved.beat_dburi == "sqlite:///sep.db"
+        assert resolved.beat_schema is None
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_an_invalid_sep_database_fails_settings_construction(self, monkeypatch):
+        """Reject an unusable SEP database rather than derive a malformed store URI."""
+        monkeypatch.setenv("SEP__DATABASE__PORT", "notanumber")
+
+        with pytest.raises(ValidationError, match="DATABASE.PORT"):
+            Settings()
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_a_configured_store_is_not_held_to_the_sep_database(self, monkeypatch):
+        """Accept an unusable SEP database when the store is configured outright.
+
+        ``InventorySettings`` and ``TasksSettings`` both resolve the global proxy
+        through their ``BACKEND_CORS_ORIGINS`` default, so probing unconditionally
+        would fail an Inventory-only or Tasks-only start-up over a SEP-namespaced
+        value nothing in that process reads.
+        """
+        monkeypatch.setenv("SEP__DATABASE__PORT", "notanumber")
+        monkeypatch.setenv(
+            "CELERY__BEAT_DBURI", "postgresql://elsewhere@host:5432/beat"
+        )
+
+        assert (
+            Settings().CELERY.beat_dburi
+            == "postgresql+psycopg2://elsewhere@host:5432/beat"
+        )
+
+    def test_the_probe_default_matches_the_sep_settings_field(self):
+        """Pin the probe's database default to ``SEPSettings``', which it cannot import.
+
+        ``app/sep/config.py`` imports ``app/core/config.py``, so the probe duplicates
+        the default rather than reading it; this fails if the two drift apart.
+        """
+        assert (
+            _SEPDatabaseSettings.model_fields["DATABASE"].default
+            == SEPSettings.model_fields["DATABASE"].default
+        )
+
+
 class TestRemovedSettingsOverrideKeysDetector:
     """Cover the startup detector for the removed flat settings-override keys."""
 
-    @staticmethod
-    def _profile(tmp_path, body: str) -> None:
-        """Write a YAML profile into ``tmp_path`` and make it the working directory.
-
-        :param tmp_path: The directory to write the profile into.
-        :param body: The ``default:`` block's body, already indented.
-        """
-        (tmp_path / "settings.yaml").write_text(f"default:\n{body}", encoding="utf-8")
-
     def test_unset_is_noop(self, monkeypatch, tmp_path):
         """Verify a profile naming none of the removed keys raises nothing."""
-        self._profile(tmp_path, "  LOGGING: WARNING\n")
-        monkeypatch.chdir(tmp_path)
+        _use_profile(tmp_path, monkeypatch, "  LOGGING: WARNING\n")
         detect_removed_settings_override_keys()
 
     @pytest.mark.parametrize(
@@ -945,8 +1167,7 @@ class TestRemovedSettingsOverrideKeysDetector:
     )
     def test_flat_env_var_fails_fast(self, monkeypatch, tmp_path, legacy_var, value):
         """Verify each removed key still set in the environment stops start-up."""
-        self._profile(tmp_path, "  LOGGING: WARNING\n")
-        monkeypatch.chdir(tmp_path)
+        _use_profile(tmp_path, monkeypatch, "  LOGGING: WARNING\n")
         monkeypatch.setenv(legacy_var, value)
         with pytest.raises(ValueError, match=legacy_var):
             detect_removed_settings_override_keys()
@@ -961,8 +1182,7 @@ class TestRemovedSettingsOverrideKeysDetector:
     )
     def test_nested_env_var_is_accepted(self, monkeypatch, tmp_path, nested_var, value):
         """Verify the nested spelling is not mistaken for the removed flat one."""
-        self._profile(tmp_path, "  LOGGING: WARNING\n")
-        monkeypatch.chdir(tmp_path)
+        _use_profile(tmp_path, monkeypatch, "  LOGGING: WARNING\n")
         monkeypatch.setenv(nested_var, value)
         detect_removed_settings_override_keys()
 
@@ -973,19 +1193,19 @@ class TestRemovedSettingsOverrideKeysDetector:
         written against the old spelling reads as an absent allowlist, which
         leaves the override API unrestricted.
         """
-        self._profile(
+        _use_profile(
             tmp_path,
+            monkeypatch,
             "  SETTINGS_OVERRIDE_ALLOWED_KEYS:\n    - Settings.LOGGING\n",
         )
-        monkeypatch.chdir(tmp_path)
         with pytest.raises(ValueError, match="SETTINGS_OVERRIDE_ALLOWED_KEYS"):
             detect_removed_settings_override_keys()
 
     def test_nested_yaml_block_is_accepted(self, monkeypatch, tmp_path):
         """Verify a migrated profile passes the detector."""
-        self._profile(
+        _use_profile(
             tmp_path,
+            monkeypatch,
             "  SETTINGS_OVERRIDE:\n    ALLOWED_KEYS:\n      - Settings.LOGGING\n",
         )
-        monkeypatch.chdir(tmp_path)
         detect_removed_settings_override_keys()

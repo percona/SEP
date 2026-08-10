@@ -32,7 +32,6 @@ verbatim, and it carries the ``RelatedApp`` sibling-tab metadata for the restore
 app. The restore subpackage is a structurally-bound child app declared via
 ``child_apps`` (mounted at ``/api/apps/backup_mongo/restore/`` with its own
 derived router), so it is no longer mounted as a ``/restores`` sub-router here.
-The Jinja UI router is threaded explicitly.
 """
 
 from app.sep.apps.backup_mongo.api_routes import router as backup_mongo_custom_router
@@ -42,7 +41,6 @@ from app.sep.apps.backup_mongo.deps import (
 )
 from app.sep.apps.backup_mongo.models import BackupTaskResponse, BackupType, OWNER
 from app.sep.apps.backup_mongo.restore.app import app as restore_app
-from app.sep.apps.backup_mongo.routes import router as jinja_router
 from app.sep.apps.backup_mongo.schema import backup_mongo_schema
 from app.sep.apps.framework.apps import (
     AppCapabilities,
@@ -74,6 +72,5 @@ app = TaskExecutionApp(
         create=False, detail=False, execute=False, update=False, delete=False
     ),
     extra_routes=(backup_mongo_custom_router,),
-    jinja_router=jinja_router,
     child_apps=(restore_app,),
 )

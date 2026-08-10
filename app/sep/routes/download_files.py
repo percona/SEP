@@ -25,13 +25,12 @@ from fastapi import status as http_status
 from starlette.responses import StreamingResponse
 
 from app.sep.deps import (
-    CurrentUser,
+    ApiCurrentUser,
     get_task_history,
-    IsAuthenticated,
+    IsApiAuthenticated,
     TaskAPI,
     TasksClient,
 )
-from app.sep.utils.decorators import csrf_exempt
 from app.tasks.models import FileMetadata, TaskHistoryResponse
 
 logger = logging.getLogger(__name__)
@@ -40,9 +39,8 @@ router = APIRouter(tags=["tasks"])
 
 @router.get(
     "/{task_history_id}",
-    dependencies=[IsAuthenticated],
+    dependencies=[IsApiAuthenticated],
 )
-@csrf_exempt
 async def list_task_history_files(
     request: Request,  # noqa: ARG001
     task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
@@ -60,11 +58,10 @@ async def list_task_history_files(
         raise
 
 
-@router.get("/{task_history_id}/download", dependencies=[IsAuthenticated])
-@csrf_exempt
+@router.get("/{task_history_id}/download", dependencies=[IsApiAuthenticated])
 async def download_task_history_file(
     request: Request,
-    user: CurrentUser,
+    user: ApiCurrentUser,
     task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
     tasks_client: TasksClient,
 ) -> StreamingResponse:

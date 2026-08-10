@@ -26,17 +26,13 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.deps import (
     alters_executor_matches_service_host,
     alters_satellite_task_names,
-    AltersLegacyForm,
     build_alters_api_task_response,
     build_alters_task,
     build_pre_checks_task_payload,
     cascade_create_alters_group,
     cascade_update_alters_group,
     extract_service_info,
-    get_alters_index_context,
     get_alters_task,
-    get_alters_task_info,
-    map_alters_legacy_form,
     parse_alters_task_args,
     resolve_predecessor_specs,
 )
@@ -111,16 +107,6 @@ async def test_get_alters_task(created_task, mock_remote_api):
     alters_task = await get_alters_task(created_task.name, mock_remote_api)
     assert isinstance(alters_task, Task)
     assert alters_task.name == created_task.name
-
-
-def test_get_alters_task_info(created_task):
-    """Test for extracting relevant information from a task for the Alters plugin."""
-    result = get_alters_task_info(created_task.model_dump())
-    assert result == {
-        "hostname": "localhost",
-        "table": "public.example_table",
-        "parent": None,
-    }
 
 
 def test_extract_service_info_from_meta():
@@ -469,30 +455,6 @@ def test_parse_alters_task_args_recursion_dsn_only_host_port():
     out = parse_alters_task_args({"args": "--recursion-method=dsn=h=1,P=2 --execute"})
     assert out["recursion_method"] == "dsn"
     assert out["dsn_table"] == "h=1,P=2"
-
-
-@pytest.mark.asyncio
-async def test_get_alters_index_context(mocker):
-    """Index view context is built via get_tasks_context."""
-    merged = {"ok": True}
-    mock_ctx = mocker.patch(
-        "app.sep.apps.alters.deps.get_tasks_context",
-        new_callable=AsyncMock,
-        return_value=merged,
-    )
-    inv, tasks, ctx, hosts = AsyncMock(), AsyncMock(), {"user": "u"}, {}
-    result = await get_alters_index_context(inv, tasks, ctx, hosts)
-    assert result is merged
-    mock_ctx.assert_awaited_once_with(
-        inv,
-        tasks,
-        get_alters_task_info,
-        hosts,
-        ctx,
-        "ALTERS",
-        service_type=ServiceTypeEnum.MYSQL,
-        alert_on_fail_default=True,
-    )
 
 
 EXPECTED_CASCADE_CREATE_POSTS = 3
@@ -854,80 +816,3 @@ def _legacy_form_base() -> dict[str, object]:
         "alter": "ADD COLUMN x INT",
         "recursion_method": "processlist",
     }
-
-
-class TestMapAltersLegacyForm:
-    """Test folding the split legacy Jinja form into the collapsed ``AltersCreate``."""
-
-    def test_collapse_prefers_inventory_id_over_manual_name(self):
-        """An inventory id wins over a manually-typed name for the same target."""
-        form = AltersLegacyForm.model_validate(
-            {
-                **_legacy_form_base(),
-                "schema_id": _LEGACY_SCHEMA_ID,
-                "schema_name": "ignored",
-                "table_id": _LEGACY_TABLE_ID,
-                "table_name": "ignored",
-            }
-        )
-        create = map_alters_legacy_form(form)
-        assert create.db_schema == _LEGACY_SCHEMA_ID
-        assert create.db_table == _LEGACY_TABLE_ID
-
-    def test_collapse_uses_free_typed_name_when_no_id(self):
-        """A manually-typed (and whitespace-padded) name collapses to the trimmed value."""
-        form = AltersLegacyForm.model_validate(
-            {**_legacy_form_base(), "schema_name": " app ", "table_name": " users "}
-        )
-        create = map_alters_legacy_form(form)
-        assert create.db_schema == "app"
-        assert create.db_table == "users"
-
-    def test_missing_both_target_modes_raises_422(self):
-        """Neither an id nor a name for the target folds to a 422, not a crash."""
-        form = AltersLegacyForm.model_validate(_legacy_form_base())
-        with pytest.raises(HTTPException) as exc_info:
-            map_alters_legacy_form(form)
-        assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-
-    def test_free_typed_name_with_dsn_delimiter_raises_422(self):
-        """Fold a free-typed legacy name with a DSN delimiter to a 422, not a bad DSN."""
-        form = AltersLegacyForm.model_validate(
-            {**_legacy_form_base(), "schema_name": "a,b", "table_name": "users"}
-        )
-        with pytest.raises(HTTPException) as exc_info:
-            map_alters_legacy_form(form)
-        assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-
-    def test_whitespace_only_name_collapses_to_none_and_raises_422(self):
-        """Collapse a whitespace-only legacy name to None (no target) → 422."""
-        form = AltersLegacyForm.model_validate(
-            {**_legacy_form_base(), "schema_name": "   ", "table_name": "   "}
-        )
-        with pytest.raises(HTTPException) as exc_info:
-            map_alters_legacy_form(form)
-        assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-
-
-class TestAltersLegacyFormCheckboxes:
-    """Test HTML checkbox binding on the legacy form (absent vs ``"1"``/``"true"``)."""
-
-    def test_absent_checkbox_defaults_to_false(self):
-        """An unchecked box (field omitted from the POST body) defaults to ``False``."""
-        form = AltersLegacyForm.model_validate(_legacy_form_base())
-        assert form.print_arg is False
-        assert form.no_swap_tables is False
-
-    def test_checkbox_value_one_is_true(self):
-        """A checked box submitting ``"1"`` binds to ``True``."""
-        form = AltersLegacyForm.model_validate(
-            {**_legacy_form_base(), "print_arg": "1"}
-        )
-        assert form.print_arg is True
-
-    def test_checkbox_value_true_is_true(self):
-        """A checked box submitting ``"true"`` binds to ``True``."""
-        form = AltersLegacyForm.model_validate(
-            {**_legacy_form_base(), "no_swap_tables": "true"}
-        )
-        assert form.no_swap_tables is True
