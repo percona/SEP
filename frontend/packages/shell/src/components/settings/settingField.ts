@@ -282,9 +282,6 @@ export function toInitialEditValue(setting: SettingResponse): EditValue {
   if (setting.value === null || setting.value === undefined) {
     return '';
   }
-  if (kind === 'choice') {
-    return String(setting.value);
-  }
   return String(setting.value);
 }
 
