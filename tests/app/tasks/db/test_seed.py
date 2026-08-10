@@ -23,6 +23,7 @@ import pytest
 from app.sep.apps.inventory.models import INVENTORY_SYNC_TASK_NAME
 from app.tasks.config import tasks_settings
 from app.tasks.db.seed import (
+    _CHECK_STALENESS_TASK,
     NOMAD_EXEC_ARTIFACT,
     NOMAD_EXEC_PYTHON_ARTIFACT,
     NOMAD_RUN_COMMAND,
@@ -31,6 +32,7 @@ from app.tasks.db.seed import (
     SYSTEM_PERIODIC_TASKS,
     SYSTEM_TASKS,
 )
+from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.models import (
     CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
     INTERNAL_TASK_NAMES,
@@ -48,6 +50,20 @@ PYTHON_TEMPLATES_WITH_PREPARE_ENV = [NOMAD_RUN_PYTHON, NOMAD_EXEC_PYTHON_ARTIFAC
 STALE_EXIT_CODE = 75
 STALE_ELAPSED_SECONDS = 7200
 FRESH_ELAPSED_SECONDS = 1
+
+
+class TestNomadStepNameParity:
+    """Assert every Nomad task Name in seed templates is a NomadStep member."""
+
+    def test_every_seed_task_name_is_nomad_step_member(self) -> None:
+        """Walk all four NOMAD_* templates + _CHECK_STALENESS_TASK Names."""
+        names: list[object] = [_CHECK_STALENESS_TASK["Name"]]
+        for template in NOMAD_TEMPLATES_WITH_STALENESS:
+            names.extend(task["Name"] for task in template["TaskGroups"][0]["Tasks"])
+
+        for name in names:
+            assert isinstance(name, NomadStep), f"{name!r} is not a NomadStep"
+            assert name in NomadStep
 
 
 class TestSystemTasks:
