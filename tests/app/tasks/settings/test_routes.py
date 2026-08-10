@@ -195,7 +195,7 @@ class TestTasksSettingsApi:
     async def test_pre_execution_options_are_str_enum_members(
         self, admin_test_client: TestClient
     ) -> None:
-        """LIST exposes PreExecutionCheckMode members with string values."""
+        """Expose PreExecutionCheckMode members with string values."""
         response = admin_test_client.get("/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         row = next(

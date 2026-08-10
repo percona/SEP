@@ -33,7 +33,7 @@ from app.core.settings_override.registry import ReloadClassification
 
 
 class SettingOption(BaseModel):
-    """One selectable member for an enum-typed setting.
+    """Represent one selectable member for an enum-typed setting.
 
     :param label: The enum member name shown in the UI (e.g. ``WARNING``).
     :param value: The JSON-dumped member value the client must PATCH

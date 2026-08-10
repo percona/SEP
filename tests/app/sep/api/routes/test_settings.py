@@ -1929,7 +1929,7 @@ class TestGlobalSettingsClass:
     async def test_logging_options_list_unique_members(
         self, api_admin_client: TestClient
     ) -> None:
-        """LIST exposes six LogLevel options (aliases excluded) with int values."""
+        """Expose six LogLevel options (aliases excluded) with int values."""
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         logging_row = _find_setting(

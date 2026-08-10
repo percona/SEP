@@ -350,7 +350,7 @@ def _enum_options(field_info: FieldInfo, annotation: Any) -> list[SettingOption]
             label=member.name,
             value=dump_field_value(field_info, member),
         )
-        for member in unwrapped  # list(enum) skips aliases
+        for member in unwrapped  # iterating the enum skips aliases
     ]
 
 
