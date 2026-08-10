@@ -565,9 +565,6 @@ async def get_created_node(inventory_api: InventoryAPI, node_id: int) -> Created
     )
 
 
-CreatedNodeDep = Annotated[CreatedNode, Depends(get_created_node)]
-
-
 async def get_created_service(
     inventory_api: InventoryAPI,
     service_id: int,
@@ -620,9 +617,6 @@ async def get_created_schema(
     return schema
 
 
-CreatedSchemaDep = Annotated[CreatedSchema, Depends(get_created_schema)]
-
-
 async def get_created_table(inventory_api: InventoryAPI, table_id: int) -> CreatedTable:
     """Retrieve a CreatedTable instance based on the given table ID.
 
@@ -639,9 +633,6 @@ async def get_created_table(inventory_api: InventoryAPI, table_id: int) -> Creat
     return await get_created_entity(
         inventory_api, SyncInventoryEntityTypeEnum.TABLE, table_id
     )
-
-
-CreatedTableDep = Annotated[CreatedTable, Depends(get_created_table)]
 
 
 class ExecutorHostsContext:
