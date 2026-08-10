@@ -62,7 +62,7 @@ ADD --chown=0:1001 --chmod=440 bundle.tgz $APP_HOME
 # The baked embedded profile. Copied after the bundle so it stays authoritative
 # even if `make pack` ever starts shipping a settings.yaml; a bind mount at this
 # path still replaces it wholesale.
-COPY --chown=0:1001 --chmod=440 ./sidecar/settings.embedded.yaml ./settings.yaml
+COPY --chown=0:1001 --chmod=440 ./sidecar/settings.yaml ./settings.yaml
 
 # Restricted variant: strip every app package the baked profile does not
 # activate. Off by default, so the general side-car build is unaffected; the

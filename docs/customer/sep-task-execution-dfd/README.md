@@ -14,7 +14,7 @@ Customer-facing documentation of how data moves through the **Services Enablemen
 | [`exports/sep-task-execution-dfd.pdf`](exports/sep-task-execution-dfd.pdf) | Exported PDF — main DFD (regenerate after `.mmd` changes) |
 | [`exports/sep-task-execution-sequence.pdf`](exports/sep-task-execution-sequence.pdf) | Exported PDF — sequence diagram |
 
-**Last diagram export:** regenerate both PDFs after editing `.mmd` files (see [Export PDF](#export-pdf)).
+**Last diagram export:** regenerate the affected PDF whenever its `.mmd` source changes (see [Export PDF](#export-pdf)).
 
 ## Legend
 
@@ -101,6 +101,12 @@ Alternative: import `.mmd` into [diagrams.net](https://app.diagrams.net/) for GU
 
 ## Export PDF
 
+`mermaid-cli` drives a headless Chrome to render the diagram, so it needs a browser
+on the machine. Point it at a system Chromium with
+`PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium`, or install one for Puppeteer once with
+`npx puppeteer browsers install chrome-headless-shell`. Without either, the commands
+below fail with a misleading *"Could not find Chrome"*.
+
 From the repository root:
 
 ```bash
@@ -141,7 +147,7 @@ Commit the updated `.mmd` sources with any README/checklist changes. The PDF und
 | D1 Snippet store | `app/sep/snippets/`, snippet approval in DB |
 | D2 Tasks PostgreSQL | `app/tasks/models.py`, `app/tasks/db/` |
 | D3 Nomad runtime | Nomad allocation logs/files (fetched via Nomad API) |
-| mTLS / TLS transport | Nginx ingress: TLS cert at `/data/certs/sep/localhost-cert.pem`. SEP-internal mTLS: `app/core/requests/remote_api.py` (SSL context builder); inter-service certs at `/data/certs/sep/*` rendered by `generate_certs.sh` during `sep_installer.sh` setup. Nomad mTLS: client cert and CA at `/data/certs/nomad/`. For external-Nomad deployments these are customer-supplied (the Nomad portion of `generate_certs.sh` is only used for bundled-Nomad sandbox deployments). |
+| mTLS / TLS transport | Nginx ingress: TLS cert at `/data/certs/sep/localhost-cert.pem`. SEP-internal mTLS: `app/core/requests/remote_api.py` (SSL context builder); inter-service certs at `/data/certs/sep/*`. Nomad mTLS: client cert and CA at `/data/certs/nomad/`. For external-Nomad deployments these are customer-supplied. |
 
 ## Security review
 

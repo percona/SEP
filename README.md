@@ -15,7 +15,6 @@
       * [MySQLSyncer](#mysqlsyncer)
 * [Usage](#usage)
   * [Starting Celery with SEP for development](#starting-celery-with-sep-for-development)
-* [Alternative: Use Docker Compose](#alternative-use-docker-compose)
 * [Contributing](#contributing)
 * [Deployment](#deployment)
 
@@ -358,12 +357,12 @@ file changes nothing.
 #### Getting Casdoor's Client ID and Client Secret
 
 1. In a browser, open Casdoor's web interface and login (the default credentials are `admin:123`).
-If you followed the Docker tutorial, it should be in http://localhost:9999.
+If you started Casdoor with the Docker command in [Prerequisites](#prerequisites), it should be in http://localhost:9999.
 
 ![image](https://github.com/user-attachments/assets/770d9957-ca7e-48b5-8e40-1dd232038fde)
 
-2. Navigate to Identity > Applications > app-built-in. If you followed the Docker tutorial,
-it should be in http://localhost:9999/applications/built-in/app-built-in
+2. Navigate to Identity > Applications > app-built-in. If you started Casdoor with the Docker
+command in [Prerequisites](#prerequisites), it should be in http://localhost:9999/applications/built-in/app-built-in
 
 ![image](https://github.com/user-attachments/assets/2b95de9d-33ce-4f60-9457-f89e7c6ce619)
 
@@ -629,95 +628,15 @@ For development environments, you can start the Celery Worker and the Celery Bea
 LOGGING=debug python3 -m app.main --start-celery
 ```
 
-## Alternative: Use Docker Compose
-
-You can also run sep with Docker Compose by following these steps:
-
-1. Enter the project folder:
-```shell
-cd SEP
-```
-
-2. Generate the SSL certificates with the [`generate_certs.sh`](https://github.com/percona/SEP/blob/main/generate_certs.sh) script:
-```shell
-./generate_certs.sh
-```
-
-3. Generate Casdoor's init data with the [`generate_casdoor_init_data.sh`](https://github.com/percona/SEP/blob/main/generate_casdoor_init_data.sh) script:
-```shell
-./generate_casdoor_init_data.sh
-```
-You can use the `-p/--password` argument to specify a password for the initial user:
-```shell
-./generate_casdoor_init_data.sh -p password
-```
-If no password is specified, a random one will be generated.
-
-By now, your `data` folder should look something like this:
-```
-data
-├── nomad.hcl
-├── certs
-│   ├── nomad
-│   │   ├── global-client-nomad.pem
-│   │   ├── global-server-nomad-key.pem
-│   │   ├── global-client-nomad-key.pem
-│   │   ├── global-client-nomad.p12
-│   │   └── global-server-nomad.pem
-│   ├── sep-ca-key.pem
-│   ├── sep
-│   │   ├── localhost-cert-key.pem
-│   │   ├── inventory_api-cert-key.pem
-│   │   ├── tasks_api-cert.pem
-│   │   ├── localhost-cert.pem
-│   │   ├── inventory_api-cert.pem
-│   │   └── tasks_api-cert-key.pem
-│   ├── casdoor
-│   │   ├── sep_token_jwt_key.pem
-│   │   ├── README.md
-│   │   ├── sep_token_jwt_key.key
-│   └── sep-ca.pem
-├── mime.types
-├── casdoor_init_data.json
-├── http-tests
-│   ├── inventory.http
-│   ├── nomad.http
-│   ├── task_history.http
-│   └── tasks.http
-└── nginx.conf
-```
-
-4. Add your PMM API key to the `.env.docker` file
-
-By now, a `.env.docker` file should have been created in your current directory.
-Open it and replace `REPLACE_WITH_YOUR_PMM_API_KEY` with your actual PMM API key.
-
-5. Start Nomad with the new generated config:
-```shell
-nomad agent -config /path/to/SEP/data/nomad.hcl
-```
-Replace `/path/to/SEP` with the path in which the project folder is stored in your computer.
-
-> [!IMPORTANT]
-> Make sure you're not running other Nomad instances.
-
-6. Build the Docker Compose services:
-```shell
-docker compose build
-```
-
-7. Start the Docker Compose services:
-```shell
-docker compose up
-```
-
-SEP will be available in https://localhost.
-You can stop SEP with CTRL-C and later start it again with `docker compose up`.
-
 ## Contributing
 
 See our [CONTRIBUTING](https://github.com/percona/SEP/blob/main/CONTRIBUTING.md) guide.
 
 ## Deployment
 
-See our [INSTALLER](https://github.com/percona/SEP/blob/main/INSTALLER.md) guide for deployment instructions.
+SEP ships bundled with Percona Monitoring and Management (PMM), which deploys and runs it
+for you; there is no separate SEP deployment step. See the PMM documentation for how to
+enable it.
+
+v0.13.1 was the final standalone SEP release. Its installer and standalone image remain
+available from that release tag for existing deployments.

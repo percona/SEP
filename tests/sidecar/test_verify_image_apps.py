@@ -35,7 +35,7 @@ exit "$FAKE_EXIT"
 
 DEFAULT_VERDICT = "verified restricted: 2 app packages (framework, shared)"
 
-IMAGE = "sep:HEAD-embedded"
+IMAGE = "sep:HEAD"
 
 USAGE_EXIT_CODE = 2
 """The status the wrapper exits with when its own arguments are wrong."""
