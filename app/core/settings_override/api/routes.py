@@ -25,10 +25,12 @@ __all__ = [
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Annotated, Any
+from enum import Enum
+from typing import Annotated, Any, get_args, get_origin
 
 from fastapi import APIRouter, Depends, HTTPException, params, Request, status
 from pydantic import ValidationError
+from pydantic.fields import FieldInfo
 from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -43,6 +45,7 @@ from app.core.requests.remote_api import RemoteAPI
 from app.core.settings_override.api.models import (
     SettingClassAppMetadata,
     SettingClassGroup,
+    SettingOption,
     SettingResponse,
     SettingsListResponse,
     SettingsPatch,
@@ -329,6 +332,28 @@ async def collect_class_setting_responses(
     ]
 
 
+def _unwrap_annotation(annotation: Any) -> Any:
+    """Return the inner type when ``annotation`` is ``Annotated[...]``, else itself."""
+    if get_origin(annotation) is Annotated:
+        args = get_args(annotation)
+        return args[0] if args else annotation
+    return annotation
+
+
+def _enum_options(field_info: FieldInfo, annotation: Any) -> list[SettingOption] | None:
+    """Return dropdown options for enum annotations; otherwise ``None``."""
+    unwrapped = _unwrap_annotation(annotation)
+    if not (isinstance(unwrapped, type) and issubclass(unwrapped, Enum)):
+        return None
+    return [
+        SettingOption(
+            label=member.name,
+            value=dump_field_value(field_info, member),
+        )
+        for member in unwrapped  # list(enum) skips aliases
+    ]
+
+
 def _settings_response_from_field(
     *,
     setting_class: SettingClassEnum,
@@ -384,6 +409,7 @@ def _settings_response_from_field(
             if applicability is not None
             else True
         ),
+        options=_enum_options(field_info, field_meta.annotation),
     )
 
 

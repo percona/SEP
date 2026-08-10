@@ -18,6 +18,7 @@
 __all__ = [
     "SettingClassAppMetadata",
     "SettingClassGroup",
+    "SettingOption",
     "SettingResponse",
     "SettingsListResponse",
     "SettingsPatch",
@@ -29,6 +30,18 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, RootModel
 
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
+
+
+class SettingOption(BaseModel):
+    """One selectable member for an enum-typed setting.
+
+    :param label: The enum member name shown in the UI (e.g. ``WARNING``).
+    :param value: The JSON-dumped member value the client must PATCH
+        (e.g. ``30`` for an ``IntEnum``).
+    """
+
+    label: str
+    value: JsonValue
 
 
 class SettingResponse(BaseModel):
@@ -61,6 +74,9 @@ class SettingResponse(BaseModel):
         (e.g. the active auth provider). ``False`` lets the UI present the field
         as inert. Display-only, like ``is_advanced``: it does not block
         PATCH/DELETE server-side; the runtime gate is the real enforcement.
+    :param options: Selectable enum members for dropdown UIs, or ``None`` /
+        empty when the field is not an ``Enum`` annotation. Populated by
+        iterating ``list(enum_cls)`` so aliases are skipped.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -78,6 +94,7 @@ class SettingResponse(BaseModel):
     has_override: bool
     is_advanced: bool = False
     is_applicable: bool = True
+    options: list[SettingOption] | None = None
 
 
 class SettingsPatch(RootModel[dict[str, JsonValue]]):

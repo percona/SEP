@@ -1861,6 +1861,46 @@ class TestGlobalSettingsClass:
         )
         assert [r.key for r in rows] == ["LOGGING"]
 
+    async def test_logging_options_list_unique_members(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """LIST exposes six LogLevel options (aliases excluded) with int values."""
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        logging_row = _find_setting(
+            response.json(), SettingClassEnum.SETTINGS.value, "LOGGING"
+        )
+        assert logging_row["options"] == [
+            {"label": "CRITICAL", "value": 50},
+            {"label": "ERROR", "value": 40},
+            {"label": "WARNING", "value": 30},
+            {"label": "INFO", "value": 20},
+            {"label": "DEBUG", "value": 10},
+            {"label": "NOTSET", "value": 0},
+        ]
+        non_enum = _find_setting(
+            response.json(),
+            SettingClassEnum.SEP_SETTINGS.value,
+            "SYNC_REFRESH_TIME",
+        )
+        assert non_enum.get("options") in (None, [])
+
+    async def test_logging_patch_integer_value_still_works(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Regression: PATCH LOGGING with int succeeds (UI will send this)."""
+        debug_level = 10
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={"LOGGING": debug_level},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        get_resp = api_admin_client.get("/api/sep/admin/settings/Settings/LOGGING")
+        assert get_resp.status_code == status.HTTP_200_OK
+        body = get_resp.json()
+        assert body["value"] == debug_level
+        assert body["options"][4] == {"label": "DEBUG", "value": debug_level}
+
     async def test_logging_invalid_level_rejected(
         self, api_admin_client: TestClient, override_session: AsyncSession
     ) -> None:
