@@ -244,7 +244,8 @@ def _ini_with_entries(*plugins: str) -> str:
     ]
     return _MINIMAL_INI.replace(
         "version_locations = %(here)s/app/sep/migrations/versions",
-        f"version_locations = {':'.join(entries)}",
+        f"version_locations = "
+        f"{sync_alembic_version_locations.ENTRY_SEPARATOR.join(entries)}",
     )
 
 
