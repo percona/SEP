@@ -26,11 +26,13 @@ from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
+from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.lifecycle import (
     ProxyEntry,
     refresh_all,
+    resolve_refresher_options,
     start_refresh_task,
 )
 from app.core.settings_override.manager import SettingsOverrideManager
@@ -548,3 +550,46 @@ async def test_refresh_picks_up_changes_on_next_cycle(
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
+
+
+class TestResolveRefresherOptions:
+    """Cover the fallback that fills unset refresher options from settings."""
+
+    def test_explicit_values_pass_through(self) -> None:
+        """Assert a caller supplying both options gets them back untouched."""
+        assert resolve_refresher_options(timedelta(seconds=7), enabled=False) == (
+            timedelta(seconds=7),
+            False,
+        )
+
+    def test_unset_values_read_the_configured_options(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert both options fall back to the live settings when unset."""
+        monkeypatch.setattr(
+            settings.SETTINGS_OVERRIDE, "REFRESH_INTERVAL", timedelta(seconds=11)
+        )
+        monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", True)
+
+        assert resolve_refresher_options(None, enabled=None) == (
+            timedelta(seconds=11),
+            True,
+        )
+
+    def test_each_option_falls_back_independently(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert one supplied option does not suppress the other's fallback."""
+        monkeypatch.setattr(
+            settings.SETTINGS_OVERRIDE, "REFRESH_INTERVAL", timedelta(seconds=13)
+        )
+        monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", False)
+
+        assert resolve_refresher_options(timedelta(seconds=3), enabled=None) == (
+            timedelta(seconds=3),
+            False,
+        )
+        assert resolve_refresher_options(None, enabled=True) == (
+            timedelta(seconds=13),
+            True,
+        )

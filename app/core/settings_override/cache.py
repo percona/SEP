@@ -35,6 +35,7 @@ from app.core.settings_override.registry import (
     is_hot_reloadable,
     is_nested_overridable_parent,
     materialize_override_value,
+    MaterializerPurpose,
 )
 from app.core.utils.pydantic import annotation_pydantic_class
 
@@ -152,7 +153,11 @@ def _apply_top_level_row(
         return
     try:
         snapshot[row.key] = materialize_override_value(
-            settings_cls, row.key, field_info, row.value
+            settings_cls,
+            row.key,
+            field_info,
+            row.value,
+            purpose=MaterializerPurpose.SNAPSHOT,
         )
     except ValueError as exc:
         logger.warning(

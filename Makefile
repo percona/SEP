@@ -300,7 +300,6 @@ endif
 			| curl -sSf -k --config - \
 				-X POST "$${JENKINS_URL}/job/SEP/job/$${jenkins_job}/buildWithParameters" \
 				--data-urlencode "releaseTag=$${tag}" \
-				--data-urlencode "notifySlack=true" \
 				--data-urlencode "pushImage=true" \
 				--data-urlencode "pushImageDocker=$(PUSH_IMAGE_DOCKER)" 2>&1; then \
 			echo "    Jenkins build triggered successfully."; \

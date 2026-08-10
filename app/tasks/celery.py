@@ -43,7 +43,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.celery import celery
 from app.core.alerts.config import alert_service
 from app.core.alerts.models import AlertSeverity
-from app.core.config import settings
 from app.core.db.utils import (
     func_json_extract,
     prepare_unsafe_value_for_json_comparison,
@@ -161,11 +160,7 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
         latter still starts the periodic task.
     """
     anonymizer_settings._resolve()  # noqa: SLF001
-    _refresher.start(
-        settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
-        enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
-        proc_alive_timeout=celery.conf.worker_proc_alive_timeout,
-    )
+    _refresher.start(proc_alive_timeout=celery.conf.worker_proc_alive_timeout)
 
 
 @worker_process_shutdown.connect

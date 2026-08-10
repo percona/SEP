@@ -568,7 +568,7 @@ def _validate_nested_key(
     the parent must exist (``unknown_key``) and be nested-overridable
     (``not_overridable``); the leaf must resolve (``unknown_nested_field``)
     and its chain must be open, neither explicitly not-overridable at any
-    segment nor withheld by ``SETTINGS_OVERRIDE_ALLOWED_KEYS``
+    segment nor withheld by ``SETTINGS_OVERRIDE.ALLOWED_KEYS``
     (``not_overridable``); finally the value is coerced to the leaf type
     (structured Pydantic error on failure).
 
@@ -1055,7 +1055,7 @@ def build_settings_router(
         that has no override row succeeds with 204. Attempting to delete a field
         the code declares NOT_OVERRIDABLE responds 409, since it cannot have an
         override row in the first place and the operator's intent is
-        unsatisfiable. A field only ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withheld
+        unsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld
         may still carry a row written before the restriction applied, so that
         row is deleted normally and only the no-row case answers 409.
 
@@ -1160,7 +1160,7 @@ def _is_statically_locked(settings_cls: type[BaseYamlSettings], key: str) -> boo
     """Return whether the code, not the allowlist, refuses overrides of ``key``.
 
     Reads the classification with the policy gate switched off, so a key only
-    ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withholds reports ``False`` here. That
+    ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withholds reports ``False`` here. That
     distinction is what lets DELETE clear a row written before a restriction
     applied while keeping 409 for a field the code marks ``NOT_OVERRIDABLE``.
 
@@ -1187,7 +1187,7 @@ def _assert_key_deletable(
     rejected with 422 (``not_overridable``), mirroring the PATCH guard in
     :func:`_validate_nested_key` so DELETE and PATCH agree on which nested keys
     exist at all. The allowlist is deliberately excluded from that check: a
-    parent every one of whose leaves ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withheld
+    parent every one of whose leaves ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld
     must stay reachable, or any row accumulated beneath it before the
     restriction applied would be stuck. A ``NESTED_ONLY`` parent rejects
     whole-parent deletion with 422 (target a nested child instead). A
