@@ -39,7 +39,7 @@ import time
 import zipfile
 from datetime import timedelta
 from pathlib import Path, PurePosixPath
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, cast
 from uuid import UUID, uuid4
 
 from aiohttp import ClientError
@@ -58,7 +58,7 @@ from app.sep.apps.atw.crud import AtwIncidentManager, AtwSendLogManager
 from app.sep.apps.atw.models import AtwSendLog, AtwSendStatusEnum
 from app.sep.bundle_upload.factory import get_delivery_executor
 from app.sep.bundle_upload.plan import DeliveryPlan, StepRecord
-from app.sep.bundle_upload.resolver import resolve_delivery_plan
+from app.sep.bundle_upload.resolver import DeliveryPlanResolution, resolve_delivery_plan
 from app.sep.bundle_upload.seam import BundleSource
 from app.sep.config import sep_settings
 from app.sep.db import get_async_session_maker
@@ -71,7 +71,6 @@ logger = logging.getLogger(__name__)
 _BYTES_PER_MIB = 1024 * 1024
 _MANIFEST_ARCNAME = "manifest.json"
 _BUNDLE_SUFFIX = ".zip"
-_UNCONFIGURED_ERROR = "Diagnostics delivery is not configured"
 _NOTHING_TO_SEND_ERROR = (
     "The selected executions produced no output or logs -- nothing to send."
 )
@@ -602,39 +601,41 @@ async def run_send(send_log_id: UUID) -> None:
         await _run_send_for_row(session, row)
 
 
-async def _resolve_plan_after_refresh(session: AsyncSession) -> DeliveryPlan | None:
+async def _resolve_plan_after_refresh(
+    session: AsyncSession, held: DeliveryPlanResolution
+) -> DeliveryPlanResolution:
     """Republish the SEP settings snapshot and resolve the delivery plan again.
 
     A worker child can hold a snapshot published before the operator supplied
     the receiver's inputs, so the plan reads as unconfigured against settings
-    that are already current everywhere else. Republishing from the session in
-    hand costs one override-row read and is taken only on the branch that would
-    otherwise record a terminal failure.
+    already current everywhere else.
 
-    A failed republish resolves to ``None`` rather than escaping: this runs
-    ahead of the broad terminal guard, so an escaping error would leave the row
-    non-terminal until the stale sweep mislabels it as a lost worker. The
-    session is rolled back before returning, so an aborted transaction does not
-    also fail the terminal write that follows.
+    A failed republish degrades to ``held`` rather than escaping: this runs ahead
+    of the broad terminal guard, so an escaping error would leave the row
+    non-terminal until the stale sweep mislabels it as a lost worker. Degrading
+    to the resolution already in hand, rather than to a fixed reason, keeps a
+    transient database error from relabelling drifted inputs as delivery nobody
+    configured. The session is rolled back first, so an aborted transaction does
+    not also fail the terminal write that follows.
 
     :param session: The database session.
-    :return: The plan resolved against the fresh snapshot, or ``None`` when
-        delivery is genuinely unconfigured or the republish failed.
+    :param held: The resolution taken against the snapshot this child already
+        holds, returned unchanged when the republish fails.
+    :return: The resolution taken against the fresh snapshot, or ``held`` when
+        the republish failed.
     :raises Exception: Propagates a ``session.rollback()`` that itself fails.
-        That is the only exit from the failure branch that is not a returned
-        ``None``. The database is unreachable at that point, so no terminal
-        write was going to land either way and the row is left to the stale
-        sweep.
+        The database is unreachable at that point, so no terminal write was
+        going to land either way and the row is left to the stale sweep.
     """
     try:
         await republish_sep_settings_snapshot(session)
     except Exception:
         logger.exception(
-            "Could not re-read the diagnostics delivery settings; treating the "
-            "send as unconfigured."
+            "Could not re-read the diagnostics delivery settings; falling back "
+            "to the snapshot this worker already holds."
         )
         await session.rollback()
-        return None
+        return held
     return resolve_delivery_plan()
 
 
@@ -648,7 +649,9 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
 
     An unresolved plan is re-read once against a freshly published snapshot
     before the terminal write, so a send enqueued straight after the enabling
-    settings write is not failed against a snapshot older than it.
+    settings write is not failed against a snapshot older than it. The failed
+    row carries whichever reason the resolver gave, so an operator can tell
+    inputs that stopped matching the plan from delivery nobody configured.
 
     :param session: The database session.
     :param row: The send log to drive.
@@ -667,12 +670,14 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
         return
 
     detail = dict(row.detail)
-    plan = resolve_delivery_plan()
-    if plan is None:
-        plan = await _resolve_plan_after_refresh(session)
-    if plan is None:
-        await _fail(session, row, detail, [], _UNCONFIGURED_ERROR)
+    resolution = resolve_delivery_plan()
+    if resolution.plan is None:
+        resolution = await _resolve_plan_after_refresh(session, resolution)
+    if (reason := resolution.unavailable_reason) is not None:
+        await _fail(session, row, detail, [], reason)
         return
+    # A resolution refuses to hold neither member, so an empty reason is a plan.
+    plan = cast(DeliveryPlan, resolution.plan)
 
     incident = await AtwIncidentManager.get_or_404(session, id=row.incident_id)
     incident_name = incident.name
@@ -689,17 +694,17 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
                 path, row, incident_name, tasks_api, plan.max_bundle_size_mb
             )
         size = path.stat().st_size
-        executor = await get_delivery_executor(
+        async with get_delivery_executor(
             plan,
             step_observer=lambda record: steps.append(_step_detail(record)),
-        )
-        with path.open("rb") as handle:
-            result = await executor.upload_bundle(
-                source_ref=f"atw-incident/{row.incident_id}",
-                bundle=BundleSource(filename=path.name, content=handle, size=size),
-                case_ref=row.case_ref,
-                manifest=manifest,
-            )
+        ) as executor:
+            with path.open("rb") as handle:
+                result = await executor.upload_bundle(
+                    source_ref=f"atw-incident/{row.incident_id}",
+                    bundle=BundleSource(filename=path.name, content=handle, size=size),
+                    case_ref=row.case_ref,
+                    manifest=manifest,
+                )
         logger.info(
             "Diagnostics send %s delivered to case %s as %s: %s",
             row.id,

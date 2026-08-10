@@ -18,7 +18,6 @@
 from typing import Any
 
 from fastapi import HTTPException, status
-from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 class HTTPNotFoundException(HTTPException):
@@ -184,21 +183,3 @@ class HTTPGoneException(HTTPException):
         super().__init__(
             status_code=status.HTTP_410_GONE, detail=detail, headers=headers
         )
-
-
-class HTTPRedirectException(StarletteHTTPException):
-    """Define exception raised for redirects.
-
-    :param location: The URL to which the client should be redirected.
-    :type location: str
-    :param status_code: The HTTP status code for the redirect response. Defaults to
-        307 (Temporary Redirect).
-    :type status_code: int
-    """
-
-    def __init__(
-        self, location: str, status_code: int = status.HTTP_307_TEMPORARY_REDIRECT
-    ) -> None:
-        self.location = location
-        super().__init__(status_code=status_code)
-        self.headers = {"Location": location}

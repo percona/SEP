@@ -39,6 +39,7 @@ from app.sep.apps.atw.models import (
     AtwSendStatusEnum,
 )
 from app.sep.bundle_upload.plan import DeliveryPlan
+from app.sep.bundle_upload.resolver import DRIFTED_INPUTS_REASON
 from app.sep.config import DeliveryPlanInputs, sep_settings
 
 _BASE = "/api/apps/atw"
@@ -89,6 +90,17 @@ def configured_by_inputs_fixture(mocker: MockerFixture) -> None:
         sep_settings,
         "DIAGNOSTICS_DELIVERY_INPUTS",
         DeliveryPlanInputs(secrets={"api_key": "supplied-key"}),
+    )
+
+
+@pytest.fixture(name="drifted_inputs")
+def drifted_inputs_fixture(mocker: MockerFixture) -> None:
+    """Store inputs naming a secret the baked receiver no longer declares."""
+    mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", _awaiting_secrets_plan())
+    mocker.patch.object(
+        sep_settings,
+        "DIAGNOSTICS_DELIVERY_INPUTS",
+        DeliveryPlanInputs(secrets={"renamed_key": "supplied-key"}),
     )
 
 
@@ -459,6 +471,16 @@ class TestAtwConfig:
 
         assert response.json()["send_disabled_reasons"] == []
 
+    @pytest.mark.usefixtures("drifted_inputs")
+    async def test_reports_the_drift_reason_when_the_inputs_stopped_matching(
+        self, async_api_client: AsyncClient
+    ) -> None:
+        """Send the UI a reason distinct from the never-configured one."""
+        response = await async_api_client.get(f"{_BASE}/config/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["send_disabled_reasons"] == [DRIFTED_INPUTS_REASON]
+
 
 @pytest.mark.asyncio
 class TestStartSendJobRuntimeInputs:
@@ -507,3 +529,23 @@ class TestStartSendJobRuntimeInputs:
 
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
         assert "Diagnostics delivery is not configured" in response.json()["detail"]
+
+    @pytest.mark.usefixtures("drifted_inputs")
+    async def test_refuses_the_send_naming_the_drift(
+        self,
+        async_api_client: AsyncClient,
+        session: AsyncSession,
+    ) -> None:
+        """Refuse with the reason that tells the operator to re-supply the inputs."""
+        incident, executions = await _seed_incident(session)
+
+        response = await async_api_client.post(
+            f"{_BASE}/incidents/{incident.id}/send-jobs/",
+            json={
+                "case_ref": "CS0042",
+                "execution_ids": [str(execution.id) for execution in executions],
+            },
+        )
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert response.json()["detail"] == DRIFTED_INPUTS_REASON

@@ -43,7 +43,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.celery import celery
 from app.core.alerts.config import alert_service
 from app.core.alerts.models import AlertSeverity
-from app.core.config import settings
 from app.core.db.utils import (
     func_json_extract,
     prepare_unsafe_value_for_json_comparison,
@@ -145,9 +144,7 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
     until a later cycle lands.
 
     ``anonymizer_settings._resolve()`` runs unconditionally for validation even
-    when the refresher is disabled, as ``messages_settings._resolve()`` does in
-    ``sep_overrides_lifespan``. The two differ in consequence: the lifespan's
-    call aborts startup, while Celery catches and logs whatever a signal
+    when the refresher is disabled. Celery catches and logs whatever a signal
     receiver raises, so an invalid config here leaves the child running without
     this refresher.
 
@@ -161,11 +158,7 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
         latter still starts the periodic task.
     """
     anonymizer_settings._resolve()  # noqa: SLF001
-    _refresher.start(
-        settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
-        enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
-        proc_alive_timeout=celery.conf.worker_proc_alive_timeout,
-    )
+    _refresher.start(proc_alive_timeout=celery.conf.worker_proc_alive_timeout)
 
 
 @worker_process_shutdown.connect
@@ -694,10 +687,13 @@ async def _dispatch_queue_item(
             await await_annotation(result, "STARTED")
         else:
             schedule_annotation(result, "STARTED")
-        return result
     finally:
         async with lock_session_maker() as async_session:
             await DispatchLockManager.delete(async_session, dispatch_lock)
+
+    if result.status.is_terminal():
+        await maybe_record_run(result.id, executor)
+    return result
 
 
 async def _raise_if_identical_task_conflict(

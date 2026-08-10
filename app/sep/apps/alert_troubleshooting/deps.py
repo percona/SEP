@@ -19,31 +19,16 @@ import logging
 import re
 from collections.abc import Iterable
 from contextlib import suppress
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import Depends, Request
 from pydantic import BaseModel, model_validator, ValidationError
 
-from app.core.exceptions import (
-    HTTPBadRequestException,
-    HTTPNotFoundException,
-    HTTPRedirectException,
-)
+from app.core.exceptions import HTTPNotFoundException
 from app.core.utils.fields import NonEmptyStr
-from app.sep.deps import DefaultContext, ExecutorHostsCtx, SessionDep
+from app.sep.deps import SessionDep
 from app.sep.models import AlertServiceType
 from app.sep.snippets.crud import SnippetManager
-from app.sep.snippets.deps import (
-    get_snippet_execution_request_meta,
-    get_snippet_source,
-    get_validated_execution_args,
-    SnippetDep,
-)
-from app.sep.snippets.models.snippet import (
-    BaseSnippetArgs,
-    Snippet,
-    SnippetExecutionMeta,
-)
+from app.sep.snippets.models.snippet import Snippet
 
 logger = logging.getLogger(__name__)
 
@@ -237,36 +222,6 @@ async def get_grouped_alerts(
     return collect_grouped_alerts(snippets)
 
 
-GroupedAlertsDep = Annotated[
-    dict[AlertServiceType, list[AlertInfo]],
-    Depends(get_grouped_alerts),
-]
-
-
-async def get_troubleshooting_index_context(
-    context: DefaultContext,
-    grouped_alerts: GroupedAlertsDep,
-) -> dict[str, Any]:
-    """Assemble the template context for the Alert Troubleshooting index page.
-
-    :param context: The default template context with user and base URI.
-    :type context: DefaultContext
-    :param grouped_alerts: Alerts grouped by service type.
-    :type grouped_alerts: GroupedAlertsDep
-    :return: The updated context dictionary for the index template.
-    :rtype: dict[str, Any]
-    """
-    context["grouped_alerts"] = grouped_alerts
-    context["alert_service_types"] = list(AlertServiceType)
-    return context
-
-
-TroubleshootingIndexContext = Annotated[
-    dict[str, Any],
-    Depends(get_troubleshooting_index_context),
-]
-
-
 def _get_normalized_alerts(snippet: Snippet) -> list[AlertInfo]:
     """Extract and normalize all alert entries from a snippet's metadata.
 
@@ -362,119 +317,3 @@ async def get_snippets_for_alert(
     """
     snippets = await SnippetManager.list(session)
     return filter_snippets_for_alert(snippets, alert_name, service_type)
-
-
-AlertSnippetsDep = Annotated[
-    tuple[list[Snippet], AlertInfo], Depends(get_snippets_for_alert)
-]
-
-
-async def get_troubleshooting_detail_context(
-    context: DefaultContext,
-    snippets_and_alert: AlertSnippetsDep,
-    executor_hosts_ctx: ExecutorHostsCtx,
-) -> dict[str, Any]:
-    """Assemble the template context for the Alert Troubleshooting detail page.
-
-    :param context: The default template context with user and base URI.
-    :type context: DefaultContext
-    :param snippets_and_alert: The snippets and alert info from filtering.
-    :type snippets_and_alert: AlertSnippetsDep
-    :param executor_hosts_ctx: The executor hosts context with display names.
-    :type executor_hosts_ctx: ExecutorHostsCtx
-    :return: The updated context dictionary for the detail template.
-    :rtype: dict[str, Any]
-    """
-    snippets, alert_info = snippets_and_alert
-    context |= {
-        "alert_info": alert_info,
-        "snippets": snippets,
-        "executor_hosts": executor_hosts_ctx.as_template_list(),
-    }
-    return context
-
-
-TroubleshootingDetailContext = Annotated[
-    dict[str, Any],
-    Depends(get_troubleshooting_detail_context),
-]
-
-
-def get_ajax_executable_snippet(
-    snippet: SnippetDep,
-) -> Snippet:
-    """Verify snippet executability and return a JSON error on failure.
-
-    Wrap the standard executable snippet check for AJAX endpoints by
-    raising an ``HTTPBadRequestException`` instead of an
-    ``HTTPRedirectException``.
-
-    :param snippet: The snippet to verify.
-    :type snippet: SnippetDep
-    :return: The verified executable snippet.
-    :rtype: Snippet
-    :raises HTTPBadRequestException: If the snippet cannot be executed.
-    """
-    if snippet.can_execute:
-        return snippet
-    raise HTTPBadRequestException(detail=f"Snippet {snippet} cannot be executed")
-
-
-AjaxExecutableSnippet = Annotated[Snippet, Depends(get_ajax_executable_snippet)]
-
-
-async def get_ajax_validated_execution_args(
-    request: Request,
-    snippet: AjaxExecutableSnippet,
-) -> BaseSnippetArgs:
-    """Validate execution arguments and return JSON errors on failure.
-
-    Wrap the standard argument validation for AJAX endpoints by catching
-    ``HTTPRedirectException`` and raising ``HTTPBadRequestException``
-    instead.
-
-    :param request: The HTTP request object.
-    :type request: Request
-    :param snippet: The executable snippet.
-    :type snippet: AjaxExecutableSnippet
-    :return: The validated execution arguments.
-    :rtype: BaseSnippetArgs
-    :raises HTTPBadRequestException: If the execution arguments are invalid.
-    """
-    try:
-        return await get_validated_execution_args(request, snippet)
-    except HTTPRedirectException:
-        raise HTTPBadRequestException(
-            detail="Invalid execution parameters",
-        ) from None
-
-
-def get_ajax_execution_request_meta(
-    snippet: AjaxExecutableSnippet,
-    snippet_source: Annotated[str, Depends(get_snippet_source)],
-    execution_args: Annotated[
-        BaseSnippetArgs, Depends(get_ajax_validated_execution_args)
-    ],
-) -> SnippetExecutionMeta:
-    """Prepare execution metadata for an AJAX snippet execution request.
-
-    Delegate to the standard snippet execution metadata builder but use
-    AJAX-safe dependency validation that returns JSON errors instead of
-    redirect responses.
-
-    :param snippet: The executable snippet.
-    :type snippet: AjaxExecutableSnippet
-    :param snippet_source: The signed URL to download the snippet artifact.
-    :type snippet_source: str
-    :param execution_args: The validated execution arguments.
-    :type execution_args: BaseSnippetArgs
-    :return: The prepared execution metadata.
-    :rtype: SnippetExecutionMeta
-    """
-    return get_snippet_execution_request_meta(snippet, snippet_source, execution_args)
-
-
-ExecutionRequestMeta = Annotated[
-    SnippetExecutionMeta,
-    Depends(get_ajax_execution_request_meta),
-]

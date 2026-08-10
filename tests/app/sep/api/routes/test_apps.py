@@ -32,10 +32,8 @@ from app.sep.api.routes.apps import build_navigation_react_route
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.registry import AppRegistry, get_app_registry
 from app.sep.deps import (
-    get_api_authenticated_user,
     get_current_user,
     get_session,
-    validate_csrf,
 )
 from app.sep.main import sep_app
 from app.sep.models import AppLifecycleEnum, AppState
@@ -85,9 +83,7 @@ def api_user_client_fixture(
     regular_user: CasdoorUser, override_session: AsyncSession
 ) -> Iterator[TestClient]:
     """Yield an authenticated (non-admin) client with the in-memory SEP session."""
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}

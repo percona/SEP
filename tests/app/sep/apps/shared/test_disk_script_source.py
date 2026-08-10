@@ -34,6 +34,8 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.core.pagination import Pagination
+from app.sep.apps.framework.list_query import InMemoryListQuery
 from app.sep.apps.framework.schema import (
     BoolField,
     ChoiceField,
@@ -216,10 +218,117 @@ class TestLoadAndList:
         """Return one list row per discovered file, projected to the row model."""
         _write_script(script_dir, "a.sh", _SHELL_NO_PARAMS)
         _write_script(script_dir, "b.sh", _SHELL_NO_PARAMS)
-        scripts = await source.list_scripts()
+        scripts, total = await source.list_scripts(None, None)
         rows = [source.list_response(script) for script in scripts]
         assert all(isinstance(row, DiskScriptListRow) for row in rows)
-        assert sorted(row.filename for row in rows) == ["a.sh", "b.sh"]
+        assert [row.filename for row in rows] == ["a.sh", "b.sh"]
+        assert total == len(scripts)
+
+    async def test_unqueried_list_returns_whole_set_past_a_default_page(
+        self, source: ScriptSource, script_dir: Path
+    ) -> None:
+        """Return every script when the route derives neither query nor pagination.
+
+        The framework calls this shape for a non-paginated list route, so it must not
+        silently truncate at a default page size.
+        """
+        count = 60
+        for index in range(count):
+            _write_script(script_dir, f"s{index:02d}.sh", _SHELL_NO_PARAMS)
+
+        scripts, total = await source.list_scripts(None, None)
+
+        assert len(scripts) == count
+        assert total == count
+
+    async def test_unqueried_paginated_list_slices_in_spec_default_order(
+        self, source: ScriptSource, script_dir: Path
+    ) -> None:
+        """Slice in the spec's default order when the route derives no query.
+
+        There is no separate unsorted path any more: a missing query resolves to the
+        spec default, so the ordering is the same one a queried call would produce.
+        """
+        names = ("c.sh", "a.sh", "b.sh")
+        for name in names:
+            _write_script(script_dir, name, _SHELL_NO_PARAMS)
+
+        scripts, total = await source.list_scripts(None, Pagination(offset=0, limit=2))
+
+        assert [script.filename for script in scripts] == ["a.sh", "b.sh"]
+        assert total == len(names)
+
+    async def test_in_memory_list_query_flag_is_set(self, source: ScriptSource) -> None:
+        """Flag the disk source as in-memory so the framework builds that dep."""
+        assert source.in_memory_list_query is True
+
+    async def test_non_spec_list_query_spec_raises_at_wiring_time(
+        self, script_dir: Path
+    ) -> None:
+        """Reject a bad spec when the source is built, not on the first list request."""
+
+        class _KitScript(BaseSnippet):
+            BASE_DIR = script_dir
+
+        with pytest.raises(TypeError, match="must be a ListQuerySpec"):
+            build_disk_script_source(
+                script_dir=script_dir,
+                script_cls=_KitScript,
+                artifact_type="testkit",
+                name="testkit",
+                display_name="Test Kit",
+                list_query_spec=None,
+            )
+
+
+class TestListQueryApplied:
+    """Exercise the disk source's in-memory sort/search/paginate over real files.
+
+    Runs against the same ``source`` fixture every other class uses: the builder now
+    defaults to the shared spec, so there is no spec-less disk source to contrast with.
+    """
+
+    async def _seed(self, script_dir: Path, *names: str) -> None:
+        for name in names:
+            _write_script(script_dir, name, _SHELL_NO_PARAMS)
+
+    async def test_sort_descending_by_filename(
+        self, source: ScriptSource, script_dir: Path
+    ) -> None:
+        """Order by the filename attribute descending via the in-memory applier."""
+        names = ("a.sh", "b.sh", "c.sh")
+        await self._seed(script_dir, *names)
+        query = InMemoryListQuery(sort_key="filename", descending=True, search=None)
+
+        rows, total = await source.list_scripts(query, Pagination())
+
+        assert [row.filename for row in rows] == ["c.sh", "b.sh", "a.sh"]
+        assert total == len(names)
+
+    async def test_search_narrows_rows_and_total(
+        self, source: ScriptSource, script_dir: Path
+    ) -> None:
+        """Narrow the rows and the total by a case-insensitive filename substring."""
+        await self._seed(script_dir, "mysql-dump.sh", "pg-vacuum.sh")
+        query = InMemoryListQuery(sort_key="filename", descending=False, search="MYSQL")
+
+        rows, total = await source.list_scripts(query, Pagination())
+
+        assert [row.filename for row in rows] == ["mysql-dump.sh"]
+        assert total == 1
+
+    async def test_pagination_slices_with_full_total(
+        self, source: ScriptSource, script_dir: Path
+    ) -> None:
+        """Return the pagination window while reporting the full filtered total."""
+        names = ("a.sh", "b.sh", "c.sh", "d.sh")
+        await self._seed(script_dir, *names)
+        query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
+
+        rows, total = await source.list_scripts(query, Pagination(offset=1, limit=2))
+
+        assert [row.filename for row in rows] == ["b.sh", "c.sh"]
+        assert total == len(names)
 
 
 class TestTaskAndInterpreterDerivation:
