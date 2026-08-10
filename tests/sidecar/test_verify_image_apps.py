@@ -144,9 +144,9 @@ def test_wrapper_overrides_the_entrypoint_to_python(fake_runtime: FakeRuntime):
 
 def test_wrapper_forwards_the_image_and_mode(fake_runtime: FakeRuntime):
     """Assert the image, the stdin marker and the mode arrive in that order."""
-    fake_runtime.run(IMAGE, "unrestricted")
+    fake_runtime.run(IMAGE, "restricted")
 
-    assert fake_runtime.argv[-3:] == [IMAGE, "-", "unrestricted"]
+    assert fake_runtime.argv[-3:] == [IMAGE, "-", "restricted"]
 
 
 def test_wrapper_delivers_the_checker_on_stdin(fake_runtime: FakeRuntime):
