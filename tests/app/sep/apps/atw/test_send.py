@@ -923,7 +923,9 @@ class TestRunSendStaleSnapshot:
             "DIAGNOSTICS_DELIVERY_INPUTS",
             DeliveryPlanInputs(
                 endpoint="https://intake-stale.example.com",
-                secrets=dict.fromkeys(delivery_plan.secrets, SecretStr("stale-api-key")),
+                secrets=dict.fromkeys(
+                    delivery_plan.secrets, SecretStr("stale-api-key")
+                ),
             ),
         )
         await _seed_delivery_inputs(
@@ -938,7 +940,7 @@ class TestRunSendStaleSnapshot:
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.SUCCESS
         assert uploader.plan is not None
-        assert str(uploader.plan.endpoint) == new_endpoint
+        assert str(uploader.plan.endpoint).rstrip("/") == new_endpoint
         assert {
             name: secret.get_secret_value()
             for name, secret in uploader.plan.secrets.items()

@@ -603,6 +603,7 @@ async def run_send(send_log_id: UUID) -> None:
 
 async def _resolve_plan_after_refresh(
     session: AsyncSession,
+    row: AtwSendLog,
 ) -> DeliveryPlanResolution:
     """Republish the SEP settings snapshot and resolve the delivery plan.
 
@@ -616,15 +617,20 @@ async def _resolve_plan_after_refresh(
     fixed "not configured" would turn a deliverable send — one whose in-hand
     snapshot already resolves a usable plan — into a terminal failure on a
     transient database error. Log, roll the session back so an aborted
-    transaction does not also fail the terminal write that may still follow, and
-    resolve against the snapshot this child already holds.
+    transaction does not also fail the terminal write that may still follow,
+    refresh ``row`` so the rollback's expire does not break later attribute
+    reads on the delivery path, and resolve against the snapshot this child
+    already holds.
 
     :param session: The database session.
+    :param row: The send log being driven; refreshed after a failed republish
+        so delivery can continue against the held snapshot.
     :return: The resolution taken against the fresh snapshot, or against the
         snapshot this child already holds when the republish failed.
-    :raises Exception: Propagates a ``session.rollback()`` that itself fails.
-        The database is unreachable at that point, so no terminal write was
-        going to land either way and the row is left to the stale sweep.
+    :raises Exception: Propagates a ``session.rollback()`` or
+        ``session.refresh()`` that itself fails. The database is unreachable at
+        that point, so no terminal write was going to land either way and the
+        row is left to the stale sweep.
     """
     try:
         await republish_sep_settings_snapshot(session)
@@ -634,6 +640,7 @@ async def _resolve_plan_after_refresh(
             "to the snapshot this worker already holds."
         )
         await session.rollback()
+        await session.refresh(row)
     return resolve_delivery_plan()
 
 
@@ -659,8 +666,9 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
     :raises HTTPBadRequestException: Propagated from the manager when a terminal
         row cannot be written.
     :raises Exception: Propagated from ``_resolve_plan_after_refresh`` when
-        rolling back a failed settings re-read itself fails. That call sits
-        ahead of the broad terminal guard, so nothing here catches it.
+        rolling back or refreshing after a failed settings re-read itself
+        fails. That call sits ahead of the broad terminal guard, so nothing
+        here catches it.
     """
     if row.status.is_terminal():
         logger.info(
@@ -669,7 +677,7 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
         return
 
     detail = dict(row.detail)
-    resolution = await _resolve_plan_after_refresh(session)
+    resolution = await _resolve_plan_after_refresh(session, row)
     if (reason := resolution.unavailable_reason) is not None:
         await _fail(session, row, detail, [], reason)
         return
