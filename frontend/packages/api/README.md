@@ -30,11 +30,18 @@ packages. Anything that talks to the backend should go through here.
   the `openapi-fetch` `{ data, error }` tuple to throw the same shape.
 - **Token accessor pattern** — `setTokenProvider()` and `setOnUnauthorized()`
   let the auth layer plug in without the API package depending on auth state.
+- **Token minter seam** — `setTokenMinter()` replaces _how_ a fresh token is
+  obtained. It defaults to the cookie-backed `POST /oauth/refresh`; a host that
+  embeds SEP and owns the session registers its own. Everything downstream — the
+  single-flight in `refreshAccessToken()`, the 401 retry in both transports,
+  the `setOnRefreshed()` notification — is minter-agnostic.
 - **Hooks** — `useAppSchema`, `useAppTasks`, `useAppTask`,
   `useCreateAppTask` (generic, predate codegen) and `useCurrentUser`
   (sample of the typed-hook pattern).
-- **Auth functions** — `postLogin`, `postRefresh`, `fetchCurrentUser`.
-  Thin request wrappers consumed by the `AuthProvider` in `@sep/shell`.
+- **Auth functions** — `postLogin`, `postRefresh`, `postSession`,
+  `postSessionExchange`, `postLogout`, `fetchCurrentUser`. Thin request wrappers
+  consumed by the `AuthProvider` in `@sep/shell`, and by an embedding host's
+  token store for the session exchange.
 
 ## Usage
 
@@ -58,6 +65,28 @@ import { setTokenProvider, setOnUnauthorized } from '@sep/api';
 
 setTokenProvider(() => currentAccessToken);
 setOnUnauthorized(() => redirectToLogin());
+```
+
+### Wire up auth in an embedded host that owns the session
+
+PMM embeds SEP with no SEP login flow and no refresh cookie: it trades its own
+session cookie for a short-lived bearer, holds it in memory, and re-exchanges
+before expiry. Only the minter differs — the retry, coalescing, and expiry
+plumbing are shared.
+
+```ts
+import {
+  postSessionExchange,
+  setOnRefreshed,
+  setOnUnauthorized,
+  setTokenMinter,
+  setTokenProvider,
+} from '@sep/api';
+
+setTokenProvider(getHostToken); // synchronous read of the in-memory bearer
+setTokenMinter(() => postSessionExchange()); // POST /oauth/session/exchange
+setOnRefreshed(recordHostToken); // store it, schedule the next exchange
+setOnUnauthorized(markHostSignedOut); // no SEP login to redirect to
 ```
 
 ### Call the API

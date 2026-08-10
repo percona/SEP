@@ -33,8 +33,8 @@ from app.sep.config import SEPSettings
 from app.tasks.config import TasksSettings
 from app.tasks.settings.routes import TASKS_ADMIN_SETTINGS_CLASSES
 from tests.sidecar.conftest import (
-    ALLOWLIST_KEY,
     EMBEDDED_PROFILE,
+    read_allowlist,
     SETTINGS_ENV_HELPER,
     SIDECAR_DIR,
 )
@@ -172,10 +172,10 @@ def test_grafana_provider_constructs_with_an_empty_token():
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_override_allowlist_resolves_from_the_profile(embedded_profile_data: dict):
     """Assert the profile's YAML list coerces into the field the policy reads."""
-    declared = embedded_profile_data["default"][ALLOWLIST_KEY]
+    declared = read_allowlist(embedded_profile_data)
 
     assert len(declared) == ALLOWLIST_SIZE
-    assert set(declared) == Settings().SETTINGS_OVERRIDE_ALLOWED_KEYS
+    assert set(declared) == Settings().SETTINGS_OVERRIDE.ALLOWED_KEYS
 
 
 def test_profile_carries_a_single_default_block(embedded_profile_data: dict):
@@ -319,7 +319,7 @@ def test_every_allowlist_entry_names_a_reachable_class(embedded_profile_data: di
     for entry in collect_app_owned_settings_classes(profile_apps):
         reachable_tokens.add(entry.setting_class.value)
 
-    allowlist = embedded_profile_data["default"][ALLOWLIST_KEY]
+    allowlist = read_allowlist(embedded_profile_data)
     for key in allowlist:
         class_token = key.split(".")[0]
         assert class_token in reachable_tokens, (

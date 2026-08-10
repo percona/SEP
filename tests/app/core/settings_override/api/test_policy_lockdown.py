@@ -244,6 +244,46 @@ class TestPatchGate:
         assert _error_types(response.json()) == {"not_overridable"}
 
 
+class TestSettingsOverrideSelfLockdown:
+    """Refuse writes that would let the override layer rewrite its own config.
+
+    ``SETTINGS_OVERRIDE`` is unmarked on purpose: marking it ``NESTED_ONLY``
+    would make its leaves reachable and let an operator rewrite
+    ``ALLOWED_KEYS`` from the database, lifting their own restriction.
+    """
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"SETTINGS_OVERRIDE__REFRESH_INTERVAL": 60},
+            {"SETTINGS_OVERRIDE__REFRESHER_ENABLED": False},
+            {"SETTINGS_OVERRIDE__ALLOWED_KEYS": ["Settings.LOGGING"]},
+        ],
+    )
+    def test_each_leaf_patch_is_rejected(
+        self, client: TestClient, body: dict[str, object]
+    ) -> None:
+        """Assert a PATCH of each settings-override leaf answers 422."""
+        response = client.patch(SETTINGS_URL, json=body)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert _error_types(response.json()) == {"not_overridable"}
+
+    def test_whole_parent_patch_is_rejected(self, client: TestClient) -> None:
+        """Assert a whole-object write of the settings-override block is refused."""
+        response = client.patch(
+            SETTINGS_URL,
+            json={
+                "SETTINGS_OVERRIDE": {
+                    "REFRESH_INTERVAL": 60,
+                    "REFRESHER_ENABLED": False,
+                    "ALLOWED_KEYS": ["Settings.LOGGING"],
+                }
+            },
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert _error_types(response.json()) == {"not_overridable"}
+
+
 class TestPatchUnrestricted:
     """Assert the default restriction leaves every PATCH status unchanged."""
 

@@ -75,16 +75,20 @@ def diagnostics_send_disabled_reasons() -> list[str]:
     """Return why the incident send action is unavailable, empty when it is not.
 
     The plan is resolved from the baked skeleton and its runtime inputs on every
-    call, so a partially-configured receiver -- a declared secret left without a
-    value -- is reported here rather than failing mid-send.
-    ``resolve_delivery_plan`` logs which names are missing; the reason surfaced
-    to the UI stays generic, because it reaches an operator who cannot act on
-    the receiver's internal secret names.
+    call, so a partially-configured receiver — a declared secret left without a
+    value — is reported here rather than failing mid-send. Delivery that was
+    working until stored inputs stopped matching the plan is reported
+    separately, because re-supplying the inputs and configuring delivery for the
+    first time are opposite actions.
+
+    ``resolve_delivery_plan`` logs which secret names are involved; the reason
+    surfaced to the UI names none of them, because it reaches an operator who
+    cannot act on the receiver's internal secret names.
 
     :return: The reasons to withhold the send action from the UI.
     """
-    if resolve_delivery_plan() is None:
-        return ["Diagnostics delivery is not configured"]
+    if (reason := resolve_delivery_plan().unavailable_reason) is not None:
+        return [reason]
     return []
 
 

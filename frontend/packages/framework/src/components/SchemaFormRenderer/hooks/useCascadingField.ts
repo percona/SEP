@@ -28,7 +28,10 @@ interface UseCascadingFieldArgs {
 interface UseCascadingFieldResult<T> {
   /** Current value of the upstream field, or undefined if no dependency is declared. */
   upstreamValue: T | undefined;
-  /** True once the upstream value is set (or if there is no dependency). */
+  /**
+   * True once the upstream value is set (or if there is no dependency). An
+   * upstream selector with nothing selected holds `''`, which is not ready.
+   */
   ready: boolean;
 }
 
@@ -62,13 +65,18 @@ export function useCascadingField<T = unknown>({
       return;
     }
     if (previousRef.current !== upstreamValue) {
-      setValue(fieldName, undefined, { shouldValidate: false, shouldDirty: false });
+      // `''` is the form's empty-value sentinel for these selector types (see
+      // `buildFormDefaults`). `undefined` would also flip a bound MUI input
+      // from controlled to uncontrolled and keep the stale selection visible.
+      setValue(fieldName, '', { shouldValidate: false, shouldDirty: false });
       previousRef.current = upstreamValue;
     }
   }, [upstreamValue, fieldName, dependsOn, setValue]);
 
+  const upstream = upstreamValue as unknown;
+
   return {
     upstreamValue: dependsOn ? upstreamValue : undefined,
-    ready: dependsOn ? upstreamValue !== undefined && upstreamValue !== null : true,
+    ready: dependsOn ? upstream !== undefined && upstream !== null && upstream !== '' : true,
   };
 }

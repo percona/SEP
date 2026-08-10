@@ -44,6 +44,7 @@ from app.sep.apps.framework.form_dsl import (
 from app.sep.apps.framework.spec import (
     assemble_envelope,
     resolve_refs,
+    service_id_meta,
     stamp_form_input,
 )
 from app.sep.connectivity import (
@@ -167,6 +168,9 @@ def assemble_checksum_payload(
                 CONNECTIVITY_META_HOST_KEY: service.node.address,
                 CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
                 CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
+                # This builder never reaches assemble_envelope, so it merges the
+                # framework's fragment directly.
+                **service_id_meta(service),
             },
         },
         name=form.task_name,

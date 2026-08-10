@@ -92,6 +92,21 @@ _DELIVERY_INPUTS_KEY = "DIAGNOSTICS_DELIVERY_INPUTS"
 _DELIVERY_INPUTS_SECRETS = {"sn_api_key": "key-value", "client_token": "token-value"}
 
 
+def _renamed_skeleton() -> dict[str, Any]:
+    """Return the baked plan an upgrade ships with ``client_token`` renamed.
+
+    :return: The skeleton payload declaring ``case_token`` in its place.
+    """
+    return {
+        **_DELIVERY_SKELETON_PAYLOAD,
+        "secrets": {"sn_api_key": "", "case_token": ""},
+        "upload": {
+            **_DELIVERY_SKELETON_PAYLOAD["upload"],
+            "fields": {"case_token": {"source": "secret", "name": "case_token"}},
+        },
+    }
+
+
 def _mock_tasks_api() -> AsyncMock:
     """Return an ``AsyncMock`` Tasks API client serving an empty TasksSettings group.
 
@@ -995,13 +1010,19 @@ class TestSepSettingsPatch:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     @pytest.mark.usefixtures("delivery_skeleton")
-    async def test_delivery_inputs_row_that_stops_matching_the_plan_is_dropped(
+    async def test_delivery_inputs_row_that_stops_matching_the_plan_survives(
         self,
         api_admin_client: TestClient,
         override_session: AsyncSession,
         mocker,
     ) -> None:
-        """Degrade a stale row to unconfigured after an upgrade renames a secret."""
+        """Keep a stale row readable after an upgrade renames a declared secret.
+
+        Inverts the previous contract, under which the row was dropped from the
+        snapshot: the resolver then read exactly what a never-configured
+        deployment reads, and the evidence of the rename survived only as a log
+        line in whichever process rebuilt the snapshot.
+        """
         response = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={_DELIVERY_INPUTS_KEY: {"secrets": _DELIVERY_INPUTS_SECRETS}},
@@ -1013,22 +1034,81 @@ class TestSepSettingsPatch:
             key=_DELIVERY_INPUTS_KEY,
         )
         assert len(rows) == 1
-
-        renamed = {
-            **_DELIVERY_SKELETON_PAYLOAD,
-            "secrets": {"sn_api_key": "", "case_token": ""},
-            "upload": {
-                **_DELIVERY_SKELETON_PAYLOAD["upload"],
-                "fields": {"case_token": {"source": "secret", "name": "case_token"}},
-            },
-        }
         mocker.patch.object(
-            sep_settings, "DIAGNOSTICS_DELIVERY", DeliveryPlan(**renamed)
+            sep_settings, "DIAGNOSTICS_DELIVERY", DeliveryPlan(**_renamed_skeleton())
         )
 
         snapshot = await build_snapshot(override_session, SEPSettings)
 
-        assert _DELIVERY_INPUTS_KEY not in snapshot
+        assert set(snapshot[_DELIVERY_INPUTS_KEY].secrets) == set(
+            _DELIVERY_INPUTS_SECRETS
+        )
+
+    @pytest.mark.usefixtures("delivery_skeleton")
+    async def test_delivery_inputs_patch_after_a_rename_is_still_rejected(
+        self, api_admin_client: TestClient, mocker
+    ) -> None:
+        """Refuse a payload naming what the plan declares today, not yesterday.
+
+        Read-time leniency is scoped to rows stored earlier; a payload submitted
+        now against a plan it does not match is still a client error.
+        """
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", DeliveryPlan(**_renamed_skeleton())
+        )
+
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={_DELIVERY_INPUTS_KEY: {"secrets": _DELIVERY_INPUTS_SECRETS}},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.usefixtures("delivery_skeleton")
+    async def test_delivery_inputs_mask_restores_across_a_surviving_drifted_row(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+        mocker,
+    ) -> None:
+        """Restore a masked secret by name, never by position, once a row drifts.
+
+        A drifted row now reaches the proxy where the PATCH handler previously
+        saw ``None``, so mask restoration has a stored value to consult again.
+        It is keyed by secret name, so the credential of a name the rename kept
+        cannot be restored under the name it introduced.
+        """
+        stored = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={_DELIVERY_INPUTS_KEY: {"secrets": _DELIVERY_INPUTS_SECRETS}},
+        )
+        assert stored.status_code == status.HTTP_200_OK
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", DeliveryPlan(**_renamed_skeleton())
+        )
+
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={
+                _DELIVERY_INPUTS_KEY: {
+                    "secrets": {
+                        "sn_api_key": SECRET_STR_MASK,
+                        "case_token": "fresh-token",
+                    }
+                }
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=_DELIVERY_INPUTS_KEY,
+        )
+        assert rows[0].value["secrets"] == {
+            "sn_api_key": _DELIVERY_INPUTS_SECRETS["sn_api_key"],
+            "case_token": "fresh-token",
+        }
 
     async def test_app_drain_nested_leaf_patch_creates_override(
         self,

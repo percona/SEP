@@ -177,8 +177,8 @@ async def test_restricted_deployment_filters_withheld_rows(
     """Assert a withheld key's row is filtered while an allowed one still lands."""
     baseline = tasks_settings.STALENESS_THRESHOLD_SECONDS
     monkeypatch.setattr(
-        settings,
-        "SETTINGS_OVERRIDE_ALLOWED_KEYS",
+        settings.SETTINGS_OVERRIDE,
+        "ALLOWED_KEYS",
         {"TasksSettings.LOG_RETENTION_DAYS"},
     )
     async with override_session_maker() as session:

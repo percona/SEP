@@ -68,6 +68,13 @@ repos:
         language: system
         files: ^app/sep/apps/.*/migrations/versions/
         pass_filenames: false
+      - id: sync-labeler-apps
+        name: Sync .github/labeler.yml app labels
+        description: "Regenerate app:<name> labeler rules from app-slice dirs"
+        entry: python3 scripts/sync_labeler_apps.py
+        language: system
+        files: ^(app/sep/apps/|frontend/packages/apps/|tests/app/sep/apps/|templates/|frontend/packages/e2e/tests/|\.github/labeler\.yml$|scripts/sync_labeler_apps\.py$)
+        pass_filenames: false
       - id: check-nomad-payload-size
         name: Check Nomad payload size
         description: "Ensure dispatch payloads stay under Nomad 16 KiB limit after minify+gzip"

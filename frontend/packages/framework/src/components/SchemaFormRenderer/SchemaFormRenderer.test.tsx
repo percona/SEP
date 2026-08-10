@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -72,6 +72,23 @@ describe('buildValidationRules', () => {
     expect(rules.max).toMatchObject({ value: 5 });
   });
 
+  it('treats whitespace-only numeric input as empty', () => {
+    const optional = buildValidationRules({ type: 'integer', name: 'n', label: 'N' }).validate as (
+      value: unknown,
+    ) => true | string;
+    expect(optional('   ')).toBe(true);
+
+    const required = buildValidationRules({
+      type: 'integer',
+      name: 'n',
+      label: 'N',
+      required: true,
+    }).validate as (value: unknown) => true | string;
+    expect(required('   ')).toBe('N is required');
+    expect(required(' 42 ')).toBe(true);
+    expect(required(' 4.2 ')).toBe('Enter a whole number');
+  });
+
   it('emits a validate fn enforcing minItems/maxItems on multi_choice', () => {
     const rules = buildValidationRules({
       type: 'multi_choice',
@@ -98,6 +115,20 @@ describe('coerceFormValues', () => {
     expect(out.age).toBe(42);
     expect(out.weight).toBeCloseTo(3.14);
     expect(out.empty).toBeUndefined();
+  });
+
+  it('coerces whitespace-only numeric input to undefined instead of 0', () => {
+    const out = coerceFormValues({ age: '   ', weight: '\t\n' }, [
+      { type: 'integer', name: 'age', label: 'Age' },
+      { type: 'float', name: 'weight', label: 'Weight' },
+    ]);
+    expect(out.age).toBeUndefined();
+    expect(out.weight).toBeUndefined();
+  });
+
+  it('coerces padded numeric input to its numeric value', () => {
+    const out = coerceFormValues({ age: ' 42 ' }, [{ type: 'integer', name: 'age', label: 'Age' }]);
+    expect(out.age).toBe(42);
   });
 
   it('leaves non-numeric fields alone', () => {
@@ -205,7 +236,10 @@ describe('SchemaFormRenderer — field rendering', () => {
     expect(screen.getByLabelText(/Notes/)).toBeInTheDocument();
     expect(screen.getByLabelText(/When/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Config/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Upload/)).toBeInTheDocument();
+    // Exact match: the file picker button carries its own accessible name
+    // ("Select file for Upload"), which a /Upload/ pattern would also match.
+    expect(screen.getByLabelText('Upload')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Select file for Upload' })).toBeInTheDocument();
     // ServiceSelector / SchemaSelector / TableSelector / HostSelector use
     // percona-ui's AutoCompleteInput which renders a TextField — assert by label.
     expect(screen.getByLabelText('Table')).toBeInTheDocument();
@@ -1124,6 +1158,41 @@ describe('SchemaFormRenderer — cardinality_rules', () => {
     // Both empty → violation active → submit blocked
     await user.click(screen.getByRole('button', { name: /Run/ }));
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('keeps the unsaved-changes guard armed when a violation blocks submission', async () => {
+    const user = userEvent.setup();
+    const removeEventListener = vi.spyOn(window, 'removeEventListener');
+    // Restored in teardown, not inline: a failing assertion below would
+    // otherwise leave the spy installed for the rest of the file.
+    onTestFinished(() => removeEventListener.mockRestore());
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Source',
+            cardinality_rules: [{ fields: ['a', 'b'], min: 1, max: 1, message: 'Exactly one.' }],
+            fields: [
+              { type: 'string', name: 'a', label: 'A' },
+              { type: 'string', name: 'b', label: 'B' },
+            ],
+          },
+        ]}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    // Dirty the form, then trip the max=1 violation so the submit is blocked.
+    await user.type(screen.getByLabelText('A'), 'one');
+    await user.type(screen.getByLabelText('B'), 'two');
+    removeEventListener.mockClear();
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+
+    // A blocked submit must not read as a successful one: react-hook-form would
+    // set isSubmitSuccessful, `useUnsavedChangesGuard` would go false, and its
+    // cleanup would drop the beforeunload listener while the form is still dirty.
+    expect(removeEventListener).not.toHaveBeenCalledWith('beforeunload', expect.any(Function));
   });
 
   it('allows submission when cardinality is satisfied', async () => {
