@@ -25,7 +25,6 @@ receivers register at worker startup even in an image that ships no app with a
 ``celery.tasks``.
 """
 
-import logging
 import logging.config
 from collections.abc import Mapping
 from copy import deepcopy
@@ -148,9 +147,10 @@ async def apply_logging_dictconfig(_: Mapping[str, object]) -> None:
     config and re-apply it -- so a log-level change takes effect in the SEP web
     process and Celery worker children without a restart. Failures are logged and
     swallowed: a malformed config must not take the process down mid-request or
-    mid-task. ``LOGGING_CONFIG`` sets ``disable_existing_loggers: False`` and
-    declares a dedicated ``celery`` handler, so re-entering ``dictConfig`` from a
-    worker refresh cycle preserves Celery's own loggers.
+    mid-task. ``LOGGING_CONFIG`` sets ``disable_existing_loggers: False``, so
+    re-entering ``dictConfig`` from a worker refresh cycle leaves the loggers
+    Celery created at runtime enabled, and re-creates the ones the config names
+    -- ``celery`` among them -- with their handlers.
 
     :param _: The new effective ``Settings`` snapshot mapping (unused -- the level
         is re-read from the proxy).

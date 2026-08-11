@@ -447,101 +447,82 @@ class TestWorkerPmmClientInvalidation:
         assert settings.PMM.api_key == SecretStr("new-key")
 
 
-def _worker_logging_boot_config(*, include_celery: bool = True) -> dict[str, object]:
-    """Build a Celery-like ``dictConfig`` for worker logging rebind tests."""
-    handlers: dict[str, object] = {"default": {"class": "logging.NullHandler"}}
-    loggers: dict[str, object] = {
-        "": {"handlers": ["default"], "level": "WARNING"},
-        "app": {"handlers": ["default"], "level": "WARNING", "propagate": False},
-    }
-    if include_celery:
-        handlers["celery"] = {"class": "logging.NullHandler"}
-        loggers["celery"] = {
-            "handlers": ["celery"],
-            "level": "INFO",
-            "propagate": False,
-        }
-    return {
+@pytest.fixture(name="worker_logging_boot")
+def worker_logging_boot_fixture() -> None:
+    """Install a WARNING-level NullHandler config and restore process logging.
+
+    Mutates process-global logging and the ``settings`` snapshot; teardown
+    always runs so a leaked ``NullHandler`` root config cannot silence later
+    tests. Snapshot restore is belt-and-suspenders with the autouse
+    ``_override_snapshot_cleared`` fixture (that one runs only on setup).
+    """
+    boot_config = {
         "version": 1,
         "disable_existing_loggers": False,
-        "handlers": handlers,
-        "loggers": loggers,
+        "handlers": {"default": {"class": "logging.NullHandler"}},
+        "loggers": {
+            "": {"handlers": ["default"], "level": "WARNING"},
+            "app": {"handlers": ["default"], "level": "WARNING", "propagate": False},
+        },
     }
-
-
-def _restore_process_logging() -> None:
-    """Re-apply the process ``LOGGING_CONFIG`` after a test mutated global loggers."""
-    settings._set_snapshot({})
-    logging.config.dictConfig(settings.LOGGING_CONFIG)
+    logging.config.dictConfig(boot_config)
+    try:
+        settings._set_snapshot({"LOGGING": LogLevel.WARNING})
+        yield
+    finally:
+        settings._set_snapshot({})
+        logging.config.dictConfig(settings.LOGGING_CONFIG)
 
 
 class TestWorkerLoggingRebind:
     """Verify a LOGGING override re-applies dictConfig in the worker path."""
 
     @pytest.mark.asyncio
-    @pytest.mark.usefixtures("no_app_owned_classes")
+    @pytest.mark.usefixtures("no_app_owned_classes", "worker_logging_boot")
     async def test_logging_override_changes_effective_app_level(
         self, override_session_maker: async_sessionmaker
     ) -> None:
-        """Re-apply dictConfig so the worker's app logger follows the override.
+        """Raise the worker's app logger to the overridden level on refresh.
 
-        Mirrors Celery's ``setup_logging`` (boot-time ``dictConfig``) then a
-        mid-cycle refresh that lands the LOGGING callback while a task would be
-        driving ``celery.loop.run_until_complete``.
+        Also pin ``disable_existing_loggers: False``: a logger Celery creates at
+        runtime and that is absent from ``LOGGING_CONFIG`` must stay enabled
+        after the callback re-enters ``dictConfig``.
         """
-        boot_config = _worker_logging_boot_config()
-        logging.config.dictConfig(boot_config)
-        settings._set_snapshot(
-            {"LOGGING": LogLevel.WARNING, "LOGGING_CONFIG": boot_config}
-        )
+        runtime_logger = logging.getLogger("celery.app.trace")
         proxies = build_sep_override_proxies()
-        try:
-            await _upsert_override(
-                override_session_maker,
-                setting_class=SettingClassEnum.SETTINGS,
-                key="LOGGING",
-                value="DEBUG",
-            )
+        await _upsert_override(
+            override_session_maker,
+            setting_class=SettingClassEnum.SETTINGS,
+            key="LOGGING",
+            value="DEBUG",
+        )
 
-            await refresh_all(
-                lambda: override_session_maker, proxies, WORKER_OVERRIDE_CALLBACKS
-            )
+        await refresh_all(
+            lambda: override_session_maker, proxies, WORKER_OVERRIDE_CALLBACKS
+        )
 
-            assert settings.LOGGING == LogLevel.DEBUG
-            assert logging.getLogger("app").isEnabledFor(logging.DEBUG)
-            celery_logger = logging.getLogger("celery")
-            assert celery_logger.handlers, (
-                "re-entering dictConfig must not tear down the celery logger"
-            )
-        finally:
-            _restore_process_logging()
+        assert settings.LOGGING == LogLevel.DEBUG
+        assert logging.getLogger("app").isEnabledFor(logging.DEBUG)
+        assert not runtime_logger.disabled
 
     @pytest.mark.asyncio
-    @pytest.mark.usefixtures("no_app_owned_classes")
+    @pytest.mark.usefixtures("no_app_owned_classes", "worker_logging_boot")
     async def test_without_the_callback_boot_level_survives(
         self, override_session_maker: async_sessionmaker
     ) -> None:
         """Pin the gap: snapshot updates LOGGING but handlers stay at boot level."""
-        boot_config = _worker_logging_boot_config(include_celery=False)
-        logging.config.dictConfig(boot_config)
-        settings._set_snapshot(
-            {"LOGGING": LogLevel.WARNING, "LOGGING_CONFIG": boot_config}
-        )
         proxies = build_sep_override_proxies()
-        try:
-            await _upsert_override(
-                override_session_maker,
-                setting_class=SettingClassEnum.SETTINGS,
-                key="LOGGING",
-                value="DEBUG",
-            )
+        await _upsert_override(
+            override_session_maker,
+            setting_class=SettingClassEnum.SETTINGS,
+            key="LOGGING",
+            value="DEBUG",
+        )
 
-            await refresh_all(lambda: override_session_maker, proxies)
+        await refresh_all(lambda: override_session_maker, proxies)
 
-            assert settings.LOGGING == LogLevel.DEBUG
-            assert not logging.getLogger("app").isEnabledFor(logging.DEBUG)
-        finally:
-            _restore_process_logging()
+        assert settings.LOGGING == LogLevel.DEBUG
+        assert not logging.getLogger("app").isEnabledFor(logging.DEBUG)
 
 
 class TestRepublishSepSettingsSnapshot:
