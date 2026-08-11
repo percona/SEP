@@ -18,7 +18,7 @@ sequenceDiagram
     rect rgb(232, 244, 252)
         Note over Eng,Grafana: Authentication Grafana session exchange
         Eng->>UI: Navigate to SEP within PMM
-        UI->>SEP: POST api oauth session-exchange with PMM session cookie
+        UI->>SEP: POST api oauth session exchange with PMM session cookie
         SEP->>Grafana: Validate session, map org role
         Grafana-->>SEP: User identity and role
         SEP-->>UI: Short-lived SEP bearer in response body, no cookie, no refresh token

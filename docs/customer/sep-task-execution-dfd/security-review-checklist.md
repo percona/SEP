@@ -69,7 +69,7 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 | # | Question | Pass | Fail | Notes |
 |---|----------|:----:|:----:|-------|
 | 5.1 | Browser ↔ PMM Nginx: HTTPS (PMM's Nginx terminates TLS and fronts SEP on a sub-path) | ☐ | ☐ | |
-| 5.1a | Session exchange endpoint (`/api/oauth/session-exchange`) is same-origin behind PMM's Nginx — no separate IdP port | ☐ | ☐ | |
+| 5.1a | Session exchange endpoint (`/api/oauth/session/exchange`) is same-origin behind PMM's Nginx — no separate IdP port | ☐ | ☐ | |
 | 5.2 | SEP ↔ Tasks/Inventory: mTLS with client certs | ☐ | ☐ | |
 | 5.3 | Tasks ↔ Nomad API: TLS/mTLS per deployment config | ☐ | ☐ | |
 

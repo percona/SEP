@@ -28,7 +28,7 @@ Customer-facing documentation of how data moves through the **Services Enablemen
 
 ### Authentication (engineers)
 
-In the shipped PMM-embedded deployment, identity comes from **PMM's Grafana**. The browser's existing PMM session cookie rides a same-origin request to `POST /api/oauth/session-exchange`; SEP validates that session against Grafana, maps the org role, and returns a **short-lived SEP-signed bearer token** in the response body. No SEP cookie is set and no refresh token is issued — when the bearer expires the SPA repeats the exchange. Subsequent API calls carry the SEP bearer as `Authorization: Bearer`.
+In the shipped PMM-embedded deployment, identity comes from **PMM's Grafana**. The browser's existing PMM session cookie rides a same-origin request to `POST /api/oauth/session/exchange`; SEP validates that session against Grafana, maps the org role, and returns a **short-lived SEP-signed bearer token** in the response body. No SEP cookie is set and no refresh token is issued — when the bearer expires the SPA repeats the exchange. Subsequent API calls carry the SEP bearer as `Authorization: Bearer <token>`.
 
 Casdoor OAuth remains a configurable alternative (`AuthProviderEnum.CASDOOR`) but is not selected by the embedded profile.
 

@@ -131,7 +131,7 @@ Customer access depends on deployment and identity configuration. The current SE
 
 Access is controlled by:
 
-- Grafana session exchange for human users in the shipped PMM-embedded deployment. The browser's PMM session cookie rides a same-origin request to `POST /api/oauth/session-exchange`; SEP validates the session against Grafana and returns a short-lived SEP-signed bearer in the response body — no SEP cookie is set and no refresh token is issued. Casdoor OAuth/JWT remains a configurable alternative.
+- Grafana session exchange for human users in the shipped PMM-embedded deployment. The browser's PMM session cookie rides a same-origin request to `POST /api/oauth/session/exchange`; SEP validates the session against Grafana and returns a short-lived SEP-signed bearer in the response body — no SEP cookie is set and no refresh token is issued. Casdoor OAuth/JWT remains a configurable alternative.
 - Optional internal bearer-token authentication through `SEP_INTERNAL_TOKEN` for service-to-service calls.
 - Transport security, including HTTPS at PMM's Nginx ingress and configured service-to-service TLS/mTLS for SEP↔Tasks/Inventory and Tasks↔Nomad.
 - Deployment-level controls around network access, database access, Nomad API access, and infrastructure log access.

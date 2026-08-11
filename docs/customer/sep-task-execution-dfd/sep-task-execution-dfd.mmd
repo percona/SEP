@@ -51,7 +51,7 @@ flowchart LR
     NomadRuntime[("D3: Nomad allocation")]
 
     %% Auth
-    Engineer -->|"POST /api/oauth/session-exchange<br/>PMM session cookie rides same-origin request"| P_Exchange
+    Engineer -->|"POST /api/oauth/session/exchange<br/>PMM session cookie rides same-origin request"| P_Exchange
     P_Exchange -->|"Validate PMM session<br/>against Grafana"| Grafana
     Grafana -->|"User identity and org role"| P_Exchange
     P_Exchange -->|"Short-lived SEP bearer<br/>in response body,<br/>no cookie set, no refresh token"| Engineer
