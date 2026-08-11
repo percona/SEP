@@ -91,11 +91,11 @@ def build_sep_override_proxies() -> ProxyRegistry:
 async def republish_sep_settings_snapshot(session: AsyncSession) -> None:
     """Republish the SEP settings snapshot from a session already in hand.
 
-    Let a Celery task take a decision against overrides written after its child
-    last refreshed: the worker's refresher advances only while something drives
-    ``celery.loop``, so a child can hold a pre-write snapshot for an unbounded
-    time, while an awaited republish inside a task body is driven by the same
-    ``run_until_complete`` that drives the task.
+    Let a Celery task decide against the overrides currently stored, not only
+    those present when its child last refreshed: the worker's refresher advances
+    only while something drives ``celery.loop``, so a child can hold a pre-write
+    snapshot for an unbounded time, while an awaited republish inside a task
+    body is driven by the same ``run_until_complete`` that drives the task.
 
     Only ``SEP_SETTINGS`` is republished, and no rebind callback fires:
     ``publish_snapshot`` has no callback channel. That is harmless for a worker
