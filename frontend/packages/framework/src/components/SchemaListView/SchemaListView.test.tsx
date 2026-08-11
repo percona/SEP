@@ -396,6 +396,33 @@ describe('SchemaListView — server-side query gate', () => {
     vi.useRealTimers();
   });
 
+  it('routes column-header sort clicks through onSortChange', async () => {
+    const onSortChange = vi.fn();
+    render(
+      <SchemaListView
+        listView={serverListView}
+        data={pageRows}
+        pagination={{
+          total: 2,
+          offset: 0,
+          limit: 50,
+          onChange: vi.fn(),
+        }}
+        serverQuery={{
+          sort: 'name',
+          onSortChange,
+          onSearchChange: vi.fn(),
+        }}
+      />,
+    );
+
+    // MRT wires sort on the header label click (same pattern as TaskHistoryTable).
+    await userEvent.click(screen.getByText('Name'));
+    expect(onSortChange).toHaveBeenCalled();
+    // Ascending ``name`` → first toggle is descending ``-name``.
+    expect(onSortChange).toHaveBeenCalledWith('-name');
+  });
+
   it('keeps nested capability-on lists client-side when pagination is absent', () => {
     render(
       <SchemaListView

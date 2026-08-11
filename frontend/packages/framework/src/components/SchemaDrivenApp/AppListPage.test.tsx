@@ -361,6 +361,25 @@ describe('AppListPage — server-side query', () => {
       }),
     );
   });
+
+  it('does not send sort/search for SchemaDrivenApp lists without the capability', () => {
+    // Alters / backup_* / other AppListPage consumers omit ``server_side_query``;
+    // their list fetches must stay offset/limit-only so client MRT sorting wins.
+    renderPage();
+
+    expect(useAppTasksMock).toHaveBeenCalledWith(
+      'sched',
+      undefined,
+      expect.objectContaining({
+        enabled: true,
+        offset: 0,
+        limit: 50,
+      }),
+    );
+    const options = useAppTasksMock.mock.calls.at(-1)?.[2] as Record<string, unknown>;
+    expect(options).not.toHaveProperty('sort');
+    expect(options).not.toHaveProperty('search');
+  });
 });
 
 describe('AppListPage — "Currently running" affordance', () => {
