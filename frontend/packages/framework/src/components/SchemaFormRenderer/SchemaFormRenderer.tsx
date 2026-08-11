@@ -195,6 +195,8 @@ export interface SchemaFormRendererProps {
   defaultValues?: Record<string, unknown>;
   /** Server-side error to show above the form (e.g. API failure from the caller's mutation). */
   submitError?: string | null;
+  /** MUI Alert severity for {@link submitError}; defaults to `error`. */
+  submitAlertSeverity?: 'error' | 'warning' | 'success' | 'info';
   /**
    * Backend per-field validation errors (e.g. parsed from a 422) applied to the
    * form this renderer owns via react-hook-form `setError`. Each entry's `path`
@@ -263,6 +265,7 @@ function SchemaFormBody({
   submitLabel = 'Run',
   loading = false,
   submitError,
+  submitAlertSeverity = 'error',
   fieldErrors,
   capabilities,
   renderField,
@@ -373,11 +376,6 @@ function SchemaFormBody({
     <FormFieldsProvider value={allFields}>
       {inDataRouter && <UnsavedChangesBlocker isGuarded={isGuarded} />}
       <Box component="form" onSubmit={handleSubmitEvent} noValidate sx={{ maxWidth: 640 }}>
-        {submitError && (
-          <Alert severity="error" sx={{ mb: 2, whiteSpace: 'pre-line' }}>
-            {submitError}
-          </Alert>
-        )}
         {hasInlineErrors && formState.isSubmitted && !submitError && (
           <Alert severity="error" sx={{ mb: 2 }}>
             Fix the highlighted fields before submitting.
@@ -398,6 +396,12 @@ function SchemaFormBody({
           <Box sx={{ mb: 2 }}>
             <AlertOnFailField />
           </Box>
+        )}
+
+        {submitError && (
+          <Alert severity={submitAlertSeverity} sx={{ mb: 2, whiteSpace: 'pre-line' }}>
+            {submitError}
+          </Alert>
         )}
 
         <Button

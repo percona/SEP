@@ -374,6 +374,41 @@ describe('SchemaFormRenderer — validation + submission', () => {
     );
     expect(screen.getByText('Server exploded')).toBeInTheDocument();
   });
+
+  it('renders submitError immediately above the submit button', () => {
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[{ title: 'Section', fields: [{ type: 'string', name: 'a', label: 'Field A' }] }]}
+        onSubmit={() => {}}
+        submitError="Batch failed"
+        submitLabel="Execute batch"
+      />,
+    );
+
+    const button = screen.getByRole('button', { name: /Execute batch/ });
+    const alert = screen.getByText('Batch failed').closest('[role="alert"]');
+    expect(alert).toBeTruthy();
+
+    const form = button.closest('form');
+    expect(form).toBeTruthy();
+    const children = Array.from(form!.children);
+    const buttonIndex = children.findIndex((el) => el.contains(button));
+    const alertIndex = children.findIndex((el) => el === alert || el.contains(alert));
+    expect(alertIndex).toBeGreaterThan(0);
+    expect(alertIndex).toBe(buttonIndex - 1);
+  });
+
+  it('renders submitError with the requested alert severity', () => {
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[{ title: 'x', fields: [{ type: 'string', name: 'a', label: 'A' }] }]}
+        onSubmit={() => {}}
+        submitError="Dispatched 2 of 2 snippets."
+        submitAlertSeverity="success"
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveClass('MuiAlert-colorSuccess');
+  });
 });
 
 describe('SchemaFormRenderer — multi_choice minItems', () => {
