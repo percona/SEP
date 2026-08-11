@@ -21,27 +21,16 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Annotated
 
-from fastapi import Depends, Header, Query, Request, status
-from pydantic import ValidationError
+from fastapi import Depends, Query
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.list_query import ListQuery, make_list_query_dep
-from app.core.exceptions import (
-    HTTPBadRequestException,
-    HTTPNotFoundException,
-    HTTPRedirectException,
-)
-from app.core.utils import remove_falsy_values_from_dict
-from app.sep.apps.framework.script_helpers import (
-    build_artifact_download_url,
-    build_execution_meta,
-)
+from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
+from app.sep.apps.framework.script_helpers import build_execution_meta
 from app.sep.deps import SessionDep
-from app.sep.middleware import messages
 from app.sep.snippets.config import snippets_settings
-from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.list_query import SnippetApprovalFilter, SnippetListQuery
 from app.sep.snippets.models.responses import (
@@ -53,7 +42,6 @@ from app.sep.snippets.models.snippet import (
     Snippet,
     SnippetExecutionMeta,
 )
-from app.sep.snippets.schema import evaluate_snippet_gates
 
 logger = logging.getLogger(__name__)
 
@@ -147,211 +135,6 @@ async def get_snippet(
 SnippetDep = Annotated[Snippet, Depends(get_snippet)]
 
 
-def validate_snippet_parameters(request: Request, snippet: SnippetDep) -> Snippet:
-    """Validate the parameters of an approved snippet and add warnings to the request.
-
-    If the snippet is approved, validate its parameters and add any validation errors
-    as warning messages to the request.
-
-    :param request: The HTTP request object.
-    :type request: Request
-    :param snippet: The snippet to validate.
-    :type snippet: Snippet
-    :return: The validated snippet.
-    :rtype: Snippet
-    """
-    if snippet.is_approved:
-        add_msg_func = (
-            messages.warning
-            if snippets_settings.META.IGNORE_INVALID_PARAMETERS
-            else messages.error
-        )
-        for error in snippet.validated_parameters.errors:
-            add_msg_func(request, error)
-    return snippet
-
-
-ValidatedSnippet = Annotated[Snippet, Depends(validate_snippet_parameters)]
-
-
-def _get_snippet_redirect_exc(
-    request: Request, referer: str | None, msg: str | None = None
-) -> HTTPRedirectException:
-    if msg:
-        messages.error(request, msg)
-    location = referer or request.url_for("snippets_index")
-    return HTTPRedirectException(
-        location=location, status_code=status.HTTP_303_SEE_OTHER
-    )
-
-
-def get_approved_snippet(
-    request: Request,
-    snippet: SnippetDep,
-    referer: Annotated[str | None, Header()] = None,
-) -> Snippet:
-    """Verify if a snippet is approved before returning it.
-
-    If the snippet is not approved, add an error message to the request and raise an
-    HTTPRedirectException back to the referer.
-
-    :param request: The HTTP request object.
-    :type request: Request
-    :param snippet: The snippet to verify the approval.
-    :type snippet: Snippet
-    :param referer: The referer URL. If None is specified, it defaults to the
-        snippets_index route.
-    :type referer: str | None
-    :return: The retrieved snippet.
-    :rtype: Snippet
-    :raises HTTPRedirectException: If the snippet is not approved.
-    """
-    if snippet.is_approved:
-        return snippet
-    raise _get_snippet_redirect_exc(
-        request, referer, f"Snippet {snippet} is not approved"
-    )
-
-
-ApprovedSnippet = Annotated[Snippet, Depends(get_approved_snippet)]
-
-
-def get_unapproved_snippet(
-    request: Request,
-    snippet: SnippetDep,
-    referer: Annotated[str | None, Header()] = None,
-) -> Snippet:
-    """Verify if a snippet is unapproved before returning it.
-
-    If the snippet is approved, add an error message to the request and raise an
-    HTTPRedirectException back to the referer.
-
-    :param request: The HTTP request object.
-    :type request: Request
-    :param snippet: The snippet to verify the approval.
-    :type snippet: Snippet
-    :param referer: The referer URL. If None is specified, it defaults to the
-        snippets_index route.
-    :type referer: str | None
-    :return: The retrieved snippet.
-    :rtype: Snippet
-    :raises HTTPRedirectException: If the snippet is approved.
-    """
-    if not snippet.is_approved:
-        return snippet
-    raise _get_snippet_redirect_exc(
-        request, referer, f"Snippet {snippet} is already approved"
-    )
-
-
-UnapprovedSnippet = Annotated[Snippet, Depends(get_unapproved_snippet)]
-
-
-def get_executable_snippet(
-    request: Request,
-    snippet: SnippetDep,
-    referer: Annotated[str | None, Header()] = None,
-) -> Snippet:
-    """Verify if a snippet can be executed before returning it.
-
-    If the snippet cannot be executed, add an error message to the request and raise an
-    HTTPRedirectException back to the referer.
-
-    :param request: The HTTP request object.
-    :type request: Request
-    :param snippet: The snippet to verify if it can be executed.
-    :type snippet: Snippet
-    :param referer: The referer URL. If None is specified, it defaults to the
-        snippets_index route.
-    :type referer: str | None
-    :return: The retrieved snippet.
-    :rtype: Snippet
-    :raises HTTPRedirectException: If the snippet cannot be executed.
-    """
-    if snippet.can_execute:
-        return snippet
-    raise _get_snippet_redirect_exc(
-        request, referer, f"Snippet {snippet} cannot be executed"
-    )
-
-
-ExecutableSnippet = Annotated[Snippet, Depends(get_executable_snippet)]
-
-
-def get_snippet_source(request: Request, snippet: SnippetDep) -> str:
-    """Return a signed URL for Nomad to download the snippet artifact.
-
-    :param request: The HTTP request object.
-    :type request: Request
-    :param snippet: The snippet to generate the signed download URL for.
-    :type snippet: Snippet
-    :return: The signed URL to download the snippet artifact.
-    :rtype: str
-    """
-    return build_artifact_download_url(
-        request,
-        artifact_type=ARTIFACT_TYPE_SNIPPET,
-        filename=snippet.filename,
-        md5_digest=snippet.md5_digest,
-    )
-
-
-SnippetSource = Annotated[str, Depends(get_snippet_source)]
-
-
-async def get_validated_execution_args(
-    request: Request,
-    snippet: ExecutableSnippet,
-    referer: Annotated[str | None, Header()] = None,
-) -> BaseSnippetArgs:
-    """Validate and return the execution arguments for an executable snippet.
-
-    :param request: The HTTP request object.
-    :type request: Request
-    :param snippet: The executable snippet.
-    :type snippet: Snippet
-    :param referer: The referer URL. If None is specified, it defaults to the
-        snippets_index route.
-    :type referer: str | None
-    :return: The validated execution arguments.
-    :rtype: BaseSnippetArgs
-    :raises HTTPRedirectException: When dynamic validation fails, or a snippet
-        field gate fires given the rest of the submission — a value submitted for
-        a parameter whose visibility (``visible_when`` / ``visible_when_not``) or
-        ``forbidden`` (``forbidden_when`` / ``forbidden_when_not``) gate fires, or
-        a parameter omitted while its ``requires`` (``requires_when`` /
-        ``requires_when_not``) gate fires. The submission is rejected rather than
-        silently stripped, matching ``@apply_conditional_rules`` for hand-coded
-        plugins.
-    """
-    execution_model = snippet.get_execution_model()
-    async with request.form() as form:
-        form_data = dict(form)
-        logger.debug(
-            "Validating execution args for snippet %r: %s", snippet.filename, form_data
-        )
-    try:
-        execution_args = execution_model.model_validate(
-            remove_falsy_values_from_dict(form_data)
-        )
-    except ValidationError as exc:
-        messages.from_validation_error(
-            request,
-            exc,
-            "Error executing snippet",
-            None,
-            exclude_types=("none_required",),
-        )
-        raise _get_snippet_redirect_exc(request, referer) from None
-
-    gate_failures = evaluate_snippet_gates(snippet, execution_args)
-    if gate_failures:
-        messages.error(request, "Error executing snippet: " + "; ".join(gate_failures))
-        raise _get_snippet_redirect_exc(request, referer)
-
-    return execution_args
-
-
 def build_snippet_execution_meta(
     snippet: Snippet,
     execution_args: BaseSnippetArgs,
@@ -386,59 +169,6 @@ def build_snippet_execution_meta(
     )
 
 
-def get_snippet_execution_request_meta(
-    snippet: ExecutableSnippet,
-    snippet_source: SnippetSource,
-    execution_args: Annotated[BaseSnippetArgs, Depends(get_validated_execution_args)],
-) -> SnippetExecutionMeta:
-    """Prepare and return the execution metadata for a snippet execution request.
-
-    :param snippet: The executable snippet.
-    :type snippet: Snippet
-    :param snippet_source: The signed URL to download the snippet artifact.
-    :type snippet_source: str
-    :param execution_args: The execution arguments for the snippet.
-    :type execution_args: BaseSnippetArgs
-    :return: The prepared execution metadata.
-    :rtype: SnippetExecutionMeta
-    """
-    return build_snippet_execution_meta(snippet, execution_args, snippet_source)
-
-
-SnippetExecutionRequestMeta = Annotated[
-    SnippetExecutionMeta, Depends(get_snippet_execution_request_meta)
-]
-
-
-def get_executable_snippet_for_api(snippet: SnippetDep) -> Snippet:
-    """Return the snippet if it can be executed, otherwise raise 403.
-
-    JSON API analogue of :func:`get_executable_snippet`. Where the form
-    flow flashes a message and redirects to the snippet's detail page,
-    the API surfaces a structured 403 the FE can render inline.
-
-    :param snippet: The snippet to verify.
-    :type snippet: Snippet
-    :return: The same snippet when it is executable.
-    :rtype: Snippet
-    :raises HTTPForbiddenException: If the snippet cannot be executed
-        (for example, it is unapproved or has no resolvable
-        interpreter).
-    """
-    if snippet.can_execute:
-        return snippet
-    if not snippet.is_approved:
-        raise HTTPForbiddenException(
-            detail=f"Snippet {snippet.filename!r} is not approved.",
-        )
-    raise HTTPForbiddenException(
-        detail=f"Snippet {snippet.filename!r} cannot be executed.",
-    )
-
-
-ExecutableSnippetForApi = Annotated[Snippet, Depends(get_executable_snippet_for_api)]
-
-
 def require_manual_sync_enabled() -> None:
     """Raise HTTPForbiddenException if manual snippet sync is disabled.
 
@@ -451,10 +181,6 @@ def require_manual_sync_enabled() -> None:
 
 
 IsManualSyncEnabled = Depends(require_manual_sync_enabled)
-
-
-class SnippetBatchApproveForm(SnippetBatchApproveRequest):
-    """Form-bound twin used by the legacy Jinja2 batch-approve route."""
 
 
 @dataclass(slots=True)

@@ -15,6 +15,18 @@
 
 """Define wire-name constants shared across snippet and framework schema modules."""
 
+from enum import StrEnum
+
+from app.core.utils.fields import EnumFieldMixin
+
+
+class TextInputHTMLElement(EnumFieldMixin, StrEnum):
+    """Enumerate the types of HTML text input elements."""
+
+    INPUT = "input"
+    TEXTAREA = "textarea"
+
+
 EXTRA_ARGS_FIELD_NAME = "extra_args"
 """Name the synthesized Extra Args execution field on the wire.
 

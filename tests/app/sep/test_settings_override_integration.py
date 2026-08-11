@@ -39,8 +39,6 @@ from app.core.utils import json_serializer
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.main import _reseed_system_periodic_tasks
-from app.sep.middleware.messages.config import messages_settings, MessagesSettings
-from app.sep.middleware.messages.models import MessageLevel
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
 SNIPPETS_TASK = "sep__sync_snippets"
@@ -72,9 +70,6 @@ def _sep_proxies() -> dict:
         SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
         SettingClassEnum.SNIPPETS_SETTINGS: ProxyEntry(
             snippets_settings, SnippetsSettings
-        ),
-        SettingClassEnum.MESSAGES_SETTINGS: ProxyEntry(
-            messages_settings, MessagesSettings
         ),
         SettingClassEnum.ALERTS_SETTINGS: ProxyEntry(alerts_settings, AlertsSettings),
     }
@@ -215,25 +210,6 @@ async def test_snippets_enable_manual_sync_override(
 
 
 @pytest.mark.asyncio
-async def test_messages_level_override(
-    override_session_maker: async_sessionmaker,
-) -> None:
-    """The messages middleware ``LEVEL`` field is observable through the proxy."""
-    warning_level = MessageLevel.WARNING
-    async with override_session_maker() as session:
-        await SettingsOverrideManager.create(
-            session,
-            SettingOverride(
-                setting_class=SettingClassEnum.MESSAGES_SETTINGS,
-                key="LEVEL",
-                value=warning_level,
-            ),
-        )
-    await refresh_all(lambda: override_session_maker, _sep_proxies())
-    assert warning_level == messages_settings.LEVEL
-
-
-@pytest.mark.asyncio
 async def test_per_class_isolation_prevents_key_leak(
     override_session_maker: async_sessionmaker,
 ) -> None:
@@ -268,7 +244,7 @@ async def test_main_lifespan_starts_sep_overrides_refresher(
     ``Mount``, which only forwards ``http``/``websocket`` scopes -- never
     ``lifespan``. Therefore ``sep_lifespan`` is *never* invoked when
     ``python -m app.main`` runs uvicorn against ``app.main:app``. The
-    ``SEP_SETTINGS``/``SNIPPETS_SETTINGS``/``MESSAGES_SETTINGS`` override
+    ``SEP_SETTINGS``/``SNIPPETS_SETTINGS`` override
     refresher must therefore be wired into ``main_lifespan`` (analogous to
     how ``tasks_lifespan`` is wired). This test exercises that path: insert
     an override row, enter ``main_lifespan``, and assert the proxy sees the
@@ -316,7 +292,6 @@ async def test_main_lifespan_starts_sep_overrides_refresher(
         # the YAML default again.
         sep_settings._set_snapshot({})
         snippets_settings._set_snapshot({})
-        messages_settings._set_snapshot({})
 
 
 @pytest_asyncio.fixture(name="beat_session_maker")

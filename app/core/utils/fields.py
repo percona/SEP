@@ -769,6 +769,17 @@ This annotated type ensures that the string starts with a forward slash and does
 not contain any whitespace characters.
 """
 
+URIPathPrefix = Annotated[str, StringConstraints(pattern=r"^(?:/[^\s/?#]+)*$")]
+"""Define a string field holding a URL mount prefix.
+
+The empty string is the valid unprefixed default; any other value is one or more
+``/``-prefixed segments with no trailing slash, so the prefix concatenates
+cleanly onto a root-anchored path. ``?`` and ``#`` are excluded because a mount
+prefix is a path, never a query or fragment. Rejecting rather than normalizing
+keeps a malformed value a startup failure instead of a doubled slash or an
+unroutable prefix at request time.
+"""
+
 JsonPointerStr = Annotated[str, AfterValidator(validate_json_pointer)]
 """Define a string field holding an RFC 6901 JSON Pointer.
 

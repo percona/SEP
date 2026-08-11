@@ -30,7 +30,7 @@ from app.core.auth.models import (
     SPAOAuthTokenResponse,
 )
 from app.core.auth.utils import get_user_model
-from app.sep.config import sep_settings
+from app.sep.config import prefixed_cookie_path, sep_settings
 from app.sep.deps import resolve_ambient_exchange_token, resolve_ambient_session_token
 
 logger = logging.getLogger(__name__)
@@ -59,34 +59,33 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
     """Set the ``HttpOnly`` refresh-token cookie on ``response``.
 
     Pull cookie attributes (name, path, max-age, samesite, secure) from
-    ``sep_settings.SESSION_REFRESH`` and set ``httponly=True`` explicitly.
+    ``sep_settings.SESSION_REFRESH`` and set ``httponly=True`` explicitly. The
+    ``path`` is anchored under the configured URL prefix so the browser sends
+    the cookie back to the refresh endpoint wherever SEP is served.
 
     :param response: The response on which to set the cookie.
-    :type response: Response
     :param refresh_token: The refresh token value to store in the cookie.
-    :type refresh_token: str
     """
-    response.set_cookie(
-        **sep_settings.SESSION_REFRESH.model_dump(by_alias=True),
-        value=refresh_token,
-        httponly=True,
-    )
+    cookie_options = sep_settings.SESSION_REFRESH.model_dump(by_alias=True)
+    cookie_options["path"] = prefixed_cookie_path(cookie_options["path"])
+    response.set_cookie(**cookie_options, value=refresh_token, httponly=True)
 
 
 def _clear_refresh_cookie(response: Response) -> None:
     """Delete the refresh-token cookie.
 
-    Pass ``path`` from ``SESSION_REFRESH.PATH`` so deletion mirrors how
-    the cookie was set: when a ``Path`` is configured, both set and delete
-    emit the same ``Path``; when ``PATH`` is ``None``, both omit the
-    attribute and the browser's default-path rules apply symmetrically.
+    Derive ``path`` from ``SESSION_REFRESH.PATH`` exactly as the set does, URL
+    prefix included, so deletion mirrors how the cookie was set: when a ``Path``
+    is configured, both emit the same one; when ``PATH`` is ``None``, both omit
+    the attribute and the browser's default-path rules apply symmetrically. A
+    delete whose ``Path`` differs from the set is silently ignored by the
+    browser, leaving the cookie in place.
 
     :param response: The response on which to delete the cookie.
-    :type response: Response
     """
     response.delete_cookie(
         key=sep_settings.SESSION_REFRESH.COOKIE_NAME,
-        path=sep_settings.SESSION_REFRESH.PATH,
+        path=prefixed_cookie_path(sep_settings.SESSION_REFRESH.PATH),
     )
 
 
@@ -203,8 +202,7 @@ async def spa_session_exchange(
 
     Carries no auth dependency by design: the caller is not yet SEP-authenticated,
     and the ambient session cookie is the credential being presented. No CSRF
-    primitive applies either -- ``IsCsrfValidated`` guards form data on the
-    server-rendered login route, and requiring a Bearer token cannot gate an
+    primitive applies either: requiring a Bearer token cannot gate an
     endpoint whose purpose is to issue one. That is safe because a cross-origin
     attacker cannot read this response (the CORS posture is an explicit
     per-environment origin allowlist, with the middleware absent when none is

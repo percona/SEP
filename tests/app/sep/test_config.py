@@ -37,29 +37,30 @@ from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import (
     App,
     AppDrainSettings,
+    CookieOptions,
     DeliveryPlanInputs,
     HealthReportSettings,
     materialize_delivery_plan_inputs,
+    prefixed_cookie_path,
     sep_settings,
     SEPSettings,
-    SessionOptions,
     SyncerExtraKwargs,
     SyncOptions,
 )
 
 
-class TestSessionOptions:
-    """Define tests for the SessionOptions model."""
+class TestCookieOptions:
+    """Define tests for the CookieOptions model."""
 
     def test_default_dump_has_none_path(self):
-        """Assert legacy SessionOptions dump keeps ``path=None`` (no explicit path)."""
-        dumped = SessionOptions().model_dump(by_alias=True)
+        """Assert a bare CookieOptions dump keeps ``path=None`` (no explicit path)."""
+        dumped = CookieOptions().model_dump(by_alias=True)
         assert dumped["key"] == "authToken"
         assert dumped["path"] is None
 
     def test_refresh_dump_carries_path(self):
         """Assert a SESSION_REFRESH-style instance exposes the configured path."""
-        dumped = SessionOptions(
+        dumped = CookieOptions(
             COOKIE_NAME="refreshToken", PATH="/api/oauth"
         ).model_dump(by_alias=True)
         assert dumped["key"] == "refreshToken"
@@ -74,7 +75,6 @@ class TestSessionRefreshDefault:
         settings = SEPSettings()
         assert settings.SESSION_REFRESH.COOKIE_NAME == "refreshToken"
         assert settings.SESSION_REFRESH.PATH == "/api/oauth"
-        assert settings.SESSION.PATH is None
 
 
 class TestAmbientSessionSSO:
@@ -87,6 +87,41 @@ class TestAmbientSessionSSO:
     def test_is_hot_reloadable(self):
         """Verify the toggle is a hot field, so a DB override can enable it live."""
         assert is_hot_reloadable(SEPSettings, "AMBIENT_SESSION_SSO_ENABLED")
+
+
+class TestRootPath:
+    """Cover the URL mount prefix SEP serves under."""
+
+    def test_defaults_to_unprefixed(self):
+        """Verify SEP serves from the origin root unless a deployment opts in."""
+        assert SEPSettings().ROOT_PATH == ""
+
+    def test_is_not_hot_reloadable(self):
+        """Verify a DB override cannot claim to move a prefix read at construction."""
+        assert not is_hot_reloadable(SEPSettings, "ROOT_PATH")
+
+
+class TestPrefixedCookiePath:
+    """Cover anchoring a configured cookie ``Path`` under the URL prefix."""
+
+    def test_leaves_a_path_alone_without_a_prefix(self, mocker):
+        """Emit today's ``Path`` unchanged, which is the regression contract."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="")
+
+        assert prefixed_cookie_path("/api/oauth") == "/api/oauth"
+
+    def test_anchors_a_path_under_the_prefix(self, mocker):
+        """Anchor the path so the browser sends the cookie to prefixed endpoints."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+
+        assert prefixed_cookie_path("/api/oauth") == "/sep/api/oauth"
+
+    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    def test_leaves_an_unset_path_unset(self, mocker, root_path):
+        """Leave ``None`` alone: the browser derives a path that already carries the prefix."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new=root_path)
+
+        assert prefixed_cookie_path(None) is None
 
 
 class TestDiagnosticsDelivery:

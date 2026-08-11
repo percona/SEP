@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from starlette.status import (
     HTTP_200_OK,
     HTTP_400_BAD_REQUEST,
@@ -176,7 +177,6 @@ class TestListTaskHistoryFiles:
         task_history_response,
     ):
         """Assert HTTP errors other than 400/409 are re-raised, not silently returned as {}."""
-        mocker.patch("app.sep.main.get_current_user", return_value=regular_user)
         mock_tasks_api_dep.get.side_effect = HTTPException(
             status_code=HTTP_500_INTERNAL_SERVER_ERROR
         )
@@ -298,4 +298,41 @@ class TestDownloadTaskHistoryFile:
         response = test_client.get(f"/files/{task_history_response.id}/download")
 
         assert response.status_code == HTTP_200_OK
+        assert "content-disposition" not in response.headers
+
+    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    @pytest.mark.usefixtures("test_client")
+    def test_download_keeps_both_the_disposition_and_the_proxy_header(
+        self, mock_tasks_client_dep, task_history_response, root_path
+    ):
+        """Assert seeding the header dict leaves Content-Disposition intact."""
+        mock_tasks_client_dep.get.return_value = {
+            "backup.sql": {"size": 2048, "is_dir": False}
+        }
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_file_stream([b"chunk"])
+        client = TestClient(sep_app, root_path=root_path, raise_server_exceptions=False)
+
+        response = client.get(
+            f"{root_path}/files/{task_history_response.id}/download?path=backup.sql"
+        )
+
+        assert response.status_code == HTTP_200_OK
+        assert response.headers["x-accel-buffering"] == "no"
+        assert response.headers["content-disposition"] == (
+            'attachment; filename="backup.sql"'
+        )
+
+    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    @pytest.mark.usefixtures("test_client")
+    def test_download_without_a_path_still_carries_the_proxy_header(
+        self, mock_tasks_client_dep, task_history_response, root_path
+    ):
+        """Assert the no-disposition contract survives the seeded header dict."""
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_file_stream([b"raw"])
+        client = TestClient(sep_app, root_path=root_path, raise_server_exceptions=False)
+
+        response = client.get(f"{root_path}/files/{task_history_response.id}/download")
+
+        assert response.status_code == HTTP_200_OK
+        assert response.headers["x-accel-buffering"] == "no"
         assert "content-disposition" not in response.headers

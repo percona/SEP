@@ -60,16 +60,17 @@ def test_parse_app_globs_discovers_all_app_labels():
     assert all(_APP_GLOBS[label] for label in declared)
 
 
-def test_archives_template_alias_resolves_through_labeler_globs():
-    """Map ``templates/archiver`` to the ``app:archives`` label."""
-    assert (
-        compute_blast_radius_labels.app_of("templates/archiver/report.j2", _APP_GLOBS)
-        == "app:archives"
-    )
-    assert (
-        compute_blast_radius_labels.app_of("templates/archives/report.j2", _APP_GLOBS)
-        is None
-    )
+def test_report_app_assets_resolve_through_labeler_globs():
+    """Map the report app's own template and asset files to ``app:report``.
+
+    The PDF template and its logo live inside the app now, so they are covered
+    by the plain ``app/sep/apps/report/**`` glob rather than a template alias.
+    """
+    for path in (
+        "app/sep/apps/report/templates/result_pdf.html.j2",
+        "app/sep/apps/report/assets/percona-logo.png",
+    ):
+        assert compute_blast_radius_labels.app_of(path, _APP_GLOBS) == "app:report"
 
 
 def test_e2e_hyphen_aliases_resolve_to_underscore_app_labels():

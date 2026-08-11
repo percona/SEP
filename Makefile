@@ -60,7 +60,7 @@ build: venv app/
 pack:
 ifndef BUNDLE
 	@echo Exporting bundle
-	@git archive --output=bundle.tgz --format=tar.gz "${RELEASE_VER}" app snippets static templates
+	@git archive --output=bundle.tgz --format=tar.gz "${RELEASE_VER}" app snippets
 else
 	@echo Copying custom bundle "${BUNDLE}"
 	@cp -a "${BUNDLE}" bundle.tgz
@@ -70,24 +70,15 @@ builder:
 	@podman image exists "sep:builder" && podman image rm "sep:builder"
 	@buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
 
+# The app-restricted PMM-embedded image is the only artifact SEP ships. Which
+# apps survive is sidecar/settings.yaml's SEP.APPS.
+# docker format, not oci: OCI silently discards the HEALTHCHECK instruction
 image: pack
 	@podman image exists "sep:${RELEASE_VER}" && podman image rm "sep:${RELEASE_VER}" || true
-	@buildah build -f Containerfile --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
-
-# docker format, not oci: OCI silently discards the HEALTHCHECK instruction
-image-sidecar: pack
-	@podman image exists "sep:${RELEASE_VER}-sidecar" && podman image rm "sep:${RELEASE_VER}-sidecar" || true
-	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}-sidecar"
-
-# The app-restricted PMM-embedded variant: the side-car recipe with the app
-# strip switched on. Which apps survive is settings.embedded.yaml's SEP.APPS.
-image-sidecar-embedded: pack
-	@podman image exists "sep:${RELEASE_VER}-embedded" && podman image rm "sep:${RELEASE_VER}-embedded" || true
-	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --build-arg SEP_RESTRICT_APPS=1 --tag "sep:${RELEASE_VER}-embedded"
+	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --build-arg SEP_RESTRICT_APPS=1 --tag "sep:${RELEASE_VER}"
 
 format: venv
 	@"${VENV_BIN}"/ruff format .
-	@"${VENV_BIN}"/djlint . --reformat
 
 ruff: venv
 	@"${VENV_BIN}"/ruff check .
@@ -99,11 +90,7 @@ ruff: venv
 typecheck: venv
 	@"${VENV_BIN}"/ty check app
 
-djlint: venv
-	@"${VENV_BIN}"/djlint .
-	@"${VENV_BIN}"/djlint . --check
-
-lint: ruff djlint
+lint: ruff
 
 audit: bandit pip-audit
 
@@ -357,4 +344,4 @@ lint-pipelines:
 	done; \
 	if [ "$${failures}" -ne 0 ]; then exit 1; fi
 
-.PHONY: venv build pack builder image image-sidecar image-sidecar-embedded format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image format ruff typecheck lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check

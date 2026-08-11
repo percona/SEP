@@ -144,9 +144,7 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
     until a later cycle lands.
 
     ``anonymizer_settings._resolve()`` runs unconditionally for validation even
-    when the refresher is disabled, as ``messages_settings._resolve()`` does in
-    ``sep_overrides_lifespan``. The two differ in consequence: the lifespan's
-    call aborts startup, while Celery catches and logs whatever a signal
+    when the refresher is disabled. Celery catches and logs whatever a signal
     receiver raises, so an invalid config here leaves the child running without
     this refresher.
 

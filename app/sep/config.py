@@ -16,21 +16,17 @@
 """Define SEP settings."""
 
 import logging
-from datetime import datetime, timedelta
-from functools import cached_property
+from datetime import timedelta
 from pathlib import Path
 from string import Template
 from typing import Annotated, Any, ClassVar, Literal, Self
 from urllib.parse import urlparse
 
 from annotated_types import Gt
-from fastapi.templating import Jinja2Templates
-from jinja2 import Environment, FileSystemLoader
 from pydantic import (
     AliasChoices,
     AliasGenerator,
     BaseModel,
-    computed_field,
     ConfigDict,
     Field,
     field_validator,
@@ -73,11 +69,11 @@ from app.core.utils.fields import (
     TimedeltaSeconds,
     UniqueList,
     URIPath,
+    URIPathPrefix,
+    URL,
 )
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.bundle_upload.plan import DeliveryPlan
-from app.sep.middleware import messages
-from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
 logger = logging.getLogger(__name__)
 
@@ -311,33 +307,20 @@ class App(BaseCaseInsensitiveModel):
             return self
         raise ValueError(f"No module named {self.celery_module_path}")
 
-    @computed_field
-    @property
-    def router_path(self) -> str:
-        """Return the plugin's router path.
 
-        :return: The router path derived from the module name.
-        :rtype: str
-        """
-        return f"{self.module_name}.router"
-
-
-class SessionOptions(BaseModel):
-    """Configuration options for a SEP session.
+class CookieOptions(BaseModel):
+    """Define the options for an authentication cookie SEP sets.
 
     :param COOKIE_NAME: The key of the authentication cookie. Defaults to "authToken".
-    :type COOKIE_NAME: str
-    :param MAX_AGE: Maximum age of the session cookie. Defaults to 7 days.
-    :type MAX_AGE: TimedeltaSeconds
-    :param SAMESITE: SameSite policy for the session cookie. Defaults to 'lax'.
-    :type SAMESITE: Literal["lax", "strict", "none"]
-    :param SECURE: Whether the session cookie should be accessible only via HTTPS.
+    :param MAX_AGE: Maximum age of the cookie. Defaults to 7 days.
+    :param SAMESITE: SameSite policy for the cookie. Defaults to 'lax'.
+    :param SECURE: Whether the cookie should be accessible only via HTTPS.
         Defaults to True.
-    :type SECURE: bool
-    :param PATH: Cookie ``Path`` attribute. When ``None`` (the default), the
-        cookie is not scoped to a specific path and the browser applies its
-        default. When set, the value must start with ``/``.
-    :type PATH: URIPath | None
+    :param PATH: Cookie ``Path`` attribute, stated relative to the application
+        root and anchored under ``ROOT_PATH`` when the cookie is emitted. When
+        ``None`` (the default), the cookie is not scoped to a specific path and
+        the browser applies its default. When set, the value must start with
+        ``/``.
     """
 
     model_config = ConfigDict(
@@ -705,16 +688,15 @@ class SEPSettings(BaseYamlAppSettings):
     :cvar SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
         file. Set to ["SEP"].
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
-    :param SESSION: Session configuration options for the legacy ``authToken``
-        cookie used by the Jinja UI.
-    :param SESSION_REFRESH: Session configuration options for the SPA
+    :param ROOT_PATH: The URL prefix an intermediary proxy serves SEP under, such as
+        ``/sep``. Defaults to ``""``, the origin root. Read once when the application
+        is constructed, so it is set through env or YAML only. A configured cookie
+        ``Path`` is anchored under it, so ``SESSION_REFRESH.PATH`` is stated
+        prefix-free and reaches the browser prefixed.
+    :param SESSION_REFRESH: Cookie configuration options for the SPA
         ``refreshToken`` cookie. The cookie is ``HttpOnly`` and scoped to
         ``/api/oauth`` by default. When overriding ``PATH`` via YAML or env
         vars, the value must start with ``/``.
-    :param TEMPLATES_DIR: The directory containing template files. Defaults to
-        ``Path("templates")``.
-    :param STATIC_DIR: The directory containing static files. Defaults to
-        ``Path("static")``.
     :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
         definition files. When ``None``, the bundled ``alert_definitions/`` directory
         inside the alerts plugin is used.
@@ -769,16 +751,14 @@ class SEPSettings(BaseYamlAppSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
-    SESSION: SessionOptions = nested_overridable_field(SessionOptions(), advanced=True)
-    SESSION_REFRESH: SessionOptions = nested_overridable_field(
-        SessionOptions(
+    ROOT_PATH: URIPathPrefix = ""
+    SESSION_REFRESH: CookieOptions = nested_overridable_field(
+        CookieOptions(
             COOKIE_NAME="refreshToken",
             PATH="/api/oauth",
         ),
         advanced=True,
     )
-    TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
-    STATIC_DIR: RelativeDirectoryPathField = Path("static")
     ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
     INVENTORY_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
     TASKS_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
@@ -883,45 +863,6 @@ class SEPSettings(BaseYamlAppSettings):
             _warn_legacy_apps_key()
         return sources
 
-    @computed_field
-    @cached_property
-    def JINJA_ENVIRONMENT(self) -> Environment:
-        """Return a Jinja2 Environment object for templates.
-
-        This property creates, caches, and returns a
-        :class:`jinja2.environment.Environment` object configured with the
-        ``jinja2.ext.do`` extension, the ``syntax_highlight`` filter, and the
-        ``syntax_highlight_css`` utility function as global.
-
-        :return: The Environment configured for Jinja2.
-        :rtype: Environment
-        """
-        env = Environment(
-            loader=FileSystemLoader(sep_settings.TEMPLATES_DIR),
-            autoescape=True,
-            extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"],
-        )
-        env.filters |= DEFAULT_FILTERS
-        env.globals["now"] = datetime.now
-        env.globals["syntax_highlight_css"] = syntax_highlight_css
-        env.globals["get_messages"] = messages.get_messages
-        return env
-
-    @computed_field
-    @cached_property
-    def TEMPLATES(self) -> Jinja2Templates:
-        """Return a Jinja2Templates object for template rendering.
-
-        This property creates, caches, and returns a ``Jinja2Templates`` object configured
-        with the ``TEMPLATES_DIR`` directory.
-
-        :return: The Jinja2 templates object for rendering templates.
-        :rtype: Jinja2Templates
-        """
-        return Jinja2Templates(
-            env=self.JINJA_ENVIRONMENT,
-        )
-
     @field_validator("FOOTER_TEMPLATE", mode="before")
     @classmethod
     def coerce_footer_template(cls, v: Any) -> Any:
@@ -990,3 +931,48 @@ class SEPSettings(BaseYamlAppSettings):
 sep_settings: SEPSettings = OverridableSettingsProxy(
     SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
 )
+
+
+def prefixed_cookie_path(path: str | None) -> str | None:
+    """Return a cookie ``Path`` anchored under the configured URL prefix.
+
+    A browser matches ``Path`` against the URL it requests, which carries the
+    prefix, so a root-anchored value would be withheld from every prefixed
+    endpoint, and a cookie the browser never sends is indistinguishable from one
+    that was never set. ``None`` is returned unchanged: with no ``Path``
+    attribute the browser derives one from the request URI, which already
+    carries the prefix.
+
+    :param path: The configured cookie path, or ``None`` to leave the attribute
+        unset.
+    :return: The path to emit, prefixed when both a prefix and a path are
+        configured.
+    """
+    if path is None:
+        return None
+    return f"{sep_settings.ROOT_PATH}{path}"
+
+
+def warn_if_base_url_lacks_root_path(base_url: URL | None, setting_name: str) -> None:
+    """Warn when an externally configured base URL omits the configured prefix.
+
+    URLs are composed by joining onto the base's path, so a base that resolves
+    outside ``ROOT_PATH`` still yields a well-formed string and the mismatch
+    surfaces only as a download that no longer routes through the prefix.
+    Advisory only: the caller still emits the URL.
+
+    :param base_url: The configured external base URL, or ``None`` when unset.
+    :param setting_name: The setting the base was read from, named in the warning
+        so an operator knows which value to correct.
+    """
+    prefix = sep_settings.ROOT_PATH
+    if not prefix or base_url is None:
+        return
+    if not urlparse(str(base_url)).path.rstrip("/").endswith(prefix):
+        logger.warning(
+            "%s is set to %s, which omits the configured ROOT_PATH %s; URLs built "
+            "on it will not reach SEP through the prefix it is served under.",
+            setting_name,
+            base_url,
+            prefix,
+        )

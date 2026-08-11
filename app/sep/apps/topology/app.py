@@ -17,8 +17,8 @@
 
 Topology renders a bespoke React Flow graph, so it ships a hand-written
 ``api_router`` and a custom UI rather than the framework's schema-driven
-surface. It carries no Jinja UI. Enablement is purely a function of app
-registration (``SEP.APPS``); there is no separate feature flag.
+surface. Enablement is purely a function of app registration (``SEP.APPS``);
+there is no separate feature flag.
 """
 
 from app.sep.apps.framework.base import BaseApp

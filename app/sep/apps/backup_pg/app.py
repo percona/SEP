@@ -30,8 +30,7 @@ stamping ``hostname`` / ``backup_type`` (and ``host`` / ``port`` on detail) so
 the list, detail, create, and update bodies stay byte-identical. The derived PUT
 and DELETE carry the framework's default protected-task + running-conflict
 guards; only the body-reading create running-conflict guard rides explicitly via
-``create_extra_deps``. The Jinja UI router is threaded explicitly as
-``jinja_router``; the registry does not.
+``create_extra_deps``.
 """
 
 from app.inventory.models import ServiceTypeEnum
@@ -46,7 +45,6 @@ from app.sep.apps.backup_pg.models import (
     BackupTaskResponse,
     OWNER,
 )
-from app.sep.apps.backup_pg.routes import router as jinja_router
 from app.sep.apps.backup_pg.spec import build_backup_pg_spec
 from app.sep.apps.backup_pg.views import backup_pg_views
 from app.sep.apps.framework.apps import (
@@ -81,5 +79,4 @@ app = TaskExecutionApp(
     detail_response_builder=build_backup_pg_api_detail_response,
     detail_response_model=BackupTaskDetailResponse,
     create_extra_deps=(HasNoConflictedRunningTasksOnCreate,),
-    jinja_router=jinja_router,
 )

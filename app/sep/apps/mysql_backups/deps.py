@@ -20,67 +20,24 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form, Query
+from fastapi import Depends, Query
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.framework import build_default_task_response, make_task_dep
-from app.sep.apps.framework.spec import (
-    assemble_envelope,
-    resolve_refs,
-)
-from app.sep.apps.mysql_backups.forms import BackupCreate, BackupTaskResponse, OWNER
+from app.sep.apps.framework import build_default_task_response
+from app.sep.apps.mysql_backups.forms import BackupTaskResponse
 from app.sep.apps.mysql_backups.models import (
     BackupType,
     CatalogServiceKey,
     extract_backup_type_marker,
 )
-from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.sep.apps.mysql_backups.restore.deps import UNKNOWN_SERVICE_SENTINEL
-from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.apps.shared.backups.edit_form import parse_server_list_config
-from app.sep.deps import (
-    DefaultContext,
-    ExecutorHostsCtx,
-    get_tasks_context,
-    InventoryAPI,
-    TaskAPI,
-)
+from app.sep.deps import InventoryAPI
 from app.sep.inventory import CreatedService
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
+from app.tasks.models import Task, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-
-
-async def build_backup_task_payload(
-    form: Annotated[BackupCreate, Form()],
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build the backup task payload from a form-urlencoded body.
-
-    The legacy Jinja form path's payload dependency. Resolves the form's
-    reference fields and feeds the shared pure
-    :func:`~app.sep.apps.mysql_backups.spec.build_backup_spec` through the
-    framework's ``assemble_envelope``, the same pair the model-first JSON create
-    route uses — so a form-created task's Nomad payload stays byte-identical to a
-    JSON-created one.
-
-    :param form: The form data for the Backups creation.
-    :type form: BackupCreate
-    :param inventory_api: The Inventory API to resolve the service reference.
-    :type inventory_api: InventoryAPI
-    :return: A fully constructed ``TaskWrite`` object.
-    :rtype: TaskWrite
-    """
-    resolved = await resolve_refs(form, inventory_api)
-    return assemble_envelope(
-        build_backup_spec(form, resolved),
-        resolved,
-        name=form.task_name,
-        owner=OWNER,
-        alert_on_fail=form.alert_on_fail,
-        run_result_recorder=RUN_RESULT_RECORDER,
-    )
 
 
 def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
@@ -118,9 +75,6 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     return parse_server_list_config(
         task, server_config, all_servers_config, extra_fields
     )
-
-
-BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
 
 
 async def resolve_mysql_service(
@@ -215,11 +169,6 @@ OptionalCatalogServiceKey = Annotated[
 ]
 
 
-get_backups_task = make_task_dep(OWNER)
-
-BackupsTask = Annotated[Task, Depends(get_backups_task)]
-
-
 def _extract_backup_type_from_task(task: Task) -> BackupType | None:
     """Read ``BACKUP_TYPE`` out of the task's YAML config as a typed value, if present.
 
@@ -276,67 +225,3 @@ def build_mysql_backups_api_task_response(
             "last_updated_by": mapping.get(task.last_updated_by, task.last_updated_by),
         },
     )
-
-
-def get_backups_task_info(task: dict[str, Any]) -> dict[str, Any]:
-    """Extract relevant information from a task for the Backups plugin.
-
-    Processes the task data to extract hostname and tables information.
-
-    :param task: The task data retrieved from the Tasks API.
-    :type task: dict[str, Any]
-    :return: A dictionary containing hostname and tables information.
-    :rtype: dict[str, Any]
-    """
-    data = task["data"]
-    meta = data["meta"]
-    task_config = yaml.safe_load(meta["config"])
-    backup_server = task_config["SERVER_LIST"][0]
-
-    return {
-        "hostname": meta["target"],
-        "host": backup_server.get("HOST"),
-        "port": backup_server.get("PORT"),
-        "upload": ", ".join(backup_server.get("UPLOAD")),
-        "backup_type": BackupType(backup_server.get("BACKUP_TYPE")).name,
-        "created_by": task.get("created_by"),
-        "last_updated_by": task.get("last_updated_by"),
-    }
-
-
-async def get_backups_index_context(
-    inventory_api: InventoryAPI,
-    tasks_api: TaskAPI,
-    context: DefaultContext,
-    executor_hosts_ctx: ExecutorHostsCtx,
-) -> dict[str, Any]:
-    """Assemble the context for the Backups plugin index view.
-
-    Retrieves MySQL services and associated tasks, organizing them based on their
-    execution status. Integrates this information into the default context for
-    rendering in templates.
-
-    :param inventory_api: The Inventory API client for fetching service and schema data.
-    :type inventory_api: InventoryAPI
-    :param tasks_api: The TaskAPI client for fetching task data.
-    :type tasks_api: TaskAPI
-    :param context: The default context to be updated with Backups-specific information.
-    :type context: DefaultContext
-    :param executor_hosts_ctx: The executor hosts context for the Backups tasks.
-    :type executor_hosts_ctx: ExecutorHostsCtx
-    :return: An updated context dictionary containing Backups-related data.
-    :rtype: dict[str, Any]
-    """
-    return await get_tasks_context(
-        inventory_api,
-        tasks_api,
-        get_backups_task_info,
-        executor_hosts_ctx,
-        context,
-        OWNER,
-        service_type=ServiceTypeEnum.MYSQL,
-        alert_on_fail_default=True,
-    )
-
-
-BackupsIndexContext = Annotated[dict[str, Any], Depends(get_backups_index_context)]

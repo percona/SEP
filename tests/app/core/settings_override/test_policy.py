@@ -53,7 +53,6 @@ from app.core.settings_override.registry import (
 from app.inventory.config import InventorySettings
 from app.sep.apps.alerts.config import AlertsSettings
 from app.sep.config import SEPSettings
-from app.sep.middleware.messages.config import MessagesSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
@@ -66,7 +65,6 @@ SETTINGS_CLASSES: dict[SettingClassEnum, type] = {
     SettingClassEnum.SEP_SETTINGS: SEPSettings,
     SettingClassEnum.TASKS_SETTINGS: TasksSettings,
     SettingClassEnum.SNIPPETS_SETTINGS: SnippetsSettings,
-    SettingClassEnum.MESSAGES_SETTINGS: MessagesSettings,
     SettingClassEnum.ALERT_SETTINGS: AlertSettings,
     SettingClassEnum.ALERTS_SETTINGS: AlertsSettings,
     SettingClassEnum.ANONYMIZER_SETTINGS: AnonymizerSettings,

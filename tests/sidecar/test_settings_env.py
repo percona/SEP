@@ -41,6 +41,9 @@ SHELL_LOCAL_NAMES = frozenset({"PATH", "PWD", "SHLVL", "_"})
 
 DATABASE_PREFIXES = ("SEP", "INVENTORY", "TASKS")
 
+BLANK_BEAT_URI = {"CELERY__BEAT_DBURI": ""}
+"""A blank inherited beat URI, the shape the helper has to clear."""
+
 
 def source_helper(**inputs: str) -> subprocess.CompletedProcess[str]:
     """Run the helper from an otherwise empty environment.
@@ -133,7 +136,7 @@ def test_supervisord_expansions_are_exported_unconditionally():
 
 
 def test_password_reaches_every_canonical_destination():
-    """Assert one input fans out to the three services and the beat store."""
+    """Assert one input fans out to the three services and nowhere else."""
     environment = exported(source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw"))
 
     assert [
@@ -143,20 +146,7 @@ def test_password_reaches_every_canonical_destination():
         "pw",
         "pw",
     ]
-    assert (
-        environment["CELERY__BEAT_DBURI"] == "postgresql://sep:pw@pmm-server:5432/sep"
-    )
-
-
-def test_password_is_percent_encoded_into_the_beat_uri():
-    """Encode a password containing URI syntax, which would corrupt the authority."""
-    environment = exported(source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="p@ss:w/rd"))
-
-    assert (
-        environment["CELERY__BEAT_DBURI"]
-        == "postgresql://sep:p%40ss%3Aw%2Frd@pmm-server:5432/sep"
-    )
-    assert environment["SEP__DATABASE__PASSWORD"] == "p@ss:w/rd"
+    assert "CELERY__BEAT_DBURI" not in environment
 
 
 def test_explicit_canonical_variable_outranks_the_derived_one():
@@ -169,20 +159,30 @@ def test_explicit_canonical_variable_outranks_the_derived_one():
     assert environment["SEP__DATABASE__HOST"] == "a"
 
 
-def test_explicit_beat_uri_is_left_untouched():
-    """Keep an explicit beat store, which may point away from the service database."""
-    environment = exported(
-        source_helper(SECRET_KEY="k", CELERY__BEAT_DBURI="postgresql://x@y/z")
-    )
+def test_an_inherited_beat_uri_is_neither_read_nor_rewritten():
+    """Leave an explicit beat store exactly as it arrived, credentials included.
 
-    assert environment["CELERY__BEAT_DBURI"] == "postgresql://x@y/z"
+    The script no longer derives the URI, so the only guarantee it still owes is
+    that supplying one changes nothing else about the environment it exports.
+    """
+    beat_uri = "postgresql://x:secret@y/z"
+    baseline = exported(source_helper(SECRET_KEY="k"))
+
+    environment = exported(source_helper(SECRET_KEY="k", CELERY__BEAT_DBURI=beat_uri))
+
+    assert environment["CELERY__BEAT_DBURI"] == beat_uri
+    assert {
+        name: value
+        for name, value in environment.items()
+        if name != "CELERY__BEAT_DBURI"
+    } == baseline
 
 
-def test_beat_uri_is_derived_without_a_password():
-    """Derive the beat store from the host/port input when no password is set."""
+def test_neither_a_beat_store_nor_a_password_is_exported_by_default():
+    """Omit both the beat store and the password, leaving the settings to resolve."""
     environment = exported(source_helper(SECRET_KEY="k"))
 
-    assert environment["CELERY__BEAT_DBURI"] == "postgresql://sep@pmm-server:5432/sep"
+    assert "CELERY__BEAT_DBURI" not in environment
     assert not [name for name in environment if name.endswith("__DATABASE__PASSWORD")]
 
 
@@ -232,6 +232,7 @@ def test_derived_environment_resolves_against_the_baked_profile(
         if name not in SHELL_LOCAL_NAMES:
             monkeypatch.setenv(name, value)
 
+    assert "CELERY__BEAT_DBURI" not in environment
     assert (
         Settings().CELERY.beat_dburi
         == "postgresql+psycopg2://sep:pw@pmm-server:5432/sep"
@@ -314,20 +315,63 @@ def test_a_blank_secret_key_variable_does_not_shadow_the_file(tmp_path: Path):
     assert "SECRET_KEY" not in environment
 
 
-@pytest.mark.parametrize("name", ["SEP__DATABASE__PASSWORD", "CELERY__BEAT_DBURI"])
-def test_a_blank_variable_does_not_shadow_the_file_it_defers_to(
-    tmp_path: Path, name: str
-):
+def test_a_blank_variable_does_not_shadow_the_file_it_defers_to(tmp_path: Path):
     """Clear a blank inherited name, which pydantic would rank above the file."""
-    secrets_dir = write_secrets(tmp_path, **{name: "from-file"})
+    secrets_dir = write_secrets(tmp_path, SEP__DATABASE__PASSWORD="from-file")
 
     environment = exported(
         source_helper(
-            SECRET_KEY="k", SEP_DB_PASSWORD="pw", SECRETS_DIR=secrets_dir, **{name: ""}
+            SECRET_KEY="k",
+            SEP_DB_PASSWORD="pw",
+            SECRETS_DIR=secrets_dir,
+            SEP__DATABASE__PASSWORD="",
         )
     )
 
-    assert name not in environment
+    assert "SEP__DATABASE__PASSWORD" not in environment
+
+
+@pytest.mark.parametrize(
+    "mount",
+    [{"CELERY__BEAT_DBURI": "postgresql://mounted@host:5432/beat"}, {}],
+    ids=["mounted", "unmounted"],
+)
+def test_a_blank_beat_uri_is_cleared(tmp_path: Path, mount: dict[str, str]):
+    """Clear a blank inherited beat URI, which outranks every source below it.
+
+    An empty string counts as supplied on the environment side, so leaving it in
+    place ranks it above both a mounted file and the derived default, and an empty
+    URL fails settings validation rather than falling through to either.
+    """
+    secrets_dir = write_secrets(tmp_path, **mount)
+
+    environment = exported(
+        source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir, **BLANK_BEAT_URI)
+    )
+
+    assert "CELERY__BEAT_DBURI" not in environment
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_a_blank_beat_uri_still_resolves_the_derived_store(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Assert a blank inherited beat URI leaves the derived store reachable.
+
+    Uncleared, the empty string reaches the settings classes and fails URL
+    validation, taking every supervisord child down with it.
+    """
+    environment = exported(
+        source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw", **BLANK_BEAT_URI)
+    )
+    for name, value in environment.items():
+        if name not in SHELL_LOCAL_NAMES:
+            monkeypatch.setenv(name, value)
+
+    assert (
+        Settings().CELERY.beat_dburi
+        == "postgresql+psycopg2://sep:pw@pmm-server:5432/sep"
+    )
 
 
 def test_a_mounted_canonical_name_is_left_unexported(tmp_path: Path):
@@ -380,17 +424,19 @@ def test_mounted_host_and_port_seed_the_supervisord_wait_loops(tmp_path: Path):
     assert environment["TASKS__DATABASE__PORT"] == "6543"
 
 
-def test_a_mounted_password_reaches_the_beat_uri_percent_encoded(tmp_path: Path):
-    """Derive the beat store from the file, since celery-beat has no file channel."""
+def test_a_mounted_password_never_reaches_the_environment(tmp_path: Path):
+    """Leave a mounted password in its file, with no derived URI carrying it out.
+
+    This is the whole point of the mount: celery-beat reads the same file through
+    the settings classes, so nothing has to put the password back in the
+    environment to reach it.
+    """
     secrets_dir = write_secrets(tmp_path, SEP__DATABASE__PASSWORD="p@ss:w/rd")
 
     environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
 
     assert "SEP__DATABASE__PASSWORD" not in environment
-    assert (
-        environment["CELERY__BEAT_DBURI"]
-        == "postgresql://sep:p%40ss%3Aw%2Frd@pmm-server:5432/sep"
-    )
+    assert "CELERY__BEAT_DBURI" not in environment
 
 
 def test_a_mounted_password_supplies_only_the_name_it_is_named_for(tmp_path: Path):
@@ -404,29 +450,6 @@ def test_a_mounted_password_supplies_only_the_name_it_is_named_for(tmp_path: Pat
 
     assert "INVENTORY__DATABASE__PASSWORD" not in environment
     assert "TASKS__DATABASE__PASSWORD" not in environment
-
-
-def test_mounting_the_beat_uri_suppresses_the_derivation(tmp_path: Path):
-    """Keep the password out of the environment entirely, which is the mount to use."""
-    secrets_dir = write_secrets(
-        tmp_path,
-        SEP__DATABASE__PASSWORD="pw",
-        CELERY__BEAT_DBURI="postgresql://sep:pw@pmm-server:5432/sep",
-    )
-
-    environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
-
-    assert "CELERY__BEAT_DBURI" not in environment
-    assert not [name for name in environment if "PASSWORD" in name]
-
-
-def test_an_explicit_password_variable_reaches_the_beat_uri():
-    """Resolve the beat password through the order the canonical exports follow."""
-    environment = exported(source_helper(SECRET_KEY="k", SEP__DATABASE__PASSWORD="pw"))
-
-    assert (
-        environment["CELERY__BEAT_DBURI"] == "postgresql://sep:pw@pmm-server:5432/sep"
-    )
 
 
 def test_a_file_value_is_stripped(tmp_path: Path):
@@ -450,7 +473,6 @@ def test_an_empty_file_counts_as_a_supplied_value(tmp_path: Path):
     assert "SEP__DATABASE__PASSWORD" not in environment
     assert environment["INVENTORY__DATABASE__PASSWORD"] == "pw"
     assert environment["TASKS__DATABASE__PASSWORD"] == "pw"
-    assert environment["CELERY__BEAT_DBURI"] == "postgresql://sep@pmm-server:5432/sep"
 
 
 def test_a_symlink_escaping_the_directory_does_not_supply_a_name(tmp_path: Path):
@@ -507,10 +529,6 @@ def test_a_lowercase_file_name_supplies_the_canonical_name(tmp_path: Path):
     assert "SEP__DATABASE__PASSWORD" not in environment
     assert environment["INVENTORY__DATABASE__PASSWORD"] == "raw"
     assert environment["TASKS__DATABASE__PASSWORD"] == "raw"
-    assert (
-        environment["CELERY__BEAT_DBURI"]
-        == "postgresql://sep:from-file@pmm-server:5432/sep"
-    )
 
 
 def test_a_lowercase_secret_key_file_satisfies_the_gate(tmp_path: Path):
@@ -575,6 +593,8 @@ def test_a_mounted_secret_resolves_through_the_shell_into_the_settings_classes(
         if name not in SHELL_LOCAL_NAMES:
             monkeypatch.setenv(name, value)
 
+    assert not [name for name in environment if "PASSWORD" in name]
+    assert "CELERY__BEAT_DBURI" not in environment
     assert (
         Settings(_secrets_dir=secrets_dir).SECRET_KEY.get_secret_value() == "from-file"
     )
