@@ -43,14 +43,18 @@ from app.tasks.execution.executors.nomad.exceptions import (
     JobNotFoundError,
 )
 from app.tasks.execution.executors.nomad.models import (
+    _ANONYMIZED_STEPS,
     _detect_stale_skip,
     _NOMAD_LOG_STREAM_CLIENT_ERROR,
     _NOMAD_LOG_STREAM_SOCK_TIMEOUT,
+    _should_anonymize,
+    _STALE_SKIP_TASK_NAME,
     NOMAD_DEAD_JOB_STATUS,
     nomad_task_states_to_execution_events,
     NomadAllocStatusEnum,
     NomadExecutor,
 )
+from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.execution.utils import gzip_compress, minify_file_content
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
@@ -199,6 +203,45 @@ def _build_executor(**kwargs) -> NomadExecutor:
     }
     defaults.update(kwargs)
     return NomadExecutor(**defaults)
+
+
+class TestAnonymizedStepClassification:
+    """Assert the redaction guard follows the NomadStep anonymization map."""
+
+    def test_anonymized_steps_stay_run_script_and_step1(self) -> None:
+        """Assert the effective anonymized set is exactly run-script and step1."""
+        assert frozenset({"run-script", "step1"}) == _ANONYMIZED_STEPS
+
+    @pytest.mark.parametrize("step", [NomadStep.RUN_SCRIPT, NomadStep.STEP1])
+    def test_should_anonymize_fires_for_anonymized_steps(self, step: NomadStep) -> None:
+        """Assert the guard fires for every step classified as anonymized."""
+        assert _should_anonymize(step, {PIIEntity.PERSON}) is True
+
+    @pytest.mark.parametrize(
+        "step",
+        [NomadStep.PREPARE_ENV, NomadStep.CLEAN_UP, NomadStep.CHECK_STALENESS],
+    )
+    def test_should_anonymize_stays_off_for_unanonymized_steps(
+        self, step: NomadStep
+    ) -> None:
+        """Assert an unanonymized step stays unredacted even with entities requested.
+
+        Pins the behaviour the classification exists to drive. A set listing only
+        the anonymized steps leaves this arm unstated, so nothing fails when a
+        newly-added step silently joins the wrong side.
+        """
+        assert _should_anonymize(step, {PIIEntity.PERSON}) is False
+
+    @pytest.mark.parametrize("step", list(NomadStep))
+    def test_no_step_is_anonymized_without_entities(self, step: NomadStep) -> None:
+        """Assert no step is redacted when no PII entities were requested."""
+        assert _should_anonymize(step, None) is False
+        assert _should_anonymize(step, set()) is False
+
+    def test_stale_skip_task_name_is_nomad_step(self) -> None:
+        """Assert the stale-skip sentinel is NomadStep.CHECK_STALENESS."""
+        assert _STALE_SKIP_TASK_NAME is NomadStep.CHECK_STALENESS
+        assert _STALE_SKIP_TASK_NAME == "check-staleness"
 
 
 class TestNomadExecutorTlsClassification:
