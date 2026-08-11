@@ -30,6 +30,7 @@ from app.sep.apps.framework.list_query import InMemoryListQuery
 from app.sep.apps.inventory.list_query import (
     ENTITY_LIST_QUERY_SPECS,
     inventory_list_query,
+    list_query_upstream_params,
 )
 
 
@@ -74,3 +75,30 @@ class TestInventoryListQuery:
         with pytest.raises(HTTPNotFoundException) as excinfo:
             inventory_list_query(entity="widgets", sort=None, search=None)
         assert excinfo.value.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestListQueryUpstreamParams:
+    """Cover mapping the validated query onto upstream inventory query params."""
+
+    def test_ascending_sort_without_search(self) -> None:
+        """Emit a bare sort key and omit search when none was supplied."""
+        query = InMemoryListQuery(sort_key="name", descending=False, search=None)
+        assert list_query_upstream_params(query) == {"sort": "name"}
+
+    def test_descending_sort_reprefixes_key(self) -> None:
+        """Reconstruct the ``-``-prefixed sort value for upstream."""
+        query = InMemoryListQuery(sort_key="created_at", descending=True, search=None)
+        assert list_query_upstream_params(query) == {"sort": "-created_at"}
+
+    def test_search_term_included_when_present(self) -> None:
+        """Forward a non-blank search term alongside sort."""
+        query = InMemoryListQuery(sort_key="name", descending=False, search="db1")
+        assert list_query_upstream_params(query) == {
+            "sort": "name",
+            "search": "db1",
+        }
+
+    def test_blank_search_omitted(self) -> None:
+        """Drop whitespace-only search so upstream treats it as unset."""
+        query = InMemoryListQuery(sort_key="name", descending=False, search="   ")
+        assert list_query_upstream_params(query) == {"sort": "name"}

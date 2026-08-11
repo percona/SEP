@@ -28,7 +28,9 @@ The shared ``GET /{entity}/`` route serves four entities, so the dependency
 reads the path segment, dispatches to the matching spec, and validates
 ``sort`` / ``search`` against that entity alone. OpenAPI documents the union of
 every entity's allowlist; per-entity validation still rejects a key that is
-legal for another entity but not this one.
+legal for another entity but not this one. The upstream adapter maps the
+validated query back to the inventory service's ``sort`` / ``search`` query
+params so the proxy never forwards raw, unvalidated client strings.
 """
 
 from __future__ import annotations
@@ -147,8 +149,27 @@ def inventory_list_query(
 
 InventoryListQueryDep = Annotated[InMemoryListQuery, Depends(inventory_list_query)]
 
+
+def list_query_upstream_params(query: InMemoryListQuery) -> dict[str, str]:
+    """Map a validated list query to inventory upstream query params.
+
+    Always emits ``sort`` (re-prefixed when descending) so the proxy's
+    per-entity default reaches upstream rather than the inventory service's
+    own default. Emits ``search`` only when a non-blank term is present.
+
+    :param query: The allowlist-vetted list query from the request boundary.
+    :return: Query params to merge into the upstream inventory list request.
+    """
+    sort = f"-{query.sort_key}" if query.descending else query.sort_key
+    params: dict[str, str] = {"sort": sort}
+    if query.search is not None and query.search.strip():
+        params["search"] = query.search
+    return params
+
+
 __all__ = [
     "ENTITY_LIST_QUERY_SPECS",
     "InventoryListQueryDep",
     "inventory_list_query",
+    "list_query_upstream_params",
 ]
