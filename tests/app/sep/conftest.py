@@ -27,7 +27,7 @@ ancestor.
 
 This module also holds shared SEP-subtree test constants. ``REDUCED_ACTIVATION``
 mirrors the side-car embedded activation profile
-(``sidecar/settings.embedded.yaml``), which several modules across the subtree
+(``sidecar/settings.yaml``), which several modules across the subtree
 assert against; defining it once here keeps those copies from drifting away from
 the profile as apps are activated or dropped.
 """
@@ -63,7 +63,7 @@ ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 REDUCED_ACTIVATION = [
     App(module_name=name) for name in ("inventory", "snippets", "atw", "mysql_backups")
 ]
-"""The PMM-embedded side-car activation list (``sidecar/settings.embedded.yaml``)."""
+"""The PMM-embedded side-car activation list (``sidecar/settings.yaml``)."""
 
 
 @pytest.fixture

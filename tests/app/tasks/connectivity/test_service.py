@@ -346,8 +346,8 @@ class TestCheckConnectivityRealSession:
 
         assert result.success is True
         assert result.error is None
-        assert await TaskHistoryLogManager.exists_for_task(
-            session, result.task_history_id
+        assert await TaskHistoryLogManager.exists(
+            session, task_history_id=result.task_history_id
         )
 
     async def test_terminal_run_records_nothing(
@@ -993,8 +993,8 @@ class TestCheckConnectivityRealSession:
         )
         assert result.success is True
         assert result.error is None
-        assert await TaskHistoryLogManager.exists_for_task(
-            session, result.task_history_id
+        assert await TaskHistoryLogManager.exists(
+            session, task_history_id=result.task_history_id
         )
 
     async def test_provisioning_phase_does_not_consume_connect_budget(

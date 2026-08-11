@@ -31,6 +31,7 @@ from app.sep.deps import (
     IsApiAuthenticated,
     TasksClient,
 )
+from app.sep.routes import STREAMING_PROXY_HEADERS
 from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ async def task_execution_events_stream(
             tasks_client, task_history.id, request, user.access_token
         ),
         media_type="text/event-stream",
+        headers=STREAMING_PROXY_HEADERS,
     )
 
 
@@ -143,6 +145,7 @@ async def task_logs_event_stream(
             tasks_client, task_history.id, request, user.access_token
         ),
         media_type="text/event-stream",
+        headers=STREAMING_PROXY_HEADERS,
     )
 
 
