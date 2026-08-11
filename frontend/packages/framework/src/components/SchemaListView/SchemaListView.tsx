@@ -290,7 +290,7 @@ function SchemaListViewCore({
   // ListView schema (which opts in) but pass no pagination and must stay
   // client-side over the embedded detail arrays.
   const activeServerQuery =
-    manualPagination && listView.server_side_query && serverQuery != null ? serverQuery : null;
+    manualPagination && listView.server_side_query && serverQuery !== null ? serverQuery : null;
   const serverSideQuery = activeServerQuery !== null;
   const pageIndex =
     manualPagination && serverPagination.limit > 0
