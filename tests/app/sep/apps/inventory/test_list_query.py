@@ -76,6 +76,20 @@ class TestInventoryListQuery:
             inventory_list_query(entity="widgets", sort=None, search=None)
         assert excinfo.value.status_code == status.HTTP_404_NOT_FOUND
 
+    def test_schemas_accept_service_id_sort(self) -> None:
+        """Accept the schemas-only ``service_id`` sort key on that entity."""
+        query = inventory_list_query(entity="schemas", sort="service_id", search=None)
+        assert query == InMemoryListQuery(
+            sort_key="service_id", descending=False, search=None
+        )
+
+    def test_tables_accept_schema_id_sort(self) -> None:
+        """Accept the tables-only ``schema_id`` sort key on that entity."""
+        query = inventory_list_query(entity="tables", sort="-schema_id", search=None)
+        assert query == InMemoryListQuery(
+            sort_key="schema_id", descending=True, search=None
+        )
+
 
 class TestListQueryUpstreamParams:
     """Cover mapping the validated query onto upstream inventory query params."""

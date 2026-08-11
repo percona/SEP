@@ -200,6 +200,35 @@ class TestInventoryGateway:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_inventory_api_dep.get.assert_not_called()
 
+    def test_list_preserves_upstream_total_not_page_length(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure the proxied total is the upstream filtered total, never ``len(items)``."""
+        mock_inventory_api_dep.get.return_value = {
+            "items": [{"id": 1}, {"id": 2}],
+            "total": _FILTERED_TOTAL,
+            "offset": 0,
+            "limit": _REQUEST_LIMIT,
+        }
+        response = test_client.get(
+            "/api/apps/inventory/schemas/",
+            params={"sort": "service_id", "search": "db", "limit": _REQUEST_LIMIT},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert len(body["items"]) == 2
+        assert body["total"] == _FILTERED_TOTAL
+        assert body["total"] != len(body["items"])
+        mock_inventory_api_dep.get.assert_awaited_once_with(
+            "/schemas/",
+            params={
+                "offset": DEFAULT_PAGINATION_OFFSET,
+                "limit": _REQUEST_LIMIT,
+                "sort": "service_id",
+                "search": "db",
+            },
+        )
+
     def test_list_rejects_out_of_bounds_limit_with_422(
         self, test_client, mock_inventory_api_dep
     ):
