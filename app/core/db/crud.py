@@ -25,6 +25,7 @@ from sqlalchemy import (
     CursorResult,
     delete,
     func,
+    Insert,
     inspect,
     ScalarResult,
     Select,
@@ -55,8 +56,10 @@ from app.core.utils.fields import DatabaseDialect
 logger = logging.getLogger(__name__)
 
 Whereable = Select | DMLWhereBase
+Executable = Select | Insert | DMLWhereBase
 ColumnExpressionOrStrLabelArgument = str | ColumnExpressionArgument[Any]
 W = TypeVar("W", bound=Whereable)
+E = TypeVar("E", bound=Executable)
 T = TypeVar("T")
 S = TypeVar("S", bound=SQLModel)
 BS = TypeVar("BS", bound=BaseSQLModel)
@@ -223,7 +226,7 @@ class BaseManager:
     async def _exec(
         cls,
         session: AsyncSession,
-        query: W,
+        query: E,
     ) -> TupleResult | ScalarResult | CursorResult:
         logger.debug("Executing query: %s", query)
         return await session.exec(query)
