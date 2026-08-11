@@ -908,25 +908,28 @@ class TestRunSendStaleSnapshot:
         send_session: AsyncSession,
         uploader: _FakeUploader,
         delivery_plan: DeliveryPlan,
-        mocker: MockerFixture,
     ) -> None:
         """Deliver against stored inputs that differ from a still-valid stale snapshot.
 
         A stale-but-valid snapshot resolves on the first read, so the pre-SEP-1781
         refresh gate would never fire; the send must still pick up the rotated
         secret and the repointed endpoint from the stored row.
+
+        The stale values are published as a proxy snapshot rather than patched onto
+        the wrapped instance, so the snapshot precedence a worker child actually
+        holds is what the republish has to supersede.
         """
         rotated_secret = "rotated-api-key"
         new_endpoint = "https://intake-rotated.example.com"
-        mocker.patch.object(
-            sep_settings,
-            "DIAGNOSTICS_DELIVERY_INPUTS",
-            DeliveryPlanInputs(
-                endpoint="https://intake-stale.example.com",
-                secrets=dict.fromkeys(
-                    delivery_plan.secrets, SecretStr("stale-api-key")
-                ),
-            ),
+        sep_settings._set_snapshot(
+            {
+                "DIAGNOSTICS_DELIVERY_INPUTS": DeliveryPlanInputs(
+                    endpoint="https://intake-stale.example.com",
+                    secrets=dict.fromkeys(
+                        delivery_plan.secrets, SecretStr("stale-api-key")
+                    ),
+                )
+            }
         )
         await _seed_delivery_inputs(
             send_session,
