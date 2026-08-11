@@ -1088,11 +1088,8 @@ def build_settings_router(
         settings_cls, proxy = _resolve(setting_class)
         key = canonical_override_key(settings_cls, key)
         field_meta = _field_meta_or_404(settings_cls, key)
-        has_override_row = (
-            await SettingsOverrideManager.count(
-                session, setting_class=setting_class, key=key
-            )
-            > 0
+        has_override_row = await SettingsOverrideManager.exists(
+            session, setting_class=setting_class, key=key
         )
         _assert_key_deletable(
             settings_cls, field_meta, has_override_row=has_override_row
