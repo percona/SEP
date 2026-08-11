@@ -22,7 +22,7 @@ sequenceDiagram
         SEP->>Grafana: Validate session, map org role
         Grafana-->>SEP: User identity and role
         SEP-->>UI: Short-lived SEP bearer in response body, no cookie, no refresh token
-        Eng->>UI: API calls with Authorization ******
+        Eng->>UI: API calls with Authorization Bearer SEP token
     end
 
     rect rgb(255, 248, 225)
