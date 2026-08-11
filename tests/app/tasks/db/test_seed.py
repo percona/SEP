@@ -20,6 +20,7 @@ import time
 
 import pytest
 
+import app.tasks.db.seed as seed_module
 from app.sep.apps.inventory.models import INVENTORY_SYNC_TASK_NAME
 from app.tasks.config import tasks_settings
 from app.tasks.db.seed import (
@@ -56,14 +57,32 @@ class TestNomadStepNameParity:
     """Assert every Nomad task Name in seed templates is a NomadStep member."""
 
     def test_every_seed_task_name_is_nomad_step_member(self) -> None:
-        """Walk all four NOMAD_* templates + _CHECK_STALENESS_TASK Names."""
+        """Walk every job-spec template seed.py defines, across all task groups.
+
+        The templates are discovered from the seed module rather than read off a
+        hand-maintained list, and every task group is walked rather than the
+        first: a guard scoped to a sample reports clean precisely when a new
+        template or group is the thing that bypassed the enum.
+        """
+        templates = [
+            value
+            for value in vars(seed_module).values()
+            if isinstance(value, dict) and "TaskGroups" in value
+        ]
+        undiscovered = [
+            known
+            for known in NOMAD_TEMPLATES_WITH_STALENESS
+            if not any(known is found for found in templates)
+        ]
+        assert not undiscovered, "template discovery missed a known NOMAD_* job spec"
+
         names: list[object] = [_CHECK_STALENESS_TASK["Name"]]
-        for template in NOMAD_TEMPLATES_WITH_STALENESS:
-            names.extend(task["Name"] for task in template["TaskGroups"][0]["Tasks"])
+        for template in templates:
+            for group in template["TaskGroups"]:
+                names.extend(task["Name"] for task in group["Tasks"])
 
         for name in names:
             assert isinstance(name, NomadStep), f"{name!r} is not a NomadStep"
-            assert name in NomadStep
 
 
 class TestSystemTasks:

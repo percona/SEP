@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the Nomad step-name leaf module."""
+"""Test the Nomad step-name leaf module."""
 
 import ast
 from pathlib import Path
@@ -21,10 +21,6 @@ from pathlib import Path
 import pytest
 
 import app.tasks.execution.executors.nomad.steps as steps_module
-from app.tasks.execution.executors.nomad.models import (
-    _ANONYMIZED_STEPS,
-    _STALE_SKIP_TASK_NAME,
-)
 from app.tasks.execution.executors.nomad.steps import (
     NOMAD_STEP_ANONYMIZE,
     NomadStep,
@@ -48,7 +44,13 @@ def test_nomad_step_members_are_literal_wire_values() -> None:
 
 
 def test_steps_module_imports_only_enum() -> None:
-    """Assert steps.py is a pure leaf: only ``enum`` appears in import statements."""
+    """Assert steps.py is a pure leaf: no import of anything but ``enum``.
+
+    Covers static (``import x`` / ``from x import y``, absolute and relative,
+    aliased, nested inside any block) and dynamic (``importlib.import_module``,
+    ``__import__``) forms, so a leaf violation cannot spell its way past the
+    walk and report clean.
+    """
     module_file = Path(steps_module.__file__)
     tree = ast.parse(module_file.read_text(encoding="utf-8"))
     imported_modules: set[str] = set()
@@ -57,9 +59,20 @@ def test_steps_module_imports_only_enum() -> None:
             for alias in node.names:
                 imported_modules.add(alias.name.split(".")[0])
         elif isinstance(node, ast.ImportFrom):
-            if node.module is None:
-                pytest.fail("relative import without module is not allowed in steps.py")
+            if node.module is None or node.level > 0:
+                pytest.fail("relative import is not allowed in steps.py")
             imported_modules.add(node.module.split(".")[0])
+        elif isinstance(node, ast.Call):
+            target = node.func
+            name = (
+                target.attr
+                if isinstance(target, ast.Attribute)
+                else target.id
+                if isinstance(target, ast.Name)
+                else ""
+            )
+            if name in {"import_module", "__import__"}:
+                pytest.fail(f"dynamic import via {name}() is not allowed in steps.py")
     assert imported_modules == {"enum"}
 
 
@@ -70,26 +83,9 @@ def test_nomad_step_anonymize_covers_every_member() -> None:
 
 def test_anonymized_steps_remain_run_script_and_step1() -> None:
     """Assert effective anonymized set stays exactly run-script and step1."""
-    derived = frozenset(
-        step.value for step, anonymize in NOMAD_STEP_ANONYMIZE.items() if anonymize
-    )
-    assert derived == frozenset({"run-script", "step1"})
+    assert NomadStep.anonymized() == frozenset({"run-script", "step1"})
     assert NOMAD_STEP_ANONYMIZE[NomadStep.RUN_SCRIPT] is True
     assert NOMAD_STEP_ANONYMIZE[NomadStep.STEP1] is True
     assert NOMAD_STEP_ANONYMIZE[NomadStep.PREPARE_ENV] is False
     assert NOMAD_STEP_ANONYMIZE[NomadStep.CLEAN_UP] is False
     assert NOMAD_STEP_ANONYMIZE[NomadStep.CHECK_STALENESS] is False
-
-
-def test_models_anonymized_steps_derived_from_classification() -> None:
-    """Assert models._ANONYMIZED_STEPS is built from NOMAD_STEP_ANONYMIZE."""
-    expected = frozenset(
-        step.value for step, anonymize in NOMAD_STEP_ANONYMIZE.items() if anonymize
-    )
-    assert _ANONYMIZED_STEPS == expected == frozenset({"run-script", "step1"})
-
-
-def test_stale_skip_task_name_is_nomad_step() -> None:
-    """Assert stale-skip sentinel uses NomadStep.CHECK_STALENESS."""
-    assert _STALE_SKIP_TASK_NAME is NomadStep.CHECK_STALENESS
-    assert _STALE_SKIP_TASK_NAME == "check-staleness"
