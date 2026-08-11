@@ -2702,7 +2702,9 @@
                 "created_at",
                 "-created_at",
                 "name",
-                "-name"
+                "-name",
+                "service_id",
+                "-service_id"
               ],
               "title": "Sort",
               "type": "string"
@@ -2952,7 +2954,9 @@
                 "created_at",
                 "-created_at",
                 "name",
-                "-name"
+                "-name",
+                "schema_id",
+                "-schema_id"
               ],
               "title": "Sort",
               "type": "string"
@@ -3388,7 +3392,9 @@
                 "created_at",
                 "-created_at",
                 "name",
-                "-name"
+                "-name",
+                "service_id",
+                "-service_id"
               ],
               "title": "Sort",
               "type": "string"
@@ -3677,7 +3683,9 @@
                 "created_at",
                 "-created_at",
                 "name",
-                "-name"
+                "-name",
+                "schema_id",
+                "-schema_id"
               ],
               "title": "Sort",
               "type": "string"

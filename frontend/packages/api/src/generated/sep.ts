@@ -1729,6 +1729,7 @@ export interface paths {
      *     :param entity: Inventory entity type (nodes, services, schemas, tables).
      *     :param inventory_api: Async client for the Inventory sub-app.
      *     :param pagination: Validated offset/limit forwarded to the upstream call.
+     *     :param list_query: Allowlist-vetted sort/search for this entity.
      *     :return: A paginated envelope echoing the requested window.
      */
     get: operations['inventory_inventory_list_entity_api_apps_inventory__entity___get'];
@@ -7763,6 +7764,15 @@ export interface components {
      *         ``"-lastRun"``). The unprefixed key must match one of the declared
      *         column keys. Defaults to ``None``.
      *     :type default_sort: NonEmptyStr | None
+     *     :param server_side_query: Opt-in capability flag declaring that the list
+     *         endpoint honors whole-result-set sort and search via server query
+     *         params. When ``True``, the React list view enables manual sorting and
+     *         filtering and drives them through those params instead of sorting the
+     *         loaded page. Typed ``bool | None`` so the discovery endpoint's
+     *         ``exclude_none`` posture drops it from the wire until a plugin opts
+     *         in, keeping the addition byte-compatible with existing schemas.
+     *         Defaults to ``None``.
+     *     :type server_side_query: bool | None
      *     :param overview_hidden_fields: Additional task-level keys to suppress
      *         from the auto-rendered "extras" loop on the plugin detail Overview
      *         tab. The framework always hides a baseline set of internal fields
@@ -7778,6 +7788,8 @@ export interface components {
       default_sort?: string | null;
       /** Overview Hidden Fields */
       overview_hidden_fields?: string[];
+      /** Server Side Query */
+      server_side_query?: boolean | null;
     };
     /**
      * MultiChoiceField
@@ -12924,6 +12936,18 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?:
+          | 'created_at'
+          | '-created_at'
+          | 'name'
+          | '-name'
+          | 'schema_id'
+          | '-schema_id'
+          | 'service_id'
+          | '-service_id';
+        /** @description Case-insensitive search across the searchable columns. */
+        search?: string | null;
       };
       header?: never;
       path: {
