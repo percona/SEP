@@ -188,19 +188,19 @@ def make_in_memory_list_query_dep(
             sort: str = sort_query_param(spec),
             search: str | None = search_query_param(),
         ) -> InMemoryListQuery:
-            return _build_in_memory_query(spec, sort, search)
+            return build_in_memory_list_query(spec, sort, search)
 
         return _in_memory_list_query_dep
 
     def _in_memory_list_query_dep_no_search(
         sort: str = sort_query_param(spec),
     ) -> InMemoryListQuery:
-        return _build_in_memory_query(spec, sort, None)
+        return build_in_memory_list_query(spec, sort, None)
 
     return _in_memory_list_query_dep_no_search
 
 
-def _build_in_memory_query(
+def build_in_memory_list_query(
     spec: ListQuerySpec,
     sort: str,
     search: str | None,
@@ -208,7 +208,10 @@ def _build_in_memory_query(
     """Resolve a request's sort and search into an :class:`InMemoryListQuery`.
 
     Validation delegates to :meth:`ListQuerySpec.resolve_sort` so the allowlist and
-    the 422 boundary are identical to the SQL dependency.
+    the 422 boundary are identical to the SQL dependency. Public so a hand-written
+    route — for example a proxied inventory list that dispatches across per-entity
+    specs — can reuse the same mapping without going through
+    :func:`make_in_memory_list_query_dep`.
 
     :param spec: The spec whose allowlist bounds the request.
     :param sort: The requested public sort key (possibly ``-`` prefixed).
@@ -367,6 +370,7 @@ def _sort(
 __all__ = [
     "InMemoryListQuery",
     "apply_in_memory",
+    "build_in_memory_list_query",
     "default_in_memory_query",
     "in_memory_list_scripts",
     "make_in_memory_list_query_dep",

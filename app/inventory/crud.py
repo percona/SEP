@@ -94,6 +94,7 @@ class SchemaManager(BaseSQLModelChildManager):
         sortable={
             "name": col(Schema.name),
             "created_at": col(Schema.created_at),
+            "service_id": col(Schema.service_id),
         },
         default_sort="name",
         tie_breaker=col(Schema.id),
@@ -120,6 +121,7 @@ class TableManager(BaseSQLModelChildManager):
         sortable={
             "name": col(Table.name),
             "created_at": col(Table.created_at),
+            "schema_id": col(Table.schema_id),
         },
         default_sort="name",
         tie_breaker=col(Table.id),

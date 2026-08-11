@@ -37,6 +37,7 @@ from app.core.pagination import Pagination
 from app.sep.apps.framework import list_query as list_query_module
 from app.sep.apps.framework.list_query import (
     apply_in_memory,
+    build_in_memory_list_query,
     default_in_memory_query,
     in_memory_list_scripts,
     InMemoryListQuery,
@@ -89,6 +90,23 @@ def _rows(*specs: tuple[str, str | None, int]) -> list[_Row]:
     :return: The rows to hand to the applier.
     """
     return [_Row(filename=f, title=t, created_at=c) for f, t, c in specs]
+
+
+class TestBuildInMemoryListQuery:
+    """Cover the public builder a hand-written route can call without a FastAPI dep."""
+
+    def test_resolves_sort_and_search(self) -> None:
+        """Carry a vetted sort key and search term onto the resolved query."""
+        query = build_in_memory_list_query(SPEC, "-filename", "needle")
+        assert query == InMemoryListQuery(
+            sort_key="filename", descending=True, search="needle"
+        )
+
+    def test_unknown_sort_key_raises_422(self) -> None:
+        """Reject an out-of-allowlist sort key with HTTP 422."""
+        with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
+            build_in_memory_list_query(SPEC, "bogus", None)
+        assert "bogus" in str(excinfo.value.detail)
 
 
 class TestMakeInMemoryListQueryDep:
