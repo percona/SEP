@@ -35,6 +35,7 @@ from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.db.engine import engine
+from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.models import (
     CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
     INVENTORY_SYNC_TASK_NAME,
@@ -72,7 +73,7 @@ STALENESS_PREAMBLE_SHELL = (
 )
 
 _CHECK_STALENESS_TASK = {
-    "Name": "check-staleness",
+    "Name": NomadStep.CHECK_STALENESS,
     "Lifecycle": {"hook": "prestart", "sidecar": False},
     "Driver": "raw_exec",
     "User": "",
@@ -111,7 +112,7 @@ NOMAD_RUN_COMMAND = {
             "Tasks": [
                 deepcopy(_CHECK_STALENESS_TASK),
                 {
-                    "Name": "run-script",
+                    "Name": NomadStep.RUN_SCRIPT,
                     "Driver": "raw_exec",
                     "User": "",
                     "Config": {
@@ -162,7 +163,7 @@ NOMAD_RUN_PYTHON = {
             "Tasks": [
                 deepcopy(_CHECK_STALENESS_TASK),
                 {
-                    "Name": "prepare-env",
+                    "Name": NomadStep.PREPARE_ENV,
                     "Lifecycle": {"hook": "prestart", "sidecar": False},
                     "Driver": "raw_exec",
                     "User": "",
@@ -185,7 +186,7 @@ NOMAD_RUN_PYTHON = {
                     ],
                 },
                 {
-                    "Name": "run-script",
+                    "Name": NomadStep.RUN_SCRIPT,
                     "Driver": "raw_exec",
                     "User": "",
                     "Config": {
@@ -213,7 +214,7 @@ NOMAD_RUN_PYTHON = {
                     "DispatchPayload": {"file": "script.py.gz"},
                 },
                 {
-                    "Name": "clean-up",
+                    "Name": NomadStep.CLEAN_UP,
                     "Lifecycle": {"hook": "poststop", "sidecar": False},
                     "Driver": "raw_exec",
                     "User": "",
@@ -262,7 +263,7 @@ NOMAD_EXEC_ARTIFACT = {
             "Tasks": [
                 deepcopy(_CHECK_STALENESS_TASK),
                 {
-                    "Name": "run-script",
+                    "Name": NomadStep.RUN_SCRIPT,
                     "Driver": "raw_exec",
                     "User": "",
                     "Config": {
@@ -337,7 +338,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
             "Tasks": [
                 deepcopy(_CHECK_STALENESS_TASK),
                 {
-                    "Name": "prepare-env",
+                    "Name": NomadStep.PREPARE_ENV,
                     "Lifecycle": {"hook": "prestart", "sidecar": False},
                     "Driver": "raw_exec",
                     "User": "",
@@ -360,7 +361,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
                     ],
                 },
                 {
-                    "Name": "run-script",
+                    "Name": NomadStep.RUN_SCRIPT,
                     "Driver": "raw_exec",
                     "User": "",
                     "Config": {
@@ -400,7 +401,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
                     ],
                 },
                 {
-                    "Name": "clean-up",
+                    "Name": NomadStep.CLEAN_UP,
                     "Lifecycle": {"hook": "poststop", "sidecar": False},
                     "Driver": "raw_exec",
                     "User": "",
