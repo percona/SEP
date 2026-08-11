@@ -17,7 +17,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Autocomplete, Box, CircularProgress, TextField, Typography } from '@mui/material';
-import { SchemaFormRenderer, SNIPPET_FORM_RESERVED_FIELD_NAMES } from '@sep/framework';
+import {
+  SchemaFormRenderer,
+  SNIPPET_FORM_RESERVED_FIELD_NAMES,
+  flattenSectionFields,
+} from '@sep/framework';
 import { parseFieldErrors, type FormSection, type SectionField } from '@sep/api';
 import { CategoryBrowser } from './CategoryBrowser';
 import { useAtwBatchExecute, useAtwMergedSchema, useAtwSnippetSearch } from './hooks';
@@ -259,7 +263,7 @@ export function filterSnippetOptions(
 export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) {
   const [available, setAvailable] = useState<AtwSnippetSummary[]>([]);
   const [selected, setSelected] = useState<AtwSnippetSummary[]>([]);
-  const [itemErrors, setItemErrors] = useState<string[]>([]);
+  const [batchOutcome, setBatchOutcome] = useState<BatchOutcomeSummary | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
@@ -282,7 +286,7 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
     }
     setSelected([]);
     setAvailable([]);
-    setItemErrors([]);
+    setBatchOutcome(null);
   }, [isClosed]);
 
   const selectedNames = useMemo(() => selected.map((snippet) => snippet.name), [selected]);
@@ -380,19 +384,27 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
       .map((snippet) => snippet.title);
   }, [schemaQuery.data, selected]);
 
+  const labelByPath = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const field of flattenSectionFields(sections)) {
+      labels.set(field.name, field.label || field.name);
+    }
+    return labels;
+  }, [sections]);
+
   const handleSubmit = (values: Record<string, unknown>) => {
-    setItemErrors([]);
+    setBatchOutcome(null);
     batchMutation.mutate(buildBatchPayload(values, selected), {
       onSuccess: (response) => {
-        const summary = summarizeBatchOutcome(response);
-        setItemErrors(summary.severity === 'success' ? [] : summary.message.split('\n').slice(1));
+        setBatchOutcome(summarizeBatchOutcome(response, labelByPath));
       },
     });
   };
 
   const submitError = batchMutation.isError
     ? (batchMutation.error?.message ?? 'Batch execution failed')
-    : null;
+    : (batchOutcome?.message ?? null);
+  const submitAlertSeverity = batchMutation.isError ? 'error' : (batchOutcome?.severity ?? 'error');
 
   // Remount the form when the selection changes so react-hook-form rebuilds its
   // registered fields and defaults for the new merged schema.
@@ -442,7 +454,7 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
         onChange={(_event, value) => {
           setSelected(value);
           // The stale batch-result banner belongs to the previous selection.
-          setItemErrors([]);
+          setBatchOutcome(null);
         }}
         inputValue={searchInput}
         onInputChange={(_event, value) => setSearchInput(value)}
@@ -507,17 +519,6 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
         </Alert>
       )}
 
-      {itemErrors.length > 0 && (
-        <Alert severity="warning" sx={{ mt: 3 }}>
-          Some snippets did not dispatch:
-          <Box component="ul" sx={{ m: 0, pl: 2 }}>
-            {itemErrors.map((message) => (
-              <li key={message}>{message}</li>
-            ))}
-          </Box>
-        </Alert>
-      )}
-
       {selected.length > 0 && schemaQuery.data && !isClosed && (
         <Box sx={{ mt: 3 }}>
           <SchemaFormRenderer
@@ -527,6 +528,7 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
             submitLabel="Execute batch"
             loading={batchMutation.isPending}
             submitError={submitError}
+            submitAlertSeverity={submitAlertSeverity}
           />
         </Box>
       )}
