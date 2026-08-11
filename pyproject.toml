@@ -346,12 +346,21 @@ omit = [
     # in teardown: measuring them leaves dead source paths in .coverage that
     # break `coverage json` (the PR coverage-comment step) with "No source for code".
     "app/sep/apps/_scaffold_*/*",
+    # Payload scripts: uploaded as file:// URIs and executed on the target host,
+    # never imported in-process. They enter the report only because the AST
+    # harness execs extracted symbols under the payload's path, so their line
+    # coverage measures harness mechanics rather than the suite's reach.
+    "app/sep/apps/*/payload",
+    "app/sep/apps/*/*_payload",
+    "app/sep/apps/*/*/*_payload",
+    "app/sep/apps/*/payloads/*",
+    "app/sep/apps/alters/pre_checks.py",
 ]
 
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
-fail_under = 75
+fail_under = 85
 
 # Optional mutation-testing pilot. Not wired into make test / CI.
 # Mutmut runs pytest from a mutants/ sandbox copy; also_copy pulls the config

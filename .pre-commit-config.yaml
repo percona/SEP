@@ -16,13 +16,6 @@ repos:
         exclude: ^frontend/(node_modules|.*/dist|packages/[^/]+/src/generated)/
   - repo: local
     hooks:
-      - id: update-installer-checksum
-        name: Update sep_installer.sh checksum
-        description: "Update sep_installer.sha256 when sep_installer.sh changes"
-        entry: sh -c "sha256sum sep_installer.sh > sep_installer.sha256"
-        language: system
-        files: ^sep_installer\.sh$
-        pass_filenames: false
       - id: update-snippets-checksum-manifest
         name: Update built-in snippets checksum manifest
         description: "Regenerate snippets/builtin-snippets.sha256 when files under snippets/ change"

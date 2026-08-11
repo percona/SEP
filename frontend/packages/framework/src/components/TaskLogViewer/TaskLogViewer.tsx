@@ -18,6 +18,7 @@
 import DownloadIcon from '@mui/icons-material/Download';
 import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
@@ -165,20 +166,16 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
   const [wrap, setWrap] = useState(false);
 
   const [unreadTypes, setUnreadTypes] = useState<Set<LogType>>(new Set());
-  const [unreadEvents, setUnreadEvents] = useState(false);
   const [unreadSteps, setUnreadSteps] = useState<Set<string>>(new Set());
 
   const prevLogSizesRef = useRef<Record<string, number>>({});
-  const prevEventCountRef = useRef(0);
 
   // Reset view state when switching to a different task history
   useEffect(() => {
     setActiveStep(undefined);
     setUnreadTypes(new Set());
     setUnreadSteps(new Set());
-    setUnreadEvents(false);
     prevLogSizesRef.current = {};
-    prevEventCountRef.current = 0;
   }, [taskHistoryId]);
 
   useEffect(() => {
@@ -225,29 +222,22 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
     }
   }, [textByStep, stepOrder, topTab, activeStep]);
 
-  // Events unread badge on top tab
-  useEffect(() => {
-    const total = Object.values(eventsByStep).reduce((sum, list) => sum + list.length, 0);
-    if (total > prevEventCountRef.current && topTab !== 'events') {
-      setUnreadEvents(true);
-    }
-    prevEventCountRef.current = total;
-  }, [eventsByStep, topTab]);
-
   const handleTopTab = (value: TopTab) => {
     setTopTab(value);
+    // Execution events deliberately carry no unread indicator: they arrive over
+    // SSE on every pushed event, and badging them pulled attention away from
+    // stdout and stderr, which are the reason the console is open.
     if (value === 'events') {
-      setUnreadEvents(false);
-    } else {
-      setUnreadTypes((prev) => {
-        if (!prev.has(value)) {
-          return prev;
-        }
-        const next = new Set(prev);
-        next.delete(value);
-        return next;
-      });
+      return;
     }
+    setUnreadTypes((prev) => {
+      if (!prev.has(value)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.delete(value);
+      return next;
+    });
   };
 
   const handleStepSelect = (step: string) => {
@@ -323,12 +313,19 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
         sx={{ px: 1, pt: 1, borderBottom: 1, borderColor: 'divider' }}
       >
         <Tabs
-          value={topTab}
-          onChange={(_, v: TopTab) => handleTopTab(v)}
-          sx={{ flex: 1, minHeight: 40 }}
+          // The events view is not one of these tabs, so hand MUI `false`
+          // rather than an out-of-range value: no tab reads as active and no
+          // out-of-range warning is logged.
+          value={topTab === 'events' ? false : topTab}
+          onChange={(_, v: LogType) => handleTopTab(v)}
+          sx={{ minHeight: 40 }}
         >
           <Tab
             value="stdout"
+            // MUI gives every tab tabIndex -1 when no tab is selected, which
+            // would strand keyboard users outside the strip while the events
+            // view is open. Keep one entry point; arrow keys move from there.
+            {...(topTab === 'events' ? { tabIndex: 0 } : {})}
             label={
               <Badge color="primary" variant="dot" invisible={!unreadTypes.has('stdout')}>
                 <span>stdout</span>
@@ -343,15 +340,25 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
               </Badge>
             }
           />
-          <Tab
-            value="events"
-            label={
-              <Badge color="primary" variant="dot" invisible={!unreadEvents}>
-                <span>Execution events</span>
-              </Badge>
-            }
-          />
         </Tabs>
+        {/* Subordinate to the primary tabs, but still one click away. */}
+        <Button
+          size="small"
+          color="inherit"
+          onClick={() => handleTopTab('events')}
+          // Not a toggle: a second click is a no-op and the way back is a
+          // primary tab, so mark it as the current view rather than pressed.
+          aria-current={topTab === 'events' ? 'true' : undefined}
+          sx={{
+            ml: 1,
+            textTransform: 'none',
+            color: topTab === 'events' ? 'text.primary' : 'text.secondary',
+            bgcolor: topTab === 'events' ? 'action.selected' : 'transparent',
+          }}
+        >
+          Execution events
+        </Button>
+        <Box sx={{ flex: 1 }} />
         <Stack direction="row" alignItems="center" spacing={1} sx={{ pr: 1 }}>
           {badgeStatus && <StatusBadge status={badgeStatus} />}
           {showLogTailSelect && (
