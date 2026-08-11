@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_891ee346a1279d5d_api_routes_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-08-11 17:53 +0000
+            created at 2026-08-11 21:17 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -209,7 +209,7 @@
     <p class="run run2"><span class="n"><a id="t125" href="#t125">125</a></span><span class="t">        <span class="op">!=</span> <span class="nam">AppLifecycleEnum</span><span class="op">.</span><span class="nam">DISABLING</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t126" href="#t126">126</a></span><span class="t">    <span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t127" href="#t127">127</a></span><span class="t">        <span class="key">return</span> <span class="key">False</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t128" href="#t128">128</a></span><span class="t">    <span class="key">if</span> <span class="key">await</span> <span class="nam">AppRunningTaskManager</span><span class="op">.</span><span class="nam">count</span><span class="op">(</span><span class="nam">session</span><span class="op">,</span> <span class="nam">app_key</span><span class="op">=</span><span class="nam">app_key</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t128" href="#t128">128</a></span><span class="t">    <span class="key">if</span> <span class="key">await</span> <span class="nam">AppRunningTaskManager</span><span class="op">.</span><span class="nam">exists</span><span class="op">(</span><span class="nam">session</span><span class="op">,</span> <span class="nam">app_key</span><span class="op">=</span><span class="nam">app_key</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t129" href="#t129">129</a></span><span class="t">        <span class="key">return</span> <span class="key">False</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t130" href="#t130">130</a></span><span class="t">    <span class="nam">result</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">AppStateManager</span><span class="op">.</span><span class="nam">update_where</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t131" href="#t131">131</a></span><span class="t">        <span class="nam">session</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -336,7 +336,7 @@
             <a class="nav" href="z_891ee346a1279d5d_api_routes_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-08-11 17:53 +0000
+            created at 2026-08-11 21:17 +0000
         </p>
     </div>
 </footer>
