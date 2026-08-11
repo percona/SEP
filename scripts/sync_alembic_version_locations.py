@@ -353,17 +353,24 @@ def main(argv: list[str] | None = None) -> int:
             allow_removals=args.allow_removals,
         )
     except VersionLocationsRemovalError as exc:
+        action = "regenerating would remove" if args.check else "refusing to remove"
+        opt_in = (
+            "Regenerating with `--allow-removals` and without `--check` performs "
+            "the removal, and only belongs on a tree whose migration chain is "
+            "being deleted for good."
+            if args.check
+            else "Re-run with `--allow-removals` only when the migration chain "
+            "is being deleted for good."
+        )
         print(
-            f"{args.ini}: refusing to remove {len(exc.removed)} "
+            f"{args.ini}: {action} {len(exc.removed)} "
             f"[sep] version_locations entry(ies): {', '.join(exc.removed)}. "
             "A configured location missing from disk is how the orphan-head "
             "filter recognises a stripped app, so removing it silently would "
             "disarm that check. Restore the migration directory; or, on a "
             "tree with an app deliberately stripped, skip this script and "
             "run `alembic --name sep upgrade heads` directly — leaving the "
-            "entry in place is what arms the filter. Re-run with "
-            "`--allow-removals` only when the migration chain is being "
-            "deleted for good.",
+            f"entry in place is what arms the filter. {opt_in}",
             file=sys.stderr,
         )
         return 1

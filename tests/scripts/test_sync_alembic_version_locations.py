@@ -500,7 +500,12 @@ class TestRemovalRefusalCli:
         assert ini_path.read_text() == before
 
     def test_check_exits_non_zero_on_a_pruning_tree(self, stripped_tree, capsys):
-        """Fail ``--check`` when entries would be pruned."""
+        """Fail ``--check`` when entries would be pruned, without claiming a refusal.
+
+        ``--check`` never writes, so the remedy that clears a real refusal —
+        re-running with ``--allow-removals`` — clears nothing here. The message
+        has to name the invocation that does perform the removal.
+        """
         ini_path, apps_root = stripped_tree
 
         assert (
@@ -509,7 +514,11 @@ class TestRemovalRefusalCli:
             )
             == 1
         )
-        assert "app/sep/apps/alpha/migrations/versions" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "app/sep/apps/alpha/migrations/versions" in err
+        assert "regenerating would remove" in err
+        assert "refusing to remove" not in err
+        assert "without `--check`" in err
 
     def test_opt_in_flag_writes_and_exits_zero(self, stripped_tree):
         """Let ``--allow-removals`` complete the removing write from the CLI."""
