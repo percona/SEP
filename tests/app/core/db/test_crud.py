@@ -1021,3 +1021,55 @@ async def _seed_nullable_parent_items(session: AsyncSession) -> None:
     )
     await _create_item(session, name="b1", created_at=base_time + timedelta(minutes=2))
     await _create_item(session, name="b2", created_at=base_time + timedelta(minutes=3))
+
+
+class TestExists:
+    """Cover ``BaseManager.exists`` short-circuit existence checks."""
+
+    @pytest.mark.asyncio
+    async def test_exists_false_on_empty_table(self, session: AsyncSession) -> None:
+        """Return ``False`` when the table has no rows."""
+        assert await UniqueKeyManager.exists(session) is False
+
+    @pytest.mark.asyncio
+    async def test_exists_true_with_no_filters(self, session: AsyncSession) -> None:
+        """Return ``True`` when any row exists and no filters are applied."""
+        await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="alpha", label="a"),
+            filter_include={"key"},
+        )
+        assert await UniqueKeyManager.exists(session) is True
+
+    @pytest.mark.asyncio
+    async def test_exists_with_equal_filters(self, session: AsyncSession) -> None:
+        """Apply keyword equal-filters the same way ``count`` does."""
+        await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="alpha", label="a"),
+            filter_include={"key"},
+        )
+        assert await UniqueKeyManager.exists(session, key="alpha") is True
+        assert await UniqueKeyManager.exists(session, key="missing") is False
+
+    @pytest.mark.asyncio
+    async def test_exists_with_whereclause(self, session: AsyncSession) -> None:
+        """Apply a positional ``whereclause`` expression."""
+        await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="alpha", label="keep"),
+            filter_include={"key"},
+        )
+        await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="beta", label="drop"),
+            filter_include={"key"},
+        )
+        assert (
+            await UniqueKeyManager.exists(session, col(UniqueKeyModel.label) == "keep")
+            is True
+        )
+        assert (
+            await UniqueKeyManager.exists(session, col(UniqueKeyModel.label) == "gone")
+            is False
+        )
