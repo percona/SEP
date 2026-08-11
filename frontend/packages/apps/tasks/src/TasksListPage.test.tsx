@@ -163,7 +163,8 @@ describe('TasksListPage', () => {
         serverQuery: expect.anything(),
       }),
     );
-    const props = schemaListViewMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    const lastCall = schemaListViewMock.mock.calls[schemaListViewMock.mock.calls.length - 1];
+    const props = lastCall?.[0] as Record<string, unknown> | undefined;
     expect(props).not.toHaveProperty('serverQuery');
   });
 
