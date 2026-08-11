@@ -584,10 +584,11 @@ async def run_send(send_log_id: UUID) -> None:
         between the enqueue and this attempt.
     :raises HTTPBadRequestException: Propagated when a terminal row cannot be
         written.
-    :raises Exception: Propagated when rolling back a failed settings re-read
-        itself fails. The database is unreachable at that point, so no terminal
-        write was going to land either way and the row is left to the stale
-        sweep.
+    :raises Exception: Propagated when rolling back or refreshing after a failed
+        settings re-read itself fails. Either the database is unreachable, so no
+        terminal write was going to land either way and the row is left to the
+        stale sweep, or the row was deleted under the send, so there is nothing
+        left to write.
     """
     async_session_maker = get_async_session_maker()
     async with async_session_maker() as session:
@@ -614,7 +615,7 @@ async def _resolve_plan_after_refresh(
     A failed republish must not escape and must not invent a fixed reason: this
     runs ahead of the broad terminal guard, so an escaping error would leave the
     row non-terminal until the stale sweep mislabels it as a lost worker, and a
-    fixed "not configured" would turn a deliverable send — one whose in-hand
+    fixed unconfigured reason would turn a deliverable send — one whose in-hand
     snapshot already resolves a usable plan — into a terminal failure on a
     transient database error. Log, roll the session back so an aborted
     transaction does not also fail the terminal write that may still follow,
@@ -628,9 +629,11 @@ async def _resolve_plan_after_refresh(
     :return: The resolution taken against the fresh snapshot, or against the
         snapshot this child already holds when the republish failed.
     :raises Exception: Propagates a ``session.rollback()`` or
-        ``session.refresh()`` that itself fails. The database is unreachable at
-        that point, so no terminal write was going to land either way and the
-        row is left to the stale sweep.
+        ``session.refresh()`` that itself fails. Either the database is
+        unreachable, so no terminal write was going to land either way and the
+        row is left to the stale sweep, or ``row`` was deleted under the send —
+        an incident cascades to its send logs — so there is nothing left to
+        write.
     """
     try:
         await republish_sep_settings_snapshot(session)
@@ -649,15 +652,16 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
 
     A row the stale sweep already failed is left alone: a task delivered late
     enough for that to happen would otherwise resurrect a terminal row and
-    deliver a bundle the UI has already reported as failed -- and, if the
+    deliver a bundle the UI has already reported as failed — and, if the
     engineer re-sent in the meantime, attach it to the case twice.
 
-    The delivery plan is re-read once against a freshly published snapshot
-    before it is resolved, so a send enqueued after an enabling write, a rotated
-    secret, or a changed endpoint is not delivered against a snapshot older
-    than it. The failed row carries whichever reason the resolver gave, so an
-    operator can tell inputs that stopped matching the plan from delivery
-    nobody configured.
+    The delivery settings are re-read once — a fresh snapshot is published —
+    before the plan is resolved, so a send enqueued after an enabling write, a
+    rotated secret, or a changed endpoint is not delivered against a snapshot
+    older than it. A re-read that fails is the one exception: delivery then
+    proceeds against the snapshot this child already holds. The failed row
+    carries whichever reason the resolver gave, so an operator can tell inputs
+    that stopped matching the plan from delivery nobody configured.
 
     :param session: The database session.
     :param row: The send log to drive.
