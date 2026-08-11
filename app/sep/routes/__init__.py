@@ -12,3 +12,13 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+from types import MappingProxyType
+
+STREAMING_PROXY_HEADERS = MappingProxyType({"X-Accel-Buffering": "no"})
+"""Stop an intermediary proxy buffering an incremental response.
+
+Frozen so a route needing extra headers must copy it, as ``download_files``
+does to add ``Content-Disposition``, rather than mutating the shared object
+into every later response.
+"""

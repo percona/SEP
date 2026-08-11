@@ -121,61 +121,31 @@ def restricted_problems(profile: Path, apps_root: Path) -> list[str]:
     return problems
 
 
-def unrestricted_problems(profile: Path, apps_root: Path) -> list[str]:
-    """Report whether an unrestricted image's app tree looks stripped.
-
-    At least one package outside the baked profile's retained set must survive,
-    which is what "the strip did not run" means for an image that ships every
-    app.
-
-    :param profile: The baked settings profile.
-    :param apps_root: The image's ``app/sep/apps`` directory.
-    :return: One entry when nothing outside the retained set survives, empty
-        otherwise.
-    :raises OSError: When the profile cannot be read or ``apps_root`` cannot be
-        listed.
-    :raises yaml.YAMLError: When the profile is not parseable YAML.
-    :raises TypeError: When the profile's root is not a mapping.
-    :raises KeyError: When the profile carries no activation list, or an entry
-        in it declares no module name.
-    """
-    expected = retained_packages(profile)
-    present = present_packages(apps_root)
-
-    if present - expected:
-        return []
-    return [
-        f"no package outside the baked profile's retained set survived, so this "
-        f"image was stripped: found {sorted(present)} within {sorted(expected)}"
-    ]
-
-
 def main() -> None:
     """Compare the running image's app tree against its baked profile.
 
-    Prints the verified app set on success so a build log records which set was
-    asserted, and so a caller can tell a real pass from a checker that never ran.
+    Prints the mode and the verified app set on success so a build log records
+    which property was asserted over which set, and so a caller can tell a real
+    pass from a checker that never ran. ``mode`` accepts only ``restricted``
+    because that is the only image SEP builds; it stays a required positional so
+    the asserted property is named at the call site rather than implied.
 
     :raises SystemExit: With the joined problems when the tree does not match,
-        or with ``argparse``'s own usage message when ``mode`` is neither
-        ``restricted`` nor ``unrestricted``.
+        or with ``argparse``'s own usage message when ``mode`` is not
+        ``restricted``.
     :raises Exception: Propagates every failure the comparison reports —
         ``OSError``, ``yaml.YAMLError``, ``TypeError`` and ``KeyError`` — so an
         unreadable or malformed profile fails the step loudly.
     """
-    checks = {
-        "restricted": restricted_problems,
-        "unrestricted": unrestricted_problems,
-    }
     parser = argparse.ArgumentParser(prog="verify_image_apps", description=__doc__)
-    parser.add_argument("mode", choices=tuple(checks))
+    parser.add_argument("mode", choices=("restricted",))
     parser.add_argument("--app-home", type=Path, default=APP_HOME)
     arguments = parser.parse_args()
 
     profile = arguments.app_home / "settings.yaml"
     apps_root = arguments.app_home / "app" / "sep" / "apps"
 
-    problems = checks[arguments.mode](profile, apps_root)
+    problems = restricted_problems(profile, apps_root)
     if problems:
         sys.exit("\n".join(problems))
 
