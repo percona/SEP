@@ -139,8 +139,8 @@ owning none needs no entry, and must not carry one.
 
 On this image an `SEP.APPS` override can therefore only **narrow** the baked
 set, never widen it. Registry construction imports each activated module, so
-activating a package the image does not ship raises `ModuleNotFoundError` and
-the container fails to start. The two surfaces that reach `SEP.APPS` are a bind
+activating a package the image does not ship raises a pydantic `ValidationError`
+(wrapping `No module named app.sep.apps.<name>`) and the container fails to start. The two surfaces that reach `SEP.APPS` are a bind
 mount at `/home/sep/app/settings.yaml` (which, per above, replaces the profile
 wholesale — so its `SEP.APPS` must be a subset of the baked one) and the
 `SEP__APPS` environment variable; the runtime settings-override API cannot,

@@ -127,13 +127,13 @@ In the current implementation:
 
 SEP does distinguish admin users for some operations, such as snippet approval and certain administrative routes, but task log viewing is not currently restricted to admin users only.
 
-Customer access depends on deployment and identity configuration. The current SEP application has no built-in customer-tenant identity model. If customer users are provisioned in Casdoor as authenticated SEP users, they can see all task history and logs that any other authenticated user can see — there is no per-customer or per-tenant row filter. The standard deployment pattern is that customers are not provisioned in SEP, and the SEP UI is reachable only by Percona personnel.
+Customer access depends on deployment and identity configuration. The current SEP application has no built-in customer-tenant identity model. If customer users are provisioned in the configured identity provider (Grafana in the embedded deployment) as authenticated SEP users, they can see all task history and logs that any other authenticated user can see — there is no per-customer or per-tenant row filter. The standard deployment pattern is that customers are not provisioned in SEP, and the SEP UI is reachable only by Percona personnel.
 
 Access is controlled by:
 
-- Casdoor OAuth/JWT authentication for human users. The React SPA carries a Casdoor-issued access token as an `Authorization: Bearer` header; the refresh token is held by the browser as an `HttpOnly` cookie scoped to `/api/oauth`. Legacy Jinja2 routes (during the API-First migration window) carry a signed session cookie; those routes also require a CSRF token.
+- Grafana session exchange for human users in the shipped PMM-embedded deployment. The browser's PMM session cookie rides a same-origin request to `POST /api/oauth/session-exchange`; SEP validates the session against Grafana and returns a short-lived SEP-signed bearer in the response body — no SEP cookie is set and no refresh token is issued. Casdoor OAuth/JWT remains a configurable alternative.
 - Optional internal bearer-token authentication through `SEP_INTERNAL_TOKEN` for service-to-service calls.
-- Transport security, including HTTPS at the Nginx ingress and configured service-to-service TLS/mTLS for SEP↔Tasks/Inventory and Tasks↔Nomad.
+- Transport security, including HTTPS at PMM's Nginx ingress and configured service-to-service TLS/mTLS for SEP↔Tasks/Inventory and Tasks↔Nomad.
 - Deployment-level controls around network access, database access, Nomad API access, and infrastructure log access.
 
 The current application does not implement customer-specific log tenancy or role-based filtering for task stdout/stderr logs.
