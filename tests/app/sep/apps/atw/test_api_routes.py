@@ -43,6 +43,7 @@ from app.sep.apps.atw.models import (
     AtwIncidentResponse,
 )
 from app.sep.deps import BEARER_REQUIRED_DETAIL
+from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 
 _GENERIC_ROOT = CATEGORY_ROOT_LABELS["generic"]
@@ -65,6 +66,38 @@ def _mock_atw_snippet(
         meta["service_type"] = service_type
     snippet.meta = meta
     return snippet
+
+
+async def _persist_atw_snippet(
+    session: AsyncSession,
+    *,
+    filename: str,
+    atw: list[str],
+    service_type: str = "mysql",
+    approved: bool,
+) -> Snippet:
+    """Persist a real ``Snippet`` row tagged for the ATW browser.
+
+    :param session: The database session.
+    :param filename: The snippet's filename.
+    :param atw: The ATW category tags to record under ``meta["atw"]``.
+    :param service_type: The service type to record under ``meta["service_type"]``.
+    :param approved: Whether the persisted snippet should carry an ``approved_at``.
+    :return: The persisted ``Snippet`` row.
+    """
+    snippet = Snippet(
+        filename=filename,
+        size=100,
+        md5_digest="a" * 32,
+        approved_at=utc_now() if approved else None,
+        meta={
+            "title": f"Title for {filename}",
+            "description": "desc",
+            "service_type": service_type,
+            "atw": atw,
+        },
+    )
+    return await SnippetManager.create(session, snippet)
 
 
 class TestAtwListEndpoint:
@@ -303,6 +336,171 @@ class TestAtwListEndpoint:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.headers["content-type"].startswith("application/json")
+
+
+class TestAtwListApprovalFilter:
+    """Verify persisted unapproved snippets get excluded from ATW listings.
+
+    Unlike ``TestAtwListEndpoint``, these tests do not mock ``SnippetManager.list``
+    so they exercise the real approval predicate against a real SQL query.
+    """
+
+    @pytest.mark.asyncio
+    async def test_unapproved_snippet_is_absent(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Ensure an unapproved ATW-tagged snippet never appears in the listing."""
+        await _persist_atw_snippet(
+            session,
+            filename="unapproved.sh",
+            atw=["OVERALL_SLOWNESS"],
+            approved=False,
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
+    @pytest.mark.asyncio
+    async def test_approved_snippet_present_with_accurate_count(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Ensure an approved ATW-tagged snippet is still listed, via a real query."""
+        await _persist_atw_snippet(
+            session,
+            filename="approved.sh",
+            atw=["OVERALL_SLOWNESS"],
+            approved=True,
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert payload[0]["snippet_count"] == 1
+        assert payload[0]["snippets"][0]["name"] == "approved.sh"
+
+    @pytest.mark.asyncio
+    async def test_all_unapproved_category_produces_no_row(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Ensure a category whose snippets are all unapproved is omitted entirely."""
+        await _persist_atw_snippet(
+            session, filename="a.sh", atw=["OVERALL_SLOWNESS"], approved=False
+        )
+        await _persist_atw_snippet(
+            session, filename="b.sh", atw=["OVERALL_SLOWNESS"], approved=False
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
+    @pytest.mark.asyncio
+    async def test_mixed_approval_count_reflects_only_approved(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Ensure a category's count and membership exclude only the unapproved row."""
+        await _persist_atw_snippet(
+            session, filename="approved.sh", atw=["OVERALL_SLOWNESS"], approved=True
+        )
+        await _persist_atw_snippet(
+            session, filename="unapproved.sh", atw=["OVERALL_SLOWNESS"], approved=False
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert payload[0]["snippet_count"] == 1
+        assert payload[0]["snippets"][0]["name"] == "approved.sh"
+
+    @pytest.mark.asyncio
+    async def test_unapproved_multi_tag_snippet_excluded_from_every_cell(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Ensure an unapproved snippet is excluded from every tag it is grouped under."""
+        await _persist_atw_snippet(
+            session,
+            filename="multi-tag.sh",
+            atw=["OVERALL_SLOWNESS", "GALERA"],
+            approved=False,
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
+    @pytest.mark.asyncio
+    async def test_unapproved_snippet_in_another_category_does_not_hide_approved_one(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Ensure the filter is applied per-row, not just within a shared cell."""
+        await _persist_atw_snippet(
+            session, filename="approved.sh", atw=["OVERALL_SLOWNESS"], approved=True
+        )
+        await _persist_atw_snippet(
+            session, filename="unapproved.sh", atw=["GALERA"], approved=False
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert payload[0]["category"] == "OVERALL_SLOWNESS"
+        assert payload[0]["snippets"][0]["name"] == "approved.sh"
+
+    @pytest.mark.asyncio
+    async def test_approved_snippet_with_non_list_atw_meta_is_still_ignored(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Ensure approval does not bypass the ``meta["atw"]`` list-shape check."""
+        snippet = await _persist_atw_snippet(
+            session, filename="bad-meta.sh", atw=[], approved=True
+        )
+        snippet.meta["atw"] = "OVERALL_SLOWNESS"
+        await SnippetManager.save(session, snippet)
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
+    @pytest.mark.asyncio
+    async def test_revoked_snippet_disappears_from_a_later_listing(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Ensure revoking a previously-approved snippet drops it on the next call."""
+        snippet = await _persist_atw_snippet(
+            session, filename="revoked.sh", atw=["OVERALL_SLOWNESS"], approved=True
+        )
+
+        first = await async_api_client.get("/api/apps/atw/")
+        assert first.json()[0]["snippets"][0]["name"] == "revoked.sh"
+
+        snippet.approved_at = None
+        await SnippetManager.save(session, snippet)
+
+        second = await async_api_client.get("/api/apps/atw/")
+
+        assert second.status_code == status.HTTP_200_OK
+        assert second.json() == []
+
+    @pytest.mark.asyncio
+    async def test_no_snippets_returns_empty_list(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Ensure an empty snippet table returns an empty listing, not an error."""
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
 
 
 class TestAtwSchemaEndpoint:
