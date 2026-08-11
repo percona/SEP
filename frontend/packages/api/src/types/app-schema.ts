@@ -359,6 +359,12 @@ export interface ListView {
   columns: ListColumn[];
   /** Column key to sort by. Prefix with '-' for descending (e.g. '-last_run'). */
   default_sort?: string;
+  /**
+   * When true, the list endpoint honors whole-result-set sort/search via server
+   * query params; SchemaListView enables manualSorting/manualFiltering only then.
+   * Omitted (or undefined) keeps client-side sort/filter over the loaded page.
+   */
+  server_side_query?: boolean;
   /** Extra record-level keys to hide from the detail Overview — both the list_view.columns rows and the extras loop, across single-task and multi-entity detail views — merged with the framework baseline. */
   overview_hidden_fields?: string[];
 }
