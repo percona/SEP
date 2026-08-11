@@ -93,10 +93,12 @@ def _sep_version_locations() -> tuple[str, ...]:
 
     Interpolation stays off so the entries keep their ``%(here)s`` prefix, which
     resolves against ``alembic.ini`` rather than the process's directory. The
-    split mirrors ``scripts/sync_alembic_version_locations.py``, which writes the
-    value with a hardcoded ``:`` rather than reading ``version_path_separator``;
+    split mirrors ``scripts/sync_alembic_version_locations.py``, which joins on
+    its own ``ENTRY_SEPARATOR`` rather than reading ``version_path_separator``;
     that key names a separator Alembic resolves through its own keyword table, so
-    reading it back is not the same as knowing how the value was joined.
+    reading it back is not the same as knowing how the value was joined. The two
+    spellings are held equal by
+    ``tests/scripts/test_sync_alembic_version_locations.py``.
 
     :return: The configured entries, in configuration order.
     """
