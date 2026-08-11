@@ -354,8 +354,8 @@ class TestConnectivityCheckEndpointRealSession:
         assert data["success"] is True
         assert data["error"] is None
         assert call_count["n"] >= MIN_POLL_ITERATIONS
-        assert await TaskHistoryLogManager.exists_for_task(
-            session, data["task_history_id"]
+        assert await TaskHistoryLogManager.exists(
+            session, task_history_id=data["task_history_id"]
         )
 
     async def test_provisioning_latency_does_not_false_negative_over_http(
@@ -481,8 +481,8 @@ class TestConnectivityCheckEndpointRealSession:
         # Provisioning spanned more polls than the connect budget alone permits,
         # yet the check still succeeded — the budgets are independent.
         assert call_count["n"] > connect_budget // POLL_INTERVAL
-        assert await TaskHistoryLogManager.exists_for_task(
-            session, data["task_history_id"]
+        assert await TaskHistoryLogManager.exists(
+            session, task_history_id=data["task_history_id"]
         )
 
     async def test_timeout_surfaces_partial_logs_and_id_over_http(
@@ -599,6 +599,6 @@ class TestConnectivityCheckEndpointRealSession:
         assert "timed out" in data["error"]
         assert "installing deps..." in data["error"]
         assert data["task_history_id"] is not None
-        assert await TaskHistoryLogManager.exists_for_task(
-            session, data["task_history_id"]
+        assert await TaskHistoryLogManager.exists(
+            session, task_history_id=data["task_history_id"]
         )
