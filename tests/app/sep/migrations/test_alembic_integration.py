@@ -23,6 +23,8 @@ any misconfigured ``version_locations`` or plugin-discovery regression.
 
 import io
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from logging.config import dictConfig, fileConfig
 
 import pytest
@@ -65,45 +67,50 @@ _SKEW_NOTICE = (
 )
 
 
-def _apply_app_then_alembic_logging(stream: io.StringIO) -> logging.Logger:
+@contextmanager
+def _app_then_alembic_logging(stream: io.StringIO) -> Iterator[logging.Logger]:
     """Install app Rich logging, then alembic fileConfig, redirect console to ``stream``.
 
     Reproduces the real order: settings-driven ``dictConfig`` runs during env
     imports, then ``fileConfig(..., disable_existing_loggers=False)`` runs in
     ``env.py``. Redirect the alembic console handler stream so assertions see
-    rendered bytes, not ``caplog`` records.
+    rendered bytes, not ``caplog`` records. Restore ``LOGGING_CONFIG`` on exit so
+    handlers/levels do not leak into later tests.
     """
-    dictConfig(LOGGING_CONFIG)
-    fileConfig(str(ALEMBIC_INI), disable_existing_loggers=False)
-    root = logging.getLogger()
-    for handler in root.handlers:
-        if isinstance(handler, logging.StreamHandler) and not isinstance(
-            handler, RichHandler
-        ):
-            handler.setStream(stream)
-    app_logger = logging.getLogger("app")
-    for handler in app_logger.handlers:
-        if isinstance(handler, logging.StreamHandler):
-            handler.setStream(stream)
-    return logging.getLogger(_ORPHAN_HEADS_LOGGER)
+    try:
+        dictConfig(LOGGING_CONFIG)
+        fileConfig(str(ALEMBIC_INI), disable_existing_loggers=False)
+        root = logging.getLogger()
+        for handler in root.handlers:
+            if isinstance(handler, logging.StreamHandler) and not isinstance(
+                handler, RichHandler
+            ):
+                handler.setStream(stream)
+        app_logger = logging.getLogger("app")
+        for handler in app_logger.handlers:
+            if isinstance(handler, logging.StreamHandler):
+                handler.setStream(stream)
+        yield logging.getLogger(_ORPHAN_HEADS_LOGGER)
+    finally:
+        dictConfig(LOGGING_CONFIG)
 
 
 def test_app_logger_after_alembic_fileconfig_uses_console_not_rich():
-    """After alembic fileConfig, app uses the console StreamHandler, not Rich."""
+    """Assert alembic fileConfig replaces RichHandler with the console StreamHandler."""
     stream = io.StringIO()
-    _apply_app_then_alembic_logging(stream)
-    app_logger = logging.getLogger("app")
-    assert not app_logger.propagate
-    assert app_logger.handlers, "app logger must keep an explicit handler"
-    assert not any(isinstance(h, RichHandler) for h in app_logger.handlers)
-    assert any(isinstance(h, logging.StreamHandler) for h in app_logger.handlers)
+    with _app_then_alembic_logging(stream):
+        app_logger = logging.getLogger("app")
+        assert not app_logger.propagate
+        assert app_logger.handlers, "app logger must keep an explicit handler"
+        assert not any(isinstance(h, RichHandler) for h in app_logger.handlers)
+        assert any(isinstance(h, logging.StreamHandler) for h in app_logger.handlers)
 
 
 def test_orphan_skip_warning_renders_as_single_greppable_line():
     """Skip notice stays one line with every revision id and path greppable."""
     stream = io.StringIO()
-    logger = _apply_app_then_alembic_logging(stream)
-    logger.warning(_SKIP_NOTICE)
+    with _app_then_alembic_logging(stream) as logger:
+        logger.warning(_SKIP_NOTICE)
     output = stream.getvalue()
     matching = [line for line in output.splitlines() if "a1b2c3d4e5f6" in line]
     assert len(matching) == 1, output
@@ -122,10 +129,10 @@ def test_orphan_skip_warning_renders_as_single_greppable_line():
 
 
 def test_version_skew_error_renders_as_single_greppable_line():
-    """Version-skew ERROR renders as one greppable line through the console handler."""
+    """Render the version-skew ERROR as one greppable console line."""
     stream = io.StringIO()
-    logger = _apply_app_then_alembic_logging(stream)
-    logger.error(_SKEW_NOTICE)
+    with _app_then_alembic_logging(stream) as logger:
+        logger.error(_SKEW_NOTICE)
     output = stream.getvalue()
     matching = [line for line in output.splitlines() if UNKNOWN_REVISION in line]
     assert len(matching) == 1, output
