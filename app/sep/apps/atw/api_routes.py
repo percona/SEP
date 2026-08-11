@@ -24,6 +24,7 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, HTTPException, Query, status
 from kombu.exceptions import KombuError
 from pydantic import BaseModel, UUID4
+from sqlmodel import col
 
 from app.core.exceptions import (
     HTTPNotFoundException,
@@ -168,9 +169,9 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     the ATW enum still defines the full taxonomy for validation (plugin schema).
 
     :param session: The database session.
-    :return: One listing row per category that has at least one snippet.
+    :return: One listing row per category that has at least one approved snippet.
     """
-    snippets = await SnippetManager.list(session)
+    snippets = await SnippetManager.list(session, col(Snippet.approved_at).is_not(None))
     snippets_by_cell = defaultdict(list)
     for snippet in snippets:
         root = derive_category_root(snippet.meta.get("service_type"))
