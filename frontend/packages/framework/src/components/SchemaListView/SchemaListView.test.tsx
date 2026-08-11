@@ -328,3 +328,87 @@ describe('SchemaListView — server pagination', () => {
     expect(screen.getByLabelText(/Go to next page/i)).toBeDisabled();
   });
 });
+
+describe('SchemaListView — server-side query gate', () => {
+  const pageRows = [
+    { id: 1, name: 'alpha', status: 'completed' },
+    { id: 2, name: 'beta', status: 'completed' },
+  ];
+
+  const serverListView: ListView = {
+    columns: [
+      { key: 'name', label: 'Name', sortable: true },
+      { key: 'status', label: 'Status', format: 'status' },
+    ],
+    default_sort: 'name',
+    server_side_query: true,
+  };
+
+  it('does not show the global search box when the capability is off', () => {
+    render(
+      <SchemaListView
+        listView={listView}
+        data={pageRows}
+        pagination={{
+          total: 2,
+          offset: 0,
+          limit: 50,
+          onChange: vi.fn(),
+        }}
+        serverQuery={{
+          sort: 'name',
+          onSortChange: vi.fn(),
+          onSearchChange: vi.fn(),
+        }}
+      />,
+    );
+
+    expect(screen.queryByPlaceholderText(/search/i)).toBeNull();
+  });
+
+  it('shows the global search box and routes search through onSearchChange', async () => {
+    vi.useFakeTimers();
+    const onSearchChange = vi.fn();
+    const { fireEvent } = await import('@testing-library/react');
+    render(
+      <SchemaListView
+        listView={serverListView}
+        data={pageRows}
+        pagination={{
+          total: 2,
+          offset: 0,
+          limit: 50,
+          onChange: vi.fn(),
+        }}
+        serverQuery={{
+          sort: 'name',
+          onSortChange: vi.fn(),
+          onSearchChange,
+        }}
+      />,
+    );
+
+    const searchBox = screen.getByPlaceholderText(/search/i);
+    fireEvent.change(searchBox, { target: { value: 'db' } });
+    // MRT debounces setGlobalFilter by 500ms when manualFiltering is on.
+    await vi.advanceTimersByTimeAsync(500);
+    expect(onSearchChange).toHaveBeenCalledWith('db');
+    vi.useRealTimers();
+  });
+
+  it('keeps nested capability-on lists client-side when pagination is absent', () => {
+    render(
+      <SchemaListView
+        listView={serverListView}
+        data={pageRows}
+        serverQuery={{
+          sort: 'name',
+          onSortChange: vi.fn(),
+          onSearchChange: vi.fn(),
+        }}
+      />,
+    );
+
+    expect(screen.queryByPlaceholderText(/search/i)).toBeNull();
+  });
+});
