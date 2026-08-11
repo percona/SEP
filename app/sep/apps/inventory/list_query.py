@@ -23,15 +23,32 @@ than ORM columns so this module never imports ``app.inventory`` models — the
 proxy only needs the public sort keys, searchable attribute names, and
 defaults, which must match the upstream inventory managers' allowlists and
 the inventory plugin ``ListView.default_sort`` values.
+
+The shared ``GET /{entity}/`` route serves four entities, so the dependency
+reads the path segment, dispatches to the matching spec, and validates
+``sort`` / ``search`` against that entity alone. OpenAPI documents the union of
+every entity's allowlist; per-entity validation still rejects a key that is
+legal for another entity but not this one.
 """
 
 from __future__ import annotations
 
 from types import MappingProxyType
+from typing import Annotated
 
+from fastapi import Depends, Query
 from sqlalchemy import column
 
-from app.core.db.list_query import ListQuerySpec
+from app.core.db.list_query import (
+    ListQuerySpec,
+    SORT_PARAM_DESCRIPTION,
+    search_query_param,
+)
+from app.sep.apps.framework.list_query import (
+    InMemoryListQuery,
+    build_in_memory_list_query,
+)
+from app.sep.apps.inventory.deps import require_inventory_plugin_entity
 
 _NODES_SPEC = ListQuerySpec(
     sortable={
@@ -86,4 +103,52 @@ ENTITY_LIST_QUERY_SPECS: MappingProxyType[str, ListQuerySpec] = MappingProxyType
     }
 )
 
-__all__ = ["ENTITY_LIST_QUERY_SPECS"]
+# Union of every entity's public sort keys (both directions). Documents the
+# shared route's OpenAPI enum; runtime validation still uses the per-entity
+# allowlist so a schemas-only key is rejected on nodes.
+_UNION_SORT_ENUM = [
+    value
+    for key in sorted(
+        {key for spec in ENTITY_LIST_QUERY_SPECS.values() for key in spec.sortable}
+    )
+    for value in (key, f"-{key}")
+]
+
+
+def inventory_list_query(
+    entity: str,
+    sort: str | None = Query(
+        default=None,
+        description=SORT_PARAM_DESCRIPTION,
+        json_schema_extra={"enum": _UNION_SORT_ENUM},
+    ),
+    search: str | None = search_query_param(),
+) -> InMemoryListQuery:
+    """Resolve ``sort`` / ``search`` against the entity's list-query allowlist.
+
+    ``sort`` defaults to ``None`` rather than a single shared default because one
+    OpenAPI declaration cannot carry four different entity defaults; an omitted
+    ``sort`` resolves to the matching spec's ``default_sort``.
+
+    :param entity: Inventory entity URL segment (``nodes``, ``services``,
+        ``schemas``, or ``tables``).
+    :param sort: Requested public sort key, optionally ``-`` prefixed, or
+        ``None`` for the entity default.
+    :param search: Raw search term, or ``None`` when unset.
+    :return: The allowlist-vetted in-memory list query.
+    :raises HTTPNotFoundException: When ``entity`` is unknown.
+    :raises HTTPUnprocessableEntityException: When ``sort`` is outside the
+        entity's allowlist.
+    """
+    entity = require_inventory_plugin_entity(entity)
+    spec = ENTITY_LIST_QUERY_SPECS[entity]
+    return build_in_memory_list_query(spec, sort or spec.default_sort, search)
+
+
+InventoryListQueryDep = Annotated[InMemoryListQuery, Depends(inventory_list_query)]
+
+__all__ = [
+    "ENTITY_LIST_QUERY_SPECS",
+    "InventoryListQueryDep",
+    "inventory_list_query",
+]
