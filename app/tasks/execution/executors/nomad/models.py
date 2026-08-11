@@ -68,7 +68,7 @@ from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundError,
     JobNotFoundError,
 )
-from app.tasks.execution.executors.nomad.steps import NOMAD_STEP_ANONYMIZE, NomadStep
+from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
 from app.tasks.logs.line_split import split_complete_lines
@@ -95,9 +95,7 @@ NOMAD_DEAD_JOB_STATUS = "dead"
 _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
 
-_ANONYMIZED_STEPS: frozenset[str] = frozenset(
-    step.value for step, anonymize in NOMAD_STEP_ANONYMIZE.items() if anonymize
-)
+_ANONYMIZED_STEPS: frozenset[NomadStep] = NomadStep.anonymized()
 
 
 def _should_anonymize(step: str, anonymize_entities: set[PIIEntity] | None) -> bool:

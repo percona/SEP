@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Canonical Nomad task/step names used inside Nomad job specs.
+"""Define the canonical Nomad task/step names used inside Nomad job specs.
 
 This module is a pure leaf: it imports nothing beyond ``enum`` so callers can
 name a step without constructing the Nomad executor. Wire values are spelled
@@ -34,7 +34,17 @@ class NomadStep(StrEnum):
     PREPARE_ENV = "prepare-env"
     CLEAN_UP = "clean-up"
     CHECK_STALENESS = "check-staleness"
-    STEP1 = "step1"  # legacy — only historical logs / frozen migration
+    STEP1 = "step1"
+
+    @classmethod
+    def anonymized(cls) -> frozenset["NomadStep"]:
+        """Return the steps whose log output is PII-anonymized.
+
+        :return: The frozen set of steps classified as anonymized.
+        """
+        return frozenset(
+            step for step, anonymize in NOMAD_STEP_ANONYMIZE.items() if anonymize
+        )
 
 
 NOMAD_STEP_ANONYMIZE: dict[NomadStep, bool] = {
