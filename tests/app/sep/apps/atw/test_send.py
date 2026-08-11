@@ -19,7 +19,7 @@ import io
 import json
 import os
 import zipfile
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
@@ -225,18 +225,6 @@ def _fake_tasks_api(
     api.stream_chunks.side_effect = lambda *_a, **_k: _chunks(b"data!")
     api.stream.side_effect = lambda *_a, **_k: _ndjson(records)
     return _patch_tasks_api(mocker, api)
-
-
-@pytest.fixture(autouse=True)
-def _clear_sep_settings_snapshot() -> Iterator[None]:
-    """Clear the proxy snapshot after each test so a republish cannot leak keys.
-
-    Every send now republishes into the global proxy, and a sibling test's
-    ``mocker.patch.object`` on the wrapped instance would otherwise be shadowed
-    by a leftover snapshot key.
-    """
-    yield
-    sep_settings._set_snapshot({})
 
 
 @pytest_asyncio.fixture(name="send_session")
