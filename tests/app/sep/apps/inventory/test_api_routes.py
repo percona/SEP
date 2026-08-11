@@ -46,6 +46,7 @@ _MYSQL_PORT = 3306
 _TASK_HISTORY_ID = 42
 _ENVELOPE_TOTAL = 7
 _FILTERED_TOTAL = 3
+_PAGE_ITEM_COUNT = 2
 _REQUEST_OFFSET = 2
 _REQUEST_LIMIT = 5
 _UPSTREAM_OFFSET = 99
@@ -205,7 +206,7 @@ class TestInventoryGateway:
     ):
         """Ensure the proxied total is the upstream filtered total, never ``len(items)``."""
         mock_inventory_api_dep.get.return_value = {
-            "items": [{"id": 1}, {"id": 2}],
+            "items": [{"id": i} for i in range(1, _PAGE_ITEM_COUNT + 1)],
             "total": _FILTERED_TOTAL,
             "offset": 0,
             "limit": _REQUEST_LIMIT,
@@ -216,7 +217,7 @@ class TestInventoryGateway:
         )
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        assert len(body["items"]) == 2
+        assert len(body["items"]) == _PAGE_ITEM_COUNT
         assert body["total"] == _FILTERED_TOTAL
         assert body["total"] != len(body["items"])
         mock_inventory_api_dep.get.assert_awaited_once_with(
