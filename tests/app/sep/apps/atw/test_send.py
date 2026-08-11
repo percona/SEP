@@ -892,7 +892,7 @@ class TestRunSendStaleSnapshot:
         uploader: _FakeUploader,
         mocker: MockerFixture,
     ) -> None:
-        """Re-read the override row even when the held snapshot already resolves."""
+        """Read the override row again even when the held snapshot already resolves."""
         overrides_read = mocker.spy(SettingsOverrideManager, "list")
         row = await _seed_send_log(send_session)
 
@@ -911,8 +911,8 @@ class TestRunSendStaleSnapshot:
     ) -> None:
         """Deliver against stored inputs that differ from a still-valid stale snapshot.
 
-        A stale-but-valid snapshot resolves on the first read, so the pre-SEP-1781
-        refresh gate would never fire; the send must still pick up the rotated
+        A stale-but-valid snapshot resolves on the first read, so a refresh gated on
+        an unresolved plan would never fire; the send must still pick up the rotated
         secret and the repointed endpoint from the stored row.
 
         The stale values are published as a proxy snapshot rather than patched onto
