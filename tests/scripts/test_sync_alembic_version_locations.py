@@ -405,7 +405,9 @@ class TestRemovalRefusal:
         assert sync_alembic_version_locations.sync_alembic_ini(
             ini_path, apps_root, allow_removals=True
         )
-        assert "app/sep/apps/alpha/migrations/versions" not in ini_path.read_text()
+        remaining = ini_path.read_text()
+        assert "app/sep/migrations/versions" in remaining
+        assert "app/sep/apps/alpha/migrations/versions" not in remaining
 
     def test_a_cosmetically_different_spelling_is_not_a_removal(self, stripped_tree):
         """Compare normalised paths, so a trailing slash still writes.
@@ -536,4 +538,6 @@ class TestRemovalRefusalCli:
             )
             == 0
         )
-        assert "app/sep/apps/alpha/migrations/versions" not in ini_path.read_text()
+        remaining = ini_path.read_text()
+        assert "app/sep/migrations/versions" in remaining
+        assert "app/sep/apps/alpha/migrations/versions" not in remaining

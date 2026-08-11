@@ -169,6 +169,7 @@ class TestFailClosedDiagnostic:
         """Leave a stripped app in play: a pruned entry hides the evidence."""
         message = self._read_fail_closed_error(sep_script, caplog)
 
+        assert message
         assert "not a stripped app" not in message
 
     def test_names_what_the_operator_has_to_look_at(self, sep_script, caplog):
