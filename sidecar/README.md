@@ -1,31 +1,28 @@
 # SEP consolidated side-car image
 
-A frontend-less variant of the SEP image, built for embedding SEP inside a PMM
+The SEP image is frontend-less, built for embedding SEP inside a PMM
 deployment. One `supervisord` runs the five SEP programs plus a bundled Valkey
 broker under a single PID 1, so the whole product ships as one container with
 one log stream.
 
-Build it with `make image-sidecar` (tag `sep:${RELEASE_VER}-sidecar`). Jenkins
-builds and publishes the same tag with a `-sidecar` suffix on both the internal
-and Docker Hub registries.
+Build it with `make image` (tag `sep:${RELEASE_VER}`, no suffix). This is the
+only image SEP ships; Jenkins builds and publishes that one tag to the internal
+registry, and to Docker Hub when the build's `pushImageDocker` parameter is set.
 
-An **app-restricted** variant of the same image is built by
-`make image-sidecar-embedded` (tag `sep:${RELEASE_VER}-embedded`). It is the
-side-car recipe with the app strip switched on, so it ships only the app
-packages the embedded settings profile activates — see [App set](#app-set).
-Jenkins builds and publishes it alongside the other two.
+The image is **app-restricted**: the app strip is switched on, so it ships only
+the app packages the settings profile activates — see [App set](#app-set).
 
 ## What it contains
 
 | Input | Role |
 |---|---|
-| `Containerfile.sidecar` | Final stage; mirrors the standalone `Dockerfile` minus the frontend-builder stage, and reuses the shared `sep:builder` wheel image. |
+| `Containerfile.sidecar` | Final stage; ships the backend only, with no frontend-builder stage, and reuses the shared `sep:builder` wheel image. |
 | `entrypoint.sh` | PID 1. Mints the broker credential for the container run, then hands off to `supervisord`. |
 | `supervisord.conf` | Runs `valkey`, three `migrate-*` one-shots, the `sep`/`inventory`/`tasks` APIs, and the Celery worker and beat. |
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables, leaving unexported any name a file under `SECRETS_DIR` already supplies. |
-| `settings.embedded.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
-| `restrict_apps.py` | Build-step strip for the app-restricted variant; removes every app package the baked profile does not activate. Removed during the build, so it is not present in the final image. |
+| `settings.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
+| `restrict_apps.py` | Build-step strip: removes every app package the baked profile does not activate. Deleted in the same `RUN`, so `make image`'s squashed build ships no copy of it. |
 | `verify_image_apps.py` | Post-build assertion that an image's app set matches its own baked profile. Piped into the image, never copied into it. |
 | `verify_image_apps.sh` | Runs `verify_image_apps.py` inside an already-built image; used by both CI and the Jenkins build. |
 
@@ -34,7 +31,7 @@ silently discards the `HEALTHCHECK` instruction.
 
 ## Runtime configuration
 
-`sidecar/settings.embedded.yaml` is baked into the image at
+`sidecar/settings.yaml` is baked into the image at
 `/home/sep/app/settings.yaml`, so the container comes up on a working
 PMM-embedded profile with no mount. It carries no secrets: the values that vary
 per deployment arrive as environment variables, which outrank the file.
@@ -102,17 +99,15 @@ set, say — is left as it found it, and the mount goes unused.
 
 ### App set
 
-The app-restricted image ships exactly the apps `settings.embedded.yaml`'s
+The app-restricted image ships exactly the apps `settings.yaml`'s
 `SEP.APPS` activates, plus `framework` and `shared`, which shipped modules reach
 and which the activation list never names. Nothing else declares the set: changing
 which apps the image ships is an edit to `SEP.APPS` and nothing else, and the
 build fails if an activated app has no package to keep.
 
-The strip is driven by the `SEP_RESTRICT_APPS` build argument, which
-`image-sidecar-embedded` passes as `1`. Only the exact value `1` strips
-anything; the argument defaults to `0`, and any other value leaves the image
-unrestricted — which is why the general side-car build, which never passes it,
-keeps every app package.
+The strip is driven by the `SEP_RESTRICT_APPS` build argument, which `image`
+passes as `1`. Only the exact value `1` strips anything; the argument defaults
+to `0`, and any other value leaves the image unrestricted.
 
 The set is asserted on the **published artifact**, not on a rebuild of it:
 `verify_image_apps.sh` pipes `verify_image_apps.py` into an already-built
@@ -120,9 +115,7 @@ image's own interpreter, and both CI and the Jenkins build call it before
 anything is pushed. The check re-derives the expected set from the profile the
 image itself bakes rather than importing `restrict_apps.py` — which the build
 deletes from the image anyway, and which could only ever agree with the tree it
-produced. The general side-car image is checked in the opposite direction, so a
-`SEP_RESTRICT_APPS` value leaking into that build is caught rather than
-published. A run prints the set it verified, because a checker that silently
+produced. A run prints the set it verified, because a checker that silently
 never ran would otherwise be indistinguishable from a passing one.
 
 The strip removes an app's directory and leaves its `version_locations` entry in
@@ -148,10 +141,6 @@ mount at `/home/sep/app/settings.yaml` (which, per above, replaces the profile
 wholesale — so its `SEP.APPS` must be a subset of the baked one) and the
 `SEP__APPS` environment variable; the runtime settings-override API cannot,
 because `SEP.APPS` is absent from `SETTINGS_OVERRIDE.ALLOWED_KEYS`.
-
-The two unrestricted images (`sep:${RELEASE_VER}` and
-`sep:${RELEASE_VER}-sidecar`) ship every app package, so neither constraint
-applies to them.
 
 ### Deployment inputs
 
@@ -281,7 +270,7 @@ special case: any deployment can set it (bare env var
 default everywhere else — keeps every overridable setting overridable. It can
 never be changed through the API, only through the deployment's own
 configuration. This image carries it under `SETTINGS_OVERRIDE:` in
-`settings.embedded.yaml`, so the bind mount that replaces that file is what
+`settings.yaml`, so the bind mount that replaces that file is what
 changes the list. A replacement that omits the key does not preserve the
 shipped list — it lifts the restriction entirely, since an absent key reads the
 same as a deployment that never set one. An environment variable of the same
