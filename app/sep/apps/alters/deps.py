@@ -23,15 +23,9 @@ from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import Depends
-from pydantic import BaseModel, ValidationError
 
-from app.core.exceptions import (
-    HTTPBadRequestException,
-    HTTPConflictException,
-    HTTPUnprocessableEntityException,
-)
+from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.requests.remote_api import RemoteAPI
-from app.core.utils.fields import EmptyStrToNone
 from app.core.utils.path import payload_uri
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.models import (
@@ -68,9 +62,6 @@ from app.sep.apps.framework.spec import (
 )
 from app.sep.deps import (
     check_for_conflicted_running_tasks,
-    DefaultContext,
-    ExecutorHostsCtx,
-    get_tasks_context,
     get_username_mapping,
     InventoryAPI,
     reject_if_protected,
@@ -83,117 +74,6 @@ from app.tasks.models import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class AltersLegacyForm(BaseModel):
-    """Parse the deprecated Alters HTML form's flat, urlencoded body.
-
-    The Jinja create/edit templates submit the historical split target fields
-    (``schema_id`` / ``schema_name`` / ``table_id`` / ``table_name``) that
-    predate the free-solo collapse, so the derived ``AltersCreate`` cannot bind
-    them directly. This model parses that flat body; :func:`map_alters_legacy_form`
-    folds it into ``AltersCreate`` for the shared task builder, keeping the legacy
-    path byte-identical. Field validation is enforced by the mapped
-    ``AltersCreate``, not here.
-
-    :param task_name: The task name.
-    :param hostname: The executor host.
-    :param service_id: The source MySQL service id.
-    :param schema_id: The schema inventory id, or empty.
-    :param schema_name: The manually-entered schema name.
-    :param table_id: The table inventory id, or empty.
-    :param table_name: The manually-entered table name.
-    :param pre_checks_mysql_config_file: The MySQL defaults file path.
-    :param alter: The pt-osc alter clause.
-    :param recursion_method: The pt-osc recursion method.
-    :param dsn_table: The DSN table (recursion method ``dsn``).
-    :param print_arg: The ``--print`` flag.
-    :param progress: The ``--progress`` value.
-    :param no_swap_tables: The ``--no-swap-tables`` flag.
-    :param no_drop_old_table: The ``--no-drop-old-table`` flag.
-    :param no_drop_new_table: The ``--no-drop-new-table`` flag.
-    :param no_drop_triggers: The ``--no-drop-triggers`` flag.
-    :param pause_file: The ``--pause-file`` path.
-    :param new_table_name: The ``--new-table-name`` value.
-    :param tries: The ``--tries`` value.
-    :param set_vars: The ``--set-vars`` value.
-    :param critical_load: The ``--critical-load`` value.
-    :param max_load: The ``--max-load`` value.
-    :param chunk_time: The ``--chunk-time`` value.
-    :param max_lag: The ``--max-lag`` value.
-    :param max_flow_ctl: The ``--max-flow-ctl`` value.
-    :param extra_args: Additional pt-osc CLI arguments.
-    :param continue_on_pre_check_failure: The continue-on-pre-check-failure toggle.
-    :param alert_on_fail: Whether to alert on failure.
-    """
-
-    task_name: str
-    hostname: str
-    service_id: int
-    schema_id: int | EmptyStrToNone = None
-    schema_name: str = ""
-    table_id: int | EmptyStrToNone = None
-    table_name: str = ""
-    pre_checks_mysql_config_file: str = "~/.my.cnf"
-    alter: str = ""
-    recursion_method: str = "processlist"
-    dsn_table: str = ""
-    print_arg: bool = False
-    progress: str = ""
-    no_swap_tables: bool = False
-    no_drop_old_table: bool = False
-    no_drop_new_table: bool = False
-    no_drop_triggers: bool = False
-    pause_file: str | None = None
-    new_table_name: str | None = None
-    tries: str | None = None
-    set_vars: str | None = None
-    critical_load: str | None = None
-    max_load: str | None = None
-    chunk_time: str | None = None
-    max_lag: str | None = None
-    max_flow_ctl: str | None = None
-    extra_args: str | None = None
-    continue_on_pre_check_failure: bool = False
-    alert_on_fail: bool = False
-
-
-def _collapse(ref_id: int | None, name: str) -> int | str | None:
-    """Collapse a legacy id/name pair into the single free-solo value.
-
-    :param ref_id: The inventory id, or ``None`` when not selected.
-    :param name: The manually-entered name (``""`` when not entered).
-    :return: The id when present, else the trimmed name, else ``None``.
-    """
-    if ref_id is not None:
-        return ref_id
-    return name.strip() or None
-
-
-def map_alters_legacy_form(flat: AltersLegacyForm) -> AltersCreate:
-    """Fold the flat legacy form into the collapsed ``AltersCreate``.
-
-    Collapses the split ``schema_id`` / ``schema_name`` and ``table_id`` /
-    ``table_name`` pairs into the single free-solo ``db_schema`` / ``db_table``
-    fields and validates through ``AltersCreate`` so the legacy path enforces the
-    same rules as the JSON path. A validation failure surfaces as a 422, matching
-    the framework's body-validation behaviour.
-
-    :param flat: The parsed legacy form body.
-    :return: The validated collapsed create model.
-    :raises HTTPUnprocessableEntityException: When the folded model is invalid.
-    """
-    data = {
-        **flat.model_dump(
-            exclude={"schema_id", "schema_name", "table_id", "table_name"}
-        ),
-        "db_schema": _collapse(flat.schema_id, flat.schema_name),
-        "db_table": _collapse(flat.table_id, flat.table_name),
-    }
-    try:
-        return AltersCreate.model_validate(data)
-    except ValidationError as exc:
-        raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
 
 
 async def build_alters_task(
@@ -228,26 +108,6 @@ async def build_alters_task(
 get_alters_task = make_task_dep(OWNER)
 
 AltersTask = Annotated[Task, Depends(get_alters_task)]
-
-
-def get_alters_task_info(task: dict[str, Any]) -> dict[str, Any]:
-    """Extract relevant information from a task for the Alters plugin.
-
-    Processes the task data to extract hostname and table information.
-
-    :param task: The task data retrieved from the Tasks API.
-    :type task: dict[str, Any]
-    :return: A dictionary containing hostname and table information.
-    :rtype: dict[str, Any]
-    """
-    data = task["data"]
-    meta = data["meta"]
-
-    return {
-        "hostname": meta["target"],
-        "table": f"{meta['_schema_name']}.{meta['_table_name']}",
-        "parent": data.get("parent"),
-    }
 
 
 def extract_service_info(meta: dict[str, Any]) -> dict[str, Any]:
@@ -767,9 +627,6 @@ async def get_unprotected_alters_task(
     return reject_if_protected(parent_task)
 
 
-UnprotectedAltersTask = Annotated[Task, Depends(get_unprotected_alters_task)]
-
-
 async def get_editable_alters_parent_task(
     task_name: str,
     tasks_api: TaskAPI,
@@ -940,41 +797,3 @@ def build_alters_api_list_response(
         last_executed_at=last_executed_at,
         username_mapping=context,
     )
-
-
-async def get_alters_index_context(
-    inventory_api: InventoryAPI,
-    tasks_api: TaskAPI,
-    context: DefaultContext,
-    executor_hosts_ctx: ExecutorHostsCtx,
-) -> dict[str, Any]:
-    """Assemble the context for the Alters plugin index view.
-
-    Retrieves MySQL services and associated tasks, organizing them based on their
-    execution status. Integrates this information into the default context for
-    rendering in templates.
-
-    :param inventory_api: The Inventory API client for fetching service and schema data.
-    :type inventory_api: InventoryAPI
-    :param tasks_api: The TaskAPI client for fetching task data.
-    :type tasks_api: TaskAPI
-    :param context: The default context to be updated with Alters-specific information.
-    :type context: DefaultContext
-    :param executor_hosts_ctx: The executor hosts context for the Alters tasks.
-    :type executor_hosts_ctx: ExecutorHostsCtx
-    :return: An updated context dictionary containing Alters-related data.
-    :rtype: dict[str, Any]
-    """
-    return await get_tasks_context(
-        inventory_api,
-        tasks_api,
-        get_alters_task_info,
-        executor_hosts_ctx,
-        context,
-        OWNER,
-        service_type=ServiceTypeEnum.MYSQL,
-        alert_on_fail_default=True,
-    )
-
-
-AltersIndexContext = Annotated[dict[str, Any], Depends(get_alters_index_context)]

@@ -344,13 +344,40 @@ async def start_refresh_task(
     return asyncio.create_task(_loop(), name="settings-override-refresher")
 
 
+def resolve_refresher_options(
+    interval: timedelta | None, *, enabled: bool | None
+) -> tuple[timedelta, bool]:
+    """Return the refresher options, reading settings for whichever is unset.
+
+    ``Settings.SETTINGS_OVERRIDE`` configures the refresher for all three
+    services, so every start-up site would otherwise repeat the same two reads
+    and each is a place the next rename can miss one. Reading here also reads
+    late enough to see a value the proxy snapshot has since refreshed.
+
+    :param interval: The caller's explicit refresh interval, or ``None``.
+    :param enabled: The caller's explicit enabled flag, or ``None``.
+    :return: ``(interval, enabled)`` with any ``None`` replaced by the
+        configured value.
+    """
+    if interval is not None and enabled is not None:
+        return interval, enabled
+    # circular import: config imports registry imports policy imports this package
+    from app.core.config import settings
+
+    options = settings.SETTINGS_OVERRIDE
+    return (
+        options.REFRESH_INTERVAL if interval is None else interval,
+        options.REFRESHER_ENABLED if enabled is None else enabled,
+    )
+
+
 @asynccontextmanager
 async def settings_override_refresher(
     session_maker_factory: SessionMakerFactory,
     proxies: ProxyRegistry,
-    interval: timedelta,
+    interval: timedelta | None = None,
     *,
-    enabled: bool,
+    enabled: bool | None = None,
     callbacks: CallbackRegistry | None = None,
 ) -> AsyncGenerator[None, None]:
     """Run the background override refresher for the duration of a lifespan.
@@ -362,21 +389,18 @@ async def settings_override_refresher(
     :param session_maker_factory: A zero-argument callable returning a
         service-scoped ``async_sessionmaker``, forwarded to
         :func:`start_refresh_task`.
-    :type session_maker_factory: SessionMakerFactory
     :param proxies: The wired proxy registry keyed by class identifier.
-    :type proxies: ProxyRegistry
-    :param interval: The wall-clock delay between refresh cycles.
-    :type interval: timedelta
+    :param interval: The wall-clock delay between refresh cycles. ``None``, the
+        default, reads ``Settings.SETTINGS_OVERRIDE.REFRESH_INTERVAL``.
     :param enabled: Whether to start the background refresher. When ``False``,
-        the context manager yields without creating a task.
-    :type enabled: bool
+        the context manager yields without creating a task. ``None``, the
+        default, reads ``Settings.SETTINGS_OVERRIDE.REFRESHER_ENABLED``.
     :param callbacks: Optional rebind callbacks forwarded to
         :func:`start_refresh_task`, fired by the periodic loop when a watched
         override changes value.
-    :type callbacks: CallbackRegistry | None
-    :yield: None
-    :rtype: AsyncGenerator[None, None]
+    :return: None
     """
+    interval, enabled = resolve_refresher_options(interval, enabled=enabled)
     refresher: asyncio.Task | None = None
     if enabled:
         refresher = await start_refresh_task(

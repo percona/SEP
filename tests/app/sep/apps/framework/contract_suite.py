@@ -59,7 +59,7 @@ from app.sep.apps.framework.form_dsl import (
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY
 from app.sep.deps import (
-    get_api_authenticated_user,
+    get_current_user,
     get_inventory_api,
     get_tasks_api,
     IsApiAuthenticated,
@@ -185,7 +185,7 @@ def build_contract_client(
     :return: A bare ``TestClient`` (never a context manager — lifespan trap).
     """
     app = mount_app(app_def)
-    app.dependency_overrides[get_api_authenticated_user] = lambda: user
+    app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_tasks_api] = lambda: tasks_api
     if inventory_api is not None:
         app.dependency_overrides[get_inventory_api] = lambda: inventory_api

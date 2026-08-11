@@ -81,9 +81,6 @@ optional = true
 pip-audit = "^2.10.0"
 bandit = {extras = ["toml"], version = "^1.7.9"}
 ruff = "^0.9.4"
-djlint = "^1.36.4"
-jsbeautifier = "^1.15.1"
-cssbeautifier = "^1.15.1"
 
 [tool.poetry.group.typecheck]
 optional = true
@@ -153,6 +150,7 @@ pytest-xdist = "^3.5"
 pytest-timeout = "^2.3.1"
 pymysql = "^1.1.3"
 myloginpath = "^0.0.4"
+mutmut = "^3.6.0"
 
 [tool.poetry.requires-plugins]
 poetry-plugin-export = "^1.9.0"
@@ -180,7 +178,6 @@ python-version = "3.11"
 exclude = [
     "**/migrations/**",
     "frontend/**",
-    "static/**",
 ]
 
 [tool.ruff]
@@ -349,12 +346,30 @@ omit = [
     # in teardown: measuring them leaves dead source paths in .coverage that
     # break `coverage json` (the PR coverage-comment step) with "No source for code".
     "app/sep/apps/_scaffold_*/*",
+    # Payload scripts: uploaded as file:// URIs and executed on the target host,
+    # never imported in-process. They enter the report only because the AST
+    # harness execs extracted symbols under the payload's path, so their line
+    # coverage measures harness mechanics rather than the suite's reach.
+    "app/sep/apps/*/payload",
+    "app/sep/apps/*/*_payload",
+    "app/sep/apps/*/*/*_payload",
+    "app/sep/apps/*/payloads/*",
+    "app/sep/apps/alters/pre_checks.py",
 ]
 
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
-fail_under = 75
+fail_under = 85
+
+# Optional mutation-testing pilot. Not wired into make test / CI.
+# Mutmut runs pytest from a mutants/ sandbox copy; also_copy pulls the config
+# the suite needs when loading app settings.
+[tool.mutmut]
+source_paths = ["app/"]
+only_mutate = ["app/core/db/utils.py"]
+pytest_add_cli_args_test_selection = ["tests/app/core/db/test_utils.py"]
+also_copy = ["settings.yaml", "snippets", "data"]
 
 [tool.tox]
 env_list = ["3.11", "3.12", "3.13"]
@@ -362,9 +377,3 @@ env_list = ["3.11", "3.12", "3.13"]
 [tool.tox.env_run_base]
 allowlist_externals = ["make"]
 commands = [["make", "test"]]
-
-
-[tool.djlint]
-profile = "jinja"
-extension = "html.j2"
-ignore = "H021"

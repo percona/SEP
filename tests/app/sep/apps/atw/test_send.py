@@ -20,6 +20,7 @@ import json
 import os
 import zipfile
 from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -54,8 +55,9 @@ from app.sep.apps.atw.send import (
     run_send,
 )
 from app.sep.bundle_upload.plan import DeliveryPlan, DeliveryPlanError, StepRecord
+from app.sep.bundle_upload.resolver import DRIFTED_INPUTS_REASON
 from app.sep.bundle_upload.seam import BundleSource, UploadResult
-from app.sep.config import sep_settings
+from app.sep.config import DeliveryPlanInputs, sep_settings
 from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
 _UPLOAD_DETAIL: dict[str, Any] = {"result": {"sys_id": "att-9", "size_bytes": 42}}
@@ -114,6 +116,7 @@ class _FakeUploader:
         self.manifest: dict[str, Any] | None = None
         self.case_ref: str | None = None
         self.called = False
+        self.released = False
 
     async def upload_bundle(
         self,
@@ -262,18 +265,27 @@ def tasks_api_fixture(mocker: MockerFixture) -> AsyncMock:
 
 @pytest.fixture(name="uploader")
 def uploader_fixture(mocker: MockerFixture) -> _FakeUploader:
-    """Provide a fake delivery executor in place of the configured one."""
+    """Provide a fake delivery executor in place of the configured one.
+
+    The real factory is an async context manager owning a per-send transport, so
+    the double is one too, and records its exit for the tests that assert the
+    transport is released however the send ends.
+    """
     fake = _FakeUploader()
 
+    @asynccontextmanager
     async def _factory(
         _plan: DeliveryPlan,
         *,
         step_observer: Callable[[StepRecord], None] | None = None,
-    ) -> _FakeUploader:
+    ) -> AsyncIterator[_FakeUploader]:
         fake.step_observer = step_observer
-        return fake
+        try:
+            yield fake
+        finally:
+            fake.released = True
 
-    mocker.patch("app.sep.apps.atw.send.get_delivery_executor", side_effect=_factory)
+    mocker.patch("app.sep.apps.atw.send.get_delivery_executor", new=_factory)
     return fake
 
 
@@ -371,6 +383,17 @@ class TestRunSendHappyPath:
         assert reloaded.detail["file_count"] == _EXPECTED_FILE_COUNT
         assert reloaded.detail["bundle_size"] > 0
         assert list(tmp_path.glob("*.zip")) == []
+
+    async def test_the_delivery_transport_is_released_when_the_send_lands(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Leave the executor's context so its per-send transport is closed."""
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        assert uploader.called is True
+        assert uploader.released is True
 
     async def test_zip_carries_a_manifest_and_per_execution_entries(
         self, send_session: AsyncSession, uploader: _FakeUploader
@@ -899,7 +922,12 @@ class TestRunSendFailures:
         delivery_plan: DeliveryPlan,
         mocker: MockerFixture,
     ) -> None:
-        """Fail cleanly when stored inputs stopped matching the baked skeleton."""
+        """Blame the drift on the terminal row, not the never-configured state.
+
+        Inverts the previous contract, under which this row read exactly like a
+        deployment that never configured delivery — yet re-supplying the inputs
+        and configuring delivery from scratch are opposite actions.
+        """
         mocker.patch.object(
             sep_settings, "DIAGNOSTICS_DELIVERY", _unconfigured_skeleton(delivery_plan)
         )
@@ -910,7 +938,7 @@ class TestRunSendFailures:
 
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
-        assert "not configured" in reloaded.detail["error"]
+        assert reloaded.detail["error"] == DRIFTED_INPUTS_REASON
 
     async def test_a_failing_refresh_still_writes_a_terminal_row(
         self,
@@ -942,6 +970,39 @@ class TestRunSendFailures:
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
         assert "not configured" in reloaded.detail["error"]
+
+    async def test_a_failing_refresh_keeps_the_reason_already_resolved(
+        self,
+        send_session: AsyncSession,
+        delivery_plan: DeliveryPlan,
+        mocker: MockerFixture,
+    ) -> None:
+        """Keep blaming the drift when the re-read that might clear it fails.
+
+        The refresh is what would notice the operator re-supplying the inputs.
+        A transient database error means it noticed nothing — not that the
+        drift the worker's own snapshot already shows has gone away.
+        """
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", _unconfigured_skeleton(delivery_plan)
+        )
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY_INPUTS",
+            DeliveryPlanInputs(secrets={"renamed_key": _STORED_SECRET}),
+        )
+        mocker.patch.object(
+            SettingsOverrideManager,
+            "list",
+            side_effect=SQLAlchemyError("database unreachable"),
+        )
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert reloaded.detail["error"] == DRIFTED_INPUTS_REASON
 
     @pytest.mark.usefixtures("uploader")
     async def test_a_files_listing_conflict_names_the_execution(
@@ -1023,6 +1084,19 @@ class TestRunSendFailures:
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
         assert "upstream exploded" in reloaded.detail["error"]
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_the_delivery_transport_is_released_when_the_send_fails(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Close the per-send transport on the failure path too, not only on success."""
+        uploader.error = RuntimeError("upstream exploded")
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        assert (await _reload(send_session, row.id)).status is AtwSendStatusEnum.FAILED
+        assert uploader.released is True
 
     @pytest.mark.usefixtures("tasks_api", "uploader")
     async def test_a_missing_row_exits_without_raising(

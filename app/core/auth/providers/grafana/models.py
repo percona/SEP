@@ -16,6 +16,7 @@
 """Define the Grafana user and token-payload models."""
 
 from collections.abc import Sequence
+from enum import StrEnum
 from typing import Any, cast, NoReturn, NotRequired, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -39,17 +40,24 @@ _TOKEN_SERIALIZER = URLSafeTimedSerializer(
     settings.SECRET_KEY.get_secret_value(), salt="sep.auth.grafana.v1"
 )
 
-# Assertion ``typ`` claim values -- an access token cannot be replayed at the
-# refresh endpoint, nor a refresh token used as a Bearer credential. An exchange
-# token is likewise refused at the refresh endpoint and on the session-cookie
-# path; it is valid only as a Bearer credential.
-_ACCESS = "access"
-_REFRESH = "refresh"
-_EXCHANGE = "exchange"
+
+class _TokenType(StrEnum):
+    """Define assertion ``typ`` claim values.
+
+    An access token cannot be replayed at the refresh endpoint, nor a refresh
+    token used as a Bearer credential. An exchange token is likewise refused at
+    the refresh endpoint and on the session-cookie path; it is valid only as a
+    Bearer credential.
+    """
+
+    ACCESS = "access"
+    REFRESH = "refresh"
+    EXCHANGE = "exchange"
+
 
 # Tried in this order so the common access-token path costs a single signature
 # check.
-_BEARER_TOKEN_TYPES = (_ACCESS, _EXCHANGE)
+_BEARER_TOKEN_TYPES = (_TokenType.ACCESS, _TokenType.EXCHANGE)
 
 _ADMIN_ROLE = "Admin"
 
@@ -90,7 +98,7 @@ def _active_grafana_sdk() -> GrafanaSDK:
     # a module-level import here would cycle
     from app.core.auth.config import get_active_auth_provider
 
-    return cast(GrafanaSDK, get_active_auth_provider())
+    return cast("GrafanaSDK", get_active_auth_provider())
 
 
 class GrafanaTokenPayload(BaseTokenPayload):
@@ -150,12 +158,12 @@ class GrafanaUser(BaseUser):
         """
         if not isinstance(data, str):
             return data
-        token_type = (info.context or {}).get("token_type", _ACCESS)
+        token_type = (info.context or {}).get("token_type", _TokenType.ACCESS)
         sdk = _active_grafana_sdk()
         max_age_by_type = {
-            _ACCESS: sdk.access_token_max_age,
-            _REFRESH: sdk.refresh_token_max_age,
-            _EXCHANGE: sdk.exchange_token_max_age,
+            _TokenType.ACCESS: sdk.access_token_max_age,
+            _TokenType.REFRESH: sdk.refresh_token_max_age,
+            _TokenType.EXCHANGE: sdk.exchange_token_max_age,
         }
         max_age = max_age_by_type.get(
             token_type, sdk.access_token_max_age
@@ -169,12 +177,12 @@ class GrafanaUser(BaseUser):
         return payload
 
     @staticmethod
-    def _mint(user: "GrafanaUser", token_type: str) -> str:
+    def _mint(user: "GrafanaUser", token_type: _TokenType) -> str:
         """Mint a signed identity assertion of ``token_type`` for ``user``.
 
         :param user: The user whose identity the assertion carries.
-        :param token_type: The assertion type (``access``, ``refresh``, or
-            ``exchange``), recorded as the ``typ`` claim.
+        :param token_type: The assertion type recorded as the ``typ`` claim
+            (wire values: ``"access"``, ``"refresh"``, ``"exchange"``).
         :return: The signed, URL-safe identity assertion.
         """
         payload = user.model_dump(
@@ -195,8 +203,8 @@ class GrafanaUser(BaseUser):
         empty = ""
         bearer = "Bearer"
         return OAuthToken(
-            access_token=GrafanaUser._mint(user, _ACCESS),
-            refresh_token=GrafanaUser._mint(user, _REFRESH),
+            access_token=GrafanaUser._mint(user, _TokenType.ACCESS),
+            refresh_token=GrafanaUser._mint(user, _TokenType.REFRESH),
             id_token=empty,
             token_type=bearer,
             expires_in=grafana.access_token_max_age,
@@ -277,13 +285,13 @@ class GrafanaUser(BaseUser):
         grafana = _active_grafana_sdk()
         if refresh_token is not None:
             user = GrafanaUser.model_validate(
-                refresh_token, context={"token_type": _REFRESH}
+                refresh_token, context={"token_type": _TokenType.REFRESH}
             )
             return GrafanaUser._oauth_token_for(user, grafana)
         if not (username and password):
             raise GrafanaException(detail="Grafana requires a username and password.")
         session = await grafana.login(username, password)
-        record = cast(_GrafanaUserRecord, await grafana.get_current_user(session))
+        record = cast("_GrafanaUserRecord", await grafana.get_current_user(session))
         orgs = await grafana.get_current_user_orgs(session)
         user = GrafanaUser._from_grafana_record(record, orgs)
         return GrafanaUser._oauth_token_for(user, grafana)
@@ -306,7 +314,7 @@ class GrafanaUser(BaseUser):
         """
         grafana = _active_grafana_sdk()
         try:
-            record = cast(_GrafanaUserRecord, await grafana.get_current_user(session))
+            record = cast("_GrafanaUserRecord", await grafana.get_current_user(session))
             orgs = await grafana.get_current_user_orgs(session)
         except HTTPException as exc:
             if exc.status_code == status.HTTP_401_UNAUTHORIZED:
@@ -356,7 +364,7 @@ class GrafanaUser(BaseUser):
         if user is None:
             return None
         return SessionExchangeTokenResponse(
-            access_token=GrafanaUser._mint(user, _EXCHANGE),
+            access_token=GrafanaUser._mint(user, _TokenType.EXCHANGE),
             expires_in=_active_grafana_sdk().exchange_token_max_age,
         )
 
@@ -393,7 +401,7 @@ class GrafanaUser(BaseUser):
         :return: The mapped ``GrafanaUser``.
         """
         record = cast(
-            _GrafanaUserRecord, await _active_grafana_sdk().lookup_user(username)
+            "_GrafanaUserRecord", await _active_grafana_sdk().lookup_user(username)
         )
         return cls._from_grafana_record(record, [])
 
@@ -407,7 +415,7 @@ class GrafanaUser(BaseUser):
         :return: The mapped ``GrafanaUser`` instances.
         """
         records = cast(
-            list[_GrafanaOrgUserRecord], await _active_grafana_sdk().get_org_users()
+            "list[_GrafanaOrgUserRecord]", await _active_grafana_sdk().get_org_users()
         )
         return [cls._from_org_user_record(record) for record in records]
 
@@ -431,7 +439,7 @@ class GrafanaUser(BaseUser):
         :raises ValidationError: If the assertion is tampered, expired, malformed,
             or not an access token.
         """
-        user = cls.model_validate(token, context={"token_type": _ACCESS})
+        user = cls.model_validate(token, context={"token_type": _TokenType.ACCESS})
         user.access_token = token
         return user
 

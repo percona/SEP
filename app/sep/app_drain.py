@@ -125,7 +125,7 @@ async def finalize_drain_if_complete(session: AsyncSession, app_key: str) -> boo
         != AppLifecycleEnum.DISABLING
     ):
         return False
-    if await AppRunningTaskManager.count(session, app_key=app_key):
+    if await AppRunningTaskManager.exists(session, app_key=app_key):
         return False
     result = await AppStateManager.update_where(
         session,

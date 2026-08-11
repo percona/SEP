@@ -77,8 +77,6 @@ async def inventory_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, Non
                 inventory_settings, InventorySettings
             ),
         },
-        settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
-        enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
         callbacks={},
     ):
         yield

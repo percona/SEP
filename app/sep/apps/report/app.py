@@ -16,8 +16,8 @@
 """Wire the Health & Security Report plugin as a declarative ``BaseApp``.
 
 Register the bespoke report plugin through the registry's definition path
-instead of the synthesized-legacy fallback, exposing the same JSON and Jinja
-routers the registry imports today, and contribute the health-report generation
+instead of the synthesized-legacy fallback, exposing the same JSON router
+the registry imports today, and contribute the health-report generation
 and artifact-purge beat schedules via ``periodic_task_schedules``.
 """
 
@@ -26,7 +26,6 @@ import json
 from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.apps.report.api_routes import router as api_router
-from app.sep.apps.report.routes import router as jinja_router
 from app.sep.config import sep_settings
 
 
@@ -87,6 +86,5 @@ app = BaseApp(
     react_route="/reports",
     nav_icon=NavIcon.BAR_CHART,
     api_router=api_router,
-    jinja_router=jinja_router,
     periodic_task_schedules=_report_periodic_tasks,
 )

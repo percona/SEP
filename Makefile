@@ -60,7 +60,7 @@ build: venv app/
 pack:
 ifndef BUNDLE
 	@echo Exporting bundle
-	@git archive --output=bundle.tgz --format=tar.gz "${RELEASE_VER}" app snippets static templates
+	@git archive --output=bundle.tgz --format=tar.gz "${RELEASE_VER}" app snippets
 else
 	@echo Copying custom bundle "${BUNDLE}"
 	@cp -a "${BUNDLE}" bundle.tgz
@@ -70,24 +70,15 @@ builder:
 	@podman image exists "sep:builder" && podman image rm "sep:builder"
 	@buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
 
+# The app-restricted PMM-embedded image is the only artifact SEP ships. Which
+# apps survive is sidecar/settings.yaml's SEP.APPS.
+# docker format, not oci: OCI silently discards the HEALTHCHECK instruction
 image: pack
 	@podman image exists "sep:${RELEASE_VER}" && podman image rm "sep:${RELEASE_VER}" || true
-	@buildah build -f Containerfile --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}"
-
-# docker format, not oci: OCI silently discards the HEALTHCHECK instruction
-image-sidecar: pack
-	@podman image exists "sep:${RELEASE_VER}-sidecar" && podman image rm "sep:${RELEASE_VER}-sidecar" || true
-	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --tag "sep:${RELEASE_VER}-sidecar"
-
-# The app-restricted PMM-embedded variant: the side-car recipe with the app
-# strip switched on. Which apps survive is settings.embedded.yaml's SEP.APPS.
-image-sidecar-embedded: pack
-	@podman image exists "sep:${RELEASE_VER}-embedded" && podman image rm "sep:${RELEASE_VER}-embedded" || true
-	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --build-arg SEP_RESTRICT_APPS=1 --tag "sep:${RELEASE_VER}-embedded"
+	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --build-arg SEP_RESTRICT_APPS=1 --tag "sep:${RELEASE_VER}"
 
 format: venv
 	@"${VENV_BIN}"/ruff format .
-	@"${VENV_BIN}"/djlint . --reformat
 
 ruff: venv
 	@"${VENV_BIN}"/ruff check .
@@ -99,11 +90,7 @@ ruff: venv
 typecheck: venv
 	@"${VENV_BIN}"/ty check app
 
-djlint: venv
-	@"${VENV_BIN}"/djlint .
-	@"${VENV_BIN}"/djlint . --check
-
-lint: ruff djlint
+lint: ruff
 
 audit: bandit pip-audit
 
@@ -296,12 +283,12 @@ endif
 			*) jenkins_job="Build" ;; \
 		esac; \
 		echo "==> Triggering Jenkins $${jenkins_job} build for $${tag}..."; \
-		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/$${jenkins_job}/buildWithParameters" \
-			-u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
-			--data-urlencode "releaseTag=$${tag}" \
-			--data-urlencode "notifySlack=true" \
-			--data-urlencode "pushImage=true" \
-			--data-urlencode "pushImageDocker=$(PUSH_IMAGE_DOCKER)" 2>&1; then \
+		if printf 'user = "%s:%s"\n' "$${JENKINS_USER}" "$${JENKINS_API_TOKEN}" \
+			| curl -sSf -k --config - \
+				-X POST "$${JENKINS_URL}/job/SEP/job/$${jenkins_job}/buildWithParameters" \
+				--data-urlencode "releaseTag=$${tag}" \
+				--data-urlencode "pushImage=true" \
+				--data-urlencode "pushImageDocker=$(PUSH_IMAGE_DOCKER)" 2>&1; then \
 			echo "    Jenkins build triggered successfully."; \
 			if [ -n "$(WEBHOOK_URL_ENV)" ] && [ -n "$(WEBHOOK_AUTH_ENV)" ]; then \
 				$(PYTHON) scripts/post_jira_webhook.py \
@@ -316,4 +303,45 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image image-sidecar image-sidecar-embedded format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check
+# Jenkins Declarative validate. Usage: make lint-pipelines [FILE=build/x.pipeline]
+lint-pipelines:
+	@set -euo pipefail; \
+	if [ -z "$${JENKINS_URL:-}" ] || [ -z "$${JENKINS_USER:-}" ] || [ -z "$${JENKINS_API_TOKEN:-}" ]; then \
+		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Declarative lint."; \
+		exit 0; \
+	fi; \
+	if [ -n "$(FILE)" ]; then \
+		files=("$(FILE)"); \
+	else \
+		files=(); \
+		while IFS= read -r file; do files+=("$${file}"); done < <(git ls-files -- ':(glob)build/**/*.pipeline'); \
+	fi; \
+	if [ "$${#files[@]}" -eq 0 ]; then \
+		echo "error: no build/**/*.pipeline files found"; \
+		exit 1; \
+	fi; \
+	crumb="$$(printf 'user = "%s:%s"\n' "$${JENKINS_USER}" "$${JENKINS_API_TOKEN}" \
+		| curl -sSf -k --config - \
+			"$${JENKINS_URL}/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\":\",//crumb)")"; \
+	failures=0; \
+	for f in "$${files[@]}"; do \
+		echo "==> Declarative-lint $${f}..."; \
+		if ! resp="$$(printf 'user = "%s:%s"\n' "$${JENKINS_USER}" "$${JENKINS_API_TOKEN}" \
+			| curl -sS -k --config - --fail-with-body \
+				-H "$${crumb}" \
+				-F "jenkinsfile=<$${f}" \
+				"$${JENKINS_URL}/pipeline-model-converter/validate")"; then \
+			echo "$${resp}"; \
+			echo "error: request to Jenkins failed for $${f}"; \
+			failures=$$((failures+1)); \
+			continue; \
+		fi; \
+		echo "$${resp}"; \
+		case "$${resp}" in \
+			*"successfully validated"*) ;; \
+			*) echo "error: Declarative validation failed for $${f}"; failures=$$((failures+1)) ;; \
+		esac; \
+	done; \
+	if [ "$${failures}" -ne 0 ]; then exit 1; fi
+
+.PHONY: venv build pack builder image format ruff typecheck lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check

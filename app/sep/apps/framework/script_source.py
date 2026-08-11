@@ -39,7 +39,7 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypeVar
 
 from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
-from app.core.pagination import PaginatedResponse, Pagination
+from app.core.pagination import Pagination
 from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA, NonEmptyStr
 from app.core.utils.iterators import unique_everseen
 from app.sep.apps.framework.schema import AppSchema
@@ -149,7 +149,16 @@ class ScriptSource(Generic[S, Q]):
         the listing root the consumer's hooks close over).
     :param load_script: Resolve a single script by filename; raise
         :class:`~app.core.exceptions.HTTPNotFoundException` when it is absent.
-    :param list_scripts: Return every currently-discovered script (disk or DB).
+    :param list_scripts: Return a page of scripts plus the filtered total. Receives
+        the resolved list-query value of type ``Q`` (a Core
+        :class:`~app.core.db.list_query.ListQuery` for push-down sources, an
+        :class:`~app.sep.apps.framework.list_query.InMemoryListQuery` for in-memory
+        sources) and the pagination window. Either argument is ``None`` when the
+        route derives no query capability: ``(None, None)`` lists every script
+        (non-paginated route), ``(None, pagination)`` returns the pagination slice of
+        the full set with the full-set total (paginated, no spec), and
+        ``(query, pagination)`` returns the filtered/sorted page with its filtered
+        total (paginated, spec).
     :param load_scripts: The optional batch loader resolving several filenames in
         one round trip, returning a filename-keyed mapping of only the scripts it
         resolved (an absent key means unresolved). When ``None`` the framework's
@@ -166,21 +175,29 @@ class ScriptSource(Generic[S, Q]):
         ``GET /`` as ``list[list_response_model]``; when ``None`` the list route
         stays untyped (back-compatible — a source that does not opt in keeps the
         original untyped list).
-    :param list_query_dep: An optional FastAPI dependency parsing an opt-in
-        list-query (sort/search/filter) value object of type ``Q`` for the
-        paginated list route. When set, ``list_page`` must also be set. A source
-        that opts out (the default) exposes no list-query params and keeps the
-        fetch-all-then-slice list path.
-    :param list_page: An optional hook returning a filtered/sorted/paginated page of
-        scripts directly (SQL-backed sources push the work down instead of fetching
-        every row and slicing in-process). Receives the pagination window and the
-        ``Q`` value produced by ``list_query_dep``; its rows are projected through
-        ``list_response``. The shared ``Q`` type-links the two hooks.
+    :param list_query_dep: An optional source-supplied request-boundary dependency
+        yielding the ``Q`` handed to ``list_scripts``. Set it when the resource adds
+        filter parameters on top of sort and search: the dependency composes the Core
+        one (built from the app's spec) with its own ``Query`` params, so the spec
+        stays the single authority for the sortable allowlist while the route also
+        carries the resource's base restrictions. When ``None`` (default) the
+        framework builds the dependency from the app's spec directly. Either way the
+        app must declare a spec, or the derived route exposes no query at all.
+    :param in_memory_list_query: Whether the source materializes its whole set and
+        applies sort/search/pagination in-process (a disk-backed source) rather than
+        pushing them down to SQL. Selects which list-query dependency the framework
+        builds for the app's :class:`~app.core.db.list_query.ListQuerySpec` — the
+        in-memory dep (:func:`~app.sep.apps.framework.list_query.make_in_memory_list_query_dep`)
+        when ``True``, the SQL dep (:func:`~app.core.db.list_query.make_list_query_dep`)
+        otherwise. Meaningful only on a source with no ``list_query_dep``, which
+        supersedes it.
     """
 
     script_dir: Path
     load_script: Callable[[str], Awaitable[S]]
-    list_scripts: Callable[[], Awaitable[Sequence[S]]]
+    list_scripts: Callable[
+        [Q | None, Pagination | None], Awaitable[tuple[Sequence[S], int]]
+    ]
     build_form_schema: Callable[[S], AppSchema]
     build_execution_meta: Callable[[S, ScriptExecuteWrite], BaseModel]
     list_response: Callable[[S], BaseModel]
@@ -188,20 +205,24 @@ class ScriptSource(Generic[S, Q]):
     list_response_model: type[BaseModel] | None = None
     load_scripts: Callable[[Sequence[str]], Awaitable[Mapping[str, S]]] | None = None
     list_query_dep: Callable[..., Q] | None = None
-    list_page: Callable[[Pagination, Q], Awaitable[PaginatedResponse]] | None = None
+    in_memory_list_query: bool = False
 
     def __post_init__(self) -> None:
-        """Reject a half-configured server list-page capability.
+        """Reject a source whose two list-query dependency knobs disagree.
 
-        ``list_query_dep`` and ``list_page`` are two halves of one opt-in
-        capability, so require both or neither at construction.
+        The framework prefers ``list_query_dep`` when both are set, so
+        ``in_memory_list_query`` would be dropped without a word. The spec-coupled
+        half of this capability cannot be checked here — a source cannot see the app's
+        spec — and lives on ``TaskExecutionApp`` instead.
 
-        :raises ValueError: When exactly one of ``list_query_dep`` / ``list_page``
-            is set.
+        :raises ValueError: When ``in_memory_list_query`` is set on a source that also
+            supplies a ``list_query_dep``.
         """
-        if (self.list_query_dep is None) != (self.list_page is None):
+        if self.list_query_dep is not None and self.in_memory_list_query:
             raise ValueError(
-                "list_query_dep and list_page must be set together (both or neither)."
+                "ScriptSource: list_query_dep supersedes the framework's in-memory "
+                "dependency; set in_memory_list_query only on a source with no "
+                "list_query_dep"
             )
 
 

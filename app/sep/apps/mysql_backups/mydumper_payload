@@ -1383,6 +1383,11 @@ class Upload(Backup):
         log_path = self.logging_dir / "upload-mydumper.log"
         self.log_stream = log_path.open("a")
         self.backup_type = BACKUP_TYPE
+        # Fail-safe default: an absent ENCRYPT is treated as "encrypt" so a
+        # standalone run against hand-authored config never silently produces an
+        # unencrypted backup on a customer host. This deliberately diverges from
+        # the form/config model default (False, an unchecked box); do not align
+        # the two.
         self.encrypt = settings.get("ENCRYPT", True)
         self.encrypt_using_tmpdir = settings.get("ENCRYPT_USING_TMPDIR", False)
         self.post_run_encrypt = settings.get("POST_RUN_ENCRYPT", False)
