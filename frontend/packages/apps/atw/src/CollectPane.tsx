@@ -18,10 +18,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Autocomplete, Box, CircularProgress, TextField, Typography } from '@mui/material';
 import { SchemaFormRenderer, SNIPPET_FORM_RESERVED_FIELD_NAMES } from '@sep/framework';
-import type { FormSection, SectionField } from '@sep/api';
+import { parseFieldErrors, type FormSection, type SectionField } from '@sep/api';
 import { CategoryBrowser } from './CategoryBrowser';
 import { useAtwBatchExecute, useAtwMergedSchema, useAtwSnippetSearch } from './hooks';
-import type { AtwBatchExecuteResponse, AtwBatchExecuteWrite, AtwSnippetSummary } from './types';
+import type {
+  AtwBatchExecuteItemResponse,
+  AtwBatchExecuteResponse,
+  AtwBatchExecuteWrite,
+  AtwSnippetSummary,
+} from './types';
 
 export interface CollectPaneProps {
   incidentId: string;
@@ -117,14 +122,76 @@ export function buildBatchPayload(
   };
 }
 
-/** Summarise the batch response's per-item errors for a banner. */
-function batchItemErrors(response: AtwBatchExecuteResponse): string[] {
-  return response.items
-    .filter((item) => item.error !== null && item.error !== undefined)
-    .map((item) => {
-      const detail = typeof item.error === 'string' ? item.error : 'validation failed';
-      return `${item.snippet_filename}: ${detail}`;
-    });
+export type BatchOutcomeSeverity = 'success' | 'warning' | 'error';
+
+export interface BatchOutcomeSummary {
+  severity: BatchOutcomeSeverity;
+  /** Multi-line text suitable for `whiteSpace: 'pre-line'`. */
+  message: string;
+}
+
+/** True when the item dispatched (task_name set), even if recording failed. */
+export function itemDispatched(item: AtwBatchExecuteItemResponse): boolean {
+  return (item.task_name ?? '') !== '';
+}
+
+export function formatItemError(
+  item: AtwBatchExecuteItemResponse,
+  itemIndex: number,
+  labelByPath: ReadonlyMap<string, string>,
+): string {
+  if (item.error === null || item.error === undefined) {
+    return '';
+  }
+
+  const prefix = `${item.snippet_filename}: `;
+
+  if (typeof item.error === 'string') {
+    return `${prefix}${item.error}`;
+  }
+
+  const parsed = parseFieldErrors({ detail: item.error });
+  if (parsed.length === 0) {
+    return `${prefix}validation failed`;
+  }
+
+  return parsed
+    .map(({ path, message }) => {
+      const namespacedPath = `overrides.snip${itemIndex}.${path}`;
+      const label = labelByPath.get(namespacedPath) ?? labelByPath.get(path) ?? path;
+      return label ? `${prefix}${label}: ${message}` : `${prefix}${message}`;
+    })
+    .join('\n');
+}
+
+export function summarizeBatchOutcome(
+  response: AtwBatchExecuteResponse,
+  labelByPath: ReadonlyMap<string, string> = new Map(),
+): BatchOutcomeSummary {
+  const total = response.items.length;
+  const dispatchedCount = response.items.filter(itemDispatched).length;
+
+  const errorLines = response.items.flatMap((item, index) => {
+    if (item.error === null || item.error === undefined) {
+      return [];
+    }
+    const line = formatItemError(item, index, labelByPath);
+    return line ? [line] : [];
+  });
+
+  const header = `Dispatched ${dispatchedCount} of ${total} snippets.`;
+  const message = errorLines.length > 0 ? [header, ...errorLines].join('\n') : header;
+
+  let severity: BatchOutcomeSeverity;
+  if (dispatchedCount === 0) {
+    severity = 'error';
+  } else if (dispatchedCount === total && errorLines.length === 0) {
+    severity = 'success';
+  } else {
+    severity = 'warning';
+  }
+
+  return { severity, message };
 }
 
 /**
@@ -317,7 +384,8 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
     setItemErrors([]);
     batchMutation.mutate(buildBatchPayload(values, selected), {
       onSuccess: (response) => {
-        setItemErrors(batchItemErrors(response));
+        const summary = summarizeBatchOutcome(response);
+        setItemErrors(summary.severity === 'success' ? [] : summary.message.split('\n').slice(1));
       },
     });
   };
