@@ -150,6 +150,41 @@ def test_spa_login_success(
     assert "SameSite=lax" in refresh_header
 
 
+def test_spa_login_scopes_the_refresh_cookie_under_the_prefix(
+    test_client, valid_username, oauth_token, mocker, faker: Faker
+):
+    """Assert the refresh cookie is reachable from a prefixed refresh endpoint.
+
+    The cookie ``Path`` is derived from the configured prefix rather than from
+    the request, so the request itself needs no prefix to exercise it.
+    """
+    mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+    mocker.patch.object(
+        User,
+        "get_oauth_token",
+        new=AsyncMock(spec=User.get_oauth_token, return_value=oauth_token),
+    )
+    mocker.patch.object(
+        User,
+        "from_jwt",
+        new=AsyncMock(
+            spec=User.from_jwt, return_value=_build_user(faker, valid_username)
+        ),
+    )
+
+    response = test_client.post(
+        "/api/oauth/login",
+        json={"username": valid_username, "password": "valid_password"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    refresh_headers = _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+    assert len(refresh_headers) == 1
+    assert "Path=/sep/api/oauth" in refresh_headers[0]
+
+
 def test_spa_login_inactive_user(
     test_client, valid_username, oauth_token, mocker, faker: Faker
 ):
@@ -406,6 +441,42 @@ def test_logout_success(test_client, valid_username, mocker, faker: Faker):
     assert "Max-Age=0" in delete_header
     assert "Path=/api/oauth" in delete_header
     invalidate_mock.assert_awaited_once_with(access_token)
+
+
+def test_logout_clears_the_cookie_at_the_prefixed_path(
+    test_client, valid_username, mocker, faker: Faker
+):
+    """Assert deletion targets the same ``Path`` the login response set.
+
+    A delete whose ``Path`` differs from the set leaves the cookie in the
+    browser, so the two must derive it identically.
+    """
+    access_token = "bearer-access-token"
+    logged_in_user = _build_user(faker, valid_username)
+    logged_in_user.access_token = access_token
+    mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+    mocker.patch.object(
+        User,
+        "from_jwt",
+        new=AsyncMock(spec=User.from_jwt, return_value=logged_in_user),
+    )
+    mocker.patch.object(
+        User,
+        "invalidate_oauth_token",
+        new=AsyncMock(spec=User.invalidate_oauth_token, return_value=None),
+    )
+
+    response = test_client.post(
+        "/api/oauth/logout",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    refresh_headers = _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+    assert len(refresh_headers) == 1
+    assert "Path=/sep/api/oauth" in refresh_headers[0]
 
 
 def test_logout_invalidate_fails_still_clears_cookie(

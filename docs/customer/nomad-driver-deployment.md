@@ -124,7 +124,7 @@ NOMAD:
   SSL_KEYFILE: /data/certs/nomad/global-client-nomad-key.pem
 ```
 
-Nomad certificates are mounted into the SEP pod/stack (`roles/sep/templates/sep-local.yaml.j2`). Local development may use plain HTTP (`settings.yaml` / `generate_certs.sh`).
+Nomad certificates are mounted into the SEP pod/stack (`roles/sep/templates/sep-local.yaml.j2`). Local development may use plain HTTP (`settings.yaml`).
 
 ---
 

@@ -240,6 +240,22 @@ class TestResolveAmbientExchangeToken:
 class TestGetBaseUrl:
     """Test get_base_url dependency."""
 
+    @staticmethod
+    def _hosted_request(root_path: str = "") -> Request:
+        """Build a request whose scope carries ``root_path``, as an ASGI server would."""
+        return Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "scheme": "http",
+                "server": ("testserver", 80),
+                "root_path": root_path,
+                "path": f"{root_path}/api/apps/inventory/",
+                "query_string": b"limit=10",
+                "headers": [(b"host", b"testserver")],
+            }
+        )
+
     def test_returns_setting_when_configured(self) -> None:
         """Assert BASE_URL from settings is returned when set."""
         request = _make_request()
@@ -247,6 +263,24 @@ class TestGetBaseUrl:
             mock_settings.BASE_URL = "https://example.com"
             result = get_base_url(request)
         assert result == "https://example.com"
+
+    def test_derives_the_request_base_without_a_prefix(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert the request path and query are dropped when no prefix is configured."""
+        monkeypatch.setattr("app.core.config.settings.BASE_URL", None)
+
+        assert str(get_base_url(self._hosted_request())) == "http://testserver/"
+
+    def test_carries_the_configured_prefix(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert a URL composed on the base stays inside the prefix SEP is mounted at."""
+        monkeypatch.setattr("app.core.config.settings.BASE_URL", None)
+
+        assert (
+            str(get_base_url(self._hosted_request("/sep"))) == "http://testserver/sep/"
+        )
 
 
 class TestGetCurrentUser:

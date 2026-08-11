@@ -24,6 +24,7 @@ from app.core.utils.fields import (
     TCP_PORT_MAX,
     TCP_PORT_MIN,
     TcpPort,
+    URIPathPrefix,
     URL,
 )
 from app.core.utils.imports import (
@@ -143,3 +144,22 @@ class TestBoundedIntFromEmptyStrFactory:
         assert adapter.validate_python(large) == large
         with pytest.raises(ValidationError):
             adapter.validate_python(-1)
+
+
+class TestUriPathPrefix:
+    """Cover the ``URIPathPrefix`` URL mount-prefix field type."""
+
+    @pytest.mark.parametrize("value", ["", "/sep", "/a/b"])
+    def test_accepts_the_unprefixed_default_and_mount_prefixes(
+        self, value: str
+    ) -> None:
+        """Accept the empty default and one or more ``/``-prefixed segments."""
+        assert TypeAdapter(URIPathPrefix).validate_python(value) == value
+
+    @pytest.mark.parametrize("value", ["/sep/", "sep", "/a b", "/sep?x", "/sep#x"])
+    def test_rejects_values_that_would_not_concatenate_cleanly(
+        self, value: str
+    ) -> None:
+        """Reject a trailing slash, a relative value, whitespace, and query or fragment."""
+        with pytest.raises(ValidationError):
+            TypeAdapter(URIPathPrefix).validate_python(value)
