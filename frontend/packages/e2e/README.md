@@ -50,7 +50,7 @@ Testing the **production** bundle (not the dev server) is intentional: it exerci
    | Task row      | `page.getByRole('row', { name: /row-text/i })`          |
    | Form field    | `page.getByLabel('Field Label')`                        |
 
-5. **If your app needs a real backend:** replace the `mockAuthenticatedApis` helper with a Playwright `webServer` that spins up `docker-compose.yml` with a known seed. See `playwright.config.ts` `webServer` docs for the pattern.
+5. **If your app needs a real backend:** replace the `mockAuthenticatedApis` helper with a Playwright `webServer` that starts a backend with a known seed. See `playwright.config.ts` `webServer` docs for the pattern.
 
 ## Page-object pattern
 

@@ -70,20 +70,17 @@ User = get_user_model()
 def get_base_url(request: Request) -> URL:
     """Return the application's base URL.
 
-    If the `BASE_URL` setting is defined, returns it. Otherwise, the function extracts
-    the base URL from an incoming request by removing the path.
+    If the ``BASE_URL`` setting is defined, returns it. Otherwise the base is
+    derived from the incoming request, and carries the URL prefix the application
+    is served under, so a URL composed on it stays inside that prefix. It always
+    ends in a trailing slash, which callers joining a path onto it must absorb.
 
     :param request: The HTTP request object from which the base URL is derived.
-    :type request: Request
-    :return: The base URL with the path removed.
-    :rtype: Any
+    :return: The application's base URL.
     """
     if settings.BASE_URL is not None:
         return settings.BASE_URL
-    return request.url.replace(path="", query="", fragment="")
-
-
-BaseURL = Annotated[URL, Depends(get_base_url)]
+    return URL(str(request.base_url))
 
 
 def is_bearer_authenticated(request: Request) -> bool:
@@ -568,9 +565,6 @@ async def get_created_node(inventory_api: InventoryAPI, node_id: int) -> Created
     )
 
 
-CreatedNodeDep = Annotated[CreatedNode, Depends(get_created_node)]
-
-
 async def get_created_service(
     inventory_api: InventoryAPI,
     service_id: int,
@@ -623,9 +617,6 @@ async def get_created_schema(
     return schema
 
 
-CreatedSchemaDep = Annotated[CreatedSchema, Depends(get_created_schema)]
-
-
 async def get_created_table(inventory_api: InventoryAPI, table_id: int) -> CreatedTable:
     """Retrieve a CreatedTable instance based on the given table ID.
 
@@ -642,9 +633,6 @@ async def get_created_table(inventory_api: InventoryAPI, table_id: int) -> Creat
     return await get_created_entity(
         inventory_api, SyncInventoryEntityTypeEnum.TABLE, table_id
     )
-
-
-CreatedTableDep = Annotated[CreatedTable, Depends(get_created_table)]
 
 
 class ExecutorHostsContext:

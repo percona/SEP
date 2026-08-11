@@ -39,15 +39,8 @@
 # ── Sensitive: build / release / runtime entrypoints ────────────────
 /Makefile                          @maxbube @yyyyyyyan
 /.pre-commit-config.yaml           @maxbube @yyyyyyyan
-/Dockerfile                        @percona/gas-admin
-/Containerfile                     @percona/gas-admin
 /Containerfile.base                @percona/gas-admin
-/docker-compose.yml                @percona/gas-admin
-/entrypoint.sh                     @percona/gas-admin
-/entrypoint_celery.sh              @percona/gas-admin
 /sidecar/                          @percona/gas-admin
-/sep_installer.sh                  @maxbube @yyyyyyyan
-/sep_installer.sha256              @maxbube @yyyyyyyan
 /CHANGELOG.md                      @maxbube @yyyyyyyan
 /scripts/release.py                @maxbube @yyyyyyyan
 /scripts/changelog.py              @maxbube @yyyyyyyan
