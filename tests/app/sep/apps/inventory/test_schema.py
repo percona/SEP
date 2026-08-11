@@ -44,4 +44,3 @@ def test_inventory_list_views_advertise_server_side_query():
     for entity in inventory_schema.entities:
         assert entity.list_view is not None
         assert entity.list_view.server_side_query is True
-

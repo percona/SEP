@@ -428,11 +428,7 @@ function entityQueriesPrefix(pluginName: string, entityName: string) {
   return ['plugins', pluginName, 'entity', entityName] as const;
 }
 
-function entityListQueryKey(
-  pluginName: string,
-  entityName: string,
-  options: AppListFetchOptions,
-) {
+function entityListQueryKey(pluginName: string, entityName: string, options: AppListFetchOptions) {
   return [
     ...entityQueriesPrefix(pluginName, entityName),
     {

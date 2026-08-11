@@ -43,12 +43,12 @@ from sqlalchemy import column
 
 from app.core.db.list_query import (
     ListQuerySpec,
-    SORT_PARAM_DESCRIPTION,
     search_query_param,
+    SORT_PARAM_DESCRIPTION,
 )
 from app.sep.apps.framework.list_query import (
-    InMemoryListQuery,
     build_in_memory_list_query,
+    InMemoryListQuery,
 )
 from app.sep.apps.inventory.deps import require_inventory_plugin_entity
 
