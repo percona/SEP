@@ -56,6 +56,8 @@ A generator (sync or async, including `async def` async generators) documents th
 
 Spell it **`:return:`, singular** — `:returns:` is valid rST and appears in a few places in the tree, but `:return:` is the dominant form; normalize to it.
 
+**Touch = Sweep.** A `:yield:` is a finding both when newly added **and** when it is pre-existing inside a docstring span the diff touched — so the tree converts incrementally. Untouched generators stay as they are; don't flag them.
+
 ## Synchronise with behaviour changes
 
 When a PR changes a function's behaviour — new code path, changed return-value semantics, new exception family, gained/lost parameter — the summary and the relevant `:return:` / `:raises:` / `:param:` blocks MUST be updated. A summary that still reads correctly about the *original* happy path is **incomplete**, not minimal.

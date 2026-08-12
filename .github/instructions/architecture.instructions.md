@@ -83,6 +83,20 @@ Hard-coded periodic schedules in seed files are a red flag when the task's confi
 - **Config snapshots hold serialized data, not live resources** — a settings-override proxy or change-detection layer stores `model_dump(mode="json")` or a fingerprint, never a live connection/executor. Pydantic `__eq__` compares private state, so two identically-configured `NomadExecutor` instances compare unequal and trigger a rebind storm; the live object belongs in `app.state.*`.
 - **A newly added settings field needs a `settings.yaml` entry.** An env/YAML-only field that ships with no key in `settings.yaml` — while its siblings are listed right above it — is invisible to operators. Mechanically gated on newly added fields only; the escape hatch is `# settings-yaml-exempt: <reason>` on the field, and it needs a real reason (internal machinery, a reader for removed keys). Pre-existing gaps are debt, not exemptions.
 
+## Celery task I/O — result-backend payload hygiene
+
+A Celery task's return value is stored **whole** in the result backend (Redis DB 1 in production), so tasks must not return large or binary payloads through it — rendered files, base64 blobs, unbounded lists. Return a lightweight **reference** (an id, key, or path) and have the consumer fetch the bytes from disk / object storage. base64 inflates a payload by ~33%, and `RESULT_EXPIRES` bounds *retention* but not *peak footprint*, so under concurrency the backend's memory climbs regardless of expiry.
+
+The tell is **binary artifacts and unbounded collections**, not a raw byte count — a small bounded dict / id / status stays inline. For any new `@celery.task`, ask: what does this return, and how big can it get?
+
+## Server-side ordering / filtering over paginated data
+
+- **Deterministic order.** Offset pagination over a non-unique sort key lets rows repeat or vanish across pages. Either the sort key is unique or the query appends a unique tie-breaker.
+- **Filter-consistent total.** The reported total must come from a count query using the **identical** predicates as the data query — a total computed before filtering paginates the wrong row count.
+- **Reject invalid sort keys at the request boundary.** An unrecognised sort key returns 4xx; silently falling back to a default hides the error from the caller.
+- **Never put a client-supplied column name in the query.** Public sort/filter keys map through an allowlist to column expressions — the request never names a column directly.
+- **Proxy completeness.** When the source is an upstream service, don't advertise sorting or filtering the proxy can only apply to the page it happens to hold; either push the operation upstream or don't offer it.
+
 ## State-machine liveness
 
 A new or modified state machine must name, for each non-terminal state, the server-side actor that advances it (a reconciler, a `task_postrun` receiver, a `save()` hook) or a contract-permitted client action. "The edge is declared valid" is not "something drives it." Mirror-image pairs (ENABLING/DISABLING) are the canonical bug — one side gets a driver, its mirror doesn't.

@@ -1,5 +1,5 @@
 ---
-applyTo: "app/**/models.py,app/**/schema.py,app/**/migrations/**/*.py,app/*/db/seed.py,app/sep/apps/**/api_routes.py,settings.yaml"
+applyTo: "app/**/models.py,app/**/schema.py,app/**/config.py,app/**/migrations/**/*.py,app/*/db/seed.py,app/sep/apps/**/api_routes.py,settings.yaml"
 ---
 
 # Backwards Compatibility
@@ -39,6 +39,12 @@ Retiring a previously-valid **constrained-vocabulary value** (a `StrEnum` member
 ## Enums
 
 Members appear in API responses, DB columns, task payloads, and config. Removing a member breaks all of them. Renaming a member's **value** (string/int) equals removing the old + adding the new. New members are safe iff consumers handle unknown values gracefully — confirm.
+
+## Changing what a shared surface *selects*
+
+Widening, narrowing, or gating a shared predicate or dispatch surface changes behaviour at every existing call site, and the reroute is invisible at the definition site. *Widening* looks purely additive — nothing removed, no signature narrowed — but a value that used to fall through to a default now matches a specific handler. *Narrowing or gating* looks like a local tightening, but silently **removes** inputs from every consumer's selected set, and the consumers that break are the ones asking a *different question* than the new condition answers.
+
+Before changing one in either direction, enumerate what **dispatches on** it: `except` sites, `isinstance` checks, `exception_handler` registrations, and DI / routing tables (`dependency_overrides`, `task_routes`, `@register`). **Registry registrations are the easiest to miss**, because the coupling is by *type* and leaves no trace where the type is defined — a class in `app/core/exceptions.py` carries no hint that `app/sep/main.py` registers a dedicated handler for it. This applies to an enum, a response model, a settings class, or a DI alias just as much as to an exception class. Exempt: a refactor whose truth table is unchanged, and module-local helpers — *shared* is the trigger, not call-site count.
 
 ## Config Keys (`settings.yaml` / env vars)
 
