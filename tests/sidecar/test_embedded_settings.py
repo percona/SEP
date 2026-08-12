@@ -30,6 +30,8 @@ from app.sep.apps.framework.registry import (
     collect_app_owned_settings_classes,
 )
 from app.sep.config import SEPSettings
+from app.sep.routes.artifacts import collect_base_dirs
+from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.tasks.config import TasksSettings
 from app.tasks.settings.routes import TASKS_ADMIN_SETTINGS_CLASSES
 from tests.sidecar.conftest import (
@@ -265,6 +267,20 @@ def test_activation_list_builds_an_app_registry():
 
     assert {"inventory", "atw", "mysql_backups"} <= activated
     assert "snippets" not in activated
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_activation_list_resolves_the_snippet_artifact_type(mocker):
+    """Assert the baked profile serves ATW-dispatched snippet downloads.
+
+    The profile activates atw and no artifact-declaring app, so the type has to
+    come from the static map rather than the registry; without it the signed URL
+    ATW emits is rejected as an invalid artifact type.
+    """
+    registry = build_app_registry(SEPSettings().APPS)
+    mocker.patch("app.sep.routes.artifacts.get_app_registry", return_value=registry)
+
+    assert ARTIFACT_TYPE_SNIPPET in collect_base_dirs()
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")

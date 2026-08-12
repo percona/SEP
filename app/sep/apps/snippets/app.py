@@ -33,6 +33,12 @@ Snippet ingestion contributes no ``periodic_task_schedules``: its task lives in
 the library (``app.sep.snippets.celery``), not this package, so the app owns no
 Celery module to prefix it with and its schedule is seeded unconditionally by
 ``get_system_periodic_tasks``.
+
+Snippets declares no ``artifact_base_dirs``: the snippet artifact type follows
+snippet execution, which is library-owned, so it is declared statically in
+``app.sep.artifact_constants`` and resolves whether or not this app is
+activated. Declaring it here as well would trip the duplicate-type guard in
+``collect_base_dirs``.
 """
 
 from app.sep.apps.framework.apps import TaskExecutionApp
@@ -43,7 +49,6 @@ from app.sep.apps.snippets.extra_routes import (
     maintenance_router,
 )
 from app.sep.snippets.config import snippets_settings
-from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.responses import SnippetsCapabilitiesResponse
 from app.sep.snippets.script_source import snippet_source
@@ -77,5 +82,4 @@ app = TaskExecutionApp(
     list_query_spec=SnippetManager.list_query_spec,
     capabilities_provider=_snippets_capabilities_provider,
     extra_routes=(approval_router, maintenance_router, artifact_router),
-    artifact_base_dirs={ARTIFACT_TYPE_SNIPPET: lambda: snippets_settings.SNIPPETS_DIR},
 )

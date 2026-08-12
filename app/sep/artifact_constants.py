@@ -13,13 +13,30 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define constant for signing artifact-download URLs.
+"""Define the constants the artifact-download surface is built from.
 
 Houses the itsdangerous salt shared by the generic ``app.sep.routes.artifacts``
 route and the framework signer in ``app.sep.apps.framework.script_helpers``, so
-both sign and verify download tokens under the same namespace.
+both sign and verify download tokens under the same namespace, plus the
+base-dir declarations that are not owned by any activatable app.
 """
 
-__all__ = ["ARTIFACT_DOWNLOAD_SALT"]
+from collections.abc import Callable, Mapping
+from pathlib import Path
+
+from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
+
+__all__ = ["ARTIFACT_DOWNLOAD_SALT", "STATIC_ARTIFACT_BASE_DIRS"]
 
 ARTIFACT_DOWNLOAD_SALT = "artifact-download"
+
+#: Artifact base dirs seeding the download map. Not owned by a ``SEP.APPS`` app,
+#: so they are not registry-derived; ``collect_base_dirs`` seeds them ahead of
+#: the per-app declarations. The snippet directory is declared here because
+#: snippet execution is library-owned: ATW builds signed snippet-download URLs
+#: through ``app.sep.snippets.script_source`` whether or not the snippets app is
+#: activated, so the type it names must resolve on the same terms.
+STATIC_ARTIFACT_BASE_DIRS: Mapping[str, Callable[[], Path]] = {
+    ARTIFACT_TYPE_SNIPPET: lambda: snippets_settings.SNIPPETS_DIR,
+}
