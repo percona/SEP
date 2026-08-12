@@ -804,7 +804,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         and joined with the new bytes. That re-fetch is idempotent because the
         withheld bytes were never emitted, so ``producer_offset`` never advanced
         past them; the writer's dedup covers a different case -- a retry after a
-        concurrent state update. ``flush_partial`` disables the
+        concurrent state update. When the withheld remainder would exceed
+        ``log_anonymization_max_withheld_bytes``, the buffer is flushed instead
+        (empty remainder, no rollback) so the cursor advances and the next cycle
+        does not re-fetch the same tail. ``flush_partial`` disables the
         withholding so a terminal drain can emit a newline-less final line
         instead of losing it forever.
 
@@ -824,7 +827,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             advanced Nomad-space offset for the next fetch, the advanced
             producer-space offset the writer should persist, and the raw byte
             length of the partial line withheld this cycle (``0`` when nothing
-            was withheld).
+            was withheld, including after a forced ceiling flush).
         """
         try:
             raw_log_data = self.backend.client.stream_logs.stream(
@@ -854,7 +857,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         anonymizing = _should_anonymize(step, anonymize_entities)
         withheld = 0
         if anonymizing and not flush_partial:
-            complete, remainder = split_complete_lines(raw_buf)
+            split = split_complete_lines(
+                raw_buf, max_withheld=self.log_anonymization_max_withheld_bytes
+            )
+            complete, remainder = split.complete, split.remainder
+            # Forced flush yields an empty remainder, so withheld stays 0 and
+            # the cursor is not rolled back -- the next cycle starts past the
+            # flushed tail instead of re-fetching it.
             withheld = len(remainder)
             nomad_offset -= withheld
         else:
