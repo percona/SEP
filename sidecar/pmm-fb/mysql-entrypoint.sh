@@ -67,9 +67,12 @@ esac
 DATADIR=/var/lib/mysql
 DEFAULTS_FILE=/root/.my.cnf
 SEED_DIR=/opt/test_db
+SOCKET=/var/lib/mysql/mysql.sock
 # Lives on the data volume beside what it describes, and is written only after
 # a complete import — the datadir existing says the import *started*
 SEED_MARKER=/var/lib/mysql/.sep-seed-imported
+# Same reasoning, and on the same volume as the accounts it records
+USERS_MARKER=/var/lib/mysql/.sep-users-created
 SERVICE_NAME=sep-mysql
 PMM_CONFIG_FILE="${PMM_AGENT_CONFIG_FILE:-/usr/local/percona/pmm/config/pmm-agent.yaml}"
 
@@ -111,21 +114,49 @@ shutdown_mysqld() {
     wait "${mysqld_pid}" 2> /dev/null || true
 }
 
+# Connect as root over the socket, ignoring every option file. --no-defaults is
+# load-bearing rather than tidiness: option files outrank MYSQL_PWD, so a
+# /root/.my.cnf left by an earlier boot would silently supply the service user's
+# password for these root connections and they would fail to authenticate. It
+# also drops /etc/my.cnf, hence the explicit socket.
+mysql_as_root() {
+    MYSQL_PWD="$1" mysql --no-defaults --protocol=socket --socket="${SOCKET}" \
+        --user=root "${@:2}"
+}
+
+# A fresh datadir leaves root passwordless, and bootstrap_users below is what
+# changes that. Report which of the two credentials the server accepts now, so
+# an interrupted bootstrap can be re-entered from either state. The password
+# travels as MYSQL_PWD rather than --password so it stays out of ps.
+root_needs_password() {
+    mysql_as_root '' --execute='SELECT 1' > /dev/null 2>&1 && return 1
+    return 0
+}
+
 # The service user is granted from '%' rather than 127.0.0.1 because the
 # Mydumper path connects over the network from the node's service address while
 # XtraBackup connects to loopback, and one credential has to satisfy both. The
 # anonymous-user delete is what keeps '%' matching a socket connection.
+# Every statement is convergent rather than first-run-only, because this may be
+# a re-entry after an interrupted bootstrap: CREATE ... IF NOT EXISTS pairs with
+# an ALTER so a half-created account ends up carrying the password we expect
+# instead of aborting the batch. Root's own password is set last on purpose —
+# until it lands, a re-entry can still connect as passwordless root.
 bootstrap_users() {
-    mysql --protocol=socket --user=root << SQL
-ALTER USER 'root'@'localhost' IDENTIFIED BY '${SEP_MYSQL_ROOT_PASSWORD}';
+    local password=''
+    root_needs_password && password="${SEP_MYSQL_ROOT_PASSWORD}"
+    mysql_as_root "${password}" << SQL
 DELETE FROM mysql.user WHERE User='';
 DROP DATABASE IF EXISTS test;
-CREATE USER 'sep_backup'@'%' IDENTIFIED WITH caching_sha2_password BY '${SEP_MYSQL_BACKUP_PASSWORD}';
+CREATE USER IF NOT EXISTS 'sep_backup'@'%' IDENTIFIED WITH caching_sha2_password BY '${SEP_MYSQL_BACKUP_PASSWORD}';
+ALTER USER 'sep_backup'@'%' IDENTIFIED WITH caching_sha2_password BY '${SEP_MYSQL_BACKUP_PASSWORD}';
 GRANT ALL ON *.* TO 'sep_backup'@'%' WITH GRANT OPTION;
-CREATE USER 'pmm'@'127.0.0.1' IDENTIFIED WITH caching_sha2_password BY '${SEP_MYSQL_PMM_PASSWORD}'
+CREATE USER IF NOT EXISTS 'pmm'@'127.0.0.1' IDENTIFIED WITH caching_sha2_password BY '${SEP_MYSQL_PMM_PASSWORD}';
+ALTER USER 'pmm'@'127.0.0.1' IDENTIFIED WITH caching_sha2_password BY '${SEP_MYSQL_PMM_PASSWORD}'
     WITH MAX_USER_CONNECTIONS 10;
 GRANT SELECT, RELOAD, PROCESS, REPLICATION CLIENT ON *.* TO 'pmm'@'127.0.0.1';
 FLUSH PRIVILEGES;
+ALTER USER 'root'@'localhost' IDENTIFIED BY '${SEP_MYSQL_ROOT_PASSWORD}';
 SQL
 }
 
@@ -226,9 +257,18 @@ main() {
     }
     success 'mysqld is up'
 
-    if ((first_boot)); then
+    # Marker-gated for the same reason as the seed below: a container stopped
+    # between initialising the datadir and creating these accounts leaves a
+    # datadir that reads as initialised, and a first_boot-gated step would then
+    # be skipped for good — leaving a credentials file naming users that do not
+    # exist. bootstrap_users is re-runnable, so the recovery is just to run it.
+    if [[ ! -f ${USERS_MARKER} ]]; then
         bootstrap_users || {
             error 'Could not create the MySQL users'
+            exit 1
+        }
+        : > "${USERS_MARKER}" || {
+            error "Could not record the user bootstrap at ${USERS_MARKER}"
             exit 1
         }
         success 'Created the sep_backup and pmm users'
