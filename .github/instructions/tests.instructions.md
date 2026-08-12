@@ -57,7 +57,7 @@ This is the *reason* behind the "don't patch a sibling in the SUT module" rule a
 
 ## Body-dep override masks form/JSON parsing — critical
 
-When a route's body is `Annotated[<Model>, Form()]` / `Annotated[<Model>, Body()]`, the test MUST NOT override the dep that materialises that body model (`dependency_overrides[build_<app>_task_payload]`, `dependency_overrides[parse_<resource>_form]`, …). Such overrides remove the Pydantic model from FastAPI's body-field resolution, so body-parsing regressions (422 in production) pass green. At least one test per POST/PUT/PATCH route MUST issue a real `test_client.post(...)` with realistic data and no body-dep override. Overriding `validate_csrf`, `get_current_user`, `get_session`, `get_inventory_api`, `get_tasks_api` is fine.
+When a route's body is `Annotated[<Model>, Form()]` / `Annotated[<Model>, Body()]`, the test MUST NOT override the dep that materialises that body model (`dependency_overrides[build_<app>_task_payload]`, `dependency_overrides[parse_<resource>_form]`, …). Such overrides remove the Pydantic model from FastAPI's body-field resolution, so body-parsing regressions (422 in production) pass green. At least one test per POST/PUT/PATCH route MUST issue a real `test_client.post(...)` with realistic data and no body-dep override. Overriding `get_current_user`, `get_session`, `get_inventory_api`, `get_tasks_api` is fine.
 
 ## Compile-only SQL ≠ engine coverage
 
@@ -65,7 +65,7 @@ When a route's body is `Annotated[<Model>, Form()]` / `Annotated[<Model>, Body()
 
 ## Don't ratify the implementation
 
-`assert "<token>" in compiled_sql` with `<token>` copied verbatim from the SUT is a tautology. Same for HTML — substring matches against template output (`'selected>hosts</option>' in response.text`) ratify the template, not the route's contract. Drive the SUT with inputs and assert observable outputs (status, row count, parsed DOM nodes).
+`assert "<token>" in compiled_sql` with `<token>` copied verbatim from the SUT is a tautology. The same holds for any rendered output — a substring match against the report PDF template's HTML ratifies the template, not the code's contract. Drive the SUT with inputs and assert observable outputs (status, row count, parsed JSON fields).
 
 ## Loops, enums, settings, private state
 

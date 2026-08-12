@@ -68,9 +68,11 @@ A route that "enforces" auth only because an auth-bearing parameter (`user: ApiA
 
 Flag new route handlers lacking explicit `dependencies=[...]` when sibling routes on the same router declare one. Carve-outs: router-level `dependencies=[...]`, full-router parameter conventions documented in the router file.
 
-## CSRF on state-changing endpoints
+## Cross-site protection on state-changing endpoints
 
-POST / PUT / DELETE / PATCH endpoints must validate CSRF. When modeling a new app's stack on a sibling, don't mechanically copy decorators — trace where CSRF is enforced in the sibling's **full** dependency chain (parent router, middleware, earlier dependency). Before dropping `IsCsrfValidated` anywhere, grep the sibling for `validate_csrf` and `IsCsrfValidated` across `routes.py`, `deps.py`, and any parent router inclusion.
+Form-token CSRF is gone: `validate_csrf`, `IsCsrfValidated` and `CSRFMiddleware` were deleted with the SSR layer (SEP-1687) and no longer exist anywhere in `app/`. Don't ask a PR to add them, and treat their absence as expected rather than as a missing guard.
+
+POST / PUT / DELETE / PATCH endpoints are protected instead by `require_bearer_for_unsafe_methods` / `RequireBearerForUnsafeMethods` (`app/sep/deps.py`) — mutating methods require an `Authorization: Bearer` header, which a browser never attaches to a cross-site request. When modeling a new app's stack on a sibling, don't mechanically copy decorators: trace the sibling's **full** dependency chain (parent router, earlier dependency) to see where that requirement actually enters, since it is usually mounted router-level rather than per route.
 
 ## Periodic-task schedules
 

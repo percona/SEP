@@ -70,7 +70,7 @@ A docstring describes what the function/class *actually* does — neither narrow
 - **Overstated coverage** — module docstring lists call-shapes the tests don't use. REWRITE per the actual call shape.
 - **Oversold framing** — defensive measure framed as a stronger guarantee than it provides (e.g. "defends against tampering via a denylist" running on dev-authored input). SOFTEN or REMOVE.
 - **Overstated runtime/lifecycle guarantee** — framing concurrency/shutdown behaviour as stronger than the code provides (*drains*, *completes cleanly*, *graceful*, *atomic*, *fail-fast* when the code just tears down). SOFTEN.
-- **Overstated constraint scope** — a field description or help text paraphrasing a validation rule over a broader set than the validator gates. REWRITE with the exact fields; the same correction is owed on every copy surface (Pydantic `Field(description=...)`, React `FormField`, Jinja tooltip).
+- **Overstated constraint scope** — a field description or help text paraphrasing a validation rule over a broader set than the validator gates. REWRITE with the exact fields; the same correction is owed on every copy surface (Pydantic `Field(description=...)`, the app's `schema.py` help text, React `FormField`).
 - **Misattributed condition** — the docstring ties a value to the wrong cause. REWRITE to name the actual governing condition.
 
 ## Don't understate the contract
