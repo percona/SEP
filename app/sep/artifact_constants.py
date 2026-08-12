@@ -23,6 +23,7 @@ base-dir declarations that are not owned by any activatable app.
 
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from types import MappingProxyType
 
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
@@ -36,7 +37,9 @@ ARTIFACT_DOWNLOAD_SALT = "artifact-download"
 #: the per-app declarations. The snippet directory is declared here because
 #: snippet execution is library-owned: ATW builds signed snippet-download URLs
 #: through ``app.sep.snippets.script_source`` whether or not the snippets app is
-#: activated, so the type it names must resolve on the same terms.
-STATIC_ARTIFACT_BASE_DIRS: Mapping[str, Callable[[], Path]] = {
-    ARTIFACT_TYPE_SNIPPET: lambda: snippets_settings.SNIPPETS_DIR,
-}
+#: activated, so the type it names must resolve on the same terms. Frozen so
+#: ``collect_base_dirs`` must copy before overlaying the per-app declarations,
+#: rather than leaking one image's activation set into the shared constant.
+STATIC_ARTIFACT_BASE_DIRS: Mapping[str, Callable[[], Path]] = MappingProxyType(
+    {ARTIFACT_TYPE_SNIPPET: lambda: snippets_settings.SNIPPETS_DIR}
+)
