@@ -68,6 +68,16 @@ System and periodic tasks are seeded at startup via `get_or_create`. Orphaned pe
 - Removing a seed entry deletes it on next startup. Dependent user-configured periodic tasks or Nomad jobs fail silently.
 - Renaming a `meta` key in a Nomad job template breaks in-flight jobs dispatched with the old parameter names.
 - Changing an `IntervalSchedule` value (30s → 5m) is safe — `get_or_create` updates it in place. Removing the schedule field entirely breaks the periodic task that references it.
+- **Narrowing which rows a gating regime *owns* strands the state it already wrote.** The rules above cover orphaned rows breaking *references*; this one covers state surviving with no writer. When a change removes rows from the set some writer maintains — an ownership predicate, an orphan sweep, a `not_in(...)` filter — name what resets the state those rows still carry. `init_periodic_tasks_db` updates `task`, `schedule_model` and `extra_kwargs` on an existing row but **never** `enabled`, so a `PeriodicTask` leaving the owned set keeps whatever `enabled` value the old regime last wrote — permanently, and invisibly to the UI that would otherwise toggle it. Either write the released value through explicitly or state why the surviving value is already correct. Not in scope: rows nothing reads, newly added state, and in-place updates where the writer keeps ownership.
+
+## Changing a settings field's shipped default
+
+Flipping a default (or converting an opt-in to an opt-out) is a behaviour change for every deployment that never set the key. Check that the PR:
+
+- **Enumerates every layer that resolves the value** and decides each — the field default, `settings.yaml`, the shipped profile, env. **The field default is the layer that ships**, not the repository default: a value the repo's own `settings.yaml` overrides is not what an operator running the image gets.
+- **Reconciles the docstring in the same change** — the `:param X:` block is a copy surface for the default and goes stale silently.
+- **Asserts the advertised default rather than assuming it**, and pins the resolved default per shipped profile with a test.
+- **Gives operators an opt-in path back and a changelog note.** A default flip is user-visible even when no contract changed.
 
 ## Behavioral asymmetry across processes / deployments / install-states
 
