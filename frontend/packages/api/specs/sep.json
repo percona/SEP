@@ -14970,7 +14970,7 @@
     },
     "/api/apps/atw/": {
       "get": {
-        "description": "List ATW-tagged snippets grouped by category.\n\nCategories with no matching snippets are omitted to keep the payload small;\nthe ATW enum still defines the full taxonomy for validation (plugin schema).\n\n:param session: The database session.\n:return: One listing row per category that has at least one snippet.",
+        "description": "List ATW-tagged snippets grouped by category.\n\nCategories with no matching snippets are omitted to keep the payload small;\nthe ATW enum still defines the full taxonomy for validation (plugin schema).\n\n:param session: The database session.\n:return: One listing row per category that has at least one approved snippet.",
         "operationId": "atw_atw_api_list_api_apps_atw__get",
         "responses": {
           "200": {

@@ -63,9 +63,9 @@ const MOCK_USER = {
  * `/@fs/.../packages/api/src/index.ts`.  Guard against that by checking
  * pathname starts with `/api/` before intercepting.
  *
- * TODO: If your app backend IS available (e.g. via docker-compose),
- * remove this helper and add a `webServer` entry to playwright.config.ts
- * that spins up docker-compose with a known seed instead.
+ * TODO: If your app backend IS available, remove this helper and add a
+ * `webServer` entry to playwright.config.ts that starts it with a known
+ * seed instead.
  */
 async function mockAuthenticatedApis(page: Page): Promise<void> {
   await page.route('**/api/**', (route) => {

@@ -25,6 +25,7 @@ from sqlalchemy import (
     CursorResult,
     delete,
     func,
+    Insert,
     inspect,
     ScalarResult,
     Select,
@@ -55,8 +56,10 @@ from app.core.utils.fields import DatabaseDialect
 logger = logging.getLogger(__name__)
 
 Whereable = Select | DMLWhereBase
+Executable = Select | Insert | DMLWhereBase
 ColumnExpressionOrStrLabelArgument = str | ColumnExpressionArgument[Any]
 W = TypeVar("W", bound=Whereable)
+E = TypeVar("E", bound=Executable)
 T = TypeVar("T")
 S = TypeVar("S", bound=SQLModel)
 BS = TypeVar("BS", bound=BaseSQLModel)
@@ -223,7 +226,7 @@ class BaseManager:
     async def _exec(
         cls,
         session: AsyncSession,
-        query: W,
+        query: E,
     ) -> TupleResult | ScalarResult | CursorResult:
         logger.debug("Executing query: %s", query)
         return await session.exec(query)
@@ -1006,6 +1009,31 @@ class BaseManager:
         )
         result = await session.scalar(query)
         return result or 0
+
+    @classmethod
+    async def exists(
+        cls,
+        session: AsyncSession,
+        *whereclause: ColumnExpressionArgument[bool],
+        **equal_filters: Any,
+    ) -> bool:
+        """Return whether any record matches the query.
+
+        Emit a short-circuiting ``SELECT EXISTS (...)`` so the database can
+        stop at the first matching row. Filter arguments match :meth:`count`
+        and are applied through :meth:`_filter_query` (``None`` equal-filter
+        values are skipped — same behaviour as ``count``).
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :param whereclause: SQL expressions for the ``where`` clause of the query.
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :return: ``True`` when at least one matching row exists.
+        """
+        inner = cls._filter_query(select(cls.Model), *whereclause, **equal_filters)
+        result = await session.scalar(select(inner.exists()))
+        return bool(result)
 
 
 class BaseSQLModelManager(BaseManager):

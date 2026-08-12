@@ -294,9 +294,6 @@ async def get_task_history(
     return await TaskHistoryManager.get_or_404(session=session, id=task_history_id)
 
 
-TaskHistoryDep = Annotated[TaskHistory, Depends(get_task_history)]
-
-
 async def get_task_history_with_task(
     session: SessionDep,
     task_history_id: int,

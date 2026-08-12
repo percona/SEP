@@ -91,9 +91,10 @@ def skip_unresolvable_heads(env_context: "EnvironmentContext") -> None:
 
     Fail-closed: heads are only dropped when a configured ``version_locations``
     entry is missing from disk, which is what a stripped app looks like. With
-    every location present, an unresolvable revision means version skew or a
-    squashed revision rather than a missing app, so the heads pass through
-    unfiltered and Alembic raises as it does today.
+    every location present the evidence is absent — the cause may be version
+    skew, a squashed revision, or an entry pruned from ``version_locations``
+    for an app that is gone — so the heads pass through unfiltered and Alembic
+    raises as it does today.
 
     Offline (``--sql``) mode needs no hook: there ``get_current_heads`` returns
     the ``starting_rev`` argument instead of reading the version table.
@@ -116,9 +117,10 @@ def skip_unresolvable_heads(env_context: "EnvironmentContext") -> None:
         if not absent:
             logger.error(
                 "%d revision(s) recorded in %s do not resolve (%s) while every "
-                "configured version_locations entry is present on disk. That is "
-                "version skew or a squashed revision, not a stripped app, so "
-                "they are left in place for Alembic to reject.",
+                "configured version_locations entry is present on disk. Likely "
+                "causes: version skew, a squashed revision, or a version_locations "
+                "entry that was pruned or went stale for an app that is no longer "
+                "installed. They are left in place for Alembic to reject.",
                 len(unresolvable),
                 migration_context.version_table,
                 ", ".join(unresolvable),

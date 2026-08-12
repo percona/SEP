@@ -650,7 +650,7 @@ export interface paths {
      *     the ATW enum still defines the full taxonomy for validation (plugin schema).
      *
      *     :param session: The database session.
-     *     :return: One listing row per category that has at least one snippet.
+     *     :return: One listing row per category that has at least one approved snippet.
      */
     get: operations['atw_atw_api_list_api_apps_atw__get'];
     put?: never;
