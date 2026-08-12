@@ -465,8 +465,8 @@ def worker_logging_boot_fixture() -> None:
             "app": {"handlers": ["default"], "level": "WARNING", "propagate": False},
         },
     }
-    logging.config.dictConfig(boot_config)
     try:
+        logging.config.dictConfig(boot_config)
         settings._set_snapshot({"LOGGING": LogLevel.WARNING})
         yield
     finally:
@@ -484,11 +484,13 @@ class TestWorkerLoggingRebind:
     ) -> None:
         """Raise the worker's app logger to the overridden level on refresh.
 
-        Also pin ``disable_existing_loggers: False``: a logger Celery creates at
-        runtime and that is absent from ``LOGGING_CONFIG`` must stay enabled
-        after the callback re-enters ``dictConfig``.
+        Also pin ``disable_existing_loggers: False``: a runtime logger outside
+        the configured logger tree (not under a name ``LOGGING_CONFIG``
+        declares) must stay enabled after the callback re-enters ``dictConfig``.
+        Children of configured names -- e.g. ``celery.app.trace`` under
+        ``celery`` -- are never disabled either way, so they cannot discriminate.
         """
-        runtime_logger = logging.getLogger("celery.app.trace")
+        runtime_logger = logging.getLogger("kombu.connection")
         proxies = build_sep_override_proxies()
         await _upsert_override(
             override_session_maker,
