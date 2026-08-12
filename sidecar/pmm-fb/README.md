@@ -54,13 +54,29 @@ it out of `unhealthy` while PMM provisioning and SEP migrations finish.
 ## Bring-up
 
 ```bash
-./bootstrap.sh              # generate .env, render pmm.conf
-docker compose up -d        # or: podman compose up -d
+./bootstrap.sh                                # generate .env, render pmm.conf
+docker compose --profile mysql up -d --build  # or: podman compose ...
 ```
+
+`--profile mysql` adds the `sep-mysql` task-execution target described below.
+Omitting it is the supported fast path — you get the same two services this
+harness has always had, and auth or UI work does not pay for a MySQL build:
+
+```bash
+docker compose up -d        # pmm-server + sep-sidecar only
+```
+
+Note that `docker compose build` obeys the profile too, and reports `No
+services to build` rather than an error when you forget it.
 
 First boot takes a couple of minutes (PMM provisioning + SEP migrations; the
 side-car recipe budgets 150 s before its healthcheck would start failing).
-Then:
+`sep-mysql` initialises a datadir and imports the employees dataset on its
+first boot; the import runs for several minutes. Its healthcheck reports
+`healthy` as soon as MySQL answers — about a minute in, while the import is
+still running — because health here means "the database is up" and nothing
+more. Watch `docker compose logs -f sep-mysql` for `Imported the employees seed
+dataset` before expecting a backup to have data to copy. Then:
 
 - PMM UI: https://127.0.0.1:8443 (admin / admin)
 - SEP API through PMM's nginx: https://127.0.0.1:8443/api/apps/
@@ -120,13 +136,121 @@ inert while no token is set.
 - The side-car has a fixed IP (`172.28.9.30`) because nginx resolves proxy
   targets at startup — a name-based upstream would keep pmm-server's nginx
   from booting before SEP is up, and would go stale across SEP restarts.
+  `sep-mysql` (`172.28.9.40`) is fixed for an unrelated reason: SEP never
+  updates an existing inventory node's address, and the Mydumper path connects
+  to exactly that address, so an address that moved across recreates would
+  leave SEP pointing at a stale one.
+
+## The MySQL target node (`sep-mysql`)
+
+Behind the `mysql` compose profile. One container carrying Percona Server
+8.4.10, a PMM Client, `percona-xtrabackup-84` (8.4.0), `mydumper` (1.0.3) and
+the `datacharmer/test_db` employees dataset — the target a MySQL Backups run
+executes *on*, not just against. The seed is baked into the image, so first
+boot needs no download; it lands as ~125 MB of real data (300,024 employees,
+2.8 M salary rows).
+
+**Why one container.** SEP does no scheduling: it pins a Nomad job to the node
+name the operator picked and `raw_exec` runs it as a plain process in that
+node's namespace. The XtraBackup payload reads the datadir directly and SEP
+pins its server config to `localhost`, so the datadir, a MySQL server on
+loopback and the backup binaries all have to be reachable from that one
+namespace. Sharing a datadir volume between a MySQL container and a separate
+PMM Client container is the attractive wrong answer: everything upstream of
+exec looks correctly wired, and the run then fails on *connect* rather than on
+the datadir. Mydumper is the counterpart — it connects over the network to the
+node's service address — so the single combined node covers both paths, since
+it can reach itself by its own address.
+
+The PMM Client is what makes the node selectable at both ends: `pmm-admin add
+mysql` registers the service, which the syncer pulls into SEP as a backup
+source, while the Nomad client `pmm-agent` supervises makes the same host an
+executor. Joining Nomad is not enough on its own — SEP's host list filters on
+`Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true`,
+so a node can be joined and still never appear. If it does not, check
+`nomad node status -verbose` inside `pmm-server` before suspecting SEP.
+
+**Prerequisites.** The service reaches SEP only through the PMM syncer, which
+needs a real Grafana token: run `./mint-grafana-token.sh`, then trigger a sync
+(`POST /apps/inventory/sync/`). Without it the node registers with PMM and
+never appears in SEP.
+
+**Credentials.** `./bootstrap.sh` generates three values into `.env`, like
+every other secret here — nothing is committed:
+
+| `.env` slot | MySQL account | Used by |
+|---|---|---|
+| `SEP_MYSQL_ROOT_PASSWORD` | `root@localhost` | local administration |
+| `SEP_MYSQL_BACKUP_PASSWORD` | `sep_backup@%` | both backup payloads, via `/root/.my.cnf` |
+| `SEP_MYSQL_PMM_PASSWORD` | `pmm@127.0.0.1` | the PMM exporters |
+
+`sep_backup` is granted from `%` rather than `127.0.0.1` on purpose: XtraBackup
+connects to loopback and Mydumper connects from the service address, and one
+credential has to satisfy both. The entrypoint writes it into `/root/.my.cnf`
+at mode `0600` on every boot.
+
+Rotating any of them in `.env` after first boot does **not** take effect — the
+passwords live in the datadir, so the container comes back up authenticating
+with the originals. To re-bootstrap, drop **both** `sep-mysql-data` and
+`sep-mysql-pmm-config`:
+
+```bash
+docker compose --profile mysql down
+docker volume rm sep-pmm-fb_sep-mysql-data sep-pmm-fb_sep-mysql-pmm-config
+```
+
+Dropping only the datadir rotates the MySQL side while the PMM config volume
+keeps the already-registered service, so the entrypoint skips `pmm-admin add`
+and the exporters keep authenticating with the old `pmm` password — monitoring
+then fails quietly. Removing the config volume re-registers the node, which
+mints new PMM ids and therefore orphans any catalogued backup rows; that is the
+trade the config volume exists to avoid, and it is the right one to take when
+the datadir those backups came from is being discarded anyway.
+
+**Running a backup.** In the MySQL Backups create form:
+
+- **Execution Host** — `sep-mysql`
+- **Database Host** — the `sep-mysql` MySQL service
+- **MySQL defaults file** — `/root/.my.cnf`
+
+Set the defaults file explicitly. Dispatched `raw_exec` tasks inherit the Nomad
+client's identity, which here is root, so `/root/.my.cnf` is readable — but the
+XtraBackup payload's *default* path is `f"{os.environ.get('HOME')}/.my.cnf"`,
+which becomes the literal string `None/.my.cnf` if `HOME` does not reach the
+task, and that surfaces as an *authentication* failure rather than a
+missing-file one. Naming the path removes the dependency. A successful run logs
+`Connecting to MySQL server host: localhost, user: sep_backup`.
+
+Both fields matter independently. Leaving **Execution Host** on `pmm-server`
+while pointing **Database Host** at the `sep-mysql` service is the mistake the
+form invites, and it does not fall back: XtraBackup would run in `pmm-server`'s
+namespace, where the pinned `localhost` has no MySQL and there is no datadir, so
+it fails at connect rather than doing anything useful.
+
+Compression, encryption and upload are untested here; they pull in `qpress`,
+`zstd` and `gpg`, which the image does not carry.
+
+**Repinning the feature build.** `${PMM_FB_TAG}` drives both `pmm-server`'s
+image and the PMM Client copied into `sep-mysql`, and the two must stay on the
+same build: the client ships its own `nomad` binary that has to speak RPC to
+the server's, and a released client beside a feature-build server pairs two
+Nomad builds nobody has tested. Move the one variable, and rebuild —
+`docker compose --profile mysql up -d --build`. Without `--build` you keep the
+old client against the new server, and the mismatch is silent: registration
+succeeds and only `raw_exec` placement misbehaves.
 
 ## Caveats
 
 - `auth_request` is off for the SEP locations (as in the dev proxy), so
   anything that can reach 127.0.0.1:8443 can call the SEP API as the service
   principal. Local testing only.
-- Both ports 8443 and 9000-9002 bind to loopback only.
+- Both ports 8443 and 9000-9002 bind to loopback only. `sep-mysql` publishes
+  nothing; it is reachable only on the compose network.
+- `sep-mysql` runs `privileged: true` with `cgroup: host` and a read-write
+  `/sys/fs/cgroup` mount. A containerised Nomad client needs it — the
+  fingerprinter reads cgroups and `raw_exec` places tasks into cgroups the
+  client creates — but it is a harness-only concession, not something the
+  side-car topology does.
 - Rotating the internal token = edit `SEP_INTERNAL_TOKEN` in `.env`, re-run
   `./bootstrap.sh` so `pmm.conf` is re-rendered with the new bearer, then
   `docker compose up -d --force-recreate` for **both** containers: the side-car

@@ -20,12 +20,26 @@
 # come from the profile baked into the image, with the per-deployment values
 # below overriding it — environment outranks the file.
 #
+# sep-mysql is the task-execution target, behind the `mysql` profile so the
+# default two-service bring-up stays fast. It is the test MySQL instance, a
+# registered PMM Client (hence a Nomad client, hence a selectable executor
+# host) and the carrier of the employees seed, all in one namespace — which is
+# what the XtraBackup path requires: SEP pins its server config to localhost
+# and the payload reads the datadir directly, so the datadir, a server on
+# loopback and the backup binaries have to share one namespace. Sharing only a
+# datadir volume between two containers looks correctly wired and then fails on
+# connect. Its image and pmm-server's are pinned to one PMM_FB_TAG below: the
+# client ships its own nomad binary that must speak RPC to the server's, so the
+# two lines move together, and a repin needs a rebuild.
+#
 # The side-car gets a fixed IP because nginx resolves proxy targets at
 # startup, when the SEP container may not be running yet — and a name-based
 # upstream would also go stale when sep-sidecar is recreated (e.g. after
 # minting the Grafana token, which now takes a recreate rather than a restart
 # because the token reaches the process as environment). pmm.conf proxies to
-# that IP.
+# that IP. sep-mysql's fixed IP is load-bearing for a different reason: SEP
+# never updates an existing inventory node's address, and the Mydumper path
+# connects to exactly that address.
 #
 # No per-deployment credentials are committed: bootstrap.sh generates those
 # into the gitignored .env and pmm.conf; see README.md. The one credential
@@ -35,7 +49,8 @@ name: sep-pmm-fb
 
 services:
   pmm-server:
-    image: docker.io/perconalab/pmm-server-fb:PR-4500-133001e
+    # Moves together with sep-mysql's PMM_FB_TAG build arg below
+    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-133001e}
     environment:
       PMM_ENABLE_SEP: "1"
       PMM_SEP_POSTGRES_PASSWORD: ${SEP_PG_PASSWORD:?run ./bootstrap.sh first}
@@ -76,6 +91,49 @@ services:
       sep-pmm:
         ipv4_address: 172.28.9.30
 
+  sep-mysql:
+    profiles: ["mysql"]
+    build:
+      context: .
+      dockerfile: Containerfile.mysql
+      args:
+        PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-133001e}
+    # Waiting for readyz only gets registration close: pmm-managed starts
+    # answering later still, which the entrypoint's bounded retry covers
+    depends_on:
+      pmm-server:
+        condition: service_healthy
+    hostname: sep-mysql
+    environment:
+      SEP_MYSQL_ROOT_PASSWORD: ${SEP_MYSQL_ROOT_PASSWORD:?run ./bootstrap.sh first}
+      SEP_MYSQL_BACKUP_PASSWORD: ${SEP_MYSQL_BACKUP_PASSWORD:?run ./bootstrap.sh first}
+      SEP_MYSQL_PMM_PASSWORD: ${SEP_MYSQL_PMM_PASSWORD:?run ./bootstrap.sh first}
+      PMM_AGENT_SERVER_ADDRESS: pmm-server:8443
+      PMM_AGENT_SERVER_USERNAME: admin
+      PMM_AGENT_SERVER_PASSWORD: admin
+      PMM_AGENT_SERVER_INSECURE_TLS: "1"
+      PMM_AGENT_CONFIG_FILE: /usr/local/percona/pmm/config/pmm-agent.yaml
+      PMM_AGENT_SETUP_NODE_NAME: sep-mysql
+      PMM_AGENT_SETUP_NODE_ADDRESS: 172.28.9.40
+      PMM_AGENT_SETUP_NODE_TYPE: container
+      PMM_AGENT_PATHS_NOMAD_DATA_DIR: /var/lib/nomad
+    # Nomad's client fingerprinter needs cgroup control, and raw_exec places its
+    # tasks into cgroups the client creates. Measured for this project, in
+    # env/pmm-sep-integration/nomad-clustering-experiment/. Harness-only.
+    privileged: true
+    cgroup: host
+    volumes:
+      - sep-mysql-data:/var/lib/mysql
+      # Keeping pmm-agent.yaml off the image layer keeps the node and service
+      # ids stable across a recreate; SEP matches inventory nodes by external
+      # id, so churning them orphans catalogued backup rows
+      - sep-mysql-pmm-config:/usr/local/percona/pmm/config
+      - sep-mysql-nomad:/var/lib/nomad
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    networks:
+      sep-pmm:
+        ipv4_address: 172.28.9.40
+
 networks:
   sep-pmm:
     driver: bridge
@@ -85,3 +143,6 @@ networks:
 
 volumes:
   pmm-data:
+  sep-mysql-data:
+  sep-mysql-pmm-config:
+  sep-mysql-nomad:
