@@ -58,9 +58,11 @@ it out of `unhealthy` while PMM provisioning and SEP migrations finish.
 docker compose --profile mysql up -d --build  # or: podman compose ...
 ```
 
-`--profile mysql` adds the `sep-mysql` task-execution target described below.
-Omitting it is the supported fast path — you get the same two services this
-harness has always had, and auth or UI work does not pay for a MySQL build:
+`--profile mysql` adds the `sep-mysql` task-execution target — a MySQL server,
+a PMM Client and the employees seed in one container, documented in
+[mysql-target.md](mysql-target.md). Omitting it is the supported fast path —
+you get the same two services this harness has always had, and auth or UI work
+does not pay for a MySQL build:
 
 ```bash
 docker compose up -d        # pmm-server + sep-sidecar only
@@ -140,129 +142,6 @@ inert while no token is set.
   updates an existing inventory node's address, and the Mydumper path connects
   to exactly that address, so an address that moved across recreates would
   leave SEP pointing at a stale one.
-
-## The MySQL target node (`sep-mysql`)
-
-Behind the `mysql` compose profile. One container carrying Percona Server
-8.4.10, a PMM Client, `percona-xtrabackup-84` (8.4.0), `mydumper` (1.0.3) and
-the `datacharmer/test_db` employees dataset — the target a MySQL Backups run
-executes *on*, not just against. The seed is baked into the image, so first
-boot needs no download; it lands as ~125 MB of real data (300,024 employees,
-2.8 M salary rows).
-
-**Why one container.** SEP does no scheduling: it pins a Nomad job to the node
-name the operator picked and `raw_exec` runs it as a plain process in that
-node's namespace. The XtraBackup payload reads the datadir directly and SEP
-pins its server config to `localhost`, so the datadir, a MySQL server on
-loopback and the backup binaries all have to be reachable from that one
-namespace. Sharing a datadir volume between a MySQL container and a separate
-PMM Client container is the attractive wrong answer: everything upstream of
-exec looks correctly wired, and the run then fails on *connect* rather than on
-the datadir. Mydumper is the counterpart — it connects over the network to the
-node's service address — so the single combined node covers both paths, since
-it can reach itself by its own address.
-
-The PMM Client is what makes the node selectable at both ends: `pmm-admin add
-mysql` registers the service, which the syncer pulls into SEP as a backup
-source, while the Nomad client `pmm-agent` supervises makes the same host an
-executor. Joining Nomad is not enough on its own — SEP's host list filters on
-`Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true`,
-so a node can be joined and still never appear. If it does not, check
-`nomad node status -verbose` inside `pmm-server` before suspecting SEP.
-
-**Prerequisites.** The service reaches SEP only through the PMM syncer, which
-needs a real Grafana token: run `./mint-grafana-token.sh`, then trigger a sync
-(`POST /apps/inventory/sync/`). Without it the node registers with PMM and
-never appears in SEP.
-
-**Credentials.** `./bootstrap.sh` generates three values into `.env`, like
-every other secret here — nothing is committed:
-
-| `.env` slot | MySQL account | Used by |
-|---|---|---|
-| `SEP_MYSQL_ROOT_PASSWORD` | `root@localhost` | local administration |
-| `SEP_MYSQL_BACKUP_PASSWORD` | `sep_backup@%` | both backup payloads, via `/root/.my.cnf` |
-| `SEP_MYSQL_PMM_PASSWORD` | `pmm@127.0.0.1` | the PMM exporters |
-
-`sep_backup` is granted from `%` rather than `127.0.0.1` on purpose: XtraBackup
-connects to loopback and Mydumper connects from the service address, and one
-credential has to satisfy both. The entrypoint writes it into `/root/.my.cnf`
-at mode `0600` on every boot.
-
-Rotating any of them in `.env` after first boot does **not** take effect — the
-passwords live in the datadir, so the container comes back up authenticating
-with the originals. To re-bootstrap, drop **both** `sep-mysql-data` and
-`sep-mysql-pmm-config` — the service's third volume, `sep-mysql-nomad`, carries
-the Nomad client's own state and its allocation directories, none of which hold
-a credential, so it is left alone:
-
-```bash
-docker compose --profile mysql down
-docker volume rm sep-pmm-fb_sep-mysql-data sep-pmm-fb_sep-mysql-pmm-config
-```
-
-Dropping only the datadir rotates the MySQL side while the PMM config volume
-keeps the already-registered service, so the entrypoint skips `pmm-admin add`
-and the exporters keep authenticating with the old `pmm` password — monitoring
-then fails quietly. Removing the config volume re-registers the node, which
-mints new PMM ids and therefore orphans any catalogued backup rows; that is the
-trade the config volume exists to avoid, and it is the right one to take when
-the datadir those backups came from is being discarded anyway.
-
-**Running a backup.** In the MySQL Backups create form:
-
-- **Execution Host** — `sep-mysql`
-- **Database Host** — the `sep-mysql` MySQL service
-- **MySQL defaults file** — `/root/.my.cnf`
-- **XtraBackup defaults file** — `/root/.my.cnf` (XtraBackup runs only)
-
-Set both, and set them explicitly. They feed different processes and neither
-covers for the other: the general field configures the payload's own connection
-to MySQL, while only the XtraBackup one becomes `--defaults-file` on the
-`xtrabackup` command line. Dispatched `raw_exec` tasks inherit the Nomad
-client's identity, which here is root, so `/root/.my.cnf` is readable — but the
-payload's *default* path is `f"{os.environ.get('HOME')}/.my.cnf"`, which
-becomes the literal string `None/.my.cnf` if `HOME` does not reach the task,
-and that surfaces as an *authentication* failure rather than a missing-file
-one; the `xtrabackup` process resolves its own option files through the same
-`HOME`. Naming both paths removes the dependency. A successful run logs
-`Connecting to MySQL server host: localhost, user: sep_backup`.
-
-`--defaults-file` is exclusive — it suppresses `/etc/my.cnf` rather than adding
-to it — so the entrypoint writes `[mysqld]` and `[xtrabackup]` groups into
-`/root/.my.cnf` beside `[client]`, carrying the datadir and socket the binary
-would otherwise have taken from the distro config.
-
-Both fields matter independently. Leaving **Execution Host** on `pmm-server`
-while pointing **Database Host** at the `sep-mysql` service is the mistake the
-form invites, and it does not fall back: XtraBackup would run in `pmm-server`'s
-namespace, where the pinned `localhost` has no MySQL and there is no datadir, so
-it fails at connect rather than doing anything useful.
-
-Compression and encryption need nothing extra — `zstd`, `lz4`, `gzip`, `gpg`
-and XtraBackup's own `xbcrypt` all arrive as dependencies of the packages above.
-Two caveats:
-
-- **`quicklz` will fail.** The form offers it for XtraBackup, but Percona
-  XtraBackup 8.4 supports only `lz4` and `zstd` (`xtrabackup --help`), and the
-  `qpress` binary that produced `.qp` files is not packaged for this base.
-  Nothing in the harness can make that combination work — pick `zstd` or `lz4`.
-- **Only local destinations are reachable.** `rsync` is present; S3 and GCS
-  uploads need `aws` and `gsutil`, which are not installed and would need
-  credentials and a bucket anyway.
-
-None of these paths is exercised by the runs this harness was added for; they
-are documented so the next person knows which failures are the image and which
-are the code.
-
-**Repinning the feature build.** `${PMM_FB_TAG}` drives both `pmm-server`'s
-image and the PMM Client copied into `sep-mysql`, and the two must stay on the
-same build: the client ships its own `nomad` binary that has to speak RPC to
-the server's, and a released client beside a feature-build server pairs two
-Nomad builds nobody has tested. Move the one variable, and rebuild —
-`docker compose --profile mysql up -d --build`. Without `--build` you keep the
-old client against the new server, and the mismatch is silent: registration
-succeeds and only `raw_exec` placement misbehaves.
 
 ## Caveats
 
