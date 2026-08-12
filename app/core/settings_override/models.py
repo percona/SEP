@@ -56,6 +56,7 @@ class SettingClassEnum(StrEnum):
     ALERT_SETTINGS = "AlertSettings"
     ANONYMIZER_SETTINGS = "AnonymizerSettings"
     ALERTS_SETTINGS = "AlertsSettings"
+    HEALTH_REPORT_SETTINGS = "HealthReportSettings"
     INVENTORY_SETTINGS = "InventorySettings"
 
 

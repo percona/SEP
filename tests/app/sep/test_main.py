@@ -38,6 +38,7 @@ from app.sep.apps.framework.registry import (
     AppRegistry,
     get_app_registry,
 )
+from app.sep.apps.report.config import health_report_settings, HealthReportSettings
 from app.sep.config import App, sep_settings, SEPSettings
 from app.sep.deps import get_session, PROTECTED_APP_KEYS
 from app.sep.main import lifespan as sep_module_lifespan
@@ -329,10 +330,14 @@ async def test_proxy_map_composes_app_owned_and_sep_entries(mocker):
         SettingClassEnum.SETTINGS,
         SettingClassEnum.ALERT_SETTINGS,
         SettingClassEnum.ALERTS_SETTINGS,
+        SettingClassEnum.HEALTH_REPORT_SETTINGS,
     }
     alerts_entry = proxies[SettingClassEnum.ALERTS_SETTINGS]
     assert alerts_entry.proxy is alerts_settings
     assert alerts_entry.settings_cls is AlertsSettings
+    report_entry = proxies[SettingClassEnum.HEALTH_REPORT_SETTINGS]
+    assert report_entry.proxy is health_report_settings
+    assert report_entry.settings_cls is HealthReportSettings
 
 
 @pytest.mark.asyncio
@@ -371,6 +376,7 @@ async def test_proxy_map_drops_alerts_but_keeps_core_alert_settings(mocker):
         get_app_registry.cache_clear()
 
     assert SettingClassEnum.ALERTS_SETTINGS not in proxies
+    assert SettingClassEnum.HEALTH_REPORT_SETTINGS not in proxies
     alert_entry = proxies[SettingClassEnum.ALERT_SETTINGS]
     assert alert_entry.proxy is alert_settings
     assert alert_entry.settings_cls is AlertSettings

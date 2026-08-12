@@ -165,7 +165,7 @@ class TestListAggregation:
             set(classes)
         )
         assert classes[-2] == SettingClassEnum.TASKS_SETTINGS.value
-        assert classes[-1] == SettingClassEnum.ALERTS_SETTINGS.value
+        assert classes[-1] == SettingClassEnum.HEALTH_REPORT_SETTINGS.value
         mock_tasks.get.assert_awaited_once_with(f"{REMOTE_BASE}/")
 
     def test_list_emits_is_advanced_for_sep_settings(

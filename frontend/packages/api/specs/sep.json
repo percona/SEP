@@ -959,6 +959,7 @@
           "AlertSettings",
           "AnonymizerSettings",
           "AlertsSettings",
+          "HealthReportSettings",
           "InventorySettings"
         ],
         "title": "SettingClassEnum",
