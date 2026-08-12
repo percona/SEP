@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_f8ab407900e3d94f_builtin_manifest_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-08-11 23:47 +0000
+            created at 2026-08-12 14:02 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -175,11 +175,11 @@
     <p class="run"><span class="n"><a id="t91" href="#t91">91</a></span><span class="t"><span class="key">async</span> <span class="key">def</span> <span class="nam">republish_sep_settings_snapshot</span><span class="op">(</span><span class="nam">session</span><span class="op">:</span> <span class="nam">AsyncSession</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t92" href="#t92">92</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Republish the SEP settings snapshot from a session already in hand.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t93" href="#t93">93</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t94" href="#t94">94</a></span><span class="t"><span class="str">    Let a Celery task take a decision against overrides written after its child</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t95" href="#t95">95</a></span><span class="t"><span class="str">    last refreshed: the worker&#x27;s refresher advances only while something drives</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t96" href="#t96">96</a></span><span class="t"><span class="str">    ``celery.loop``, so a child can hold a pre-write snapshot for an unbounded</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t97" href="#t97">97</a></span><span class="t"><span class="str">    time, while an awaited republish inside a task body is driven by the same</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t98" href="#t98">98</a></span><span class="t"><span class="str">    ``run_until_complete`` that drives the task.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t94" href="#t94">94</a></span><span class="t"><span class="str">    Let a Celery task decide against the overrides currently stored, not only</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t95" href="#t95">95</a></span><span class="t"><span class="str">    those present when its child last refreshed: the worker&#x27;s refresher advances</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t96" href="#t96">96</a></span><span class="t"><span class="str">    only while something drives ``celery.loop``, so a child can hold a pre-write</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t97" href="#t97">97</a></span><span class="t"><span class="str">    snapshot for an unbounded time, while an awaited republish inside a task</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t98" href="#t98">98</a></span><span class="t"><span class="str">    body is driven by the same ``run_until_complete`` that drives the task.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t99" href="#t99">99</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t100" href="#t100">100</a></span><span class="t"><span class="str">    Only ``SEP_SETTINGS`` is republished, and no rebind callback fires:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t101" href="#t101">101</a></span><span class="t"><span class="str">    ``publish_snapshot`` has no callback channel. That is harmless for a worker</span>&nbsp;</span><span class="r"></span></p>
@@ -279,7 +279,7 @@
             <a class="nav" href="z_f8ab407900e3d94f_builtin_manifest_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-08-11 23:47 +0000
+            created at 2026-08-12 14:02 +0000
         </p>
     </div>
 </footer>
