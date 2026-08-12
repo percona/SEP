@@ -149,10 +149,8 @@ root_needs_password() {
     return 0
 }
 
-# The service user is granted from '%' rather than 127.0.0.1 because the
-# Mydumper path connects over the network from the node's service address while
-# XtraBackup connects to loopback, and one credential has to satisfy both. The
-# anonymous-user delete is what keeps '%' matching a socket connection.
+# The anonymous-user delete is what keeps sep_backup's '%' host matching a
+# socket connection.
 # Every statement is convergent rather than first-run-only, because this may be
 # a re-entry after an interrupted bootstrap: CREATE ... IF NOT EXISTS pairs with
 # an ALTER so a half-created account ends up carrying the password we expect
