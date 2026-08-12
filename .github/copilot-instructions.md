@@ -12,7 +12,7 @@ SEP is a FastAPI application with three mounted sub-applications, each with its 
 
 SEP apps are FastAPI routers under `app/sep/apps/<name>/` with `routes.py`, `deps.py`, and optional `models.py`. `Annotated[..., Depends(...)]` aliases live in `deps.py`.
 
-The UI is **API-first + React** — see `api-first.instructions.md` for rules that apply when a PR touches the API gateway, app schemas, or `frontend/packages/`. The server-rendered Jinja2 layer was deleted in SEP-1687; the only Jinja left in the tree renders the report PDF.
+The UI is **API-first + React** — see `api-first.instructions.md` for rules that apply when a PR touches the API gateway, app schemas, or `frontend/packages/`. The server-rendered Jinja2 layer has been removed; the only Jinja left renders the report PDF.
 
 ## Repo-wide rules (apply to every PR)
 

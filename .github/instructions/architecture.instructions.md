@@ -70,7 +70,7 @@ Flag new route handlers lacking explicit `dependencies=[...]` when sibling route
 
 ## Cross-site protection on state-changing endpoints
 
-Form-token CSRF is gone: `validate_csrf`, `IsCsrfValidated` and `CSRFMiddleware` were deleted with the SSR layer (SEP-1687) and no longer exist anywhere in `app/`. Don't ask a PR to add them, and treat their absence as expected rather than as a missing guard.
+Form-token CSRF is gone: `validate_csrf`, `IsCsrfValidated` and `CSRFMiddleware` were deleted with the SSR layer and no longer exist anywhere in `app/`. Don't ask a PR to add them, and treat their absence as expected rather than as a missing guard.
 
 POST / PUT / DELETE / PATCH endpoints are protected instead by `require_bearer_for_unsafe_methods` / `RequireBearerForUnsafeMethods` (`app/sep/deps.py`) — mutating methods require an `Authorization: Bearer` header, which a browser never attaches to a cross-site request. When modeling a new app's stack on a sibling, don't mechanically copy decorators: trace the sibling's **full** dependency chain (parent router, earlier dependency) to see where that requirement actually enters, since it is usually mounted router-level rather than per route.
 

@@ -4,7 +4,7 @@ applyTo: "app/sep/api/**/*.py,app/sep/apps/framework/**/*.py,app/sep/apps/**/api
 
 # API-First + React
 
-The UI is a schema-driven React SPA backed by a SEP API gateway. The server-rendered Jinja2 layer it replaced was deleted in SEP-1687, so there is no longer a legacy path to fall back to or keep at parity — every UI surface is React over the API. PRs on these paths must follow the rules below.
+The UI is a schema-driven React SPA backed by a SEP API gateway. The server-rendered Jinja2 layer it replaced has been removed, so there is no longer a legacy path to fall back to or keep at parity — every UI surface is React over the API. PRs on these paths must follow the rules below.
 
 ## Rule 1 — Gateway pattern (most-violated)
 
@@ -43,7 +43,7 @@ Source of truth: `frontend/packages/framework/src/index.ts` — check it for the
 
 ## Rule 5 — Auth
 
-**Bearer is the credential for `/api/*`.** The cookie-session path that coexisted with it belonged to the Jinja SSR layer and went with it (SEP-1687). The one cookie that still matters is the **ambient provider session** (PMM / Grafana): when `AMBIENT_SESSION_SSO_ENABLED` is on and the active provider supports it, `resolve_ambient_session_token()` / `resolve_ambient_exchange_token()` (`app/sep/deps.py`) exchange that provider cookie for a SEP token pair or a short-lived bearer. It is an auto-login source, not a parallel session for route auth — an absent session, a rejected session, and a provider outage are deliberately indistinguishable and all deny. Don't introduce a new flow.
+**Bearer is the credential for `/api/*`.** The cookie-session path that coexisted with it belonged to the Jinja SSR layer and went with it. The one cookie that still matters is the **ambient provider session** (PMM / Grafana): when `AMBIENT_SESSION_SSO_ENABLED` is on and the active provider supports it, `resolve_ambient_session_token()` / `resolve_ambient_exchange_token()` (`app/sep/deps.py`) exchange that provider cookie for a SEP token pair or a short-lived bearer. It is an auto-login source, not a parallel session for route auth — an absent session, a rejected session, and a provider outage are deliberately indistinguishable and all deny. Don't introduce a new flow.
 
 **Cross-site protection is the Bearer requirement itself**, not a CSRF token: `require_bearer_for_unsafe_methods` forces `Authorization: Bearer` on mutating methods, which browsers never attach cross-site. There is no `validate_csrf` / `@csrf_exempt` to add or skip. **Never store access tokens in localStorage** — in-memory + HttpOnly refresh cookie + silent refresh (XSS is the threat).
 
