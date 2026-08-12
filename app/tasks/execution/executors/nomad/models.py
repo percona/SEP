@@ -325,6 +325,15 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         Defaults to 5.
     :param terminal_log_drain_interval: Seconds to wait before each post-terminal
         drain re-fetch, giving ``logmon`` time to flush the tail. Defaults to 0.5.
+    :param log_anonymization_max_withheld_bytes: Maximum raw byte length that
+        task-log anonymization may withhold while awaiting a line terminator.
+        When the trailing partial exceeds this ceiling it is flushed anyway,
+        accepting a single redaction-boundary leak so an un-terminated line
+        cannot stall log persistence, stall the live viewer, or drive
+        quadratic Nomad re-fetching. Setting the ceiling very low effectively
+        disables line-boundary anonymization and reinstates the SEP-1651
+        defect, so the value must stay positive. Defaults to 1 MiB -- generous
+        enough that ordinary line-oriented output never trips it.
     :cvar INHERITED_MARKERS: Overlay marking the inherited ``BaseRemoteAPI`` TLS
         fields (``verify_ssl`` and the ``ssl_*`` paths) HOT and ``advanced``
         without redeclaring them; set to the shared :data:`REMOTE_API_TLS_MARKERS`.
@@ -341,6 +350,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     cert_expiry_warn_days: int = hot_field(7, ge=1, advanced=True)
     terminal_log_drain_max_attempts: int = hot_field(5, ge=0, advanced=True)
     terminal_log_drain_interval: float = hot_field(0.5, gt=0, advanced=True)
+    log_anonymization_max_withheld_bytes: int = hot_field(
+        _ONE_MEBIBYTE, gt=0, advanced=True
+    )
     check_cert_expiry_interval: IntervalSchedule | None = field_with_metadata(
         metadata={"reload": ReloadClassification.HOT, "advanced": True},
         default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
