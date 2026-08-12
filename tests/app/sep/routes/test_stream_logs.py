@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from starlette.status import HTTP_200_OK, HTTP_503_SERVICE_UNAVAILABLE
 
 from app.core.requests import RemoteAPI
@@ -198,6 +199,43 @@ def test_stream_execution_events_event_stream(
     assert "Started" in streamed_content
     assert "event: finish" in streamed_content
     assert f'"status": "{TaskHistoryStatusEnum.FAILED.value}"' in streamed_content
+
+
+@pytest.mark.parametrize("root_path", ["", "/sep"])
+@pytest.mark.usefixtures("test_client", "mock_tasks_client")
+def test_logs_stream_tells_a_proxy_not_to_buffer(task_history_response, root_path):
+    """Assert the log stream reaches the browser incrementally through a proxy."""
+    client = TestClient(sep_app, root_path=root_path, raise_server_exceptions=False)
+
+    response = client.get(f"{root_path}/stream-logs/{task_history_response.id}")
+
+    assert response.status_code == HTTP_200_OK
+    assert response.headers["x-accel-buffering"] == "no"
+    assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+
+@pytest.mark.parametrize("root_path", ["", "/sep"])
+@pytest.mark.usefixtures("test_client")
+def test_execution_events_stream_tells_a_proxy_not_to_buffer(
+    mock_tasks_client, task_history_response, root_path
+):
+    """Assert the execution-events stream reaches the browser incrementally too."""
+
+    async def mock_get(path, **_kwargs):
+        if path == f"/history/{task_history_response.id}/events":
+            return []
+        return {"status": TaskHistoryStatusEnum.SUCCESS}
+
+    mock_tasks_client.get.side_effect = mock_get
+    client = TestClient(sep_app, root_path=root_path, raise_server_exceptions=False)
+
+    response = client.get(
+        f"{root_path}/stream-logs/{task_history_response.id}/execution-events"
+    )
+
+    assert response.status_code == HTTP_200_OK
+    assert response.headers["x-accel-buffering"] == "no"
+    assert "event: finish" in response.content.decode("utf-8")
 
 
 def test_execution_events_stream_emits_sep_error_on_upstream_error(

@@ -16,12 +16,15 @@
 """Define tests for the app.sep.main module."""
 
 import importlib
+import logging
 from contextlib import asynccontextmanager, contextmanager
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import FastAPI, HTTPException, status
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
+from starlette.datastructures import URL
 
 import app.sep.main as main_module
 from app.core.alerts.config import alert_settings, AlertSettings
@@ -42,12 +45,18 @@ from app.sep.main import (
     sep_app,
     sep_lifespan,
     warn_if_ambient_sso_inert,
+    warn_if_external_base_lacks_prefix,
 )
 from app.sep.models import AppLifecycleEnum, AppState
 from app.sep.snippets.config import snippets_settings
 from tests.app.sep.conftest import REDUCED_ACTIVATION
 
 _ORIGINAL_SEP_APP = main_module.sep_app
+
+_BASE_URL_TARGET = "app.core.config.settings.BASE_URL"
+_SNIPPETS_BASE_URL_TARGET = (
+    "app.sep.snippets.config.snippets_settings.SNIPPETS_BASE_URL"
+)
 
 
 def _reload_restoring_identity() -> None:
@@ -157,6 +166,109 @@ class TestAmbientSsoStartupWarning:
         warn_if_ambient_sso_inert()
 
         warning.assert_not_called()
+
+
+class TestExternalBaseStartupWarning:
+    """Cover the startup advisory for an external base that omits the URL prefix."""
+
+    @pytest.mark.parametrize(
+        ("offending", "unset"),
+        [
+            (_BASE_URL_TARGET, _SNIPPETS_BASE_URL_TARGET),
+            (_SNIPPETS_BASE_URL_TARGET, _BASE_URL_TARGET),
+        ],
+    )
+    def test_warns_when_a_configured_base_omits_the_prefix(
+        self, mocker, caplog, offending, unset
+    ):
+        """Warn once per offending base, naming the setting an operator must fix."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+        mocker.patch(offending, new=URL("https://host"))
+        mocker.patch(unset, new=None)
+
+        with caplog.at_level(logging.WARNING):
+            warn_if_external_base_lacks_prefix()
+
+        assert len(caplog.records) == 1
+        assert caplog.records[0].getMessage().startswith(offending.rsplit(".", 1)[1])
+
+    def test_stays_silent_when_the_bases_carry_the_prefix(self, mocker, caplog):
+        """Skip the warning when both bases already resolve under the prefix."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+        mocker.patch(_BASE_URL_TARGET, new=URL("https://host/sep"))
+        mocker.patch(_SNIPPETS_BASE_URL_TARGET, new=URL("https://host/sep"))
+
+        with caplog.at_level(logging.WARNING):
+            warn_if_external_base_lacks_prefix()
+
+        assert caplog.records == []
+
+    def test_stays_silent_when_no_external_base_is_configured(self, mocker, caplog):
+        """Skip the warning when a prefix is set but neither external base is."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+        mocker.patch(_BASE_URL_TARGET, new=None)
+        mocker.patch(_SNIPPETS_BASE_URL_TARGET, new=None)
+
+        with caplog.at_level(logging.WARNING):
+            warn_if_external_base_lacks_prefix()
+
+        assert caplog.records == []
+
+    def test_stays_silent_when_no_prefix_is_configured(self, mocker, caplog):
+        """Leave the unprefixed deployment unwarned, which is the regression contract."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="")
+        mocker.patch(_BASE_URL_TARGET, new=URL("https://host"))
+        mocker.patch(_SNIPPETS_BASE_URL_TARGET, new=URL("https://host"))
+
+        with caplog.at_level(logging.WARNING):
+            warn_if_external_base_lacks_prefix()
+
+        assert caplog.records == []
+
+
+class TestPrefixedRouting:
+    """Cover routing when an ASGI server mounts ``sep_app`` under a URL prefix."""
+
+    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    def test_health_answers_under_the_configured_prefix(self, root_path):
+        """Resolve the liveness probe at the prefixed path PMM's nginx forwards."""
+        client = TestClient(sep_app, root_path=root_path)
+
+        assert client.get(f"{root_path}/health").status_code == status.HTTP_200_OK
+
+    def test_health_still_answers_unprefixed_under_a_prefix(self):
+        """Keep the container healthcheck working: it probes loopback unprefixed."""
+        client = TestClient(sep_app, root_path="/sep")
+
+        assert client.get("/health").status_code == status.HTTP_200_OK
+
+    def test_a_prefix_like_path_is_not_mis_stripped(self):
+        """Reject ``/september`` rather than mangling it into a ``/sep`` match."""
+        client = TestClient(sep_app, root_path="/sep", raise_server_exceptions=False)
+
+        assert client.get("/september").status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    @pytest.mark.usefixtures("guarded_client")
+    @pytest.mark.asyncio
+    async def test_a_json_api_route_resolves_under_the_prefix(self, root_path):
+        """Resolve an app's JSON route identically with and without the prefix."""
+        client = TestClient(sep_app, root_path=root_path, raise_server_exceptions=False)
+
+        response = client.get(f"{root_path}/api/apps/inventory/")
+
+        assert response.status_code == status.HTTP_200_OK
+
+    @pytest.mark.asyncio
+    async def test_async_client_resolves_under_the_prefix(self):
+        """Cover the ``ASGITransport`` path the async fixtures reach the app through."""
+        transport = ASGITransport(app=sep_app, root_path="/sep")
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        response = await client.get("/sep/health")
+        await client.aclose()
+
+        assert response.status_code == status.HTTP_200_OK
 
 
 def test_sep_app_rebuilds_without_alerts_and_dipper(mocker):

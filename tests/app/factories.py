@@ -20,6 +20,7 @@ in ``tests/app/sep/apps/<app>/factories.py``, beside that app's tests.
 """
 
 from datetime import datetime, UTC
+from itertools import count
 
 from polyfactory import Use
 from polyfactory.factories.pydantic_factory import ModelFactory
@@ -159,11 +160,18 @@ class NodeWriteFactory(ModelFactory[NodeWrite]):
     external_id = None
 
 
+# Service has a unique (port, node_id) index, so a randomly generated port can
+# land on one a test pinned by hand and turn that create into a silent 409. Hand
+# out ports from a sequence above every port the tests hardcode instead.
+_service_ports = count(20000)
+
+
 class ServiceWriteFactory(ModelFactory[ServiceWrite]):
     """Define factory for ServiceWrite instances."""
 
     node_id = None
     external_id = None
+    port = Use(lambda: next(_service_ports))
 
 
 class SchemaWriteFactory(ModelFactory[SchemaWrite]):

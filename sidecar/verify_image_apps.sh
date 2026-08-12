@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Assert an already-built image's app set, by piping sidecar/verify_image_apps.py
-# into that image's own interpreter. Usage: verify_image_apps.sh <image> <mode>.
+# into that image's own interpreter. Usage: verify_image_apps.sh <image> restricted.
 # Set CONTAINER_RUNTIME=podman for the Jenkins agent; CI uses the docker default.
 set -o errexit -o nounset -o pipefail
 
 if [ "$#" -ne 2 ]; then
-    echo "usage: ${0##*/} <image> <restricted|unrestricted>" >&2
+    echo "usage: ${0##*/} <image> restricted" >&2
     exit 2
 fi
 

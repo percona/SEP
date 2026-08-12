@@ -46,7 +46,7 @@ from app.sep.api.router import api_router
 from app.sep.apps.framework.registry import (
     get_app_registry,
 )
-from app.sep.config import sep_settings
+from app.sep.config import sep_settings, warn_if_base_url_lacks_root_path
 from app.sep.db import get_async_session_maker
 from app.sep.db.seed import get_system_periodic_tasks, init_sep_db
 from app.sep.settings_override import (
@@ -78,17 +78,32 @@ def warn_if_ambient_sso_inert() -> None:
         )
 
 
+def warn_if_external_base_lacks_prefix() -> None:
+    """Emit a warning when a configured external base URL omits the URL prefix.
+
+    Catch the static (env/YAML) misconfiguration at startup; a hot
+    ``SNIPPETS_BASE_URL`` override is checked where the URL is built. Advisory
+    only: startup continues on a mismatch.
+    """
+    warn_if_base_url_lacks_root_path(settings.BASE_URL, "BASE_URL")
+    warn_if_base_url_lacks_root_path(
+        snippets_settings.SNIPPETS_BASE_URL, "SNIPPETS_BASE_URL"
+    )
+
+
 async def sep_startup() -> None:
     """Define actions to perform on SEP startup.
 
     Initialize the SEP periodic task database, trigger the initial snippets
-    synchronization if configured, and warn when ambient SSO is enabled under a
-    provider that cannot honor it.
+    synchronization if configured, warn when ambient SSO is enabled under a
+    provider that cannot honor it, and warn when a configured external base URL
+    omits the URL prefix SEP is served under.
     """
     await init_sep_db()
     if snippets_settings.SYNC_ON_STARTUP:
         sync_snippets.delay()
     warn_if_ambient_sso_inert()
+    warn_if_external_base_lacks_prefix()
 
 
 def _make_remote_api_rebinder(
@@ -283,6 +298,7 @@ sep_app = create_app(
     lifespan=lifespan,
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
+    root_path=sep_settings.ROOT_PATH,
     title="SEP Web Application API",
     version=__version__,
     description=(

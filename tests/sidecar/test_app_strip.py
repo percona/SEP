@@ -93,10 +93,12 @@ def _sep_version_locations() -> tuple[str, ...]:
 
     Interpolation stays off so the entries keep their ``%(here)s`` prefix, which
     resolves against ``alembic.ini`` rather than the process's directory. The
-    split mirrors ``scripts/sync_alembic_version_locations.py``, which writes the
-    value with a hardcoded ``:`` rather than reading ``version_path_separator``;
+    split mirrors ``scripts/sync_alembic_version_locations.py``, which joins on
+    its own ``ENTRY_SEPARATOR`` rather than reading ``version_path_separator``;
     that key names a separator Alembic resolves through its own keyword table, so
-    reading it back is not the same as knowing how the value was joined.
+    reading it back is not the same as knowing how the value was joined. The two
+    spellings are held equal by
+    ``tests/scripts/test_sync_alembic_version_locations.py``.
 
     :return: The configured entries, in configuration order.
     """
@@ -336,7 +338,7 @@ def test_stripped_apps_owning_no_migrations_need_no_version_locations_entry():
 
     Such an app is exempt from the sibling assertion, and carries no entry of its
     own: an entry whose directory never exists on any image would report a
-    stripped app to the orphan-head filter even on the unrestricted one.
+    stripped app to the orphan-head filter even on an unstripped tree.
     """
     entries = _sep_version_locations()
     stripped_non_owners = sorted(
@@ -490,26 +492,6 @@ def test_restricted_mode_reports_every_departure_at_once(
     assert len(problems) == RESTRICTED_DEPARTURE_KINDS
 
 
-def test_unrestricted_mode_accepts_an_unstripped_tree(
-    synthetic_tree: tuple[Path, Path],
-):
-    """Assert a tree keeping the unactivated packages reports no departure."""
-    profile, apps_root = synthetic_tree
-
-    assert verify_image_apps.unrestricted_problems(profile, apps_root) == []
-
-
-def test_unrestricted_mode_rejects_a_stripped_tree(stripped_tree: tuple[Path, Path]):
-    """Assert the strip reaching an image that must ship every app is reported."""
-    profile, apps_root = stripped_tree
-
-    problems = verify_image_apps.unrestricted_problems(profile, apps_root)
-
-    assert len(problems) == 1
-    for name in ACTIVATED_IN_SYNTHETIC_TREE:
-        assert name in problems[0]
-
-
 def test_main_prints_the_verified_app_set(
     image_tree: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -539,7 +521,7 @@ def test_main_exits_when_an_unshipped_package_survived(
 def test_main_rejects_an_unknown_mode(
     image_tree: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """Assert a mode outside the two directions is refused by the parser."""
+    """Assert a mode the parser does not accept is refused."""
     with pytest.raises(SystemExit) as excinfo:
         _run_main(image_tree, "bogus", monkeypatch)
 

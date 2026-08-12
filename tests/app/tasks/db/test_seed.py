@@ -20,9 +20,11 @@ import time
 
 import pytest
 
+import app.tasks.db.seed as seed_module
 from app.sep.apps.inventory.models import INVENTORY_SYNC_TASK_NAME
 from app.tasks.config import tasks_settings
 from app.tasks.db.seed import (
+    _CHECK_STALENESS_TASK,
     NOMAD_EXEC_ARTIFACT,
     NOMAD_EXEC_PYTHON_ARTIFACT,
     NOMAD_RUN_COMMAND,
@@ -31,6 +33,7 @@ from app.tasks.db.seed import (
     SYSTEM_PERIODIC_TASKS,
     SYSTEM_TASKS,
 )
+from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.models import (
     CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
     INTERNAL_TASK_NAMES,
@@ -48,6 +51,38 @@ PYTHON_TEMPLATES_WITH_PREPARE_ENV = [NOMAD_RUN_PYTHON, NOMAD_EXEC_PYTHON_ARTIFAC
 STALE_EXIT_CODE = 75
 STALE_ELAPSED_SECONDS = 7200
 FRESH_ELAPSED_SECONDS = 1
+
+
+class TestNomadStepNameParity:
+    """Assert every Nomad task Name in seed templates is a NomadStep member."""
+
+    def test_every_seed_task_name_is_nomad_step_member(self) -> None:
+        """Walk every job-spec template seed.py defines, across all task groups.
+
+        The templates are discovered from the seed module rather than read off a
+        hand-maintained list, and every task group is walked rather than the
+        first: a guard scoped to a sample reports clean precisely when a new
+        template or group is the thing that bypassed the enum.
+        """
+        templates = [
+            value
+            for value in vars(seed_module).values()
+            if isinstance(value, dict) and "TaskGroups" in value
+        ]
+        undiscovered = [
+            known
+            for known in NOMAD_TEMPLATES_WITH_STALENESS
+            if not any(known is found for found in templates)
+        ]
+        assert not undiscovered, "template discovery missed a known NOMAD_* job spec"
+
+        names: list[object] = [_CHECK_STALENESS_TASK["Name"]]
+        for template in templates:
+            for group in template["TaskGroups"]:
+                names.extend(task["Name"] for task in group["Tasks"])
+
+        for name in names:
+            assert isinstance(name, NomadStep), f"{name!r} is not a NomadStep"
 
 
 class TestSystemTasks:
