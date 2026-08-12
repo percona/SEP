@@ -245,10 +245,16 @@ register_with_pmm() {
         sleep 5
     done &
 
-    # pmm-admin talks to the local agent API, which the loop above has not
-    # opened yet
-    retry_cmd 30 2 pmm-admin status > /dev/null || {
-        error 'pmm-agent never became ready'
+    # `pmm-admin status` only reaches the agent's local API, which the loop
+    # above opens almost immediately — well before the agent finishes
+    # establishing its two-way channel to PMM Server. On first boot that gap
+    # is invisible because `pmm-agent setup` above already blocked on a
+    # server round-trip; a recreate skips setup (the config volume preserved
+    # the agent id) and lands here with no such wait behind it. `pmm-admin
+    # list`, which the already-registered check below needs anyway, cannot
+    # succeed until the server connection is up, so gate on that instead.
+    retry_cmd 30 2 pmm-admin list > /dev/null || {
+        error 'pmm-agent never connected to PMM Server'
         exit 1
     }
 
