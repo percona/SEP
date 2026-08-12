@@ -192,7 +192,9 @@ at mode `0600` on every boot.
 Rotating any of them in `.env` after first boot does **not** take effect — the
 passwords live in the datadir, so the container comes back up authenticating
 with the originals. To re-bootstrap, drop **both** `sep-mysql-data` and
-`sep-mysql-pmm-config`:
+`sep-mysql-pmm-config` — the service's third volume, `sep-mysql-nomad`, carries
+the Nomad client's own state and its allocation directories, none of which hold
+a credential, so it is left alone:
 
 ```bash
 docker compose --profile mysql down
