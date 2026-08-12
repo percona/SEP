@@ -12,7 +12,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-"""Tests for the baked PMM-embedded settings profile."""
+"""Verify the baked PMM-embedded settings profile."""
 
 import re
 from typing import Any
