@@ -861,6 +861,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 raw_buf, max_withheld=self.log_anonymization_max_withheld_bytes
             )
             complete, remainder = split.complete, split.remainder
+            if split.forced:
+                logger.warning(
+                    "Forced anonymization flush of un-terminated log line "
+                    "alloc_id=%s step=%s log_type=%s withheld_ceiling=%s; "
+                    "accepting a redaction-boundary leak so the Nomad cursor "
+                    "can advance",
+                    alloc_id,
+                    step,
+                    log_type,
+                    self.log_anonymization_max_withheld_bytes,
+                )
             # Forced flush yields an empty remainder, so withheld stays 0 and
             # the cursor is not rolled back -- the next cycle starts past the
             # flushed tail instead of re-fetching it.
@@ -1662,6 +1673,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         complete = split.complete
         if not complete:
             return None, offset
+        if split.forced:
+            logger.warning(
+                "Forced anonymization flush of un-terminated log line "
+                "alloc_id=%s step=%s log_type=%s withheld_ceiling=%s; "
+                "accepting a redaction-boundary leak so the live viewer "
+                "can advance",
+                alloc_id,
+                step,
+                log_type,
+                self.log_anonymization_max_withheld_bytes,
+            )
         del pending[: len(complete)]
         decoded_msg = _decode_and_anonymize(complete, anonymize_entities)
         return decoded_msg, offset - len(pending)
