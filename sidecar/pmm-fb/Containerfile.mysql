@@ -30,11 +30,19 @@ RUN rpm --import 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x79EA15
         'enabled=1' 'gpgcheck=1' > /etc/yum.repos.d/mydumper.repo
 
 # python3-pip and gzip are for the dispatched run-python task, which builds a
-# venv and gunzips its result; the rest mirror the ansible playbook's set
+# venv and gunzips its result; percona-server-server, percona-toolkit and
+# python3-PyMySQL mirror the ansible playbook's set.
+#
+# zstd, lz4, gnupg2 and rsync back the compression, encryption and local-upload
+# options the backup forms offer. Every one of them already arrives as a
+# transitive dependency of the packages above, so naming them changes nothing
+# today — that is the point: the README documents them as available, and a
+# dependency graph that shifts upstream should not be what makes that true.
 RUN dnf install -y \
         percona-server-server percona-toolkit python3-PyMySQL \
         percona-xtrabackup-84 mydumper \
         python3-pip gzip tar hostname procps-ng iproute \
+        zstd lz4 gnupg2 rsync \
     && dnf clean all
 
 # pmm-agent, pmm-admin, the exporters and tools/nomad — the feature build's own
