@@ -27,13 +27,19 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import CheckIcon from '@mui/icons-material/Check';
 
-import { formatSettingValue, formatSettingValuePretty } from './settingField';
+import {
+  formatSettingDisplayValue,
+  formatSettingValuePretty,
+  type SettingChoiceOption,
+} from './settingField';
 
 export interface SettingValueDisplayProps {
   /** The raw setting value to render. */
   value: unknown;
   /** The setting key, used for accessible labels on the modal. */
   settingKey: string;
+  /** Optional enum/Literal options so the Current column can show labels. */
+  options?: SettingChoiceOption[] | null;
 }
 
 /** Above this many characters the value is truncated behind a "View more" modal. */
@@ -47,12 +53,16 @@ const COPIED_TOOLTIP_MS = 2000;
  * truncated and revealed in full (pretty-printed JSON inside a `<pre>`) via a
  * modal so a single row can't blow up the layout.
  */
-export default function SettingValueDisplay({ value, settingKey }: SettingValueDisplayProps) {
+export default function SettingValueDisplay({
+  value,
+  settingKey,
+  options,
+}: SettingValueDisplayProps) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const formatted = formatSettingValue(value);
+  const formatted = formatSettingDisplayValue(value, options);
   const isLong = formatted.length > TRUNCATE_LIMIT;
   const display = isLong ? `${formatted.slice(0, TRUNCATE_LIMIT)}…` : formatted;
 
@@ -67,7 +77,7 @@ export default function SettingValueDisplay({ value, settingKey }: SettingValueD
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(formatSettingValuePretty(value));
+      await navigator.clipboard.writeText(formatSettingValuePretty(value, options));
       setCopied(true);
       if (copiedTimer.current) {
         clearTimeout(copiedTimer.current);
@@ -132,7 +142,7 @@ export default function SettingValueDisplay({ value, settingKey }: SettingValueD
               overflowWrap: 'anywhere',
             }}
           >
-            {formatSettingValuePretty(value)}
+            {formatSettingValuePretty(value, options)}
           </Box>
         </DialogContent>
         <DialogActions>

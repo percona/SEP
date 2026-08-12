@@ -155,7 +155,11 @@ export default function SettingRow({ setting }: SettingRowProps) {
         <Typography variant="caption" color="text.secondary" display="block">
           Current
         </Typography>
-        <SettingValueDisplay value={setting.value} settingKey={setting.key} />
+        <SettingValueDisplay
+          value={setting.value}
+          settingKey={setting.key}
+          options={setting.options}
+        />
       </Grid>
 
       {/* Edit control + actions */}
