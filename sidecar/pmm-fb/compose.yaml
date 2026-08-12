@@ -91,11 +91,16 @@ services:
       dockerfile: Containerfile.mysql
       args:
         PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-133001e}
-    # Waiting for readyz only gets registration close: pmm-managed starts
-    # answering later still, which the entrypoint's bounded retry covers
+    # service_started, not service_healthy: pmm-server's baked-in healthcheck
+    # (StartPeriod=25s, Interval=4s, Retries=3) reports unhealthy at ~37s, but
+    # a cold start on an empty volume measures ~90s to first pass readyz —
+    # service_healthy aborts this dependent well inside that window. Ordering
+    # is all that is needed here: pmm-managed starts answering registration
+    # requests later still, and the entrypoint's own bounded retry
+    # (retry_cmd 30 2 pmm-agent setup, 60s) already covers that wait.
     depends_on:
       pmm-server:
-        condition: service_healthy
+        condition: service_started
     hostname: sep-mysql
     environment:
       SEP_MYSQL_ROOT_PASSWORD: ${SEP_MYSQL_ROOT_PASSWORD:?run ./bootstrap.sh first}
