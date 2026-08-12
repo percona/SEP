@@ -54,7 +54,7 @@ When a docstring promises the function *never raises* and something propagates a
 
 A generator (sync or async, including `async def` async generators) documents the produced value with **`:return:`**, not `:yield:`. Sphinx's Python domain defines no `yield` field — `PyObject.doc_field_types` carries `param` / `returns` / `rtype` / `raises` and nothing else — so `:yield:` renders as an *unstyled generic field*, defeating the Sphinx compatibility that mandates rST here in the first place. (A "Yields" section exists only under Napoleon's Google/NumPy styles, which this project doesn't use.) Describe the produced value in the `:return:` body; the summary line's `Yield …` opener already tells the reader it's a generator. Any `:rtype:` must be `Generator[...]` / `AsyncGenerator[...]`, never the yielded element type.
 
-Spell it **`:return:`, singular** — `:returns:` is valid rST and appears in a few places in the tree, but `:return:` is the dominant form; normalize to it.
+Spell it **`:return:`, singular** — `:returns:` is also valid rST but appears nowhere in this tree; keep it that way.
 
 **Touch = Sweep.** A `:yield:` is a finding both when newly added **and** when it is pre-existing inside a docstring span the diff touched — so the tree converts incrementally. Untouched generators stay as they are; don't flag them.
 
