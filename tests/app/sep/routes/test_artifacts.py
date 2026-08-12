@@ -32,6 +32,8 @@ from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT, STATIC_ARTIFACT_B
 from app.sep.routes.artifacts import collect_base_dirs
 from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
 
+_SNIPPETS_DIR_TARGET = "app.sep.snippets.config.snippets_settings.SNIPPETS_DIR"
+
 
 def _make_token(payload: dict, salt: str = ARTIFACT_DOWNLOAD_SALT) -> str:
     return crypto_timestamp_serializer.dumps(payload, salt=salt)
@@ -141,7 +143,7 @@ class TestDownloadArtifact:
         }
         token = _make_token(payload)
 
-        with patch("app.sep.snippets.config.snippets_settings.SNIPPETS_DIR", tmp_path):
+        with patch(_SNIPPETS_DIR_TARGET, tmp_path):
             response = test_client.get(f"/artifacts/download/{token}")
 
         assert response.status_code == HTTP_200_OK
@@ -182,7 +184,7 @@ class TestDownloadArtifact:
 
         with (
             patch("app.sep.routes.artifacts.sep_settings.ARTIFACT_DOWNLOAD_TTL", 60),
-            patch("app.sep.snippets.config.snippets_settings.SNIPPETS_DIR", tmp_path),
+            patch(_SNIPPETS_DIR_TARGET, tmp_path),
         ):
             response = test_client.get(
                 f"/artifacts/download/{token}", follow_redirects=False
@@ -215,7 +217,7 @@ class TestDownloadArtifact:
         }
         token = _make_token(payload)
 
-        with patch("app.sep.snippets.config.snippets_settings.SNIPPETS_DIR", tmp_path):
+        with patch(_SNIPPETS_DIR_TARGET, tmp_path):
             response = test_client.get(
                 f"/artifacts/download/{token}", follow_redirects=False
             )
@@ -231,7 +233,7 @@ class TestDownloadArtifact:
         }
         token = _make_token(payload)
 
-        with patch("app.sep.snippets.config.snippets_settings.SNIPPETS_DIR", tmp_path):
+        with patch(_SNIPPETS_DIR_TARGET, tmp_path):
             response = test_client.get(
                 f"/artifacts/download/{token}", follow_redirects=False
             )

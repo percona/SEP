@@ -15,10 +15,9 @@
 
 """Define the constants the artifact-download surface is built from.
 
-Houses the itsdangerous salt shared by the generic ``app.sep.routes.artifacts``
-route and the framework signer in ``app.sep.apps.framework.script_helpers``, so
-both sign and verify download tokens under the same namespace, plus the
-base-dir declarations that are not owned by any activatable app.
+Houses the itsdangerous salt every artifact-download signer and verifier shares,
+so tokens validate under one namespace, plus the base-dir declarations that are
+not owned by any activatable app.
 """
 
 from collections.abc import Callable, Mapping

@@ -308,7 +308,6 @@ def test_embedded_activation_list_serves_a_snippet_download(mocker, tmp_path):
     was not mounted; a 400 means the snippet type did not resolve.
     """
     original_apps = sep_settings.APPS
-    original_sep_app = main_module.sep_app
     (tmp_path / "collect.sh").write_text("#!/bin/bash\necho hello")
     token = crypto_timestamp_serializer.dumps(
         {"type": ARTIFACT_TYPE_SNIPPET, "filename": "collect.sh", "md5": "abc123"},
@@ -330,8 +329,7 @@ def test_embedded_activation_list_serves_a_snippet_download(mocker, tmp_path):
         sep_settings.APPS = original_apps
         get_app_registry.cache_clear()
         importlib.reload(artifacts_module)
-        importlib.reload(main_module)
-        main_module.sep_app = original_sep_app
+        _reload_restoring_identity()
 
 
 async def _refresher_proxy_map(mocker) -> dict[SettingClassEnum, ProxyEntry]:

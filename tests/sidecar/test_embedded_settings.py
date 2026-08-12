@@ -34,6 +34,7 @@ from app.sep.routes.artifacts import collect_base_dirs
 from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.tasks.config import TasksSettings
 from app.tasks.settings.routes import TASKS_ADMIN_SETTINGS_CLASSES
+from tests.app.sep.conftest import REDUCED_ACTIVATION
 from tests.sidecar.conftest import (
     EMBEDDED_PROFILE,
     read_allowlist,
@@ -271,7 +272,7 @@ def test_activation_list_builds_an_app_registry():
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_activation_list_resolves_the_snippet_artifact_type(mocker):
-    """Assert the baked profile serves ATW-dispatched snippet downloads.
+    """Resolve the snippet artifact type from the baked profile's activation list.
 
     The profile activates atw and no artifact-declaring app, so the type has to
     come from the static map rather than the registry; without it the signed URL
@@ -281,6 +282,21 @@ def test_activation_list_resolves_the_snippet_artifact_type(mocker):
     mocker.patch("app.sep.routes.artifacts.get_app_registry", return_value=registry)
 
     assert ARTIFACT_TYPE_SNIPPET in collect_base_dirs()
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_reduced_activation_mirrors_the_baked_profile():
+    """Pin the shared activation constant to the profile it claims to mirror.
+
+    ``REDUCED_ACTIVATION`` stands in for this profile everywhere in the SEP
+    subtree, so a divergence makes those tests assert against a deployment that
+    does not exist — which is how an activation-gated artifact-download failure
+    stayed invisible to the whole suite while carrying a ``snippets`` entry the
+    profile never had.
+    """
+    assert [app.module_name for app in REDUCED_ACTIVATION] == [
+        app.module_name for app in SEPSettings().APPS
+    ]
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
