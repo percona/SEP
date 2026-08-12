@@ -33,7 +33,9 @@ from tests.sidecar.conftest import SETTINGS_ENV_HELPER, SIDECAR_DIR
 
 SUPERVISORD_EXPANSION = re.compile(r"%\(ENV_([A-Za-z0-9_]+)\)s")
 UNCONDITIONAL_EXPORT = re.compile(r"^export ([A-Z_][A-Z0-9_]*)=", re.MULTILINE)
-BLANK_CLEARED_NAMES_ARRAY = re.compile(r"blank_cleared_names=\(\n(.*?)\n\)", re.DOTALL)
+BLANK_CLEARED_NAMES_ARRAY = re.compile(
+    r"blank_cleared_names=\(\s*(.*?)\s*\)", re.DOTALL
+)
 
 CALLER_SHELL_OPTIONS = "set -o errexit -o nounset -o pipefail"
 """The options ``entrypoint.sh`` has active when it sources the helper."""
@@ -103,7 +105,7 @@ def managed_canonical_names() -> frozenset[str]:
     match = BLANK_CLEARED_NAMES_ARRAY.search(
         SETTINGS_ENV_HELPER.read_text(encoding="utf-8")
     )
-    assert match
+    assert match, "blank_cleared_names array not found in settings-env.sh"
     return frozenset(match.group(1).split())
 
 
