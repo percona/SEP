@@ -630,7 +630,6 @@ SEP exposes interactive Swagger UI pages for each of its services:
 | `/api/inventory/docs` | Inventory service |
 | `/api/tasks/docs` | Tasks service |
 
-The top-level `/docs` and `/redoc` paths return 404 by design.
 
 ### Starting Celery with SEP for development
 
