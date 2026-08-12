@@ -227,8 +227,21 @@ form invites, and it does not fall back: XtraBackup would run in `pmm-server`'s
 namespace, where the pinned `localhost` has no MySQL and there is no datadir, so
 it fails at connect rather than doing anything useful.
 
-Compression, encryption and upload are untested here; they pull in `qpress`,
-`zstd` and `gpg`, which the image does not carry.
+Compression and encryption need nothing extra — `zstd`, `lz4`, `gzip`, `gpg`
+and XtraBackup's own `xbcrypt` all arrive as dependencies of the packages above.
+Two caveats:
+
+- **`quicklz` will fail.** The form offers it for XtraBackup, but Percona
+  XtraBackup 8.4 supports only `lz4` and `zstd` (`xtrabackup --help`), and the
+  `qpress` binary that produced `.qp` files is not packaged for this base.
+  Nothing in the harness can make that combination work — pick `zstd` or `lz4`.
+- **Only local destinations are reachable.** `rsync` is present; S3 and GCS
+  uploads need `aws` and `gsutil`, which are not installed and would need
+  credentials and a bucket anyway.
+
+None of these paths is exercised by the runs this harness was added for; they
+are documented so the next person knows which failures are the image and which
+are the code.
 
 **Repinning the feature build.** `${PMM_FB_TAG}` drives both `pmm-server`'s
 image and the PMM Client copied into `sep-mysql`, and the two must stay on the
