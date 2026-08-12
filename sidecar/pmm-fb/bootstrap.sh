@@ -65,7 +65,6 @@ esac
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${script_dir}" || exit 1
 
-# Arguments: the slot name, and the value to append when the slot is absent
 ensure_slot() {
     local name="$1" value="$2"
     grep -q "^${name}=" .env && return 0
@@ -97,9 +96,8 @@ SEP_SECRET_KEY=$(openssl rand -hex 32)
 SEP_INTERNAL_TOKEN=$(openssl rand -hex 32)
 # Filled in by ./mint-grafana-token.sh; empty leaves the profile's inert token
 SEP_GRAFANA_TOKEN=
-# sep-mysql: root, the sep_backup user both backup payloads authenticate as,
-# and the PMM exporters' monitoring user. Rotating these after first boot needs
-# the sep-mysql-data volume dropped — the datadir keeps the original passwords.
+# Rotating these after first boot needs the sep-mysql-data volume dropped — the
+# datadir keeps the original passwords
 SEP_MYSQL_ROOT_PASSWORD=$(openssl rand -hex 16)
 SEP_MYSQL_BACKUP_PASSWORD=$(openssl rand -hex 16)
 SEP_MYSQL_PMM_PASSWORD=$(openssl rand -hex 16)

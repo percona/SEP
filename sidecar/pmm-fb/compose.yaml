@@ -20,27 +20,15 @@
 # come from the profile baked into the image, with the per-deployment values
 # below overriding it — environment outranks the file.
 #
-# sep-mysql is the task-execution target, behind the `mysql` profile so the
-# default two-service bring-up stays fast. It is the test MySQL instance, a
-# registered PMM Client (hence a Nomad client, hence a selectable executor
-# host) and the carrier of the employees seed, all in one namespace — which is
-# what the XtraBackup path requires: SEP pins its server config to localhost
-# and the payload reads the datadir directly, so the datadir, a server on
-# loopback and the backup binaries have to share one namespace. Sharing only a
-# datadir volume between two containers looks correctly wired and then fails on
-# connect. Its PMM Client and pmm-server's image both read ${PMM_FB_TAG}, and
-# the pinned default is spelled out on each of the two lines: the client ships
-# its own nomad binary that must speak RPC to the server's, so a repin edits
-# both lines, and it needs a rebuild.
+# sep-mysql is the task-execution target, behind the `mysql` profile; see
+# mysql-target.md.
 #
 # The side-car gets a fixed IP because nginx resolves proxy targets at
 # startup, when the SEP container may not be running yet — and a name-based
 # upstream would also go stale when sep-sidecar is recreated (e.g. after
 # minting the Grafana token, which now takes a recreate rather than a restart
 # because the token reaches the process as environment). pmm.conf proxies to
-# that IP. sep-mysql's fixed IP is load-bearing for a different reason: SEP
-# never updates an existing inventory node's address, and the Mydumper path
-# connects to exactly that address.
+# that IP.
 #
 # No per-deployment credentials are committed: bootstrap.sh generates those
 # into the gitignored .env and pmm.conf; see README.md. The one credential
@@ -50,8 +38,7 @@ name: sep-pmm-fb
 
 services:
   pmm-server:
-    # Same variable as sep-mysql's PMM_FB_TAG build arg below, and the default
-    # is pinned on both lines — a repin edits both
+    # Default repeated on sep-mysql's PMM_FB_TAG build arg — a repin edits both
     image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-133001e}
     environment:
       PMM_ENABLE_SEP: "1"

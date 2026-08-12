@@ -176,15 +176,11 @@ ALTER USER 'root'@'localhost' IDENTIFIED BY '${SEP_MYSQL_ROOT_PASSWORD}';
 SQL
 }
 
-# /root lives in the image layer rather than the data volume, so this is
-# rewritten on every boot. install creates the file at 0600 before the password
-# is written into it. Three groups because the consumers read different ones:
-# PyMySQL and mydumper take [client], while xtrabackup takes [xtrabackup] and
-# [mysqld] — and the form hands this file to xtrabackup as --defaults-file,
-# which suppresses /etc/my.cnf, so the datadir and socket it would have read
-# from the distro config have to be named here as well. [client] deliberately
-# carries no socket: PyMySQL prefers a unix socket over the host it was given,
-# so naming one would send the Mydumper path to loopback instead of the node.
+# /root is an image layer rather than the data volume, so this is rewritten on
+# every boot. Consumers read different groups: [client] for PyMySQL and
+# mydumper, [xtrabackup] and [mysqld] for xtrabackup. [client] deliberately
+# carries no socket — PyMySQL would prefer it over the host it was given and
+# send the Mydumper path to loopback instead of the node.
 write_defaults_file() {
     install -m 0600 /dev/null "${DEFAULTS_FILE}" || return 1
     cat > "${DEFAULTS_FILE}" << EOF || return 1

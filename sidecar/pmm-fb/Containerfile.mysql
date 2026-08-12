@@ -1,14 +1,4 @@
-# The MySQL target node for task-execution QA: Percona Server 8.4, a PMM Client
-# (whose pmm-agent supervises a Nomad client), the XtraBackup and mydumper
-# binaries, and the employees seed dataset — all in one namespace. That single
-# namespace is the point: the XtraBackup path pins the server to localhost and
-# reads the datadir directly, so datadir, server and binaries have to be
-# reachable by one raw_exec task.
-
-# The PMM Client must come from the same feature build as pmm-server: the client
-# ships its own nomad binary that has to speak RPC to the server's, and a
-# released client beside a feature-build server pairs two nomad builds nobody
-# has tested.
+# Image for the sep-mysql target node; see mysql-target.md.
 ARG PMM_FB_TAG
 FROM docker.io/perconalab/pmm-client-fb:${PMM_FB_TAG} AS pmmclient
 
@@ -31,13 +21,9 @@ RUN rpm --import 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x79EA15
 
 # python3-pip and gzip are for the dispatched run-python task, which builds a
 # venv and gunzips its result; percona-server-server, percona-toolkit and
-# python3-PyMySQL mirror the ansible playbook's set.
-#
-# zstd, lz4, gnupg2 and rsync back the compression, encryption and local-upload
-# options the backup forms offer. Every one of them already arrives as a
-# transitive dependency of the packages above, so naming them changes nothing
-# today — that is the point: the README documents them as available, and a
-# dependency graph that shifts upstream should not be what makes that true.
+# python3-PyMySQL mirror the ansible playbook's set. zstd, lz4, gnupg2 and rsync
+# are named though they already arrive transitively, so a shift upstream cannot
+# quietly drop a compression, encryption or upload option the forms offer.
 RUN dnf install -y \
         percona-server-server percona-toolkit python3-PyMySQL \
         percona-xtrabackup-84 mydumper \
@@ -45,9 +31,7 @@ RUN dnf install -y \
         zstd lz4 gnupg2 rsync \
     && dnf clean all
 
-# pmm-agent, pmm-admin, the exporters and tools/nomad — the feature build's own
-# tree rather than the release repo's. Static Go binaries, so they run unchanged
-# on OL9; the perl pt-* helpers are covered by percona-toolkit above.
+# Static Go binaries, so the feature build's own tree runs unchanged on OL9
 COPY --from=pmmclient /usr/local/percona/pmm /usr/local/percona/pmm
 ENV PATH="/usr/local/percona/pmm/bin:${PATH}"
 
