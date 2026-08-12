@@ -256,7 +256,7 @@
 | app/sep/apps/shared/backups/edit\_form.py                                                                                    |       17 |        0 |       10 |        0 |    100% |           |
 | app/sep/apps/shared/backups/responses.py                                                                                     |        3 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/shared/disk\_script\_source.py                                                                                  |       79 |        2 |       18 |        2 |     96% |  214, 259 |
-| app/sep/apps/snippets/app.py                                                                                                 |       12 |        0 |        0 |        0 |    100% |           |
+| app/sep/apps/snippets/app.py                                                                                                 |       11 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/snippets/extra\_routes.py                                                                                       |       71 |        6 |       10 |        0 |     93% |80-82, 99, 183, 214 |
 | app/sep/apps/tasks/api\_routes.py                                                                                            |       27 |        0 |        2 |        0 |    100% |           |
 | app/sep/apps/tasks/app.py                                                                                                    |        5 |        0 |        0 |        0 |    100% |           |
@@ -267,7 +267,7 @@
 | app/sep/apps/topology/app.py                                                                                                 |        4 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/topology/models.py                                                                                              |      112 |        0 |        2 |        0 |    100% |           |
 | app/sep/apps/topology/topology.py                                                                                            |      173 |        7 |       58 |        8 |     94% |118-119, 122-\>114, 153, 156-157, 226-\>228, 229-\>231, 407, 491-\>501, 505 |
-| app/sep/artifact\_constants.py                                                                                               |        2 |        0 |        0 |        0 |    100% |           |
+| app/sep/artifact\_constants.py                                                                                               |        8 |        0 |        0 |        0 |    100% |           |
 | app/sep/bundle\_upload/factory.py                                                                                            |       28 |        1 |        4 |        1 |     94% |        67 |
 | app/sep/bundle\_upload/plan.py                                                                                               |      163 |        1 |       58 |        1 |     99% |       587 |
 | app/sep/bundle\_upload/resolver.py                                                                                           |       46 |        0 |       12 |        0 |    100% |           |
@@ -279,8 +279,8 @@
 | app/sep/db/engine.py                                                                                                         |        7 |        0 |        0 |        0 |    100% |           |
 | app/sep/db/seed.py                                                                                                           |       39 |        0 |       12 |        0 |    100% |           |
 | app/sep/deps.py                                                                                                              |      244 |        6 |       48 |        1 |     97% |251, 612-\>617, 633, 822-825 |
-| app/sep/inventory.py                                                                                                         |       99 |        7 |       12 |        1 |     93% |86, 97, 233, 289, 329, 366, 390 |
-| app/sep/main.py                                                                                                              |      127 |       15 |       12 |        3 |     87% |148-150, 297-316, 336-\>345, 345-\>350, 473-477 |
+| app/sep/inventory.py                                                                                                         |       99 |        8 |       12 |        1 |     92% |86, 97, 233, 289, 329, 366, 390, 424 |
+| app/sep/main.py                                                                                                              |      126 |       15 |       10 |        2 |     88% |149-151, 298-317, 337-\>346, 471-475 |
 | app/sep/migrations/\_discovery.py                                                                                            |       41 |        2 |       20 |        3 |     92% |65, 97, 133-\>130 |
 | app/sep/migrations/\_orphan\_heads.py                                                                                        |       33 |        0 |        6 |        0 |    100% |           |
 | app/sep/migrations/env.py                                                                                                    |       41 |        5 |        4 |        2 |     84% |40-\>43, 69-80, 123 |
@@ -302,7 +302,7 @@
 | app/sep/migrations/versions/2026\_08\_08\_0306-cf94cc04be4b\_drop\_session\_and\_messages\_setting\_.py                      |       30 |        3 |        6 |        3 |     83% |73, 106, 110 |
 | app/sep/models.py                                                                                                            |       66 |        1 |        2 |        1 |     97% |       247 |
 | app/sep/periodic\_tasks.py                                                                                                   |       55 |        0 |       20 |        0 |    100% |           |
-| app/sep/routes/artifacts.py                                                                                                  |       38 |        1 |       14 |        1 |     96% |        81 |
+| app/sep/routes/artifacts.py                                                                                                  |       38 |        1 |       14 |        1 |     96% |        87 |
 | app/sep/routes/download\_files.py                                                                                            |       41 |        0 |        8 |        1 |     98% |   79-\>85 |
 | app/sep/routes/execution\_events.py                                                                                          |       12 |        0 |        2 |        0 |    100% |           |
 | app/sep/routes/stream\_logs.py                                                                                               |       75 |       26 |       12 |        4 |     63% |86-98, 105, 109-125, 127-132, 180-\>175, 185-190, 192-196, 201-206 |
@@ -413,7 +413,7 @@
 | app/tasks/routes.py                                                                                                          |      232 |       22 |       46 |        4 |     89% |146-150, 233-239, 272, 322-328, 335, 379-380, 410, 452, 473, 637, 651, 659, 685, 693-\>695, 716-717 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **25729** | **1691** | **6450** |  **623** | **92%** |           |
+| **TOTAL**                                                                                                                    | **25733** | **1692** | **6448** |  **622** | **92%** |           |
 
 
 ## Setup coverage badge
