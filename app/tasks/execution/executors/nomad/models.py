@@ -1617,19 +1617,25 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             )
         await queue.put(TaskLog(step=step, type=log_type, msg=None))
 
-    @staticmethod
     def _decode_live_frame(
+        self,
         pending: bytearray,
         raw_msg: str,
         step: str,
         offset: int,
         anonymize_entities: set[PIIEntity] | None,
+        *,
+        alloc_id: str,
+        log_type: TaskLogType,
     ) -> tuple[str | None, int]:
         """Decode a live log frame, anonymizing per complete line.
 
         For anonymized steps the trailing partial line is kept in ``pending``
         and withheld until a later frame supplies its newline, so a PII token
         split across frames is anonymized whole rather than per fragment.
+        When the withheld remainder would exceed
+        ``log_anonymization_max_withheld_bytes``, the whole buffer is flushed
+        instead and ``pending`` is cleared so the live viewer keeps advancing.
         Non-anonymized steps decode and emit each frame unchanged.
 
         :param pending: The withheld-remainder buffer, mutated in place.
@@ -1637,15 +1643,23 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :param step: The Nomad task name within the allocation.
         :param offset: The raw Nomad byte offset at the end of this frame.
         :param anonymize_entities: PII entities to redact, or ``None``.
+        :param alloc_id: The Nomad allocation identifier (for forced-flush
+            diagnostics).
+        :param log_type: The log stream type (stdout or stderr).
         :return: ``(text, resume_offset)`` to emit, where ``resume_offset`` is
             rolled back over any withheld remainder so a reconnecting client
             re-fetches it; ``(None, offset)`` when the whole buffer is still a
-            partial line and nothing should be emitted yet.
+            partial line and nothing should be emitted yet. After a forced
+            ceiling flush ``pending`` is empty, so the resume offset is not
+            rolled back.
         """
         if not _should_anonymize(step, anonymize_entities):
             return b64decode_str(raw_msg), offset
         pending.extend(b64decode(raw_msg))
-        complete, _ = split_complete_lines(bytes(pending))
+        split = split_complete_lines(
+            bytes(pending), max_withheld=self.log_anonymization_max_withheld_bytes
+        )
+        complete = split.complete
         if not complete:
             return None, offset
         del pending[: len(complete)]
@@ -1760,7 +1774,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                                 elapsed,
                             )
                         decoded_msg, emit_offset = self._decode_live_frame(
-                            pending, msg, step, offset, anonymize_entities
+                            pending,
+                            msg,
+                            step,
+                            offset,
+                            anonymize_entities,
+                            alloc_id=alloc_id,
+                            log_type=log_type,
                         )
                         if decoded_msg is None:
                             continue
