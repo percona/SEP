@@ -18,6 +18,16 @@ success() { printf '✓ %s\n' "$*" >&2; }
 info() { printf 'ℹ %s\n' "$*" >&2; }
 debug() { [[ ${DEBUG:-0} == "1" ]] && printf '[DEBUG] %s\n' "$*" >&2 || true; }
 
+# Runs a command with xtrace suspended, restoring it on return (local -).
+# DEBUG=1 traces every expansion, and the three generated passwords reach the
+# commands wrapped below as arguments and as option-file contents — tracing
+# those would write the credentials straight into the container log.
+without_xtrace() {
+    local -
+    set +o xtrace
+    "$@"
+}
+
 need_cmd() {
     command -v "$1" > /dev/null 2>&1 || {
         error "Missing required command: $1"
@@ -76,9 +86,15 @@ USERS_MARKER=/var/lib/mysql/.sep-users-created
 SERVICE_NAME=sep-mysql
 PMM_CONFIG_FILE="${PMM_AGENT_CONFIG_FILE:-/usr/local/percona/pmm/config/pmm-agent.yaml}"
 
-: "${SEP_MYSQL_ROOT_PASSWORD:?run ./bootstrap.sh first}" \
-    "${SEP_MYSQL_BACKUP_PASSWORD:?run ./bootstrap.sh first}" \
-    "${SEP_MYSQL_PMM_PASSWORD:?run ./bootstrap.sh first}"
+# Wrapped rather than expanded at top level: ${VAR:?} puts the value itself
+# into the xtrace line
+require_secrets() {
+    : "${SEP_MYSQL_ROOT_PASSWORD:?run ./bootstrap.sh first}" \
+        "${SEP_MYSQL_BACKUP_PASSWORD:?run ./bootstrap.sh first}" \
+        "${SEP_MYSQL_PMM_PASSWORD:?run ./bootstrap.sh first}"
+}
+
+without_xtrace require_secrets
 
 mysqld_pid=0
 
@@ -185,6 +201,16 @@ agent_is_registered() {
     grep -qE '^id: *[^"[:space:]]' "${PMM_CONFIG_FILE}" 2> /dev/null
 }
 
+# A function rather than an inline call so without_xtrace can wrap it: the
+# password would otherwise be expanded into the trace in the caller's frame,
+# before the wrapper could suspend it
+add_mysql_service() {
+    pmm-admin add mysql \
+        --username=pmm --password="${SEP_MYSQL_PMM_PASSWORD}" \
+        --host=127.0.0.1 --port=3306 --query-source=perfschema \
+        --service-name="${SERVICE_NAME}"
+}
+
 register_with_pmm() {
     if agent_is_registered; then
         info 'Node already registered; keeping the existing pmm-agent config'
@@ -221,10 +247,7 @@ register_with_pmm() {
     if pmm-admin list 2> /dev/null | grep -qw "${SERVICE_NAME}"; then
         info "MySQL service ${SERVICE_NAME} is already registered"
     else
-        pmm-admin add mysql \
-            --username=pmm --password="${SEP_MYSQL_PMM_PASSWORD}" \
-            --host=127.0.0.1 --port=3306 --query-source=perfschema \
-            --service-name="${SERVICE_NAME}" || {
+        without_xtrace add_mysql_service || {
             error 'pmm-admin add mysql failed'
             exit 1
         }
@@ -263,7 +286,7 @@ main() {
     # be skipped for good — leaving a credentials file naming users that do not
     # exist. bootstrap_users is re-runnable, so the recovery is just to run it.
     if [[ ! -f ${USERS_MARKER} ]]; then
-        bootstrap_users || {
+        without_xtrace bootstrap_users || {
             error 'Could not create the MySQL users'
             exit 1
         }
@@ -277,7 +300,7 @@ main() {
     # Nothing downstream reads this file, so an unnoticed failure here would
     # leave the node registering and looking selectable while every dispatched
     # backup fails to authenticate
-    write_defaults_file || {
+    without_xtrace write_defaults_file || {
         error "Could not write ${DEFAULTS_FILE}"
         exit 1
     }
