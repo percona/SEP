@@ -94,12 +94,14 @@ ignored by both; the Kubernetes `..data` projected layout resolves normally.
 `SECRETS_DIR` has no baked default, so a side-car that mounts nothing is
 unaffected.
 
-When you mount a file for a name, leave that variable **unset** rather than
-empty. A canonical variable set to the empty string outranks a file of the same
-name, because a blank environment variable still counts as supplied. The script
-clears the blank for `SECRET_KEY` and for every name it derives, but a name
-whose `SEP_*` guard is inactive — `PMM__API_KEY` with no `SEP_GRAFANA_TOKEN`
-set, say — is left as it found it, and the mount goes unused.
+Leaving a mounted name **unset** and leaving it **empty** both work: a
+canonical variable inherited as the empty string would otherwise outrank the
+file, since a blank environment variable still counts as supplied, so the
+script clears the blank for every canonical name it manages — `SECRET_KEY`,
+every name it derives, and every name a `SEP_*` guard would otherwise leave
+untouched when that guard is inactive (`PMM__API_KEY` with no
+`SEP_GRAFANA_TOKEN` set, say). Unset is still the clearer choice for a
+deployment that writes its own compose file or job template.
 
 ### App set
 
