@@ -34,9 +34,9 @@ ARTIFACT_DOWNLOAD_SALT = "artifact-download"
 #: Artifact base dirs seeding the download map. Not owned by a ``SEP.APPS`` app,
 #: so they are not registry-derived; ``collect_base_dirs`` seeds them ahead of
 #: the per-app declarations. The snippet directory is declared here because
-#: snippet execution is library-owned: ATW builds signed snippet-download URLs
+#: snippet execution is library-owned: signed snippet-download URLs are built
 #: through ``app.sep.snippets.script_source`` whether or not the snippets app is
-#: activated, so the type it names must resolve on the same terms. Frozen so
+#: activated, so the type they name must resolve on the same terms. Frozen so
 #: ``collect_base_dirs`` must copy before overlaying the per-app declarations,
 #: rather than leaking one image's activation set into the shared constant.
 STATIC_ARTIFACT_BASE_DIRS: Mapping[str, Callable[[], Path]] = MappingProxyType(
