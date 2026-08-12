@@ -90,6 +90,45 @@ def write_secrets(tmp_path: Path, **files: str) -> str:
     return str(directory)
 
 
+def managed_canonical_names() -> frozenset[str]:
+    """Return the canonical names the script's ``blank_cleared_names`` loop manages.
+
+    Parsed from the script rather than duplicated as a literal, so it can
+    never drift from the list :func:`apply_environment` relies on to isolate
+    a test from whatever one of these names the pytest process itself
+    happened to inherit.
+
+    :return: The managed canonical names.
+    """
+    match = BLANK_CLEARED_NAMES_ARRAY.search(
+        SETTINGS_ENV_HELPER.read_text(encoding="utf-8")
+    )
+    assert match
+    return frozenset(match.group(1).split())
+
+
+def apply_environment(
+    monkeypatch: pytest.MonkeyPatch, environment: dict[str, str]
+) -> None:
+    """Replay a subprocess's exported environment onto the pytest process.
+
+    A managed name the subprocess left unexported is meant to fall through to
+    a mounted file or the baked default -- but the pytest process is not
+    otherwise isolated from its own ambient environment, so a managed name
+    already set there (from the shell a developer or CI job runs pytest in)
+    would outrank both. Every managed name is cleared first so replaying the
+    export is the only source left.
+
+    :param monkeypatch: The environment patcher.
+    :param environment: The subprocess's exported environment, from :func:`exported`.
+    """
+    for name in managed_canonical_names():
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        if name not in SHELL_LOCAL_NAMES:
+            monkeypatch.setenv(name, value)
+
+
 @pytest.mark.parametrize("secret_key", [{}, {"SECRET_KEY": ""}], ids=["unset", "empty"])
 def test_missing_secret_key_aborts_with_an_actionable_message(
     secret_key: dict[str, str],
@@ -693,9 +732,7 @@ class TestBlankNamesWhoseGuardMightNeverFire:
                 SECRET_KEY="k", SECRETS_DIR=secrets_dir, SEP__DATABASE__PASSWORD=""
             )
         )
-        for name, value in environment.items():
-            if name not in SHELL_LOCAL_NAMES:
-                monkeypatch.setenv(name, value)
+        apply_environment(monkeypatch, environment)
 
         assert (
             SEPSettings(_secrets_dir=secrets_dir).DATABASE.PASSWORD.get_secret_value()
@@ -708,9 +745,7 @@ class TestBlankNamesWhoseGuardMightNeverFire:
     ):
         """Match the baked ``BASE_URL: null`` default rather than an empty URL."""
         environment = exported(source_helper(SECRET_KEY="k", BASE_URL=""))
-        for name, value in environment.items():
-            if name not in SHELL_LOCAL_NAMES:
-                monkeypatch.setenv(name, value)
+        apply_environment(monkeypatch, environment)
 
         assert Settings().BASE_URL is None
 
@@ -726,49 +761,41 @@ class TestGuardInactiveEndpointsResolveWithoutCrashing:
 
     @pytest.mark.usefixtures("embedded_profile_cwd")
     @pytest.mark.parametrize(
-        ("mount", "expected"),
-        [
-            ({}, "https://pmm-server:8443"),
-            ({"PMM__ENDPOINT": "https://mounted:9443"}, "https://mounted:9443"),
-        ],
+        "mount",
+        [{}, {"PMM__ENDPOINT": "https://mounted:9443"}],
         ids=["falls-through-to-the-baked-profile", "resolves-through-the-file"],
     )
     def test_pmm_endpoint(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
+        embedded_profile_data: dict,
         mount: dict[str, str],
-        expected: str,
     ):
         """Assert a blank ``PMM__ENDPOINT`` never reaches ``PMMSettings`` empty."""
         secrets_dir = write_secrets(tmp_path, **mount)
         environment = exported(
             source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir, PMM__ENDPOINT="")
         )
-        for name, value in environment.items():
-            if name not in SHELL_LOCAL_NAMES:
-                monkeypatch.setenv(name, value)
+        apply_environment(monkeypatch, environment)
+        expected = mount.get(
+            "PMM__ENDPOINT", embedded_profile_data["default"]["PMM"]["ENDPOINT"]
+        )
 
         assert Settings(_secrets_dir=secrets_dir).PMM.endpoint == expected
 
     @pytest.mark.usefixtures("embedded_profile_cwd")
     @pytest.mark.parametrize(
-        ("mount", "expected"),
-        [
-            ({}, "https://pmm-server:8443/nomad"),
-            (
-                {"TASKS__NOMAD__ENDPOINT": "https://mounted:9443/nomad"},
-                "https://mounted:9443/nomad",
-            ),
-        ],
+        "mount",
+        [{}, {"TASKS__NOMAD__ENDPOINT": "https://mounted:9443/nomad"}],
         ids=["falls-through-to-the-baked-profile", "resolves-through-the-file"],
     )
     def test_nomad_endpoint(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
+        embedded_profile_data: dict,
         mount: dict[str, str],
-        expected: str,
     ):
         """Assert a blank ``TASKS__NOMAD__ENDPOINT`` never crashes ``TasksSettings``."""
         secrets_dir = write_secrets(tmp_path, **mount)
@@ -780,30 +807,26 @@ class TestGuardInactiveEndpointsResolveWithoutCrashing:
                 TASKS__NOMAD__ENDPOINT="",
             )
         )
-        for name, value in environment.items():
-            if name not in SHELL_LOCAL_NAMES:
-                monkeypatch.setenv(name, value)
+        apply_environment(monkeypatch, environment)
+        expected = mount.get(
+            "TASKS__NOMAD__ENDPOINT",
+            embedded_profile_data["default"]["TASKS"]["NOMAD"]["ENDPOINT"],
+        )
 
         assert str(TasksSettings(_secrets_dir=secrets_dir).NOMAD.endpoint) == expected
 
     @pytest.mark.usefixtures("embedded_profile_cwd")
     @pytest.mark.parametrize(
-        ("mount", "expected"),
-        [
-            ({}, "https://pmm-server:8443/graph"),
-            (
-                {"AUTH__PROVIDER__GRAFANA__ENDPOINT": "https://mounted:9443/graph"},
-                "https://mounted:9443/graph",
-            ),
-        ],
+        "mount",
+        [{}, {"AUTH__PROVIDER__GRAFANA__ENDPOINT": "https://mounted:9443/graph"}],
         ids=["falls-through-to-the-baked-profile", "resolves-through-the-file"],
     )
     def test_grafana_endpoint(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
+        embedded_profile_data: dict,
         mount: dict[str, str],
-        expected: str,
     ):
         """Assert a blank Grafana endpoint never crashes ``AuthSettings`` either."""
         secrets_dir = write_secrets(tmp_path, **mount)
@@ -814,9 +837,11 @@ class TestGuardInactiveEndpointsResolveWithoutCrashing:
                 AUTH__PROVIDER__GRAFANA__ENDPOINT="",
             )
         )
-        for name, value in environment.items():
-            if name not in SHELL_LOCAL_NAMES:
-                monkeypatch.setenv(name, value)
+        apply_environment(monkeypatch, environment)
+        expected = mount.get(
+            "AUTH__PROVIDER__GRAFANA__ENDPOINT",
+            embedded_profile_data["default"]["AUTH"]["PROVIDER"]["grafana"]["endpoint"],
+        )
 
         provider = AuthSettings(_secrets_dir=secrets_dir).PROVIDER["grafana"]
         assert str(provider.endpoint) == expected
