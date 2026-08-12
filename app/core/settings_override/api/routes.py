@@ -26,7 +26,7 @@ __all__ = [
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Annotated, Any, get_args, get_origin
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, params, Request, status
 from pydantic import ValidationError
@@ -332,25 +332,22 @@ async def collect_class_setting_responses(
     ]
 
 
-def _unwrap_annotation(annotation: Any) -> Any:
-    """Return the inner type when ``annotation`` is ``Annotated[...]``, else itself."""
-    if get_origin(annotation) is Annotated:
-        args = get_args(annotation)
-        return args[0] if args else annotation
-    return annotation
+def _enum_options(field_info: FieldInfo) -> list[SettingOption] | None:
+    """Return dropdown options for enum annotations; otherwise ``None``.
 
-
-def _enum_options(field_info: FieldInfo, annotation: Any) -> list[SettingOption] | None:
-    """Return dropdown options for enum annotations; otherwise ``None``."""
-    unwrapped = _unwrap_annotation(annotation)
-    if not (isinstance(unwrapped, type) and issubclass(unwrapped, Enum)):
+    :param field_info: The Pydantic field metadata for the target attribute.
+    :return: One option per canonical enum member, or ``None`` when the
+        annotation is not an ``Enum`` subclass.
+    """
+    annotation = field_info.annotation
+    if not (isinstance(annotation, type) and issubclass(annotation, Enum)):
         return None
     return [
         SettingOption(
             label=member.name,
             value=dump_field_value(field_info, member),
         )
-        for member in unwrapped  # iterating the enum skips aliases
+        for member in annotation  # iterating the enum skips aliases
     ]
 
 
@@ -409,7 +406,7 @@ def _settings_response_from_field(
             if applicability is not None
             else True
         ),
-        options=_enum_options(field_info, field_meta.annotation),
+        options=_enum_options(field_info),
     )
 
 

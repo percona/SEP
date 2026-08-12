@@ -24,6 +24,8 @@ import {
   groupNodeId,
   formatSettingValue,
   formatSettingDisplayValue,
+  formatSettingValuePretty,
+  matchOptionLabel,
   getFieldKind,
   isEditable,
   isSaveable,
@@ -125,11 +127,12 @@ describe('formatSettingValue', () => {
 });
 
 describe('formatSettingDisplayValue', () => {
+  const options = [
+    { label: 'WARNING', value: 30 },
+    { label: 'DEBUG', value: 10 },
+  ];
+
   it('prefers the matching option label over the raw dumped value', () => {
-    const options = [
-      { label: 'WARNING', value: 30 },
-      { label: 'DEBUG', value: 10 },
-    ];
     expect(formatSettingDisplayValue(30, options)).toBe('WARNING');
     expect(formatSettingDisplayValue(10, options)).toBe('DEBUG');
   });
@@ -138,6 +141,35 @@ describe('formatSettingDisplayValue', () => {
     expect(formatSettingDisplayValue(30)).toBe('30');
     expect(formatSettingDisplayValue(30, [])).toBe('30');
     expect(formatSettingDisplayValue(99, [{ label: 'WARNING', value: 30 }])).toBe('99');
+  });
+});
+
+describe('matchOptionLabel', () => {
+  const options = [
+    { label: 'WARNING', value: 30 },
+    { label: 'DEBUG', value: 10 },
+  ];
+
+  it('returns the matching label for dumped wire values', () => {
+    expect(matchOptionLabel(30, options)).toBe('WARNING');
+    expect(matchOptionLabel('10', options)).toBe('DEBUG');
+  });
+
+  it('returns null when options are missing or unmatched', () => {
+    expect(matchOptionLabel(30)).toBeNull();
+    expect(matchOptionLabel(30, [])).toBeNull();
+    expect(matchOptionLabel(99, options)).toBeNull();
+  });
+});
+
+describe('formatSettingValuePretty', () => {
+  it('prefers option labels before pretty-printing', () => {
+    expect(
+      formatSettingValuePretty(30, [
+        { label: 'WARNING', value: 30 },
+        { label: 'DEBUG', value: 10 },
+      ]),
+    ).toBe('WARNING');
   });
 });
 

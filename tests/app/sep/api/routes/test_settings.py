@@ -1948,12 +1948,12 @@ class TestGlobalSettingsClass:
             SettingClassEnum.SEP_SETTINGS.value,
             "SYNC_REFRESH_TIME",
         )
-        assert non_enum.get("options") in (None, [])
+        assert non_enum["options"] is None
 
     async def test_logging_patch_integer_value_still_works(
         self, api_admin_client: TestClient
     ) -> None:
-        """Regression: PATCH LOGGING with int succeeds (UI will send this)."""
+        """Accept an integer PATCH value for LOGGING (the shape the UI sends)."""
         debug_level = 10
         response = api_admin_client.patch(
             "/api/sep/admin/settings/Settings",
@@ -1964,7 +1964,7 @@ class TestGlobalSettingsClass:
         assert get_resp.status_code == status.HTTP_200_OK
         body = get_resp.json()
         assert body["value"] == debug_level
-        assert body["options"][4] == {"label": "DEBUG", "value": debug_level}
+        assert {"label": "DEBUG", "value": debug_level} in body["options"]
 
     async def test_logging_invalid_level_rejected(
         self, api_admin_client: TestClient, override_session: AsyncSession

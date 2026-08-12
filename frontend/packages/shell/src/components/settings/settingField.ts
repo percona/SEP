@@ -253,21 +253,15 @@ export function formatSettingValue(value: unknown): string {
 }
 
 /**
- * Format a value for the read-only Current column. When ``options`` includes a
- * matching member, show its label (e.g. ``WARNING``) instead of the dumped
- * wire value (e.g. ``30``).
+ * Format a value for the read-only Current column. When `options` includes a
+ * matching member, show its label (e.g. `WARNING`) instead of the dumped
+ * wire value (e.g. `30`).
  */
 export function formatSettingDisplayValue(
   value: unknown,
   options?: SettingChoiceOption[] | null,
 ): string {
-  if (options && options.length > 0 && value !== null && value !== undefined) {
-    const match = options.find((opt) => String(opt.value) === String(value));
-    if (match) {
-      return match.label;
-    }
-  }
-  return formatSettingValue(value);
+  return matchOptionLabel(value, options) ?? formatSettingValue(value);
 }
 
 /**
@@ -279,11 +273,9 @@ export function formatSettingValuePretty(
   value: unknown,
   options?: SettingChoiceOption[] | null,
 ): string {
-  if (options && options.length > 0 && value !== null && value !== undefined) {
-    const match = options.find((opt) => String(opt.value) === String(value));
-    if (match) {
-      return match.label;
-    }
+  const label = matchOptionLabel(value, options);
+  if (label !== null) {
+    return label;
   }
   if (value === null || value === undefined) {
     return '—';
@@ -292,6 +284,18 @@ export function formatSettingValuePretty(
     return JSON.stringify(value, null, 2);
   }
   return formatSettingValue(value);
+}
+
+/** Return the matching option label, or `null` when none matches. */
+export function matchOptionLabel(
+  value: unknown,
+  options?: SettingChoiceOption[] | null,
+): string | null {
+  if (!options || options.length === 0 || value === null || value === undefined) {
+    return null;
+  }
+  const match = options.find((opt) => String(opt.value) === String(value));
+  return match ? match.label : null;
 }
 
 /**

@@ -74,9 +74,8 @@ class SettingResponse(BaseModel):
         (e.g. the active auth provider). ``False`` lets the UI present the field
         as inert. Display-only, like ``is_advanced``: it does not block
         PATCH/DELETE server-side; the runtime gate is the real enforcement.
-    :param options: Selectable enum members for dropdown UIs, or ``None`` /
-        empty when the field is not an ``Enum`` annotation. Populated by
-        iterating ``list(enum_cls)`` so aliases are skipped.
+    :param options: Selectable enum members for dropdown UIs, or ``None`` when
+        the field is not an ``Enum`` annotation. Aliased members are excluded.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
