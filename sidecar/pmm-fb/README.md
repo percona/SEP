@@ -212,14 +212,24 @@ the datadir those backups came from is being discarded anyway.
 - **Execution Host** — `sep-mysql`
 - **Database Host** — the `sep-mysql` MySQL service
 - **MySQL defaults file** — `/root/.my.cnf`
+- **XtraBackup defaults file** — `/root/.my.cnf` (XtraBackup runs only)
 
-Set the defaults file explicitly. Dispatched `raw_exec` tasks inherit the Nomad
+Set both, and set them explicitly. They feed different processes and neither
+covers for the other: the general field configures the payload's own connection
+to MySQL, while only the XtraBackup one becomes `--defaults-file` on the
+`xtrabackup` command line. Dispatched `raw_exec` tasks inherit the Nomad
 client's identity, which here is root, so `/root/.my.cnf` is readable — but the
-XtraBackup payload's *default* path is `f"{os.environ.get('HOME')}/.my.cnf"`,
-which becomes the literal string `None/.my.cnf` if `HOME` does not reach the
-task, and that surfaces as an *authentication* failure rather than a
-missing-file one. Naming the path removes the dependency. A successful run logs
+payload's *default* path is `f"{os.environ.get('HOME')}/.my.cnf"`, which
+becomes the literal string `None/.my.cnf` if `HOME` does not reach the task,
+and that surfaces as an *authentication* failure rather than a missing-file
+one; the `xtrabackup` process resolves its own option files through the same
+`HOME`. Naming both paths removes the dependency. A successful run logs
 `Connecting to MySQL server host: localhost, user: sep_backup`.
+
+`--defaults-file` is exclusive — it suppresses `/etc/my.cnf` rather than adding
+to it — so the entrypoint writes `[mysqld]` and `[xtrabackup]` groups into
+`/root/.my.cnf` beside `[client]`, carrying the datadir and socket the binary
+would otherwise have taken from the distro config.
 
 Both fields matter independently. Leaving **Execution Host** on `pmm-server`
 while pointing **Database Host** at the `sep-mysql` service is the mistake the

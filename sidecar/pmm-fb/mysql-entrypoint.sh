@@ -178,11 +178,29 @@ SQL
 
 # /root lives in the image layer rather than the data volume, so this is
 # rewritten on every boot. install creates the file at 0600 before the password
-# is written into it.
+# is written into it. Three groups because the consumers read different ones:
+# PyMySQL and mydumper take [client], while xtrabackup takes [xtrabackup] and
+# [mysqld] — and the form hands this file to xtrabackup as --defaults-file,
+# which suppresses /etc/my.cnf, so the datadir and socket it would have read
+# from the distro config have to be named here as well. [client] deliberately
+# carries no socket: PyMySQL prefers a unix socket over the host it was given,
+# so naming one would send the Mydumper path to loopback instead of the node.
 write_defaults_file() {
     install -m 0600 /dev/null "${DEFAULTS_FILE}" || return 1
-    printf '[client]\nuser=sep_backup\npassword=%s\n' \
-        "${SEP_MYSQL_BACKUP_PASSWORD}" > "${DEFAULTS_FILE}" || return 1
+    cat > "${DEFAULTS_FILE}" << EOF || return 1
+[client]
+user=sep_backup
+password=${SEP_MYSQL_BACKUP_PASSWORD}
+
+[mysqld]
+datadir=${DATADIR}
+socket=${SOCKET}
+
+[xtrabackup]
+user=sep_backup
+password=${SEP_MYSQL_BACKUP_PASSWORD}
+socket=${SOCKET}
+EOF
 }
 
 # employees.sql sources its dump files by relative path, so importing it from
