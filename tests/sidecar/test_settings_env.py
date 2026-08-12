@@ -707,12 +707,7 @@ class TestBlankNamesWhoseGuardMightNeverFire:
         Otherwise a name added to one and not the other goes untested or
         unmanaged without either side failing.
         """
-        array_body = BLANK_CLEARED_NAMES_ARRAY.search(
-            SETTINGS_ENV_HELPER.read_text(encoding="utf-8")
-        )
-
-        assert array_body
-        assert set(array_body.group(1).split()) == set(self.ALL_BLANK_CLEARED_NAMES) | {
+        assert managed_canonical_names() == set(self.ALL_BLANK_CLEARED_NAMES) | {
             "CELERY__BEAT_DBURI"
         }
 
@@ -740,14 +735,111 @@ class TestBlankNamesWhoseGuardMightNeverFire:
         )
 
     @pytest.mark.usefixtures("embedded_profile_cwd")
-    def test_a_blank_base_url_resolves_to_none_not_an_empty_url(
-        self, monkeypatch: pytest.MonkeyPatch
+    def test_a_mounted_internal_token_resolves_even_with_its_guard_inactive(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """Match the baked ``BASE_URL: null`` default rather than an empty URL."""
-        environment = exported(source_helper(SECRET_KEY="k", BASE_URL=""))
+        """Assert the file resolves though nothing derives ``SEP_INTERNAL_TOKEN``.
+
+        Unlike the URL-typed names, an uncleared blank here would not crash:
+        ``derive_internal_token`` treats an empty ``SecretStr`` the same as an
+        unset one and silently overwrites it with a value derived from
+        ``SECRET_KEY``, discarding the mounted token instead. A shell-level
+        "absent from the environment" assertion can't tell that apart from
+        this -- the derived fallback also leaves the name unexported.
+        """
+        secrets_dir = write_secrets(tmp_path, SEP_INTERNAL_TOKEN="from-file")
+        environment = exported(
+            source_helper(
+                SECRET_KEY="k", SECRETS_DIR=secrets_dir, SEP_INTERNAL_TOKEN=""
+            )
+        )
         apply_environment(monkeypatch, environment)
 
-        assert Settings().BASE_URL is None
+        assert (
+            Settings(_secrets_dir=secrets_dir).SEP_INTERNAL_TOKEN.get_secret_value()
+            == "from-file"
+        )
+
+    @pytest.mark.usefixtures("embedded_profile_cwd")
+    def test_mounted_grafana_credentials_resolve_even_with_their_guard_inactive(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Assert both files resolve though nothing sets ``SEP_GRAFANA_TOKEN``.
+
+        The token guard never fires without a raw input, so without the
+        unconditional clear both files would stay shadowed the same way the
+        password file did before the fix.
+        """
+        secrets_dir = write_secrets(
+            tmp_path,
+            AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN="from-file",
+            PMM__API_KEY="from-file",
+        )
+        environment = exported(
+            source_helper(
+                SECRET_KEY="k",
+                SECRETS_DIR=secrets_dir,
+                AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN="",
+                PMM__API_KEY="",
+            )
+        )
+        apply_environment(monkeypatch, environment)
+
+        assert (
+            AuthSettings(_secrets_dir=secrets_dir)
+            .PROVIDER["grafana"]
+            .service_account_token.get_secret_value()
+            == "from-file"
+        )
+        assert (
+            Settings(_secrets_dir=secrets_dir).PMM.api_key.get_secret_value()
+            == "from-file"
+        )
+
+    @pytest.mark.usefixtures("embedded_profile_cwd")
+    @pytest.mark.parametrize(
+        "mount",
+        [{}, {"BASE_URL": "https://mounted:9443/sep"}],
+        ids=["falls-through-to-none", "resolves-through-the-file"],
+    )
+    def test_a_blank_base_url_resolves_through_the_file_or_to_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mount: dict[str, str]
+    ):
+        """Match a mounted file or the baked ``BASE_URL: null`` default, never an empty URL."""
+        secrets_dir = write_secrets(tmp_path, **mount)
+        environment = exported(
+            source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir, BASE_URL="")
+        )
+        apply_environment(monkeypatch, environment)
+        expected = mount.get("BASE_URL")
+
+        base_url = Settings(_secrets_dir=secrets_dir).BASE_URL
+        assert (str(base_url) if base_url is not None else base_url) == expected
+
+
+class TestApplyEnvironmentIsolatesFromTheAmbientProcess:
+    """Prove the pre-clear in ``apply_environment`` -- not just the subprocess run -- matters."""
+
+    @pytest.mark.usefixtures("embedded_profile_cwd")
+    def test_an_ambient_managed_name_does_not_survive_a_correctly_cleared_export(
+        self, monkeypatch: pytest.MonkeyPatch, embedded_profile_data: dict
+    ):
+        """Assert a name the subprocess correctly left unexported outranks an ambient leak.
+
+        The subprocess's own environment starts clean, so ``PMM__ENDPOINT``
+        never reaches it here -- this sets it directly on the pytest process
+        first, the way a developer's or CI job's shell might, to prove that
+        without ``apply_environment``'s own clear, replaying the export alone
+        would leave the leaked value in place.
+        """
+        monkeypatch.setenv("PMM__ENDPOINT", "https://leaked-from-the-pytest-process")
+        environment = exported(source_helper(SECRET_KEY="k", PMM__ENDPOINT=""))
+        apply_environment(monkeypatch, environment)
+
+        assert (
+            Settings().PMM.endpoint
+            == embedded_profile_data["default"]["PMM"]["ENDPOINT"]
+        )
 
 
 class TestGuardInactiveEndpointsResolveWithoutCrashing:
