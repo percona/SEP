@@ -69,22 +69,9 @@ const MOCK_ATW_LIST = [
  * reachable only through the Collect pane's search of `GET /api/apps/snippets/`.
  */
 const MOCK_SEARCH_SNIPPET = {
-  filename: 'ops/pt-summary.sh',
+  name: 'ops/pt-summary.sh',
   title: 'PT Summary',
   description: 'Collects a percona-toolkit system summary.',
-  service_type: null,
-  size: 512,
-  md5_digest: 'e2e',
-  is_approved: true,
-  approved_at: '2026-07-20T10:00:00Z',
-  updated_by: null,
-  reason: '',
-  requires_sudo: false,
-  sudo_optional: false,
-  sudo_default: false,
-  interpreter: 'bash',
-  created_at: '2026-07-20T10:00:00Z',
-  updated_at: null,
 };
 
 /**
@@ -278,7 +265,7 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       const matches =
         term !== '' &&
         [
-          MOCK_SEARCH_SNIPPET.filename,
+          MOCK_SEARCH_SNIPPET.name,
           MOCK_SEARCH_SNIPPET.title,
           MOCK_SEARCH_SNIPPET.description,
         ].some((field) => field.toLowerCase().includes(term));
@@ -411,7 +398,7 @@ test.describe('Collect Diagnostic Data (ATW)', () => {
     const lastSchemaUrl = calls.executionSchemaUrls.at(-1);
     expect(lastSchemaUrl, 'the selection should have requested a merged schema').toBeDefined();
     expect(new URL(lastSchemaUrl ?? '').searchParams.getAll('snippet_filename')).toEqual([
-      MOCK_SEARCH_SNIPPET.filename,
+      MOCK_SEARCH_SNIPPET.name,
     ]);
 
     const lastSearchUrl = calls.snippetSearchUrls.at(-1);
