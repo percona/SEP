@@ -17,7 +17,10 @@
 
 import inspect
 import os
+import socket
+import threading
 from collections.abc import AsyncGenerator, Iterator
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
@@ -26,7 +29,7 @@ import pytest
 import pytest_asyncio
 from aiohttp import ClientResponse
 from faker import Faker
-from fastapi import Request
+from fastapi import Request, status
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from pytest_mock import MockerFixture
@@ -44,6 +47,7 @@ from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
 from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.health import HEALTH_PATH
 from app.core.requests import RemoteAPI
 from app.core.utils import json_serializer
 from app.inventory.models import ServiceTypeEnum
@@ -84,6 +88,97 @@ if "stream_writer" in inspect.signature(ClientResponse.__init__).parameters:
             super().__init__(*args, **kwargs)
 
     aioresponses.core.ClientResponse = _CompatClientResponse
+
+
+class HealthProbeServer:
+    """Drive a real HTTP listener on loopback answering the shared health path.
+
+    The readiness gate in :mod:`app.core.health` polls over a real socket, so the
+    failures worth covering -- connection refused, a listener that accepts and
+    never answers, a host-header rejection -- only reproduce against a real
+    listener. The port is reserved and released in ``__init__`` so a test can
+    probe a closed port before calling :meth:`start`.
+    """
+
+    def __init__(self) -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+            self.port: int = probe.getsockname()[1]
+        self.statuses: list[int] = []
+        self.default_status: int = status.HTTP_200_OK
+        self.headers_to_send: dict[str, str] = {}
+        self.required_host: str | None = None
+        self.requests: list[tuple[str, dict[str, str]]] = []
+        self.listening = threading.Event()
+        self._server: HTTPServer | None = None
+        self._thread: threading.Thread | None = None
+
+    def _build_handler(self) -> type[BaseHTTPRequestHandler]:
+        server = self
+
+        class Handler(BaseHTTPRequestHandler):
+            """Answer the health path from the controller's script."""
+
+            def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's API
+                """Answer with the next scripted status, honouring the host rule."""
+                server.requests.append((self.path, dict(self.headers.items())))
+                if self.path != HEALTH_PATH:
+                    self.send_error(status.HTTP_404_NOT_FOUND)
+                    return
+                if (
+                    server.required_host is not None
+                    and self.headers.get("Host", "").split(":")[0]
+                    != server.required_host
+                ):
+                    self.send_error(status.HTTP_400_BAD_REQUEST)
+                    return
+                status_code = (
+                    server.statuses.pop(0) if server.statuses else server.default_status
+                )
+                self.send_response(status_code)
+                for name, value in server.headers_to_send.items():
+                    self.send_header(name, value)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *args: Any, **kwargs: Any) -> None:
+                """Silence the handler's stderr access log."""
+
+        return Handler
+
+    def start(self) -> None:
+        """Begin serving on the reserved port."""
+        for _ in range(5):
+            try:
+                self._server = HTTPServer(
+                    ("127.0.0.1", self.port), self._build_handler()
+                )
+            except OSError:
+                continue
+            break
+        else:
+            pytest.skip(f"could not bind 127.0.0.1:{self.port} for a probe test")
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+        self.listening.set()
+
+    def stop(self) -> None:
+        """Stop serving and join the serving thread."""
+        if self._server is not None:
+            self._server.shutdown()
+            self._server.server_close()
+            self._server = None
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+            self._thread = None
+
+
+@pytest.fixture(name="health_probe_server")
+def health_probe_server_fixture() -> Iterator[HealthProbeServer]:
+    """Yield a controller for a real loopback listener on the health path."""
+    server = HealthProbeServer()
+    yield server
+    server.stop()
 
 
 @pytest.fixture(scope="session", autouse=True)
