@@ -54,13 +54,31 @@ it out of `unhealthy` while PMM provisioning and SEP migrations finish.
 ## Bring-up
 
 ```bash
-./bootstrap.sh              # generate .env, render pmm.conf
-docker compose up -d        # or: podman compose up -d
+./bootstrap.sh                                # generate .env, render pmm.conf
+docker compose --profile mysql up -d --build  # or: podman compose ...
 ```
+
+`--profile mysql` adds the `sep-mysql` task-execution target — a MySQL server,
+a PMM Client and the employees seed in one container, documented in
+[mysql-target.md](mysql-target.md). Omitting it is the supported fast path —
+you get the same two services this harness has always had, and auth or UI work
+does not pay for a MySQL build:
+
+```bash
+docker compose up -d        # pmm-server + sep-sidecar only
+```
+
+Note that `docker compose build` obeys the profile too, and reports `No
+services to build` rather than an error when you forget it.
 
 First boot takes a couple of minutes (PMM provisioning + SEP migrations; the
 side-car recipe budgets 150 s before its healthcheck would start failing).
-Then:
+`sep-mysql` initialises a datadir and imports the employees dataset on its
+first boot; the import runs for several minutes. Its healthcheck reports
+`healthy` as soon as MySQL answers — about a minute in, while the import is
+still running — because health here means "the database is up" and nothing
+more. Watch `docker compose logs -f sep-mysql` for `Imported the employees seed
+dataset` before expecting a backup to have data to copy. Then:
 
 - PMM UI: https://127.0.0.1:8443 (admin / admin)
 - SEP API through PMM's nginx: https://127.0.0.1:8443/api/apps/
@@ -120,13 +138,23 @@ inert while no token is set.
 - The side-car has a fixed IP (`172.28.9.30`) because nginx resolves proxy
   targets at startup — a name-based upstream would keep pmm-server's nginx
   from booting before SEP is up, and would go stale across SEP restarts.
+  `sep-mysql` (`172.28.9.40`) is fixed for an unrelated reason: SEP never
+  updates an existing inventory node's address, and the Mydumper path connects
+  to exactly that address, so an address that moved across recreates would
+  leave SEP pointing at a stale one.
 
 ## Caveats
 
 - `auth_request` is off for the SEP locations (as in the dev proxy), so
   anything that can reach 127.0.0.1:8443 can call the SEP API as the service
   principal. Local testing only.
-- Both ports 8443 and 9000-9002 bind to loopback only.
+- Both ports 8443 and 9000-9002 bind to loopback only. `sep-mysql` publishes
+  nothing; it is reachable only on the compose network.
+- `sep-mysql` runs `privileged: true` with `cgroup: host` and a read-write
+  `/sys/fs/cgroup` mount. A containerised Nomad client needs it — the
+  fingerprinter reads cgroups and `raw_exec` places tasks into cgroups the
+  client creates — but it is a harness-only concession, not something the
+  side-car topology does.
 - Rotating the internal token = edit `SEP_INTERNAL_TOKEN` in `.env`, re-run
   `./bootstrap.sh` so `pmm.conf` is re-rendered with the new bearer, then
   `docker compose up -d --force-recreate` for **both** containers: the side-car

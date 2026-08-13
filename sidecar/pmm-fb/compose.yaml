@@ -20,6 +20,9 @@
 # come from the profile baked into the image, with the per-deployment values
 # below overriding it — environment outranks the file.
 #
+# sep-mysql is the task-execution target, behind the `mysql` profile; see
+# mysql-target.md.
+#
 # The side-car gets a fixed IP because nginx resolves proxy targets at
 # startup, when the SEP container may not be running yet — and a name-based
 # upstream would also go stale when sep-sidecar is recreated (e.g. after
@@ -33,9 +36,14 @@
 
 name: sep-pmm-fb
 
+# Registered into PMM inventory and bound on the container — SEP hands the
+# registered address to Mydumper, so the two must not drift
+x-sep-mysql-address: &sep_mysql_address 172.28.9.40
+
 services:
   pmm-server:
-    image: docker.io/perconalab/pmm-server-fb:PR-4500-133001e
+    # Default repeated on sep-mysql's PMM_FB_TAG build arg — a repin edits both
+    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-133001e}
     environment:
       PMM_ENABLE_SEP: "1"
       PMM_SEP_POSTGRES_PASSWORD: ${SEP_PG_PASSWORD:?run ./bootstrap.sh first}
@@ -76,6 +84,54 @@ services:
       sep-pmm:
         ipv4_address: 172.28.9.30
 
+  sep-mysql:
+    profiles: ["mysql"]
+    build:
+      context: .
+      dockerfile: Containerfile.mysql
+      args:
+        PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-133001e}
+    # service_started, not service_healthy: pmm-server's baked-in healthcheck
+    # (StartPeriod=25s, Interval=4s, Retries=3) reports unhealthy at ~37s, but
+    # a cold start on an empty volume measures ~90s to first pass readyz —
+    # service_healthy aborts this dependent well inside that window. Ordering
+    # is all that is needed here: pmm-managed starts answering registration
+    # requests later still, and the entrypoint's own bounded retry
+    # (retry_cmd 30 2 pmm-agent setup, 60s) already covers that wait.
+    depends_on:
+      pmm-server:
+        condition: service_started
+    hostname: sep-mysql
+    environment:
+      SEP_MYSQL_ROOT_PASSWORD: ${SEP_MYSQL_ROOT_PASSWORD:?run ./bootstrap.sh first}
+      SEP_MYSQL_BACKUP_PASSWORD: ${SEP_MYSQL_BACKUP_PASSWORD:?run ./bootstrap.sh first}
+      SEP_MYSQL_PMM_PASSWORD: ${SEP_MYSQL_PMM_PASSWORD:?run ./bootstrap.sh first}
+      PMM_AGENT_SERVER_ADDRESS: pmm-server:8443
+      PMM_AGENT_SERVER_USERNAME: admin
+      PMM_AGENT_SERVER_PASSWORD: admin
+      PMM_AGENT_SERVER_INSECURE_TLS: "1"
+      PMM_AGENT_CONFIG_FILE: /usr/local/percona/pmm/config/pmm-agent.yaml
+      PMM_AGENT_SETUP_NODE_NAME: sep-mysql
+      PMM_AGENT_SETUP_NODE_ADDRESS: *sep_mysql_address
+      PMM_AGENT_SETUP_NODE_TYPE: container
+      PMM_AGENT_PATHS_NOMAD_DATA_DIR: /var/lib/nomad
+    # Nomad's client fingerprinter needs cgroup control, and raw_exec places its
+    # tasks into cgroups the client creates. Measured on this topology, and a
+    # harness-only concession — the side-car topology needs neither.
+    privileged: true
+    cgroup: host
+    volumes:
+      - sep-mysql-data:/var/lib/mysql
+      # Keeping pmm-agent.yaml off the image layer keeps the node and service
+      # ids stable across a recreate; SEP matches inventory nodes by external
+      # id, so churning them orphans catalogued backup rows
+      - sep-mysql-pmm-config:/usr/local/percona/pmm/config
+      - sep-mysql-nomad:/var/lib/nomad
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    networks:
+      sep-pmm:
+        ipv4_address: *sep_mysql_address
+
 networks:
   sep-pmm:
     driver: bridge
@@ -85,3 +141,6 @@ networks:
 
 volumes:
   pmm-data:
+  sep-mysql-data:
+  sep-mysql-pmm-config:
+  sep-mysql-nomad:
