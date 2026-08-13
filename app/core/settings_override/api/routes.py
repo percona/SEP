@@ -32,6 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, params, Request, status
 from pydantic import ValidationError
 from pydantic.fields import FieldInfo
 from sqlalchemy.exc import IntegrityError
+from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import BaseYamlSettings
@@ -72,6 +73,7 @@ from app.core.settings_override.registry import (
     materialize_override_value,
     NESTED_VALUE_MISSING,
     override_keys_for_rows,
+    override_rows_for_key,
     preserve_patch_credential_url_value,
     ReloadClassification,
     rendered_leaf_keys,
@@ -1079,7 +1081,10 @@ def build_settings_router(
         override row in the first place and the operator's intent is
         unsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld
         may still carry a row written before the restriction applied, so that
-        row is deleted normally and only the no-row case answers 409.
+        row is deleted normally (found by canonicalizing the stored key, so a
+        legacy non-canonical casing is still seen) and only the no-row case
+        answers 409. When several rows canonicalize to the same key, all of
+        them are removed.
 
         After republishing the snapshot, fires the rebind callbacks for the
         reverted key so a HOT target rebinds to its restored value without
@@ -1111,15 +1116,21 @@ def build_settings_router(
         settings_cls, proxy = _resolve(setting_class)
         key = canonical_override_key(settings_cls, key)
         field_meta = _field_meta_or_404(settings_cls, key)
-        has_override_row = await SettingsOverrideManager.exists(
-            session, setting_class=setting_class, key=key
+        rows = await override_rows_for_key(
+            session,
+            settings_cls=settings_cls,
+            setting_class=setting_class,
+            key=key,
         )
         _assert_key_deletable(
-            settings_cls, field_meta, has_override_row=has_override_row
+            settings_cls, field_meta, has_override_row=bool(rows)
         )
-        await SettingsOverrideManager.delete_where(
-            session, setting_class=setting_class, key=key
-        )
+        if rows:
+            await SettingsOverrideManager.delete_where(
+                session,
+                col(SettingOverride.key).in_({row.key for row in rows}),
+                setting_class=setting_class,
+            )
         previous = proxy.get_snapshot()
         await publish_snapshot(proxy, session, settings_cls)
         await _fire_inline_rebind_callbacks(request, setting_class, proxy, previous)
