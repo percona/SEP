@@ -46,7 +46,7 @@ from app.core.utils.strings import lower_if_string
 
 
 class ReportScheduleEntry(BaseLowercaseModel):
-    """A single scheduled report generation with its own cadence and parameters.
+    """Define a single scheduled report generation with its own cadence and parameters.
 
     :param schedule: When to run (interval or crontab).
     :type schedule: IntervalSchedule | CrontabSchedule
