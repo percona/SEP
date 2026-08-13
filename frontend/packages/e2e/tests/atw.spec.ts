@@ -264,11 +264,9 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       const term = (searchParams.get('search') ?? '').toLowerCase();
       const matches =
         term !== '' &&
-        [
-          MOCK_SEARCH_SNIPPET.name,
-          MOCK_SEARCH_SNIPPET.title,
-          MOCK_SEARCH_SNIPPET.description,
-        ].some((field) => field.toLowerCase().includes(term));
+        [MOCK_SEARCH_SNIPPET.name, MOCK_SEARCH_SNIPPET.title, MOCK_SEARCH_SNIPPET.description].some(
+          (field) => field.toLowerCase().includes(term),
+        );
       const items = matches ? [MOCK_SEARCH_SNIPPET] : [];
       return route.fulfill({
         status: 200,
