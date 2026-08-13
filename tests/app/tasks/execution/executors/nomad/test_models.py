@@ -727,7 +727,7 @@ class TestDispatchJob:
 
 
 class TestAllocStepState:
-    """Test the module-level ``_alloc_step_state`` helper."""
+    """Exercise the module-level ``_alloc_step_state`` helper."""
 
     def test_returns_state_when_present(self):
         """Assert the step's state is returned untouched when well-formed."""
@@ -1214,7 +1214,7 @@ class TestStopTask:
         session: AsyncSession,
         created_task_with_history: TaskHistory,
     ):
-        """Assert stopping a row backed by a TaskStates-less allocation terminates it.
+        """Assert stopping a row backed by a ``TaskStates``-less allocation ends it.
 
         ``stop_task`` syncs before it writes the status, so a sync that raised
         left the row RUNNING and answered the request with a 500 — the row could
@@ -1647,13 +1647,13 @@ class TestSyncTaskHistory:
 
 
 class TestSyncTaskHistoryWithoutTaskStates:
-    """Test _sync_task_history against an allocation carrying no ``TaskStates``.
+    """Exercise ``_sync_task_history`` against an allocation with no ``TaskStates``.
 
     Nomad's reschedule chain lands on an allocation that exists but has not
     started any task once the client running the original allocation goes away.
     Reading ``TaskStates`` off that shape used to raise ``KeyError``, which left
-    the row RUNNING forever and made ``stop`` -- the endpoint meant to clear it
-    -- fail with a 500.
+    the row RUNNING forever and made ``stop``, the endpoint meant to clear it,
+    fail with a 500.
     """
 
     @staticmethod
@@ -1836,8 +1836,8 @@ class TestSyncTaskHistoryWithoutTaskStates:
 
         An allocation that started no task produced no output and no exit code,
         so reporting SUCCESS would mislead operators and release any chained
-        task waiting on this one. The row is left for the dead-job branch, which
-        sees the job's own status rather than the allocation's alone.
+        task waiting on this one. While the job lives the allocation may still
+        be starting, so the row is left RUNNING rather than terminated.
         """
         self._backend(
             mock_nomad_cls,
@@ -1907,7 +1907,7 @@ class TestSyncTaskHistoryWithoutTaskStates:
 
         ``sync_running_items`` always supplies a ``writer_session``, so the
         reschedule-frontier reset, the log fetch and the terminal drain all run
-        against a ``TaskStates``-less allocation on every tick -- the exact call
+        against a ``TaskStates``-less allocation on every tick, the exact call
         shape that raised ``KeyError`` in production. Nothing can be persisted
         for an allocation that started no task, but the row must still leave
         RUNNING.
@@ -1938,8 +1938,15 @@ class TestSyncTaskHistoryWithoutTaskStates:
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    async def test_dead_job_path_stamps_finished_at_once(self, mock_nomad_cls):
-        """Assert a dead job with no task states still resolves via the job branch."""
+    async def test_dead_job_with_complete_alloc_reaches_lost_not_success(
+        self, mock_nomad_cls
+    ):
+        """Assert a dead job never reports SUCCESS for an allocation that ran nothing.
+
+        Once the job is dead nothing will advance the row, so it must reach a
+        terminal status; but there is no exit code behind ``complete`` here, and
+        SUCCESS would release any chained task and silence ``alert_on_fail``.
+        """
         self._backend(
             mock_nomad_cls,
             self._alloc(
@@ -1952,12 +1959,54 @@ class TestSyncTaskHistoryWithoutTaskStates:
 
         result = await executor._sync_task_history(self._queue_item())
 
-        assert result.status == TaskHistoryStatusEnum.SUCCESS
+        assert result.status == TaskHistoryStatusEnum.LOST
         assert result.finished_at == datetime(2023, 11, 14, 22, 13, 20, tzinfo=UTC)
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_dead_job_without_client_status_reaches_lost(self, mock_nomad_cls):
+        """Assert a dead job resolves the row even with no ``ClientStatus`` to read.
+
+        The live-job branch reads this key defensively; reading it unguarded
+        here would raise ``KeyError`` one line below the ``TaskStates`` read
+        this class exists to guard, wedging the row exactly as before.
+        """
+        alloc = self._alloc(ModifyTime=1_700_000_000_000_000_000)
+        del alloc["ClientStatus"]
+        self._backend(
+            mock_nomad_cls,
+            alloc,
+            job={"ID": "job-1", "Status": NOMAD_DEAD_JOB_STATUS, "Stop": False},
+        )
+        executor = _build_executor()
+
+        result = await executor._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.LOST
+        assert result.finished_at == datetime(2023, 11, 14, 22, 13, 20, tzinfo=UTC)
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_dead_job_with_lost_alloc_keeps_its_own_status(self, mock_nomad_cls):
+        """Assert a dead-end status the allocation does report is carried through.
+
+        Only a status outside the dead-end set is rewritten to LOST, so a
+        ``failed`` allocation still lands FAILED rather than being flattened.
+        """
+        self._backend(
+            mock_nomad_cls,
+            self._alloc(ClientStatus=NomadAllocStatusEnum.FAILED),
+            job={"ID": "job-1", "Status": NOMAD_DEAD_JOB_STATUS, "Stop": False},
+        )
+        executor = _build_executor()
+
+        result = await executor._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
 
 
 class TestStampFinishedAt:
-    """Test NomadExecutor._stamp_finished_at."""
+    """Exercise ``NomadExecutor._stamp_finished_at``."""
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_uses_allocation_modify_time(self, mock_nomad_cls):
@@ -3408,7 +3457,7 @@ class TestNomadLogStreaming:
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_stream_logs_absent_task_states_yields_sentinel(self, mock_nomad_cls):
-        """Assert streaming an allocation with no TaskStates key yields the sentinel."""
+        """Assert streaming an allocation with no ``TaskStates`` yields the sentinel."""
         mock_nomad_cls.return_value = MagicMock()
         executor = _build_executor()
         queue_item = _build_queue_item(
@@ -4336,7 +4385,7 @@ class TestPersistNomadTaskLogsCursorDurability:
         session,
         created_task_with_history,
     ):
-        """Assert the Celery log-persistence path tolerates a TaskStates-less alloc.
+        """Assert the Celery log-persistence path tolerates a ``TaskStates``-less alloc.
 
         ``sync_running_items`` supplies a ``writer_session``, so this branch runs
         on every periodic sync of a rescheduled allocation.

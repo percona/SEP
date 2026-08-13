@@ -144,7 +144,8 @@ _STALE_SKIP_EXIT_CODE = 75
 # allocation carries no task states to corroborate it. SUCCESS is excluded: an
 # allocation that started no task produced no output and no exit code, so
 # reporting a successful run off ``complete`` would both mislead operators and
-# release any chained task waiting on this one.
+# release any chained task waiting on this one. A dead job cannot leave the row
+# RUNNING either, so anything outside this set resolves to LOST there.
 _DEAD_END_ALLOC_STATUSES = frozenset(
     {
         TaskHistoryStatusEnum.FAILED,
@@ -158,8 +159,8 @@ def _alloc_task_states(alloc: dict[str, Any]) -> dict[str, Any]:
     """Return an allocation's Nomad task states as a mapping.
 
     An allocation that has not started any task carries no ``TaskStates`` at
-    all -- the shape a reschedule chain produces once the client running the
-    original allocation goes away -- so the read degrades to an empty mapping
+    all, the shape a reschedule chain produces once the client running the
+    original allocation goes away, so the read degrades to an empty mapping
     instead of raising. Anything present but not a mapping is upstream shape
     drift rather than a task that never started, so it is logged before
     degrading the same way: raising here aborts the very sync, stop and log
@@ -443,15 +444,16 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
     @staticmethod
     def get_task_history_status_from_alloc_status(
-        client_status: NomadAllocStatusEnum,
+        client_status: NomadAllocStatusEnum | None,
         default: TaskHistoryStatusEnum | None = None,
         *,
         stopped: bool = False,
     ) -> TaskHistoryStatusEnum | None:
         """Get the task history status based on the allocation status.
 
-        :param client_status: The Nomad allocation status.
-        :type client_status: NomadAllocStatusEnum
+        :param client_status: The Nomad allocation status, or ``None`` when the
+            allocation does not report one.
+        :type client_status: NomadAllocStatusEnum | None
         :param default: The default status to return if no match is found. Defaults to
             None.
         :type default: TaskHistoryStatusEnum | None
@@ -1061,8 +1063,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         client status as the only signal. One of ``_DEAD_END_ALLOC_STATUSES``
         moves the row out of RUNNING on that signal alone, because a row left
         RUNNING blocks every later dispatch of the same task, target and payload
-        with a 409. A pending or running allocation is simply still starting and
-        is left alone.
+        with a 409. While the job lives, a pending or running allocation is
+        simply still starting and is left alone. Once the job is dead nothing
+        will advance it, so any other status resolves to LOST: an allocation
+        that started no task produced no exit code to have earned SUCCESS.
 
         :param queue_item: The task history record for tracking this execution.
         :param writer_session: The dedicated session to use for log chunk
@@ -1095,10 +1099,15 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 if stale_skip:
                     queue_item.status = TaskHistoryStatusEnum.STALE
                 else:
-                    queue_item.status = self.get_task_history_status_from_alloc_status(
-                        alloc["ClientStatus"],
+                    status = self.get_task_history_status_from_alloc_status(
+                        alloc.get("ClientStatus"),
                         queue_item.status,
                         stopped=job.get("Stop", False),
+                    )
+                    queue_item.status = (
+                        status
+                        if task_states or status in _DEAD_END_ALLOC_STATUSES
+                        else TaskHistoryStatusEnum.LOST
                     )
             elif not task_states:
                 dead_end_status = self.get_task_history_status_from_alloc_status(
@@ -1777,15 +1786,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 timeout=client_timeout,
             ) as response:
                 logger.debug("Log response status: %s", response.status)
+                # The 404 clears once Nomad serves this step's logs, so retrying
+                # is only useful while the allocation still lists the step.
                 step_state = _alloc_step_state(alloc, step)
                 if (
                     response.status == status.HTTP_404_NOT_FOUND
-                    # Retrying is only useful while the allocation still lists
-                    # this step as pending: the 404 clears when Nomad starts
-                    # serving its logs. An allocation that does not carry the
-                    # step at all never will, so it falls through to
-                    # ``raise_for_status`` and ends the stream instead of
-                    # polling forever.
                     and step_state
                     and step_state.get("StartedAt") is None
                 ):
