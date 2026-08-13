@@ -53,46 +53,27 @@ export function filterSettingsGroups(
     .filter(
       (group) => filters.settingClass === 'all' || group.setting_class === filters.settingClass,
     )
-    .map((group) => {
-      const readOnlyAppOwnedGroup =
-        group.is_app_owned &&
-        group.settings.length > 0 &&
-        group.settings.every((setting) => setting.reload === 'not_overridable');
-
-      return {
-        ...group,
-        settings: group.settings.filter((setting) => {
-          if (needle && !setting.key.toLowerCase().includes(needle)) {
-            return false;
-          }
-          if (filters.advanced === 'hidden' && setting.is_advanced) {
-            return false;
-          }
-          if (filters.reload !== 'all' && setting.reload !== filters.reload) {
-            // App-owned groups whose fields are entirely read-only config (for
-            // example HealthReportSettings) stay visible under the default Hot
-            // filter so operators can inspect them; mixed core groups still hide
-            // individual not_overridable leaves to reduce clutter.
-            if (
-              !(
-                filters.reload === 'hot' &&
-                readOnlyAppOwnedGroup &&
-                setting.reload === 'not_overridable'
-              )
-            ) {
-              return false;
-            }
-          }
-          if (filters.override === 'yes' && !setting.has_override) {
-            return false;
-          }
-          if (filters.override === 'no' && setting.has_override) {
-            return false;
-          }
-          return true;
-        }),
-      };
-    })
+    .map((group) => ({
+      ...group,
+      settings: group.settings.filter((setting) => {
+        if (needle && !setting.key.toLowerCase().includes(needle)) {
+          return false;
+        }
+        if (filters.advanced === 'hidden' && setting.is_advanced) {
+          return false;
+        }
+        if (filters.reload !== 'all' && setting.reload !== filters.reload) {
+          return false;
+        }
+        if (filters.override === 'yes' && !setting.has_override) {
+          return false;
+        }
+        if (filters.override === 'no' && setting.has_override) {
+          return false;
+        }
+        return true;
+      }),
+    }))
     .filter((group) => group.settings.length > 0);
 }
 
