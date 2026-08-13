@@ -195,6 +195,9 @@ regen-pbm-payloads: venv
 regen-pbm-payloads-check: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/gen_pbm_payloads.py --check
 
+check-nomad-payload-size: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/check_nomad_payload_size.py $(ARGS)
+
 changelog-add:
 ifndef TICKET
 	$(error TICKET is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")

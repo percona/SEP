@@ -22,7 +22,14 @@ import gzip
 import io
 import sys
 
-from python_minifier import minify
+try:
+    from python_minifier import minify
+except ModuleNotFoundError:
+    sys.exit(
+        "python_minifier is not installed for this Python interpreter.\n"
+        "Use the project venv: venv/bin/python scripts/check_nomad_payload_size.py ...\n"
+        "Or: make check-nomad-payload-size ARGS='--report <path>...'"
+    )
 
 NOMAD_PAYLOAD_SIZE_LIMIT = 16384
 
