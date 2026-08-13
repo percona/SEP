@@ -1,5 +1,5 @@
 ---
-applyTo: "app/**/models.py,app/**/schema.py,app/**/migrations/**/*.py,app/*/db/seed.py,app/sep/apps/**/api_routes.py,settings.yaml"
+applyTo: "app/**/models.py,app/**/schema.py,app/**/config.py,app/**/migrations/**/*.py,app/*/db/seed.py,app/sep/apps/**/api_routes.py,settings.yaml"
 ---
 
 # Backwards Compatibility
@@ -40,6 +40,12 @@ Retiring a previously-valid **constrained-vocabulary value** (a `StrEnum` member
 
 Members appear in API responses, DB columns, task payloads, and config. Removing a member breaks all of them. Renaming a member's **value** (string/int) equals removing the old + adding the new. New members are safe iff consumers handle unknown values gracefully — confirm.
 
+## Changing what a shared surface *selects*
+
+Widening, narrowing, or gating a shared predicate or dispatch surface changes behaviour at every existing call site, and the reroute is invisible at the definition site. *Widening* looks purely additive — nothing removed, no signature narrowed — but a value that used to fall through to a default now matches a specific handler. *Narrowing or gating* looks like a local tightening, but silently **removes** inputs from every consumer's selected set, and the consumers that break are the ones asking a *different question* than the new condition answers.
+
+Before changing one in either direction, enumerate what **dispatches on** it: `except` sites, `isinstance` checks, `exception_handler` registrations, and DI / routing tables (`dependency_overrides`, `task_routes`, `@register`). **Registry registrations are the easiest to miss**, because the coupling is by *type* and leaves no trace where the type is defined — a class in `app/core/exceptions.py` carries no hint that `app/sep/main.py` registers a dedicated handler for it. This applies to an enum, a response model, a settings class, or a DI alias just as much as to an exception class. Exempt: a refactor whose truth table is unchanged, and module-local helpers — *shared* is the trigger, not call-site count.
+
 ## Config Keys (`settings.yaml` / env vars)
 
 - Renaming a key breaks deployments setting the old key. Accept both old and new with a deprecation warning.
@@ -68,6 +74,16 @@ System and periodic tasks are seeded at startup via `get_or_create`. Orphaned pe
 - Removing a seed entry deletes it on next startup. Dependent user-configured periodic tasks or Nomad jobs fail silently.
 - Renaming a `meta` key in a Nomad job template breaks in-flight jobs dispatched with the old parameter names.
 - Changing an `IntervalSchedule` value (30s → 5m) is safe — `get_or_create` updates it in place. Removing the schedule field entirely breaks the periodic task that references it.
+- **Narrowing which rows a gating regime *owns* strands the state it already wrote.** The rules above cover orphaned rows breaking *references*; this one covers state surviving with no writer. When a change removes rows from the set some writer maintains — an ownership predicate, an orphan sweep, a `not_in(...)` filter — name what resets the state those rows still carry. `init_periodic_tasks_db` updates `task`, `schedule_model` and `extra_kwargs` on an existing row but **never** `enabled`, so a `PeriodicTask` leaving the owned set keeps whatever `enabled` value the old regime last wrote — permanently, and invisibly to the UI that would otherwise toggle it. Either write the released value through explicitly or state why the surviving value is already correct. Not in scope: rows nothing reads, newly added state, and in-place updates where the writer keeps ownership.
+
+## Changing a settings field's shipped default
+
+Flipping a default (or converting an opt-in to an opt-out) is a behaviour change for every deployment that never set the key. Check that the PR:
+
+- **Enumerates every layer that resolves the value** and decides each — the field default, `settings.yaml`, the shipped profile, env. **The field default is the layer that ships**, not the repository default: a value the repo's own `settings.yaml` overrides is not what an operator running the image gets.
+- **Reconciles the docstring in the same change** — the `:param X:` block is a copy surface for the default and goes stale silently.
+- **Asserts the advertised default rather than assuming it**, and pins the resolved default per shipped profile with a test.
+- **Gives operators an opt-in path back and a changelog note.** A default flip is user-visible even when no contract changed.
 
 ## Behavioral asymmetry across processes / deployments / install-states
 

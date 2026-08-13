@@ -23,9 +23,9 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 
 | # | Question | Pass | Fail | Notes |
 |---|----------|:----:|:----:|-------|
-| 1.1 | Diagram states engineers use **Casdoor OAuth/JWT**, not client-certificate user login | ☐ | ☐ | |
+| 1.1 | Diagram states engineers authenticate via **Grafana session exchange** (PMM session → short-lived SEP bearer), not client-certificate user login | ☐ | ☐ | |
 | 1.2 | mTLS is shown only on **service-to-service** links (SEP↔Tasks, Tasks↔Nomad), not as user identity | ☐ | ☐ | |
-| 1.3 | Refresh token: SPA receives it in an `HttpOnly` cookie named `refreshToken`, `Path=/api/oauth`, `SameSite=Lax`, `Secure=True` in production. Legacy `POST /api/oauth/token` clients receive it in the JSON body (no cookie). | ☐ | ☐ | |
+| 1.3 | Token lifecycle: exchange returns a short-lived SEP bearer in the response body; no SEP cookie is set; no refresh token is issued. When the bearer expires the SPA repeats the exchange. | ☐ | ☐ | |
 | 1.4 | `SEP_INTERNAL_TOKEN` service principal is documented if relevant to customer deployment | ☐ | ☐ | |
 
 ---
@@ -68,8 +68,8 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 
 | # | Question | Pass | Fail | Notes |
 |---|----------|:----:|:----:|-------|
-| 5.1 | Browser ↔ Nginx ingress: HTTPS (Nginx terminates TLS and fronts SEP UI and `/api/*`) | ☐ | ☐ | |
-| 5.1a | Browser ↔ Casdoor `/oauth/*`: HTTPS, fronted on its own server block on a separate port — not the SEP ingress port | ☐ | ☐ | |
+| 5.1 | Browser ↔ PMM Nginx: HTTPS (PMM's Nginx terminates TLS and fronts SEP on a sub-path) | ☐ | ☐ | |
+| 5.1a | Session exchange endpoint (`/api/oauth/session/exchange`) is same-origin behind PMM's Nginx — no separate IdP port | ☐ | ☐ | |
 | 5.2 | SEP ↔ Tasks/Inventory: mTLS with client certs | ☐ | ☐ | |
 | 5.3 | Tasks ↔ Nomad API: TLS/mTLS per deployment config | ☐ | ☐ | |
 
