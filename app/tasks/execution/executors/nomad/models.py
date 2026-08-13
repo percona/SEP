@@ -146,14 +146,25 @@ def _alloc_step_state(alloc: dict[str, Any], step: str) -> dict[str, Any]:
 
     An allocation that has not started any task carries no ``TaskStates`` at
     all, and a rescheduled allocation may no longer carry a given step, so both
-    reads degrade to an empty state instead of raising.
+    reads degrade to an empty state instead of raising. A state that is present
+    but not a mapping is a broken upstream contract rather than a missing task,
+    so it is logged before degrading the same way -- raising here would abort
+    the very sync and stop paths this guard exists to keep alive.
 
     :param alloc: The allocation details from Nomad.
     :param step: The Nomad task (step) name to look up.
-    :return: The step's task state, empty when absent.
+    :return: The step's task state, empty when absent or malformed.
     """
     state = (alloc.get("TaskStates") or {}).get(step)
-    return state if isinstance(state, dict) else {}
+    if state is not None and not isinstance(state, dict):
+        logger.warning(
+            "Allocation %s reports a non-mapping task state for step %r: %r",
+            alloc.get("ID"),
+            step,
+            state,
+        )
+        return {}
+    return state or {}
 
 
 def _detect_stale_skip(task_states: dict[str, Any] | None) -> bool:
