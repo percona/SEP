@@ -90,7 +90,7 @@ function renderPane(ui: ReactNode) {
 }
 
 /** Every snippet-search request issued so far, with its query params. */
-function searchCalls(): { search?: string; approval?: string; limit?: number; offset?: number }[] {
+function searchCalls(): { search?: string; limit?: number; offset?: number }[] {
   return mockedApi.get.mock.calls
     .filter(([url]: [string]) => url.startsWith('/apps/atw/snippets/'))
     .map(([, config]: [string, { params: Record<string, unknown> }]) => config.params);
