@@ -139,6 +139,24 @@ describe('DeliverySetupGate', () => {
     expect(screen.getByTestId('atw-delivery-setup-prompt')).toBeInTheDocument();
   });
 
+  it('renders the app when the settings carry no delivery inputs key', () => {
+    // Nothing for an admin to fill in, so the prompt would name a remedy
+    // nobody in this deployment can carry out.
+    mockList({
+      data: [
+        {
+          setting_class: 'SEPSettings',
+          is_app_owned: false,
+          settings: [setting('DIAGNOSTICS_DELIVERY', { secrets: {} })],
+        },
+      ] as unknown as SettingClassGroup[],
+    });
+    renderGate(true);
+
+    expect(screen.getByTestId('atw-app')).toBeInTheDocument();
+    expect(screen.queryByTestId('atw-delivery-setup-prompt')).not.toBeInTheDocument();
+  });
+
   it('renders the app when the settings read failed', () => {
     mockList({ error: new ApiError({ kind: 'network', message: 'down' }) });
     renderGate();

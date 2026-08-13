@@ -52,6 +52,8 @@ interface StoredDeliveryInputs {
   endpoint: string;
   secrets: Record<string, string>;
   hasOverride: boolean;
+  /** Whether the settings response carries the key at all. */
+  isPresent: boolean;
 }
 
 /** Locate one setting inside the `SEPSettings` group of a LIST response. */
@@ -113,6 +115,7 @@ export const storedDeliveryInputs = (
     endpoint: endpoint ?? '',
     secrets: secrets ?? {},
     hasOverride: setting?.has_override ?? false,
+    isPresent: setting !== undefined,
   };
 };
 
@@ -247,7 +250,10 @@ interface DeliverySetupGateProps {
  * and reports its own failures, which is better than telling an operator with a
  * working connection to go configure one. That rule also covers the 403 the
  * admin-gated settings API returns to every regular user — "cannot tell" must
- * never become a permanent setup screen for people who could not clear it.
+ * never become a permanent setup screen for people who could not clear it. A
+ * build whose settings carry no `DIAGNOSTICS_DELIVERY_INPUTS` key at all is the
+ * same case for a different reason: there is no key for anyone to fill in, so
+ * the prompt would name a remedy nobody in this deployment can carry out.
  * `drifted` does gate: SEP holds values the current delivery plan no longer
  * accepts, so delivery is as broken as if nothing were stored.
  *
@@ -262,7 +268,7 @@ export function DeliverySetupGate({
   isAdmin = false,
   children,
 }: PropsWithChildren<DeliverySetupGateProps>) {
-  const { status, isLoading, error } = useDeliveryConfiguration();
+  const { status, stored, isLoading, error } = useDeliveryConfiguration();
 
   if (isLoading) {
     return (
@@ -272,7 +278,7 @@ export function DeliverySetupGate({
     );
   }
 
-  if (error || status === 'configured') {
+  if (error || !stored.isPresent || status === 'configured') {
     return <>{children}</>;
   }
 
