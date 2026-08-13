@@ -746,6 +746,7 @@ class TestRaiseIfIdenticalTaskConflictRealPostgres:
         for finished in (
             TaskHistoryStatusEnum.SUCCESS,
             TaskHistoryStatusEnum.LOST,
+            TaskHistoryStatusEnum.STOPPED,
         ):
             await _seed_pg_history(
                 postgres_session,
