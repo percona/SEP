@@ -35,6 +35,7 @@ from app.sep.deps import (
     require_bearer_for_unsafe_methods,
 )
 from app.sep.main import sep_app
+from tests.app.sep.conftest import REDUCED_ACTIVATION
 
 
 class TestApiRouterComposition:
@@ -58,6 +59,25 @@ class TestApiRouterComposition:
             route.path for route in apps_router.routes if hasattr(route, "path")
         }
         assert "/apps/atw/schema" in plugin_paths
+
+    def test_atw_snippet_search_resolves_without_snippets_app(self) -> None:
+        """Resolve ATW's snippet search on the PMM-embedded activation list.
+
+        The second assertion is the load-bearing half: search works because ATW
+        owns the route, not because the snippets app happened to mount.
+        """
+        router = build_apps_router(build_app_registry(REDUCED_ACTIVATION))
+        paths = {route.path for route in router.routes if hasattr(route, "path")}
+
+        assert "/apps/atw/snippets/" in paths
+        assert not any(path.startswith("/apps/snippets") for path in paths)
+
+    def test_snippets_own_list_route_still_mounted_when_activated(self) -> None:
+        """Keep the Snippet Manager's own list route under the full activation list."""
+        plugin_paths = {
+            route.path for route in apps_router.routes if hasattr(route, "path")
+        }
+        assert "/apps/snippets/" in plugin_paths
 
     def test_checksums_router_registered_under_plugins(self) -> None:
         """Assert the checksums schema route is resolvable under ``/apps/checksums``."""

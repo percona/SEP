@@ -15,6 +15,7 @@
 
 """Tests for the ATW plugin JSON API routes under /api/apps/atw/."""
 
+import logging
 import re
 from datetime import timedelta
 from unittest.mock import AsyncMock, Mock, patch
@@ -28,6 +29,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.core.utils.date_time import utc_now
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.atw import api_routes as atw_api_routes
@@ -96,6 +98,34 @@ async def _persist_atw_snippet(
             "service_type": service_type,
             "atw": atw,
         },
+    )
+    return await SnippetManager.create(session, snippet)
+
+
+async def _persist_snippet(
+    session: AsyncSession,
+    *,
+    filename: str,
+    meta: dict,
+    approved: bool = True,
+) -> Snippet:
+    """Persist a real ``Snippet`` row carrying caller-supplied frontmatter.
+
+    Unlike :func:`_persist_atw_snippet` the metadata is not shaped for the category
+    browser, so a row can omit the ``atw`` tag or declare a degenerate title.
+
+    :param session: The database session.
+    :param filename: The snippet's filename.
+    :param meta: The frontmatter metadata to record verbatim.
+    :param approved: Whether the persisted snippet should carry an ``approved_at``.
+    :return: The persisted ``Snippet`` row.
+    """
+    snippet = Snippet(
+        filename=filename,
+        size=100,
+        md5_digest="a" * 32,
+        approved_at=utc_now() if approved else None,
+        meta=meta,
     )
     return await SnippetManager.create(session, snippet)
 
@@ -501,6 +531,463 @@ class TestAtwListApprovalFilter:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
+
+
+class TestAtwListTitleFallback:
+    """Pin the category listing's share of the summary projection's title fallback.
+
+    ``_build_summary`` is shared with the search route, so hardening it against a
+    degenerate title changes this listing too — for a snippet whose frontmatter
+    declares an empty or valueless title, which rendered as a blank label before.
+    """
+
+    @pytest.mark.asyncio
+    async def test_blank_title_renders_as_the_filename(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Label a blank-titled ATW-tagged snippet with its filename."""
+        await _persist_snippet(
+            session,
+            filename="ops/blank-title.sh",
+            meta={
+                "title": "",
+                "description": "d",
+                "service_type": "mysql",
+                "atw": ["OVERALL_SLOWNESS"],
+            },
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["snippets"][0]["title"] == "ops/blank-title.sh"
+
+
+class TestAtwSnippetSearch:
+    """Cover GET /api/apps/atw/snippets/.
+
+    Real rows go through ``async_api_client`` rather than a mocked
+    ``SnippetManager``, so the searchable set, the approval predicate, and the
+    paginated total are the ones the route actually issues.
+    """
+
+    SEARCH_URL = "/api/apps/atw/snippets/"
+    MATCHING_FILENAMES = ("a.sh", "b.sh", "c.sh")
+    PAGE_LIMIT = 2
+
+    @pytest.mark.asyncio
+    async def test_matches_on_title(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Return an approved snippet whose title contains the term."""
+        await _persist_snippet(
+            session,
+            filename="diag/a.sh",
+            meta={"title": "Slow Query Diagnostics", "description": "Timings."},
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "slow"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["total"] == 1
+        assert [item["name"] for item in payload["items"]] == ["diag/a.sh"]
+
+    @pytest.mark.asyncio
+    async def test_matches_on_filename(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Match the filename, proving it is part of the searchable set."""
+        await _persist_snippet(
+            session,
+            filename="diag/slow-query.sh",
+            meta={"title": "Unrelated", "description": "Unrelated."},
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "slow-query"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["total"] == 1
+        assert payload["items"][0]["name"] == "diag/slow-query.sh"
+
+    @pytest.mark.asyncio
+    async def test_matches_on_description(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Match the description, proving it is part of the searchable set."""
+        await _persist_snippet(
+            session,
+            filename="ops/x.sh",
+            meta={"title": "Unrelated", "description": "Collects processlist data."},
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "processlist"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["name"] == "ops/x.sh"
+
+    @pytest.mark.asyncio
+    async def test_reaches_a_snippet_outside_the_atw_taxonomy(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Return a snippet carrying no ``atw`` tag, which the listing never exposes."""
+        await _persist_snippet(
+            session,
+            filename="ops/pt-summary.sh",
+            meta={"title": "PT Summary", "description": "Toolkit summary."},
+        )
+
+        listing = await async_api_client.get("/api/apps/atw/")
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "pt summary"}
+        )
+
+        assert listing.json() == []
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["name"] == "ops/pt-summary.sh"
+
+    @pytest.mark.asyncio
+    async def test_unapproved_snippet_is_excluded(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Withhold an unapproved snippet that matches the term."""
+        await _persist_snippet(
+            session,
+            filename="approved.sh",
+            meta={"title": "Galera check", "description": "d"},
+        )
+        await _persist_snippet(
+            session,
+            filename="unapproved.sh",
+            meta={"title": "Galera check", "description": "d"},
+            approved=False,
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "galera"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["total"] == 1
+        assert [item["name"] for item in payload["items"]] == ["approved.sh"]
+
+    @pytest.mark.asyncio
+    async def test_approval_is_not_a_client_input(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Ignore an ``approval`` query parameter rather than widening the set.
+
+        The route declares no ``approval`` parameter, so the picker cannot be made
+        to offer a snippet that execution would reject.
+        """
+        await _persist_snippet(
+            session,
+            filename="approved.sh",
+            meta={"title": "Galera check", "description": "d"},
+        )
+        await _persist_snippet(
+            session,
+            filename="unapproved.sh",
+            meta={"title": "Galera check", "description": "d"},
+            approved=False,
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "galera", "approval": "all"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["total"] == 1
+        assert [item["name"] for item in payload["items"]] == ["approved.sh"]
+
+    @pytest.mark.asyncio
+    async def test_item_carries_only_the_summary_fields(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Serve ATW's own summary shape rather than the snippets list row."""
+        await _persist_snippet(
+            session,
+            filename="ops/x.sh",
+            meta={"title": "Summary", "description": "d", "service_type": "mysql"},
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "summary"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert set(item) == {"name", "title", "description"}
+        assert item == {"name": "ops/x.sh", "title": "Summary", "description": "d"}
+
+    @pytest.mark.asyncio
+    async def test_title_falls_back_to_filename_when_key_absent(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Label a snippet declaring no ``title`` key with its filename."""
+        await _persist_snippet(
+            session, filename="ops/no-title.sh", meta={"description": "d"}
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "no-title"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["title"] == "ops/no-title.sh"
+
+    @pytest.mark.asyncio
+    async def test_title_falls_back_to_filename_when_empty(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Label a snippet declaring an empty ``title`` with its filename.
+
+        The key is present, so ``Snippet.title``'s ``dict.get`` default never fires
+        and the fallback has to live in the response projection.
+        """
+        await _persist_snippet(
+            session,
+            filename="ops/blank-title.sh",
+            meta={"title": "", "description": "d"},
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "blank-title"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["title"] == "ops/blank-title.sh"
+
+    @pytest.mark.asyncio
+    async def test_title_falls_back_to_filename_when_null(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Label a snippet declaring a valueless ``title`` with its filename."""
+        await _persist_snippet(
+            session,
+            filename="ops/null-title.sh",
+            meta={"title": None, "description": "d"},
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "null-title"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["title"] == "ops/null-title.sh"
+
+    @pytest.mark.asyncio
+    async def test_valueless_description_does_not_fail_the_page(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Serve a snippet declaring a valueless ``description`` as an empty string.
+
+        The key is present, so ``Snippet.description``'s ``dict.get`` default never
+        fires and the raw ``None`` would fail the summary model's ``str`` field,
+        turning one malformed snippet into a 500 for the whole page.
+        """
+        await _persist_snippet(
+            session,
+            filename="ops/null-description.sh",
+            meta={"title": "Galera", "description": None},
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "galera"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["description"] == ""
+
+    @pytest.mark.asyncio
+    async def test_out_of_allowlist_sort_is_rejected(
+        self, async_api_client: AsyncClient
+    ) -> None:
+        """Reject a sort key outside the manager's allowlist with a 422."""
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "x", "sort": "meta"}
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.json()["detail"] == "Invalid sort key: 'meta'"
+
+    @pytest.mark.asyncio
+    async def test_allowlisted_sort_is_accepted(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Sort by an allowlisted key rather than falling back to the default."""
+        await _persist_snippet(
+            session, filename="b.sh", meta={"title": "Galera b", "description": "d"}
+        )
+        await _persist_snippet(
+            session, filename="a.sh", meta={"title": "Galera a", "description": "d"}
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "galera", "sort": "filename"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["name"] for item in response.json()["items"]] == ["a.sh", "b.sh"]
+
+    @pytest.mark.asyncio
+    async def test_total_counts_the_filtered_set_not_the_page(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Report the whole match count while serving one page of it."""
+        for name in self.MATCHING_FILENAMES:
+            await _persist_snippet(
+                session, filename=name, meta={"title": "Galera", "description": "d"}
+            )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "galera", "limit": self.PAGE_LIMIT}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload["items"]) == self.PAGE_LIMIT
+        assert payload["total"] == len(self.MATCHING_FILENAMES)
+
+    @pytest.mark.asyncio
+    async def test_paging_is_deterministic_across_boundaries(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Cover every match exactly once across two pages.
+
+        Every row shares an ``approved_at``, so only the spec's unique ``id``
+        tie-breaker keeps the boundary stable.
+        """
+        for name in self.MATCHING_FILENAMES:
+            await _persist_snippet(
+                session, filename=name, meta={"title": "Galera", "description": "d"}
+            )
+
+        first = await async_api_client.get(
+            self.SEARCH_URL,
+            params={"search": "galera", "offset": 0, "limit": self.PAGE_LIMIT},
+        )
+        second = await async_api_client.get(
+            self.SEARCH_URL,
+            params={
+                "search": "galera",
+                "offset": self.PAGE_LIMIT,
+                "limit": len(self.MATCHING_FILENAMES) - self.PAGE_LIMIT,
+            },
+        )
+
+        names = [item["name"] for item in first.json()["items"]]
+        names += [item["name"] for item in second.json()["items"]]
+        assert sorted(names) == ["a.sh", "b.sh", "c.sh"]
+
+    @pytest.mark.asyncio
+    async def test_no_match_returns_an_empty_page(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Return an empty page rather than an error when nothing matches."""
+        await _persist_snippet(
+            session, filename="a.sh", meta={"title": "Galera", "description": "d"}
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "zzzz"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["items"] == []
+        assert payload["total"] == 0
+
+    @pytest.mark.asyncio
+    async def test_omitted_search_returns_every_approved_snippet(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Fall back to all approved snippets when no term is supplied.
+
+        A blank term builds no predicate, so the page is the unfiltered approved
+        set rather than an empty one.
+        """
+        await _persist_snippet(
+            session, filename="a.sh", meta={"title": "Galera", "description": "d"}
+        )
+        await _persist_snippet(
+            session,
+            filename="b.sh",
+            meta={"title": "Other", "description": "d"},
+            approved=False,
+        )
+
+        response = await async_api_client.get(self.SEARCH_URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["total"] == 1
+        assert payload["items"][0]["name"] == "a.sh"
+
+    @pytest.mark.asyncio
+    async def test_wildcard_in_the_term_matches_literally(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Match a literal ``%`` rather than treating it as a LIKE wildcard."""
+        await _persist_snippet(
+            session, filename="a.sh", meta={"title": "100% CPU", "description": "d"}
+        )
+        await _persist_snippet(
+            session, filename="b.sh", meta={"title": "100 CPU", "description": "d"}
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "100%"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["total"] == 1
+        assert payload["items"][0]["name"] == "a.sh"
+
+    @pytest.mark.asyncio
+    async def test_limit_above_the_ceiling_is_rejected(
+        self, async_api_client: AsyncClient
+    ) -> None:
+        """Reject a page size above ``MAX_PAGINATION_LIMIT``."""
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "x", "limit": MAX_PAGINATION_LIMIT + 1}
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @pytest.mark.asyncio
+    async def test_malformed_atw_meta_does_not_affect_search(
+        self, async_api_client: AsyncClient, session: AsyncSession, caplog
+    ) -> None:
+        """Return a snippet whose ``atw`` tag is malformed, warning about nothing.
+
+        Search never reads ``ATW_META_KEY``, unlike the category listing, so a
+        non-list tag is neither a filter nor a diagnostic here.
+        """
+        await _persist_snippet(
+            session,
+            filename="ops/bad-meta.sh",
+            meta={"title": "Galera", "description": "d", "atw": "OVERALL_SLOWNESS"},
+        )
+
+        with caplog.at_level(logging.WARNING, logger=atw_api_routes.__name__):
+            response = await async_api_client.get(
+                self.SEARCH_URL, params={"search": "galera"}
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["name"] == "ops/bad-meta.sh"
+        assert caplog.records == []
 
 
 class TestAtwSchemaEndpoint:

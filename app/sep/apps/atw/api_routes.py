@@ -63,6 +63,7 @@ from app.sep.apps.atw.crud import (
 )
 from app.sep.apps.atw.deps import (
     AtwIncidentDep,
+    AtwSnippetSearchQueryDep,
     ClosedAtwIncidentDep,
     diagnostics_send_disabled_reasons,
     IsDiagnosticsSendConfigured,
@@ -154,10 +155,22 @@ schema_endpoint(router=router, plugin_schema=atw_schema)
 
 
 def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
+    """Project a snippet onto the ATW summary shape.
+
+    ``Snippet.title`` and ``Snippet.description`` default only when the frontmatter
+    key is **absent**, so a snippet declaring an empty or valueless one arrives here
+    as ``""`` or ``None``. Both are coerced: the title fallback keeps the snippet
+    labelled rather than blank, and the description fallback keeps a valueless
+    ``description:`` from failing this model's ``str`` field and 500-ing the whole
+    page over one malformed snippet.
+
+    :param snippet: The snippet to project.
+    :return: The snippet's identifying name, display title, and description.
+    """
     return ATWSnippetSummary(
         name=snippet.filename,
-        title=snippet.title,
-        description=snippet.description,
+        title=snippet.title or snippet.filename,
+        description=snippet.description or "",
     )
 
 
@@ -209,6 +222,33 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
             )
 
     return grouped
+
+
+@router.get("/snippets/")
+async def atw_snippet_search(
+    session: SessionDep,
+    list_query: AtwSnippetSearchQueryDep,
+    pagination: PaginationDep,
+) -> PaginatedResponse[ATWSnippetSummary]:
+    """Search approved snippets by free text, independent of the ATW taxonomy.
+
+    Served from ATW's own router over the snippets library, so the capability does
+    not depend on the Snippet Manager app being activated. The ``atw`` metadata tag
+    is a presentation filter on the category listing and is deliberately not
+    applied here, so search reaches snippets that listing never exposes.
+
+    :param session: The database session.
+    :param list_query: The vetted sort and search selections, pinned to approved.
+    :param pagination: The offset/limit window for the page.
+    :return: A paginated page of approved snippet summaries.
+    :raises sqlalchemy.exc.SQLAlchemyError: When the count or data query fails to
+        execute.
+    """
+    page = await SnippetManager.snippet_list_page(
+        session, list_query=list_query, pagination=pagination
+    )
+    items = [_build_summary(snippet) for snippet in page.items]
+    return PaginatedResponse.from_pagination(items, page.total, pagination)
 
 
 @router.post("/incidents/", status_code=status.HTTP_201_CREATED)
