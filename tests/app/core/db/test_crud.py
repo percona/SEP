@@ -79,7 +79,7 @@ class PaginationItemManager(BaseSQLModelManager):
 
 
 class PaginationItemByNameManager(BaseSQLModelManager):
-    """Manager for test pagination items with a spec default sort by name."""
+    """Manage test pagination items with a spec default sort by name."""
 
     Model = PaginationItem
     list_query_spec = ListQuerySpec(
