@@ -44,9 +44,7 @@ class LineSplit(NamedTuple):
     forced: bool
 
 
-def split_complete_lines(
-    buf: bytes, max_withheld: int | None = None
-) -> LineSplit:
+def split_complete_lines(buf: bytes, max_withheld: int | None = None) -> LineSplit:
     r"""Split ``buf`` at the last line terminator.
 
     A carriage return is treated as a terminator alongside the newline so that
@@ -77,5 +75,5 @@ def split_complete_lines(
     else:
         complete, remainder = buf[: index + 1], buf[index + 1 :]
     if max_withheld is not None and len(remainder) > max_withheld:
-        return LineSplit(buf, b"", True)
-    return LineSplit(complete, remainder, False)
+        return LineSplit(buf, b"", forced=True)
+    return LineSplit(complete, remainder, forced=False)
