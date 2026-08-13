@@ -893,9 +893,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     self.log_anonymization_max_withheld_bytes,
                     "the Nomad cursor can advance",
                 )
-            # Forced flush yields an empty remainder, so withheld stays 0 and
-            # the cursor is not rolled back -- the next cycle starts past the
-            # flushed tail instead of re-fetching it.
+            # A forced flush empties the remainder, so this is the no-rollback
+            # path the docstring describes.
             withheld = len(remainder)
             nomad_offset -= withheld
         else:
