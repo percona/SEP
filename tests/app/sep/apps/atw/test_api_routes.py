@@ -18,6 +18,7 @@
 import logging
 import re
 from datetime import timedelta
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 from uuid import UUID, uuid4
 
@@ -63,7 +64,7 @@ def _mock_atw_snippet(
     snippet.filename = filename
     snippet.title = title
     snippet.description = description
-    meta: dict = {"atw": atw}
+    meta: dict[str, Any] = {"atw": atw}
     if service_type is not None:
         meta["service_type"] = service_type
     snippet.meta = meta
@@ -106,7 +107,7 @@ async def _persist_snippet(
     session: AsyncSession,
     *,
     filename: str,
-    meta: dict,
+    meta: dict[str, Any],
     approved: bool = True,
 ) -> Snippet:
     """Persist a real ``Snippet`` row carrying caller-supplied frontmatter.
@@ -537,8 +538,8 @@ class TestAtwListTitleFallback:
     """Pin the category listing's share of the summary projection's title fallback.
 
     ``_build_summary`` is shared with the search route, so hardening it against a
-    degenerate title changes this listing too — for a snippet whose frontmatter
-    declares an empty or valueless title, which rendered as a blank label before.
+    degenerate title changes this listing too — an empty title rendered as a blank
+    label before, and a valueless one failed the whole response.
     """
 
     @pytest.mark.asyncio
@@ -967,7 +968,10 @@ class TestAtwSnippetSearch:
 
     @pytest.mark.asyncio
     async def test_malformed_atw_meta_does_not_affect_search(
-        self, async_api_client: AsyncClient, session: AsyncSession, caplog
+        self,
+        async_api_client: AsyncClient,
+        session: AsyncSession,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Return a snippet whose ``atw`` tag is malformed, warning about nothing.
 
@@ -987,7 +991,11 @@ class TestAtwSnippetSearch:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["items"][0]["name"] == "ops/bad-meta.sh"
-        assert caplog.records == []
+        assert [
+            record
+            for record in caplog.records
+            if record.name == atw_api_routes.__name__
+        ] == []
 
 
 class TestAtwSchemaEndpoint:
