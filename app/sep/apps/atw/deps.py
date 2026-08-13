@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define FastAPI dependencies for the ATW plugin's incident routes."""
+"""Define FastAPI dependencies for the ATW plugin's API routes."""
 
 from typing import Annotated
 
@@ -25,6 +25,8 @@ from app.sep.apps.atw.crud import AtwIncidentManager
 from app.sep.apps.atw.models import AtwIncident
 from app.sep.bundle_upload.resolver import resolve_delivery_plan
 from app.sep.deps import SessionDep
+from app.sep.snippets.deps import CoreListQueryDep
+from app.sep.snippets.list_query import SnippetApprovalFilter, SnippetListQuery
 
 
 async def get_atw_incident(session: SessionDep, incident_id: UUID4) -> AtwIncident:
@@ -102,3 +104,21 @@ async def require_diagnostics_send_configured() -> None:
 
 
 IsDiagnosticsSendConfigured = Depends(require_diagnostics_send_configured)
+
+
+def get_atw_snippet_search_query(core: CoreListQueryDep) -> SnippetListQuery:
+    """Compose the Core-vetted sort and search with an approved-only filter.
+
+    ``approval`` is pinned rather than declared as a query parameter: the picker
+    must not be able to offer a snippet that execution would reject, so widening
+    the set cannot be a client input.
+
+    :param core: The Core-resolved sort and search.
+    :return: A snippets list query restricted to approved snippets.
+    """
+    return SnippetListQuery(core=core, approval=SnippetApprovalFilter.APPROVED)
+
+
+AtwSnippetSearchQueryDep = Annotated[
+    SnippetListQuery, Depends(get_atw_snippet_search_query)
+]
