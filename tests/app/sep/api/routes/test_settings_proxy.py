@@ -164,7 +164,8 @@ class TestListAggregation:
         assert {"SEPSettings", "SnippetsSettings", "AlertSettings"}.issubset(
             set(classes)
         )
-        assert classes[-2] == SettingClassEnum.TASKS_SETTINGS.value
+        assert classes[-3] == SettingClassEnum.TASKS_SETTINGS.value
+        assert classes[-2] == SettingClassEnum.ALERTS_SETTINGS.value
         assert classes[-1] == SettingClassEnum.HEALTH_REPORT_SETTINGS.value
         mock_tasks.get.assert_awaited_once_with(f"{REMOTE_BASE}/")
 
