@@ -453,14 +453,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         :param client_status: The Nomad allocation status, or ``None`` when the
             allocation does not report one.
-        :type client_status: NomadAllocStatusEnum | None
         :param default: The default status to return if no match is found. Defaults to
             None.
-        :type default: TaskHistoryStatusEnum | None
         :param stopped: Whether the Nomad job was stopped.
-        :type stopped: bool
         :return: The corresponding task history status.
-        :rtype: TaskHistoryStatusEnum | None
         """
         match client_status:
             case NomadAllocStatusEnum.COMPLETE if not stopped:
