@@ -29,7 +29,7 @@ from typing import NamedTuple
 
 
 class LineSplit(NamedTuple):
-    """Result of splitting a buffer into complete lines and a withheld remainder.
+    """Carry the complete lines and withheld remainder from one buffer split.
 
     :param complete: Every byte up to and including the last line terminator,
         or the whole buffer when a forced flush fires.
@@ -54,9 +54,10 @@ def split_complete_lines(buf: bytes, max_withheld: int | None = None) -> LineSpl
 
     When ``max_withheld`` is set and the trailing remainder would exceed that
     byte length, the whole ``buf`` is returned as ``complete`` with an empty
-    remainder and ``forced=True``. Returning the buffer whole (rather than
-    cutting at a byte position) preserves codepoint safety; the caller accepts
-    a redaction miss at exactly that one boundary.
+    remainder and ``forced=True``. The buffer is returned intact rather than
+    cut at ``max_withheld`` so no new mid-codepoint split is introduced, but
+    ``buf`` may itself end mid-codepoint; the caller accepts a redaction miss
+    and one replacement character at exactly that boundary.
 
     :param buf: The raw (pre-anonymization) bytes fetched so far.
     :param max_withheld: Optional ceiling on the raw byte length that may be

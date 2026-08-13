@@ -122,6 +122,29 @@ def _decode_and_anonymize(raw: bytes, anonymize_entities: set[PIIEntity] | None)
     return text
 
 
+def _warn_forced_flush(
+    alloc_id: str, step: str, log_type: TaskLogType, ceiling: int, consequence: str
+) -> None:
+    """Warn that anonymization flushed an un-terminated line at the ceiling.
+
+    :param alloc_id: The Nomad allocation identifier.
+    :param step: The Nomad task name within the allocation.
+    :param log_type: The log stream type (stdout or stderr).
+    :param ceiling: The configured withheld-bytes ceiling that was exceeded.
+    :param consequence: What advancing past the flushed tail unblocks.
+    """
+    logger.warning(
+        "Forced anonymization flush of un-terminated log line "
+        "alloc_id=%s step=%s log_type=%s withheld_ceiling=%s; "
+        "accepting a redaction-boundary leak so %s",
+        alloc_id,
+        step,
+        log_type,
+        ceiling,
+        consequence,
+    )
+
+
 def _nomad_event_body_text(ev: dict) -> str:
     raw = ev.get("DisplayMessage") or ev.get("Message") or ev.get("Description") or ""
     if isinstance(raw, str):
@@ -331,9 +354,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         accepting a single redaction-boundary leak so an un-terminated line
         cannot stall log persistence, stall the live viewer, or drive
         quadratic Nomad re-fetching. Setting the ceiling very low effectively
-        disables line-boundary anonymization and reinstates the SEP-1651
-        defect, so the value must stay positive. Defaults to 1 MiB -- generous
-        enough that ordinary line-oriented output never trips it.
+        disables line-boundary anonymization, letting a PII token that straddles
+        two fetched chunks escape redaction, so the value must stay positive.
+        Defaults to 1 MiB, generous enough that ordinary line-oriented output
+        never trips it.
     :cvar INHERITED_MARKERS: Overlay marking the inherited ``BaseRemoteAPI`` TLS
         fields (``verify_ssl`` and the ``ssl_*`` paths) HOT and ``advanced``
         without redeclaring them; set to the shared :data:`REMOTE_API_TLS_MARKERS`.
@@ -862,15 +886,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             )
             complete, remainder = split.complete, split.remainder
             if split.forced:
-                logger.warning(
-                    "Forced anonymization flush of un-terminated log line "
-                    "alloc_id=%s step=%s log_type=%s withheld_ceiling=%s; "
-                    "accepting a redaction-boundary leak so the Nomad cursor "
-                    "can advance",
+                _warn_forced_flush(
                     alloc_id,
                     step,
                     log_type,
                     self.log_anonymization_max_withheld_bytes,
+                    "the Nomad cursor can advance",
                 )
             # Forced flush yields an empty remainder, so withheld stays 0 and
             # the cursor is not rolled back -- the next cycle starts past the
@@ -1674,15 +1695,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if not complete:
             return None, offset
         if split.forced:
-            logger.warning(
-                "Forced anonymization flush of un-terminated log line "
-                "alloc_id=%s step=%s log_type=%s withheld_ceiling=%s; "
-                "accepting a redaction-boundary leak so the live viewer "
-                "can advance",
+            _warn_forced_flush(
                 alloc_id,
                 step,
                 log_type,
                 self.log_anonymization_max_withheld_bytes,
+                "the live viewer can advance",
             )
         del pending[: len(complete)]
         decoded_msg = _decode_and_anonymize(complete, anonymize_entities)

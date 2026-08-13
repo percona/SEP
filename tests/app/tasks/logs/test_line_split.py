@@ -125,12 +125,13 @@ class TestSplitCompleteLines:
     def test_forced_flush_preserves_mid_codepoint_bytes(self):
         """Assert a forced flush returns the buffer whole, not a mid-codepoint cut.
 
-        Cutting at a byte position could split a multi-byte UTF-8 sequence;
-        returning ``buf`` intact keeps the module's codepoint-safety guarantee.
+        Cutting at ``max_withheld`` could split a multi-byte UTF-8 sequence the
+        buffer holds complete; returning ``buf`` intact introduces no such cut,
+        though ``buf`` may itself end mid-codepoint as it does here.
         """
         # "é" is two UTF-8 bytes (0xc3 0xa9); an unterminated buffer ending
         # mid-codepoint must still flush as the original bytes.
         buf = b"cafe\xc3"  # incomplete "é"
         split = split_complete_lines(buf, max_withheld=3)
         assert split == LineSplit(buf, b"", forced=True)
-        assert split.complete is buf or split.complete == buf
+        assert split.complete is buf
