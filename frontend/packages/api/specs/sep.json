@@ -3966,6 +3966,37 @@
         "title": "PaginatedResponse[ATWIncidentExecutionResponse]",
         "type": "object"
       },
+      "atw__PaginatedResponse_ATWSnippetSummary_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/atw__ATWSnippetSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[ATWSnippetSummary]",
+        "type": "object"
+      },
       "atw__PaginatedResponse_AtwIncidentResponse_": {
         "properties": {
           "items": {
@@ -15691,6 +15722,105 @@
           }
         },
         "summary": "Get Schema",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
+    "/api/apps/atw/snippets/": {
+      "get": {
+        "description": "Search approved snippets by free text, independent of the ATW taxonomy.\n\nServed from ATW's own router over the snippets library, so the capability does\nnot depend on the Snippet Manager app being activated. The ``atw`` metadata tag\nis a presentation filter on the category listing and is deliberately not\napplied here, so search reaches snippets that listing never exposes.\n\n:param session: The database session.\n:param list_query: The vetted sort and search selections, pinned to approved.\n:param pagination: The offset/limit window for the page.\n:return: A paginated page of approved snippet summaries.\n:raises sqlalchemy.exc.SQLAlchemyError: When the count or data query fails to\n    execute.",
+        "operationId": "atw_atw_snippet_search_api_apps_atw_snippets__get",
+        "parameters": [
+          {
+            "description": "Sort key; prefix with '-' for descending order.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "-approved_at",
+              "description": "Sort key; prefix with '-' for descending order.",
+              "enum": [
+                "approved_at",
+                "-approved_at",
+                "created_at",
+                "-created_at",
+                "filename",
+                "-filename",
+                "service_type",
+                "-service_type",
+                "title",
+                "-title"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Case-insensitive search across the searchable columns.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive search across the searchable columns.",
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__PaginatedResponse_ATWSnippetSummary_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Snippet Search",
         "tags": [
           "atw"
         ]
