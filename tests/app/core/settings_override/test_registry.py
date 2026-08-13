@@ -20,10 +20,13 @@ from typing import ClassVar
 
 import pytest
 from pydantic import BaseModel, SecretStr
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.config import AlertSettings
 from app.core.alerts.models import BaseAlertProvider
 from app.core.alerts.providers.pagerduty import PagerDutyEventsAlertProvider
+from app.core.settings_override.manager import SettingsOverrideManager
+from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.registry import (
     chain_has_advanced,
     dump_field_value,
@@ -41,6 +44,7 @@ from app.core.settings_override.registry import (
     MaterializerContext,
     MaterializerPurpose,
     nested_overridable_field_names,
+    override_rows_for_key,
     preserve_patch_credential_url_value,
     ReloadClassification,
     resolve_nested_field_metadata,
@@ -802,3 +806,173 @@ def test_overlay_malformed_or_absent_is_harmless(overlay: object) -> None:
         field_reload_classification(info, owner_cls=_Probe, field_name="value")
         is ReloadClassification.NOT_OVERRIDABLE
     )
+
+
+_CANONICAL_NESTED = "NOMAD__timeout"
+_LEGACY_NESTED = "nomad__TIMEOUT"
+_TOP_LEVEL = "INVENTORY_ENDPOINT"
+
+
+async def _insert(session: AsyncSession, **kwargs: object) -> SettingOverride:
+    """Insert one override row through the manager, bypassing the API."""
+    return await SettingsOverrideManager.create(session, SettingOverride(**kwargs))
+
+
+@pytest.mark.asyncio
+async def test_override_rows_for_key_resolves_legacy_nested_casing(
+    session: AsyncSession,
+) -> None:
+    """Assert a mixed-case nested row is found under its canonical key."""
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key=_LEGACY_NESTED,
+        value=30,
+        is_active=True,
+    )
+    rows = await override_rows_for_key(
+        session,
+        settings_cls=TasksSettings,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key=_CANONICAL_NESTED,
+    )
+    assert [row.key for row in rows] == [_LEGACY_NESTED]
+
+
+@pytest.mark.asyncio
+async def test_override_rows_for_key_returns_legacy_and_canonical_duplicates(
+    session: AsyncSession,
+) -> None:
+    """Assert every row that canonicalizes to the requested key is returned."""
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key=_LEGACY_NESTED,
+        value=30,
+        is_active=True,
+    )
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key=_CANONICAL_NESTED,
+        value=45,
+        is_active=True,
+    )
+    rows = await override_rows_for_key(
+        session,
+        settings_cls=TasksSettings,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key=_CANONICAL_NESTED,
+    )
+    assert {row.key for row in rows} == {_LEGACY_NESTED, _CANONICAL_NESTED}
+
+
+@pytest.mark.asyncio
+async def test_override_rows_for_key_excludes_other_setting_class(
+    session: AsyncSession,
+) -> None:
+    """Assert a matching stored key on another class is not returned."""
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key=_LEGACY_NESTED,
+        value=30,
+        is_active=True,
+    )
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key=_LEGACY_NESTED,
+        value=99,
+        is_active=True,
+    )
+    rows = await override_rows_for_key(
+        session,
+        settings_cls=TasksSettings,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key=_CANONICAL_NESTED,
+    )
+    assert [row.key for row in rows] == [_LEGACY_NESTED]
+    assert rows[0].setting_class == SettingClassEnum.TASKS_SETTINGS
+
+
+@pytest.mark.asyncio
+async def test_override_rows_for_key_includes_inactive_row(
+    session: AsyncSession,
+) -> None:
+    """Assert an inactive row is still resolved (write paths match on key alone)."""
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key=_LEGACY_NESTED,
+        value=30,
+        is_active=False,
+    )
+    rows = await override_rows_for_key(
+        session,
+        settings_cls=TasksSettings,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key=_CANONICAL_NESTED,
+    )
+    assert [row.key for row in rows] == [_LEGACY_NESTED]
+    assert rows[0].is_active is False
+
+
+@pytest.mark.asyncio
+async def test_override_rows_for_key_returns_empty_for_no_match(
+    session: AsyncSession,
+) -> None:
+    """Assert a missing key or an unresolvable stored key yields no rows."""
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="NOMAD__does_not_exist",
+        value=1,
+        is_active=True,
+    )
+    assert (
+        await override_rows_for_key(
+            session,
+            settings_cls=TasksSettings,
+            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            key=_CANONICAL_NESTED,
+        )
+        == []
+    )
+    assert (
+        await override_rows_for_key(
+            session,
+            settings_cls=TasksSettings,
+            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            key="NOMAD__unknown_leaf",
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_override_rows_for_key_matches_top_level_exactly(
+    session: AsyncSession,
+) -> None:
+    """Assert a top-level key matches stored spelling exactly, not by case-folding."""
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key=_TOP_LEVEL,
+        value="https://canonical.example.com",
+        is_active=True,
+    )
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key=_TOP_LEVEL.lower(),
+        value="https://legacy.example.com",
+        is_active=True,
+    )
+    rows = await override_rows_for_key(
+        session,
+        settings_cls=SEPSettings,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key=_TOP_LEVEL,
+    )
+    assert [row.key for row in rows] == [_TOP_LEVEL]
