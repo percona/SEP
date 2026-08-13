@@ -66,7 +66,7 @@ const MOCK_ATW_LIST = [
 
 /**
  * A snippet the ATW category listing never exposes (it carries no `atw` tag),
- * reachable only through the Collect pane's search of `GET /api/apps/snippets/`.
+ * reachable only through the Collect pane's search of `GET /api/apps/atw/snippets/`.
  */
 const MOCK_SEARCH_SNIPPET = {
   name: 'ops/pt-summary.sh',
@@ -133,7 +133,7 @@ interface AtwApiMockOptions {
 
 /** What the mocked API recorded, for assertions on the requests themselves. */
 interface AtwApiMockCalls {
-  /** Every `GET /api/apps/snippets/` the Collect pane's search issued. */
+  /** Every `GET /api/apps/atw/snippets/` the Collect pane's search issued. */
   snippetSearchUrls: string[];
   /** Every merged-schema request, which carries the selection's filenames. */
   executionSchemaUrls: string[];
@@ -404,8 +404,8 @@ test.describe('Collect Diagnostic Data (ATW)', () => {
     const lastSearchUrl = calls.snippetSearchUrls.at(-1);
     expect(lastSearchUrl, 'typing should have issued a snippet search').toBeDefined();
     for (const url of calls.snippetSearchUrls) {
-      // Unapproved snippets are rejected at execute time, so they are never offered.
-      expect(new URL(url).searchParams.get('approval')).toBe('approved');
+      // Approval is pinned server-side; the client must not send it as a param.
+      expect(new URL(url).searchParams.has('approval')).toBe(false);
     }
     expect(new URL(lastSearchUrl ?? '').searchParams.get('search')).toBe('summary');
   });
