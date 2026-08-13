@@ -62,6 +62,32 @@ describe('filterSettingsGroups', () => {
     expect(keysOf(result)).not.toContain('STATIC_DIR');
   });
 
+  it('keeps read-only-only app-owned groups visible under the default hot filter', () => {
+    const readOnlyAppGroup: SettingClassGroup = {
+      setting_class: 'HealthReportSettings',
+      is_app_owned: true,
+      app_id: 'report',
+      app_enabled: true,
+      settings: [
+        makeSetting({
+          setting_class: 'HealthReportSettings',
+          key: 'upload',
+          reload: 'not_overridable',
+        }),
+        makeSetting({
+          setting_class: 'HealthReportSettings',
+          key: 'endpoint',
+          reload: 'not_overridable',
+        }),
+      ],
+    };
+
+    const result = filterSettingsGroups([readOnlyAppGroup], DEFAULT_SETTINGS_FILTERS);
+
+    expect(result).toHaveLength(1);
+    expect(keysOf(result)).toEqual(['upload', 'endpoint']);
+  });
+
   it('hides advanced settings by default and reveals them when advanced is shown', () => {
     expect(DEFAULT_SETTINGS_FILTERS.advanced).toBe('hidden');
     const hidden = filterSettingsGroups(groups, DEFAULT_SETTINGS_FILTERS);
