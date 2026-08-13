@@ -360,7 +360,7 @@ class TestDeprecatedPMMRemoved:
     """The deprecated ``SEP.PMM`` section is gone; PMM lives only top-level."""
 
     def test_sep_settings_has_no_health_report_field(self):
-        """``SEPSettings`` no longer declares a ``HEALTH_REPORT`` field."""
+        """Assert ``SEPSettings`` no longer declares a ``HEALTH_REPORT`` field."""
         assert "HEALTH_REPORT" not in SEPSettings.model_fields
 
     def test_sep_settings_has_no_pmm_field(self):
