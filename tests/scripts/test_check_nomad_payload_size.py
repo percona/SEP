@@ -110,3 +110,44 @@ def test_main_returns_zero_when_within_limit(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["check_nomad_payload_size.py", str(path)])
     assert check_nomad_payload_size.main() == 0
     assert capsys.readouterr().out == ""
+
+
+def test_report_prints_size_headroom_and_returns_zero(tmp_path, monkeypatch, capsys):
+    """``--report`` prints size, limit, and headroom and always exits 0."""
+    path = _write(tmp_path, "verbose.py", VERBOSE_SCRIPT)
+    limit = 10_000
+    monkeypatch.setattr(check_nomad_payload_size, "NOMAD_PAYLOAD_SIZE_LIMIT", limit)
+    size = check_nomad_payload_size.payload_size(str(path))
+    headroom = limit - size
+    assert check_nomad_payload_size.main(["--report", str(path)]) == 0
+    out = capsys.readouterr().out.strip()
+    assert out == (f"{path}: {size:,} / {limit:,} bytes ({headroom:,} bytes headroom)")
+
+
+def test_report_returns_zero_when_over_limit(tmp_path, monkeypatch, capsys):
+    """``--report`` exits 0 even when a payload exceeds the limit."""
+    path = _write(tmp_path, "verbose.py", VERBOSE_SCRIPT)
+    monkeypatch.setattr(check_nomad_payload_size, "NOMAD_PAYLOAD_SIZE_LIMIT", 1)
+    size = check_nomad_payload_size.payload_size(str(path))
+    over = size - 1
+    assert check_nomad_payload_size.main(["--report", str(path)]) == 0
+    out = capsys.readouterr().out.strip()
+    assert "OVER LIMIT" in out
+    assert f"{over:,} bytes OVER LIMIT" in out
+    assert str(path) in out
+
+
+def test_report_prints_one_line_per_path(tmp_path, monkeypatch, capsys):
+    """``--report`` prints one line per path when multiple paths are given."""
+    path_a = _write(tmp_path, "a.py", VERBOSE_SCRIPT)
+    path_b = _write(tmp_path, "b.py", VERBOSE_SCRIPT)
+    limit = 10_000
+    monkeypatch.setattr(check_nomad_payload_size, "NOMAD_PAYLOAD_SIZE_LIMIT", limit)
+    size = check_nomad_payload_size.payload_size(str(path_a))
+    headroom = limit - size
+    line = f"{path_a}: {size:,} / {limit:,} bytes ({headroom:,} bytes headroom)"
+    assert check_nomad_payload_size.main(["--report", str(path_a), str(path_b)]) == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == len((path_a, path_b))
+    assert lines[0] == line
+    assert lines[1] == line.replace(str(path_a), str(path_b))
