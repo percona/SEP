@@ -50,6 +50,7 @@ from app.sep.apps.framework.registry import (
 from app.sep.config import sep_settings, warn_if_base_url_lacks_root_path
 from app.sep.db import get_async_session_maker
 from app.sep.db.seed import get_system_periodic_tasks, init_sep_db
+from app.sep.routes.artifacts import router as artifacts_router
 from app.sep.settings_override import (
     build_sep_override_proxies,
     invalidate_pmm_clients,
@@ -342,10 +343,7 @@ if any(app.uses_task_data for app in get_app_registry()):
     sep_app.include_router(download_files_router, prefix="/files")
     sep_app.include_router(execution_events_router, prefix="/execution-events")
 
-if any(app.artifact_base_dirs for app in get_app_registry()):
-    from app.sep.routes.artifacts import router as artifacts_router
-
-    sep_app.include_router(artifacts_router, prefix="/artifacts")
+sep_app.include_router(artifacts_router, prefix="/artifacts")
 
 sep_app.include_router(api_router)
 sep_app.include_router(top_level_api_router, include_in_schema=False)
