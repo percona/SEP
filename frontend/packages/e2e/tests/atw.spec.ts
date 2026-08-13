@@ -270,9 +270,9 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       });
     }
 
-    // Snippet search, served by the snippets app's own list endpoint. Reports a
-    // total far beyond the returned page so the truncation notice is exercised.
-    if (pathname === '/api/apps/snippets/' || pathname === '/api/apps/snippets') {
+    // Snippet search, served by ATW's own snippet route. Reports a total far
+    // beyond the returned page so the truncation notice is exercised.
+    if (pathname === '/api/apps/atw/snippets/' || pathname === '/api/apps/atw/snippets') {
       calls.snippetSearchUrls.push(req.url());
       const term = (searchParams.get('search') ?? '').toLowerCase();
       const matches =
