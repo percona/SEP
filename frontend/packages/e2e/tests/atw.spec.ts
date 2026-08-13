@@ -16,11 +16,16 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
-import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
+import {
+  fulfillConfiguredDelivery,
+  fulfillEnabledApps,
+  isEnabledAppsPath,
+  isSettingsListPath,
+} from './mockEnabledApps';
 
 const APP_ROUTE = '/atw';
 
-const APP_DISPLAY_NAME = 'Collect Diagnostic Data';
+const APP_DISPLAY_NAME = 'Support diagnostics';
 
 const MOCK_TOKEN = { access_token: 'smoke-test-token', expires_in: 3600 };
 
@@ -186,6 +191,11 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
 
     if (isEnabledAppsPath(pathname)) {
       return fulfillEnabledApps(route);
+    }
+
+    // The delivery setup gate wraps every ATW route.
+    if (isSettingsListPath(pathname)) {
+      return fulfillConfiguredDelivery(route);
     }
 
     if (pathname.includes('/oauth/refresh')) {
@@ -362,7 +372,7 @@ async function openIncidentAndBuildForm(page: Page): Promise<void> {
   await expect(page.getByLabel('Executor host')).toBeVisible({ timeout: 15_000 });
 }
 
-test.describe('Collect Diagnostic Data (ATW)', () => {
+test.describe('Support diagnostics (ATW)', () => {
   test('batch execute records an execution in the Results pane', async ({ page }) => {
     const consoleErrors: string[] = [];
     page.on('console', (msg) => {

@@ -525,7 +525,7 @@ class TestAtwSchemaEndpoint:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["name"] == "atw"
-        assert data["display_name"] == "Collect Diagnostic Data"
+        assert data["display_name"] == "Support diagnostics"
 
     def test_atw_schema_category_browser_has_parent_category_fail_rules(
         self, test_client: TestClient

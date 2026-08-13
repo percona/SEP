@@ -225,7 +225,7 @@ class TestCeleryDerivation:
         a synthetic module name would derive ``None``.
         """
         return [
-            App(name="Collect Diagnostic Data", module_name="atw"),
+            App(name="Support diagnostics", module_name="atw"),
             App(name="Checksums", module_name="checksums"),
             App(name="Alerts", module_name="alerts"),
             App(name="Report", module_name="report", celery_module_path=None),
