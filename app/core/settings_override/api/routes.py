@@ -1123,15 +1123,8 @@ def build_settings_router(
             setting_class=setting_class,
             key=key,
         )
-        _assert_key_deletable(
-            settings_cls, field_meta, has_override_row=bool(rows)
-        )
-        if rows:
-            await SettingsOverrideManager.delete_where(
-                session,
-                col(SettingOverride.key).in_({row.key for row in rows}),
-                setting_class=setting_class,
-            )
+        _assert_key_deletable(settings_cls, field_meta, has_override_row=bool(rows))
+        await _delete_override_rows(session, setting_class, rows)
         previous = proxy.get_snapshot()
         await publish_snapshot(proxy, session, settings_cls)
         await _fire_inline_rebind_callbacks(request, setting_class, proxy, previous)
@@ -1270,6 +1263,29 @@ def _assert_key_deletable(
             f"Setting {settings_cls.__name__}.{field_meta.key} cannot be"
             " overridden; no row to delete.",
         )
+
+
+async def _delete_override_rows(
+    session: AsyncSession,
+    setting_class: SettingClassEnum,
+    rows: list[SettingOverride],
+) -> None:
+    """Delete every resolved override row by its stored key.
+
+    A no-op when ``rows`` is empty, so DELETE stays idempotent without emitting
+    an invalid ``IN ()`` clause.
+
+    :param session: The sub-app's database session.
+    :param setting_class: The settings class the rows belong to.
+    :param rows: The rows :func:`override_rows_for_key` resolved for this key.
+    """
+    if not rows:
+        return
+    await SettingsOverrideManager.delete_where(
+        session,
+        col(SettingOverride.key).in_({row.key for row in rows}),
+        setting_class=setting_class,
+    )
 
 
 async def _persist_overrides(

@@ -1191,9 +1191,7 @@ async def override_rows_for_key(
     :rtype: list[SettingOverride]
     """
     rows = await SettingsOverrideManager.list(session, setting_class=setting_class)
-    return [
-        row for row in rows if canonical_override_key(settings_cls, row.key) == key
-    ]
+    return [row for row in rows if canonical_override_key(settings_cls, row.key) == key]
 
 
 def _clear_cached_properties(instance: BaseModel) -> None:
