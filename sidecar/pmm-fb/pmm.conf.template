@@ -149,41 +149,48 @@
       return 403 '{"code":7,"error":"Access denied","message":"Access denied"}';
     }
 
-    # ── SEP side-car (feature build) ──────────────────────────────────
-    # The five SEP path prefixes the PMM UI proxies to SEP (mirrors
-    # ui/apps/pmm/vite.config.ts on branch PMM-15216; no clash with PMM's
-    # /v1 + /graph). Proxied by fixed IP: nginx resolves targets at
-    # startup, when the SEP container may not be up yet (see compose.yaml).
-    # auth_request is off — SEP authenticates the injected/forwarded
-    # bearer itself, exactly like the dev proxy topology.
-    location /api {
+    # SEP side-car (feature build).
+    # One mount point, which is what the PMM UI asks for: SEP_BASE_PATH in
+    # ui/packages/sep/api/src/base.ts is '/sep', so every request the browser
+    # makes is /sep/api/..., /sep/files/... and so on. It does not clash with
+    # PMM's /v1 or /graph.
+    #
+    # This replaces the five bare prefixes /api, /sep_app, /files, /stream-logs
+    # and /execution-events. The UI stopped using them on 2026-08-10, when
+    # PMM-15216 re-pathed it onto /sep, and nothing here followed: a request to
+    # /sep/api/... matched no location, fell through to PMM's catch-all, and was
+    # answered 401 by auth_request. It stayed invisible only because compose.yaml
+    # pins a feature build whose bundle predates the re-pathing, so the two were
+    # stale together. Any newer pin breaks every SEP page in PMM at once, and it
+    # presents as an authentication failure, because SepAuthGate fails closed on
+    # the session exchange it cannot reach.
+    #
+    # The prefix is stripped, by the trailing slash on proxy_pass, because the
+    # side-car does not serve it: SEP-1794's SEP.ROOT_PATH is not in this branch,
+    # and app/core/config.py constructs FastAPI without root_path. This is the
+    # same trade PMM_DEV_SEP_STRIP_PREFIX=1 makes in the dev proxy, and it is
+    # lossy the same way -- request.url_for() then emits prefix-less absolute
+    # URLs, so a link SEP returns escapes the mount point. Once the side-car
+    # carries ROOT_PATH, set SEP__ROOT_PATH=/sep, drop the trailing slash, and
+    # forward /sep untouched.
+    #
+    # Proxied by fixed IP: nginx resolves targets at startup, when the SEP
+    # container may not be up yet (see compose.yaml). auth_request is off --
+    # SEP authenticates the injected/forwarded bearer itself, exactly like the
+    # dev proxy topology.
+    location /sep/ {
       auth_request off;
-      proxy_pass http://172.28.9.30:9000;
+      proxy_pass http://172.28.9.30:9000/;
       proxy_set_header Host $http_host;
       proxy_set_header X-Forwarded-Proto $scheme;
       proxy_set_header Authorization $sep_authorization;
       proxy_read_timeout 600;
     }
-    location /sep_app {
+    # Streaming endpoints: long-lived, unbuffered, WebSocket-capable. Longer
+    # prefixes than /sep/, so nginx matches these first.
+    location /sep/stream-logs {
       auth_request off;
-      proxy_pass http://172.28.9.30:9000;
-      proxy_set_header Host $http_host;
-      proxy_set_header X-Forwarded-Proto $scheme;
-      proxy_set_header Authorization $sep_authorization;
-      proxy_read_timeout 600;
-    }
-    location /files {
-      auth_request off;
-      proxy_pass http://172.28.9.30:9000;
-      proxy_set_header Host $http_host;
-      proxy_set_header X-Forwarded-Proto $scheme;
-      proxy_set_header Authorization $sep_authorization;
-      proxy_read_timeout 600;
-    }
-    # Streaming endpoints: long-lived, unbuffered, WebSocket-capable.
-    location /stream-logs {
-      auth_request off;
-      proxy_pass http://172.28.9.30:9000;
+      proxy_pass http://172.28.9.30:9000/stream-logs;
       proxy_set_header Host $http_host;
       proxy_set_header X-Forwarded-Proto $scheme;
       proxy_set_header Authorization $sep_authorization;
@@ -193,9 +200,9 @@
       proxy_buffering off;
       proxy_read_timeout 3600;
     }
-    location /execution-events {
+    location /sep/execution-events {
       auth_request off;
-      proxy_pass http://172.28.9.30:9000;
+      proxy_pass http://172.28.9.30:9000/execution-events;
       proxy_set_header Host $http_host;
       proxy_set_header X-Forwarded-Proto $scheme;
       proxy_set_header Authorization $sep_authorization;
