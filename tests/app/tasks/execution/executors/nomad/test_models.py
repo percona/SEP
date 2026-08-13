@@ -1897,6 +1897,47 @@ class TestSyncTaskHistoryWithoutTaskStates:
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_periodic_sync_with_writer_session_terminates_and_persists_nothing(
+        self,
+        mock_nomad_cls,
+        session: AsyncSession,
+        created_task_with_history: TaskHistory,
+    ):
+        """Assert the periodic sync leg runs end to end with log persistence on.
+
+        ``sync_running_items`` always supplies a ``writer_session``, so the
+        reschedule-frontier reset, the log fetch and the terminal drain all run
+        against a ``TaskStates``-less allocation on every tick -- the exact call
+        shape that raised ``KeyError`` in production. Nothing can be persisted
+        for an allocation that started no task, but the row must still leave
+        RUNNING.
+        """
+        self._backend(
+            mock_nomad_cls,
+            self._alloc(
+                ClientStatus=NomadAllocStatusEnum.LOST,
+                CreateIndex=ALLOCATION_CREATE_INDEX,
+            ),
+        )
+        queue_item = created_task_with_history
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        queue_item.anonymize_mask = 0
+        queue_item.execution_request.tracking = {
+            "allocation_id": "alloc-1",
+            "evaluation_id": "eval-1",
+            "job_id": "job-1",
+        }
+        executor = _build_executor(terminal_log_drain_max_attempts=0)
+
+        result = await executor._sync_task_history(queue_item, writer_session=session)
+
+        assert result.status == TaskHistoryStatusEnum.LOST
+        assert result.execution_request.tracking["allocation_id"] == "alloc-2"
+        chunks = await TaskHistoryLogManager.list_chunks_for_task(session, result.id)
+        assert chunks == []
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_dead_job_path_stamps_finished_at_once(self, mock_nomad_cls):
         """Assert a dead job with no task states still resolves via the job branch."""
         self._backend(
@@ -2208,6 +2249,40 @@ class TestGetLogsForAllocation:
         assert all(
             kwargs["offset"] == INITIAL_LOG_OFFSET for kwargs in stream_call_kwargs
         )
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_logs_for_allocation_drops_carried_over_content(self, mock_nomad_cls):
+        """Assert content carried in ``initial_logs`` is dropped, not returned again.
+
+        Only the offset bookkeeping is carried forward between cycles: a caller
+        that hands back the content it already persisted must not receive it in
+        this cycle's delta, or the writer appends the same bytes twice. A step
+        that never started makes that visible, since no fresh delta overwrites
+        the carried key.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.return_value = ""
+
+        alloc = {
+            "ID": "alloc-1",
+            "TaskStates": {"pending-step": {"StartedAt": None}},
+        }
+        initial_logs = {
+            "pending-step": {
+                "stdout": "already persisted",
+                TaskLogType.STDERR: "already persisted",
+                "stdout_last_offset": INITIAL_LOG_OFFSET,
+            }
+        }
+
+        executor = _build_executor()
+        result = executor.get_logs_for_allocation(alloc, initial_logs=initial_logs)
+
+        assert dict(result["pending-step"]) == {
+            "stdout_last_offset": INITIAL_LOG_OFFSET
+        }
+        mock_backend.client.stream_logs.stream.assert_not_called()
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_get_logs_for_allocation_skips_step_when_not_started(self, mock_nomad_cls):
@@ -3271,6 +3346,64 @@ class TestNomadLogStreaming:
 
         assert state != "running"
         assert out_alloc is refreshed_alloc
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_stream_logs_fans_out_one_producer_per_step_and_type(
+        self, mock_nomad_cls
+    ):
+        """Assert a started allocation streams both log types of every step.
+
+        Each producer signals its own end with a ``msg=None`` sentinel, which the
+        generator consumes rather than yields; it returns once the last stream
+        has signalled. Per-step start offsets are forwarded so a resumed stream
+        does not replay what the client already received, and a stream with no
+        recorded offset starts at ``0``.
+        """
+        mock_nomad_cls.return_value = MagicMock()
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-stream",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+        alloc = self._alloc_for_logs() | {
+            "TaskStates": {
+                "step1": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"},
+                "step2": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"},
+            }
+        }
+        start_offsets = {"step1": {TaskLogType.STDOUT: INITIAL_LOG_OFFSET}}
+        forwarded_offsets = {}
+
+        async def fake_push(
+            _self, _alloc, step, log_type, queue, start_offset, _anonymize_entities
+        ):
+            forwarded_offsets[(step, log_type)] = start_offset
+            await queue.put(TaskLog(step=step, type=log_type, msg=f"{step}:{log_type}"))
+            await queue.put(TaskLog(step=step, type=log_type, msg=None))
+
+        with (
+            patch.object(NomadExecutor, "get_last_allocation", return_value=alloc),
+            patch.object(NomadExecutor, "_push_logs_to_queue", fake_push),
+        ):
+            emitted = [
+                log async for log in executor.stream_logs(queue_item, start_offsets)
+            ]
+
+        expected_streams = {
+            (step, log_type) for step in ("step1", "step2") for log_type in TaskLogType
+        }
+        assert {(log.step, log.type) for log in emitted} == expected_streams
+        assert all(log.msg for log in emitted)
+        assert forwarded_offsets == {
+            ("step1", TaskLogType.STDOUT): INITIAL_LOG_OFFSET,
+            ("step1", TaskLogType.STDERR): 0,
+            ("step2", TaskLogType.STDOUT): 0,
+            ("step2", TaskLogType.STDERR): 0,
+        }
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
