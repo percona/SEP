@@ -125,6 +125,11 @@ default:
       - MODULE_NAME: inventory
       - MODULE_NAME: atw
       - MODULE_NAME: mysql_backups
+      # POM's on-host half. It sweeps the MongoDB estate over Nomad for the facts
+      # no metric carries and serves them at /api/apps/pom_discovery/facts, which
+      # pmm-managed pulls. The topology and health half is in pmm-managed, so a
+      # PMM that ships this app also needs a build carrying managed/services/pom.
+      - MODULE_NAME: pom_discovery
     SYNCERS:
       - SYNCER: PMMSyncer
       - SYNCER: MySQLSyncer
