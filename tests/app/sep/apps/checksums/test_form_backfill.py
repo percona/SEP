@@ -26,11 +26,9 @@ from app.sep.apps.checksums.form_backfill import (
     reconstruct_checksums_form,
 )
 from app.sep.apps.checksums.models import ChecksumsForm
-from app.sep.apps.framework.form_backfill import (
-    _backfill_single_task,
-    FormBackfillContext,
-)
+from app.sep.apps.framework.form_backfill import _backfill_single_task
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
+from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.tasks.models import Task, TaskBackendEnum
 
