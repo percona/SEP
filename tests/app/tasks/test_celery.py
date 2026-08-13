@@ -637,6 +637,75 @@ def _pg_queue_item(
 # duplicate is never excluded as "self".
 _UNSEEDED_ITEM_ID = 999_999
 
+# Every status the dedup guard must ignore, derived rather than listed so a
+# new terminal status is covered without touching these tests.
+_FINISHED_STATUSES = (
+    frozenset(TaskHistoryStatusEnum) - TaskHistoryStatusEnum.active_statuses()
+)
+
+
+class TestIdenticalTaskConflictStatusScoping:
+    """Exercise the dedup guard's status scoping on the default test engine.
+
+    The guard filters on ``TaskHistoryStatusEnum.active_statuses()``, which is a
+    plain ``IN`` predicate and therefore dialect-independent — so unlike the
+    ``jsonb`` containment paths, this leg needs no real PostgreSQL and runs in a
+    default ``make test``. It is what makes a wedged RUNNING row block every
+    later dispatch of the same task, target and payload, and what lets a row
+    that reached a terminal status stop blocking them.
+
+    The seeding helpers below are dialect-agnostic despite their names.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("finished", sorted(_FINISHED_STATUSES))
+    async def test_finished_duplicate_does_not_block_dispatch(
+        self, session: AsyncSession, finished: TaskHistoryStatusEnum
+    ) -> None:
+        """Assert a duplicate row in a finished status never conflicts.
+
+        :param session: The async session fixture the guard queries.
+        :param finished: The terminal status seeded on the duplicate row.
+        """
+        task = await _create_pg_task(session)
+        meta = {"target": "node-1"}
+        await _seed_pg_history(
+            session,
+            task_id=task.id,
+            task_name=task.name,
+            meta=meta,
+            status=finished,
+        )
+        queue_item = _pg_queue_item(task, meta=meta, item_id=_UNSEEDED_ITEM_ID)
+
+        await _raise_if_identical_task_conflict(queue_item, session)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("active", sorted(TaskHistoryStatusEnum.active_statuses()))
+    async def test_active_duplicate_still_blocks_dispatch(
+        self, session: AsyncSession, active: TaskHistoryStatusEnum
+    ) -> None:
+        """Assert a duplicate row in an active status still conflicts.
+
+        :param session: The async session fixture the guard queries.
+        :param active: The active status seeded on the duplicate row.
+        """
+        task = await _create_pg_task(session)
+        meta = {"target": "node-1"}
+        await _seed_pg_history(
+            session,
+            task_id=task.id,
+            task_name=task.name,
+            meta=meta,
+            status=active,
+        )
+        queue_item = _pg_queue_item(task, meta=meta, item_id=_UNSEEDED_ITEM_ID)
+
+        with pytest.raises(
+            HTTPConflictException, match="Identical queue item already running"
+        ):
+            await _raise_if_identical_task_conflict(queue_item, session)
+
 
 class TestRaiseIfIdenticalTaskConflictRealPostgres:
     """Exercise _raise_if_identical_task_conflict end-to-end on a real PostgreSQL engine.

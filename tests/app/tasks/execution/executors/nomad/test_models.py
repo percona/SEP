@@ -26,7 +26,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from aiohttp import ClientError, ClientTimeout
+from aiohttp import ClientError, ClientResponseError, ClientTimeout
 from fastapi import status
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
 from pydantic import ValidationError
@@ -37,7 +37,7 @@ from app.core.settings_override.registry import (
     ReloadClassification,
     resolve_nested_field_metadata,
 )
-from app.core.utils import slugify
+from app.core.utils import slugify, utc_now
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.crud import (
@@ -51,6 +51,7 @@ from app.tasks.execution.executors.nomad.exceptions import (
 )
 from app.tasks.execution.executors.nomad.models import (
     _alloc_step_state,
+    _alloc_task_states,
     _ANONYMIZED_STEPS,
     _detect_stale_skip,
     _NOMAD_LOG_STREAM_CLIENT_ERROR,
@@ -740,28 +741,62 @@ class TestAllocStepState:
             {"ID": "alloc-1", "TaskStates": None},
             {"ID": "alloc-1", "TaskStates": {}},
             {"ID": "alloc-1", "TaskStates": {"other-step": {"State": "running"}}},
+            {"ID": "alloc-1", "TaskStates": {"step1": None}},
         ],
     )
     def test_absent_state_degrades_to_empty(self, alloc: dict[str, Any]):
         """Assert every shape that lacks the step yields an empty state."""
         assert _alloc_step_state(alloc, "step1") == {}
 
-    def test_malformed_state_is_logged_and_degrades_to_empty(
-        self, caplog: pytest.LogCaptureFixture
+    @pytest.mark.parametrize(
+        ("alloc", "expected_log"),
+        [
+            (
+                {"ID": "alloc-1", "TaskStates": {"step1": "not a mapping"}},
+                "non-mapping task state",
+            ),
+            (
+                {"ID": "alloc-1", "TaskStates": "not a mapping"},
+                "non-mapping task states",
+            ),
+            (
+                {"ID": "alloc-1", "TaskStates": ["step1"]},
+                "non-mapping task states",
+            ),
+        ],
+    )
+    def test_malformed_shape_is_logged_and_degrades_to_empty(
+        self,
+        alloc: dict[str, Any],
+        expected_log: str,
+        caplog: pytest.LogCaptureFixture,
     ):
-        """Assert a non-mapping task state is reported instead of silently ignored.
+        """Assert non-mapping task states are reported instead of raising.
 
-        A missing state is the expected shape for a task that never started; a
-        state that is present but not a mapping is a broken Nomad contract, so
-        it must leave a trace rather than look identical to not-started.
+        A missing state is the expected shape for a task that never started;
+        a container or member that is present but not a mapping is upstream
+        shape drift, so it must leave a trace rather than either look identical
+        to not-started or crash the sync, stop and log paths.
         """
-        alloc = {"ID": "alloc-1", "TaskStates": {"step1": "not a mapping"}}
-
         with caplog.at_level(logging.WARNING):
             assert _alloc_step_state(alloc, "step1") == {}
 
-        assert "non-mapping task state" in caplog.text
+        assert expected_log in caplog.text
         assert "alloc-1" in caplog.text
+
+    @pytest.mark.parametrize(
+        "task_states", ["not a mapping", ["step1"], 7], ids=["str", "list", "int"]
+    )
+    def test_alloc_task_states_tolerates_non_mapping_container(
+        self, task_states: Any, caplog: pytest.LogCaptureFixture
+    ):
+        """Assert a non-mapping ``TaskStates`` degrades to an empty mapping."""
+        with caplog.at_level(logging.WARNING):
+            assert (
+                _alloc_task_states({"ID": "alloc-1", "TaskStates": task_states}) == {}
+            )
+
+        assert "non-mapping task states" in caplog.text
 
 
 class TestDetectStaleSkip:
@@ -1637,7 +1672,10 @@ class TestSyncTaskHistoryWithoutTaskStates:
 
     @staticmethod
     def _queue_item() -> TaskHistory:
-        """Return a RUNNING task history tracking ``alloc-1``/``job-1``."""
+        """Return a RUNNING task history tracking ``alloc-1``/``job-1``.
+
+        :return: The task history the sync under test starts from.
+        """
         return _build_queue_item(
             tracking={
                 "allocation_id": "alloc-1",
@@ -1791,6 +1829,74 @@ class TestSyncTaskHistoryWithoutTaskStates:
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_complete_client_status_on_live_job_stays_running(
+        self, mock_nomad_cls
+    ):
+        """Assert ``complete`` alone is never read as a successful run.
+
+        An allocation that started no task produced no output and no exit code,
+        so reporting SUCCESS would mislead operators and release any chained
+        task waiting on this one. The row is left for the dead-job branch, which
+        sees the job's own status rather than the allocation's alone.
+        """
+        self._backend(
+            mock_nomad_cls,
+            self._alloc(
+                ClientStatus=NomadAllocStatusEnum.COMPLETE,
+                ModifyTime=1_700_000_000_000_000_000,
+            ),
+        )
+        executor = _build_executor()
+
+        result = await executor._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.RUNNING
+        assert result.finished_at is None
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_stopped_job_reaches_stopped(self, mock_nomad_cls):
+        """Assert a deliberately stopped job terminates the row as STOPPED.
+
+        Unlike a bare ``complete``, a stopped job is an operator decision, so
+        the row is safe to terminate without task states to corroborate it.
+        """
+        self._backend(
+            mock_nomad_cls,
+            self._alloc(ClientStatus=NomadAllocStatusEnum.COMPLETE),
+            job={"ID": "job-1", "Status": "running", "Stop": True},
+        )
+        executor = _build_executor()
+
+        result = await executor._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.STOPPED
+        assert result.finished_at is not None
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_terminal_transition_is_logged(
+        self, mock_nomad_cls, caplog: pytest.LogCaptureFixture
+    ):
+        """Assert the dead-end transition leaves a trace naming the allocation.
+
+        The row changes status without any task state to explain why, so the
+        allocation ID and the client status behind the decision must be
+        recoverable from the worker log.
+        """
+        self._backend(
+            mock_nomad_cls, self._alloc(ClientStatus=NomadAllocStatusEnum.LOST)
+        )
+        executor = _build_executor()
+
+        with caplog.at_level(logging.WARNING):
+            await executor._sync_task_history(self._queue_item())
+
+        assert "alloc-2" in caplog.text
+        assert "no task states" in caplog.text
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_dead_job_path_stamps_finished_at_once(self, mock_nomad_cls):
         """Assert a dead job with no task states still resolves via the job branch."""
         self._backend(
@@ -1807,6 +1913,50 @@ class TestSyncTaskHistoryWithoutTaskStates:
 
         assert result.status == TaskHistoryStatusEnum.SUCCESS
         assert result.finished_at == datetime(2023, 11, 14, 22, 13, 20, tzinfo=UTC)
+
+
+class TestStampFinishedAt:
+    """Test NomadExecutor._stamp_finished_at."""
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_uses_allocation_modify_time(self, mock_nomad_cls):
+        """Assert a modification time is converted to the finish timestamp."""
+        mock_nomad_cls.return_value = MagicMock()
+        queue_item = _build_queue_item()
+
+        _build_executor()._stamp_finished_at(
+            queue_item, {"ID": "alloc-1", "ModifyTime": 1_700_000_000_000_000_000}
+        )
+
+        assert queue_item.finished_at == datetime(2023, 11, 14, 22, 13, 20, tzinfo=UTC)
+
+    @pytest.mark.parametrize(
+        "alloc",
+        [
+            {"ID": "alloc-1"},
+            {"ID": "alloc-1", "ModifyTime": None},
+            {"ID": "alloc-1", "ModifyTime": 0},
+        ],
+        ids=["absent", "none", "epoch-zero"],
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_falls_back_to_now_without_usable_modify_time(
+        self, mock_nomad_cls, alloc: dict[str, Any]
+    ):
+        """Assert an unusable modification time still stamps a finish time.
+
+        ``ModifyTime: 0`` would convert to the Unix epoch, which reads as a task
+        that finished in 1970; the fallback keeps the row's finish time close to
+        when the executor actually observed the allocation.
+        """
+        mock_nomad_cls.return_value = MagicMock()
+        queue_item = _build_queue_item()
+        before = utc_now()
+
+        _build_executor()._stamp_finished_at(queue_item, alloc)
+
+        assert queue_item.finished_at is not None
+        assert queue_item.finished_at >= before
 
 
 class TestTaskNeedsJobRegister:
@@ -2983,23 +3133,24 @@ class TestNomadLogStreaming:
         mock_get_last_allocation.assert_called_once_with("job-1", "eval-1")
         assert logs == []
 
-    @pytest.mark.asyncio
-    @patch(
-        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
-        new_callable=AsyncMock,
-    )
-    async def test_consume_nomad_log_stream_404_absent_task_states_waits(
-        self, mock_sleep
-    ):
-        """Treat a 404 on a TaskStates-less allocation as not-started-yet."""
+    @staticmethod
+    async def _consume_404(
+        executor: NomadExecutor, alloc: dict[str, Any]
+    ) -> tuple[str, dict[str, Any], float | None]:
+        """Drive one ``_consume_nomad_log_stream`` cycle against a 404 response.
+
+        :param executor: The executor under test.
+        :param alloc: The allocation the stream is reading from.
+        :return: The ``(state, alloc, stream_start)`` tuple the method returned.
+        """
         mock_response = MagicMock()
         mock_response.status = 404
+        mock_response.raise_for_status = MagicMock(
+            side_effect=ClientResponseError(MagicMock(), (), status=404)
+        )
         mock_ctx = AsyncMock()
         mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
         mock_ctx.__aexit__ = AsyncMock(return_value=False)
-
-        executor = _build_executor()
-        alloc = {"ID": "alloc-stream", "JobID": "job-1", "EvalID": "eval-1"}
         params = {
             "task": "step1",
             "type": TaskLogType.STDOUT,
@@ -3008,7 +3159,7 @@ class TestNomadLogStreaming:
         }
 
         with patch.object(executor, "_request", return_value=mock_ctx):
-            state, out_alloc, stream_start = await executor._consume_nomad_log_stream(
+            return await executor._consume_nomad_log_stream(
                 alloc=alloc,
                 step="step1",
                 log_type=TaskLogType.STDOUT,
@@ -3019,10 +3170,53 @@ class TestNomadLogStreaming:
                 pending=bytearray(),
             )
 
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    async def test_consume_nomad_log_stream_404_unstarted_step_waits(self, mock_sleep):
+        """Retry a 404 while the allocation still lists the step as unstarted."""
+        executor = _build_executor()
+        alloc = {
+            "ID": "alloc-stream",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "TaskStates": {"step1": {"StartedAt": None}},
+        }
+
+        state, out_alloc, stream_start = await self._consume_404(executor, alloc)
+
         assert state == "running"
         assert out_alloc is alloc
         assert stream_start is None
         mock_sleep.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    async def test_consume_nomad_log_stream_404_absent_task_states_ends_stream(
+        self, mock_sleep
+    ):
+        """End the stream on a 404 for a step the allocation does not carry.
+
+        The 404 clears only once Nomad starts serving that step's logs, so an
+        allocation that lists no task states at all would otherwise be polled
+        forever. Falling through to ``raise_for_status`` ends the caller's loop
+        through the existing client-error sentinel instead.
+        """
+        executor = _build_executor()
+        alloc = {"ID": "alloc-stream", "JobID": "job-1", "EvalID": "eval-1"}
+
+        state, out_alloc, stream_start = await self._consume_404(executor, alloc)
+
+        assert state == _NOMAD_LOG_STREAM_CLIENT_ERROR
+        assert state != "running"
+        assert out_alloc is alloc
+        assert stream_start is None
+        mock_sleep.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_consume_nomad_log_stream_recheck_missing_step_ends_stream(self):

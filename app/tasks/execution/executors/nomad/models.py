@@ -140,22 +140,57 @@ def _nomad_event_exit_code(ev: dict) -> Any:
 _STALE_SKIP_TASK_NAME = NomadStep.CHECK_STALENESS
 _STALE_SKIP_EXIT_CODE = 75
 
+# Statuses a RUNNING row may reach on the allocation status alone, when the
+# allocation carries no task states to corroborate it. SUCCESS is excluded: an
+# allocation that started no task produced no output and no exit code, so
+# reporting a successful run off ``complete`` would both mislead operators and
+# release any chained task waiting on this one.
+_DEAD_END_ALLOC_STATUSES = frozenset(
+    {
+        TaskHistoryStatusEnum.FAILED,
+        TaskHistoryStatusEnum.LOST,
+        TaskHistoryStatusEnum.STOPPED,
+    }
+)
+
+
+def _alloc_task_states(alloc: dict[str, Any]) -> dict[str, Any]:
+    """Return an allocation's Nomad task states as a mapping.
+
+    An allocation that has not started any task carries no ``TaskStates`` at
+    all -- the shape a reschedule chain produces once the client running the
+    original allocation goes away -- so the read degrades to an empty mapping
+    instead of raising. Anything present but not a mapping is upstream shape
+    drift rather than a task that never started, so it is logged before
+    degrading the same way: raising here aborts the very sync, stop and log
+    paths this guard exists to keep alive.
+
+    :param alloc: The allocation details from Nomad.
+    :return: The allocation's task states, empty when absent or malformed.
+    """
+    task_states = alloc.get("TaskStates")
+    if task_states is not None and not isinstance(task_states, dict):
+        logger.warning(
+            "Allocation %s reports non-mapping task states: %r",
+            alloc.get("ID"),
+            task_states,
+        )
+        return {}
+    return task_states or {}
+
 
 def _alloc_step_state(alloc: dict[str, Any], step: str) -> dict[str, Any]:
     """Return one step's Nomad task state, or an empty dict when unavailable.
 
-    An allocation that has not started any task carries no ``TaskStates`` at
-    all, and a rescheduled allocation may no longer carry a given step, so both
-    reads degrade to an empty state instead of raising. A state that is present
-    but not a mapping is a broken upstream contract rather than a missing task,
-    so it is logged before degrading the same way -- raising here would abort
-    the very sync and stop paths this guard exists to keep alive.
+    A rescheduled allocation may no longer carry a given step, and a malformed
+    state is treated the same way :func:`_alloc_task_states` treats a malformed
+    container.
 
     :param alloc: The allocation details from Nomad.
     :param step: The Nomad task (step) name to look up.
     :return: The step's task state, empty when absent or malformed.
     """
-    state = (alloc.get("TaskStates") or {}).get(step)
+    state = _alloc_task_states(alloc).get(step)
     if state is not None and not isinstance(state, dict):
         logger.warning(
             "Allocation %s reports a non-mapping task state for step %r: %r",
@@ -709,12 +744,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             )
         logger.debug("Allocations: %r", [alloc["JobID"] for alloc in allocations])
         alloc = allocations[0]
-        if task_states := alloc.get("TaskStates"):
+        if task_states := _alloc_task_states(alloc):
             alloc["TaskStates"] = sort_dict(
                 task_states,
                 lambda item: (
-                    item[1]["StartedAt"] or "9",
-                    item[1]["FinishedAt"] or "9",
+                    item[1].get("StartedAt") or "9",
+                    item[1].get("FinishedAt") or "9",
                     item[0],
                 ),
             )
@@ -922,7 +957,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 if isinstance(key, str) and key in log_type_values:
                     continue
                 task_logs[step][key] = value
-        task_states = alloc.get("TaskStates") or {}
+        task_states = _alloc_task_states(alloc)
         for step, log_type in product(task_states, TaskLogType):
             if task_states[step].get("StartedAt") is None:
                 continue
@@ -1022,18 +1057,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         the first post-deployment sync via :func:`backfill_legacy_logs`, so
         pre-existing records keep a continuous log stream.
 
-        An allocation that started no task carries no ``TaskStates``; when its
-        client status is already terminal the row is moved out of RUNNING on that
-        signal alone, since a row left RUNNING blocks every later dispatch of the
-        same task, target and payload.
+        An allocation that started no task carries no ``TaskStates``, leaving its
+        client status as the only signal. One of ``_DEAD_END_ALLOC_STATUSES``
+        moves the row out of RUNNING on that signal alone, because a row left
+        RUNNING blocks every later dispatch of the same task, target and payload
+        with a 409. A pending or running allocation is simply still starting and
+        is left alone.
 
         :param queue_item: The task history record for tracking this execution.
-        :type queue_item: TaskHistory
         :param writer_session: The dedicated session to use for log chunk
             persistence. When ``None``, log persistence is skipped.
-        :type writer_session: AsyncSession | None
         :return: The updated task history with execution details.
-        :rtype: TaskHistory
         """
         if queue_item.status != TaskHistoryStatusEnum.RUNNING:
             return queue_item
@@ -1047,7 +1081,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             return queue_item
         alloc, job_id = resolved
 
-        task_states = alloc.get("TaskStates") or {}
+        task_states = _alloc_task_states(alloc)
         stale_skip = _detect_stale_skip(task_states)
 
         try:
@@ -1067,18 +1101,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                         stopped=job.get("Stop", False),
                     )
             elif not task_states:
-                # An allocation that started no task carries no client-side
-                # progress to read, so the allocation status is the only signal
-                # left. A terminal one (the reschedule chain dead-ending on a
-                # client that never came back) must not leave the row RUNNING
-                # forever: that is what blocks every later dispatch of the same
-                # task/target/payload with a 409. A pending or running
-                # allocation is simply still starting and is left alone.
                 dead_end_status = self.get_task_history_status_from_alloc_status(
                     alloc.get("ClientStatus"),
                     stopped=job.get("Stop", False),
                 )
-                if dead_end_status is not None and dead_end_status.is_terminal():
+                if dead_end_status in _DEAD_END_ALLOC_STATUSES:
                     logger.warning(
                         "Allocation %s of task history %s reports %r with no task "
                         "states; marking %s",
@@ -1750,9 +1777,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 timeout=client_timeout,
             ) as response:
                 logger.debug("Log response status: %s", response.status)
+                step_state = _alloc_step_state(alloc, step)
                 if (
                     response.status == status.HTTP_404_NOT_FOUND
-                    and _alloc_step_state(alloc, step).get("StartedAt") is None
+                    # Retrying is only useful while the allocation still lists
+                    # this step as pending: the 404 clears when Nomad starts
+                    # serving its logs. An allocation that does not carry the
+                    # step at all never will, so it falls through to
+                    # ``raise_for_status`` and ends the stream instead of
+                    # polling forever.
+                    and step_state
+                    and step_state.get("StartedAt") is None
                 ):
                     logger.debug(
                         "Task %s of alloc %s has not started yet. Retrying in %s seconds...",
@@ -1823,8 +1858,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                             alloc["JobID"], alloc["EvalID"]
                         )
                         return (
-                            # A rescheduled allocation may no longer carry this
-                            # step; an empty state ends the caller's loop.
+                            # An empty state ends the caller's loop, so a step
+                            # the refreshed allocation dropped stops the stream.
                             _alloc_step_state(alloc, step).get("State", ""),
                             alloc,
                             stream_start,
@@ -1873,7 +1908,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         active_streams = set()
         queue = asyncio.Queue()
         push_logs_tasks = []
-        task_states = alloc.get("TaskStates") or {}
+        task_states = _alloc_task_states(alloc)
         if task_states:
             start_offsets = defaultdict(dict, start_offsets or {})
             for step, log_type in product(task_states, TaskLogType):
