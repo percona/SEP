@@ -16,7 +16,7 @@
 """Define tests for the top-level app.main module."""
 
 import functools
-import logging
+import logging.config
 import threading
 from http.client import HTTPConnection
 from typing import Any
