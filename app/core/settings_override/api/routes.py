@@ -1070,7 +1070,7 @@ def build_settings_router(
         session: session_dep,  # type: ignore[valid-type]
         remote_api: remote_dep,  # type: ignore[valid-type]
     ) -> None:
-        """Revert one override row to the field's declared default.
+        """Revert override row(s) for one field to the field's declared default.
 
         For a remote class the DELETE is forwarded to the owning sub-app, which
         owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
@@ -1325,7 +1325,11 @@ async def _stage_and_commit_overrides(
     settings_cls: type[BaseYamlSettings],
     to_apply: list[tuple[str, Any]],
 ) -> None:
-    """Stage every (setting_class, key) row and commit the batch.
+    """Stage every matching (setting_class, key) row and commit the batch.
+
+    Resolves existing rows by canonicalizing each stored key. A missing key
+    is inserted; every row that already canonicalizes to ``key`` is updated
+    in place.
 
     :param session: The sub-app's database session.
     :param setting_class: The settings class the rows belong to.
