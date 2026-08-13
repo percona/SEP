@@ -1039,6 +1039,7 @@ def build_settings_router(
         await _persist_overrides(
             session=session,
             setting_class=setting_class,
+            settings_cls=settings_cls,
             to_apply=to_apply,
         )
         previous = proxy.get_snapshot()
@@ -1275,17 +1276,21 @@ async def _persist_overrides(
     *,
     session: AsyncSession,
     setting_class: SettingClassEnum,
+    settings_cls: type[BaseYamlSettings],
     to_apply: list[tuple[str, Any]],
 ) -> None:
     """Insert or update each ``(setting_class, key)`` row in a single transaction.
 
-    Existing rows have ``value`` and ``is_active`` updated; missing rows are
-    inserted fresh. The transaction is committed once at the end so a failure
-    on any single row rolls back the entire batch.
+    Existing rows (resolved by canonicalizing the stored key) have ``value``
+    and ``is_active`` updated; missing rows are inserted fresh. When several
+    rows canonicalize to the same key, every matching row is updated so
+    whichever one the snapshot loader picks as winner yields the same value.
+    Stored keys are left as-is. The transaction is committed once at the end
+    so a failure on any single row rolls back the entire batch.
 
     Concurrent PATCHes against the same key would otherwise race: both
-    requests can observe ``existing is None`` between their ``first()`` and
-    the unique-index commit, and the second commit would raise
+    requests can observe no matching row between their lookup and the
+    unique-index commit, and the second commit would raise
     :class:`sqlalchemy.exc.IntegrityError`. The handler catches that case,
     rolls back the failed transaction, and replays the batch against the
     rows the winning writer left in place so the second PATCH still applies
@@ -1293,16 +1298,23 @@ async def _persist_overrides(
 
     :param session: The sub-app's database session.
     :param setting_class: The settings class the rows belong to.
+    :param settings_cls: The Pydantic settings class used to canonicalize keys.
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
     """
     try:
         await _stage_and_commit_overrides(
-            session=session, setting_class=setting_class, to_apply=to_apply
+            session=session,
+            setting_class=setting_class,
+            settings_cls=settings_cls,
+            to_apply=to_apply,
         )
     except IntegrityError:
         await session.rollback()
         await _stage_and_commit_overrides(
-            session=session, setting_class=setting_class, to_apply=to_apply
+            session=session,
+            setting_class=setting_class,
+            settings_cls=settings_cls,
+            to_apply=to_apply,
         )
 
 
@@ -1310,20 +1322,25 @@ async def _stage_and_commit_overrides(
     *,
     session: AsyncSession,
     setting_class: SettingClassEnum,
+    settings_cls: type[BaseYamlSettings],
     to_apply: list[tuple[str, Any]],
 ) -> None:
     """Stage every (setting_class, key) row and commit the batch.
 
     :param session: The sub-app's database session.
     :param setting_class: The settings class the rows belong to.
+    :param settings_cls: The Pydantic settings class used to canonicalize keys.
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
     """
     for key, value in to_apply:
         stored_value = unwrap_secrets_for_storage(value)
-        existing = await SettingsOverrideManager.first(
-            session, setting_class=setting_class, key=key
+        existing_rows = await override_rows_for_key(
+            session,
+            settings_cls=settings_cls,
+            setting_class=setting_class,
+            key=key,
         )
-        if existing is None:
+        if not existing_rows:
             session.add(
                 SettingOverride(
                     setting_class=setting_class,
@@ -1332,8 +1349,8 @@ async def _stage_and_commit_overrides(
                     is_active=True,
                 )
             )
-        else:
-            existing.value = stored_value
-            existing.is_active = True
-            session.add(existing)
+        for row in existing_rows:
+            row.value = stored_value
+            row.is_active = True
+            session.add(row)
     await session.commit()
