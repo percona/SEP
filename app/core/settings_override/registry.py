@@ -53,6 +53,7 @@ __all__ = [
     "nested_overridable_field_names",
     "not_overridable_field",
     "override_keys_for_rows",
+    "override_rows_for_key",
     "preserve_patch_credential_url_value",
     "rendered_leaf_keys",
     "resolve_nested_field",
@@ -74,6 +75,7 @@ from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter, WrapSeriali
 from pydantic.errors import PydanticSchemaGenerationError
 from pydantic_core import PydanticUndefined
 
+from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.policy import (
     has_allowed_key_under,
@@ -93,6 +95,7 @@ from app.core.utils.pydantic import (
 
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
+    from sqlmodel.ext.asyncio.session import AsyncSession
 
     # Imported only for annotations: the override substrate must not depend on
     # the concrete settings classes at runtime, which lets ``app.core.config``
@@ -1151,6 +1154,46 @@ def override_keys_for_rows(
         for i in range(1, len(chain) + 1):
             keys.add("__".join(chain[:i]))
     return keys
+
+
+async def override_rows_for_key(
+    session: AsyncSession,
+    *,
+    settings_cls: type[BaseModel],
+    setting_class: SettingClassEnum,
+    key: str,
+) -> list[SettingOverride]:
+    """Return the :class:`SettingOverride` rows whose stored key canonicalizes to ``key``.
+
+    Lists every row for ``setting_class`` and keeps those whose stored ``key``
+    canonicalizes (via :func:`canonical_override_key`) to the requested key.
+    That makes a legacy non-canonically-cased nested row visible to DELETE and
+    PATCH, which previously matched the stored column with string equality and
+    missed it.
+
+    Inactive rows are included: both write paths currently match on
+    ``(setting_class, key)`` alone, so an inactive row stays deletable and
+    re-activatable. For a key without ``__``, :func:`canonical_override_key`
+    returns the stored key unchanged, so the match degrades to exact equality
+    -- matching :func:`app.core.settings_override.cache._apply_top_level_row`,
+    which already ignores a mixed-case top-level row as an unknown field.
+
+    :param session: The sub-app's database session.
+    :type session: AsyncSession
+    :param settings_cls: The Pydantic settings class the rows belong to.
+    :type settings_cls: type[BaseModel]
+    :param setting_class: The class identifier used to filter override rows.
+    :type setting_class: SettingClassEnum
+    :param key: The canonical override key to resolve against.
+    :type key: str
+    :return: Every matching row, in the order :meth:`SettingsOverrideManager.list`
+        returns them.
+    :rtype: list[SettingOverride]
+    """
+    rows = await SettingsOverrideManager.list(session, setting_class=setting_class)
+    return [
+        row for row in rows if canonical_override_key(settings_cls, row.key) == key
+    ]
 
 
 def _clear_cached_properties(instance: BaseModel) -> None:
