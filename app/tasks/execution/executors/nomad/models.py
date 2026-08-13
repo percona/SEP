@@ -122,6 +122,29 @@ def _decode_and_anonymize(raw: bytes, anonymize_entities: set[PIIEntity] | None)
     return text
 
 
+def _warn_forced_flush(
+    alloc_id: str, step: str, log_type: TaskLogType, ceiling: int, consequence: str
+) -> None:
+    """Warn that anonymization flushed an un-terminated line at the ceiling.
+
+    :param alloc_id: The Nomad allocation identifier.
+    :param step: The Nomad task name within the allocation.
+    :param log_type: The log stream type (stdout or stderr).
+    :param ceiling: The configured withheld-bytes ceiling that was exceeded.
+    :param consequence: What advancing past the flushed tail unblocks.
+    """
+    logger.warning(
+        "Forced anonymization flush of un-terminated log line "
+        "alloc_id=%s step=%s log_type=%s withheld_ceiling=%s; "
+        "accepting a redaction-boundary leak so %s",
+        alloc_id,
+        step,
+        log_type,
+        ceiling,
+        consequence,
+    )
+
+
 def _nomad_event_body_text(ev: dict) -> str:
     raw = ev.get("DisplayMessage") or ev.get("Message") or ev.get("Description") or ""
     if isinstance(raw, str):
@@ -325,6 +348,16 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         Defaults to 5.
     :param terminal_log_drain_interval: Seconds to wait before each post-terminal
         drain re-fetch, giving ``logmon`` time to flush the tail. Defaults to 0.5.
+    :param log_anonymization_max_withheld_bytes: Maximum raw byte length that
+        task-log anonymization may withhold while awaiting a line terminator.
+        When the trailing partial exceeds this ceiling it is flushed anyway,
+        accepting a single redaction-boundary leak so an un-terminated line
+        cannot stall log persistence, stall the live viewer, or drive
+        quadratic Nomad re-fetching. Setting the ceiling very low effectively
+        disables line-boundary anonymization, letting a PII token that straddles
+        two fetched chunks escape redaction, so the value must stay positive.
+        Defaults to 1 MiB, generous enough that ordinary line-oriented output
+        never trips it.
     :cvar INHERITED_MARKERS: Overlay marking the inherited ``BaseRemoteAPI`` TLS
         fields (``verify_ssl`` and the ``ssl_*`` paths) HOT and ``advanced``
         without redeclaring them; set to the shared :data:`REMOTE_API_TLS_MARKERS`.
@@ -341,6 +374,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     cert_expiry_warn_days: int = hot_field(7, ge=1, advanced=True)
     terminal_log_drain_max_attempts: int = hot_field(5, ge=0, advanced=True)
     terminal_log_drain_interval: float = hot_field(0.5, gt=0, advanced=True)
+    log_anonymization_max_withheld_bytes: int = hot_field(
+        _ONE_MEBIBYTE, gt=0, advanced=True
+    )
     check_cert_expiry_interval: IntervalSchedule | None = field_with_metadata(
         metadata={"reload": ReloadClassification.HOT, "advanced": True},
         default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
@@ -792,7 +828,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         and joined with the new bytes. That re-fetch is idempotent because the
         withheld bytes were never emitted, so ``producer_offset`` never advanced
         past them; the writer's dedup covers a different case -- a retry after a
-        concurrent state update. ``flush_partial`` disables the
+        concurrent state update. When the withheld remainder would exceed
+        ``log_anonymization_max_withheld_bytes``, the buffer is flushed instead
+        (empty remainder, no rollback) so the cursor advances and the next cycle
+        does not re-fetch the same tail. ``flush_partial`` disables the
         withholding so a terminal drain can emit a newline-less final line
         instead of losing it forever.
 
@@ -812,7 +851,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             advanced Nomad-space offset for the next fetch, the advanced
             producer-space offset the writer should persist, and the raw byte
             length of the partial line withheld this cycle (``0`` when nothing
-            was withheld).
+            was withheld, including after a forced ceiling flush).
         """
         try:
             raw_log_data = self.backend.client.stream_logs.stream(
@@ -842,7 +881,20 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         anonymizing = _should_anonymize(step, anonymize_entities)
         withheld = 0
         if anonymizing and not flush_partial:
-            complete, remainder = split_complete_lines(raw_buf)
+            split = split_complete_lines(
+                raw_buf, max_withheld=self.log_anonymization_max_withheld_bytes
+            )
+            complete, remainder = split.complete, split.remainder
+            if split.forced:
+                _warn_forced_flush(
+                    alloc_id,
+                    step,
+                    log_type,
+                    self.log_anonymization_max_withheld_bytes,
+                    "the Nomad cursor can advance",
+                )
+            # A forced flush empties the remainder, so this is the no-rollback
+            # path the docstring describes.
             withheld = len(remainder)
             nomad_offset -= withheld
         else:
@@ -1596,19 +1648,25 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             )
         await queue.put(TaskLog(step=step, type=log_type, msg=None))
 
-    @staticmethod
     def _decode_live_frame(
+        self,
         pending: bytearray,
         raw_msg: str,
         step: str,
         offset: int,
         anonymize_entities: set[PIIEntity] | None,
+        *,
+        alloc_id: str,
+        log_type: TaskLogType,
     ) -> tuple[str | None, int]:
         """Decode a live log frame, anonymizing per complete line.
 
         For anonymized steps the trailing partial line is kept in ``pending``
         and withheld until a later frame supplies its newline, so a PII token
         split across frames is anonymized whole rather than per fragment.
+        When the withheld remainder would exceed
+        ``log_anonymization_max_withheld_bytes``, the whole buffer is flushed
+        instead and ``pending`` is cleared so the live viewer keeps advancing.
         Non-anonymized steps decode and emit each frame unchanged.
 
         :param pending: The withheld-remainder buffer, mutated in place.
@@ -1616,17 +1674,33 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :param step: The Nomad task name within the allocation.
         :param offset: The raw Nomad byte offset at the end of this frame.
         :param anonymize_entities: PII entities to redact, or ``None``.
+        :param alloc_id: The Nomad allocation identifier (for forced-flush
+            diagnostics).
+        :param log_type: The log stream type (stdout or stderr).
         :return: ``(text, resume_offset)`` to emit, where ``resume_offset`` is
             rolled back over any withheld remainder so a reconnecting client
             re-fetches it; ``(None, offset)`` when the whole buffer is still a
-            partial line and nothing should be emitted yet.
+            partial line and nothing should be emitted yet. After a forced
+            ceiling flush ``pending`` is empty, so the resume offset is not
+            rolled back.
         """
         if not _should_anonymize(step, anonymize_entities):
             return b64decode_str(raw_msg), offset
         pending.extend(b64decode(raw_msg))
-        complete, _ = split_complete_lines(bytes(pending))
+        split = split_complete_lines(
+            bytes(pending), max_withheld=self.log_anonymization_max_withheld_bytes
+        )
+        complete = split.complete
         if not complete:
             return None, offset
+        if split.forced:
+            _warn_forced_flush(
+                alloc_id,
+                step,
+                log_type,
+                self.log_anonymization_max_withheld_bytes,
+                "the live viewer can advance",
+            )
         del pending[: len(complete)]
         decoded_msg = _decode_and_anonymize(complete, anonymize_entities)
         return decoded_msg, offset - len(pending)
@@ -1739,7 +1813,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                                 elapsed,
                             )
                         decoded_msg, emit_offset = self._decode_live_frame(
-                            pending, msg, step, offset, anonymize_entities
+                            pending,
+                            msg,
+                            step,
+                            offset,
+                            anonymize_entities,
+                            alloc_id=alloc_id,
+                            log_type=log_type,
                         )
                         if decoded_msg is None:
                             continue
