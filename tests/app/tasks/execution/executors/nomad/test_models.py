@@ -108,6 +108,9 @@ WITHHELD_PARTIAL_RESUME_OFFSET = 5  # cursor rolled back over the withheld "card
 MULTIBYTE_LINE_EOF_OFFSET = 12  # raw EOF of "café\n€uro" (6 + 6 UTF-8 bytes)
 MULTIBYTE_WITHHELD_BYTES = 6  # raw byte length of the withheld "€uro"
 NEWLINELESS_TAIL_FRAME_EOF_OFFSET = 21  # raw EOF of "card=4111111111111111"
+# Ceiling low enough that the 21-byte newline-less card line forces a flush.
+FORCED_FLUSH_CEILING_BYTES = 10
+NOMAD_MODELS_LOGGER = "app.tasks.execution.executors.nomad.models"
 
 
 def _redact_card_token(text: str, _entities: set[PIIEntity]) -> str:
@@ -2681,6 +2684,50 @@ class TestGetLogsForAllocation:
         assert flushed["run-script"]["stdout_withheld"] == 0
         assert flushed["run-script"]["stdout_last_offset"] == len(raw_bytes)
 
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_logs_for_allocation_forced_flush_advances_cursor(
+        self, mock_nomad_cls, mock_anonymize, caplog
+    ):
+        """Assert an over-ceiling partial is emitted and the Nomad cursor advances.
+
+        Without the ceiling the newline-less frame would be withheld and the
+        offset rolled back to 0, so the next sync cycle re-fetches the same
+        tail. A forced flush must leave withheld at 0 and keep the frame's
+        raw EOF as the next cursor.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.side_effect = _redact_card_token
+        raw_bytes = b"card=4111111111111111"  # no terminating newline; 21 bytes
+        frame = json.dumps(
+            {"Data": b64encode(raw_bytes).decode(), "Offset": len(raw_bytes)}
+        )
+        mock_backend.client.stream_logs.stream.return_value = frame
+        alloc = {
+            "ID": "alloc-1",
+            "TaskStates": {"run-script": {"StartedAt": "2024-01-01T00:00:00Z"}},
+        }
+        executor = _build_executor(
+            log_anonymization_max_withheld_bytes=FORCED_FLUSH_CEILING_BYTES
+        )
+
+        with caplog.at_level(logging.WARNING, logger=NOMAD_MODELS_LOGGER):
+            result = executor.get_logs_for_allocation(
+                alloc, anonymize_entities={PIIEntity.CREDIT_CARD}
+            )
+
+        assert result["run-script"]["stdout"] == "card=[REDACTED]"
+        assert "4111" not in result["run-script"]["stdout"]
+        assert result["run-script"]["stdout_withheld"] == 0
+        assert result["run-script"]["stdout_last_offset"] == len(raw_bytes)
+        assert any(
+            "Forced anonymization flush" in record.message
+            and "alloc-1" in record.message
+            and "run-script" in record.message
+            for record in caplog.records
+        )
+
 
 class TestNomadLogStreaming:
     """Regression tests for Nomad HTTP log streaming helpers."""
@@ -3093,6 +3140,79 @@ class TestNomadLogStreaming:
         assert (
             params["offset"] == WITHHELD_PARTIAL_FRAME_EOF_OFFSET
         )  # raw resume cursor
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    async def test_consume_stream_forced_flush_clears_pending_and_advances(
+        self, mock_anonymize, caplog
+    ):
+        """Assert an over-ceiling live partial is pushed and pending is cleared.
+
+        Without the ceiling the newline-less frame would leave pending growing
+        and emit nothing. A forced flush must anonymize, push to the queue,
+        clear pending, and leave the emit offset un-rolled-back.
+        """
+        mock_anonymize.side_effect = _redact_card_token
+        chunks = [
+            self._nomad_log_frame(
+                msg="card=4111111111111111",
+                offset=NEWLINELESS_TAIL_FRAME_EOF_OFFSET,
+            )
+        ]
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        executor = _build_executor(
+            log_anonymization_max_withheld_bytes=FORCED_FLUSH_CEILING_BYTES
+        )
+        alloc = {
+            "ID": "alloc-stream",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "TaskStates": {
+                "run-script": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"}
+            },
+        }
+        params = {
+            "task": "run-script",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+        pending = bytearray()
+
+        with (
+            patch.object(executor, "_request", return_value=mock_ctx),
+            caplog.at_level(logging.WARNING, logger=NOMAD_MODELS_LOGGER),
+        ):
+            await executor._consume_nomad_log_stream(
+                alloc=alloc,
+                step="run-script",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities={PIIEntity.CREDIT_CARD},
+                pending=pending,
+            )
+
+        logs = await self._drain_task_logs(queue)
+        assert [log.msg for log in logs] == ["card=[REDACTED]"]
+        assert "4111" not in logs[0].msg
+        assert logs[0].offset == NEWLINELESS_TAIL_FRAME_EOF_OFFSET
+        assert bytes(pending) == b""
+        assert any(
+            "Forced anonymization flush" in record.message
+            and "alloc-stream" in record.message
+            and "run-script" in record.message
+            for record in caplog.records
+        )
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.anonymize_text")

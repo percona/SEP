@@ -987,6 +987,38 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/atw/snippets/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Snippet Search
+     * @description Search approved snippets by free text, independent of the ATW taxonomy.
+     *
+     *     Served from ATW's own router over the snippets library, so the capability does
+     *     not depend on the Snippet Manager app being activated. The ``atw`` metadata tag
+     *     is a presentation filter on the category listing and is deliberately not
+     *     applied here, so search reaches snippets that listing never exposes.
+     *
+     *     :param session: The database session.
+     *     :param list_query: The vetted sort and search selections, pinned to approved.
+     *     :param pagination: The offset/limit window for the page.
+     *     :return: A paginated page of approved snippet summaries.
+     *     :raises sqlalchemy.exc.SQLAlchemyError: When the count or data query fails to
+     *         execute.
+     */
+    get: operations['atw_atw_snippet_search_api_apps_atw_snippets__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/backup_mongo/': {
     parameters: {
       query?: never;
@@ -5830,6 +5862,17 @@ export interface components {
     atw__PaginatedResponse_ATWIncidentExecutionResponse_: {
       /** Items */
       items: components['schemas']['atw__ATWIncidentExecutionResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[ATWSnippetSummary] */
+    atw__PaginatedResponse_ATWSnippetSummary_: {
+      /** Items */
+      items: components['schemas']['atw__ATWSnippetSummary'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -11706,6 +11749,52 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['framework__AppSchema'];
+        };
+      };
+    };
+  };
+  atw_atw_snippet_search_api_apps_atw_snippets__get: {
+    parameters: {
+      query?: {
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?:
+          | 'approved_at'
+          | '-approved_at'
+          | 'created_at'
+          | '-created_at'
+          | 'filename'
+          | '-filename'
+          | 'service_type'
+          | '-service_type'
+          | 'title'
+          | '-title';
+        /** @description Case-insensitive search across the searchable columns. */
+        search?: string | null;
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__PaginatedResponse_ATWSnippetSummary_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
