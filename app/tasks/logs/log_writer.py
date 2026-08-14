@@ -28,6 +28,7 @@ from app.tasks.crud import (
     TaskHistoryManager,
 )
 from app.tasks.models import (
+    LogCaptureStatusEnum,
     TaskHistoryLogState,
     TaskLogType,
 )
@@ -230,6 +231,111 @@ class TaskHistoryLogWriter:
         raise LogWriterConflictError(
             f"TaskHistoryLogWriter: exhausted {_MAX_VERSION_RETRIES} retries for "
             f"task_history_id={task_history_id} source={source!r} stream={stream}"
+        )
+
+    @classmethod
+    async def record_capture_status(
+        cls,
+        session: AsyncSession,
+        task_history_id: int,
+        *,
+        source: str,
+        stream: TaskLogType,
+        capture_status: LogCaptureStatusEnum,
+        allocation_epoch: int | None = None,
+    ) -> None:
+        """Record how completely ``(source, stream)`` was captured.
+
+        Creates the state row when none exists, which is what lets a reader
+        tell a stream that produced no bytes from one whose bytes were lost:
+        :meth:`append` returns early for a fresh empty stream, so without this
+        the most common case leaves no row at all. Offsets and staging are
+        carried through untouched — only the verdict is written.
+
+        :param session: The SQLAlchemy asynchronous session. The writer commits
+            on success so callers are responsible only for rollback on failure.
+        :param task_history_id: The ``TaskHistory`` identifier.
+        :param source: The execution step name (Nomad task name or
+            ``"execution"`` for Celery callables).
+        :param stream: The log stream (stdout or stderr) being classified.
+        :param capture_status: The verdict to record for this stream.
+        :param allocation_epoch: The Nomad allocation ``CreateIndex`` the
+            verdict describes. When it is *older* than the epoch the row (or,
+            on the first-insert path, the task-level high-water mark) already
+            carries, the write is discarded: it reports on an allocation the
+            frontier has moved past, and applying it would overwrite a newer
+            allocation's verdict. ``None`` leaves the row's epoch untouched.
+        :raises LogWriterConflictError: If the optimistic-locking retries are
+            exhausted without converging on a successful update.
+        """
+        for _ in range(_MAX_VERSION_RETRIES):
+            state = await TaskHistoryLogStateManager.get_for_stream(
+                session, task_history_id, source, stream
+            )
+            is_new = state is None
+            if state is None:
+                state = TaskHistoryLogStateManager.build_default(
+                    task_history_id, source, stream
+                )
+
+            if allocation_epoch is not None:
+                guard_epoch = state.allocation_epoch
+                if is_new:
+                    guard_epoch = await TaskHistoryManager.get_log_allocation_epoch(
+                        session, task_history_id, for_update=True
+                    )
+                if allocation_epoch < guard_epoch:
+                    await cls._release_first_insert_lock(session, is_new=is_new)
+                    return
+
+            new_allocation_epoch = (
+                allocation_epoch
+                if allocation_epoch is not None
+                else state.allocation_epoch
+            )
+            now = utc_now()
+
+            if is_new:
+                applied = await TaskHistoryLogStateManager.insert_row_idempotent(
+                    session,
+                    task_history_id=task_history_id,
+                    source=source,
+                    stream=stream,
+                    persisted_offset=state.persisted_offset,
+                    producer_offset=state.producer_offset,
+                    nomad_offset=state.nomad_offset,
+                    allocation_epoch=new_allocation_epoch,
+                    staging=state.staging,
+                    version=state.version + 1,
+                    now=now,
+                    capture_status=capture_status,
+                )
+            else:
+                applied = await TaskHistoryLogStateManager.update_row_if_version(
+                    session,
+                    task_history_id=task_history_id,
+                    source=source,
+                    stream=stream,
+                    old_version=state.version,
+                    new_version=state.version + 1,
+                    persisted_offset=state.persisted_offset,
+                    producer_offset=state.producer_offset,
+                    nomad_offset=state.nomad_offset,
+                    allocation_epoch=new_allocation_epoch,
+                    staging=state.staging,
+                    now=now,
+                    capture_status=capture_status,
+                )
+
+            if applied:
+                await session.commit()
+                return
+            await session.rollback()
+
+        raise LogWriterConflictError(
+            f"TaskHistoryLogWriter: exhausted {_MAX_VERSION_RETRIES} capture-status "
+            f"retries for task_history_id={task_history_id} source={source!r} "
+            f"stream={stream}"
         )
 
     @classmethod

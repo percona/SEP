@@ -34,6 +34,7 @@ class NomadStep(StrEnum):
     PREPARE_ENV = "prepare-env"
     CLEAN_UP = "clean-up"
     CHECK_STALENESS = "check-staleness"
+    LOG_CAPTURE_HOLD = "log-capture-hold"
     STEP1 = "step1"
 
     @classmethod
@@ -46,11 +47,36 @@ class NomadStep(StrEnum):
             step for step, anonymize in NOMAD_STEP_ANONYMIZE.items() if anonymize
         )
 
+    @classmethod
+    def is_persistable(cls, step: str) -> bool:
+        """Return whether SEP persists ``step``'s streams and gates release on it.
+
+        ``LOG_CAPTURE_HOLD`` produces no task output of its own and exists only
+        to keep the allocation readable, so draining it would gate release on a
+        stream that only ends when the hold itself does.
+
+        Takes a raw name rather than a member, and admits every name but the
+        hold: a Nomad allocation's task states are keyed by whatever the job
+        spec declared, so a step this enum does not know is an unrecognized
+        *producer* — excluding it would silently drop its output from the live
+        viewer and leave its capture unclassified.
+
+        :param step: The Nomad task (step) name to classify.
+        :return: ``True`` for every step but the log-capture hold.
+        """
+        return step != cls.LOG_CAPTURE_HOLD
+
 
 NOMAD_STEP_ANONYMIZE: dict[NomadStep, bool] = {
     NomadStep.RUN_SCRIPT: True,
     NomadStep.PREPARE_ENV: False,
     NomadStep.CLEAN_UP: False,
     NomadStep.CHECK_STALENESS: False,
+    NomadStep.LOG_CAPTURE_HOLD: False,
     NomadStep.STEP1: True,
 }
+
+#: Hold duration a job dispatched without the meta key falls back to, in
+#: seconds. Spans three 30 s sync cadences so a beat delayed by worker backlog
+#: still lands inside the hold.
+LOG_CAPTURE_HOLD_DEFAULT_SECONDS = 90

@@ -53,11 +53,14 @@ from app.tasks.execution.executors.nomad.models import (
     _alloc_step_state,
     _alloc_task_states,
     _ANONYMIZED_STEPS,
+    _capture_hold_step_state,
+    _detect_capture_hold_ready,
     _detect_stale_skip,
     _NOMAD_LOG_STREAM_CLIENT_ERROR,
     _NOMAD_LOG_STREAM_SOCK_TIMEOUT,
     _should_anonymize,
     _STALE_SKIP_TASK_NAME,
+    _status_from_step_states,
     NOMAD_DEAD_JOB_STATUS,
     nomad_task_states_to_execution_events,
     NomadAllocStatusEnum,
@@ -69,6 +72,7 @@ from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     ExecutionEvent,
     FileMetadata,
+    LogCaptureStatusEnum,
     Task,
     TaskExecutionRequest,
     TaskHistory,
@@ -5415,3 +5419,960 @@ class TestDrainTerminalLogs:
         )
         assert stdout == "head\ntail\n"
         assert stderr == "boot\nlate\n"
+
+
+class TestNomadCaptureHoldDetection:
+    """Cover the log-capture-hold terminal-detection helpers."""
+
+    @staticmethod
+    def _alloc(task_states: dict) -> dict:
+        """Return an allocation carrying the given task states."""
+        return {"ID": "alloc-1", "TaskStates": task_states}
+
+    def test_hold_absent_is_never_ready(self) -> None:
+        """Assert an allocation with no hold step never reports ready.
+
+        Jobs registered before the hold existed carry no such step, and their
+        logs are already collectable, so there is nothing to release.
+        """
+        alloc = self._alloc({"run-script": {"State": "dead"}})
+
+        assert _detect_capture_hold_ready(alloc) is False
+        assert _capture_hold_step_state(alloc) is None
+
+    def test_ready_once_every_producing_step_is_dead(self) -> None:
+        """Assert a live hold plus all-dead producers reports ready."""
+        alloc = self._alloc(
+            {
+                "run-script": {"State": "dead"},
+                "clean-up": {"State": "dead"},
+                NomadStep.LOG_CAPTURE_HOLD: {"State": "running"},
+            }
+        )
+
+        assert _detect_capture_hold_ready(alloc) is True
+
+    def test_not_ready_while_a_producing_step_still_runs(self) -> None:
+        """Assert one live producer keeps the allocation from being ready."""
+        alloc = self._alloc(
+            {
+                "run-script": {"State": "dead"},
+                "clean-up": {"State": "running"},
+                NomadStep.LOG_CAPTURE_HOLD: {"State": "running"},
+            }
+        )
+
+        assert _detect_capture_hold_ready(alloc) is False
+
+    def test_not_ready_while_a_producing_step_is_still_pending(self) -> None:
+        """Assert a producer that never started blocks readiness.
+
+        A ``check-staleness`` abort can leave a main task at ``pending`` rather
+        than ``dead``; treating that as drained would signal the hold before
+        the producer set finished.
+        """
+        alloc = self._alloc(
+            {
+                "check-staleness": {"State": "dead"},
+                "run-script": {"State": "pending"},
+                NomadStep.LOG_CAPTURE_HOLD: {"State": "running"},
+            }
+        )
+
+        assert _detect_capture_hold_ready(alloc) is False
+
+    def test_hold_alone_is_not_ready(self) -> None:
+        """Assert an allocation whose only step is the hold is not ready."""
+        alloc = self._alloc({NomadStep.LOG_CAPTURE_HOLD: {"State": "running"}})
+
+        assert _detect_capture_hold_ready(alloc) is False
+
+    def test_status_derives_from_producing_steps_only(self) -> None:
+        """Assert a failed hold does not re-label a task whose work succeeded."""
+        alloc = self._alloc(
+            {
+                "run-script": {"State": "dead", "Failed": False},
+                NomadStep.LOG_CAPTURE_HOLD: {"State": "dead", "Failed": True},
+            }
+        )
+
+        assert _status_from_step_states(alloc) == TaskHistoryStatusEnum.SUCCESS
+
+    def test_status_is_failed_when_a_producing_step_failed(self) -> None:
+        """Assert a failing producer drives the derived status to FAILED."""
+        alloc = self._alloc(
+            {
+                "run-script": {"State": "dead", "Failed": True},
+                NomadStep.LOG_CAPTURE_HOLD: {"State": "running", "Failed": False},
+            }
+        )
+
+        assert _status_from_step_states(alloc) == TaskHistoryStatusEnum.FAILED
+
+
+class TestNomadCaptureHoldRelease:
+    """Cover the hold-release signal and its guards."""
+
+    @staticmethod
+    def _alloc(hold_state: str | None) -> dict:
+        """Return an allocation whose hold step carries ``hold_state``."""
+        task_states = {"run-script": {"State": "dead"}}
+        if hold_state is not None:
+            task_states[NomadStep.LOG_CAPTURE_HOLD] = {"State": hold_state}
+        return {"ID": "alloc-1", "TaskStates": task_states}
+
+    @classmethod
+    def _backend_serving(cls, mock_nomad_cls, alloc: dict) -> MagicMock:
+        """Wire a backend whose allocation re-read returns ``alloc``."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = alloc
+        return mock_backend
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_signals_the_hold_task_by_name(self, mock_nomad_cls) -> None:
+        """Assert the release targets only the hold step, not the allocation."""
+        alloc = self._alloc("running")
+        mock_backend = self._backend_serving(mock_nomad_cls, alloc)
+        executor = _build_executor()
+
+        executor._release_capture_hold(alloc)
+
+        mock_backend.client.allocation.signal_allocation.assert_called_once_with(
+            "alloc-1", "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
+        )
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_does_not_signal_a_hold_that_has_not_started(self, mock_nomad_cls) -> None:
+        """Assert a ``pending`` hold is left to expire rather than signalled.
+
+        Between the last producer dying and the hold starting there is a window
+        where the step exists but is not running, and a signal delivered there
+        can be dropped — which would strand the allocation for the full deadline
+        while SEP believed it had released it.
+        """
+        alloc = self._alloc("pending")
+        mock_backend = self._backend_serving(mock_nomad_cls, alloc)
+        executor = _build_executor()
+
+        executor._release_capture_hold(alloc)
+
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_does_not_signal_an_already_dead_hold(self, mock_nomad_cls) -> None:
+        """Assert a hold that already expired is not signalled."""
+        alloc = self._alloc("dead")
+        mock_backend = self._backend_serving(mock_nomad_cls, alloc)
+        executor = _build_executor()
+
+        executor._release_capture_hold(alloc)
+
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_does_not_signal_when_no_hold_step_exists(self, mock_nomad_cls) -> None:
+        """Assert a pre-upgrade allocation is never signalled."""
+        alloc = self._alloc(None)
+        mock_backend = self._backend_serving(mock_nomad_cls, alloc)
+        executor = _build_executor()
+
+        executor._release_capture_hold(alloc)
+
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_signals_on_the_re_read_state_not_the_stale_snapshot(
+        self, mock_nomad_cls
+    ) -> None:
+        """Assert a hold that started after the sync began is still released.
+
+        The snapshot the caller holds predates the terminal drain, which sleeps
+        between attempts, so a hold that was ``pending`` then is typically
+        running by now. Reading the stale copy would forfeit the early release
+        on the common path and pin the allocation for its full deadline.
+        """
+        stale = self._alloc("pending")
+        mock_backend = self._backend_serving(mock_nomad_cls, self._alloc("running"))
+        executor = _build_executor()
+
+        executor._release_capture_hold(stale)
+
+        mock_backend.client.allocation.signal_allocation.assert_called_once_with(
+            "alloc-1", "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
+        )
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_re_read_failure_does_not_escape(self, mock_nomad_cls) -> None:
+        """Assert a failed allocation re-read degrades instead of raising.
+
+        This runs at the tail of an otherwise-successful sync; letting it
+        propagate would lose the terminal status the caller just stamped.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.side_effect = BaseNomadException(
+            MagicMock(text="gone")
+        )
+        executor = _build_executor()
+
+        executor._release_capture_hold(self._alloc("running"))
+
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_non_json_signal_response_does_not_escape(self, mock_nomad_cls) -> None:
+        """Assert a non-JSON signal response is swallowed like a Nomad error.
+
+        ``signal_allocation`` decodes the response body, so an empty or
+        non-JSON body raises ``ValueError`` rather than a Nomad exception — a
+        family that would otherwise escape the handler and abort the sync.
+        """
+        alloc = self._alloc("running")
+        mock_backend = self._backend_serving(mock_nomad_cls, alloc)
+        mock_backend.client.allocation.signal_allocation.side_effect = ValueError(
+            "Expecting value: line 1 column 1 (char 0)"
+        )
+        executor = _build_executor()
+
+        executor._release_capture_hold(alloc)
+
+        mock_backend.client.allocation.signal_allocation.assert_called_once()
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_release_failure_does_not_escape(self, mock_nomad_cls) -> None:
+        """Assert a failed signal is swallowed rather than aborting the sync.
+
+        The bytes are already persisted by the time the release runs and the
+        step self-expires at its deadline, so a failed release costs residency,
+        not data.
+        """
+        alloc = self._alloc("running")
+        mock_backend = self._backend_serving(mock_nomad_cls, alloc)
+        mock_backend.client.allocation.signal_allocation.side_effect = (
+            BaseNomadException(MagicMock(text="denied"))
+        )
+        executor = _build_executor()
+
+        executor._release_capture_hold(alloc)
+
+        mock_backend.client.allocation.signal_allocation.assert_called_once()
+
+
+class TestNomadCaptureOutcomes:
+    """Cover per-stream capture verdicts written at terminal sync."""
+
+    HOLD_ALLOC_ID = "alloc-hold"
+
+    @staticmethod
+    def _alloc(steps: dict[str, str], *, hold_state: str | None = "running") -> dict:
+        """Return a terminal allocation with the given step states."""
+        task_states = {
+            step: {"StartedAt": "2024-01-01T00:00:00Z", "State": state}
+            for step, state in steps.items()
+        }
+        if hold_state is not None:
+            task_states[NomadStep.LOG_CAPTURE_HOLD] = {
+                "StartedAt": "2024-01-01T00:00:00Z",
+                "State": hold_state,
+            }
+        return {
+            "ID": TestNomadCaptureOutcomes.HOLD_ALLOC_ID,
+            "CreateIndex": ALLOCATION_CREATE_INDEX,
+            "TaskStates": task_states,
+        }
+
+    @staticmethod
+    async def _verdicts(session, history_id) -> dict[tuple[str, str], str]:
+        """Return the recorded verdict for every ``(source, stream)`` pair."""
+        rows = await TaskHistoryLogStateManager.list_for_task(session, history_id)
+        return {(row.source, row.stream): row.capture_status for row in rows}
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_silent_stream_is_recorded_complete(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert a step that emitted nothing is recorded, not left rowless.
+
+        This is the reader contract the whole change exists for: without a row
+        a silent step is indistinguishable from one whose bytes were lost.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.return_value = ""
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(terminal_log_drain_max_attempts=0)
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._alloc({"run-script": "dead"}),
+            previous_allocation_id=self.HOLD_ALLOC_ID,
+            capture_hold_ready=True,
+        )
+
+        verdicts = await self._verdicts(session, history.id)
+        assert verdicts[("run-script", TaskLogType.STDOUT)] == (
+            LogCaptureStatusEnum.COMPLETE
+        )
+        assert verdicts[("run-script", TaskLogType.STDERR)] == (
+            LogCaptureStatusEnum.COMPLETE
+        )
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_hold_step_gets_no_verdict_of_its_own(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert the hold step is never recorded as a captured stream."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.return_value = ""
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(terminal_log_drain_max_attempts=0)
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._alloc({"run-script": "dead"}),
+            previous_allocation_id=self.HOLD_ALLOC_ID,
+            capture_hold_ready=True,
+        )
+
+        verdicts = await self._verdicts(session, history.id)
+        assert not [
+            source for source, _ in verdicts if source == NomadStep.LOG_CAPTURE_HOLD
+        ]
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_a_live_hold_caps_every_verdict_at_incomplete(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert nothing is called complete while the hold is unreleasable.
+
+        A hold that is present but not yet releasable means some producer has
+        not finished, so "this stream is at EOF" is not yet knowable — even
+        for a stream whose own fetch succeeded.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.return_value = ""
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(terminal_log_drain_max_attempts=0)
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._alloc({"run-script": "dead", "clean-up": "pending"}),
+            previous_allocation_id=self.HOLD_ALLOC_ID,
+            capture_hold_ready=False,
+        )
+
+        verdicts = await self._verdicts(session, history.id)
+        assert set(verdicts.values()) == {LogCaptureStatusEnum.INCOMPLETE}
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_pre_upgrade_allocation_still_earns_complete(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert an allocation with no hold at all can still be complete.
+
+        Jobs registered before the hold step existed have nothing to wait on,
+        so a clean drain there is as final as it will ever be.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.return_value = ""
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(terminal_log_drain_max_attempts=0)
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._alloc({"run-script": "dead"}, hold_state=None),
+            previous_allocation_id=self.HOLD_ALLOC_ID,
+            capture_hold_ready=False,
+        )
+
+        verdicts = await self._verdicts(session, history.id)
+        assert set(verdicts.values()) == {LogCaptureStatusEnum.COMPLETE}
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_failed_fetch_marks_only_its_own_stream_incomplete(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert one stream's fetch failure leaves its siblings complete.
+
+        Letting the failure propagate would abort the cycle for every step in
+        the allocation, trading a silent per-stream loss for a loud
+        whole-cycle one.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+
+        def fake_stream(alloc_id, *, task, type_, offset):
+            if type_ == TaskLogType.STDERR:
+                raise BaseNomadException(MagicMock(text="gone"))
+            return ""
+
+        mock_backend.client.stream_logs.stream.side_effect = fake_stream
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(terminal_log_drain_max_attempts=0)
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._alloc({"run-script": "dead"}),
+            previous_allocation_id=self.HOLD_ALLOC_ID,
+            capture_hold_ready=True,
+        )
+
+        verdicts = await self._verdicts(session, history.id)
+        assert verdicts[("run-script", TaskLogType.STDOUT)] == (
+            LogCaptureStatusEnum.COMPLETE
+        )
+        assert verdicts[("run-script", TaskLogType.STDERR)] == (
+            LogCaptureStatusEnum.INCOMPLETE
+        )
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_release_is_issued_once_capture_is_recorded(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert the hold is signalled only after the verdicts are written."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.return_value = ""
+        alloc = self._alloc({"run-script": "dead", "clean-up": "dead"})
+        # The release re-reads the allocation before signalling.
+        mock_backend.allocation.get_allocation.return_value = alloc
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(terminal_log_drain_max_attempts=0)
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=alloc,
+            previous_allocation_id=self.HOLD_ALLOC_ID,
+            capture_hold_ready=True,
+        )
+
+        mock_backend.client.allocation.signal_allocation.assert_called_once_with(
+            self.HOLD_ALLOC_ID, "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
+        )
+        verdicts = await self._verdicts(session, history.id)
+        assert ("clean-up", TaskLogType.STDOUT) in verdicts
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_running_history_records_nothing_and_does_not_release(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert a still-running sync neither classifies nor releases."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.return_value = ""
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.RUNNING
+        executor = _build_executor(terminal_log_drain_max_attempts=0)
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=self._alloc({"run-script": "running"}),
+            previous_allocation_id=self.HOLD_ALLOC_ID,
+            capture_hold_ready=False,
+        )
+
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
+        assert await self._verdicts(session, history.id) == {}
+
+
+class TestNomadSyncWithCaptureHold:
+    """Cover terminal detection when a log-capture-hold step is present."""
+
+    @staticmethod
+    def _backend(mock_nomad_cls, task_states: dict, *, job: dict) -> MagicMock:
+        """Wire a backend returning one allocation and job."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "ClientStatus": NomadAllocStatusEnum.RUNNING,
+            "TaskStates": task_states,
+            "ModifyTime": 1_700_000_000_000_000_000,
+        }
+        mock_backend.client.stream_logs.stream.return_value = ""
+        mock_backend.job.get_job.return_value = job
+        return mock_backend
+
+    @staticmethod
+    def _queue_item() -> TaskHistory:
+        """Return a RUNNING history already landed on the allocation."""
+        return _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            },
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_reaches_terminal_status_while_allocation_still_runs(
+        self, mock_nomad_cls
+    ):
+        """Assert the task completes without waiting out the hold.
+
+        The allocation still reports ``running`` because the hold holds it, so
+        the status has to come from the producing steps or completion latency
+        would inherit the whole hold window.
+        """
+        self._backend(
+            mock_nomad_cls,
+            {
+                "run-script": {"State": "dead", "Failed": False},
+                NomadStep.LOG_CAPTURE_HOLD: {"State": "running", "Failed": False},
+            },
+            job={"ID": "job-1", "Status": "running", "Stop": False},
+        )
+        executor = _build_executor()
+
+        result = await executor._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.SUCCESS
+        assert result.finished_at is not None
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_failing_step_yields_failed_while_hold_runs(self, mock_nomad_cls):
+        """Assert a failed producer is reported FAILED, not SUCCESS."""
+        self._backend(
+            mock_nomad_cls,
+            {
+                "run-script": {"State": "dead", "Failed": True},
+                NomadStep.LOG_CAPTURE_HOLD: {"State": "running", "Failed": False},
+            },
+            job={"ID": "job-1", "Status": "running", "Stop": False},
+        )
+        executor = _build_executor()
+
+        result = await executor._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_stale_skip_still_wins_over_step_derivation(self, mock_nomad_cls):
+        """Assert a stale-skipped allocation stays STALE with a hold present."""
+        self._backend(
+            mock_nomad_cls,
+            {
+                "check-staleness": {
+                    "State": "dead",
+                    "Failed": True,
+                    "Events": [{"Type": "Terminated", "ExitCode": 75}],
+                },
+                "run-script": {"State": "dead", "Failed": False},
+                NomadStep.LOG_CAPTURE_HOLD: {"State": "running", "Failed": False},
+            },
+            job={"ID": "job-1", "Status": "running", "Stop": False},
+        )
+        executor = _build_executor()
+
+        result = await executor._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.STALE
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_operator_stop_still_wins_over_step_derivation(self, mock_nomad_cls):
+        """Assert an operator-stopped job reports STOPPED, not SUCCESS."""
+        self._backend(
+            mock_nomad_cls,
+            {
+                "run-script": {"State": "dead", "Failed": False},
+                NomadStep.LOG_CAPTURE_HOLD: {"State": "running", "Failed": False},
+            },
+            job={"ID": "job-1", "Status": "dead", "Stop": True},
+        )
+        executor = _build_executor()
+
+        result = await executor._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.STOPPED
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_dead_job_with_a_pending_producer_does_not_release(
+        self, mock_nomad_cls
+    ):
+        """Assert the two terminal paths overlapping still withholds the signal.
+
+        A ``check-staleness`` abort can leave the job dead while a main task
+        sits at ``pending`` and the hold runs on. Releasing there would signal
+        before the producer set drained, re-opening the race the hold closes —
+        and the job-status path alone cannot catch it.
+        """
+        mock_backend = self._backend(
+            mock_nomad_cls,
+            {
+                "run-script": {"State": "pending", "Failed": False},
+                NomadStep.LOG_CAPTURE_HOLD: {"State": "running", "Failed": False},
+            },
+            job={"ID": "job-1", "Status": NOMAD_DEAD_JOB_STATUS, "Stop": False},
+        )
+        executor = _build_executor()
+
+        await executor._sync_task_history(self._queue_item())
+
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_pre_upgrade_allocation_keeps_client_status_derivation(
+        self, mock_nomad_cls
+    ):
+        """Assert an allocation with no hold step behaves exactly as before."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "ClientStatus": NomadAllocStatusEnum.COMPLETE,
+            "TaskStates": {"run-script": {"StartedAt": "1", "FinishedAt": "2"}},
+            "ModifyTime": 1_700_000_000_000_000_000,
+        }
+        mock_backend.client.stream_logs.stream.return_value = ""
+        mock_backend.job.get_job.return_value = {
+            "ID": "job-1",
+            "Status": NOMAD_DEAD_JOB_STATUS,
+            "Stop": False,
+        }
+        executor = _build_executor()
+
+        result = await executor._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.SUCCESS
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
+
+
+class TestNomadCaptureOutcomeDrainFailures:
+    """Cover that a failure during the terminal drain reaches the verdict."""
+
+    DRAIN_ATTEMPTS = 2
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_drain_fetch_failure_downgrades_the_verdict(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert a stream whose drain re-fetch fails is not called complete.
+
+        The first fetch succeeding says nothing about the tail: the drain exists
+        precisely because ``logmon`` flushes asynchronously, so a failure there
+        means bytes may be missing and the honest verdict is incomplete.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        calls = {"n": 0}
+
+        def fake_stream(alloc_id, *, task, type_, offset):
+            if type_ != TaskLogType.STDOUT:
+                return ""
+            calls["n"] += 1
+            if calls["n"] > 1:
+                raise BaseNomadException(MagicMock(text="gone"))
+            return ""
+
+        mock_backend.client.stream_logs.stream.side_effect = fake_stream
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(terminal_log_drain_max_attempts=self.DRAIN_ATTEMPTS)
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=TestNomadCaptureOutcomes._alloc({"run-script": "dead"}),
+            previous_allocation_id="alloc-hold",
+            capture_hold_ready=True,
+        )
+
+        verdicts = await TestNomadCaptureOutcomes._verdicts(session, history.id)
+        assert verdicts[("run-script", TaskLogType.STDOUT)] == (
+            LogCaptureStatusEnum.INCOMPLETE
+        )
+        assert verdicts[("run-script", TaskLogType.STDERR)] == (
+            LogCaptureStatusEnum.COMPLETE
+        )
+
+
+class TestNomadCaptureHoldDispatchMeta:
+    """Cover that the hold deadline reaches the job as dispatch meta."""
+
+    HOLD_SECONDS = 45
+
+    @staticmethod
+    def _task_declaring_hold_meta(*, declares: bool) -> Task:
+        """Return a parameterized task whose template may declare the hold key."""
+        parameterized = {"Payload": "required"}
+        if declares:
+            parameterized["MetaOptional"] = ["log_capture_hold_seconds"]
+        return Task(
+            id=1,
+            name="test-task",
+            data={"ID": "dispatch-hold", "ParameterizedJob": parameterized},
+            backend="nomad",
+            owner="ANY",
+        )
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_configured_deadline_is_injected_as_meta(self, mock_nomad_cls):
+        """Assert the executor setting is passed per dispatch, as a string.
+
+        Enforcement lives on the execution host, so the value has to travel
+        with the dispatch rather than being read by the shell from SEP.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.job.dispatch_job.return_value = {
+            "DispatchedJobID": "d-1",
+            "EvalID": "e-1",
+        }
+        executor = _build_executor(log_capture_hold_seconds=self.HOLD_SECONDS)
+        task = self._task_declaring_hold_meta(declares=True)
+
+        executor.dispatch_job(_build_queue_item(task=task, payload="x"), task)
+
+        meta = mock_backend.job.dispatch_job.call_args[1]["meta"]
+        assert meta["log_capture_hold_seconds"] == str(self.HOLD_SECONDS)
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_meta_is_withheld_from_a_template_that_does_not_declare_it(
+        self, mock_nomad_cls
+    ):
+        """Assert a template predating the hold key is dispatched without it.
+
+        Nomad rejects a dispatch carrying meta the parameterized job never
+        declared, so gating on the declaration is what lets the setting be
+        hot-reloadable without re-registering every job first.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.job.dispatch_job.return_value = {
+            "DispatchedJobID": "d-1",
+            "EvalID": "e-1",
+        }
+        executor = _build_executor(log_capture_hold_seconds=self.HOLD_SECONDS)
+        task = self._task_declaring_hold_meta(declares=False)
+
+        executor.dispatch_job(_build_queue_item(task=task, payload="x"), task)
+
+        meta = mock_backend.job.dispatch_job.call_args[1]["meta"]
+        assert "log_capture_hold_seconds" not in meta
+
+
+class TestNomadSubCadenceCapture:
+    """Cover the headline guarantee: a step shorter than the sync cadence."""
+
+    SUB_CADENCE_STDOUT = "starting\nworking\ndone\n"
+    SUB_CADENCE_STDERR = "warning: slow\n"
+
+    @staticmethod
+    def _stream_for(payloads: dict[tuple[str, TaskLogType], str]):
+        """Return a fake Nomad stream serving each stream's full content once."""
+
+        def fake_stream(alloc_id, *, task, type_, offset):
+            content = payloads.get((task, type_), "")
+            delta = content[offset:]
+            if not delta:
+                return ""
+            return json.dumps(
+                {
+                    "Data": b64encode(delta.encode()).decode(),
+                    "Offset": len(content),
+                }
+            )
+
+        return fake_stream
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_never_sampled_step_persists_every_emitted_byte(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ):
+        """Assert a step never sampled while running loses nothing.
+
+        The allocation is still readable at terminal sync only because the hold
+        holds it; before this mechanism the source was collected first and the
+        stream persisted zero bytes while looking byte-for-byte like a step
+        that legitimately printed nothing.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.side_effect = self._stream_for(
+            {
+                ("run-script", TaskLogType.STDOUT): self.SUB_CADENCE_STDOUT,
+                ("run-script", TaskLogType.STDERR): self.SUB_CADENCE_STDERR,
+            }
+        )
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(terminal_log_drain_max_attempts=1)
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=TestNomadCaptureOutcomes._alloc({"run-script": "dead"}),
+            previous_allocation_id="alloc-hold",
+            capture_hold_ready=True,
+        )
+
+        stdout = await TestDrainTerminalLogs()._stream_content(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+        stderr = await TestDrainTerminalLogs()._stream_content(
+            session, history.id, "run-script", TaskLogType.STDERR
+        )
+        assert stdout == self.SUB_CADENCE_STDOUT
+        assert stderr == self.SUB_CADENCE_STDERR
+
+        verdicts = await TestNomadCaptureOutcomes._verdicts(session, history.id)
+        assert verdicts[("run-script", TaskLogType.STDOUT)] == (
+            LogCaptureStatusEnum.COMPLETE
+        )
+
+
+class TestNomadStopReleasesCaptureHold:
+    """Cover the hold release on the operator-stop path."""
+
+    @staticmethod
+    def _alloc(hold_state: str) -> dict:
+        """Return an allocation whose hold step carries ``hold_state``."""
+        return {
+            "ID": "alloc-1",
+            "TaskStates": {
+                "run-script": {"State": "dead"},
+                NomadStep.LOG_CAPTURE_HOLD: {"State": hold_state},
+            },
+        }
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_stop_releases_a_hold_that_is_still_holding(self, mock_nomad_cls):
+        """Assert stopping a task signals a hold that is holding the allocation.
+
+        Deregistering the job does not end the hold: the job goes ``dead`` while
+        the allocation stays ``running`` for the rest of the deadline. Nothing is
+        captured on this path, so the hold is pure residency and is released.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = self._alloc("running")
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        await executor._stop_task(queue_item)
+
+        mock_backend.job.deregister_job.assert_called_once_with("job-1")
+        mock_backend.client.allocation.signal_allocation.assert_called_once_with(
+            "alloc-1", "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
+        )
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_stop_still_deregisters_when_the_allocation_is_gone(
+        self, mock_nomad_cls
+    ):
+        """Assert a missing allocation does not turn a stop into an error.
+
+        The stop must remain effective even when there is no allocation left to
+        release — the deregister is the part that actually stops the task.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.side_effect = URLNotFoundNomadException(
+            MagicMock(text="gone")
+        )
+        mock_backend.job.get_allocations.return_value = []
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        await executor._stop_task(queue_item)
+
+        mock_backend.job.deregister_job.assert_called_once_with("job-1")
+        mock_backend.client.allocation.signal_allocation.assert_not_called()

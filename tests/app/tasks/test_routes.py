@@ -43,12 +43,14 @@ from app.tasks.connectivity.service import _cached_check_connectivity
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
 from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
+from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.main import tasks_app
 from app.tasks.models import (
     DispatchLock,
     ExecutionEvent,
+    LogCaptureStatusEnum,
     RUN_SCRIPT_OUTPUT_FILES_PATH,
     SYSTEM_USER,
     Task,
@@ -3066,3 +3068,218 @@ class TestSyncTaskHistoryRealSession:
         assert response.status_code == status.HTTP_200_OK
         assert recorded == [result]
         assert mock_executor.stream_file.call_args.kwargs["anonymize"] is False
+
+
+async def _record_capture(
+    session: AsyncSession,
+    history_id: int,
+    *,
+    source: str,
+    capture_status: LogCaptureStatusEnum,
+) -> None:
+    """Record one stream's capture verdict for a history."""
+    await TaskHistoryLogWriter.record_capture_status(
+        session,
+        history_id,
+        source=source,
+        stream=TaskLogType.STDOUT,
+        capture_status=capture_status,
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_log_capture_unknown_before_migration(
+    test_client, created_task_with_history
+):
+    """Assert a history with no state rows reports ``unknown`` over HTTP.
+
+    This is the pre-migration population: the bytes are gone and the stored
+    offsets cannot say whether the step was silent or lost.
+    """
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["log_capture"] == LogCaptureStatusEnum.UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_log_capture_complete_for_a_silent_step(
+    test_client, session, created_task_with_history
+):
+    """Assert a step that printed nothing reports ``complete``, not ``unknown``.
+
+    The reader contract the ticket exists for: silent and lost must be
+    distinguishable through the response, not merely in the database.
+    """
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["log_capture"] == LogCaptureStatusEnum.COMPLETE
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_log_capture_incomplete_dominates(
+    test_client, session, created_task_with_history
+):
+    """Assert one lost stream reports ``incomplete`` even beside a clean one."""
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="clean-up",
+        capture_status=LogCaptureStatusEnum.INCOMPLETE,
+    )
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["log_capture"] == LogCaptureStatusEnum.INCOMPLETE
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_log_capture_ignores_the_hold_step(
+    test_client, session, created_task_with_history
+):
+    """Assert the hold's own row cannot drag a clean task to incomplete."""
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source=NomadStep.LOG_CAPTURE_HOLD,
+        capture_status=LogCaptureStatusEnum.INCOMPLETE,
+    )
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["log_capture"] == LogCaptureStatusEnum.COMPLETE
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_log_capture_counts_a_celery_source(
+    test_client, session, created_task_with_history
+):
+    """Assert a Celery-written ``execution`` source reaches the aggregate.
+
+    The Celery executor's source is not a Nomad step name at all, so an
+    aggregate filtered by Nomad step names would report ``unknown`` for every
+    Celery-backed task while passing every Nomad test.
+    """
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="execution",
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["log_capture"] == LogCaptureStatusEnum.COMPLETE
+
+
+@pytest.mark.asyncio
+async def test_retrieve_task_history_reports_log_capture(
+    test_client, session, created_task_with_history
+):
+    """Assert the single-history route carries the verdict too.
+
+    Route wiring is per-endpoint: a list route populating the field proves
+    nothing about the retrieve route, which used to compute ``has_logs`` by
+    hand.
+    """
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        capture_status=LogCaptureStatusEnum.INCOMPLETE,
+    )
+
+    response = test_client.get(f"/history/{created_task_with_history.id}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["log_capture"] == LogCaptureStatusEnum.INCOMPLETE
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_by_task_name_reports_log_capture(
+    test_client, session, created_task_with_history
+):
+    """Assert the per-task history list carries the verdict."""
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+
+    response = test_client.get(f"/{created_task_with_history.task.name}/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["log_capture"] == LogCaptureStatusEnum.COMPLETE
+
+
+@pytest.mark.asyncio
+async def test_stop_route_reports_log_capture(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert the stop route carries the capture verdict on its response.
+
+    Route wiring is per-endpoint, and this one computed ``has_logs`` by hand
+    before it was folded into the shared helper.
+    """
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        capture_status=LogCaptureStatusEnum.INCOMPLETE,
+    )
+    mock_executor.stop_task.return_value = created_task_with_history
+
+    response = test_client.post(f"/history/{created_task_with_history.id}/stop/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["log_capture"] == LogCaptureStatusEnum.INCOMPLETE
+
+
+@pytest.mark.asyncio
+async def test_sync_route_reports_log_capture(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert the sync route carries the capture verdict on its response."""
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+
+    response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["log_capture"] == LogCaptureStatusEnum.COMPLETE

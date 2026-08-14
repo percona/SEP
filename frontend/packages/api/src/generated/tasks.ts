@@ -787,6 +787,19 @@ export interface components {
       period: components['schemas']['Period'];
     };
     JsonValue: unknown;
+    /**
+     * LogCaptureStatusEnum
+     * @description Describe how completely SEP captured a task's log stream.
+     *
+     *     Distinguishes a stream that genuinely produced nothing from one whose bytes
+     *     were lost before SEP could read them -- the stored offsets alone cannot tell
+     *     those apart, since both leave the cursors at zero.
+     *
+     *     ``UNKNOWN`` is the honest verdict where no evidence survives: rows written
+     *     before the column existed, and histories carrying no state rows at all.
+     * @enum {string}
+     */
+    LogCaptureStatusEnum: 'complete' | 'incomplete' | 'unknown';
     /** PaginatedResponse[TaskHistoryResponse] */
     PaginatedResponse_TaskHistoryResponse_: {
       /** Items */
@@ -1440,6 +1453,12 @@ export interface components {
      *         either a chunk-store row or a legacy ``tracking["task_logs"]`` blob.
      *         Populated by list/retrieve routes; defaults to ``False``.
      *     :type has_logs: bool
+     *     :param log_capture: How completely SEP captured this execution's logs,
+     *         aggregated over its state rows: any incomplete stream reports
+     *         ``"incomplete"``, else any unknown reports ``"unknown"``, else
+     *         ``"complete"``. Populated by list/retrieve routes; defaults to
+     *         ``"unknown"``, which is also what a history carrying no state rows
+     *         reports.
      *     :param display_name: A user-meaningful label derived from the task name or
      *         execution-request metadata. Read-only; computed on serialisation.
      */
@@ -1486,6 +1505,8 @@ export interface components {
       has_logs: boolean;
       /** Id */
       id: number | null;
+      /** @default unknown */
+      log_capture: components['schemas']['LogCaptureStatusEnum'];
       /** Started At */
       started_at?: string | null;
       /** @default pending */
