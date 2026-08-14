@@ -87,6 +87,7 @@ NOMAD_DEFAULT_TIMEOUT = 10
 INITIAL_LOG_OFFSET = 50
 # One started step times (stdout + stderr) when another step has StartedAt None.
 EXPECTED_GET_LOGS_STREAM_CALLS_ONE_READY_STEP = 2
+EXPECTED_HOLD_READS_UNTIL_RUNNING = 3
 MOCK_LOG_STREAM_BODY_START_MONOTONIC = 1000.0
 STALENESS_THRESHOLD_OVERRIDE = 300
 MULTI_CHUNK_LOG_FIRST_OFFSET = 17
@@ -5529,21 +5530,25 @@ class TestNomadCaptureHoldRelease:
         mock_backend.allocation.get_allocation.return_value = alloc
         return mock_backend
 
+    @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    def test_signals_the_hold_task_by_name(self, mock_nomad_cls) -> None:
+    async def test_signals_the_hold_task_by_name(self, mock_nomad_cls) -> None:
         """Assert the release targets only the hold step, not the allocation."""
         alloc = self._alloc("running")
         mock_backend = self._backend_serving(mock_nomad_cls, alloc)
         executor = _build_executor()
 
-        executor._release_capture_hold(alloc)
+        await executor._release_capture_hold(alloc)
 
         mock_backend.client.allocation.signal_allocation.assert_called_once_with(
             "alloc-1", "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
         )
 
+    @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    def test_does_not_signal_a_hold_that_has_not_started(self, mock_nomad_cls) -> None:
+    async def test_does_not_signal_a_hold_that_has_not_started(
+        self, mock_nomad_cls
+    ) -> None:
         """Assert a ``pending`` hold is left to expire rather than signalled.
 
         Between the last producer dying and the hold starting there is a window
@@ -5555,34 +5560,101 @@ class TestNomadCaptureHoldRelease:
         mock_backend = self._backend_serving(mock_nomad_cls, alloc)
         executor = _build_executor()
 
-        executor._release_capture_hold(alloc)
+        await executor._release_capture_hold(alloc)
 
         mock_backend.client.allocation.signal_allocation.assert_not_called()
 
+    @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    def test_does_not_signal_an_already_dead_hold(self, mock_nomad_cls) -> None:
+    async def test_does_not_signal_an_already_dead_hold(self, mock_nomad_cls) -> None:
         """Assert a hold that already expired is not signalled."""
         alloc = self._alloc("dead")
         mock_backend = self._backend_serving(mock_nomad_cls, alloc)
         executor = _build_executor()
 
-        executor._release_capture_hold(alloc)
+        await executor._release_capture_hold(alloc)
 
         mock_backend.client.allocation.signal_allocation.assert_not_called()
 
+    @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    def test_does_not_signal_when_no_hold_step_exists(self, mock_nomad_cls) -> None:
+    async def test_does_not_signal_when_no_hold_step_exists(
+        self, mock_nomad_cls
+    ) -> None:
         """Assert a pre-upgrade allocation is never signalled."""
         alloc = self._alloc(None)
         mock_backend = self._backend_serving(mock_nomad_cls, alloc)
         executor = _build_executor()
 
-        executor._release_capture_hold(alloc)
+        await executor._release_capture_hold(alloc)
 
         mock_backend.client.allocation.signal_allocation.assert_not_called()
 
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    def test_signals_on_the_re_read_state_not_the_stale_snapshot(
+    async def test_awaiting_hold_start_polls_until_the_step_runs(
+        self, mock_nomad_cls, mock_sleep
+    ) -> None:
+        """Assert the stop path waits for a poststop hold that has not started.
+
+        A stop deregisters and releases straight away, before Nomad has finished
+        killing the payload, so the hold is normally still ``pending`` on the
+        first read. Reading once there would forfeit the release on the very
+        path the release was added for.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.side_effect = [
+            self._alloc("pending"),
+            self._alloc("pending"),
+            self._alloc("running"),
+        ]
+        executor = _build_executor()
+
+        await executor._release_capture_hold(
+            self._alloc("pending"), await_hold_start=True
+        )
+
+        assert (
+            mock_backend.allocation.get_allocation.call_count
+            == EXPECTED_HOLD_READS_UNTIL_RUNNING
+        )
+        mock_backend.client.allocation.signal_allocation.assert_called_once_with(
+            "alloc-1", "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
+        )
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_awaiting_hold_start_stops_early_on_a_dead_hold(
+        self, mock_nomad_cls, mock_sleep
+    ) -> None:
+        """Assert polling gives up as soon as the hold is past signalling.
+
+        A hold already ``dead`` — or absent, on a pre-upgrade allocation — will
+        never become signallable, so spending the whole attempt budget on it
+        would just delay the stop.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = self._alloc("dead")
+        executor = _build_executor()
+
+        await executor._release_capture_hold(self._alloc("dead"), await_hold_start=True)
+
+        assert mock_backend.allocation.get_allocation.call_count == 1
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_signals_on_the_re_read_state_not_the_stale_snapshot(
         self, mock_nomad_cls
     ) -> None:
         """Assert a hold that started after the sync began is still released.
@@ -5596,14 +5668,15 @@ class TestNomadCaptureHoldRelease:
         mock_backend = self._backend_serving(mock_nomad_cls, self._alloc("running"))
         executor = _build_executor()
 
-        executor._release_capture_hold(stale)
+        await executor._release_capture_hold(stale)
 
         mock_backend.client.allocation.signal_allocation.assert_called_once_with(
             "alloc-1", "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
         )
 
+    @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    def test_re_read_failure_does_not_escape(self, mock_nomad_cls) -> None:
+    async def test_re_read_failure_does_not_escape(self, mock_nomad_cls) -> None:
         """Assert a failed allocation re-read degrades instead of raising.
 
         This runs at the tail of an otherwise-successful sync; letting it
@@ -5616,12 +5689,15 @@ class TestNomadCaptureHoldRelease:
         )
         executor = _build_executor()
 
-        executor._release_capture_hold(self._alloc("running"))
+        await executor._release_capture_hold(self._alloc("running"))
 
         mock_backend.client.allocation.signal_allocation.assert_not_called()
 
+    @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    def test_non_json_signal_response_does_not_escape(self, mock_nomad_cls) -> None:
+    async def test_non_json_signal_response_does_not_escape(
+        self, mock_nomad_cls
+    ) -> None:
         """Assert a non-JSON signal response is swallowed like a Nomad error.
 
         ``signal_allocation`` decodes the response body, so an empty or
@@ -5635,12 +5711,13 @@ class TestNomadCaptureHoldRelease:
         )
         executor = _build_executor()
 
-        executor._release_capture_hold(alloc)
+        await executor._release_capture_hold(alloc)
 
         mock_backend.client.allocation.signal_allocation.assert_called_once()
 
+    @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    def test_release_failure_does_not_escape(self, mock_nomad_cls) -> None:
+    async def test_release_failure_does_not_escape(self, mock_nomad_cls) -> None:
         """Assert a failed signal is swallowed rather than aborting the sync.
 
         The bytes are already persisted by the time the release runs and the
@@ -5654,7 +5731,7 @@ class TestNomadCaptureHoldRelease:
         )
         executor = _build_executor()
 
-        executor._release_capture_hold(alloc)
+        await executor._release_capture_hold(alloc)
 
         mock_backend.client.allocation.signal_allocation.assert_called_once()
 
@@ -6052,6 +6129,31 @@ class TestNomadSyncWithCaptureHold:
         result = await executor._sync_task_history(self._queue_item())
 
         assert result.status == TaskHistoryStatusEnum.STOPPED
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_operator_stop_does_not_relabel_a_failed_step(self, mock_nomad_cls):
+        """Assert a stop landing on an already-failed payload still reports FAILED.
+
+        The stop override applies to a success, never to a failure — matching
+        ``get_task_history_status_from_alloc_status``, where ``stopped`` guards
+        only the ``COMPLETE`` arm. Relabelling here would report an operator
+        action where the payload actually errored, and silence anything keyed on
+        ``FAILED``.
+        """
+        self._backend(
+            mock_nomad_cls,
+            {
+                "run-script": {"State": "dead", "Failed": True},
+                NomadStep.LOG_CAPTURE_HOLD: {"State": "running", "Failed": False},
+            },
+            job={"ID": "job-1", "Status": "dead", "Stop": True},
+        )
+        executor = _build_executor()
+
+        result = await executor._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")

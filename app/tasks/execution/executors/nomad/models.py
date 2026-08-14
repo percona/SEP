@@ -278,9 +278,7 @@ def _detect_capture_hold_ready(alloc: dict[str, Any]) -> bool:
     task_states = _alloc_task_states(alloc)
     if NomadStep.LOG_CAPTURE_HOLD not in task_states:
         return False
-    producing_steps = [
-        step for step in task_states if step != NomadStep.LOG_CAPTURE_HOLD
-    ]
+    producing_steps = [step for step in task_states if NomadStep.is_persistable(step)]
     return bool(producing_steps) and all(
         _alloc_step_state(alloc, step).get("State") == NOMAD_DEAD_TASK_STATE
         for step in producing_steps
@@ -303,7 +301,7 @@ def _status_from_step_states(alloc: dict[str, Any]) -> TaskHistoryStatusEnum:
     failed = any(
         _alloc_step_state(alloc, step).get("Failed")
         for step in task_states
-        if step != NomadStep.LOG_CAPTURE_HOLD
+        if NomadStep.is_persistable(step)
     )
     return TaskHistoryStatusEnum.FAILED if failed else TaskHistoryStatusEnum.SUCCESS
 
@@ -946,8 +944,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         allocation: the job goes ``dead`` while the allocation stays ``running``
         for the rest of the hold's deadline. Nothing is being captured on this
         path — the stop route persists no logs — so the hold is released
-        explicitly. A hold that has not started yet cannot be signalled and
-        still expires on its own deadline.
+        explicitly. The release polls for the hold to start, because the
+        poststop step only runs once Nomad has finished killing the payload:
+        signalling straight after the deregister would almost always find it
+        still ``pending``. A hold that never starts within that window still
+        expires on its own deadline.
 
         :param queue_item: The task history record for tracking this execution.
         :raises ValueError: When the task history carries no Nomad job id.
@@ -964,7 +965,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 queue_item.id,
             )
             return
-        self._release_capture_hold(alloc)
+        await self._release_capture_hold(alloc, await_hold_start=True)
 
     def _fetch_step_log_delta(
         self,
@@ -1317,8 +1318,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         jobs registered before the hold step existed and as the fallback for any
         case where Nomad skips a step rather than marking it ``dead``.
 
-        A stale-skip abort and an operator stop override the derived status on
-        either path, as they did before.
+        A stale-skip abort overrides the derived status on either path. An
+        operator stop overrides a success but never a failure, matching
+        :meth:`get_task_history_status_from_alloc_status`, where ``stopped``
+        guards only the ``COMPLETE`` arm: a payload that already failed is
+        reported ``FAILED`` even when a stop lands in the same window, so the
+        failure is not relabelled as an operator action.
 
         :param queue_item: The running task history record to stamp.
         :param alloc: The current Nomad allocation dict.
@@ -1332,10 +1337,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             self._stamp_finished_at(queue_item, alloc)
             if stale_skip:
                 queue_item.status = TaskHistoryStatusEnum.STALE
-            elif job.get("Stop", False):
-                queue_item.status = TaskHistoryStatusEnum.STOPPED
-            else:
-                queue_item.status = _status_from_step_states(alloc)
+                return
+            status = _status_from_step_states(alloc)
+            if job.get("Stop", False) and status is not TaskHistoryStatusEnum.FAILED:
+                status = TaskHistoryStatusEnum.STOPPED
+            queue_item.status = status
             return
 
         if job["Status"] == NOMAD_DEAD_JOB_STATUS:
@@ -1446,7 +1452,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 capture_hold_ready=capture_hold_ready,
             )
             if capture_hold_ready:
-                self._release_capture_hold(alloc)
+                await self._release_capture_hold(alloc)
 
     async def _record_capture_outcomes(
         self,
@@ -1518,37 +1524,60 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     allocation_epoch=alloc_epoch,
                 )
 
-    def _release_capture_hold(self, alloc: dict[str, Any]) -> None:
+    async def _release_capture_hold(
+        self, alloc: dict[str, Any], *, await_hold_start: bool = False
+    ) -> None:
         """Signal the log-capture-hold step so Nomad may collect the allocation.
 
-        Re-reads the allocation first. ``alloc`` was fetched before the terminal
-        drain, which sleeps between attempts, so by now it is seconds stale —
-        and the hold only reaches ``running`` shortly after the last producing
-        step dies. Signalling a step that has not started can be dropped, and
-        this is the only chance to release: the caller has already stamped a
-        terminal status, and the sync sweep only revisits ``RUNNING`` histories.
-        A hold that is still not running by then keeps the allocation until its
-        own deadline, which is the bound the design accepts.
+        Re-reads the allocation first, because ``alloc`` is stale by the time a
+        release is due and the hold only reaches ``running`` shortly after the
+        last producing step dies. This is the only chance to release: the caller
+        has already stamped a terminal status, and the sync sweep only revisits
+        ``RUNNING`` histories. A hold still not running when the attempts run out
+        keeps the allocation until its own deadline, which is the bound the
+        design accepts.
+
+        How much slack the re-read needs differs by caller, which is what
+        ``await_hold_start`` selects. The sync path arrives after the terminal
+        drain's sleeps, so one read almost always finds the hold running. A stop
+        arrives immediately after deregistering, *before* Nomad has killed the
+        payload, so the poststop hold is typically still ``pending`` and a single
+        read would forfeit the release it exists to issue.
 
         A failed release is not a failed capture. The bytes are already
         persisted by the time this runs, and the step self-expires at its
         deadline, so the failure is logged and the verdicts stand.
 
         :param alloc: The Nomad allocation dict read at the start of the sync.
+        :param await_hold_start: Whether to poll for a hold that has not started
+            yet, on the terminal drain's cadence. ``False`` reads once.
         """
         alloc_id = alloc["ID"]
-        try:
-            current = self.backend.allocation.get_allocation(alloc_id)
-        except BaseNomadException:
-            logger.warning(
-                "Could not re-read allocation %s to release the log-capture hold; "
-                "it will expire at its own deadline",
-                alloc_id,
-                exc_info=True,
-            )
-            return
+        attempts = (
+            max(1, self.terminal_log_drain_max_attempts) if await_hold_start else 1
+        )
+        hold_state = None
+        for attempt in range(attempts):
+            if attempt:
+                await asyncio.sleep(self.terminal_log_drain_interval)
+            try:
+                current = self.backend.allocation.get_allocation(alloc_id)
+            except BaseNomadException:
+                logger.warning(
+                    "Could not re-read allocation %s to release the log-capture "
+                    "hold; it will expire at its own deadline",
+                    alloc_id,
+                    exc_info=True,
+                )
+                return
+            hold_state = _capture_hold_step_state(current)
+            if hold_state == NOMAD_RUNNING_TASK_STATE:
+                break
+            if hold_state is None or hold_state == NOMAD_DEAD_TASK_STATE:
+                # Absent, unreadable, or already over — waiting cannot make any
+                # of those signallable.
+                break
 
-        hold_state = _capture_hold_step_state(current)
         if hold_state != NOMAD_RUNNING_TASK_STATE:
             logger.debug(
                 "Log-capture hold on allocation %s is %r rather than running; "
