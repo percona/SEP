@@ -156,6 +156,18 @@ def api_unauthenticated_client_fixture(
     sep_app.dependency_overrides = {}
 
 
+def _configure_health_report_upload(mocker) -> None:
+    """Patch ``health_report_settings`` so upload is fully configured."""
+    from pydantic import SecretStr
+
+    from app.sep.apps.report.config import health_report_settings
+
+    mocker.patch.object(health_report_settings, "upload", new=True)
+    mocker.patch.object(health_report_settings, "endpoint", "https://snow.example.com")
+    mocker.patch.object(health_report_settings, "api_key", SecretStr("local-secret"))
+    mocker.patch.object(health_report_settings, "client_id", "client-1")
+
+
 def _list_keys_by_class(client: TestClient) -> dict[str, set[str]]:
     """Locate LIST keys grouped by settings class in the admin settings payload."""
     response = client.get(SETTINGS_LIST_URL)
@@ -230,6 +242,7 @@ class TestSepConfigExportYaml:
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             SettingClassEnum.ALERTS_SETTINGS.value,
+            SettingClassEnum.HEALTH_REPORT_SETTINGS.value,
         ):
             assert set(export[setting_class]) == list_keys[setting_class]
 
@@ -246,6 +259,16 @@ class TestSepConfigExportYaml:
         assert block["BACKUP_RETENTION"] == DEFAULT_ALERT_BACKUP_RETENTION
         assert block["ALERT_FOLDER_NAME"] == "SEP Alerts"
 
+    async def test_health_report_settings_block_exported(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Export the ``HealthReportSettings`` section with its fields."""
+        export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
+        list_keys = _list_keys_by_class(api_admin_client)
+        block = export[SettingClassEnum.HEALTH_REPORT_SETTINGS.value]
+        assert set(block) == list_keys[SettingClassEnum.HEALTH_REPORT_SETTINGS.value]
+        assert block["upload"] is False
+
     async def test_secret_fields_match_list_projection(
         self, api_admin_client: TestClient
     ) -> None:
@@ -260,24 +283,11 @@ class TestSepConfigExportYaml:
         self, api_admin_client: TestClient, mocker
     ) -> None:
         """Render scalar and nested ``SecretStr`` values as ``**********``."""
-        from pydantic import SecretStr
-
-        from app.sep.config import HealthReportSettings, sep_settings
-
-        mocker.patch.object(
-            sep_settings,
-            "HEALTH_REPORT",
-            HealthReportSettings(
-                upload=True,
-                endpoint="https://snow.example.com",
-                api_key=SecretStr("local-secret"),
-                client_id="client-1",
-            ),
-        )
+        _configure_health_report_upload(mocker)
         yaml_text = api_admin_client.get(EXPORT_URL).text
         export = yaml.safe_load(yaml_text)
-        sep_block = export[SettingClassEnum.SEP_SETTINGS.value]
-        assert sep_block["HEALTH_REPORT"]["api_key"] == REDACTED_SECRET
+        health_block = export[SettingClassEnum.HEALTH_REPORT_SETTINGS.value]
+        assert health_block["api_key"] == REDACTED_SECRET
         assert (
             export[SettingClassEnum.TASKS_SETTINGS.value]["API_SECRET"]
             == REDACTED_SECRET
@@ -567,6 +577,7 @@ class TestSepConfigExportTasksFanOut:
 SEP_CLASS = SettingClassEnum.SEP_SETTINGS.value
 SNIPPETS_CLASS = SettingClassEnum.SNIPPETS_SETTINGS.value
 ALERTS_CLASS = SettingClassEnum.ALERTS_SETTINGS.value
+HEALTH_REPORT_CLASS = SettingClassEnum.HEALTH_REPORT_SETTINGS.value
 SETTINGS_CLASS = SettingClassEnum.SETTINGS.value
 ALERT_CLASS = SettingClassEnum.ALERT_SETTINGS.value
 TASKS_CLASS = SettingClassEnum.TASKS_SETTINGS.value
@@ -574,6 +585,7 @@ FULL_EXPORT_CLASSES = {
     SEP_CLASS,
     SNIPPETS_CLASS,
     ALERTS_CLASS,
+    HEALTH_REPORT_CLASS,
     SETTINGS_CLASS,
     ALERT_CLASS,
     TASKS_CLASS,
@@ -865,27 +877,14 @@ class TestSepConfigExportFilter:
         self, api_admin_client: TestClient, mocker
     ) -> None:
         """Keep the value redacted in the YAML when filtering to a secret-bearing field."""
-        from pydantic import SecretStr
-
-        from app.sep.config import HealthReportSettings, sep_settings
-
-        mocker.patch.object(
-            sep_settings,
-            "HEALTH_REPORT",
-            HealthReportSettings(
-                upload=True,
-                endpoint="https://snow.example.com",
-                api_key=SecretStr("local-secret"),
-                client_id="client-1",
-            ),
-        )
+        _configure_health_report_upload(mocker)
         response = api_admin_client.get(
-            EXPORT_URL, params={"keys": f"{SEP_CLASS}.HEALTH_REPORT"}
+            EXPORT_URL, params={"keys": HEALTH_REPORT_CLASS}
         )
         assert response.status_code == status.HTTP_200_OK
         assert "local-secret" not in response.text
         payload = yaml.safe_load(response.text)
-        assert payload[SEP_CLASS]["HEALTH_REPORT"]["api_key"] == REDACTED_SECRET
+        assert payload[HEALTH_REPORT_CLASS]["api_key"] == REDACTED_SECRET
 
     async def test_class_segment_tolerates_incidental_whitespace(
         self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
