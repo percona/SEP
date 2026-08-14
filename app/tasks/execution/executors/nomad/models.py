@@ -30,7 +30,7 @@ from enum import StrEnum
 from functools import cached_property
 from itertools import product
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 
 from aiohttp import (
     ClientError,
@@ -103,6 +103,23 @@ _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
 
 _ANONYMIZED_STEPS: frozenset[NomadStep] = NomadStep.anonymized()
+
+
+class StepLogDelta(NamedTuple):
+    """Carry one fetched log delta and the advanced cursor metadata.
+
+    :param text: The anonymized text fetched this cycle.
+    :param nomad_offset: The advanced raw-byte Nomad cursor for the next fetch.
+    :param producer_offset: The advanced post-anonymization byte cursor.
+    :param withheld_bytes: Raw-byte count withheld this cycle.
+    :param fetch_failed: Whether the underlying Nomad stream fetch failed.
+    """
+
+    text: str
+    nomad_offset: int
+    producer_offset: int
+    withheld_bytes: int
+    fetch_failed: bool
 
 
 def _should_anonymize(step: str, anonymize_entities: set[PIIEntity] | None) -> bool:
@@ -977,7 +994,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         anonymize_entities: set[PIIEntity] | None,
         *,
         flush_partial: bool = False,
-    ) -> tuple[str, int, int, int, bool]:
+    ) -> StepLogDelta:
         """Fetch the delta bytes and advanced offsets for a single step/log_type.
 
         The Nomad offset tracks the raw (pre-anonymization) byte position in
@@ -1014,9 +1031,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             and ``step1`` content. When ``None``, no anonymization is performed.
         :param flush_partial: When ``True``, emit the trailing partial line
             instead of withholding it (terminal flush).
-        :return: ``(delta_text, new_nomad_offset, new_producer_offset,
-            withheld_bytes, fetch_failed)`` — the anonymized bytes fetched this
-            cycle, the advanced Nomad-space offset for the next fetch, the
+        :return: A :class:`StepLogDelta` carrying the anonymized bytes fetched
+            this cycle, the advanced Nomad-space offset for the next fetch, the
             advanced producer-space offset the writer should persist, the raw
             byte length of the partial line withheld this cycle (``0`` when
             nothing was withheld, including after a forced ceiling flush), and
@@ -1043,7 +1059,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 alloc_id,
                 step,
             )
-            return "", nomad_start_offset, producer_start_offset, 0, True
+            return StepLogDelta(
+                "",
+                nomad_start_offset,
+                producer_start_offset,
+                0,
+                True,
+            )
         pieces = []
         nomad_offset = nomad_start_offset
         for raw_log_data_item in (
@@ -1079,7 +1101,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             complete, anonymize_entities if anonymizing else None
         )
         producer_offset = producer_start_offset + len(delta.encode("utf-8"))
-        return delta, nomad_offset, producer_offset, withheld, False
+        return StepLogDelta(
+            delta,
+            nomad_offset,
+            producer_offset,
+            withheld,
+            False,
+        )
 
     def get_logs_for_allocation(
         self,
@@ -1147,22 +1175,20 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             fetch_failed_key = f"{log_type}_fetch_failed"
             nomad_start_offset = task_logs[step].get(last_offset_key) or 0
             producer_start_offset = task_logs[step].get(producer_offset_key) or 0
-            delta, new_nomad_offset, new_producer_offset, withheld, fetch_failed = (
-                self._fetch_step_log_delta(
-                    alloc_id,
-                    step,
-                    log_type,
-                    nomad_start_offset,
-                    producer_start_offset,
-                    anonymize_entities,
-                    flush_partial=flush_partial,
-                )
+            step_delta = self._fetch_step_log_delta(
+                alloc_id,
+                step,
+                log_type,
+                nomad_start_offset,
+                producer_start_offset,
+                anonymize_entities,
+                flush_partial=flush_partial,
             )
-            task_logs[step][last_offset_key] = new_nomad_offset
-            task_logs[step][producer_offset_key] = new_producer_offset
-            task_logs[step][withheld_key] = withheld
-            task_logs[step][fetch_failed_key] = fetch_failed
-            task_logs[step][log_type] = delta
+            task_logs[step][last_offset_key] = step_delta.nomad_offset
+            task_logs[step][producer_offset_key] = step_delta.producer_offset
+            task_logs[step][withheld_key] = step_delta.withheld_bytes
+            task_logs[step][fetch_failed_key] = step_delta.fetch_failed
+            task_logs[step][log_type] = step_delta.text
         return task_logs
 
     def _resolve_running_allocation(
