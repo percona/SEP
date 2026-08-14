@@ -52,24 +52,51 @@ down_revision: Union[str, None] = "6a19d56d7985"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+_CAPTURE_STATUS_MEMBERS = ("COMPLETE", "INCOMPLETE", "UNKNOWN")
+_CAPTURE_STATUS_CHECK_NAME = "logcapturestatusenum"
+_CAPTURE_STATUS_CHECK_SQL = "capture_status IN ({})".format(
+    ", ".join(f"'{member}'" for member in _CAPTURE_STATUS_MEMBERS)
+)
+
+
+def _capture_status_type() -> sa.Enum:
+    """Build the non-native ``capture_status`` enum column type.
+
+    The CHECK constraint is created explicitly (``create_constraint=False``)
+    rather than inline: SQLite's ``ADD COLUMN`` skips the enum's implicit CHECK
+    with only a warning, so relying on the type would leave a fresh SQLite DB
+    without it while PostgreSQL got one. The explicit constraint reuses the same
+    name (``logcapturestatusenum``) and ``IN`` clause that ``TaskHistoryLogState``
+    emits, so a DB built from migrations matches one built from
+    ``metadata.create_all``.
+
+    :return: The non-native enum type, with constraint creation deferred.
+    """
+    return sa.Enum(
+        *_CAPTURE_STATUS_MEMBERS,
+        name=_CAPTURE_STATUS_CHECK_NAME,
+        native_enum=False,
+        create_constraint=False,
+    )
+
 
 def upgrade() -> None:
     op.add_column(
         "taskhistory_log_state",
         sa.Column(
             "capture_status",
-            sa.Enum(
-                "COMPLETE",
-                "INCOMPLETE",
-                "UNKNOWN",
-                name="logcapturestatusenum",
-                native_enum=False,
-            ),
+            _capture_status_type(),
             nullable=False,
             server_default="UNKNOWN",
         ),
     )
+    with op.batch_alter_table("taskhistory_log_state") as batch_op:
+        batch_op.create_check_constraint(
+            _CAPTURE_STATUS_CHECK_NAME, _CAPTURE_STATUS_CHECK_SQL
+        )
 
 
 def downgrade() -> None:
-    op.drop_column("taskhistory_log_state", "capture_status")
+    with op.batch_alter_table("taskhistory_log_state") as batch_op:
+        batch_op.drop_constraint(_CAPTURE_STATUS_CHECK_NAME, type_="check")
+        batch_op.drop_column("capture_status")

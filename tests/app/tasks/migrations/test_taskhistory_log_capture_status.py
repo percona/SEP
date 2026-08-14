@@ -21,6 +21,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.tasks.config import tasks_settings
@@ -40,6 +41,8 @@ _INSERT_STATE_ROW = (
     "VALUES ('2026-01-01 00:00:00', ?, ?, 'STDOUT', 0, ?, 0, 0, X'', "
     "'2026-01-01 00:00:00', 0)"
 )
+
+_SET_CAPTURE_STATUS = "UPDATE taskhistory_log_state SET capture_status = ?"
 
 # The signature this defect leaves behind: cursors never advanced because the
 # allocation was collected before the sync read it.
@@ -108,6 +111,36 @@ def test_pre_existing_rows_are_classified_unknown(tasks_alembic_config):
         _STRANDED_PRODUCER_OFFSET,
         _DRAINED_PRODUCER_OFFSET,
     ]
+
+
+def test_upgrade_constrains_capture_status_to_the_enum_domain(tasks_alembic_config):
+    """Assert the migrated column carries the enum's CHECK constraint.
+
+    SQLite skips the implicit CHECK a non-native ``sa.Enum`` would contribute to
+    ``ADD COLUMN``, warning rather than failing, so without an explicit
+    constraint a DB built from migrations would accept values one built from the
+    model's metadata rejects. The rejected value here is the member *value*,
+    which is exactly the mistake the name-persisting column invites.
+    """
+    cfg, sync_url = tasks_alembic_config
+    command.upgrade(cfg, "head")
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                _INSERT_STATE_ROW, (1, "run-script", _DRAINED_PRODUCER_OFFSET)
+            )
+            conn.exec_driver_sql(
+                _SET_CAPTURE_STATUS, (LogCaptureStatusEnum.COMPLETE.name,)
+            )
+
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            conn.exec_driver_sql(
+                _SET_CAPTURE_STATUS, (LogCaptureStatusEnum.COMPLETE.value,)
+            )
+    finally:
+        engine.dispose()
 
 
 def test_downgrade_drops_the_column(tasks_alembic_config):

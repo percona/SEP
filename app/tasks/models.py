@@ -1007,7 +1007,7 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
     )
     capture_status: LogCaptureStatusEnum = SQLField(
         sa_column=Column(
-            EnumField(LogCaptureStatusEnum, native_enum=False),
+            EnumField(LogCaptureStatusEnum, native_enum=False, create_constraint=True),
             nullable=False,
             # ``EnumField`` persists member *names*, so the server default must
             # be spelled as one: a value here writes a string the mapped type
