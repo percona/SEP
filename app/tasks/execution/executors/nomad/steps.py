@@ -51,21 +51,29 @@ class NomadStep(StrEnum):
     def is_persistable(cls, step: str) -> bool:
         """Return whether SEP persists ``step``'s streams and gates release on it.
 
-        ``LOG_CAPTURE_HOLD`` produces no task output of its own and exists only
-        to keep the allocation readable, so draining it would gate release on a
-        stream that only ends when the hold itself does.
+        Tests against :data:`NON_PERSISTABLE_STEPS`, which is also what the
+        capture-status aggregate filters on in SQL. Sharing one definition is
+        what keeps a second non-producing step from being excluded here and
+        silently counted there.
 
-        Takes a raw name rather than a member, and admits every name but the
-        hold: a Nomad allocation's task states are keyed by whatever the job
+        Takes a raw name rather than a member, and admits every name outside
+        that set: a Nomad allocation's task states are keyed by whatever the job
         spec declared, so a step this enum does not know is an unrecognized
         *producer* — excluding it would silently drop its output from the live
         viewer and leave its capture unclassified.
 
         :param step: The Nomad task (step) name to classify.
-        :return: ``True`` for every step but the log-capture hold.
+        :return: ``True`` for every step SEP treats as a log producer.
         """
-        return step != cls.LOG_CAPTURE_HOLD
+        return step not in NON_PERSISTABLE_STEPS
 
+
+#: Steps that emit no task output of their own. ``LOG_CAPTURE_HOLD`` exists only
+#: to keep the allocation readable, so draining it would gate release on a stream
+#: that only ends when the hold itself does. Read by both
+#: :meth:`NomadStep.is_persistable` and the capture-status aggregate's SQL
+#: filter, so the two cannot diverge.
+NON_PERSISTABLE_STEPS: frozenset[str] = frozenset({NomadStep.LOG_CAPTURE_HOLD})
 
 NOMAD_STEP_ANONYMIZE: dict[NomadStep, bool] = {
     NomadStep.RUN_SCRIPT: True,

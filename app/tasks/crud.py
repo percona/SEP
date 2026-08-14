@@ -35,7 +35,7 @@ from app.core.exceptions import HTTPConflictException
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import DatabaseDialect
-from app.tasks.execution.executors.nomad.steps import NomadStep
+from app.tasks.execution.executors.nomad.steps import NON_PERSISTABLE_STEPS
 from app.tasks.logs.constants import TAIL_SCAN_MAX_CHUNKS
 from app.tasks.models import (
     CAPTURE_STATUS_PRECEDENCE,
@@ -1212,8 +1212,9 @@ class TaskHistoryLogStateManager(BaseManager):
         defaulting to a verdict here; the caller renders a missing key as
         ``UNKNOWN``.
 
-        Rows are filtered by *excluding* the hold step rather than by selecting
-        the Nomad steps SEP drains: ``source`` also carries non-Nomad producers
+        Rows are filtered by *excluding* :data:`NON_PERSISTABLE_STEPS` — the same
+        set :meth:`NomadStep.is_persistable` tests — rather than by selecting the
+        Nomad steps SEP drains: ``source`` also carries non-Nomad producers
         (the Celery executor writes ``"execution"``, legacy rows carry
         ``"step1"``), and selecting by Nomad step name would drop every one of
         them and report ``UNKNOWN`` for tasks whose capture is known-complete.
@@ -1233,7 +1234,7 @@ class TaskHistoryLogStateManager(BaseManager):
             )
             .where(
                 col(TaskHistoryLogState.task_history_id).in_(task_history_ids),
-                col(TaskHistoryLogState.source) != NomadStep.LOG_CAPTURE_HOLD,
+                col(TaskHistoryLogState.source).notin_(NON_PERSISTABLE_STEPS),
             )
             .distinct()
         )
