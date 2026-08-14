@@ -642,38 +642,26 @@ class TaskHistoryLogWriter:
         """Insert or update the state row and return whether we won the race.
 
         :param session: The SQLAlchemy asynchronous session.
-        :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier.
-        :type task_history_id: int
         :param source: The execution step name.
-        :type source: str
         :param stream: The log stream.
-        :type stream: TaskLogType
         :param is_new: Whether the state row was freshly built (``True``) or
             loaded from the DB (``False``).
-        :type is_new: bool
         :param new_version: The bumped version counter to write.
-        :type new_version: int
         :param old_version: The version observed on the loaded state row, or
             ``0`` for a new row.
-        :type old_version: int
         :param persisted_offset: The advanced user-facing persisted offset.
-        :type persisted_offset: int
         :param producer_offset: The producer-relative offset to persist.
-        :type producer_offset: int
         :param nomad_offset: The raw Nomad-space fetch offset to persist.
         :param allocation_epoch: The Nomad ``CreateIndex`` to persist.
         :param staging: The remaining staging buffer to persist.
-        :type staging: bytes
         :param now: The update timestamp.
-        :type now: datetime
         :param capture_status: The capture verdict to write, or ``None`` to
             leave the stored verdict untouched on an update and take the
             column's own default on an insert. Omitting it is what keeps a
             byte-appending write from downgrading a stream already recorded
             ``COMPLETE``.
         :return: Whether the insert or optimistic-locked update succeeded.
-        :rtype: bool
         """
         if is_new:
             insert_verdict = (

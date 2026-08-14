@@ -1155,7 +1155,7 @@ async def test_sync_task_history_populates_has_logs(
     Covers both the already-finished early-return branch and the RUNNING
     full-sync path. Regression: the sync endpoint short-circuits when the task
     has already finished. Before the fix, the early return skipped
-    ``_populate_has_logs`` so the response always had ``has_logs=False`` even
+    ``_populate_log_metadata`` so the response always had ``has_logs=False`` even
     when chunks existed, which broke the API contract relative to
     ``GET /history/{id}``.
     """

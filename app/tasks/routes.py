@@ -719,6 +719,10 @@ async def create_task_history(session: SessionDep, task: TaskHistory) -> TaskHis
     Neither ``has_logs`` nor ``log_capture`` is populated on this response — a
     row that was just created has no chunk-store entry, legacy tracking blob or
     capture verdict yet, so both fall back to their serialization defaults.
+
+    :param session: The SQLAlchemy asynchronous session.
+    :param task: The task history to persist.
+    :return: The saved task history record.
     """
     logger.debug("Creating task history %s", task.name)
     return await TaskHistoryManager.save(session, task)
