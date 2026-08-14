@@ -249,8 +249,10 @@ class TaskHistoryLogWriter:
         Creates the state row when none exists, which is what lets a reader
         tell a stream that produced no bytes from one whose bytes were lost:
         :meth:`append` returns early for a fresh empty stream, so without this
-        the most common case leaves no row at all. Offsets and staging are
-        carried through untouched — only the verdict is written.
+        the most common case leaves no row at all. The offsets and the staging
+        bytes are re-written unchanged; the row's audit columns and ``version``
+        advance as they do on any state write, so this is not a free-standing
+        column update.
 
         :param session: The SQLAlchemy asynchronous session. The writer commits
             on success so callers are responsible only for rollback on failure.
@@ -293,39 +295,22 @@ class TaskHistoryLogWriter:
                 if allocation_epoch is not None
                 else state.allocation_epoch
             )
-            now = utc_now()
-
-            if is_new:
-                applied = await TaskHistoryLogStateManager.insert_row_idempotent(
-                    session,
-                    task_history_id=task_history_id,
-                    source=source,
-                    stream=stream,
-                    persisted_offset=state.persisted_offset,
-                    producer_offset=state.producer_offset,
-                    nomad_offset=state.nomad_offset,
-                    allocation_epoch=new_allocation_epoch,
-                    staging=state.staging,
-                    version=state.version + 1,
-                    now=now,
-                    capture_status=capture_status,
-                )
-            else:
-                applied = await TaskHistoryLogStateManager.update_row_if_version(
-                    session,
-                    task_history_id=task_history_id,
-                    source=source,
-                    stream=stream,
-                    old_version=state.version,
-                    new_version=state.version + 1,
-                    persisted_offset=state.persisted_offset,
-                    producer_offset=state.producer_offset,
-                    nomad_offset=state.nomad_offset,
-                    allocation_epoch=new_allocation_epoch,
-                    staging=state.staging,
-                    now=now,
-                    capture_status=capture_status,
-                )
+            applied = await cls._persist_state(
+                session=session,
+                task_history_id=task_history_id,
+                source=source,
+                stream=stream,
+                is_new=is_new,
+                new_version=state.version + 1,
+                old_version=state.version,
+                persisted_offset=state.persisted_offset,
+                producer_offset=state.producer_offset,
+                nomad_offset=state.nomad_offset,
+                allocation_epoch=new_allocation_epoch,
+                staging=state.staging,
+                now=utc_now(),
+                capture_status=capture_status,
+            )
 
             if applied:
                 await session.commit()
@@ -652,6 +637,7 @@ class TaskHistoryLogWriter:
         allocation_epoch: int,
         staging: bytes,
         now: datetime,
+        capture_status: LogCaptureStatusEnum | None = None,
     ) -> bool:
         """Insert or update the state row and return whether we won the race.
 
@@ -681,10 +667,18 @@ class TaskHistoryLogWriter:
         :type staging: bytes
         :param now: The update timestamp.
         :type now: datetime
+        :param capture_status: The capture verdict to write, or ``None`` to
+            leave the stored verdict untouched on an update and take the
+            column's own default on an insert. Omitting it is what keeps a
+            byte-appending write from downgrading a stream already recorded
+            ``COMPLETE``.
         :return: Whether the insert or optimistic-locked update succeeded.
         :rtype: bool
         """
         if is_new:
+            insert_verdict = (
+                {"capture_status": capture_status} if capture_status is not None else {}
+            )
             return await TaskHistoryLogStateManager.insert_row_idempotent(
                 session,
                 task_history_id=task_history_id,
@@ -697,6 +691,7 @@ class TaskHistoryLogWriter:
                 staging=staging,
                 version=new_version,
                 now=now,
+                **insert_verdict,
             )
         return await TaskHistoryLogStateManager.update_row_if_version(
             session,
@@ -711,6 +706,7 @@ class TaskHistoryLogWriter:
             allocation_epoch=allocation_epoch,
             staging=staging,
             now=now,
+            capture_status=capture_status,
         )
 
     @classmethod
