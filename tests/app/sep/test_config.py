@@ -39,7 +39,6 @@ from app.sep.config import (
     AppDrainSettings,
     CookieOptions,
     DeliveryPlanInputs,
-    HealthReportSettings,
     materialize_delivery_plan_inputs,
     prefixed_cookie_path,
     sep_settings,
@@ -331,33 +330,6 @@ class TestDiagnosticsDeliveryInputs:
             )
 
 
-class TestHealthReportEndpoint:
-    """Cover endpoint normalization on the ``HEALTH_REPORT`` block."""
-
-    @pytest.mark.parametrize(
-        ("configured", "expected"),
-        [
-            (
-                "https://intake.example.com/v1/upload/",
-                "https://intake.example.com/v1/upload/",
-            ),
-            (
-                "https://intake.example.com/v1/upload",
-                "https://intake.example.com/v1/upload",
-            ),
-            ("https://intake.example.com/", "https://intake.example.com"),
-            ("https://intake.example.com", "https://intake.example.com"),
-        ],
-    )
-    def test_preserves_a_path_trailing_slash(self, configured, expected):
-        """Keep a path's trailing slash, trimming only a bare origin's."""
-        assert HealthReportSettings(endpoint=configured).endpoint == expected
-
-    def test_empty_endpoint_becomes_none(self):
-        """Leave a blank endpoint unset rather than normalizing it."""
-        assert HealthReportSettings(endpoint="   ").endpoint is None
-
-
 class TestFooterTemplate:
     """Define tests for the FOOTER_TEMPLATE setting."""
 
@@ -382,6 +354,14 @@ class TestFooterTemplate:
         tmpl = Template("custom $summary")
         settings = SEPSettings(FOOTER_TEMPLATE=tmpl)
         assert settings.FOOTER_TEMPLATE is tmpl
+
+
+class TestHealthReportFieldRemoved:
+    """``SEPSettings`` no longer mounts the ``HEALTH_REPORT`` section."""
+
+    def test_sep_settings_has_no_health_report_field(self):
+        """Assert ``SEPSettings`` no longer declares a ``HEALTH_REPORT`` field."""
+        assert "HEALTH_REPORT" not in SEPSettings.model_fields
 
 
 class TestDeprecatedPMMRemoved:
