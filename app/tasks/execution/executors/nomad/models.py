@@ -203,6 +203,18 @@ def _alloc_step_state(alloc: dict[str, Any], step: str) -> dict[str, Any]:
     return state or {}
 
 
+def _alloc_step_sort_key(alloc: dict[str, Any], step: str) -> tuple[Any, Any, str]:
+    """Return the ordering key for one step within an allocation's task states.
+
+    :param alloc: The allocation details from Nomad.
+    :param step: The Nomad task (step) name to key.
+    :return: The step's start time, finish time and name, with ``"9"`` standing
+        in for an absent timestamp so an unstarted step sorts last.
+    """
+    state = _alloc_step_state(alloc, step)
+    return state.get("StartedAt") or "9", state.get("FinishedAt") or "9", step
+
+
 def _detect_stale_skip(task_states: dict[str, Any] | None) -> bool:
     """Return ``True`` when the ``check-staleness`` prestart task exited 75.
 
@@ -745,11 +757,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if task_states := _alloc_task_states(alloc):
             alloc["TaskStates"] = sort_dict(
                 task_states,
-                lambda item: (
-                    item[1].get("StartedAt") or "9",
-                    item[1].get("FinishedAt") or "9",
-                    item[0],
-                ),
+                lambda item: _alloc_step_sort_key(alloc, item[0]),
             )
         return alloc
 
@@ -957,7 +965,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 task_logs[step][key] = value
         task_states = _alloc_task_states(alloc)
         for step, log_type in product(task_states, TaskLogType):
-            if task_states[step].get("StartedAt") is None:
+            if _alloc_step_state(alloc, step).get("StartedAt") is None:
                 continue
             last_offset_key = f"{log_type}_last_offset"
             producer_offset_key = f"{log_type}_producer_offset"

@@ -1064,6 +1064,36 @@ class TestGetLastAllocation:
         result = executor.get_last_allocation(job_id="job-1")
         assert result == {"ID": "alloc-1", "JobID": "job-1"}
 
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_last_allocation_non_mapping_step_state(
+        self, mock_nomad_cls, caplog: pytest.LogCaptureFixture
+    ):
+        """Assert a non-mapping task state still sorts instead of raising.
+
+        This read walks the ``FollowupEvalID`` reschedule chain, so raising here
+        wedges the sync and stop paths the container guard already protects. A
+        step with no usable timestamps sorts last, behind the well-formed one.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocations.get_allocations.return_value = [
+            {
+                "ID": "alloc-1",
+                "JobID": "job-1",
+                "TaskStates": {
+                    "broken-step": "not a mapping",
+                    "step1": {"StartedAt": "1", "FinishedAt": "2"},
+                },
+            }
+        ]
+
+        executor = _build_executor()
+        with caplog.at_level(logging.WARNING):
+            result = executor.get_last_allocation(job_id="job-1")
+
+        assert list(result["TaskStates"]) == ["step1", "broken-step"]
+        assert "non-mapping task state" in caplog.text
+
 
 class TestDispatchTask:
     """Test NomadExecutor.dispatch_task."""
@@ -2212,6 +2242,29 @@ class TestGetLogsForAllocation:
         executor = _build_executor()
         result = executor.get_logs_for_allocation({"ID": "alloc-1"})
         assert dict(result) == {}
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_get_logs_for_allocation_non_mapping_step_state(
+        self, mock_nomad_cls, caplog: pytest.LogCaptureFixture
+    ):
+        """Assert a non-mapping task state is skipped rather than raising.
+
+        Reading ``StartedAt`` off it directly would raise ``AttributeError`` on
+        the Celery sync path, which is the failure mode the container guard
+        already removes one level up.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        executor = _build_executor()
+
+        with caplog.at_level(logging.WARNING):
+            result = executor.get_logs_for_allocation(
+                {"ID": "alloc-1", "TaskStates": {"broken-step": "not a mapping"}}
+            )
+
+        assert dict(result) == {}
+        mock_backend.client.stream_logs.stream.assert_not_called()
+        assert "non-mapping task state" in caplog.text
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_get_logs_for_allocation_exception_handling(self, mock_nomad_cls):
