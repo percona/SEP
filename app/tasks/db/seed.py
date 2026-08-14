@@ -90,14 +90,14 @@ _CHECK_STALENESS_TASK = {
 
 _STALENESS_META_OPTIONAL = ["scheduled_at", "staleness_threshold_seconds"]
 
-# POSIX sh body of the log-capture hold: keep the allocation non-terminal after
-# the payload exits so Nomad cannot garbage-collect logs SEP has not read yet,
-# until either SEP signals the step or the deadline elapses.
-#
-# ``sleep`` is backgrounded and waited on because a POSIX shell runs traps only
-# between foreground commands -- ``trap ...; sleep N`` would ignore the signal
-# for the full N seconds, which is the whole duration the trap exists to cut
-# short.
+#: POSIX sh body of the log-capture hold: keep the allocation non-terminal after
+#: the payload exits so Nomad cannot garbage-collect logs SEP has not read yet,
+#: until either SEP signals the step or the deadline elapses.
+#:
+#: ``sleep`` is backgrounded and waited on because a POSIX shell runs traps only
+#: between foreground commands -- ``trap ...; sleep N`` would ignore the signal
+#: for the full N seconds, which is the whole duration the trap exists to cut
+#: short.
 LOG_CAPTURE_HOLD_SHELL = (
     'trap "exit 0" TERM INT; '
     "hold=$NOMAD_META_log_capture_hold_seconds; "
