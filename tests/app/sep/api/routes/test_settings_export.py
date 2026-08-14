@@ -156,6 +156,18 @@ def api_unauthenticated_client_fixture(
     sep_app.dependency_overrides = {}
 
 
+def _configure_health_report_upload(mocker) -> None:
+    """Patch ``health_report_settings`` so upload is fully configured."""
+    from pydantic import SecretStr
+
+    from app.sep.apps.report.config import health_report_settings
+
+    mocker.patch.object(health_report_settings, "upload", new=True)
+    mocker.patch.object(health_report_settings, "endpoint", "https://snow.example.com")
+    mocker.patch.object(health_report_settings, "api_key", SecretStr("local-secret"))
+    mocker.patch.object(health_report_settings, "client_id", "client-1")
+
+
 def _list_keys_by_class(client: TestClient) -> dict[str, set[str]]:
     """Locate LIST keys grouped by settings class in the admin settings payload."""
     response = client.get(SETTINGS_LIST_URL)
@@ -271,18 +283,7 @@ class TestSepConfigExportYaml:
         self, api_admin_client: TestClient, mocker
     ) -> None:
         """Render scalar and nested ``SecretStr`` values as ``**********``."""
-        from pydantic import SecretStr
-
-        from app.sep.apps.report.config import health_report_settings
-
-        mocker.patch.object(health_report_settings, "upload", new=True)
-        mocker.patch.object(
-            health_report_settings, "endpoint", "https://snow.example.com"
-        )
-        mocker.patch.object(
-            health_report_settings, "api_key", SecretStr("local-secret")
-        )
-        mocker.patch.object(health_report_settings, "client_id", "client-1")
+        _configure_health_report_upload(mocker)
         yaml_text = api_admin_client.get(EXPORT_URL).text
         export = yaml.safe_load(yaml_text)
         health_block = export[SettingClassEnum.HEALTH_REPORT_SETTINGS.value]
@@ -876,18 +877,7 @@ class TestSepConfigExportFilter:
         self, api_admin_client: TestClient, mocker
     ) -> None:
         """Keep the value redacted in the YAML when filtering to a secret-bearing field."""
-        from pydantic import SecretStr
-
-        from app.sep.apps.report.config import health_report_settings
-
-        mocker.patch.object(health_report_settings, "upload", new=True)
-        mocker.patch.object(
-            health_report_settings, "endpoint", "https://snow.example.com"
-        )
-        mocker.patch.object(
-            health_report_settings, "api_key", SecretStr("local-secret")
-        )
-        mocker.patch.object(health_report_settings, "client_id", "client-1")
+        _configure_health_report_upload(mocker)
         response = api_admin_client.get(
             EXPORT_URL, params={"keys": HEALTH_REPORT_CLASS}
         )

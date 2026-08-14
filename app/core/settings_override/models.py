@@ -33,7 +33,8 @@ class SettingClassEnum(StrEnum):
 
     The wired classes are ``SEPSettings``, ``TasksSettings``,
     ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
-    ``AlertsSettings``, ``AnonymizerSettings`` and ``InventorySettings``.
+    ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings`` and
+    ``InventorySettings``.
 
     To wire a new settings class:
 

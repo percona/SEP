@@ -17,7 +17,7 @@
 
 The section is read straight off YAML/env rather than mounted as a field on
 ``SEPSettings``: importing this module runs the report package ``__init__``, which
-pulls in the app definition and, transitively, ``sep_settings`` -- so a field
+pulls in the app definition and, transitively, ``sep_settings`` — so a field
 default typed with :class:`HealthReportSettings` would cycle while
 ``SEPSettings`` is still being constructed. Consumers import
 :data:`health_report_settings` at call time (periodic task schedules, Celery
@@ -30,17 +30,17 @@ __all__ = [
     "health_report_settings",
 ]
 
+from collections.abc import Callable
 from typing import Any, ClassVar
 from urllib.parse import urlparse
 
-from pydantic import field_validator, model_validator, PositiveInt, SecretStr
+from pydantic import field_validator, PositiveInt, SecretStr
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule, Period
 from app.core.config import BaseYamlSettings
-from app.core.models import BaseLowercaseModel
+from app.core.models import BaseLowercaseModel, BaseTransformFieldsModel
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.utils import transform_dict_keys
 from app.core.utils.fields import StrRelativePath
 from app.core.utils.strings import lower_if_string
 
@@ -49,20 +49,13 @@ class ReportScheduleEntry(BaseLowercaseModel):
     """Define a single scheduled report generation with its own cadence and parameters.
 
     :param schedule: When to run (interval or crontab).
-    :type schedule: IntervalSchedule | CrontabSchedule
     :param since: Prometheus-style start offset for the report window.
-    :type since: str
     :param until: Prometheus-style end offset for the report window.
-    :type until: str
     :param full: Whether to generate a full report.
-    :type full: bool
     :param refresh: Re-run advisor checks before collecting results.
-    :type refresh: bool
     :param sections: Optional list of report sections to include.
-    :type sections: list[str] | None
     :param upload: Upload the generated report to ServiceNow after generation.
         Requires global upload credentials to be configured.
-    :type upload: bool
     """
 
     schedule: IntervalSchedule | CrontabSchedule
@@ -74,38 +67,32 @@ class ReportScheduleEntry(BaseLowercaseModel):
     upload: bool = False
 
 
-class HealthReportSettings(BaseYamlSettings):
-    """Configuration for the Health & Security Report plugin.
+class HealthReportSettings(BaseYamlSettings, BaseTransformFieldsModel):
+    """Define configuration options for the Health & Security Report plugin.
 
     :cvar SETTINGS_PREFIXES: The prefixes for health-report settings in the
         configuration file. Set to ``["SEP", "HEALTH_REPORT"]`` so the section
         lives under ``SEP.HEALTH_REPORT``.
     :param schedules: List of report generation schedules, each with its own
         cadence and parameters.  Empty by default (no periodic generation).
-    :type schedules: list[ReportScheduleEntry]
     :param upload: Master toggle for ServiceNow upload.  When ``False``
         (the default) uploading is disabled regardless of other fields.
-    :type upload: bool
     :param endpoint: The ServiceNow upload API URL.
-    :type endpoint: str | None
     :param api_key: API key for authenticating with the upload endpoint.
-    :type api_key: SecretStr | None
     :param client_id: Customer identifier sent with each upload.
-    :type client_id: str | None
     :param artifact_dir: Directory where rendered PDF artifacts are staged for
         download. Shared between the Celery worker (writer) and web (reader), so
         only lightweight job metadata transits the Celery result backend.
-    :type artifact_dir: StrRelativePath
     :param artifact_ttl: Maximum age (seconds) of a staged PDF artifact before the
         cleanup task removes it. Should mirror ``CELERY.RESULT_EXPIRES`` so a
         job's metadata and its artifact expire together.
-    :type artifact_ttl: PositiveInt
     :param cleanup_interval: Cadence of the ``purge_report_artifacts`` sweep that
         deletes staged PDFs older than ``artifact_ttl``.
-    :type cleanup_interval: IntervalSchedule
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "HEALTH_REPORT"]
+    TRANSFORM_CALLABLE: ClassVar[Callable[[Any], Any]] = lower_if_string
+    TRANSFORM_DEEP: ClassVar[bool] = True
     schedules: list[ReportScheduleEntry] = []
     upload: bool = False
     endpoint: str | None = None
@@ -116,14 +103,6 @@ class HealthReportSettings(BaseYamlSettings):
     cleanup_interval: IntervalSchedule = IntervalSchedule(
         every=15, period=Period.MINUTES
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _lowercase_yaml_keys(cls, data: Any) -> Any:
-        """Fold uppercase YAML keys to the lowercase field names this class declares."""
-        if isinstance(data, dict):
-            return transform_dict_keys(data, lower_if_string, deep=True)
-        return data
 
     @field_validator("endpoint", "client_id", mode="before")
     @classmethod
@@ -139,7 +118,7 @@ class HealthReportSettings(BaseYamlSettings):
 
         An intake may route ``/v1/upload/`` and ``/v1/upload`` differently,
         answering the slashless spelling with a redirect that replays the
-        request body -- credentials included -- to the redirect target. The
+        request body — credentials included — to the redirect target. The
         configured path is therefore sent exactly as written.
 
         :param v: The configured endpoint, or ``None`` when unset.

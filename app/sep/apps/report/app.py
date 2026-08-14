@@ -32,7 +32,8 @@ from app.sep.apps.report.config import health_report_settings
 def _report_periodic_tasks() -> list[AppPeriodicTask]:
     """Expand one generation task per configured health-report schedule entry.
 
-    Kept as a callable because ``HEALTH_REPORT.schedules`` is variable-length;
+    Kept as a callable because ``health_report_settings.schedules`` is
+    variable-length;
     each entry's interval is deferred via the ``schedule`` thunk so a hot
     override is visible on the next seed.
 

@@ -169,19 +169,19 @@ class TestReportScheduleEntry:
 
 
 class TestHealthReportSettingsProxy:
-    """The module exposes an overridable proxy bound to its enum member."""
+    """Expose an overridable proxy bound to the section's enum member."""
 
     def test_health_report_settings_is_overridable_proxy(self) -> None:
         """``health_report_settings`` is an ``OverridableSettingsProxy``."""
         assert isinstance(health_report_settings, OverridableSettingsProxy)
 
     def test_enum_member_exists(self) -> None:
-        """The section has a distinct ``SettingClassEnum`` member."""
+        """Assert the section has a distinct ``SettingClassEnum`` member."""
         assert SettingClassEnum.HEALTH_REPORT_SETTINGS.value == "HealthReportSettings"
 
 
 class TestHealthReportSettingsOverridePosture:
-    """Every field stays ``NOT_OVERRIDABLE`` after the rehome."""
+    """Keep every field ``NOT_OVERRIDABLE`` after the rehome."""
 
     @pytest.mark.parametrize(
         "field",
@@ -197,5 +197,5 @@ class TestHealthReportSettingsOverridePosture:
         ],
     )
     def test_no_field_is_hot_reloadable(self, field: str) -> None:
-        """Each health report field is left unmarked."""
+        """Assert each health report field is left unmarked."""
         assert is_hot_reloadable(HealthReportSettings, field) is False

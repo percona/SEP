@@ -356,12 +356,16 @@ class TestFooterTemplate:
         assert settings.FOOTER_TEMPLATE is tmpl
 
 
-class TestDeprecatedPMMRemoved:
-    """The deprecated ``SEP.PMM`` section is gone; PMM lives only top-level."""
+class TestHealthReportFieldRemoved:
+    """``SEPSettings`` no longer mounts the ``HEALTH_REPORT`` section."""
 
     def test_sep_settings_has_no_health_report_field(self):
         """Assert ``SEPSettings`` no longer declares a ``HEALTH_REPORT`` field."""
         assert "HEALTH_REPORT" not in SEPSettings.model_fields
+
+
+class TestDeprecatedPMMRemoved:
+    """The deprecated ``SEP.PMM`` section is gone; PMM lives only top-level."""
 
     def test_sep_settings_has_no_pmm_field(self):
         """``SEPSettings`` no longer declares a ``PMM`` field."""
