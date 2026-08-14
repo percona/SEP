@@ -1064,7 +1064,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 nomad_start_offset,
                 producer_start_offset,
                 0,
-                True,
+                fetch_failed=True,
             )
         pieces = []
         nomad_offset = nomad_start_offset
@@ -1106,7 +1106,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             nomad_offset,
             producer_offset,
             withheld,
-            False,
+            fetch_failed=False,
         )
 
     def get_logs_for_allocation(
