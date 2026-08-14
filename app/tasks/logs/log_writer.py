@@ -369,13 +369,14 @@ class TaskHistoryLogWriter:
                     now=now,
                 )
                 drained_bytes = len(row.staging)
-                applied = await TaskHistoryLogStateManager.update_row_if_version(
-                    session,
+                applied = await cls._persist_state(
+                    session=session,
                     task_history_id=task_history_id,
                     source=row.source,
                     stream=row.stream,
-                    old_version=row.version,
+                    is_new=False,
                     new_version=row.version + 1,
+                    old_version=row.version,
                     persisted_offset=new_persisted,
                     producer_offset=row.producer_offset,
                     nomad_offset=row.nomad_offset,
