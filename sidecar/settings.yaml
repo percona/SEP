@@ -27,7 +27,6 @@ default:
   # The value must include SEP's URL prefix below, because download URLs are joined
   # onto it rather than replacing its path.
   BASE_URL: null
-  CONNECTIVITY_CHECK_DEFAULT: false
 
   # The settings the embedded deployment leaves to an administrator; everything
   # else is refused by the override API because this image provisions it.
