@@ -23,7 +23,6 @@ import app.sep.deps as sep_deps
 from app.core.exceptions import HTTPServiceUnavailableException
 from app.sep.apps.report import deps as report_deps
 from app.sep.apps.report.deps import (
-    get_report_index_context,
     require_pmm_api,
 )
 from app.sep.clients.pmm import PMMRemoteAPI
@@ -73,58 +72,3 @@ class TestPmmDepReExports:
         :param name: The re-exported symbol name to compare.
         """
         assert getattr(report_deps, name) is getattr(sep_deps, name)
-
-
-class TestGetReportIndexContext:
-    """Test the ``get_report_index_context`` dependency."""
-
-    @pytest.mark.asyncio
-    async def test_context_includes_pmm_configured_true_when_api_present(self):
-        """Assert ``pmm_configured`` is ``True`` when PMM API is available."""
-        base_context: dict = {"user": "test-user", "plugins": []}
-        mock_api = AsyncMock(spec=PMMRemoteAPI)
-
-        result = await get_report_index_context(base_context, mock_api)
-
-        assert result["pmm_configured"] is True
-
-    @pytest.mark.asyncio
-    async def test_context_includes_pmm_configured_false_when_api_none(self):
-        """Assert ``pmm_configured`` is ``False`` when PMM API is ``None``."""
-        base_context: dict = {"user": "test-user", "plugins": []}
-
-        result = await get_report_index_context(base_context, None)
-
-        assert result["pmm_configured"] is False
-
-    @pytest.mark.asyncio
-    async def test_context_includes_sections_list(self):
-        """Assert the context contains the expected sections list."""
-        base_context: dict = {}
-        mock_api = AsyncMock(spec=PMMRemoteAPI)
-
-        result = await get_report_index_context(base_context, mock_api)
-
-        assert result["sections"] == EXPECTED_SECTIONS
-
-    @pytest.mark.asyncio
-    async def test_context_preserves_base_context_keys(self):
-        """Assert existing keys from the base context are preserved."""
-        base_context: dict = {"user": "test-user", "csrf_token": "abc123"}
-        mock_api = AsyncMock(spec=PMMRemoteAPI)
-
-        result = await get_report_index_context(base_context, mock_api)
-
-        assert result["user"] == "test-user"
-        assert result["csrf_token"] == "abc123"
-        assert "pmm_configured" in result
-        assert "sections" in result
-
-    @pytest.mark.asyncio
-    async def test_context_returns_same_dict_reference(self):
-        """Assert the returned context is the same dict object that was passed in."""
-        base_context: dict = {"key": "value"}
-
-        result = await get_report_index_context(base_context, None)
-
-        assert result is base_context

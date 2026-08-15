@@ -16,10 +16,11 @@
 """Define database operations for the Tasks API."""
 
 import logging
+from collections import defaultdict
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from datetime import datetime
 
-from sqlalchemy import CursorResult, delete, func, literal, or_, update
+from sqlalchemy import CursorResult, delete, func, or_, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import and_, col, select
@@ -27,17 +28,21 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import SERVICE_PRINCIPAL_ID
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.db import ListQuery, ListQuerySpec
 from app.core.db.crud import BaseManager, BaseSQLModelManager
 from app.core.db.utils import func_json_extract, idempotent_insert
 from app.core.exceptions import HTTPConflictException
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import DatabaseDialect
+from app.tasks.execution.executors.nomad.steps import NON_PERSISTABLE_STEPS
 from app.tasks.logs.constants import TAIL_SCAN_MAX_CHUNKS
 from app.tasks.models import (
+    CAPTURE_STATUS_PRECEDENCE,
     DispatchLock,
     GENERIC_EXECUTOR_TASK_NAMES,
     INTERNAL_TASK_NAMES,
+    LogCaptureStatusEnum,
     SYSTEM_USER,
     Task,
     TaskBackendEnum,
@@ -62,11 +67,25 @@ class TaskManager(BaseSQLModelManager):
     such as listing active tasks, retrieving tasks by name, and deleting tasks.
 
     :ivar Model: The SQLModel class this manager is responsible for (``Task``).
-    :vartype Model: type[Task]
+    :cvar ordering: Legacy default ordering (``created_at`` desc, ``id`` desc);
+        superseded by :attr:`list_query_spec` when set.
+    :cvar list_query_spec: Sort allowlist, searchable columns, default sort, and
+        unique ``id`` tie-breaker for Task list endpoints.
     """
 
     Model = Task
-    ordering = [col(Task.created_at).desc(), col(Task.id).desc()]
+    list_query_spec = ListQuerySpec(
+        sortable={
+            "name": col(Task.name),
+            "backend": col(Task.backend),
+            "owner": col(Task.owner),
+            "created_at": col(Task.created_at),
+            "updated_at": col(Task.updated_at),
+        },
+        default_sort="-created_at",
+        tie_breaker=col(Task.id),
+        searchable=[col(Task.name), col(Task.owner)],
+    )
 
     @classmethod
     def _append_list_active_data_filters(
@@ -124,6 +143,8 @@ class TaskManager(BaseSQLModelManager):
         cls,
         session: AsyncSession,
         pagination: Pagination,
+        *,
+        list_query: ListQuery,
         owner: str | None = None,
         target: str | None = None,
         parent_is_null: bool | None = None,
@@ -133,6 +154,8 @@ class TaskManager(BaseSQLModelManager):
         """Return a paginated response of active (non-deleted) tasks.
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :param pagination: Validated offset/limit window for this page.
+        :param list_query: The resolved sort/search produced at the request boundary.
         :param owner: The owner of the tasks. If provided, only tasks for this owner
             will be listed.
         :param target: The execution target hostname. If provided, only tasks whose
@@ -144,7 +167,6 @@ class TaskManager(BaseSQLModelManager):
             matches this string.
         :param self_parent: When ``True``, only tasks whose ``data["parent"]`` equals
             ``Task.name`` are returned.
-        :param pagination: Validated offset/limit window for this page.
         :return: A paginated response containing active tasks and metadata.
         """
         where = [col(Task.deleted_at).is_(None)]
@@ -159,8 +181,12 @@ class TaskManager(BaseSQLModelManager):
             backup_type=backup_type,
             self_parent=self_parent,
         )
-        return await cls.list_paginated(
-            session, *where, pagination=pagination, **kwargs
+        return await cls.list_query_paginated(
+            session,
+            *where,
+            list_query=list_query,
+            pagination=pagination,
+            **kwargs,
         )
 
     @classmethod
@@ -299,10 +325,23 @@ class TaskHistoryManager(BaseSQLModelManager):
     """Manage task history operations, including listing task histories by task name.
 
     :ivar Model: The SQLModel class this manager is responsible for (``TaskHistory``).
-    :vartype Model: type[TaskHistory]
+    :cvar list_query_spec: Shared sort allowlist, searchable columns, default sort,
+        and unique ``id`` tie-breaker for both TaskHistory list endpoints.
     """
 
     Model = TaskHistory
+    list_query_spec = ListQuerySpec(
+        sortable={
+            "created_at": col(TaskHistory.created_at),
+            "started_at": col(TaskHistory.started_at),
+            "finished_at": col(TaskHistory.finished_at),
+            "status": col(TaskHistory.status),
+            "executed_by": col(TaskHistory.executed_by),
+        },
+        default_sort="-created_at",
+        tie_breaker=col(TaskHistory.id),
+        searchable=[col(TaskHistory.executed_by)],
+    )
 
     @classmethod
     async def get_log_allocation_epoch(
@@ -375,7 +414,7 @@ class TaskHistoryManager(BaseSQLModelManager):
             )
             .values(log_allocation_epoch=new_allocation_epoch)
         )
-        await session.exec(stmt)
+        await cls._exec(session, stmt)
 
     @classmethod
     async def list_by_task_name(
@@ -451,6 +490,7 @@ class TaskHistoryManager(BaseSQLModelManager):
         session: AsyncSession,
         task_name: str,
         pagination: Pagination,
+        list_query: ListQuery,
         status: TaskHistoryStatusEnum | None = None,
         snippet_filename: str | None = None,
         select_related_task: bool = False,
@@ -459,29 +499,25 @@ class TaskHistoryManager(BaseSQLModelManager):
         """Return a paginated response of task histories by the task's name.
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
         :param task_name: The name of the task to list histories for.
-        :type task_name: str
+        :param pagination: Validated offset/limit window for this page.
+        :param list_query: The resolved sort/search produced at the request boundary.
         :param status: The status of the task history. If provided, only histories
             with this status will be listed.
-        :type status: TaskHistoryStatusEnum | None
         :param snippet_filename: If provided, filter task histories by the specified
             snippet filename in the task's metadata.
-        :type snippet_filename: str | None
         :param select_related_task: Whether to include the related task data in the
             result. Defaults to False.
-        :type select_related_task: bool
-        :param pagination: Validated offset/limit window for this page.
-        :type pagination: Pagination
         :param query_options: Additional SQLAlchemy query options to apply.
-        :type query_options: Sequence
         :return: A paginated response containing task histories and metadata.
-        :rtype: PaginatedResponse[TaskHistory]
         """
-        count_query = select(func.count()).select_from(TaskHistory).join(Task)
-        count_clauses = [col(Task.name) == task_name]
+        clauses = [
+            col(TaskHistory.task_id).in_(
+                select(Task.id).where(col(Task.name) == task_name)
+            )
+        ]
         if snippet_filename:
-            count_clauses.append(
+            clauses.append(
                 func_json_extract(
                     session.get_bind().name,
                     col(TaskHistory.execution_request),
@@ -490,19 +526,16 @@ class TaskHistoryManager(BaseSQLModelManager):
                 )
                 == snippet_filename
             )
-        count_query = cls._filter_query(count_query, *count_clauses, status=status)
-        total = await session.scalar(count_query) or 0
-        items = await cls.list_by_task_name(
-            session=session,
-            task_name=task_name,
-            status=status,
-            snippet_filename=snippet_filename,
-            select_related_task=select_related_task,
-            offset=pagination.offset,
-            limit=pagination.limit,
+        select_related = (TaskHistory.task,) if select_related_task else ()
+        return await cls.list_query_paginated(
+            session,
+            *clauses,
+            list_query=list_query,
+            select_related=select_related,
             query_options=query_options,
+            pagination=pagination,
+            status=status,
         )
-        return PaginatedResponse.from_pagination(items, total, pagination)
 
     @classmethod
     async def list_all_history_paginated(
@@ -510,6 +543,7 @@ class TaskHistoryManager(BaseSQLModelManager):
         session: AsyncSession,
         *,
         pagination: Pagination,
+        list_query: ListQuery,
         status: TaskHistoryStatusEnum | None = None,
         exclude_internal: bool = False,
         query_options: Sequence = (),
@@ -518,6 +552,7 @@ class TaskHistoryManager(BaseSQLModelManager):
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
         :param pagination: Validated offset/limit window for this page.
+        :param list_query: The resolved sort/search produced at the request boundary.
         :param status: Optional exact status filter.
         :param exclude_internal: When ``True``, omit system-internal rows before
             counting and pagination, so ``limit=5`` always returns five user-facing
@@ -551,9 +586,10 @@ class TaskHistoryManager(BaseSQLModelManager):
                 col(TaskHistory.task_id).not_in(internal_ids),
                 col(TaskHistory.id).not_in(system_generic_history_ids),
             )
-        return await cls.list_paginated(
+        return await cls.list_query_paginated(
             session,
             *extra,
+            list_query=list_query,
             select_related=(TaskHistory.task,),
             query_options=query_options,
             pagination=pagination,
@@ -771,30 +807,6 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         return result.rowcount
 
     @classmethod
-    async def exists_for_task(cls, session: AsyncSession, task_history_id: int) -> bool:
-        """Return ``True`` when at least one chunk exists for the task history.
-
-        Uses a ``SELECT 1 ... LIMIT 1`` short-circuit query so the database
-        can stop scanning as soon as it finds the first matching row instead
-        of counting every chunk.
-
-        :param session: The SQLAlchemy asynchronous session to use for query
-            execution.
-        :type session: AsyncSession
-        :param task_history_id: The ``TaskHistory`` identifier.
-        :type task_history_id: int
-        :return: Whether any chunk rows exist for the task history.
-        :rtype: bool
-        """
-        query = (
-            select(literal(1))
-            .where(col(TaskHistoryLog.task_history_id) == task_history_id)
-            .limit(1)
-        )
-        result = await session.exec(query)
-        return result.first() is not None
-
-    @classmethod
     async def ids_with_chunks(
         cls,
         session: AsyncSession,
@@ -804,7 +816,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
 
         Emit a single ``SELECT DISTINCT task_history_id FROM taskhistory_log
         WHERE task_history_id IN (:ids)`` so list endpoints avoid an N+1
-        :meth:`exists_for_task` call per paginated row. Return an empty set
+        :meth:`exists` call per paginated row. Return an empty set
         for empty input without emitting any SQL -- an empty ``IN ()``
         predicate triggers a SQLAlchemy warning and is a no-op anyway.
 
@@ -823,7 +835,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             .where(col(TaskHistoryLog.task_history_id).in_(task_history_ids))
             .distinct()
         )
-        result = await session.exec(query)
+        result = await cls._exec(session, query)
         return set(result.all())
 
     @classmethod
@@ -1047,7 +1059,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             content=chunk.decode("utf-8", errors="replace"),
             created_at=now,
         )
-        await session.exec(stmt)
+        await cls._exec(session, stmt)
 
     @classmethod
     async def delete_chunks_below_offset(
@@ -1101,7 +1113,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             .where(col(TaskHistoryLog.id).in_(select(limited_ids.c.id)))
             .execution_options(synchronize_session=False)
         )
-        result = await session.exec(stmt)
+        result = await cls._exec(session, stmt)
         return result.rowcount or 0
 
 
@@ -1176,8 +1188,69 @@ class TaskHistoryLogStateManager(BaseManager):
             allocation_epoch=0,
             staging=b"",
             staging_updated_at=utc_now(),
+            capture_status=LogCaptureStatusEnum.INCOMPLETE,
             version=0,
         )
+
+    @classmethod
+    async def capture_status_by_task(
+        cls,
+        session: AsyncSession,
+        task_history_ids: Sequence[int],
+    ) -> dict[int, LogCaptureStatusEnum]:
+        """Return the aggregate capture verdict per task history.
+
+        Emit a single grouped ``SELECT`` over the distinct
+        ``(task_history_id, capture_status)`` pairs so list endpoints avoid an
+        N+1 read per paginated row, then reduce each history's pairs by
+        severity: any ``INCOMPLETE`` stream wins, else any ``UNKNOWN``, else
+        ``COMPLETE``. Return an empty mapping for empty input without emitting
+        any SQL — an empty ``IN ()`` predicate triggers a SQLAlchemy warning
+        and is a no-op anyway.
+
+        Histories with no state rows are absent from the result rather than
+        defaulting to a verdict here; the caller renders a missing key as
+        ``UNKNOWN``.
+
+        Rows are filtered by *excluding* :data:`NON_PERSISTABLE_STEPS` — the same
+        set :meth:`NomadStep.is_persistable` tests — rather than by selecting the
+        Nomad steps SEP drains: ``source`` also carries non-Nomad producers
+        (the Celery executor writes ``"execution"``, legacy rows carry
+        ``"step1"``), and selecting by Nomad step name would drop every one of
+        them and report ``UNKNOWN`` for tasks whose capture is known-complete.
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :param task_history_ids: The ``TaskHistory`` identifiers to aggregate.
+        :return: The aggregate verdict keyed by task history identifier, for
+            those identifiers carrying at least one state row.
+        """
+        if not task_history_ids:
+            return {}
+        query = (
+            select(
+                col(TaskHistoryLogState.task_history_id),
+                col(TaskHistoryLogState.capture_status),
+            )
+            .where(
+                col(TaskHistoryLogState.task_history_id).in_(task_history_ids),
+                col(TaskHistoryLogState.source).notin_(NON_PERSISTABLE_STEPS),
+            )
+            .distinct()
+        )
+        result = await cls._exec(session, query)
+
+        statuses: defaultdict[int, set[LogCaptureStatusEnum]] = defaultdict(set)
+        for task_history_id, capture_status in result.all():
+            statuses[task_history_id].add(capture_status)
+        return {
+            task_history_id: next(
+                candidate
+                for candidate in CAPTURE_STATUS_PRECEDENCE
+                if candidate in seen
+            )
+            for task_history_id, seen in statuses.items()
+        }
 
     @classmethod
     async def list_for_task(
@@ -1236,7 +1309,7 @@ class TaskHistoryLogStateManager(BaseManager):
                 updated_at=utc_now(),
             )
         )
-        await session.exec(stmt)
+        await cls._exec(session, stmt)
 
     @classmethod
     async def insert_row_idempotent(
@@ -1253,6 +1326,7 @@ class TaskHistoryLogStateManager(BaseManager):
         staging: bytes,
         version: int,
         now: datetime,
+        capture_status: LogCaptureStatusEnum = LogCaptureStatusEnum.INCOMPLETE,
     ) -> bool:
         """Insert a new state row, returning ``True`` on a successful insert.
 
@@ -1262,29 +1336,22 @@ class TaskHistoryLogStateManager(BaseManager):
 
         :param session: The SQLAlchemy asynchronous session to use for query
             execution.
-        :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier.
-        :type task_history_id: int
         :param source: The execution step name.
-        :type source: str
         :param stream: The log stream (stdout or stderr).
-        :type stream: TaskLogType
         :param persisted_offset: The user-facing byte offset already persisted.
-        :type persisted_offset: int
         :param producer_offset: The producer-relative byte offset already
             consumed from the current allocation.
-        :type producer_offset: int
         :param nomad_offset: The raw Nomad-space fetch offset for the next read.
         :param allocation_epoch: The Nomad ``CreateIndex`` the cursors belong to.
         :param staging: Bytes pending flush to the chunk store.
-        :type staging: bytes
         :param version: The initial optimistic-locking version counter.
-        :type version: int
         :param now: The insertion timestamp used for audit columns.
-        :type now: datetime
+        :param capture_status: The capture verdict to stamp on the new row.
+            Defaults to ``INCOMPLETE`` — a stream is not known to be drained
+            at the moment its row first appears.
         :return: ``True`` when a row was inserted; ``False`` when the row
             already existed.
-        :rtype: bool
         """
         stmt = idempotent_insert(session.get_bind().name, TaskHistoryLogState).values(
             task_history_id=task_history_id,
@@ -1296,10 +1363,11 @@ class TaskHistoryLogStateManager(BaseManager):
             allocation_epoch=allocation_epoch,
             staging=staging,
             staging_updated_at=now,
+            capture_status=capture_status,
             version=version,
             created_at=now,
         )
-        result = await session.exec(stmt)
+        result = await cls._exec(session, stmt)
         return bool(result.rowcount == 1)
 
     @classmethod
@@ -1318,6 +1386,7 @@ class TaskHistoryLogStateManager(BaseManager):
         allocation_epoch: int,
         staging: bytes,
         now: datetime,
+        capture_status: LogCaptureStatusEnum | None = None,
     ) -> bool:
         """Update a state row conditioned on the old version and return whether we won.
 
@@ -1328,32 +1397,37 @@ class TaskHistoryLogStateManager(BaseManager):
 
         :param session: The SQLAlchemy asynchronous session to use for query
             execution.
-        :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier.
-        :type task_history_id: int
         :param source: The execution step name.
-        :type source: str
         :param stream: The log stream (stdout or stderr).
-        :type stream: TaskLogType
         :param old_version: The version the caller read from the state row.
-        :type old_version: int
         :param new_version: The bumped version to write.
-        :type new_version: int
         :param persisted_offset: The updated user-facing persisted offset.
-        :type persisted_offset: int
         :param producer_offset: The updated producer-relative offset.
-        :type producer_offset: int
         :param nomad_offset: The updated raw Nomad-space fetch offset.
         :param allocation_epoch: The updated Nomad ``CreateIndex`` the cursors
             belong to.
         :param staging: The updated staging bytes buffer.
-        :type staging: bytes
         :param now: The update timestamp used for the audit columns.
-        :type now: datetime
+        :param capture_status: The capture verdict to write, or ``None`` to
+            leave the stored verdict untouched. Omitting the column is what
+            keeps an ordinary byte-appending update from downgrading a stream
+            already recorded ``COMPLETE``.
         :return: ``True`` when exactly one row was updated; ``False`` when the
             optimistic-locking guard prevented the write.
-        :rtype: bool
         """
+        values = {
+            "persisted_offset": persisted_offset,
+            "producer_offset": producer_offset,
+            "nomad_offset": nomad_offset,
+            "allocation_epoch": allocation_epoch,
+            "staging": staging,
+            "staging_updated_at": now,
+            "version": new_version,
+            "updated_at": now,
+        }
+        if capture_status is not None:
+            values["capture_status"] = capture_status
         stmt = (
             update(TaskHistoryLogState)
             .where(
@@ -1362,18 +1436,9 @@ class TaskHistoryLogStateManager(BaseManager):
                 col(TaskHistoryLogState.stream) == stream,
                 col(TaskHistoryLogState.version) == old_version,
             )
-            .values(
-                persisted_offset=persisted_offset,
-                producer_offset=producer_offset,
-                nomad_offset=nomad_offset,
-                allocation_epoch=allocation_epoch,
-                staging=staging,
-                staging_updated_at=now,
-                version=new_version,
-                updated_at=now,
-            )
+            .values(**values)
         )
-        result = await session.exec(stmt)
+        result = await cls._exec(session, stmt)
         return bool(result.rowcount == 1)
 
 
@@ -1381,7 +1446,6 @@ class DispatchLockManager(BaseSQLModelManager):
     """Manage dispatch lock operations.
 
     :ivar Model: The SQLModel class this manager is responsible for (``DispatchLock``).
-    :vartype Model: type[DispatchLock]
     """
 
     Model = DispatchLock

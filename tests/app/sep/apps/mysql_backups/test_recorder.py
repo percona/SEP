@@ -15,12 +15,15 @@
 
 """Tests for the MySQL backup catalog recorder."""
 
+import ast
 from datetime import datetime, UTC
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import yaml
 
+from app.sep.apps.mysql_backups import recorder as recorder_module
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.recorder import record_backup_run, RUN_RESULT_RECORDER
 from app.tasks.hook_resolver import resolve_hook
@@ -29,6 +32,12 @@ from tests.app.factories import build_task_history, TaskFactory
 
 _STARTED = datetime(2026, 7, 29, 1, 0, tzinfo=UTC)
 _FINISHED = datetime(2026, 7, 29, 1, 5, tzinfo=UTC)
+_SERVICE_ID = 7
+
+#: Sentinel telling ``_history`` to omit a meta key rather than set it, so a test
+#: can distinguish "absent" from "present and empty" — ``None`` is itself a value
+#: a malformed task can carry.
+_OMITTED = object()
 
 
 @pytest.fixture
@@ -64,13 +73,21 @@ def _history(
     backup_type: str | None = "M",
     status: TaskHistoryStatusEnum = TaskHistoryStatusEnum.SUCCESS,
     service_name: str | None = "svc-a",
+    service_id: object = _SERVICE_ID,
     target: str | None = "db01",
     history_id: int = 1,
 ) -> TaskHistory:
-    """Build a terminal ``TaskHistory`` (with its ``Task``) the recorder can read."""
+    """Build a terminal ``TaskHistory`` (with its ``Task``) the recorder can read.
+
+    ``service_id`` is typed loosely so a test can plant a wrong-typed value the
+    way a hand-edited or pre-change task would carry it; ``_OMITTED`` leaves the
+    key out of the meta entirely.
+    """
     meta: dict = {}
     if service_name is not None:
         meta["_service_name"] = service_name
+    if service_id is not _OMITTED:
+        meta["_service_id"] = service_id
     if target is not None:
         meta["target"] = target
     if backup_type is not None:
@@ -105,6 +122,7 @@ class TestRecordsSuccessfulRuns:
         record = records[0]
         assert record.backup_type == "M"
         assert record.service_name == "svc-a"
+        assert record.service_id == _SERVICE_ID
         assert record.hostname == "db01"
         assert record.location == "/data/backups/mydumper/svc-a/20260729"
         assert record.size_bytes == 4096  # noqa: PLR2004
@@ -206,6 +224,65 @@ class TestPartialResults:
 
 
 @pytest.mark.usefixtures("_recorder_uses_test_session")
+class TestServiceId:
+    """Read the inventory service id off the task meta, defensively."""
+
+    @pytest.mark.asyncio
+    async def test_records_service_id_from_meta(self, session) -> None:
+        """Store the id the envelope stamped alongside the service name."""
+        await record_backup_run(session, _history(backup_type="M"), None)
+
+        record = (await MysqlBackupRunManager.list(session))[0]
+        assert record.service_id == _SERVICE_ID
+
+    @pytest.mark.asyncio
+    async def test_task_predating_the_id_still_records(self, session) -> None:
+        """Record a run off a task created before the id was stamped.
+
+        The whole point of the name fallback: a pre-change task carries no
+        ``_service_id``, and that must leave the column empty rather than fail
+        the run or the history sync.
+        """
+        await record_backup_run(
+            session, _history(backup_type="M", service_id=_OMITTED), None
+        )
+
+        records = await MysqlBackupRunManager.list(session)
+        assert len(records) == 1
+        assert records[0].service_id is None
+        assert records[0].service_name == "svc-a"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "planted",
+        ["7", 7.0, True, None, [7], 0, -1],
+        ids=["str", "float", "bool", "null", "list", "zero", "negative"],
+    )
+    async def test_unusable_service_id_is_dropped(self, session, planted) -> None:
+        """Drop a wrong-typed or non-positive id instead of storing it.
+
+        Recording it as absent is what keeps the row name-reachable; see
+        :func:`~app.sep.apps.mysql_backups.recorder._positive_int`.
+        """
+        await record_backup_run(
+            session, _history(backup_type="M", service_id=planted), None
+        )
+
+        records = await MysqlBackupRunManager.list(session)
+        assert len(records) == 1
+        assert records[0].service_id is None
+        assert records[0].service_name == "svc-a"
+
+    @pytest.mark.asyncio
+    async def test_smallest_valid_id_is_kept(self, session) -> None:
+        """Keep an id of ``1``, the lower bound the range guard must not exclude."""
+        await record_backup_run(session, _history(backup_type="M", service_id=1), None)
+
+        records = await MysqlBackupRunManager.list(session)
+        assert records[0].service_id == 1
+
+
+@pytest.mark.usefixtures("_recorder_uses_test_session")
 class TestNoRecordCases:
     """Leave no record for binlog runs, non-success terminals, and unknown tools."""
 
@@ -276,6 +353,29 @@ class TestIdempotency:
         await record_backup_run(session, history, result)
 
         assert len(await MysqlBackupRunManager.list(session)) == 1
+
+
+class TestRecorderResolvesNoInventory:
+    """Keep the recorder free of any Inventory dependency.
+
+    It runs in the *tasks* service off a ``TaskHistory`` and its task meta, which
+    is the whole reason the service name and id are stamped into that meta at
+    creation time. An inventory lookup here would both reintroduce the rename
+    coupling this catalog key exists to remove and give the tasks service a
+    dependency it has no client for.
+    """
+
+    def test_module_imports_no_inventory(self) -> None:
+        """Assert no import in ``recorder.py`` reaches an inventory module."""
+        tree = ast.parse(Path(recorder_module.__file__).read_text())
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module)
+
+        assert not [name for name in imported if "inventory" in name]
 
 
 class TestRecorderRegistration:

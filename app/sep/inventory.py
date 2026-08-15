@@ -22,7 +22,12 @@ from typing import Any, ClassVar, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.db import BaseSQLModel
-from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
+from app.core.utils.fields import (
+    ARBITRARY_ARGS_SCHEMA,
+    ArbitraryMapping,
+    EmptyStrToNone,
+    NonEmptyStr,
+)
 from app.inventory.models import ServiceTypeEnum, SourceEnum
 from app.sep.models import SyncInventoryEntityTypeEnum
 
@@ -197,7 +202,6 @@ class Service(BaseInventoryModel):
     :param replication_set: The replication set in which the service is running. Defaults to None.
     :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
-    :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as
         "service_id". Defaults to None.
     :type external_id: NonEmptyStr | EmptyStrToNone
@@ -215,7 +219,7 @@ class Service(BaseInventoryModel):
     environment: str | None = None
     cluster: str | None = None
     replication_set: str | None = None
-    custom_labels: dict[str, Any] | None = None
+    custom_labels: ArbitraryMapping | None = None
     external_id: NonEmptyStr | EmptyStrToNone = Field(
         default=None,
         validation_alias="service_id",
@@ -257,7 +261,6 @@ class CreatedService(CreatedEntityBase, Service):
     :param replication_set: The replication set in which the service is running. Defaults to None.
     :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
-    :type custom_labels: dict[str, Any] | None
     :param external_id: The external identifier for the service, aliased as
         "service_id". Defaults to None.
     :type external_id: NonEmptyStr | EmptyStrToNone
@@ -379,7 +382,9 @@ class Table(BaseInventoryModel):
 
     name: NonEmptyStr
     create: NonEmptyStr
-    keys: dict[str, Any] = Field(default_factory=dict)
+    keys: dict[str, Any] = Field(
+        default_factory=dict, json_schema_extra=ARBITRARY_ARGS_SCHEMA
+    )
 
     def __repr__(self) -> str:
         return f"Table(name={self.name!r})"
@@ -418,6 +423,14 @@ class CreatedTable(CreatedEntityBase, Table):
     def __repr__(self) -> str:
         return f"Table(name={self.name!r}, schema_id={self.schema_id})"
 
+
+# ``Service``/``Schema`` reference each other's children before those classes
+# exist, so Pydantic defers their build. Resolve it here, where every name is in
+# scope, rather than leaving it to whichever consumer happens to build a model
+# first -- a subclass declared in another module (``SystemFactsService``) cannot
+# resolve ``Schema`` from its own namespace.
+for _model in (Node, CreatedNode, Service, CreatedService, Schema, CreatedSchema):
+    _model.model_rebuild()
 
 CreatedEntity = CreatedNode | CreatedService | CreatedSchema | CreatedTable
 

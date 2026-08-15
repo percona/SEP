@@ -30,35 +30,36 @@ from app.core.settings_override.registry import (
     is_hot_reloadable,
     is_nested_overridable_parent,
     MaterializerContext,
+    MaterializerPurpose,
     SECRET_STR_MASK,
 )
 from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import (
     App,
     AppDrainSettings,
+    CookieOptions,
     DeliveryPlanInputs,
-    HealthReportSettings,
     materialize_delivery_plan_inputs,
+    prefixed_cookie_path,
     sep_settings,
     SEPSettings,
-    SessionOptions,
     SyncerExtraKwargs,
     SyncOptions,
 )
 
 
-class TestSessionOptions:
-    """Define tests for the SessionOptions model."""
+class TestCookieOptions:
+    """Define tests for the CookieOptions model."""
 
     def test_default_dump_has_none_path(self):
-        """Assert legacy SessionOptions dump keeps ``path=None`` (no explicit path)."""
-        dumped = SessionOptions().model_dump(by_alias=True)
+        """Assert a bare CookieOptions dump keeps ``path=None`` (no explicit path)."""
+        dumped = CookieOptions().model_dump(by_alias=True)
         assert dumped["key"] == "authToken"
         assert dumped["path"] is None
 
     def test_refresh_dump_carries_path(self):
         """Assert a SESSION_REFRESH-style instance exposes the configured path."""
-        dumped = SessionOptions(
+        dumped = CookieOptions(
             COOKIE_NAME="refreshToken", PATH="/api/oauth"
         ).model_dump(by_alias=True)
         assert dumped["key"] == "refreshToken"
@@ -73,7 +74,6 @@ class TestSessionRefreshDefault:
         settings = SEPSettings()
         assert settings.SESSION_REFRESH.COOKIE_NAME == "refreshToken"
         assert settings.SESSION_REFRESH.PATH == "/api/oauth"
-        assert settings.SESSION.PATH is None
 
 
 class TestAmbientSessionSSO:
@@ -86,6 +86,41 @@ class TestAmbientSessionSSO:
     def test_is_hot_reloadable(self):
         """Verify the toggle is a hot field, so a DB override can enable it live."""
         assert is_hot_reloadable(SEPSettings, "AMBIENT_SESSION_SSO_ENABLED")
+
+
+class TestRootPath:
+    """Cover the URL mount prefix SEP serves under."""
+
+    def test_defaults_to_unprefixed(self):
+        """Verify SEP serves from the origin root unless a deployment opts in."""
+        assert SEPSettings().ROOT_PATH == ""
+
+    def test_is_not_hot_reloadable(self):
+        """Verify a DB override cannot claim to move a prefix read at construction."""
+        assert not is_hot_reloadable(SEPSettings, "ROOT_PATH")
+
+
+class TestPrefixedCookiePath:
+    """Cover anchoring a configured cookie ``Path`` under the URL prefix."""
+
+    def test_leaves_a_path_alone_without_a_prefix(self, mocker):
+        """Emit today's ``Path`` unchanged, which is the regression contract."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="")
+
+        assert prefixed_cookie_path("/api/oauth") == "/api/oauth"
+
+    def test_anchors_a_path_under_the_prefix(self, mocker):
+        """Anchor the path so the browser sends the cookie to prefixed endpoints."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+
+        assert prefixed_cookie_path("/api/oauth") == "/sep/api/oauth"
+
+    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    def test_leaves_an_unset_path_unset(self, mocker, root_path):
+        """Leave ``None`` alone: the browser derives a path that already carries the prefix."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new=root_path)
+
+        assert prefixed_cookie_path(None) is None
 
 
 class TestDiagnosticsDelivery:
@@ -140,10 +175,14 @@ class TestDiagnosticsDeliveryInputs:
     """Cover the ``DIAGNOSTICS_DELIVERY_INPUTS`` runtime-inputs settings block."""
 
     @staticmethod
-    def _context(raw: Any) -> MaterializerContext:
+    def _context(
+        raw: Any, purpose: MaterializerPurpose = MaterializerPurpose.VALIDATE
+    ) -> MaterializerContext:
         """Return the materialization context the override layer would build.
 
         :param raw: The raw, JSON-decoded value of the candidate override.
+        :param purpose: Whether the value stands for a payload submitted now or
+            a row read back out of the database.
         :return: The context for the inputs field.
         """
         return MaterializerContext(
@@ -151,6 +190,7 @@ class TestDiagnosticsDeliveryInputs:
             field_name="DIAGNOSTICS_DELIVERY_INPUTS",
             field_info=SEPSettings.model_fields["DIAGNOSTICS_DELIVERY_INPUTS"],
             raw=raw,
+            purpose=purpose,
         )
 
     @staticmethod
@@ -240,6 +280,39 @@ class TestDiagnosticsDeliveryInputs:
                 self._context({"secrets": {"sn_api_key": "a"}})
             )
 
+    def test_a_stored_row_that_stopped_matching_survives_the_read(
+        self, mocker: MockerFixture
+    ):
+        """Keep a drifted row readable so the resolver can report it as drift.
+
+        Raising here would only get the row dropped from the snapshot, leaving
+        the resolver unable to tell an upgrade-renamed secret from a deployment
+        that never configured delivery.
+        """
+        mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", self._skeleton())
+
+        inputs = materialize_delivery_plan_inputs(
+            self._context(
+                {"secrets": {"sn_api_key": "a", "renamed_token": "b"}},
+                MaterializerPurpose.SNAPSHOT,
+            )
+        )
+
+        assert set(inputs.secrets) == {"sn_api_key", "renamed_token"}
+
+    def test_a_malformed_stored_row_is_still_refused_on_the_read(
+        self, mocker: MockerFixture
+    ):
+        """Keep shape coercion strict on both paths, so a junk row is still dropped."""
+        mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", self._skeleton())
+
+        with pytest.raises(ValidationError):
+            materialize_delivery_plan_inputs(
+                self._context(
+                    {"secrets": "not-a-mapping"}, MaterializerPurpose.SNAPSHOT
+                )
+            )
+
     def test_model_rejects_a_secret_carrying_the_mask(self):
         """Refuse the redaction mask as a stored credential value."""
         with pytest.raises(ValidationError, match="sn_api_key"):
@@ -255,33 +328,6 @@ class TestDiagnosticsDeliveryInputs:
             SEPSettings(
                 DIAGNOSTICS_DELIVERY_INPUTS={"secrets": {"sn_api_key": SECRET_STR_MASK}}
             )
-
-
-class TestHealthReportEndpoint:
-    """Cover endpoint normalization on the ``HEALTH_REPORT`` block."""
-
-    @pytest.mark.parametrize(
-        ("configured", "expected"),
-        [
-            (
-                "https://intake.example.com/v1/upload/",
-                "https://intake.example.com/v1/upload/",
-            ),
-            (
-                "https://intake.example.com/v1/upload",
-                "https://intake.example.com/v1/upload",
-            ),
-            ("https://intake.example.com/", "https://intake.example.com"),
-            ("https://intake.example.com", "https://intake.example.com"),
-        ],
-    )
-    def test_preserves_a_path_trailing_slash(self, configured, expected):
-        """Keep a path's trailing slash, trimming only a bare origin's."""
-        assert HealthReportSettings(endpoint=configured).endpoint == expected
-
-    def test_empty_endpoint_becomes_none(self):
-        """Leave a blank endpoint unset rather than normalizing it."""
-        assert HealthReportSettings(endpoint="   ").endpoint is None
 
 
 class TestFooterTemplate:
@@ -308,6 +354,14 @@ class TestFooterTemplate:
         tmpl = Template("custom $summary")
         settings = SEPSettings(FOOTER_TEMPLATE=tmpl)
         assert settings.FOOTER_TEMPLATE is tmpl
+
+
+class TestHealthReportFieldRemoved:
+    """``SEPSettings`` no longer mounts the ``HEALTH_REPORT`` section."""
+
+    def test_sep_settings_has_no_health_report_field(self):
+        """Assert ``SEPSettings`` no longer declares a ``HEALTH_REPORT`` field."""
+        assert "HEALTH_REPORT" not in SEPSettings.model_fields
 
 
 class TestDeprecatedPMMRemoved:

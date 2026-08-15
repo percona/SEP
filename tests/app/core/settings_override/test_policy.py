@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Cover the ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` restriction and its predicates.
+"""Cover the ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` restriction and its predicates.
 
 Exercise the setting itself (env parsing through the real ``Settings()`` source
 chain, entry-format validation), the ``policy`` predicates that read it, the
@@ -25,13 +25,15 @@ import json
 import subprocess
 import sys
 from collections.abc import Callable
+from datetime import timedelta
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from app import BASE_DIR
 from app.core.alerts.config import AlertSettings
-from app.core.config import Settings, settings
+from app.core.config import Settings, settings, SettingsOverrideOptions
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.policy import (
     has_allowed_key_under,
@@ -39,7 +41,9 @@ from app.core.settings_override.policy import (
     is_restriction_active,
 )
 from app.core.settings_override.registry import (
+    chain_has_explicit_not_overridable,
     field_reload_classification,
+    is_nested_overridable_parent,
     iter_class_fields,
     ReloadClassification,
     rendered_leaf_keys,
@@ -48,12 +52,12 @@ from app.core.settings_override.registry import (
 )
 from app.inventory.config import InventorySettings
 from app.sep.apps.alerts.config import AlertsSettings
+from app.sep.apps.report.config import HealthReportSettings
 from app.sep.config import SEPSettings
-from app.sep.middleware.messages.config import MessagesSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
-from tests.sidecar.conftest import ALLOWLIST_KEY, EMBEDDED_PROFILE
+from tests.sidecar.conftest import ALLOWLIST_KEY, EMBEDDED_PROFILE, read_allowlist
 
 #: Every settings class reachable from the settings router, keyed by the enum
 #: member whose value is the class ``__name__``.
@@ -62,9 +66,9 @@ SETTINGS_CLASSES: dict[SettingClassEnum, type] = {
     SettingClassEnum.SEP_SETTINGS: SEPSettings,
     SettingClassEnum.TASKS_SETTINGS: TasksSettings,
     SettingClassEnum.SNIPPETS_SETTINGS: SnippetsSettings,
-    SettingClassEnum.MESSAGES_SETTINGS: MessagesSettings,
     SettingClassEnum.ALERT_SETTINGS: AlertSettings,
     SettingClassEnum.ALERTS_SETTINGS: AlertsSettings,
+    SettingClassEnum.HEALTH_REPORT_SETTINGS: HealthReportSettings,
     SettingClassEnum.ANONYMIZER_SETTINGS: AnonymizerSettings,
     SettingClassEnum.INVENTORY_SETTINGS: InventorySettings,
 }
@@ -95,9 +99,11 @@ def shipped_allowed_keys() -> list[str]:
     :return: The entries the embedded profile declares.
     """
     profile = yaml.safe_load(EMBEDDED_PROFILE.read_text(encoding="utf-8"))
-    entries = profile["default"].get(ALLOWLIST_KEY)
+    entries = read_allowlist(profile)
     if not isinstance(entries, list):
-        pytest.fail(f"{ALLOWLIST_KEY} is not a list in {EMBEDDED_PROFILE}: {entries!r}")
+        pytest.fail(
+            f"{'.'.join(ALLOWLIST_KEY)} is not a list in {EMBEDDED_PROFILE}: {entries!r}"
+        )
     return entries
 
 
@@ -130,29 +136,79 @@ class TestSettingDeclaration:
 
     def test_default_is_none(self) -> None:
         """Assert the shipped default leaves every deployment unrestricted."""
-        assert settings.SETTINGS_OVERRIDE_ALLOWED_KEYS is None
+        assert settings.SETTINGS_OVERRIDE.ALLOWED_KEYS is None
 
     def test_field_is_not_overridable(self) -> None:
-        """Assert the restriction cannot be unlocked through the override API."""
+        """Assert the restriction cannot be unlocked through the override API.
+
+        Positively locks both halves of the self-lockdown: the unmarked
+        ``SETTINGS_OVERRIDE`` parent classifies ``NOT_OVERRIDABLE`` (so nested
+        leaves are unreachable), and ``ALLOWED_KEYS`` keeps its explicit
+        ``not_overridable_field`` marker (so a later parent-marker change still
+        refuses that leaf via the chain check).
+        """
         assert (
             field_reload_classification(
-                Settings.model_fields["SETTINGS_OVERRIDE_ALLOWED_KEYS"],
+                Settings.model_fields["SETTINGS_OVERRIDE"],
                 owner_cls=Settings,
-                field_name="SETTINGS_OVERRIDE_ALLOWED_KEYS",
+                field_name="SETTINGS_OVERRIDE",
             )
             is ReloadClassification.NOT_OVERRIDABLE
         )
+        assert (
+            is_nested_overridable_parent(
+                Settings, "SETTINGS_OVERRIDE", include_policy_gate=False
+            )
+            is False
+        )
+        assert (
+            field_reload_classification(
+                SettingsOverrideOptions.model_fields["ALLOWED_KEYS"],
+                owner_cls=SettingsOverrideOptions,
+                field_name="ALLOWED_KEYS",
+            )
+            is ReloadClassification.NOT_OVERRIDABLE
+        )
+        assert chain_has_explicit_not_overridable(
+            Settings, "SETTINGS_OVERRIDE__ALLOWED_KEYS"
+        )
+
+    @pytest.mark.parametrize("raw", ["PT0S", "-PT5S"])
+    def test_rejects_non_positive_refresh_interval_from_env(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str
+    ) -> None:
+        """Assert a zero or negative interval fails the settings load.
+
+        ``start_refresh_task`` sleeps for the configured interval between
+        cycles, so a non-positive value would spin against the database.
+        """
+        monkeypatch.setenv("SETTINGS_OVERRIDE__REFRESH_INTERVAL", raw)
+        with pytest.raises(ValidationError, match="greater than 0"):
+            Settings()
+
+    @pytest.mark.parametrize("raw", [0, -5])
+    def test_rejects_non_positive_refresh_interval_as_seconds(self, raw: int) -> None:
+        """Assert the bound also holds for the integer-seconds form YAML yields."""
+        with pytest.raises(ValidationError, match="greater than 0"):
+            SettingsOverrideOptions(REFRESH_INTERVAL=raw)
+
+    def test_accepts_positive_refresh_interval_from_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert a positive interval loads unchanged."""
+        monkeypatch.setenv("SETTINGS_OVERRIDE__REFRESH_INTERVAL", "PT45S")
+        assert timedelta(seconds=45) == Settings().SETTINGS_OVERRIDE.REFRESH_INTERVAL
 
     def test_parses_json_array_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Assert a bare env var carrying a JSON array reaches the field as a set."""
         monkeypatch.setenv(
-            "SETTINGS_OVERRIDE_ALLOWED_KEYS",
+            "SETTINGS_OVERRIDE__ALLOWED_KEYS",
             '["Settings.LOGGING", "SEPSettings.SYNC_REFRESH_TIME"]',
         )
         assert {
             "Settings.LOGGING",
             "SEPSettings.SYNC_REFRESH_TIME",
-        } == Settings().SETTINGS_OVERRIDE_ALLOWED_KEYS
+        } == Settings().SETTINGS_OVERRIDE.ALLOWED_KEYS
 
     @pytest.mark.parametrize(
         "entry",
@@ -173,18 +229,19 @@ class TestSettingDeclaration:
         self, monkeypatch: pytest.MonkeyPatch, entry: str
     ) -> None:
         """Assert a malformed entry fails the settings load rather than going inert."""
-        monkeypatch.setenv("SETTINGS_OVERRIDE_ALLOWED_KEYS", json.dumps([entry]))
-        with pytest.raises(ValueError, match="SETTINGS_OVERRIDE_ALLOWED_KEYS"):
+        monkeypatch.setenv("SETTINGS_OVERRIDE__ALLOWED_KEYS", json.dumps([entry]))
+        with pytest.raises(ValueError, match="ALLOWED_KEYS"):
             Settings()
 
     def test_accepts_nested_key_entry(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Assert a ``__``-delimited key token passes the format validator."""
         monkeypatch.setenv(
-            "SETTINGS_OVERRIDE_ALLOWED_KEYS", '["Settings.PMM__annotations_enabled"]'
+            "SETTINGS_OVERRIDE__ALLOWED_KEYS",
+            '["Settings.PMM__annotations_enabled"]',
         )
         assert {
             "Settings.PMM__annotations_enabled"
-        } == Settings().SETTINGS_OVERRIDE_ALLOWED_KEYS
+        } == Settings().SETTINGS_OVERRIDE.ALLOWED_KEYS
 
 
 class TestPredicates:

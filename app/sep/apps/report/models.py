@@ -21,6 +21,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA, ArbitraryMapping
+
 
 class CheckSeverity(StrEnum):
     """Severity levels for advisor check results."""
@@ -215,7 +217,9 @@ class BackupEntry(BaseModel):
     estimated_data: bool = True
     enabled: bool | None = None
     encryption: str = "Unknown"
-    period: dict[str, Any] = Field(default_factory=dict)
+    period: dict[str, Any] = Field(
+        default_factory=dict, json_schema_extra=ARBITRARY_ARGS_SCHEMA
+    )
 
 
 class BackupSection(BaseModel):
@@ -415,7 +419,5 @@ class ReportJobResponse(BaseModel):
     job_id: str
     status: str
     pdf_ready: bool = False
-    result: dict[str, Any] | None = Field(
-        default=None, json_schema_extra={"additionalProperties": True}
-    )
+    result: ArbitraryMapping | None = None
     error: str | None = None

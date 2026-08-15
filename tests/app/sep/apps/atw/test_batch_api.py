@@ -40,15 +40,14 @@ from starlette.datastructures import URL
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import RemoteAPI
+from app.core.utils.date_time import utc_now
 from app.sep.apps.atw.crud import AtwIncidentExecutionManager, AtwIncidentManager
 from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution
 from app.sep.deps import (
-    get_api_authenticated_user,
     get_current_user,
     get_session,
     get_tasks_api,
     require_bearer_for_unsafe_methods,
-    validate_csrf,
 )
 from app.sep.main import sep_app
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
@@ -481,6 +480,34 @@ class TestAtwBatchExecute:
             _FIRST_TASK_ID,
             _SECOND_TASK_ID,
         ]
+
+    @pytest.mark.asyncio
+    async def test_closed_incident_returns_409_before_dispatch(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        incident: AtwIncident,
+        session: AsyncSession,
+        tasks_api: AsyncMock,
+    ) -> None:
+        """Reject batch execution on a closed incident before any snippet is resolved."""
+        await create_snippet("a.sh", parameters=[])
+        incident.closed_at = utc_now()
+        await AtwIncidentManager.save(session, incident)
+
+        response = api_client.post(
+            executions_url(incident.id),
+            json={
+                "executor_host": "host1",
+                "items": [{"snippet_filename": "a.sh"}],
+            },
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "closed" in response.json()["detail"].lower()
+        tasks_api.post.assert_not_called()
+        rows = await AtwIncidentExecutionManager.list(session, incident_id=incident.id)
+        assert rows == []
 
     @pytest.mark.asyncio
     async def test_whole_batch_resolves_in_one_snippet_lookup(
@@ -1476,10 +1503,8 @@ class TestAtwBatchExecuteOnRealPostgres:
 
         mocker.patch.object(AtwIncidentExecutionManager, "save", new=_flaky_save)
 
-        sep_app.dependency_overrides[validate_csrf] = lambda: True
         sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
         sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-        sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
         sep_app.dependency_overrides[get_session] = lambda: postgres_session
         client = AsyncClient(
             transport=ASGITransport(app=sep_app), base_url="http://test"

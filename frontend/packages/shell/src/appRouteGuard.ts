@@ -35,5 +35,10 @@ export function wrapAppRoute(appKey: string, element: ReactElement): ReactElemen
   if (UNGUARDED_APP_KEYS.has(appKey)) {
     return element;
   }
+  // `children` rides in the props object rather than `createElement`'s third
+  // argument: this module is plain `.ts` so JSX (what the rule wants) is not
+  // available, and `AppDisabledGuardProps.children` is required, which the
+  // third-argument overload does not satisfy for the type checker.
+  // eslint-disable-next-line react/no-children-prop
   return createElement(AppDisabledGuard, { appKey, children: element });
 }

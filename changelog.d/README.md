@@ -72,7 +72,7 @@ is the only way to end up without one. Capitalise the first word; do not add a
 ## What a fragment must say
 
 A fragment is read by an operator deciding whether a change affects them and
-when. Two things it must carry.
+when. Three things it must carry.
 
 **Name the asymmetry.** When the change does not land uniformly — for some
 installations and not others, for some processes and not others, or only after
@@ -83,7 +83,23 @@ Answer whichever of these three applies:
 |---|---|---|
 | **Who** | fresh installs only, or existing installations too? | "reaches fresh installs and installer re-runs only; an existing installation keeps its rendered config until the installer runs again" — not "the new default applies" |
 | **When** | at upgrade, at restart, or on the next occurrence of some event? | "an override lands on the next task the worker executes" — not "without a restart" |
-| **Lag** | how long between the triggering action and the effect, and what happens to work started inside that window? | "workers pick the new values up on their next refresh, 30 seconds by default, so a send started inside that window fails as unconfigured and is not retried" — not "takes effect immediately" |
+| **Lag** | how long between the triggering action and the effect, and what happens to work started inside that window? | "worker-side refresh advances while tasks run rather than on a wall-clock interval, so an override has no fixed upper bound on when it lands and work enqueued in the meantime may still run against the old value" — not "takes effect immediately" |
+
+**State the granularity an operator acts on.** When the fragment describes a
+*mechanism* — a directory that is consulted, a set of names that are derived, a
+pattern that is matched — say at what granularity it applies, and cite the
+surface carrying the full recipe. A mechanism summarised at the wrong
+granularity is worse than one left undescribed: the operator acts on the summary
+and does not go looking for the recipe.
+
+The tell is a plural noun standing in for a set whose members behave
+differently. "Consults `SECRETS_DIR` for every canonical name it derives" is
+true of the lookup and false of the outcome, because one derived name per
+service does not mean one mounted file per service — so an operator mounts one
+file and gets a container that fails to start. Naming the granularity ("a file
+supplies only the name it is named for, so keeping the password out of the
+environment means mounting all three") and pointing at `sidecar/README.md` costs
+one clause.
 
 **Pick the section from what the change *is*.** The work-item type decides only
 once that answer is "a modification to behaviour that already shipped".

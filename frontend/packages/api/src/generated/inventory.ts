@@ -114,7 +114,7 @@ export interface paths {
      *     that has no override row succeeds with 204. Attempting to delete a field
      *     the code declares NOT_OVERRIDABLE responds 409, since it cannot have an
      *     override row in the first place and the operator's intent is
-     *     unsatisfiable. A field only ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withheld
+     *     unsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld
      *     may still carry a row written before the restriction applied, so that
      *     row is deleted normally and only the no-row case answers 409.
      *
@@ -517,15 +517,15 @@ export interface components {
      *     :param os_version: The observed operating system version.
      *     :type os_version: str | None
      *     :param installed_packages: Snapshot of installed packages.
-     *     :type installed_packages: list[dict[str, Any]] | None
      *     :param config: Snapshot of host configuration.
-     *     :type config: dict[str, Any] | None
      *     :param observed_at: When this observation was collected.
      *     :type observed_at: UTCDatetime
      */
     HostSystemObservationResponse: {
       /** Config */
-      config?: Record<string, never> | null;
+      config?: {
+        [key: string]: unknown;
+      } | null;
       /**
        * Created At
        * Format: date-time
@@ -534,7 +534,11 @@ export interface components {
       /** Id */
       id: number | null;
       /** Installed Packages */
-      installed_packages?: Record<string, never>[] | null;
+      installed_packages?:
+        | {
+            [key: string]: unknown;
+          }[]
+        | null;
       /** Node Id */
       node_id: number;
       /**
@@ -556,17 +560,21 @@ export interface components {
      *     :param os_version: The observed operating system version. Defaults to None.
      *     :type os_version: str | None
      *     :param installed_packages: Snapshot of installed packages. Defaults to None.
-     *     :type installed_packages: list[dict[str, Any]] | None
      *     :param config: Snapshot of host configuration. Defaults to None.
-     *     :type config: dict[str, Any] | None
      *     :param observed_at: When this observation was collected.
      *     :type observed_at: UTCDatetime
      */
     HostSystemObservationWrite: {
       /** Config */
-      config?: Record<string, never> | null;
+      config?: {
+        [key: string]: unknown;
+      } | null;
       /** Installed Packages */
-      installed_packages?: Record<string, never>[] | null;
+      installed_packages?:
+        | {
+            [key: string]: unknown;
+          }[]
+        | null;
       /** Node Id */
       node_id?: number | null;
       /**
@@ -968,7 +976,6 @@ export interface components {
      *     :param replication_set: The replication set in which the service is running, if set.
      *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service, if set.
-     *     :type custom_labels: dict[str, Any] | None
      *     :param node_id: The unique identifier of the node on which the service is running.
      *         Must be unique for external_id, as defined by composite index
      *         ix_service_external_id_node_id, and for port, as defined by composite index
@@ -988,7 +995,9 @@ export interface components {
        */
       created_at?: string;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -1034,7 +1043,6 @@ export interface components {
      *     :param replication_set: The replication set in which the service is running, if set.
      *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service, if set.
-     *     :type custom_labels: dict[str, Any] | None
      *     :param node_id: The unique identifier of the node on which the service is running.
      *     :type node_id: int
      *     :param schemas: A list of schemas associated with the service.
@@ -1051,7 +1059,9 @@ export interface components {
        */
       created_at?: string;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -1100,7 +1110,6 @@ export interface components {
      *     :param replication_set: The replication set in which the service is running, if set.
      *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service, if set.
-     *     :type custom_labels: dict[str, Any] | None
      *     :param node_id: The unique identifier of the node on which the service is running.
      *     :type node_id: int
      *     :param schemas: A list of schemas associated with the service.
@@ -1117,7 +1126,9 @@ export interface components {
        */
       created_at?: string;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -1247,7 +1258,6 @@ export interface components {
      *     :param replication_set: The replication set in which the service is running. Defaults to None.
      *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service. Defaults to None.
-     *     :type custom_labels: dict[str, Any] | None
      *     :param node_id: The foreign key referencing the node to which the service belongs.
      *         Defaults to None.
      *     :type node_id: int | None
@@ -1256,7 +1266,9 @@ export interface components {
       /** Cluster */
       cluster?: string | null;
       /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
       /** Environment */
       environment?: string | null;
       /** External Id */
@@ -1276,8 +1288,8 @@ export interface components {
      * @description Enumerate settings classes that may have HOT override rows.
      *
      *     The wired classes are ``SEPSettings``, ``TasksSettings``,
-     *     ``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,
-     *     ``AlertSettings``, ``AlertsSettings``, ``AnonymizerSettings`` and
+     *     ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
+     *     ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings`` and
      *     ``InventorySettings``.
      *
      *     To wire a new settings class:
@@ -1298,11 +1310,11 @@ export interface components {
       | 'SEPSettings'
       | 'TasksSettings'
       | 'SnippetsSettings'
-      | 'MessagesSettings'
       | 'Settings'
       | 'AlertSettings'
       | 'AnonymizerSettings'
       | 'AlertsSettings'
+      | 'HealthReportSettings'
       | 'InventorySettings';
     /**
      * SettingClassGroup
@@ -1345,6 +1357,19 @@ export interface components {
       settings: components['schemas']['SettingResponse'][];
     };
     /**
+     * SettingOption
+     * @description Represent one selectable member for an enum-typed setting.
+     *
+     *     :param label: The enum member name shown in the UI (e.g. ``WARNING``).
+     *     :param value: The JSON-dumped member value the client must PATCH
+     *         (e.g. ``30`` for an ``IntEnum``).
+     */
+    SettingOption: {
+      /** Label */
+      label: string;
+      value: components['schemas']['JsonValue'];
+    };
+    /**
      * SettingResponse
      * @description Represent a single setting's metadata and current value.
      *
@@ -1375,6 +1400,8 @@ export interface components {
      *         (e.g. the active auth provider). ``False`` lets the UI present the field
      *         as inert. Display-only, like ``is_advanced``: it does not block
      *         PATCH/DELETE server-side; the runtime gate is the real enforcement.
+     *     :param options: Selectable enum members for dropdown UIs, or ``None`` when
+     *         the field is not an ``Enum`` annotation. Aliased members are excluded.
      */
     SettingResponse: {
       /** Default Value */
@@ -1401,6 +1428,8 @@ export interface components {
       key: string;
       /** Key Path */
       key_path?: string[];
+      /** Options */
+      options?: components['schemas']['SettingOption'][] | null;
       reload: components['schemas']['ReloadClassification'];
       setting_class: components['schemas']['SettingClassEnum'];
       /** Type */
@@ -1476,7 +1505,9 @@ export interface components {
       /** Id */
       id: number | null;
       /** Keys */
-      keys: Record<string, never>;
+      keys: {
+        [key: string]: unknown;
+      };
       /** Name */
       name: string;
       /** Schema Id */
@@ -1517,7 +1548,9 @@ export interface components {
       /** Id */
       id: number | null;
       /** Keys */
-      keys: Record<string, never>;
+      keys: {
+        [key: string]: unknown;
+      };
       /** Name */
       name: string;
       /** Schema Id */
@@ -1555,7 +1588,9 @@ export interface components {
       /** Id */
       id: number | null;
       /** Keys */
-      keys: Record<string, never>;
+      keys: {
+        [key: string]: unknown;
+      };
       /** Name */
       name: string;
       /** Schema Id */
@@ -1578,7 +1613,9 @@ export interface components {
       /** Create */
       create: string;
       /** Keys */
-      keys: Record<string, never>;
+      keys: {
+        [key: string]: unknown;
+      };
       /** Name */
       name: string;
       /** Schema Id */
@@ -1731,7 +1768,9 @@ export interface operations {
         node_type?: string | null;
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -1894,7 +1933,9 @@ export interface operations {
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2031,7 +2072,9 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2160,7 +2203,9 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2232,7 +2277,9 @@ export interface operations {
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2362,7 +2409,9 @@ export interface operations {
         include_tables?: string | null;
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;
@@ -2521,7 +2570,9 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
-        sort?: string;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
       header?: never;

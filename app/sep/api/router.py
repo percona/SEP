@@ -58,10 +58,6 @@ from app.sep.deps import (
 def build_apps_router(registry: AppRegistry) -> APIRouter:
     """Build the ``/apps`` sub-router by iterating the app registry.
 
-    Mirror the Jinja UI mount loop in ``app/sep/main.py`` so future
-    runtime enable/disable guards can be applied symmetrically at both
-    mount points.
-
     :param registry: The app registry, in activation order.
     :type registry: AppRegistry
     :return: An ``APIRouter`` mounted at ``/apps`` with each app whose
@@ -92,7 +88,9 @@ def build_apps_router(registry: AppRegistry) -> APIRouter:
 
 apps_router = build_apps_router(get_app_registry())
 
-api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
+api_router = APIRouter(
+    prefix="/api", dependencies=[IsApiAuthenticated, RequireBearerForUnsafeMethods]
+)
 api_router.include_router(apps_router)
 api_router.include_router(app_info_router, prefix="/sep/app-info", tags=["sep"])
 api_router.include_router(dashboard_router, prefix="/sep/dashboard", tags=["sep"])

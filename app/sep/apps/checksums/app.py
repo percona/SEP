@@ -21,14 +21,12 @@ serves the byte-identical schema, list, detail, create, update, execute, and
 delete surfaces. Create and update are derived from the model-first
 :class:`~app.sep.apps.checksums.models.ChecksumsForm` through the
 ``pt-table-checksum`` spec builder; the derived PUT and DELETE carry the
-framework's default protected-task + running-conflict guards. The Jinja UI router
-is threaded explicitly (the registry does not).
+framework's default protected-task + running-conflict guards.
 """
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.checksums.deps import build_checksums_payload
 from app.sep.apps.checksums.models import ChecksumsForm, OWNER
-from app.sep.apps.checksums.routes import router as jinja_router
 from app.sep.apps.checksums.views import checksums_views
 from app.sep.apps.framework.apps import (
     AppCapabilities,
@@ -54,5 +52,4 @@ app = TaskExecutionApp(
     service_type=ServiceTypeEnum.MYSQL,
     list_filter=ListFilterConfig(status=True, service_type=True),
     response_context_provider=get_username_mapping,
-    jinja_router=jinja_router,
 )

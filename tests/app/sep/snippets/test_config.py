@@ -31,14 +31,13 @@ from app.core.settings_override.registry import (
     is_hot_reloadable,
     materialize_override_value,
 )
-from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
 from app.sep.snippets.config import (
     SnippetFilter,
     SnippetFilterType,
     SnippetsSettings,
     SnippetSudoOption,
 )
-from app.sep.snippets.models.snippet import BaseSnippet, SUDO_INPUT_NAME
+from app.sep.snippets.models.snippet import BaseSnippet
 
 EXECUTOR_HOSTS = frozenset({("host1", "host1")})
 
@@ -105,44 +104,6 @@ class TestSnippetSudoOptionAlias:
         )
 
 
-class TestSudoFormGeneration:
-    """Test that _to_form generates the correct checkbox state."""
-
-    def test_optional_default_false_produces_unchecked_checkbox(self):
-        """Verify sudo checkbox is unchecked when sudo_default is False."""
-        html = BaseSnippet._to_form(
-            "[]",
-            frozenset({("host1", "host1")}),
-            add_sudo_field=True,
-            sudo_default=False,
-        )
-        assert SUDO_INPUT_NAME in html
-        assert 'type="checkbox"' in html
-        checkbox_tag = html.split('type="checkbox"')[0].rsplit("<", 1)[1]
-        assert "checked" not in checkbox_tag
-
-    def test_optional_default_true_produces_checked_checkbox(self):
-        """Verify sudo checkbox is checked when sudo_default is True."""
-        html = BaseSnippet._to_form(
-            "[]",
-            frozenset({("host1", "host1")}),
-            add_sudo_field=True,
-            sudo_default=True,
-        )
-        assert 'type="checkbox"' in html
-        checkbox_tag = html.split('type="checkbox"')[0].rsplit("<", 1)[1]
-        assert "checked" in checkbox_tag
-
-    def test_no_sudo_field_when_not_optional(self):
-        """Verify no sudo field is rendered when add_sudo_field is False."""
-        html = BaseSnippet._to_form(
-            "[]",
-            frozenset({("host1", "host1")}),
-            add_sudo_field=False,
-        )
-        assert SUDO_INPUT_NAME not in html
-
-
 class TestSudoExecutionModel:
     """Test that _get_execution_model sets correct sudo default."""
 
@@ -175,155 +136,6 @@ class TestSudoExecutionModel:
 
 EXPECTED_FIELDSETS_WITH_EXECUTOR = 2
 EXPECTED_FIELDSETS_MIXED_GROUPS = 3
-
-
-class TestToFormParameterGrouping:
-    """Test that _to_form groups parameters into separate fieldsets."""
-
-    def test_no_groups_produces_single_parameters_fieldset(self):
-        """Verify ungrouped params render a single 'Parameters' fieldset."""
-        params = _make_params_json({"name": "host"}, {"name": "port"})
-        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
-        legends = _extract_fieldset_legends(html)
-        assert "Parameters" in legends
-        assert _count_fieldsets(html) == EXPECTED_FIELDSETS_WITH_EXECUTOR
-
-    def test_all_same_group_produces_named_fieldset(self):
-        """Verify params sharing one group render a single named fieldset."""
-        params = _make_params_json(
-            {"name": "host", "group": "Database"},
-            {"name": "port", "group": "Database"},
-        )
-        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
-        legends = _extract_fieldset_legends(html)
-        assert "Database" in legends
-        assert "Parameters" not in legends
-
-    def test_mixed_grouped_and_ungrouped(self):
-        """Verify mixed grouped/ungrouped params render multiple fieldsets."""
-        params = _make_params_json(
-            {"name": "host", "group": "Database"},
-            {"name": "verbose"},
-        )
-        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
-        legends = _extract_fieldset_legends(html)
-        assert "Database" in legends
-        assert "Parameters" in legends
-        assert _count_fieldsets(html) == EXPECTED_FIELDSETS_MIXED_GROUPS
-
-    def test_first_occurrence_order_preserved(self):
-        """Verify fieldset order follows first-occurrence of each group."""
-        params = _make_params_json(
-            {"name": "p1", "group": "Beta"},
-            {"name": "p2", "group": "Alpha"},
-            {"name": "p3", "group": "Beta"},
-        )
-        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
-        legends = _extract_fieldset_legends(html)
-        beta_idx = legends.index("Beta")
-        alpha_idx = legends.index("Alpha")
-        assert beta_idx < alpha_idx
-
-    def test_extra_args_in_ungrouped_fieldset(self):
-        """Verify extra args field lands in the ungrouped 'Parameters' fieldset."""
-        params = _make_params_json({"name": "host", "group": "DB"})
-        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS, add_extra_args_field=True)
-        legends = _extract_fieldset_legends(html)
-        assert "DB" in legends
-        assert "Parameters" in legends
-
-    def test_sudo_in_ungrouped_fieldset(self):
-        """Verify sudo checkbox lands in the ungrouped 'Parameters' fieldset."""
-        params = _make_params_json({"name": "host", "group": "DB"})
-        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS, add_sudo_field=True)
-        legends = _extract_fieldset_legends(html)
-        assert "Parameters" in legends
-        assert SUDO_INPUT_NAME in html
-
-    def test_empty_params_no_parameter_fieldset(self):
-        """Verify no parameter fieldset is created when params are empty."""
-        html = BaseSnippet._to_form("[]", EXECUTOR_HOSTS)
-        legends = _extract_fieldset_legends(html)
-        assert "Parameters" not in legends
-
-
-class TestToFormHiddenParameters:
-    """Test that _to_form omits parameters marked ``hidden``."""
-
-    def test_hidden_param_omitted_from_html(self):
-        """A hidden param is not rendered while a sibling still renders."""
-        params = _make_params_json(
-            {"name": "pmmserver"},
-            {"name": "apikey", "hidden": True},
-        )
-        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
-        assert 'name="pmmserver"' in html
-        assert 'name="apikey"' not in html
-
-    def test_hidden_secret_value_never_in_html(self):
-        """A hidden param's default value never leaks into the page source."""
-        secret = "super-secret-api-key"
-        params = _make_params_json(
-            {"name": "apikey", "hidden": True, "default": secret},
-        )
-        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
-        assert secret not in html
-        assert 'name="apikey"' not in html
-
-    def test_hidden_param_creates_no_fieldset(self):
-        """A solely-hidden parameter produces no extra 'Parameters' fieldset."""
-        params = _make_params_json({"name": "apikey", "hidden": True})
-        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
-        legends = _extract_fieldset_legends(html)
-        assert "Parameters" not in legends
-
-    def test_non_hidden_params_render_unchanged(self):
-        """Params without ``hidden`` render exactly as before."""
-        params = _make_params_json({"name": "host"}, {"name": "port"})
-        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
-        assert 'name="host"' in html
-        assert 'name="port"' in html
-
-
-class TestToFormOptionalExecutorHosts:
-    """Test ``_to_form`` with optional executor hosts and custom form ID."""
-
-    def test_executor_hosts_none_omits_host_fieldset(self):
-        """Verify no executor host fieldset is rendered when hosts are ``None``."""
-        html = BaseSnippet._to_form("[]", None)
-        legends = _extract_fieldset_legends(html)
-        assert EXECUTION_HOST_LABEL not in legends
-
-    def test_executor_hosts_none_still_renders_parameters(self):
-        """Verify parameter fieldsets render even when hosts are ``None``."""
-        params = _make_params_json({"name": "port"})
-        html = BaseSnippet._to_form(params, None)
-        legends = _extract_fieldset_legends(html)
-        assert "Parameters" in legends
-
-    def test_executor_hosts_provided_includes_host_fieldset(self):
-        """Verify executor host fieldset renders when hosts are provided."""
-        html = BaseSnippet._to_form("[]", EXECUTOR_HOSTS)
-        legends = _extract_fieldset_legends(html)
-        assert EXECUTION_HOST_LABEL in legends
-
-    def test_custom_form_id(self):
-        """Verify the form element uses a custom ID when provided."""
-        html = BaseSnippet._to_form("[]", EXECUTOR_HOSTS, form_id="myCustomForm")
-        assert 'id="myCustomForm"' in html
-
-    def test_default_form_id(self):
-        """Verify the form element uses the default ID."""
-        html = BaseSnippet._to_form("[]", EXECUTOR_HOSTS)
-        assert 'id="snippetExecuteForm"' in html
-
-    def test_executor_hosts_none_with_custom_form_id(self):
-        """Verify both optional hosts and custom ID work together."""
-        params = _make_params_json({"name": "host"})
-        html = BaseSnippet._to_form(params, None, form_id="troubleshoot-test")
-        assert 'id="troubleshoot-test"' in html
-        assert EXECUTION_HOST_LABEL not in html
-        assert "Parameters" in html
 
 
 class TestSyncIntervalHotField:

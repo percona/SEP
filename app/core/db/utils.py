@@ -77,7 +77,8 @@ def create_app_async_engine(database: DatabaseOptions) -> AsyncEngine:
     """Build a service API async engine, forwarding only the set pool options.
 
     Unset pool fields are omitted so the engine keeps SQLAlchemy's own defaults,
-    leaving standalone deployments unchanged.
+    leaving standalone deployments unchanged. An unset or SQLite-inapplicable
+    ``CONNECT_TIMEOUT`` likewise omits ``connect_args`` entirely.
 
     :param database: The service database options carrying the URL and any
         configured pool sizing.
@@ -87,6 +88,7 @@ def create_app_async_engine(database: DatabaseOptions) -> AsyncEngine:
         database.URL,
         echo=False,
         json_serializer=json_serializer,
+        **database.connect_engine_kwargs,
         **database.pool_engine_kwargs,
     )
 
@@ -342,6 +344,23 @@ def acquire_pg_advisory_xact_lock(bind: Connection, lock_key: int) -> None:
         bind.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
 
 
+def table_exists(bind: Connection, table_name: str) -> bool:
+    """Return whether ``table_name`` is present on the bound database.
+
+    Enum-widening downgrades need this as a separate preflight from
+    :func:`check_constraint_lists_members`. That helper collapses "the table is
+    gone" and "the member is not listed" into a single ``False``, which reads
+    correctly for a narrowing guard (``if not lists_members: return``) but
+    inverts for a widening one (``if lists_members: return``) — there, a missing
+    table falls through into DDL against a table another track already dropped.
+
+    :param bind: The migration's bound connection (``op.get_bind()``).
+    :param table_name: The table to test for.
+    :return: ``True`` when the table exists.
+    """
+    return inspect(bind).has_table(table_name)
+
+
 def check_constraint_lists_members(
     bind: Connection,
     table_name: str,
@@ -356,10 +375,17 @@ def check_constraint_lists_members(
     tests membership by matching each value as a single-quoted SQL string
     literal, so ``"SETTINGS"`` does not spuriously match ``"SEP_SETTINGS"``.
 
-    Returns ``False`` when the table does not exist -- ``get_check_constraints``
+    Returns ``False`` when the table does not exist. ``get_check_constraints``
     raises ``NoSuchTableError`` for a missing table, and a missing table means
-    there is no constraint to list anything (so an enum-narrowing downgrade
-    correctly no-ops when another track already dropped the shared table).
+    there is no constraint to list anything.
+
+    That single ``False`` carries two meanings, so it only short-circuits DDL
+    for a guard written ``if not lists_members: return`` (enum widening on
+    upgrade, narrowing on downgrade). A guard with the opposite polarity —
+    ``if lists_members: return``, as enum *narrowing* needs on upgrade and its
+    widening downgrade needs in reverse — falls through on a missing table and
+    runs DDL against it. Those call sites must precede this check with
+    :func:`table_exists`.
 
     :param bind: The migration's bound connection (``op.get_bind()``).
     :param table_name: The table whose CHECK constraints are inspected.

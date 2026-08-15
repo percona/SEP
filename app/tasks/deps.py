@@ -27,6 +27,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.requests import Request
 
 from app.api.deps import CurrentUserID
+from app.core.db import ListQuery, make_list_query_dep
 from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
@@ -293,9 +294,6 @@ async def get_task_history(
     return await TaskHistoryManager.get_or_404(session=session, id=task_history_id)
 
 
-TaskHistoryDep = Annotated[TaskHistory, Depends(get_task_history)]
-
-
 async def get_task_history_with_task(
     session: SessionDep,
     task_history_id: int,
@@ -348,4 +346,9 @@ def get_logs_offsets(request: Request) -> defaultdict[str, dict[str, int]]:
 LogsOffsetsDep = Annotated[
     defaultdict[str, dict[str, int]],
     Depends(get_logs_offsets),
+]
+
+TaskListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(TaskManager))]
+TaskHistoryListQueryDep = Annotated[
+    ListQuery, Depends(make_list_query_dep(TaskHistoryManager))
 ]

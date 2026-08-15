@@ -25,14 +25,8 @@ import pytest
 import yaml
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.backup_pg.deps import (
-    build_backup_task_payload,
-    get_backups_index_context,
-    get_backups_task,
-)
 from app.sep.apps.backup_pg.models import BackupPgForm, BackupType
-from app.sep.main import sep_app
-from app.tasks.models import Task, TaskBackendEnum, TaskWrite
+from app.tasks.models import Task
 from tests.app.factories import MOCK_CREATED_SERVICE_ID, TaskFactory
 from tests.app.sep.apps.framework.kit import MockInventoryAPI
 
@@ -43,24 +37,6 @@ def mock_inventory_api() -> MockInventoryAPI:
     api = MockInventoryAPI()
     api.seed_service(MOCK_CREATED_SERVICE_ID, service_type=ServiceTypeEnum.POSTGRESQL)
     return api
-
-
-@pytest.fixture
-def _mock_get_backups_index_context_dep() -> None:
-    """Mock the get_backups_index_context dependency for the Jinja index route."""
-    sep_app.dependency_overrides[get_backups_index_context] = lambda: {
-        "user": "default_user",
-        "executor_hosts": [],
-        "services": [],
-        "tasks": [],
-        "history_tasks": [],
-        "running_tasks": [],
-        "alert_on_fail_default": False,
-        "alert_on_fail_available": False,
-        "connectivity_check_default": True,
-    }
-    yield
-    sep_app.dependency_overrides = {}
 
 
 @pytest.fixture
@@ -97,25 +73,3 @@ def created_task() -> Task:
             }
         },
     )
-
-
-@pytest.fixture
-def _mock_get_backups_task_dep(created_task: Task) -> None:
-    """Mock the get_backups_task dependency."""
-    sep_app.dependency_overrides[get_backups_task] = lambda: created_task
-    yield
-    sep_app.dependency_overrides = {}
-
-
-@pytest.fixture
-def mock_build_backup_task_payload_dep() -> TaskWrite:
-    """Mock the build_backup_task_payload dependency for the Jinja create route."""
-    fake_task_write = TaskWrite(
-        name="fake_task",
-        backend=TaskBackendEnum.PROXY,
-        owner="BACKUP_PG",
-        data={"task": "fake-task", "meta": {}, "payload": ""},
-    )
-    sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write
-    yield fake_task_write
-    sep_app.dependency_overrides = {}

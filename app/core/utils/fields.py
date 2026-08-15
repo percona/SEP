@@ -425,6 +425,67 @@ def database_url_normalized_scheme_field_factory(
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 """Define a string field that must not be empty."""
 
+ARBITRARY_ARGS_SCHEMA = {"additionalProperties": True}
+"""Advertise a free-form argument map for OpenAPI / TypeScript clients.
+
+Without this, a bare ``dict`` field emits ``type: object`` with no
+``additionalProperties``, which openapi-typescript turns into
+``Record<string, never>``. Pass as ``Field(json_schema_extra=...)`` on a plain
+Pydantic field, or nest under ``SQLField(..., schema_extra=...)`` for SQLModel.
+"""
+
+
+class ArbitraryMapping(dict):
+    """Represent a free-form ``dict[str, Any]`` in an open object schema.
+
+    Use for nested or nullable mappings, and for route-level free-form JSON
+    bodies / responses. Putting ``additionalProperties`` only as a sibling of
+    ``anyOf`` still leaves ``Record<string, never>`` in the generated union.
+
+    Implemented as a ``dict`` subclass (not ``Annotated`` + ``WithJsonSchema``)
+    for two reasons:
+
+    1. **Fresh schema dicts.** FastAPI writes an operation-derived ``title``
+       into the JSON schema it resolves for a return type or ``Body()``.
+       ``WithJsonSchema`` returns the dict it stores, and equal metadata
+       collapses across annotation sites, so one route's title leaks onto
+       every other (including a GET response title on a PUT request body).
+       An explicit ``title`` in the template, and a fresh dict *per*
+       ``WithJsonSchema`` construction, both still leak. Returning a new dict
+       from ``__get_pydantic_json_schema__`` on every call keeps titles local.
+       Model fields are unaffected — they keep field-derived titles.
+    2. **Stable component names.** The ``Annotated`` + ``WithJsonSchema`` form
+       renamed generics to
+       ``PaginatedResponse_Annotated_dict_str__Any___WithJsonSchema__``. A
+       named subclass keeps ``PaginatedResponse_ArbitraryMapping_``.
+    """
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> core_schema.CoreSchema:
+        """Validate and coerce as a plain ``dict[str, Any]``.
+
+        :param source_type: The annotated source type (ignored; always this class).
+        :param handler: Pydantic's core-schema builder.
+        :return: A core schema for ``dict[str, Any]``.
+        """
+        return handler.generate_schema(dict[str, Any])
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        core_schema: core_schema.CoreSchema,
+        handler: GetCoreSchemaHandler,
+    ) -> JsonSchemaValue:
+        """Emit an open object schema, copying so FastAPI title writes stay local.
+
+        :param core_schema: The core schema produced for this type.
+        :param handler: Pydantic's JSON-schema builder.
+        :return: A fresh ``type: object`` schema with ``additionalProperties``.
+        """
+        return {**handler(core_schema), **ARBITRARY_ARGS_SCHEMA}
+
 
 def dsn_safe(value: str) -> str:
     """Reject DSN/CLI delimiters in a free-typed schema, table, or host name.
@@ -706,6 +767,17 @@ URIPath = Annotated[str, StringConstraints(pattern=r"^\/[^\s]*$")]
 
 This annotated type ensures that the string starts with a forward slash and does
 not contain any whitespace characters.
+"""
+
+URIPathPrefix = Annotated[str, StringConstraints(pattern=r"^(?:/[^\s/?#]+)*$")]
+"""Define a string field holding a URL mount prefix.
+
+The empty string is the valid unprefixed default; any other value is one or more
+``/``-prefixed segments with no trailing slash, so the prefix concatenates
+cleanly onto a root-anchored path. ``?`` and ``#`` are excluded because a mount
+prefix is a path, never a query or fragment. Rejecting rather than normalizing
+keeps a malformed value a startup failure instead of a doubled slash or an
+unroutable prefix at request time.
 """
 
 JsonPointerStr = Annotated[str, AfterValidator(validate_json_pointer)]

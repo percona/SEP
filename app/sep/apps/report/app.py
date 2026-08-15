@@ -16,8 +16,8 @@
 """Wire the Health & Security Report plugin as a declarative ``BaseApp``.
 
 Register the bespoke report plugin through the registry's definition path
-instead of the synthesized-legacy fallback, exposing the same JSON and Jinja
-routers the registry imports today, and contribute the health-report generation
+instead of the synthesized-legacy fallback, exposing the same JSON router
+the registry imports today, and contribute the health-report generation
 and artifact-purge beat schedules via ``periodic_task_schedules``.
 """
 
@@ -26,14 +26,14 @@ import json
 from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.apps.report.api_routes import router as api_router
-from app.sep.apps.report.routes import router as jinja_router
-from app.sep.config import sep_settings
+from app.sep.apps.report.config import health_report_settings
 
 
 def _report_periodic_tasks() -> list[AppPeriodicTask]:
     """Expand one generation task per configured health-report schedule entry.
 
-    Kept as a callable because ``HEALTH_REPORT.schedules`` is variable-length;
+    Kept as a callable because ``health_report_settings.schedules`` is
+    variable-length;
     each entry's interval is deferred via the ``schedule`` thunk so a hot
     override is visible on the next seed.
 
@@ -41,7 +41,7 @@ def _report_periodic_tasks() -> list[AppPeriodicTask]:
         contrib.
     """
     tasks: list[AppPeriodicTask] = []
-    for idx, entry in enumerate(sep_settings.HEALTH_REPORT.schedules):
+    for idx, entry in enumerate(health_report_settings.schedules):
         suffix = f"_{idx}" if idx else ""
         task_kwargs = {}
         if entry.since != "now-7d":
@@ -71,7 +71,7 @@ def _report_periodic_tasks() -> list[AppPeriodicTask]:
         AppPeriodicTask(
             name="sep__purge_report_artifacts",
             task="purge_report_artifacts",
-            schedule=lambda: sep_settings.HEALTH_REPORT.cleanup_interval,
+            schedule=lambda: health_report_settings.cleanup_interval,
         ),
     )
     return tasks
@@ -87,6 +87,5 @@ app = BaseApp(
     react_route="/reports",
     nav_icon=NavIcon.BAR_CHART,
     api_router=api_router,
-    jinja_router=jinja_router,
     periodic_task_schedules=_report_periodic_tasks,
 )

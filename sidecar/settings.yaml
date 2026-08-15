@@ -1,0 +1,172 @@
+# Baked PMM-embedded settings profile for the consolidated side-car image.
+# Copied to $APP_HOME/settings.yaml by sidecar/Containerfile.sidecar; a bind mount
+# at that path replaces it wholesale, which is the operator escape hatch.
+#
+# One `default:` block only. YamlPrefixConfigSettingsSource deep-merges `default`
+# into the FASTAPI_ENV-selected block, so with no second block this file resolves
+# identically under the image's baked FASTAPI_ENV=production_docker and under any
+# other value -- and AuthSettings sees exactly one auth provider.
+#
+# Per-deployment inputs (database password, Grafana token, PMM/Nomad endpoints,
+# SECRET_KEY) arrive as environment variables, which outrank this file. See
+# sidecar/README.md for the contract.
+#
+# TLS verification is off on every PMM-facing client below: PMM terminates TLS
+# with a self-signed certificate the side-car cannot validate from inside the
+# container.
+
+default:
+  # PMM's nginx forwards the browser's Host verbatim and PMM's public address is
+  # deployment-specific, so no narrower value is knowable at image-build time.
+  ALLOWED_HOSTS:
+    - "*"
+  ALLOW_CONCURRENT_SESSIONS: true
+  LOGGING: INFO
+  SSL_CAFILE: null
+  # Set via the BASE_URL environment variable when tasks download scripts or artifacts.
+  # The value must include SEP's URL prefix below, because download URLs are joined
+  # onto it rather than replacing its path.
+  BASE_URL: null
+  CONNECTIVITY_CHECK_DEFAULT: false
+
+  # The settings the embedded deployment leaves to an administrator; everything
+  # else is refused by the override API because this image provisions it.
+  # Unprefixed, so all three services read the same list.
+  SETTINGS_OVERRIDE:
+    ALLOWED_KEYS:
+      - Settings.LOGGING
+      - Settings.PMM__annotations_enabled
+      - SEPSettings.SYNC_REFRESH_TIME
+      - SEPSettings.CONNECTIVITY_CHECK_DEFAULT
+      - SEPSettings.FOOTER_TEMPLATE
+      - SEPSettings.DIAGNOSTICS_DELIVERY_INPUTS
+      - AlertSettings.PROVIDERS
+      - AlertSettings.SOURCE_PREFIX
+      - AlertSettings.SOURCE_SUFFIX
+      - AnonymizerSettings.DEFAULT_ENTITIES
+      - TasksSettings.PRE_EXECUTION_CONNECTIVITY_CHECK
+      - TasksSettings.LOG_RETENTION_DAYS
+
+  AUTH:
+    PROVIDER:
+      grafana:
+        endpoint: https://pmm-server:8443/graph
+        # Supplied at runtime; Grafana auth and the PMM syncer stay inert until then.
+        service_account_token: ""
+        session_cookie_name: pmm_session
+        verify_ssl: false
+
+  PMM:
+    ENDPOINT: https://pmm-server:8443
+    VERIFY_SSL: false
+    # Task-lifecycle annotations onto PMM. create_pmm_annotation returns early
+    # when API_KEY is unset, so this stays a silent no-op until a token is supplied.
+    ANNOTATIONS_ENABLED: true
+
+  CELERY:
+    # Superseded per container start by the credentialed URLs entrypoint.sh mints.
+    BROKER_URL: redis://127.0.0.1:6379/0
+    RESULT_BACKEND: redis://127.0.0.1:6379/1
+    # No BEAT_DBURI: the beat store defaults to the resolved SEP database, so the
+    # mounted SEP__DATABASE__PASSWORD reaches it without an env-visible URI.
+    RESULT_EXPIRES: 3600
+    WORKER_STATE_DB: celery_worker_state
+
+  SEP:
+    AMBIENT_SESSION_SSO_ENABLED: true
+    # PMM ships a hardcoded `location /sep/` block, so this is fixed topology
+    # rather than a per-deployment input. The loopback healthcheck stays
+    # unprefixed: routing tolerates a request that arrives without the prefix.
+    ROOT_PATH: /sep
+    DATABASE:
+      ENGINE: postgresql
+      HOST: pmm-server
+      NAME: sep
+      PORT: 5432
+      USER: sep
+    # Where diagnostics bundles go once an operator supplies the credentials.
+    # The secret names are declared but empty: the plan's cross-reference
+    # validator requires every cited name to be declared, and the values arrive
+    # through DIAGNOSTICS_DELIVERY_INPUTS. Delivery stays off until they do.
+    DIAGNOSTICS_DELIVERY:
+      endpoint: https://percona.service-now.com/
+      max_bundle_size_mb: 30
+      secrets:
+        sn_api_key: ""
+        client_token: ""
+      resolution_steps:
+        - name: resolve_ticket
+          method: POST
+          path: api/pellc/percona_connector/ticket_details
+          headers:
+            x-sn-apikey: {source: secret, name: sn_api_key}
+          body:
+            client_token: {source: secret, name: client_token}
+            ticket_number: {source: input, field: case_ref}
+          outputs:
+            table_name: /result/table_name
+            ticket_id: /result/ticket_id
+      upload:
+        path: api/now/attachment/upload
+        headers:
+          x-sn-apikey: {source: secret, name: sn_api_key}
+          Accept: {source: literal, value: application/json}
+        fields:
+          table_name: {source: output, step: resolve_ticket, output: table_name}
+          table_sys_id: {source: output, step: resolve_ticket, output: ticket_id}
+        file_field: uploadFile
+        file_content_type: application/zip
+        reference_pointer: /result/sys_id
+    INVENTORY_ENDPOINT: http://127.0.0.1:9001
+    TASKS_ENDPOINT: http://127.0.0.1:9002
+    UVICORN_HOST: 0.0.0.0
+    UVICORN_PORT: 9000
+    PROXY_HEADERS: true
+    SSL_CERTFILE: null
+    SSL_KEYFILE: null
+    APPS:
+      - MODULE_NAME: inventory
+      - MODULE_NAME: atw
+      - MODULE_NAME: mysql_backups
+    SYNCERS:
+      - SYNCER: PMMSyncer
+      - SYNCER: MySQLSyncer
+        IGNORE_SCHEMAS:
+          - sys
+          - performance_schema
+          - mysql
+          - information_schema
+      - SYNCER: SystemFactsSyncer
+
+  INVENTORY:
+    DATABASE:
+      ENGINE: postgresql
+      HOST: pmm-server
+      NAME: sep
+      PORT: 5432
+      USER: sep
+    UVICORN_HOST: 0.0.0.0
+    UVICORN_PORT: 9001
+    SSL_CERTFILE: null
+    SSL_KEYFILE: null
+
+  TASKS:
+    DATABASE:
+      ENGINE: postgresql
+      HOST: pmm-server
+      NAME: sep
+      PORT: 5432
+      USER: sep
+    UVICORN_HOST: 0.0.0.0
+    UVICORN_PORT: 9002
+    NOMAD:
+      # Credential-free so this file validates standalone; the credentialed form
+      # arrives as the canonical Nomad endpoint variable.
+      ENDPOINT: https://pmm-server:8443/nomad
+      SECURE: true
+      VERIFY_SSL: false
+      SSL_CAFILE: null
+      SSL_CERTFILE: null
+      SSL_KEYFILE: null
+    SSL_CERTFILE: null
+    SSL_KEYFILE: null
