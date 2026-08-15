@@ -27,10 +27,10 @@ executor. Joining Nomad is not enough on its own — SEP's host list filters on
 so a node can be joined and still never appear. If it does not, check
 `nomad node status -verbose` inside `pmm-server` before suspecting SEP.
 
-**Prerequisites.** The service reaches SEP only through the PMM syncer, which
-needs a real Grafana token: run `./mint-grafana-token.sh`, then trigger a sync
-(`POST /apps/inventory/sync/`). Without it the node registers with PMM and
-never appears in SEP.
+**Prerequisites.** The service reaches SEP only through the PMM syncer, so
+trigger a sync (`POST /apps/inventory/sync/`) once the node has registered.
+PMM publishes the Grafana token the syncer needs, so there is no minting step.
+Until a sync runs, the node registers with PMM and never appears in SEP.
 
 **Credentials.** `./bootstrap.sh` generates three values into `.env`, like
 every other secret here — nothing is committed:
