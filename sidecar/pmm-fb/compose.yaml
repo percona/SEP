@@ -5,34 +5,27 @@
 # percona/pmm branch PMM-15216, PRs #5653 + #5700): its entrypoint provisions
 # the network-reachable low-privilege `sep` role and `sep` database.
 #
-# sep-sidecar is the app-restricted consolidated side-car, built on main by
-# `make image-sidecar-embedded` and published under an `-embedded` suffix
-# (apps: inventory, mysql_backups, atw; supervisord running the three APIs +
-# Celery worker/beat + bundled Valkey; builtin snippets ingested at boot, no
-# snippets management UI). Pin the `-embedded` tag — see pmm-fb/README.md
-# "Which image to pin"; the plain tag is the standalone image.
+# sep-sidecar is the app-restricted consolidated side-car, built and published
+# from main under a suffix-less tag — the build emits a single artifact. See
+# pmm-fb/README.md "Which image to pin".
 #
-# Run ./bootstrap.sh first: it generates the .env this file interpolates and
-# renders pmm.conf from its committed template. pmm.conf overlays the stock
-# nginx config so the five SEP path prefixes the PMM UI expects (/api,
-# /sep_app, /stream-logs, /execution-events, /files) reach the side-car; see
-# pmm.conf.template for the interim auth (Option D) wiring. SEP's own settings
-# come from the profile baked into the image, with the per-deployment values
-# below overriding it — environment outranks the file.
+# Run ./bootstrap.sh first: it generates the .env this file interpolates. PMM
+# owns every SEP deployment secret: it writes them into the pmm-sep-secrets
+# volume, which the side-car reads through SECRETS_DIR, and it serves SEP under
+# its own /sep prefix. SEP's remaining settings come from the profile baked into
+# the image, with the per-deployment values below overriding it — environment
+# outranks the file.
 #
 # sep-mysql is the task-execution target, behind the `mysql` profile; see
 # mysql-target.md.
 #
-# The side-car gets a fixed IP because nginx resolves proxy targets at
-# startup, when the SEP container may not be running yet — and a name-based
-# upstream would also go stale when sep-sidecar is recreated (e.g. after
-# minting the Grafana token, which now takes a recreate rather than a restart
-# because the token reaches the process as environment). pmm.conf proxies to
-# that IP.
+# pmm-server's nginx resolves the side-car by name at request time, so neither
+# container needs a fixed address and either may be recreated freely. sep-mysql
+# keeps its pin for an unrelated reason — see the anchor comment below.
 #
 # No per-deployment credentials are committed: bootstrap.sh generates those
-# into the gitignored .env and pmm.conf; see README.md. The one credential
-# spelled out below is PMM's stock admin:admin, which the feature build ships.
+# into the gitignored .env; see README.md. The one credential spelled out below
+# is PMM's stock admin:admin, which the feature build ships.
 
 name: sep-pmm-fb
 
@@ -43,46 +36,56 @@ x-sep-mysql-address: &sep_mysql_address 172.28.9.40
 services:
   pmm-server:
     # Default repeated on sep-mysql's PMM_FB_TAG build arg — a repin edits both
-    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-133001e}
+    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-882b6ba}
     environment:
       PMM_ENABLE_SEP: "1"
       PMM_SEP_POSTGRES_PASSWORD: ${SEP_PG_PASSWORD:?run ./bootstrap.sh first}
+      # Bare host:port — the entrypoint rejects a scheme or a trailing path, and
+      # the failure surfaces as a routing fault rather than a config error
+      PMM_SEP_ADDRESS: sep-sidecar:9000
       PMM_ENABLE_NOMAD: "1" # SEP task execution runs through PMM's embedded Nomad…
       PMM_PUBLIC_ADDRESS: pmm-server # …which silently refuses to start without a public address
     ports:
       - "127.0.0.1:8443:8443"
     volumes:
       - pmm-data:/srv
-      - ./pmm.conf:/etc/nginx/conf.d/pmm.conf:ro
+      # The only volume crossing the boundary; pmm-data stays PMM's alone
+      - pmm-sep-secrets:/srv/sep-secrets
     networks:
-      sep-pmm:
-        ipv4_address: 172.28.9.2
+      - sep-pmm
 
   sep-sidecar:
-    # The app-restricted image, built by main's image-sidecar-embedded target.
-    # Track the -embedded suffix: the plain tag is the standalone image, which
-    # has no supervisord and will not come up here. See README.md "Which image
-    # to pin".
-    image: docker.io/percona/percona-sep:pmm-272c0f0-embedded
-    depends_on: [pmm-server]
+    image: docker.io/percona/percona-sep:5d6a9df64003ab249eb3b51081899ae0e98848c5
+    # service_healthy, not service_started: PMM publishes SEP's secrets in two
+    # stages and SEP builds its settings once, at process start, so a side-car
+    # released early comes up with Grafana auth inert and never recovers. Only
+    # correct against a pin carrying PMM-15331, whose healthcheck additionally
+    # requires the current provisioning run to have published both token files.
+    # An older pin turns this into a bring-up failure — see README.md "Caveats".
+    depends_on:
+      pmm-server:
+        condition: service_healthy
+    # The image runs as uid/gid 1001 and PMM writes the files 0640 group 0 under
+    # a setgid directory, so group 0 membership is what makes them readable
+    group_add: ["0"]
     environment:
-      SECRET_KEY: ${SEP_SECRET_KEY:?run ./bootstrap.sh first}
-      SEP_DB_PASSWORD: ${SEP_PG_PASSWORD:?run ./bootstrap.sh first}
-      SEP_INTERNAL_TOKEN: ${SEP_INTERNAL_TOKEN:?run ./bootstrap.sh first}
-      # Empty until ./mint-grafana-token.sh runs; settings-env.sh tests -n, so
-      # empty leaves the profile's inert token in place
-      SEP_GRAFANA_TOKEN: ${SEP_GRAFANA_TOKEN:-}
+      SECRETS_DIR: /run/secrets/sep
       # The baked profile's endpoint is deliberately credential-free; the
       # harness is where PMM's admin:admin belongs
       SEP_NOMAD_ENDPOINT: https://admin:admin@pmm-server:8443/nomad
-      BASE_URL: http://sep-sidecar:9000
+      # The harness's only Nomad executor runs inside pmm-server and shares its
+      # network namespace, so it resolves this compose service name; a real
+      # deployment's PMM Client nodes could not. The /sep prefix is load-bearing:
+      # download URLs are joined onto this path rather than replacing it.
+      BASE_URL: http://sep-sidecar:9000/sep
     ports:
       - "127.0.0.1:9000:9000" # sep API (direct host access for probing)
       - "127.0.0.1:9001:9001" # inventory API
       - "127.0.0.1:9002:9002" # tasks API
+    volumes:
+      - pmm-sep-secrets:/run/secrets/sep:ro
     networks:
-      sep-pmm:
-        ipv4_address: 172.28.9.30
+      - sep-pmm
 
   sep-mysql:
     profiles: ["mysql"]
@@ -90,14 +93,12 @@ services:
       context: .
       dockerfile: Containerfile.mysql
       args:
-        PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-133001e}
-    # service_started, not service_healthy: pmm-server's baked-in healthcheck
-    # (StartPeriod=25s, Interval=4s, Retries=3) reports unhealthy at ~37s, but
-    # a cold start on an empty volume measures ~90s to first pass readyz —
-    # service_healthy aborts this dependent well inside that window. Ordering
-    # is all that is needed here: pmm-managed starts answering registration
-    # requests later still, and the entrypoint's own bounded retry
-    # (retry_cmd 30 2 pmm-agent setup, 60s) already covers that wait.
+        PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-882b6ba}
+    # service_started, not service_healthy: this node consumes none of the SEP
+    # secret provisioning pmm-server's health now gates on, and ordering is all
+    # it needs — pmm-managed starts answering registration requests later still,
+    # and the entrypoint's own bounded retry (retry_cmd 30 2 pmm-agent setup,
+    # 60s) already covers that wait.
     depends_on:
       pmm-server:
         condition: service_started
@@ -141,6 +142,9 @@ networks:
 
 volumes:
   pmm-data:
+  # Project-scoped deliberately: an unqualified name: would collide with a real
+  # PMM install's pmm-sep-secrets volume on the same host
+  pmm-sep-secrets:
   sep-mysql-data:
   sep-mysql-pmm-config:
   sep-mysql-nomad:
