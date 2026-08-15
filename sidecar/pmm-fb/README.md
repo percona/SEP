@@ -1,51 +1,51 @@
 # PMM + SEP feature-build harness
 
-Compose topology pairing the PMM feature build (SEP frontend + PostgreSQL
-exposure, [Percona-Lab/pmm-submodules#4500] = percona/pmm branch `PMM-15216`,
-PRs [percona/pmm#5653] + [percona/pmm#5700]) with the app-restricted SEP
-side-car: supervisord running the three APIs + Celery worker/beat + bundled
-Valkey, shipping only the `inventory`, `mysql_backups` and `atw` apps. The
-snippets management app is not shipped — the builtin snippet library is
-ingested and auto-approved at boot (SEP-1627) so atw can execute it, with no
-periodic or manual re-sync.
+Compose topology pairing the PMM feature build (SEP frontend, PostgreSQL
+exposure, secret provisioning and the native `/sep` proxy,
+[Percona-Lab/pmm-submodules#4500] = percona/pmm branch `PMM-15216`, PRs
+[percona/pmm#5653] + [percona/pmm#5700]) with the app-restricted SEP side-car:
+supervisord running the three APIs + Celery worker/beat + bundled Valkey,
+shipping only the `inventory`, `mysql_backups` and `atw` apps. The snippets
+management app is not shipped — the builtin snippet library is ingested and
+auto-approved at boot (SEP-1627) so atw can execute it, with no periodic or
+manual re-sync.
 
 ## Which image to pin
 
-The restricted image is built on `main`, not on this branch. `main`'s
-`image-sidecar-embedded` target derives the shipped app set from
-`sidecar/settings.embedded.yaml`'s `SEP.APPS` and publishes it under an
-`-embedded` suffix, so a feature build tagged `<customImageTag>` produces:
+The restricted image is built on `main`, not on this branch, and the build emits
+a **single** artifact under a suffix-less tag — the `-sidecar` / `-embedded`
+variants no longer exist. `main`'s `image` target builds it with
+`SEP_RESTRICT_APPS=1`, deriving the shipped app set from `sidecar/settings.yaml`'s
+`SEP.APPS`, and publishes it as `percona/percona-sep:<commit-sha>`.
 
-| Tag | Contents |
-|---|---|
-| `percona/percona-sep:<customImageTag>` | the standalone image |
-| `percona/percona-sep:<customImageTag>-sidecar` | the full side-car, every app |
-| `percona/percona-sep:<customImageTag>-embedded` | the app-restricted side-car — **pin this one** |
+`compose.yaml`'s `sep-sidecar` service therefore pins a main-line commit SHA.
+Repin to a newer one by picking a tag published from `main` — the tag list on
+Docker Hub is ordered by publish date.
 
-Which of those reach Docker Hub is a per-run decision: each push stage is
-gated on the build job's `pushImageDocker` parameter. Only the plain tag has
-ever landed there for a feature build, so check the registry rather than
-assuming all three exist.
+Two properties of the pinned image are load-bearing, and both are worth checking
+on the **artifact** rather than on the commit that built it:
 
-`compose.yaml`'s `sep-sidecar` service must therefore track the `-embedded`
-tag. Pinning the plain tag gets the standalone image, which has no supervisord
-and will not come up under this harness.
+```bash
+TAG=<the tag you are pinning>
 
-The pin reads `pmm-272c0f0-embedded` — the first `-embedded` build cut from
-this branch after the branch-side repoint and strip were retired, published to
-both the internal registry and Docker Hub. It carries the baked settings
-profile, which is what the side-car reads for everything the `environment:`
-block does not supply, and is required now that nothing is mounted over
-`/home/sep/app/settings.yaml`.
+# It must read secrets from a directory (SECRETS_DIR); expect 4.
+docker run --rm --entrypoint sh docker.io/percona/percona-sep:$TAG \
+  -c 'grep -c SECRETS_DIR /home/sep/app/settings-env.sh'
 
-Repin whenever you need a newer build: cut one from the SEP `Build` job with a
-`customImageTag`, and pin that tag with `-embedded` appended. The plain tag
-from the same run is the standalone image, not this one.
+# It must carry a HEALTHCHECK; expect a Test naming healthcheck.sh.
+skopeo inspect --config --raw docker://docker.io/percona/percona-sep:$TAG \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["config"]["Healthcheck"])'
+```
 
-That image carries the side-car `HEALTHCHECK` — every side-car recipe builds
-in docker format precisely because OCI discards the instruction — so
-`docker compose ps` reports its health normally. The 150 s start period keeps
-it out of `unhealthy` while PMM provisioning and SEP migrations finish.
+`skopeo inspect --config` **without** `--raw` normalizes to OCI, whose
+image-config spec has no `Healthcheck` field, so it reports `null` for every SEP
+tag including ones that carry the instruction. Only the raw config blob answers
+the question. Every side-car recipe builds in docker format for the same reason:
+OCI discards the instruction. The 150 s start period keeps the side-car out of
+`unhealthy` while PMM provisioning and SEP migrations finish.
+
+The pmm-server pin is subject to its own constraint — see
+[Caveats](#caveats).
 
 [Percona-Lab/pmm-submodules#4500]: https://github.com/Percona-Lab/pmm-submodules/pull/4500
 [percona/pmm#5653]: https://github.com/percona/pmm/pull/5653
@@ -54,7 +54,7 @@ it out of `unhealthy` while PMM provisioning and SEP migrations finish.
 ## Bring-up
 
 ```bash
-./bootstrap.sh                                # generate .env, render pmm.conf
+./bootstrap.sh                                # generate .env
 docker compose --profile mysql up -d --build  # or: podman compose ...
 ```
 
@@ -71,106 +71,147 @@ docker compose up -d        # pmm-server + sep-sidecar only
 Note that `docker compose build` obeys the profile too, and reports `No
 services to build` rather than an error when you forget it.
 
-First boot takes a couple of minutes (PMM provisioning + SEP migrations; the
-side-car recipe budgets 150 s before its healthcheck would start failing).
-`sep-mysql` initialises a datadir and imports the employees dataset on its
-first boot; the import runs for several minutes. Its healthcheck reports
-`healthy` as soon as MySQL answers — about a minute in, while the import is
-still running — because health here means "the database is up" and nothing
+First boot takes a couple of minutes. The side-car does not start until
+pmm-server reports healthy, which now means "SEP's secrets are published" as
+well as "PMM is up" — so expect `sep-sidecar` to sit in `Created` for a while
+before it runs. `sep-mysql` initialises a datadir and imports the employees
+dataset on its first boot; the import runs for several minutes. Its healthcheck
+reports `healthy` as soon as MySQL answers — about a minute in, while the import
+is still running — because health here means "the database is up" and nothing
 more. Watch `docker compose logs -f sep-mysql` for `Imported the employees seed
 dataset` before expecting a backup to have data to copy. Then:
 
-- PMM UI: https://127.0.0.1:8443 (admin / admin)
-- SEP API through PMM's nginx: https://127.0.0.1:8443/api/apps/
+- PMM UI: https://127.0.0.1:8443 (admin / admin) — SEP's pages are part of it
+- SEP's API through PMM's nginx: https://127.0.0.1:8443/sep/api/… . The side-car
+  serves no UI of its own, so `/sep/` itself answers `{"detail":"Not Found"}`;
+  that is the embedded topology working, not a routing fault.
 - SEP APIs directly: http://127.0.0.1:9000-9002 (sep / inventory / tasks)
 
-Optionally mint a real Grafana service-account token (enables SEP-side
-Grafana auth — login/ambient SSO — and the PMM syncer; the PMM UI's SEP pages
-work without it):
+There is no token-minting step. PMM mints the Grafana service-account token
+itself and publishes it to the side-car, so Grafana-backed sign-in, the PMM
+syncer and task-lifecycle PMM annotations all work on a first boot.
+
+To probe the API by hand, exchange your PMM browser session for a short-lived
+SEP bearer rather than looking for a static token — an unauthenticated request
+is answered `401`, because nothing injects a bearer server-side any more:
 
 ```bash
-./mint-grafana-token.sh
+curl -sk -c /tmp/pmm-cookies -X POST https://127.0.0.1:8443/graph/login \
+  -H 'Content-Type: application/json' -d '{"user":"admin","password":"admin"}'
+TOKEN=$(curl -sk -b /tmp/pmm-cookies -X POST \
+  https://127.0.0.1:8443/sep/api/oauth/session/exchange | python3 -c \
+  'import json,sys; print(json.load(sys.stdin)["access_token"])')
+curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
 ```
-
-The token lands in `.env` and the script recreates the side-car to apply it —
-a restart would reuse the old environment. Task-lifecycle PMM annotations also
-start reaching PMM at that point: the baked profile enables them, and they are
-inert while no token is set.
 
 ## How the pieces connect
 
-- `bootstrap.sh` generates per-deployment secrets into the gitignored `.env`
-  (PG password, SEP secret key, SEP internal token, plus an empty slot for the
-  Grafana token) and renders the gitignored `pmm.conf` from its committed
-  `pmm.conf.template` sibling. Nothing secret is committed; re-running
-  re-renders and keeps an existing `.env`, minted Grafana token included.
-- SEP's settings come from the profile baked into the image at
-  `/home/sep/app/settings.yaml` — nothing is mounted over it. `compose.yaml`'s
-  `environment:` block supplies only the per-deployment values (`SECRET_KEY`,
-  `SEP_DB_PASSWORD`, `SEP_INTERNAL_TOKEN`, `SEP_GRAFANA_TOKEN`,
-  `SEP_NOMAD_ENDPOINT`, `BASE_URL`), which outrank the file; the image supplies
-  everything else. `../README.md` documents the full input contract, including
-  that a *partial* override is environment-only and a *full* override means
-  bind-mounting over the baked profile wholesale.
-- `PMM_ENABLE_SEP=1` + the generated password make pmm-server's entrypoint
+- `bootstrap.sh` generates the gitignored `.env`, which now holds only the
+  passwords PMM cannot generate for itself: `SEP_PG_PASSWORD` (the password PMM
+  provisions SEP's PostgreSQL role with) and the three `sep-mysql` passwords.
+  Nothing secret is committed; re-running keeps an existing `.env` and appends
+  any slot it predates.
+- **PMM owns every SEP deployment secret.** With `PMM_ENABLE_SEP=1` it writes
+  six files into the `pmm-sep-secrets` volume, which pmm-server mounts at
+  `/srv/sep-secrets` and the side-car mounts read-only at `/run/secrets/sep`.
+  `SECRETS_DIR` points SEP at that directory and it reads each file as the
+  canonical setting the filename names:
+
+  | File | Written by | When |
+  |---|---|---|
+  | `SECRET_KEY` | the entrypoint | seconds after container start |
+  | `SEP__DATABASE__PASSWORD`, `INVENTORY__DATABASE__PASSWORD`, `TASKS__DATABASE__PASSWORD` | the entrypoint | seconds after container start |
+  | `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY` | `grafana-sep`, a supervisord one-shot | after Grafana's first-boot migration |
+
+  No secret reaches the side-car as environment, so none appears in
+  `docker inspect` or in the process environment.
+- **The two-stage write is why `sep-sidecar` waits on
+  `condition: service_healthy`.** SEP builds its settings once, at process
+  start, and never re-reads them: a side-car released between the two stages
+  would come up with Grafana authentication permanently inert. pmm-server's
+  healthcheck gates on the current provisioning run having published both token
+  files, so health means the side-car can safely read everything.
+- **Group 0, not a matching uid.** The side-car runs as uid/gid 1001 and PMM
+  writes the files mode 0640 owned by group `root` under a setgid `02770`
+  directory. `group_add: ["0"]` is what makes them readable, and it keeps
+  working if PMM's runtime uid changes.
+- `PMM_ENABLE_SEP=1` + `SEP_PG_PASSWORD` also make pmm-server's entrypoint
   expose its embedded PostgreSQL on the compose network and provision the
   low-privilege `sep` role owning the `sep` database (percona/pmm#5700).
-  Nothing is published on the host. `PMM_ENABLE_NOMAD=1` +
-  `PMM_PUBLIC_ADDRESS` start PMM's embedded Nomad, which SEP task execution
-  dispatches through (Nomad silently stays down if the public address is
-  unset).
+  Nothing is published on the host. `PMM_ENABLE_NOMAD=1` + `PMM_PUBLIC_ADDRESS`
+  start PMM's embedded Nomad, which SEP task execution dispatches through
+  (Nomad silently stays down if the public address is unset).
 - All three SEP services **and** the Celery beat store share that single
   `sep` database — the exposure provisions exactly one db/role, and the three
   Alembic tracks use distinct version tables with non-colliding table names.
   The side-car's migration one-shots wait for `pmm-server:5432` and migrate
   on first boot.
-- The rendered `pmm.conf` overlays the stock nginx config (bind mount) and
-  adds the five SEP path prefixes the PMM UI expects (`/api`, `/sep_app`,
-  `/stream-logs`, `/execution-events`, `/files`), proxying them to the
-  side-car. Interim auth (Option D, mirroring the vite dev proxy on branch
-  `PMM-15216`): nginx injects `Authorization: Bearer $SEP_INTERNAL_TOKEN`
-  server-side when the client sent no bearer of its own, and SEP
-  authenticates it as the non-admin service principal. Admin-only SEP
-  endpoints therefore return 403 through this path — swapping the injection
-  to the long-lived Grafana SA token needs SEP-side bearer support first
-  (SEP-1692; SEP's grafana provider currently validates bearers only as its
-  own session JWTs).
-- The side-car has a fixed IP (`172.28.9.30`) because nginx resolves proxy
-  targets at startup — a name-based upstream would keep pmm-server's nginx
-  from booting before SEP is up, and would go stale across SEP restarts.
-  `sep-mysql` (`172.28.9.40`) is fixed for an unrelated reason: SEP never
-  updates an existing inventory node's address, and the Mydumper path connects
-  to exactly that address, so an address that moved across recreates would
-  leave SEP pointing at a stale one.
+- **PMM proxies SEP natively.** pmm-server ships its own `location /sep/`
+  block; `PMM_SEP_ADDRESS: sep-sidecar:9000` points it at the side-car, and the
+  baked settings profile sets `SEP.ROOT_PATH: /sep` to match. The value is a
+  bare `host:port` — a scheme or a trailing path is rejected, and the failure
+  surfaces as a routing fault rather than a config error. Nothing is bind-mounted
+  over PMM's nginx config.
+- **Neither container needs a fixed address.** PMM's SEP location proxies to a
+  *variable* under a location-scoped `resolver ... valid=10s`, which defers
+  resolution to request time, so the config loads with the side-car absent and
+  picks up a new address within the TTL when it is recreated. `sep-mysql`
+  (`172.28.9.40`) is still fixed, for an unrelated reason: SEP never updates an
+  existing inventory node's address, and the Mydumper path connects to exactly
+  that address, so an address that moved across recreates would leave SEP
+  pointing at a stale one.
+- `BASE_URL` is `http://sep-sidecar:9000/sep` — a compose service name, which
+  `../README.md` explicitly tells you not to use because it defines `BASE_URL`
+  as the side-car's address *as reachable from Nomad task executors*. That
+  prescription is for a real deployment, where PMM Client nodes run their own
+  Nomad clients and resolve no compose name. This harness has no PMM Client
+  nodes: its only executor is the Nomad client inside `pmm-server`, which shares
+  that container's network namespace and resolves `sep-sidecar` through Docker's
+  embedded DNS. The consequence is that **the harness does not exercise the
+  production artifact-download path**. The `/sep` suffix is required either way
+  — download URLs are joined onto `BASE_URL`'s path rather than replacing it.
 
 ## Caveats
 
-- `auth_request` is off for the SEP locations (as in the dev proxy), so
-  anything that can reach 127.0.0.1:8443 can call the SEP API as the service
-  principal. Local testing only.
+- **The pmm-server pin must carry the SEP readiness gate** (PMM-15331, first in
+  `PR-4500-882b6ba`), which widens the start period to 720 s and holds the
+  container unhealthy until SEP provisioning completes. Against an older pin,
+  `condition: service_healthy` stops being a gate and becomes a bring-up
+  failure: the old 25 s start period flips pmm-server to `unhealthy` at ~37 s
+  while a cold start needs ~90 s to first pass `readyz`, and compose aborts the
+  dependent. If you ever repin backwards, revert `sep-sidecar`'s condition to
+  `service_started` in the same edit.
+- **`PMM_ENABLE_SEP` unset takes SEP down**, it does not degrade it. All six
+  files are removed on pmm-server's next start, and the side-car exits 1 with a
+  single actionable `SECRET_KEY is required` rather than coming up
+  half-configured. A side-car already running is unaffected until it restarts,
+  because its settings are in memory.
 - Both ports 8443 and 9000-9002 bind to loopback only. `sep-mysql` publishes
   nothing; it is reachable only on the compose network.
+- Under **rootless podman**, `group_add: ["0"]` maps through the user namespace
+  differently and may need `--group-add keep-groups`. If the side-car exits
+  reporting it cannot read `/run/secrets/sep`, that is the first thing to check.
+- Rotating `SEP_PG_PASSWORD` takes two restarts, in order: pmm-server first, so
+  it moves the database password and rewrites the files, then the side-car,
+  which reads those files only at process start.
 - `sep-mysql` runs `privileged: true` with `cgroup: host` and a read-write
   `/sys/fs/cgroup` mount. A containerised Nomad client needs it — the
   fingerprinter reads cgroups and `raw_exec` places tasks into cgroups the
   client creates — but it is a harness-only concession, not something the
   side-car topology does.
-- Rotating the internal token = edit `SEP_INTERNAL_TOKEN` in `.env`, re-run
-  `./bootstrap.sh` so `pmm.conf` is re-rendered with the new bearer, then
-  `docker compose up -d --force-recreate` for **both** containers: the side-car
-  because a restart would reuse its old environment, and pmm-server because
-  nginx only reads its config at start. The nginx map and the side-car's
-  environment have to move together.
 - The settings mount is gone, so editing a rendered YAML file is no longer a
   way to try something out. Partial overrides are environment-variable-only; a
   full override means bind-mounting over `/home/sep/app/settings.yaml`, which
-  replaces the baked profile wholesale. Only `settings.yaml` is ignored here,
-  so add an ignore rule for any other local filename you mount — such a file
-  holds the deployment's secrets in cleartext.
-- **Upgrading a harness bootstrapped before the mount was dropped:** delete the
-  leftover `settings.yaml`. It is inert now but still holds the secret key, PG
-  password and internal token in cleartext; it stays ignored only to keep it
-  out of a commit until you do. If you had minted a Grafana token, it lives
-  only in that file — copy it into `.env` as `SEP_GRAFANA_TOKEN=` before
-  deleting, or just re-run `./mint-grafana-token.sh` afterwards; otherwise
-  Grafana auth and the PMM syncer silently go inert.
+  replaces the baked profile wholesale. Add an ignore rule for any local
+  filename you mount that is not already in `.gitignore` — such a file holds the
+  deployment's secrets in cleartext.
+- **Upgrading a harness bootstrapped before PMM took over the secrets:** the
+  supported path is `docker compose down -v`, then `./bootstrap.sh` and a fresh
+  `up -d`. Dropping the volumes is what gets the secrets volume initialised with
+  PMM's `02770` permissions — Docker only initialises a *new* named volume from
+  the image, never an existing one. Then delete the leftover `pmm.conf` and
+  `settings.yaml`: both are inert now, both hold secrets in cleartext, and both
+  stay gitignored only to keep them out of a commit until you do. The retired
+  `SEP_SECRET_KEY`, `SEP_INTERNAL_TOKEN` and `SEP_GRAFANA_TOKEN` slots in an
+  existing `.env` are inert too — nothing reads them — but delete them for the
+  same reason.
