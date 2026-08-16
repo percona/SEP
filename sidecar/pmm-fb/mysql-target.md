@@ -28,7 +28,8 @@ so a node can be joined and still never appear. If it does not, check
 `nomad node status -verbose` inside `pmm-server` before suspecting SEP.
 
 **Prerequisites.** The service reaches SEP only through the PMM syncer, so
-trigger a sync (`POST /apps/inventory/sync/`) once the node has registered.
+trigger a sync (`POST https://127.0.0.1:8443/sep/api/apps/inventory/sync/`)
+once the node has registered.
 PMM publishes the Grafana token the syncer needs, so there is no minting step.
 Until a sync runs, the node registers with PMM and never appears in SEP.
 
