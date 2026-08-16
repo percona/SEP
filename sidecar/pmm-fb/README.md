@@ -123,8 +123,10 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   | `SEP__DATABASE__PASSWORD`, `INVENTORY__DATABASE__PASSWORD`, `TASKS__DATABASE__PASSWORD` | the entrypoint | seconds after container start |
   | `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY` | `grafana-sep`, a supervisord one-shot | after Grafana's first-boot migration |
 
-  No secret reaches the side-car as environment, so none appears in
-  `docker inspect` or in the process environment.
+  None of the six reaches the side-car as environment, so none appears in
+  `docker inspect` or in the process environment. `SEP_NOMAD_ENDPOINT` is the
+  one credential that does: PMM's stock `admin:admin`, a published default
+  rather than a provisioned secret.
 - **The two-stage write is why `sep-sidecar` waits on
   `condition: service_healthy`.** SEP builds its settings once, at process
   start, and never re-reads them: a side-car released between the two stages
