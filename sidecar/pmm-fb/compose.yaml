@@ -55,7 +55,7 @@ services:
       - sep-pmm
 
   sep-sidecar:
-    image: docker.io/percona/percona-sep:5d6a9df64003ab249eb3b51081899ae0e98848c5
+    image: docker.io/percona/percona-sep:29d29624626c54360d354975d1e2f8706c8323c7
     # service_healthy, not service_started: PMM publishes SEP's secrets in two
     # stages and SEP builds its settings once, at process start, so a side-car
     # released early comes up with Grafana auth inert and never recovers. Only
