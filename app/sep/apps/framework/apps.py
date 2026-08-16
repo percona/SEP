@@ -64,6 +64,7 @@ from app.sep.apps.framework.form_dsl import (
 from app.sep.apps.framework.responses import (
     BaseTaskResponse,
     build_default_task_response,
+    root_segment,
     serialized_field_names,
     TaskResponseBuilder,
 )
@@ -74,6 +75,7 @@ from app.sep.apps.framework.schema import (
     DerivedTask,
     DetailView,
     ListView,
+    NON_ROW_BOUND_FORMATS,
     RelatedApp,
 )
 from app.sep.apps.framework.script_source import ScriptSource
@@ -962,7 +964,7 @@ class TaskExecutionApp(BaseApp):
             )
 
     def _validate_view_columns(self) -> None:
-        """Reject a ``list_view`` column key absent from the serialized list row.
+        """Reject a ``list_view`` column key whose root is absent from the serialized row.
 
         Enforce at construction — collecting every unknown column and raising once —
         so a column typo is rejected up front rather than rendering a blank column at
@@ -970,14 +972,25 @@ class TaskExecutionApp(BaseApp):
         ``response_model.model_dump(by_alias=True)`` emits (see
         :func:`~app.sep.apps.framework.responses.serialized_field_names`), not
         ``model_fields`` alone. ``by_alias=True`` matches the derived list route,
-        which pins ``response_model_by_alias=True``. Keys are compared whole, so a
-        dotted path or a synthetic (``_actions``) key is rejected; no model-first
-        app uses one today. Skip ``schema=`` passthrough apps (no ``create_model``)
-        and model-first apps that declare no ``list_view``; detail-view ``data.*``
-        paths stay free-form and are checked by the conformance suite instead.
+        which pins ``response_model_by_alias=True``.
 
-        :raises ValueError: When a ``views.list_view`` column ``key`` is not present
-            in the serialized ``response_model`` row.
+        Two widenings are applied before comparison:
+
+        • Columns whose ``format`` is in
+          :data:`~app.sep.apps.framework.schema.NON_ROW_BOUND_FORMATS` (for example
+          ``ACTIONS``, ``SCHEDULE``) are exempt — their cells are not derived from the
+          column's own row value.
+        • A dotted column key (for example ``target.service``) is resolved to its root
+          segment (``target``) via
+          :func:`~app.sep.apps.framework.responses.root_segment`; sub-paths are
+          free-form and not validated.
+
+        Skip ``schema=`` passthrough apps (no ``create_model``) and model-first apps
+        that declare no ``list_view``; detail-view ``data.*`` paths stay free-form and
+        are checked by the conformance suite instead.
+
+        :raises ValueError: When a ``list_view`` column key's root segment is not
+            present in the serialized ``response_model`` row.
         """
         if self.create_model is None or self.views.list_view is None:
             return
@@ -985,11 +998,18 @@ class TaskExecutionApp(BaseApp):
         unknown = [
             column.key
             for column in self.views.list_view.columns
-            if column.key not in response_fields
+            if column.format not in NON_ROW_BOUND_FORMATS
+            and root_segment(column.key) not in response_fields
         ]
         if unknown:
+            roots = [
+                f"{k!r} (root: {root_segment(k)!r})"
+                if "." in k or "[" in k
+                else repr(k)
+                for k in unknown
+            ]
             raise ValueError(
-                f"TaskExecutionApp: list_view column keys {unknown} are not present "
+                f"TaskExecutionApp: list_view column keys {roots} are not present "
                 f"in the serialized {self.response_model.__name__} row"
             )
 
