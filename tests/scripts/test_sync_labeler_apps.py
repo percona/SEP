@@ -181,7 +181,7 @@ def test_framework_and_shared_are_excluded(tmp_path):
 
 
 def test_leftover_pycache_only_directory_is_not_an_app(tmp_path):
-    """A directory holding only ``__pycache__`` is not discovered as an app."""
+    """Exclude leftover ``__pycache__``-only directories from app discovery."""
     repo = _valid_repo(tmp_path)
     leftover = repo / "app" / "sep" / "apps" / "ghost_app"
     leftover.mkdir(parents=True)
