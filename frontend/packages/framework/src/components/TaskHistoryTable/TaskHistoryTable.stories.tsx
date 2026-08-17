@@ -39,6 +39,7 @@ function makeEntry(
     duration,
     executed_by: 'admin',
     has_logs: status !== 'pending',
+    log_capture: 'unknown',
     task: {
       id: id,
       name: `task-${id}`,
