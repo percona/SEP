@@ -272,7 +272,7 @@ class TestTriggerScope:
     async def test_a_full_estate_run_is_sql_null_not_json_null(
         self, api: AsyncClient, two_hosts: AsyncSession
     ) -> None:
-        """ "No scope" has to be SQL NULL, or `scope IS NULL` finds no full sweeps.
+        """A full sweep has to store SQL NULL, or `scope IS NULL` finds no full sweeps.
 
         SQLAlchemy's JSON types store a Python ``None`` as the JSON scalar ``null``
         unless told otherwise, and the Python side reads back ``None`` either way --

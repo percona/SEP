@@ -282,33 +282,6 @@ async def list_services(
     return list(result.all())
 
 
-#: Statuses a run can hold once it has stopped moving.
-TERMINAL_STATUSES = (
-    ProbeRunStatus.SUCCESS,
-    ProbeRunStatus.PARTIAL,
-    ProbeRunStatus.FAILED,
-)
-
-
-async def latest_terminal_run(session: AsyncSession) -> ProbeRun | None:
-    """Return the newest run that finished, whatever it concluded.
-
-    Deliberately not the newest run: a sweep in flight has no facts yet, and serving
-    an empty set while one is running would make the consumer's merge lose every
-    probe fact for the duration.
-
-    :param session: The database session.
-    :return: The run, or ``None`` when none has ever finished.
-    """
-    result = await session.exec(
-        select(ProbeRun)
-        .where(col(ProbeRun.status).in_(TERMINAL_STATUSES))
-        .order_by(col(ProbeRun.started_at).desc())
-        .limit(1)
-    )
-    return result.first()
-
-
 async def recent_runs(session: AsyncSession, limit: int = 20) -> list[ProbeRun]:
     """Return the most recent runs, newest first.
 

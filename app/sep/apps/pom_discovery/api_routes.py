@@ -13,15 +13,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Serve the probe's facts, and the runs that produced them.
+"""Serve the estate POM holds, and the sweeps that filled it.
 
-``GET /facts`` is the contract with PMM, and its shape follows from one constraint:
-**the caller must never wait for a Nomad job.** PMM assembles its topology document
-on the request path in about a tenth of a second; a probe sweep takes tens of
-seconds. So this endpoint never probes. It serves whatever the last completed sweep
-stored, says how old that is, and leaves the caller to decide -- which it can,
-because every fact carries its own ``observed_at`` and the consumer merges by
-precedence rather than by trust.
+Every read here follows from one constraint: **the caller must never wait for a Nomad
+job.** PMM assembles its topology document on the request path in about a tenth of a
+second; a probe sweep takes tens of seconds. So nothing on this router probes. It
+serves rows, each carrying when it was last collected, and leaves the caller to
+decide -- which it can, because the age travels with the data and the consumer merges
+by precedence rather than by trust.
+
+``GET /services`` is the contract with pmm-managed. It replaced ``GET /facts``, which
+served the last sweep's output as a flat fact list: an estate that is *upserted*
+answers "what is running on this service" even when the most recent sweep never
+reached it, where the last sweep's output answered only "what did the last sweep
+see".
 
 Auth is applied at the mount level: ``/api/apps`` carries the ``IsApiAuthenticated``
 router guard, and unsafe methods additionally require a bearer.
@@ -45,7 +50,6 @@ from app.sep.apps.pom_discovery.crud import (
     get_host,
     get_run,
     get_service,
-    latest_terminal_run,
     list_hosts,
     list_services,
     ProbeRunManager,
@@ -99,33 +103,6 @@ class ProbeCounts(BaseModel):
     services_resolved: int
     services_orphaned: int
     services_answered: int
-
-
-class FactsResponse(BaseModel):
-    """Everything the last completed sweep found.
-
-    :param run_id: The sweep that produced these facts.
-    :param status: That sweep's terminal status.
-    :param observed_at: When it ran, or ``None`` when none has ever completed.
-    :param age_seconds: How long ago that was.
-    :param stale: Whether it is older than ``FACTS_MAX_AGE``. Advisory: the facts are
-        served either way, because discarding them would erase the difference between
-        "this node has no probe" and "this node has not been probed since Tuesday".
-    :param counts: What the sweep reached.
-    :param facts: The facts themselves.
-    :param error: Why the sweep failed, when it did. Carried here rather than left in
-        the run history so a consumer can report the cause in its own receipt instead
-        of saying only that the facts are missing.
-    """
-
-    run_id: UUID | None = None
-    status: str | None = None
-    observed_at: datetime | None = None
-    age_seconds: float | None = None
-    stale: bool = False
-    counts: ProbeCounts | None = None
-    facts: list[ProbeFact] = Field(default_factory=list)
-    error: str | None = None
 
 
 class ProbeRunResponse(BaseModel):
@@ -533,36 +510,6 @@ async def delete_estate_service(service_id: str, session: SessionDep) -> None:
     if service is None:
         raise HTTPNotFoundException(detail=f"Service {service_id} not found")
     await delete_service(session, service)
-
-
-@router.get("/facts", response_model=FactsResponse)
-async def get_facts(session: SessionDep) -> FactsResponse:
-    """Return the facts from the last completed sweep.
-
-    Answers ``200`` with an empty fact list when the probe has never completed, rather
-    than ``404``: "no probe has run here" is a normal state of a PMM that has not
-    enabled this app, and a consumer should record the source as empty rather than
-    treat its own configuration as broken.
-
-    :param session: The database session.
-    :return: The facts, with their age.
-    """
-    run = await latest_terminal_run(session)
-    if run is None:
-        return FactsResponse()
-
-    observed_at = make_datetime_utc(run.finished_at or run.started_at)
-    age = (utc_now() - observed_at).total_seconds()
-    return FactsResponse(
-        run_id=run.id,
-        status=str(run.status),
-        observed_at=observed_at,
-        age_seconds=age,
-        stale=age > pom_discovery_settings.FACTS_MAX_AGE.total_seconds(),
-        counts=_counts(run),
-        facts=[ProbeFact(**fact) for fact in (run.facts or [])],
-        error=run.error,
-    )
 
 
 @router.get("/runs", response_model=list[ProbeRunResponse])

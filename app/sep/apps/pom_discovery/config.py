@@ -59,9 +59,6 @@ class PomDiscoverySettings(BaseYamlSettings):
     :param MAX_CONCURRENT_PROBES: Ceiling on probe tasks in flight at once. Every
         dispatch is a Nomad job, and a real estate has far more hosts than this
         workspace's sandbox.
-    :param FACTS_MAX_AGE: How old the stored facts may be before :func:`get_facts`
-        reports them stale. Not a filter -- stale facts are still served, with their
-        age, because the consumer merges them by precedence and can decide for itself.
     :param RUN_RETENTION: How many runs to keep. Each carries its whole fact set, so
         this bounds the table rather than an operator having to.
     :param STALE_RUN_AFTER: How long a run may stay ``running`` before the trigger
@@ -81,7 +78,6 @@ class PomDiscoverySettings(BaseYamlSettings):
     TASK_TIMEOUT: PositiveInt = 180
     POLL_INTERVAL: PositiveInt = 3
     MAX_CONCURRENT_PROBES: PositiveInt = 8
-    FACTS_MAX_AGE: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = timedelta(minutes=30)
     RUN_RETENTION: PositiveInt = 50
     STALE_RUN_AFTER: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = timedelta(
         minutes=30

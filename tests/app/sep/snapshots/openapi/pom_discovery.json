@@ -3286,92 +3286,6 @@
         "title": "YamlField",
         "type": "object"
       },
-      "pom_discovery__FactsResponse": {
-        "description": "Everything the last completed sweep found.\n\n:param run_id: The sweep that produced these facts.\n:param status: That sweep's terminal status.\n:param observed_at: When it ran, or ``None`` when none has ever completed.\n:param age_seconds: How long ago that was.\n:param stale: Whether it is older than ``FACTS_MAX_AGE``. Advisory: the facts are\n    served either way, because discarding them would erase the difference between\n    \"this node has no probe\" and \"this node has not been probed since Tuesday\".\n:param counts: What the sweep reached.\n:param facts: The facts themselves.\n:param error: Why the sweep failed, when it did. Carried here rather than left in\n    the run history so a consumer can report the cause in its own receipt instead\n    of saying only that the facts are missing.",
-        "properties": {
-          "age_seconds": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Age Seconds"
-          },
-          "counts": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/pom_discovery__ProbeCounts"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "facts": {
-            "items": {
-              "$ref": "#/components/schemas/pom_discovery__ProbeFact"
-            },
-            "title": "Facts",
-            "type": "array"
-          },
-          "observed_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Observed At"
-          },
-          "run_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Run Id"
-          },
-          "stale": {
-            "default": false,
-            "title": "Stale",
-            "type": "boolean"
-          },
-          "status": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Status"
-          }
-        },
-        "title": "FactsResponse",
-        "type": "object"
-      },
       "pom_discovery__HostResponse": {
         "description": "One host, with the services POM knows are on it.\n\nA host is a row whether or not any MongoDB was found on it: that is what makes\n\"which hosts have no database\" a query rather than an absence, and it is the only\nway a machine that has never run one appears at all.\n\n:param node_id: PMM's node id.\n:param name: The node's registered name.\n:param address: The node's registered address.\n:param executor_host: The Nomad client serving it. ``None`` means nothing can be\n    run there, which is a fact about the estate rather than a probe failure.\n:param observed: Everything collected about the host, including\n    ``unregistered_mongods`` where the probe found a database PMM has no service\n    for. Empty when the host has never been successfully probed.\n:param first_seen_at: When POM first wrote a row for it.\n:param last_attempt_at: When a run last probed it.\n:param last_success_at: When it last answered.\n:param failing_since: The first failure after the last success.\n:param consecutive_failures: Failures since the last success.\n:param last_error: The most recent failure detail.\n:param services: The services on it. Empty is a meaningful answer, not a gap.",
         "properties": {
@@ -3942,28 +3856,6 @@
     }
   },
   "paths": {
-    "/api/apps/pom_discovery/facts": {
-      "get": {
-        "description": "Return the facts from the last completed sweep.\n\nAnswers ``200`` with an empty fact list when the probe has never completed, rather\nthan ``404``: \"no probe has run here\" is a normal state of a PMM that has not\nenabled this app, and a consumer should record the source as empty rather than\ntreat its own configuration as broken.\n\n:param session: The database session.\n:return: The facts, with their age.",
-        "operationId": "pom_discovery_get_facts_api_apps_pom_discovery_facts_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/pom_discovery__FactsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Facts",
-        "tags": [
-          "pom_discovery"
-        ]
-      }
-    },
     "/api/apps/pom_discovery/hosts": {
       "get": {
         "description": "Return every host POM holds, each with its services.\n\n``has_service=false`` is the question this table exists to answer: which machines\ncarry a PMM client and no database. It is a filter rather than an endpoint of its\nown so there is one list contract to learn, and because the same list with the\nfilter inverted is the ordinary estate view.\n\nCounts describe the *tables*, not the last run. A scoped refresh must not make the\nestate look one host wide.\n\n:param session: The database session.\n:param has_service: Filter on whether a MongoDB service is registered here.\n:param failing: Filter on whether the host is currently failing.\n:param executor: Filter on whether an executor serves it.\n:return: The hosts, by name.",
