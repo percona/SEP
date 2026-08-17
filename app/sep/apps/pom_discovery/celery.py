@@ -33,7 +33,9 @@ logger = logging.getLogger(__name__)
 
 @owned_by("pom_discovery")
 @celery.task
-def run_pom_probe(execution_id: str | None = None) -> str:
+def run_pom_probe(
+    execution_id: str | None = None, node_ids: list[str] | None = None
+) -> str:
     """Run one probe sweep and return its id.
 
     Scheduled by this app's ``periodic_task_schedules`` contribution, and invoked by
@@ -41,9 +43,11 @@ def run_pom_probe(execution_id: str | None = None) -> str:
     before the Nomad work begins.
 
     :param execution_id: An already-created run's id, or ``None`` to mint one.
+    :param node_ids: The hosts to refresh, or ``None`` for the whole estate. The
+        scheduled sweep passes nothing, which is what keeps it a full refresh.
     :return: The run's id, as a string.
     """
     resolved = celery.loop.run_until_complete(
-        run_probe(UUID(execution_id) if execution_id else None)
+        run_probe(UUID(execution_id) if execution_id else None, node_ids)
     )
     return str(resolved)
