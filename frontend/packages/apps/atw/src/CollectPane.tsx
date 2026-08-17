@@ -17,7 +17,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Autocomplete, Box, CircularProgress, TextField, Typography } from '@mui/material';
-import { SchemaFormRenderer, SNIPPET_FORM_RESERVED_FIELD_NAMES } from '@sep/framework';
+import {
+  SchemaFormRenderer,
+  SNIPPET_FORM_RESERVED_FIELD_NAMES,
+  useDebouncedValue,
+} from '@sep/framework';
 import type { FormSection, SectionField } from '@sep/api';
 import { CategoryBrowser } from './CategoryBrowser';
 import { useAtwBatchExecute, useAtwMergedSchema, useAtwSnippetSearch } from './hooks';
@@ -27,9 +31,6 @@ export interface CollectPaneProps {
   incidentId: string;
   isClosed?: boolean;
 }
-
-/** Pause after the last keystroke before the snippet search fires (ms). */
-const SNIPPET_SEARCH_DEBOUNCE_MS = 300;
 
 /** Stable empty list so an idle search does not churn the options memo. */
 const NO_SNIPPETS: AtwSnippetSummary[] = [];
@@ -194,20 +195,12 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
   const [selected, setSelected] = useState<AtwSnippetSummary[]>([]);
   const [itemErrors, setItemErrors] = useState<string[]>([]);
   const [searchInput, setSearchInput] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  // Shares the Snippet Manager list's search-debounce window.
+  const debouncedSearch = useDebouncedValue(searchInput.trim());
 
   const handleSnippetsChange = useCallback((snippets: AtwSnippetSummary[]) => {
     setAvailable(snippets);
   }, []);
-
-  // Matches the Snippet Manager list's 300ms window.
-  useEffect(() => {
-    const handle = setTimeout(
-      () => setDebouncedSearch(searchInput.trim()),
-      SNIPPET_SEARCH_DEBOUNCE_MS,
-    );
-    return () => clearTimeout(handle);
-  }, [searchInput]);
 
   useEffect(() => {
     if (!isClosed) {

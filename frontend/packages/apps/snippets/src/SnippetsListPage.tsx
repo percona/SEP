@@ -49,7 +49,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import SearchIcon from '@mui/icons-material/Search';
 import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
-import { useSnippetDownload } from '@sep/framework';
+import { useDebouncedValue, useSnippetDownload } from '@sep/framework';
 import {
   useSnippets,
   useApproveSnippet,
@@ -98,9 +98,6 @@ function encodeServiceType(type: string): string {
 function decodeServiceType(value: string): string {
   return value.slice(SERVICE_TYPE_PREFIX.length);
 }
-
-/** Debounce window (ms) before a search keystroke drives a server refetch. */
-const SEARCH_DEBOUNCE_MS = 300;
 
 /** Label shown for snippets that declare no `service_type`. */
 const UNCATEGORIZED_LABEL = 'Uncategorized';
@@ -241,11 +238,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
   const [serviceTypeFilter, setServiceTypeFilter] = useState<string>(ALL_SERVICES);
 
   // Debounce the search box so typing drives one refetch per pause, not per key.
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  useEffect(() => {
-    const handle = setTimeout(() => setDebouncedSearch(search.trim()), SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(handle);
-  }, [search]);
+  const debouncedSearch = useDebouncedValue(search.trim());
 
   // Map the service-type UI selection onto the server equality param: no filter,
   // "uncategorized" (carried by a separate flag below), or the decoded free-form
