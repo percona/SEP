@@ -226,6 +226,18 @@ def upgrade() -> None:
                 nullable=False,
                 server_default="[]",
             ),
+            # NULL means the whole estate. A scoped run stores the node ids it was
+            # asked about, because a receipt cannot be read honestly without them and
+            # the single-flight guard has nothing to compare against.
+            # ``none_as_null`` so a full-estate run is SQL NULL rather than the
+            # JSON scalar ``null``; without it `scope IS NULL` matches nothing.
+            sa.Column(
+                "scope",
+                postgresql.JSONB(astext_type=sa.Text(), none_as_null=True).with_variant(
+                    sa.JSON(none_as_null=True), "sqlite"
+                ),
+                nullable=True,
+            ),
             sa.Column("error", sa.String(), nullable=True),
             sa.PrimaryKeyConstraint("id"),
             schema=POM_SCHEMA_SYMBOL,

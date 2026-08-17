@@ -36,7 +36,7 @@ from fastapi import status as http_status
 from pydantic import BaseModel, Field
 
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
-from app.core.utils.date_time import utc_now
+from app.core.utils.date_time import make_datetime_utc, utc_now
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.pom_discovery.config import pom_discovery_settings
 from app.sep.apps.pom_discovery.crud import (
@@ -50,7 +50,7 @@ from app.sep.apps.pom_discovery.crud import (
     list_services,
     ProbeRunManager,
     recent_runs,
-    running_run,
+    running_runs,
 )
 from app.sep.apps.pom_discovery.models import (
     PomHost,
@@ -137,6 +137,9 @@ class ProbeRunResponse(BaseModel):
     :param finished_at: When it reached a terminal status; ``None`` while running.
     :param counts: What it reached.
     :param facts_collected: How many facts it stored.
+    :param scope: The hosts it was asked to refresh, or ``None`` for the whole
+        estate. Without it the counters cannot be read: "9 of 13 answered" means
+        something different when the run was only ever asked about one host.
     :param error: The failure detail when the sweep itself raised.
     """
 
@@ -146,6 +149,7 @@ class ProbeRunResponse(BaseModel):
     finished_at: datetime | None = None
     counts: ProbeCounts
     facts_collected: int = 0
+    scope: list[str] | None = None
     error: str | None = None
 
 
@@ -198,6 +202,16 @@ class ProbeRunDetail(ProbeRunResponse):
     facts: list[ProbeFact] = Field(default_factory=list)
 
 
+class TriggerRequest(BaseModel):
+    """Ask for a refresh of named hosts rather than the whole estate.
+
+    :param node_ids: PMM's node ids. Empty, or the whole body absent, means every
+        host POM holds -- which is what the scheduled sweep does.
+    """
+
+    node_ids: list[str] = Field(default_factory=list)
+
+
 class ProbeRunAccepted(BaseModel):
     """Acknowledge a queued sweep.
 
@@ -207,11 +221,13 @@ class ProbeRunAccepted(BaseModel):
     :param run_id: The queued sweep's id.
     :param status: Always ``running`` at this point.
     :param started_at: When the run row was created.
+    :param scope: The hosts it will refresh, or ``None`` for the whole estate.
     """
 
     run_id: UUID
     status: str
     started_at: datetime
+    scope: list[str] | None = None
 
 
 class ServiceResponse(BaseModel):
@@ -362,6 +378,7 @@ def _run_response(run: ProbeRun) -> ProbeRunResponse:
         finished_at=run.finished_at,
         counts=_counts(run),
         facts_collected=len(run.facts or []),
+        scope=run.scope,
         error=run.error,
     )
 
@@ -534,7 +551,7 @@ async def get_facts(session: SessionDep) -> FactsResponse:
     if run is None:
         return FactsResponse()
 
-    observed_at = run.finished_at or run.started_at
+    observed_at = make_datetime_utc(run.finished_at or run.started_at)
     age = (utc_now() - observed_at).total_seconds()
     return FactsResponse(
         run_id=run.id,
@@ -582,39 +599,101 @@ async def get_probe_run(run_id: UUID, session: SessionDep) -> ProbeRunDetail:
     )
 
 
+async def _reap_if_abandoned(session: SessionDep, run: ProbeRun) -> bool:
+    """Fail a run whose worker is gone, so one lost worker cannot wedge the app.
+
+    ``started_at`` is normalised before the subtraction, which is not defensive
+    padding: SQLite stores no timezone, so a run read back from it is naive while
+    ``utc_now()`` is aware, and subtracting them raises ``TypeError``. Since SQLite is
+    the shipped default, the guard would have failed with a 500 on exactly the request
+    meant to recover from a crashed worker.
+
+    :param session: The database session.
+    :param run: The run in flight.
+    :return: Whether it was reaped.
+    """
+    age = utc_now() - make_datetime_utc(run.started_at)
+    if age < pom_discovery_settings.STALE_RUN_AFTER:
+        return False
+    run.status = ProbeRunStatus.FAILED
+    run.finished_at = utc_now()
+    run.error = "abandoned: no worker recorded a terminal status"
+    await ProbeRunManager.save(session, run)
+    return True
+
+
 @router.post(
     "/runs",
     response_model=ProbeRunAccepted,
     status_code=http_status.HTTP_202_ACCEPTED,
 )
-async def trigger_probe(session: SessionDep) -> ProbeRunAccepted:
-    """Queue a probe sweep.
+async def trigger_probe(
+    session: SessionDep, request: TriggerRequest | None = None
+) -> ProbeRunAccepted:
+    """Queue a probe sweep, over the whole estate or over named hosts.
+
+    A scoped refresh exists because the two questions are different sizes. "What does
+    the estate look like" is a sweep of everything and costs a Nomad job per executor
+    host -- a minute and a half in this sandbox. "I just did something to this host,
+    is it healthy now" should not cost that, and it is the question PMM's UI will ask
+    after every action it grows.
+
+    The scope is node ids, which is what PMM already holds, so its trigger passes them
+    through untranslated (§5.3's payoff).
+
+    Conflict is judged **per host**, not globally. A refresh of one host has no reason
+    to be blocked by a refresh of another, and blocking it would make the scoped
+    trigger useless exactly when the estate is busiest. Two runs collide only when
+    they would touch the same host; a full refresh collides with everything, including
+    another full refresh.
 
     :param session: The database session.
-    :raises HTTPConflictException: When a sweep is already in flight.
+    :param request: The optional scope. Absent, or an empty list, means everything.
+    :raises HTTPNotFoundException: When a requested node id is not in the estate.
+    :raises HTTPConflictException: When a requested host is already being refreshed.
     :return: The queued sweep.
     """
-    in_flight = await running_run(session)
-    if in_flight is not None:
-        age = utc_now() - in_flight.started_at
-        if age < pom_discovery_settings.STALE_RUN_AFTER:
-            raise HTTPConflictException(
-                detail=f"Probe run {in_flight.id} is already in flight"
-            )
-        # Past the cutoff its worker is gone, and nothing else would ever advance the
-        # row. Fail it here so one lost worker cannot wedge the app indefinitely.
-        in_flight.status = ProbeRunStatus.FAILED
-        in_flight.finished_at = utc_now()
-        in_flight.error = "abandoned: no worker recorded a terminal status"
-        await ProbeRunManager.save(session, in_flight)
+    node_ids = list(dict.fromkeys(request.node_ids)) if request else []
 
-    run = await ProbeRunManager.save(session, ProbeRun())
+    # An id POM does not hold is answered by name rather than by running a refresh
+    # that would quietly do nothing. SEP's inventory copy can lag PMM's, so this is a
+    # real case rather than a typo guard.
+    for node_id in node_ids:
+        if await get_host(session, node_id) is None:
+            raise HTTPNotFoundException(detail=f"Host {node_id} not found")
+
+    for in_flight in await running_runs(session):
+        if await _reap_if_abandoned(session, in_flight):
+            continue
+        # A run with no scope is over everything, so it overlaps whatever is asked.
+        overlap = (
+            not in_flight.scope
+            or not node_ids
+            or bool(set(in_flight.scope) & set(node_ids))
+        )
+        if overlap:
+            raise HTTPConflictException(
+                detail=(
+                    f"Probe run {in_flight.id} is already refreshing "
+                    + (
+                        "the whole estate"
+                        if not in_flight.scope
+                        else ", ".join(sorted(set(in_flight.scope) & set(node_ids)))
+                        or "these hosts"
+                    )
+                )
+            )
+
+    run = await ProbeRunManager.save(session, ProbeRun(scope=node_ids or None))
 
     # Imported here rather than at module scope: the API process has no reason to load
     # the dispatch stack, and importing celery.py at import time would pull it in.
     from app.sep.apps.pom_discovery.celery import run_pom_probe
 
-    run_pom_probe.delay(str(run.id))
+    run_pom_probe.delay(str(run.id), node_ids or None)
     return ProbeRunAccepted(
-        run_id=run.id, status=str(run.status), started_at=run.started_at
+        run_id=run.id,
+        status=str(run.status),
+        started_at=run.started_at,
+        scope=run.scope,
     )

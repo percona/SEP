@@ -307,6 +307,11 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
         above are this list's summary, and a summary is all a sweep could show until
         this column existed -- "5 of 14 answered" cannot say *which* five, on which
         hosts, or which one took a minute.
+    :param scope: The node ids this run was asked to refresh, or ``None`` for the
+        whole estate. Stored rather than inferred, because without it the receipt
+        cannot be read honestly -- "9 of 13 answered" means something different when
+        the run was only ever asked about one host -- and because the single-flight
+        guard has nothing to compare against.
     :param error: The failure detail when the sweep itself raised.
     """
 
@@ -358,6 +363,21 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
             postgresql.JSONB(astext_type=JSON()).with_variant(JSON(), "sqlite"),
             nullable=False,
             server_default="[]",
+        ),
+    )
+    # The one nullable JSON column in this app, and it needs ``none_as_null`` to be
+    # honest about it. SQLAlchemy's JSON types default to storing a Python ``None`` as
+    # the JSON scalar ``null``, so without this a full-estate run is written as
+    # ``'null'::jsonb`` and `WHERE scope IS NULL` finds none of them -- the Python side
+    # reads back ``None`` either way, so nothing complains until someone asks the
+    # database which runs were full sweeps. Measured happening before it was set.
+    scope: list[str] | None = SQLField(
+        default=None,
+        sa_column=Column(
+            postgresql.JSONB(astext_type=JSON(), none_as_null=True).with_variant(
+                JSON(none_as_null=True), "sqlite"
+            ),
+            nullable=True,
         ),
     )
     error: str | None = SQLField(default=None)

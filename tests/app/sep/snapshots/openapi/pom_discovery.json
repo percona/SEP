@@ -3614,12 +3614,26 @@
         "type": "object"
       },
       "pom_discovery__ProbeRunAccepted": {
-        "description": "Acknowledge a queued sweep.\n\nReturned with ``202``: a sweep dispatches Nomad jobs and takes tens of seconds, so\nit is never performed synchronously.\n\n:param run_id: The queued sweep's id.\n:param status: Always ``running`` at this point.\n:param started_at: When the run row was created.",
+        "description": "Acknowledge a queued sweep.\n\nReturned with ``202``: a sweep dispatches Nomad jobs and takes tens of seconds, so\nit is never performed synchronously.\n\n:param run_id: The queued sweep's id.\n:param status: Always ``running`` at this point.\n:param started_at: When the run row was created.\n:param scope: The hosts it will refresh, or ``None`` for the whole estate.",
         "properties": {
           "run_id": {
             "format": "uuid",
             "title": "Run Id",
             "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
           },
           "started_at": {
             "format": "date-time",
@@ -3692,6 +3706,20 @@
             "title": "Run Id",
             "type": "string"
           },
+          "scope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
           "started_at": {
             "format": "date-time",
             "title": "Started At",
@@ -3712,7 +3740,7 @@
         "type": "object"
       },
       "pom_discovery__ProbeRunResponse": {
-        "description": "One sweep's record.\n\n:param run_id: The sweep's id.\n:param status: ``running`` / ``success`` / ``partial`` / ``failed``.\n:param started_at: When it began.\n:param finished_at: When it reached a terminal status; ``None`` while running.\n:param counts: What it reached.\n:param facts_collected: How many facts it stored.\n:param error: The failure detail when the sweep itself raised.",
+        "description": "One sweep's record.\n\n:param run_id: The sweep's id.\n:param status: ``running`` / ``success`` / ``partial`` / ``failed``.\n:param started_at: When it began.\n:param finished_at: When it reached a terminal status; ``None`` while running.\n:param counts: What it reached.\n:param facts_collected: How many facts it stored.\n:param scope: The hosts it was asked to refresh, or ``None`` for the whole\n    estate. Without it the counters cannot be read: \"9 of 13 answered\" means\n    something different when the run was only ever asked about one host.\n:param error: The failure detail when the sweep itself raised.",
         "properties": {
           "counts": {
             "$ref": "#/components/schemas/pom_discovery__ProbeCounts"
@@ -3749,6 +3777,20 @@
             "format": "uuid",
             "title": "Run Id",
             "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
           },
           "started_at": {
             "format": "date-time",
@@ -3881,6 +3923,20 @@
           "first_seen_at"
         ],
         "title": "ServiceResponse",
+        "type": "object"
+      },
+      "pom_discovery__TriggerRequest": {
+        "description": "Ask for a refresh of named hosts rather than the whole estate.\n\n:param node_ids: PMM's node ids. Empty, or the whole body absent, means every\n    host POM holds -- which is what the scheduled sweep does.",
+        "properties": {
+          "node_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Node Ids",
+            "type": "array"
+          }
+        },
+        "title": "TriggerRequest",
         "type": "object"
       }
     }
@@ -4127,8 +4183,25 @@
         ]
       },
       "post": {
-        "description": "Queue a probe sweep.\n\n:param session: The database session.\n:raises HTTPConflictException: When a sweep is already in flight.\n:return: The queued sweep.",
+        "description": "Queue a probe sweep, over the whole estate or over named hosts.\n\nA scoped refresh exists because the two questions are different sizes. \"What does\nthe estate look like\" is a sweep of everything and costs a Nomad job per executor\nhost -- a minute and a half in this sandbox. \"I just did something to this host,\nis it healthy now\" should not cost that, and it is the question PMM's UI will ask\nafter every action it grows.\n\nThe scope is node ids, which is what PMM already holds, so its trigger passes them\nthrough untranslated (§5.3's payoff).\n\nConflict is judged **per host**, not globally. A refresh of one host has no reason\nto be blocked by a refresh of another, and blocking it would make the scoped\ntrigger useless exactly when the estate is busiest. Two runs collide only when\nthey would touch the same host; a full refresh collides with everything, including\nanother full refresh.\n\n:param session: The database session.\n:param request: The optional scope. Absent, or an empty list, means everything.\n:raises HTTPNotFoundException: When a requested node id is not in the estate.\n:raises HTTPConflictException: When a requested host is already being refreshed.\n:return: The queued sweep.",
         "operationId": "pom_discovery_trigger_probe_api_apps_pom_discovery_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/pom_discovery__TriggerRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "content": {
@@ -4139,6 +4212,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Trigger Probe",

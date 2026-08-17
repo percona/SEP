@@ -291,13 +291,21 @@ class SweepOutcome:
     host_errors: dict[str, str] = dc_field(default_factory=dict)
 
 
-async def _sweep(observed_at: str) -> SweepOutcome:
+async def _sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOutcome:
     """Map, probe and collect, without touching the run row.
 
     Split out so :func:`run_probe` reads as the lifecycle it is -- create, work,
     record -- rather than interleaving the two.
 
+    A scope narrows *everything downstream of enumeration*, not the enumeration
+    itself: hosts are still listed from inventory, because that is how a scoped id is
+    recognised as a host at all, and then everything outside the scope is dropped
+    before a single dispatch is made. Nothing outside it is written, which is what
+    makes §5.4's rule real -- an entity this run did not attempt keeps every timestamp
+    it had, so refreshing one host cannot make the rest of the estate look failed.
+
     :param observed_at: When the sweep began, ISO 8601, stamped on every fact.
+    :param node_ids: The hosts to refresh, or ``None`` for the whole estate.
     :return: What the sweep reached, collected and saw per service.
     """
     inventory_api, tasks_api = await _build_clients()
@@ -316,6 +324,10 @@ async def _sweep(observed_at: str) -> SweepOutcome:
         # mapped: a host with no database has no service to derive it from, and that
         # is the host worth having a row for.
         hosts = build_hosts(nodes, services, executor_hosts)
+        if node_ids:
+            hosts, services, mapped = _narrow_to_scope(
+                hosts, services, mapped, node_ids
+            )
         # Every host with an executor is dispatched to, service or no service:
         # a machine with a PMM client and no database is the one an install
         # decision is about, and it has no service to be reached through.
@@ -377,6 +389,51 @@ async def _sweep(observed_at: str) -> SweepOutcome:
         _record_entity(outcome, entry, record, host_result, node_ids, observed_at)
 
     return outcome
+
+
+def _narrow_to_scope(
+    hosts: list[InventoryHost],
+    services: list[InventoryService],
+    mapped: list[Any],
+    node_ids: list[str],
+) -> tuple[list[InventoryHost], list[InventoryService], list[Any]]:
+    """Drop everything the caller did not ask about.
+
+    Services are matched to hosts by name and address, as everywhere else in this app:
+    a service knows its node's name, not PMM's node id, and this is the same join
+    :func:`_index_hosts` does in the other direction.
+
+    An id that names no enumerated host silently contributes nothing here, because the
+    endpoint has already rejected it with a 404. Reaching this function it can only
+    mean the estate changed between the request and the sweep, and refreshing the rest
+    of the scope is a better answer than failing the run.
+
+    :param hosts: Every enumerated host.
+    :param services: Every MongoDB service.
+    :param mapped: Every service paired with its executor.
+    :param node_ids: The hosts to keep.
+    :return: The hosts, services and mappings inside the scope.
+    """
+    wanted = set(node_ids)
+    scoped_hosts = [host for host in hosts if host.node_id in wanted]
+
+    names = {host.name for host in scoped_hosts}
+    names |= {host.address for host in scoped_hosts if host.address}
+
+    def on_scope(service: InventoryService) -> bool:
+        return service.node_name in names or service.node_address in names
+
+    scoped_services = [service for service in services if on_scope(service)]
+    scoped_mapped = [entry for entry in mapped if on_scope(entry.service)]
+
+    logger.info(
+        "POM discovery: scoped to %d host(s) of %d, %d service(s) of %d",
+        len(scoped_hosts),
+        len(hosts),
+        len(scoped_services),
+        len(services),
+    )
+    return scoped_hosts, scoped_services, scoped_mapped
 
 
 def _index_hosts(outcome: SweepOutcome) -> dict[str | None, str]:
@@ -512,21 +569,31 @@ async def _persist_estate(outcome: SweepOutcome, run_id: UUID) -> None:
         await session.commit()
 
 
-def _terminal_status(resolved: int, answered: int) -> ProbeRunStatus:
+def _terminal_status(outcome: SweepOutcome) -> ProbeRunStatus:
     """Conclude a sweep from what it reached.
 
-    Orphans do not count against it: a service whose node runs no healthy executor is
-    a fact about the estate, not a failure of the sweep. Resolving nothing at all is
-    different -- that is POM's infrastructure being unavailable, which is exactly the
-    condition the probe exists to surface.
+    Judged on **dispatches and services together**, not services alone. Services alone
+    was right while every dispatch existed to reach one, and it stopped being right
+    the moment a host could be probed for its own sake: a refresh of a machine with a
+    PMM client and no database resolves no services at all, and would have been
+    reported ``FAILED`` for doing exactly what it was asked. Measured that way on a
+    scoped refresh of ``standalone-node00``, which is what prompted this.
 
-    :param resolved: Services that mapped to a live executor host.
-    :param answered: ...of which returned a record.
+    Orphans still do not count against a run: a service whose node runs no healthy
+    executor is a fact about the estate, not a failure of the sweep. Reaching *nothing*
+    is different -- no host answered and no service resolved -- and that is POM's
+    infrastructure being unavailable, which is the condition the probe exists to
+    surface.
+
+    :param outcome: What the sweep produced.
     :return: The status.
     """
-    if not resolved:
+    attempted = len(outcome.dispatched) + outcome.resolved
+    answered = len(outcome.host_documents) + outcome.answered
+
+    if not attempted:
         return ProbeRunStatus.FAILED
-    if answered == resolved:
+    if answered == attempted:
         return ProbeRunStatus.SUCCESS
     return ProbeRunStatus.PARTIAL
 
@@ -546,7 +613,9 @@ async def _fail_run(run_id: UUID, error: str) -> None:
         await ProbeRunManager.save(session, failed)
 
 
-async def run_probe(execution_id: UUID | None = None) -> UUID:
+async def run_probe(
+    execution_id: UUID | None = None, node_ids: list[str] | None = None
+) -> UUID:
     """Run one probe sweep and store its facts.
 
     The run row is created before the work starts so a caller can be answered with an
@@ -554,19 +623,22 @@ async def run_probe(execution_id: UUID | None = None) -> UUID:
 
     :param execution_id: An already-created run's id, passed by the trigger endpoint.
         ``None`` mints a fresh run.
+    :param node_ids: The hosts to refresh, or ``None`` for the whole estate. Taken
+        from the caller rather than read back off the run row so a scheduled sweep,
+        which has no row until this function makes one, takes the same path.
     :return: The run's id.
     """
     session_maker = get_async_session_maker()
     async with session_maker() as session:
         if execution_id is None:
-            run = await ProbeRunManager.save(session, ProbeRun())
+            run = await ProbeRunManager.save(session, ProbeRun(scope=node_ids))
         else:
             run = await ProbeRunManager.get(session, id=execution_id)
         run_id = run.id
 
     observed_at = utc_now().isoformat()
     try:
-        outcome = await _sweep(observed_at)
+        outcome = await _sweep(observed_at, node_ids)
     except Exception as exc:
         logger.exception("POM discovery: sweep %s failed", run_id)
         await _fail_run(run_id, str(exc))
@@ -576,7 +648,7 @@ async def run_probe(execution_id: UUID | None = None) -> UUID:
     # sees a finished run always finds the rows that run produced.
     await _persist_estate(outcome, run_id)
 
-    status = _terminal_status(outcome.resolved, outcome.answered)
+    status = _terminal_status(outcome)
     async with session_maker() as session:
         finished = await ProbeRunManager.get(session, id=run_id)
         finished.status = status

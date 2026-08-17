@@ -333,7 +333,7 @@ async def get_run(session: AsyncSession, run_id: UUID) -> ProbeRun | None:
 
 
 async def running_run(session: AsyncSession) -> ProbeRun | None:
-    """Return the sweep in flight, if there is one.
+    """Return the newest sweep in flight, if there is one.
 
     :param session: The database session.
     :return: The running run, or ``None``.
@@ -345,6 +345,24 @@ async def running_run(session: AsyncSession) -> ProbeRun | None:
         .limit(1)
     )
     return result.first()
+
+
+async def running_runs(session: AsyncSession) -> list[ProbeRun]:
+    """Return every sweep currently in flight, newest first.
+
+    All of them, not the newest, because the conflict question is per host once a
+    refresh can be scoped: two runs over different hosts are not in conflict, and
+    answering that needs each one's scope.
+
+    :param session: The database session.
+    :return: The running runs.
+    """
+    result = await session.exec(
+        select(ProbeRun)
+        .where(ProbeRun.status == ProbeRunStatus.RUNNING)
+        .order_by(col(ProbeRun.started_at).desc())
+    )
+    return list(result.all())
 
 
 async def prune_runs(session: AsyncSession, keep: int) -> int:
