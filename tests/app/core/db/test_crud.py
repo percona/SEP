@@ -79,10 +79,14 @@ class PaginationItemManager(BaseSQLModelManager):
 
 
 class PaginationItemByNameManager(BaseSQLModelManager):
-    """Manager for test pagination items with explicit ordering."""
+    """Manage test pagination items with a spec default sort by name."""
 
     Model = PaginationItem
-    ordering = [col(PaginationItem.name)]
+    list_query_spec = ListQuerySpec(
+        sortable={"name": col(PaginationItem.name)},
+        default_sort="name",
+        tie_breaker=col(PaginationItem.id),
+    )
 
 
 class PaginationItemSpecManager(BaseSQLModelManager):
@@ -98,18 +102,6 @@ class PaginationItemSpecManager(BaseSQLModelManager):
         default_sort="name",
         tie_breaker=col(PaginationItem.id),
         searchable=[col(PaginationItem.name)],
-    )
-
-
-class PaginationItemSpecAndOrderingManager(BaseSQLModelManager):
-    """Manage items declaring both a spec and an explicit ordering (spec wins)."""
-
-    Model = PaginationItem
-    ordering = [col(PaginationItem.category)]
-    list_query_spec = ListQuerySpec(
-        sortable={"name": col(PaginationItem.name)},
-        default_sort="name",
-        tie_breaker=col(PaginationItem.id),
     )
 
 
@@ -380,11 +372,11 @@ class TestBaseSQLModelManagerPagination:
         assert len(result.items[0].items) == MATCHING_ITEM_TOTAL
 
     @pytest.mark.asyncio
-    async def test_explicit_ordering_takes_precedence_over_created_at_fallback(
+    async def test_spec_default_sort_overrides_created_at_fallback(
         self,
         session: AsyncSession,
     ) -> None:
-        """Assert managers with explicit ordering ignore the fallback ordering."""
+        """Assert managers with a spec default sort ignore the fallback ordering."""
         base_time = datetime(2026, 1, 1, tzinfo=UTC)
         await _create_item(
             session,
@@ -642,7 +634,7 @@ class TestGetOrCreate:
 
 
 class TestGetOrderingSpecShim:
-    """Cover the ``_get_ordering`` derive-from-spec compatibility branch."""
+    """Cover ``_get_ordering`` derive-from-spec and default-fallback behavior."""
 
     def test_spec_manager_derives_default_sort_ordering(self) -> None:
         """Derive ``[default NULLS LAST, tie-breaker]`` when a spec is declared."""
@@ -663,13 +655,6 @@ class TestGetOrderingSpecShim:
         assert "DESC" in str(ordering[0])
         assert ".id" in str(ordering[1])
         assert "DESC" in str(ordering[1])
-
-    def test_spec_wins_over_explicit_ordering(self) -> None:
-        """Prefer the spec over an explicit ``ordering`` when both are declared."""
-        ordering = list(PaginationItemSpecAndOrderingManager._get_ordering())
-
-        assert "name" in str(ordering[0])
-        assert "category" not in str(ordering[0])
 
 
 class TestOrderByOverride:
