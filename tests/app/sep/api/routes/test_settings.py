@@ -1844,6 +1844,7 @@ class TestSepOverridesLifespanWiring:
                 (SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"),
                 (SettingClassEnum.ALERTS_SETTINGS, "BACKUP_INTERVAL"),
                 (SettingClassEnum.SEP_SETTINGS, "APP_DRAIN"),
+                (SettingClassEnum.POM_DISCOVERY_SETTINGS, "SCHEDULE"),
             }
         finally:
             sep_app.state.override_callbacks = original
