@@ -285,6 +285,15 @@ class TestReducedActivationSettings:
         assert SettingClassEnum.ALERTS_SETTINGS.value not in groups
         assert SettingClassEnum.ALERT_SETTINGS.value in groups
 
+    async def test_health_report_settings_not_wired_at_all(
+        self, reduced_activation_client: TestClient
+    ) -> None:
+        """Omit ``HealthReportSettings`` entirely when the report app is deactivated."""
+        response = reduced_activation_client.get(f"{REDUCED_SETTINGS_PREFIX}/")
+        assert response.status_code == status.HTTP_200_OK
+        groups = {group["setting_class"] for group in response.json()["groups"]}
+        assert SettingClassEnum.HEALTH_REPORT_SETTINGS.value not in groups
+
     async def test_patch_on_deactivated_class_is_not_found(
         self, reduced_activation_client: TestClient
     ) -> None:
@@ -327,6 +336,7 @@ class TestSepSettingsList:
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             SettingClassEnum.ALERTS_SETTINGS.value,
+            SettingClassEnum.HEALTH_REPORT_SETTINGS.value,
             SettingClassEnum.SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
             SettingClassEnum.ALERT_SETTINGS.value,

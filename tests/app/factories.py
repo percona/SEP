@@ -41,6 +41,7 @@ from app.inventory.models import (
 )
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.tasks.models import (
+    LogCaptureStatusEnum,
     Task,
     TaskBackendEnum,
     TaskExecutionRequest,
@@ -146,6 +147,7 @@ class TaskHistoryResponseFactory(ModelFactory[TaskHistoryResponse]):
 
     status: TaskHistoryStatusEnum = TaskHistoryStatusEnum.SUCCESS
     has_logs: bool = False
+    log_capture: LogCaptureStatusEnum = LogCaptureStatusEnum.UNKNOWN
     started_at = None
     finished_at = None
     anonymize_mask = None

@@ -16,6 +16,7 @@
 """Define database operations for the Tasks API."""
 
 import logging
+from collections import defaultdict
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from datetime import datetime
 
@@ -34,11 +35,14 @@ from app.core.exceptions import HTTPConflictException
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import DatabaseDialect
+from app.tasks.execution.executors.nomad.steps import NON_PERSISTABLE_STEPS
 from app.tasks.logs.constants import TAIL_SCAN_MAX_CHUNKS
 from app.tasks.models import (
+    CAPTURE_STATUS_PRECEDENCE,
     DispatchLock,
     GENERIC_EXECUTOR_TASK_NAMES,
     INTERNAL_TASK_NAMES,
+    LogCaptureStatusEnum,
     SYSTEM_USER,
     Task,
     TaskBackendEnum,
@@ -1181,8 +1185,69 @@ class TaskHistoryLogStateManager(BaseManager):
             allocation_epoch=0,
             staging=b"",
             staging_updated_at=utc_now(),
+            capture_status=LogCaptureStatusEnum.INCOMPLETE,
             version=0,
         )
+
+    @classmethod
+    async def capture_status_by_task(
+        cls,
+        session: AsyncSession,
+        task_history_ids: Sequence[int],
+    ) -> dict[int, LogCaptureStatusEnum]:
+        """Return the aggregate capture verdict per task history.
+
+        Emit a single grouped ``SELECT`` over the distinct
+        ``(task_history_id, capture_status)`` pairs so list endpoints avoid an
+        N+1 read per paginated row, then reduce each history's pairs by
+        severity: any ``INCOMPLETE`` stream wins, else any ``UNKNOWN``, else
+        ``COMPLETE``. Return an empty mapping for empty input without emitting
+        any SQL — an empty ``IN ()`` predicate triggers a SQLAlchemy warning
+        and is a no-op anyway.
+
+        Histories with no state rows are absent from the result rather than
+        defaulting to a verdict here; the caller renders a missing key as
+        ``UNKNOWN``.
+
+        Rows are filtered by *excluding* :data:`NON_PERSISTABLE_STEPS` — the same
+        set :meth:`NomadStep.is_persistable` tests — rather than by selecting the
+        Nomad steps SEP drains: ``source`` also carries non-Nomad producers
+        (the Celery executor writes ``"execution"``, legacy rows carry
+        ``"step1"``), and selecting by Nomad step name would drop every one of
+        them and report ``UNKNOWN`` for tasks whose capture is known-complete.
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :param task_history_ids: The ``TaskHistory`` identifiers to aggregate.
+        :return: The aggregate verdict keyed by task history identifier, for
+            those identifiers carrying at least one state row.
+        """
+        if not task_history_ids:
+            return {}
+        query = (
+            select(
+                col(TaskHistoryLogState.task_history_id),
+                col(TaskHistoryLogState.capture_status),
+            )
+            .where(
+                col(TaskHistoryLogState.task_history_id).in_(task_history_ids),
+                col(TaskHistoryLogState.source).notin_(NON_PERSISTABLE_STEPS),
+            )
+            .distinct()
+        )
+        result = await cls._exec(session, query)
+
+        statuses: defaultdict[int, set[LogCaptureStatusEnum]] = defaultdict(set)
+        for task_history_id, capture_status in result.all():
+            statuses[task_history_id].add(capture_status)
+        return {
+            task_history_id: next(
+                candidate
+                for candidate in CAPTURE_STATUS_PRECEDENCE
+                if candidate in seen
+            )
+            for task_history_id, seen in statuses.items()
+        }
 
     @classmethod
     async def list_for_task(
@@ -1258,6 +1323,7 @@ class TaskHistoryLogStateManager(BaseManager):
         staging: bytes,
         version: int,
         now: datetime,
+        capture_status: LogCaptureStatusEnum = LogCaptureStatusEnum.INCOMPLETE,
     ) -> bool:
         """Insert a new state row, returning ``True`` on a successful insert.
 
@@ -1267,29 +1333,22 @@ class TaskHistoryLogStateManager(BaseManager):
 
         :param session: The SQLAlchemy asynchronous session to use for query
             execution.
-        :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier.
-        :type task_history_id: int
         :param source: The execution step name.
-        :type source: str
         :param stream: The log stream (stdout or stderr).
-        :type stream: TaskLogType
         :param persisted_offset: The user-facing byte offset already persisted.
-        :type persisted_offset: int
         :param producer_offset: The producer-relative byte offset already
             consumed from the current allocation.
-        :type producer_offset: int
         :param nomad_offset: The raw Nomad-space fetch offset for the next read.
         :param allocation_epoch: The Nomad ``CreateIndex`` the cursors belong to.
         :param staging: Bytes pending flush to the chunk store.
-        :type staging: bytes
         :param version: The initial optimistic-locking version counter.
-        :type version: int
         :param now: The insertion timestamp used for audit columns.
-        :type now: datetime
+        :param capture_status: The capture verdict to stamp on the new row.
+            Defaults to ``INCOMPLETE`` — a stream is not known to be drained
+            at the moment its row first appears.
         :return: ``True`` when a row was inserted; ``False`` when the row
             already existed.
-        :rtype: bool
         """
         stmt = idempotent_insert(session.get_bind().name, TaskHistoryLogState).values(
             task_history_id=task_history_id,
@@ -1301,6 +1360,7 @@ class TaskHistoryLogStateManager(BaseManager):
             allocation_epoch=allocation_epoch,
             staging=staging,
             staging_updated_at=now,
+            capture_status=capture_status,
             version=version,
             created_at=now,
         )
@@ -1323,6 +1383,7 @@ class TaskHistoryLogStateManager(BaseManager):
         allocation_epoch: int,
         staging: bytes,
         now: datetime,
+        capture_status: LogCaptureStatusEnum | None = None,
     ) -> bool:
         """Update a state row conditioned on the old version and return whether we won.
 
@@ -1333,32 +1394,37 @@ class TaskHistoryLogStateManager(BaseManager):
 
         :param session: The SQLAlchemy asynchronous session to use for query
             execution.
-        :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier.
-        :type task_history_id: int
         :param source: The execution step name.
-        :type source: str
         :param stream: The log stream (stdout or stderr).
-        :type stream: TaskLogType
         :param old_version: The version the caller read from the state row.
-        :type old_version: int
         :param new_version: The bumped version to write.
-        :type new_version: int
         :param persisted_offset: The updated user-facing persisted offset.
-        :type persisted_offset: int
         :param producer_offset: The updated producer-relative offset.
-        :type producer_offset: int
         :param nomad_offset: The updated raw Nomad-space fetch offset.
         :param allocation_epoch: The updated Nomad ``CreateIndex`` the cursors
             belong to.
         :param staging: The updated staging bytes buffer.
-        :type staging: bytes
         :param now: The update timestamp used for the audit columns.
-        :type now: datetime
+        :param capture_status: The capture verdict to write, or ``None`` to
+            leave the stored verdict untouched. Omitting the column is what
+            keeps an ordinary byte-appending update from downgrading a stream
+            already recorded ``COMPLETE``.
         :return: ``True`` when exactly one row was updated; ``False`` when the
             optimistic-locking guard prevented the write.
-        :rtype: bool
         """
+        values = {
+            "persisted_offset": persisted_offset,
+            "producer_offset": producer_offset,
+            "nomad_offset": nomad_offset,
+            "allocation_epoch": allocation_epoch,
+            "staging": staging,
+            "staging_updated_at": now,
+            "version": new_version,
+            "updated_at": now,
+        }
+        if capture_status is not None:
+            values["capture_status"] = capture_status
         stmt = (
             update(TaskHistoryLogState)
             .where(
@@ -1367,16 +1433,7 @@ class TaskHistoryLogStateManager(BaseManager):
                 col(TaskHistoryLogState.stream) == stream,
                 col(TaskHistoryLogState.version) == old_version,
             )
-            .values(
-                persisted_offset=persisted_offset,
-                producer_offset=producer_offset,
-                nomad_offset=nomad_offset,
-                allocation_epoch=allocation_epoch,
-                staging=staging,
-                staging_updated_at=now,
-                version=new_version,
-                updated_at=now,
-            )
+            .values(**values)
         )
         result = await cls._exec(session, stmt)
         return bool(result.rowcount == 1)
@@ -1386,7 +1443,6 @@ class DispatchLockManager(BaseSQLModelManager):
     """Manage dispatch lock operations.
 
     :ivar Model: The SQLModel class this manager is responsible for (``DispatchLock``).
-    :vartype Model: type[DispatchLock]
     """
 
     Model = DispatchLock

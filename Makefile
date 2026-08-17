@@ -67,7 +67,7 @@ else
 endif
 
 builder:
-	@podman image exists "sep:builder" && podman image rm "sep:builder"
+	@podman image exists "sep:builder" && podman image rm "sep:builder" || true
 	@buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
 
 # The app-restricted PMM-embedded image is the only artifact SEP ships. Which
