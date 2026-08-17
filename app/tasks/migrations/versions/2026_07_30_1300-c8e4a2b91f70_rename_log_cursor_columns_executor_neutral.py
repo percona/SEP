@@ -28,6 +28,7 @@ values preserved):
 """
 from typing import Sequence, Union
 
+import sqlalchemy as sa
 from alembic import op
 
 
@@ -36,38 +37,36 @@ down_revision: Union[str, None] = "a19da5cf0bca"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+_LOG_STATE_RENAMES: tuple[tuple[str, str], ...] = (
+    ("nomad_offset", "producer_fetch_offset"),
+    ("allocation_epoch", "producer_epoch"),
+)
+_HISTORY_RENAMES: tuple[tuple[str, str], ...] = (
+    ("log_allocation_epoch", "log_producer_epoch"),
+)
+
+
+def _apply_renames(table: str, pairs: tuple[tuple[str, str], ...]) -> None:
+    inspector = sa.inspect(op.get_bind())
+    columns = {column["name"] for column in inspector.get_columns(table)}
+    for old, new in pairs:
+        if old in columns and new not in columns:
+            op.alter_column(table, old, new_column_name=new)
+        elif old in columns and new in columns:
+            op.drop_column(table, old)
+
 
 def upgrade() -> None:
-    op.alter_column(
-        "taskhistory_log_state",
-        "nomad_offset",
-        new_column_name="producer_fetch_offset",
-    )
-    op.alter_column(
-        "taskhistory_log_state",
-        "allocation_epoch",
-        new_column_name="producer_epoch",
-    )
-    op.alter_column(
-        "taskhistory",
-        "log_allocation_epoch",
-        new_column_name="log_producer_epoch",
-    )
+    _apply_renames("taskhistory_log_state", _LOG_STATE_RENAMES)
+    _apply_renames("taskhistory", _HISTORY_RENAMES)
 
 
 def downgrade() -> None:
-    op.alter_column(
+    _apply_renames(
         "taskhistory",
-        "log_producer_epoch",
-        new_column_name="log_allocation_epoch",
+        tuple((new, old) for old, new in _HISTORY_RENAMES),
     )
-    op.alter_column(
+    _apply_renames(
         "taskhistory_log_state",
-        "producer_epoch",
-        new_column_name="allocation_epoch",
-    )
-    op.alter_column(
-        "taskhistory_log_state",
-        "producer_fetch_offset",
-        new_column_name="nomad_offset",
+        tuple((new, old) for old, new in _LOG_STATE_RENAMES),
     )
