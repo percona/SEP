@@ -13,7 +13,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from app.sep.apps.report.app import app
-from app.sep.apps.report.app_owned_settings import APP_OWNED_SETTINGS_CLASSES
+"""Declare the report app's own settings class."""
 
-__all__ = ["APP_OWNED_SETTINGS_CLASSES", "app"]
+from app.core.settings_override.api.routes import AppOwnedClassEntry
+from app.core.settings_override.models import SettingClassEnum
+from app.sep.apps.report.config import health_report_settings, HealthReportSettings
+
+APP_OWNED_SETTINGS_CLASSES: list[AppOwnedClassEntry] = [
+    AppOwnedClassEntry(
+        setting_class=SettingClassEnum.HEALTH_REPORT_SETTINGS,
+        settings_cls=HealthReportSettings,
+        proxy=health_report_settings,
+        app_key="report",
+    ),
+]
