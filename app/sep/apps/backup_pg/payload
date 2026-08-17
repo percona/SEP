@@ -590,17 +590,17 @@ class PgBackRest(Backup):
         self.pgbackrest_bin = server_data.get('PGBACKREST_BIN', '/bin/pgbackrest')
         self.pgbackrest_config_file = server_data.get('PGBACKREST_CONFIG_FILE', str(DEFAULT_CFG_DIR) + '/pgbackrest/pgbackrest.conf')
         self.pgbackrest_backup_type = server_data.get('PGBACKREST_BACKUP_TYPE', 'incr')
-        self.pg_datadir = server_data.get('PG_DATADIR', '/var/lib/pgsql/12/data/')
-        self.pg_retention_full = server_data.get('PG_RETENTION_FULL', '2')
-        self.pg_retention_archive = server_data.get('PG_RETENTION_ARCHIVE')
+        self.pg_datadir = server_data.get('PGBACKREST_DATADIR', '/var/lib/pgsql/12/data/')
+        self.pg_retention_full = server_data.get('PGBACKREST_RETENTION_FULL', '2')
+        self.pg_retention_archive = server_data.get('PGBACKREST_RETENTION_ARCHIVE')
         self.pg_process_max = server_data.get('PG_PROCESS_MAX', '4')
         self.pg_repo = server_data.get('PG_REPO', '1')
-        self.pg_incremental_cycle = server_data.get('PG_INCREMENTAL_CYCLE', '1')
+        self.pg_incremental_cycle = server_data.get('PGBACKREST_INCREMENTAL_CYCLE', '1')
         self.pg_aes256_passfile = server_data.get('PG_AES256_PASSFILE')
 
         # Normalize settings
         if self.pg_incremental_cycle == 'weekly':
-            self.pg_incremental_cycle = 1
+            self.pg_incremental_cycle = '1'
 
         # report options
         self.report_options['options'] = {
@@ -669,9 +669,9 @@ class PgBackRest(Backup):
         stanza.add_section('global')
         stanza.set('global', 'process-max', self.pg_process_max)
         stanza.set('global', 'repo1-path', self.backup_server_dir)
-        stanza.set('global', 'repo1-retention-full', self.pg_retention_full)
+        stanza.set('global', 'repo1-retention-full', str(self.pg_retention_full))
         if self.pg_retention_archive is not None:
-            stanza.set('global', 'repo1-retention-archive', self.pg_retention_archive)
+            stanza.set('global', 'repo1-retention-archive', str(self.pg_retention_archive))
         if self.pg_aes256_passfile:
             try:
                 stanza.set('global', 'repo1-cipher-type', 'aes-256-cbc')
@@ -695,7 +695,16 @@ class PgBackRest(Backup):
         self.logger.info("Stanza creation OK")
 
     def _run_backup_command(self):
-        """Run backup command."""
+        """Run backup command.
+
+        :raises BackupError: If ``pg_incremental_cycle`` is not a recognised value
+            or if pgbackrest exits with a non-zero return code.
+        """
+        valid_cycles = ['daily', 'weekly', '1', '2', '3', '4', '5', '6', '7']
+        if str(self.pg_incremental_cycle) not in valid_cycles:
+            msg = 'Invalid PGBACKREST_INCREMENTAL_CYCLE setting: %s. Should be one of: %s.' % (
+                self.pg_incremental_cycle, valid_cycles)
+            raise BackupError(msg)
 
         cmd = [self.pgbackrest_bin,
                '--config={0}'.format(self.pgbackrest_config_file),
@@ -705,7 +714,7 @@ class PgBackRest(Backup):
                'backup']
 
         # Full backup today?
-        if self.pg_incremental_cycle == 'daily' or self.pg_incremental_cycle == datetime.datetime.today().isoweekday():
+        if self.pg_incremental_cycle == 'daily' or int(self.pg_incremental_cycle) == datetime.datetime.today().isoweekday():
             cmd.append('--type=full')
         elif self.pgbackrest_backup_type == 'diff':
             cmd.append('--type={0}'.format(self.pgbackrest_backup_type))

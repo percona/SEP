@@ -40,15 +40,14 @@ from starlette.datastructures import URL
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import RemoteAPI
+from app.core.utils.date_time import utc_now
 from app.sep.apps.atw.crud import AtwIncidentExecutionManager, AtwIncidentManager
 from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution
 from app.sep.deps import (
-    get_api_authenticated_user,
     get_current_user,
     get_session,
     get_tasks_api,
     require_bearer_for_unsafe_methods,
-    validate_csrf,
 )
 from app.sep.main import sep_app
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
@@ -94,7 +93,7 @@ def request_less_session(session: AsyncSession, mocker: MockerFixture) -> AsyncS
     maker.return_value.__aenter__ = AsyncMock(return_value=session)
     maker.return_value.__aexit__ = AsyncMock(return_value=False)
     mocker.patch(
-        "app.sep.apps.snippets.script_source.get_async_session_maker",
+        "app.sep.snippets.script_source.get_async_session_maker",
         return_value=maker,
     )
     return session
@@ -127,6 +126,7 @@ def create_snippet(
         parameters: list[dict[str, Any]] | None = None,
         approved: bool = True,
         sudo: SnippetSudoOption | None = None,
+        allow_extra_args: bool | None = None,
     ) -> Snippet:
         target = snippets_dir / filename
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -137,6 +137,8 @@ def create_snippet(
             meta["parameters"] = parameters
         if sudo is not None:
             meta["sudo"] = sudo.value
+        if allow_extra_args is not None:
+            meta["allow_extra_args"] = allow_extra_args
         snippet.meta = meta
         snippet.__dict__.pop("validated_parameters", None)
         if approved:
@@ -380,6 +382,42 @@ class TestAtwExecutionSchema:
 
         assert "sudo" not in field_names(response.json()["shared"])
 
+    @pytest.mark.asyncio
+    async def test_extra_args_never_merges_into_shared_even_when_identical(
+        self, api_client: TestClient, create_snippet: Callable[..., Awaitable[Snippet]]
+    ) -> None:
+        """Keep Extra Args per-snippet even when two snippets declare it identically.
+
+        Every other byte-identical parameter merges into ``shared`` once two
+        snippets declare it (see ``test_identical_parameter_is_merged_into_shared``).
+        Extra args are snippet-specific CLI flags, so this one must be the
+        exception: never promoted, regardless of how many snippets opt in.
+        """
+        await create_snippet("a.sh", parameters=[], allow_extra_args=True)
+        await create_snippet("b.sh", parameters=[], allow_extra_args=True)
+
+        response = api_client.get(
+            SCHEMA_URL, params={"snippet_filename": ["a.sh", "b.sh"]}
+        )
+
+        payload = response.json()
+        assert "extra_args" not in field_names(payload["shared"])
+        assert "extra_args" in field_names(per_snippet_fields(payload, "a.sh"))
+        assert "extra_args" in field_names(per_snippet_fields(payload, "b.sh"))
+
+    @pytest.mark.asyncio
+    async def test_extra_args_field_omitted_when_not_allowed(
+        self, api_client: TestClient, create_snippet: Callable[..., Awaitable[Snippet]]
+    ) -> None:
+        """Omit Extra Args entirely for a snippet that never opted in."""
+        await create_snippet("a.sh", parameters=[])
+
+        response = api_client.get(SCHEMA_URL, params={"snippet_filename": ["a.sh"]})
+
+        payload = response.json()
+        assert "extra_args" not in field_names(payload["shared"])
+        assert "extra_args" not in field_names(per_snippet_fields(payload, "a.sh"))
+
     def test_missing_filename_is_rejected(self, api_client: TestClient) -> None:
         """Reject a request that selects no snippet at all."""
         response = api_client.get(SCHEMA_URL)
@@ -442,6 +480,34 @@ class TestAtwBatchExecute:
             _FIRST_TASK_ID,
             _SECOND_TASK_ID,
         ]
+
+    @pytest.mark.asyncio
+    async def test_closed_incident_returns_409_before_dispatch(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        incident: AtwIncident,
+        session: AsyncSession,
+        tasks_api: AsyncMock,
+    ) -> None:
+        """Reject batch execution on a closed incident before any snippet is resolved."""
+        await create_snippet("a.sh", parameters=[])
+        incident.closed_at = utc_now()
+        await AtwIncidentManager.save(session, incident)
+
+        response = api_client.post(
+            executions_url(incident.id),
+            json={
+                "executor_host": "host1",
+                "items": [{"snippet_filename": "a.sh"}],
+            },
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "closed" in response.json()["detail"].lower()
+        tasks_api.post.assert_not_called()
+        rows = await AtwIncidentExecutionManager.list(session, incident_id=incident.id)
+        assert rows == []
 
     @pytest.mark.asyncio
     async def test_whole_batch_resolves_in_one_snippet_lookup(
@@ -524,6 +590,64 @@ class TestAtwBatchExecute:
         meta = tasks_api.post.await_args.kwargs["json"]["meta"]
         assert "/item.cnf" in meta["args"]
         assert "/shared.cnf" not in meta["args"]
+
+    @pytest.mark.asyncio
+    async def test_per_item_extra_args_reach_dispatched_command(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+    ) -> None:
+        """Deliver a per-item Extra Args value into the dispatched command string."""
+        await create_snippet("a.sh", parameters=[], allow_extra_args=True)
+
+        response = api_client.post(
+            executions_url(incident.id),
+            json={
+                "executor_host": "host1",
+                "items": [
+                    {"snippet_filename": "a.sh", "args": {"extra_args": "--verbose"}}
+                ],
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["items"][0]["error"] is None
+        meta = tasks_api.post.await_args.kwargs["json"]["meta"]
+        assert "--verbose" in meta["args"].split()
+
+    @pytest.mark.asyncio
+    async def test_shared_args_never_apply_extra_args(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+    ) -> None:
+        """Drop an Extra Args value submitted through ``shared_args``, not just from ``shared``.
+
+        ``NON_SHAREABLE_FIELD_NAMES`` keeps Extra Args out of the merged schema's
+        ``shared`` section, but a caller could still post it directly under
+        ``shared_args``. It must be dropped there too, or one snippet's flags
+        would silently apply to every other snippet in the batch that also
+        declares the field.
+        """
+        await create_snippet("a.sh", parameters=[], allow_extra_args=True)
+
+        response = api_client.post(
+            executions_url(incident.id),
+            json={
+                "executor_host": "host1",
+                "shared_args": {"extra_args": "--shared-flag"},
+                "items": [{"snippet_filename": "a.sh"}],
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["items"][0]["error"] is None
+        meta = tasks_api.post.await_args.kwargs["json"]["meta"]
+        assert "--shared-flag" not in (meta.get("args") or "")
 
     @pytest.mark.asyncio
     async def test_traversal_filename_fails_the_whole_batch(
@@ -1358,7 +1482,7 @@ class TestAtwBatchExecuteOnRealPostgres:
         maker.return_value.__aenter__ = AsyncMock(return_value=postgres_session)
         maker.return_value.__aexit__ = AsyncMock(return_value=False)
         mocker.patch(
-            "app.sep.apps.snippets.script_source.get_async_session_maker",
+            "app.sep.snippets.script_source.get_async_session_maker",
             return_value=maker,
         )
         tasks_api.post.side_effect = [
@@ -1379,10 +1503,8 @@ class TestAtwBatchExecuteOnRealPostgres:
 
         mocker.patch.object(AtwIncidentExecutionManager, "save", new=_flaky_save)
 
-        sep_app.dependency_overrides[validate_csrf] = lambda: True
         sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
         sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-        sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
         sep_app.dependency_overrides[get_session] = lambda: postgres_session
         client = AsyncClient(
             transport=ASGITransport(app=sep_app), base_url="http://test"

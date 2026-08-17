@@ -15,32 +15,26 @@
 
 """Define tests for base SEP dependencies."""
 
-from collections import OrderedDict
 from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.testclient import TestClient
-from itsdangerous import BadSignature
-from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.auth.exceptions import (
     HTTPForbiddenException,
     HTTPUnauthorizedException,
 )
-from app.core.auth.models import OAuthToken
-from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.auth.models import OAuthToken, SessionExchangeTokenResponse
 from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
-    HTTPRedirectException,
     HTTPServiceUnavailableException,
 )
 from app.core.pagination import MAX_PAGINATION_LIMIT
-from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.registry import AppRegistry, build_app_registry
 from app.sep.clients.pmm import PMMRemoteAPI
@@ -51,14 +45,11 @@ from app.sep.deps import (
     check_for_conflicted_running_tasks,
     ExecutorHostsContext,
     get_api_authenticated_admin,
-    get_api_authenticated_user,
     get_base_url,
     get_created_entity,
     get_created_node,
     get_created_schema,
-    get_current_admin,
     get_current_user,
-    get_default_context,
     get_executor_hosts,
     get_executor_hosts_context,
     get_inventory_api,
@@ -66,8 +57,6 @@ from app.sep.deps import (
     get_task_by_name,
     get_task_history,
     get_tasks_api,
-    get_tasks_context,
-    get_tasks_index_context,
     get_toggleable_app_key,
     get_username_mapping,
     is_bearer_authenticated,
@@ -77,9 +66,9 @@ from app.sep.deps import (
     require_app_enabled,
     require_bearer_for_unsafe_methods,
     require_pmm_api,
+    resolve_ambient_exchange_token,
     resolve_ambient_session_token,
 )
-from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import CreatedNode, CreatedSchema
 from app.sep.models import AppLifecycleEnum, AppState, SyncInventoryEntityTypeEnum
 from app.tasks.models import (
@@ -101,7 +90,7 @@ EXPECTED_NODE_COUNT = 5
 
 
 def _make_request(method: str = "GET", authorization: str | None = None) -> Request:
-    """Build a minimal Request with messages state for testing.
+    """Build a minimal Request for testing.
 
     :param method: HTTP method to set on the request scope.
     :type method: str
@@ -120,9 +109,7 @@ def _make_request(method: str = "GET", authorization: str | None = None) -> Requ
         "app": MagicMock(),
         "router": MagicMock(),
     }
-    req = Request(scope)
-    req.state.messages = OrderedDict()
-    return req
+    return Request(scope)
 
 
 class TestResolveAmbientSessionToken:
@@ -188,8 +175,86 @@ class TestResolveAmbientSessionToken:
         warning.assert_called_once()
 
 
+class TestResolveAmbientExchangeToken:
+    """Verify ``resolve_ambient_exchange_token`` gating and fail-closed behavior."""
+
+    @staticmethod
+    def _request(cookies: dict[str, str] | None = None) -> Request:
+        """Build a minimal GET request carrying ``cookies`` in the Cookie header."""
+        headers: list[tuple[bytes, bytes]] = []
+        if cookies:
+            joined = "; ".join(f"{name}={value}" for name, value in cookies.items())
+            headers.append((b"cookie", joined.encode()))
+        return Request(
+            {"type": "http", "headers": headers, "method": "GET", "path": "/"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_none_when_toggle_disabled(self, grafana_mock) -> None:
+        """Assert the helper no-ops when ambient SSO is off, even under Grafana."""
+        request = self._request({"grafana_session": "s"})
+        assert await resolve_ambient_exchange_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_none_when_provider_lacks_ambient_support(self, mocker) -> None:
+        """Assert a provider without ambient-session support yields ``None``."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request({"grafana_session": "s"})
+        assert await resolve_ambient_exchange_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_none_when_cookie_absent(self, grafana_mock, mocker) -> None:
+        """Assert an absent session cookie yields ``None``."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request()
+        assert await resolve_ambient_exchange_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_returns_exchange_token_on_happy_path(
+        self, grafana_mock, mocker
+    ) -> None:
+        """Assert a valid ambient session mints an exchange assertion, not a pair."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request({"grafana_session": "ambient"})
+
+        token = await resolve_ambient_exchange_token(request)
+
+        assert isinstance(token, SessionExchangeTokenResponse)
+        assert token.access_token
+        grafana_mock.get_current_user.assert_awaited_once_with("ambient")
+
+    @pytest.mark.asyncio
+    async def test_operational_failure_logs_and_returns_none(
+        self, grafana_mock, mocker
+    ) -> None:
+        """Assert an upstream failure denies rather than surfacing a 502."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        grafana_mock.get_current_user.side_effect = GrafanaException()
+        warning = mocker.patch("app.sep.deps.logger.warning")
+        request = self._request({"grafana_session": "s"})
+
+        assert await resolve_ambient_exchange_token(request) is None
+        warning.assert_called_once()
+
+
 class TestGetBaseUrl:
     """Test get_base_url dependency."""
+
+    @staticmethod
+    def _hosted_request(root_path: str = "") -> Request:
+        """Build a request whose scope carries ``root_path``, as an ASGI server would."""
+        return Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "scheme": "http",
+                "server": ("testserver", 80),
+                "root_path": root_path,
+                "path": f"{root_path}/api/apps/inventory/",
+                "query_string": b"limit=10",
+                "headers": [(b"host", b"testserver")],
+            }
+        )
 
     def test_returns_setting_when_configured(self) -> None:
         """Assert BASE_URL from settings is returned when set."""
@@ -199,94 +264,77 @@ class TestGetBaseUrl:
             result = get_base_url(request)
         assert result == "https://example.com"
 
+    def test_derives_the_request_base_without_a_prefix(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert the request path and query are dropped when no prefix is configured."""
+        monkeypatch.setattr("app.core.config.settings.BASE_URL", None)
+
+        assert str(get_base_url(self._hosted_request())) == "http://testserver/"
+
+    def test_carries_the_configured_prefix(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert a URL composed on the base stays inside the prefix SEP is mounted at."""
+        monkeypatch.setattr("app.core.config.settings.BASE_URL", None)
+
+        assert (
+            str(get_base_url(self._hosted_request("/sep"))) == "http://testserver/sep/"
+        )
+
 
 class TestGetCurrentUser:
-    """Test get_current_user dependency."""
+    """Cover the Bearer-only ``get_current_user`` dependency."""
 
     @pytest.mark.asyncio
     async def test_valid_bearer_returns_user(self) -> None:
-        """Assert a valid Bearer path returns the user from the API dependency."""
+        """Assert a valid Bearer token resolves through the API dependency."""
         request = _make_request(authorization="Bearer bearer-token")
         active_user = CasdoorUserFactory.build(is_forbidden=False)
-        mock_oauth2 = AsyncMock(return_value="bearer-token")
-        mock_api_user = AsyncMock(return_value=active_user)
-        with (
-            patch("app.sep.deps.oauth2_scheme", mock_oauth2),
-            patch("app.sep.deps.get_current_user_api", mock_api_user),
-            patch(
-                "app.sep.deps.get_access_token_from_cookie",
-                side_effect=AssertionError(
-                    "cookie must not be read when Bearer succeeds"
-                ),
-            ),
-        ):
-            result = await get_current_user(request)
-        assert result is active_user
-        mock_oauth2.assert_awaited_once_with(request)
-        mock_api_user.assert_awaited_once_with("bearer-token")
-
-    @pytest.mark.asyncio
-    async def test_valid_cookie_returns_user(self) -> None:
-        """Assert cookie-only auth still returns an active user."""
-        request = _make_request()
-        active_user = CasdoorUserFactory.build(is_forbidden=False)
-        with (
-            patch(
-                "app.sep.deps.oauth2_scheme",
-                AsyncMock(
-                    side_effect=AssertionError(
-                        "oauth2_scheme must not be called without a Bearer header"
-                    )
-                ),
-            ),
-            patch(
-                "app.sep.deps.get_access_token_from_cookie", return_value="cookie-token"
-            ),
-            patch.object(CasdoorUser, "from_jwt", return_value=active_user),
-        ):
-            result = await get_current_user(request)
-        assert result is active_user
-
-    @pytest.mark.asyncio
-    async def test_bearer_and_cookie_present_bearer_wins(self) -> None:
-        """Assert Authorization Bearer is preferred over session cookie."""
-        request = _make_request(authorization="Bearer bearer-token")
-        bearer_user = CasdoorUserFactory.build(username="bearer-user")
-        cookie_user = CasdoorUserFactory.build(username="cookie-user")
         with (
             patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="bearer-token")),
             patch(
-                "app.sep.deps.get_current_user_api", AsyncMock(return_value=bearer_user)
-            ),
-            patch(
-                "app.sep.deps.get_access_token_from_cookie",
-                return_value="cookie-token",
-            ),
-            patch.object(
-                CasdoorUser,
-                "from_jwt",
-                return_value=cookie_user,
+                "app.sep.deps.get_current_user_api",
+                AsyncMock(return_value=active_user),
             ),
         ):
-            result = await get_current_user(request)
-        assert result.username == "bearer-user"
+            assert await get_current_user(request) is active_user
 
     @pytest.mark.asyncio
-    async def test_neither_bearer_nor_cookie_raises_redirect(self) -> None:
-        """Assert missing Bearer and missing cookie raises LoginRedirectException."""
-        request = _make_request()
+    async def test_missing_bearer_raises_unauthorized(self) -> None:
+        """Assert a header-less request raises SEP's ``HTTPUnauthorizedException``.
+
+        The guard runs before ``oauth2_scheme``, whose ``auto_error=True`` would
+        otherwise raise a bare Starlette ``HTTPException`` and bypass SEP's
+        project-exception convention.
+        """
         with (
             patch(
-                "app.sep.deps.get_access_token_from_cookie",
-                side_effect=LoginRedirectException(request),
+                "app.sep.deps.oauth2_scheme",
+                AsyncMock(side_effect=AssertionError("must not reach oauth2_scheme")),
             ),
-            pytest.raises(LoginRedirectException),
+            pytest.raises(HTTPUnauthorizedException),
         ):
+            await get_current_user(_make_request())
+
+    @pytest.mark.asyncio
+    async def test_session_cookie_alone_raises_unauthorized(self) -> None:
+        """Assert a stale session cookie no longer authenticates anything."""
+        request = Request(
+            {
+                "type": "http",
+                "headers": [(b"cookie", b"authToken=whatever")],
+                "method": "GET",
+                "client": ("127.0.0.1", "80"),
+                "path": "/",
+            }
+        )
+        with pytest.raises(HTTPUnauthorizedException):
             await get_current_user(request)
 
     @pytest.mark.asyncio
     async def test_invalid_bearer_raises_unauthorized(self) -> None:
-        """Assert invalid JWT via Bearer raises HTTPUnauthorizedException."""
+        """Assert an invalid Bearer token propagates ``HTTPUnauthorizedException``."""
         request = _make_request(authorization="Bearer bad-token")
         with (
             patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="bad-token")),
@@ -300,176 +348,17 @@ class TestGetCurrentUser:
 
     @pytest.mark.asyncio
     async def test_inactive_user_via_bearer_raises_forbidden(self) -> None:
-        """Assert inactive user resolved via Bearer raises HTTPForbiddenException."""
-        request = _make_request(authorization="Bearer token")
+        """Assert an inactive user resolved from a valid Bearer raises 403."""
+        request = _make_request(authorization="Bearer bearer-token")
         with (
-            patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="token")),
+            patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="bearer-token")),
             patch(
                 "app.sep.deps.get_current_user_api",
-                AsyncMock(side_effect=HTTPForbiddenException("User is not active")),
+                AsyncMock(side_effect=HTTPForbiddenException),
             ),
             pytest.raises(HTTPForbiddenException),
         ):
             await get_current_user(request)
-
-    @pytest.mark.asyncio
-    async def test_malformed_bearer_header_does_not_fall_back_to_cookie(self) -> None:
-        """Assert a malformed Bearer header surfaces the 401 without cookie fallback."""
-        request = _make_request(authorization="Bearer ")
-        with (
-            patch(
-                "app.sep.deps.oauth2_scheme",
-                AsyncMock(side_effect=HTTPException(status_code=401)),
-            ),
-            patch(
-                "app.sep.deps.get_access_token_from_cookie",
-                side_effect=AssertionError(
-                    "cookie must not be read for a Bearer-authenticated request"
-                ),
-            ),
-            pytest.raises(HTTPException),
-        ):
-            await get_current_user(request)
-
-    @pytest.mark.asyncio
-    async def test_bad_signature_raises_redirect(self) -> None:
-        """Assert BadSignature during JWT decode raises LoginRedirectException."""
-        request = _make_request()
-        with (
-            patch(
-                "app.sep.deps.get_access_token_from_cookie", return_value="fake-token"
-            ),
-            patch.object(CasdoorUser, "from_jwt", side_effect=BadSignature("bad")),
-            pytest.raises(LoginRedirectException),
-        ):
-            await get_current_user(request)
-
-    @pytest.mark.asyncio
-    async def test_validation_error_raises_redirect(self) -> None:
-        """Assert ValidationError during user parsing raises LoginRedirectException."""
-        request = _make_request()
-        with (
-            patch(
-                "app.sep.deps.get_access_token_from_cookie", return_value="fake-token"
-            ),
-            patch.object(
-                CasdoorUser,
-                "from_jwt",
-                side_effect=ValidationError.from_exception_data("CasdoorUser", []),
-            ),
-            pytest.raises(LoginRedirectException),
-        ):
-            await get_current_user(request)
-
-    @pytest.mark.asyncio
-    async def test_inactive_user_raises_redirect(self) -> None:
-        """Assert inactive user raises LoginRedirectException."""
-        inactive_user = CasdoorUserFactory.build(is_forbidden=True)
-        request = _make_request()
-        with (
-            patch(
-                "app.sep.deps.get_access_token_from_cookie", return_value="fake-token"
-            ),
-            patch.object(CasdoorUser, "from_jwt", return_value=inactive_user),
-            pytest.raises(LoginRedirectException),
-        ):
-            await get_current_user(request)
-
-
-class TestGetApiAuthenticatedUser:
-    """Test get_api_authenticated_user dependency."""
-
-    @pytest.mark.asyncio
-    async def test_returns_user_when_authenticated(self) -> None:
-        """Assert the authenticated user is returned unchanged."""
-        request = _make_request()
-        active_user = CasdoorUserFactory.build(is_forbidden=False)
-        with patch(
-            "app.sep.deps.get_current_user", AsyncMock(return_value=active_user)
-        ):
-            result = await get_api_authenticated_user(request)
-        assert result is active_user
-
-    @pytest.mark.asyncio
-    async def test_login_redirect_raises_unauthorized(self) -> None:
-        """Assert LoginRedirectException is converted to HTTPUnauthorizedException."""
-        request = _make_request()
-        with (
-            patch(
-                "app.sep.deps.get_current_user",
-                AsyncMock(side_effect=LoginRedirectException(request)),
-            ),
-            pytest.raises(HTTPUnauthorizedException),
-        ):
-            await get_api_authenticated_user(request)
-
-    @pytest.mark.asyncio
-    async def test_login_redirect_preserves_cookie_clearing_header(self) -> None:
-        """Assert the ``set-cookie`` header from ``LoginRedirectException`` is preserved.
-
-        ``LoginRedirectException`` emits a ``set-cookie`` header that clears the
-        stale session cookie. When the exception is converted to 401 for API
-        callers, that header must ride along so the invalid cookie does not
-        linger on the client.
-        """
-        request = _make_request()
-        with (
-            patch(
-                "app.sep.deps.get_current_user",
-                AsyncMock(side_effect=LoginRedirectException(request)),
-            ),
-            pytest.raises(HTTPUnauthorizedException) as exc_info,
-        ):
-            await get_api_authenticated_user(request)
-        assert exc_info.value.headers is not None
-        set_cookie = exc_info.value.headers.get("set-cookie")
-        assert set_cookie is not None
-        assert sep_settings.SESSION.COOKIE_NAME in set_cookie
-        assert f"{sep_settings.SESSION.COOKIE_NAME}=" in set_cookie
-
-    @pytest.mark.asyncio
-    async def test_http_redirect_raises_unauthorized(self) -> None:
-        """Assert a plain HTTPRedirectException is also converted to 401."""
-        request = _make_request()
-        with (
-            patch(
-                "app.sep.deps.get_current_user",
-                AsyncMock(side_effect=HTTPRedirectException("/login")),
-            ),
-            pytest.raises(HTTPUnauthorizedException),
-        ):
-            await get_api_authenticated_user(request)
-
-    @pytest.mark.asyncio
-    async def test_non_redirect_exception_propagates(self) -> None:
-        """Assert non-redirect auth exceptions propagate unchanged."""
-        request = _make_request()
-        with (
-            patch(
-                "app.sep.deps.get_current_user",
-                AsyncMock(side_effect=HTTPForbiddenException("User is not active")),
-            ),
-            pytest.raises(HTTPForbiddenException),
-        ):
-            await get_api_authenticated_user(request)
-
-
-class TestGetCurrentAdmin:
-    """Test get_current_admin dependency."""
-
-    @pytest.mark.asyncio
-    async def test_non_admin_raises_forbidden(self) -> None:
-        """Assert non-admin user raises HTTPForbiddenException."""
-        regular_user = CasdoorUserFactory.build(is_admin=False)
-        with pytest.raises(HTTPForbiddenException):
-            await get_current_admin(regular_user)
-
-    @pytest.mark.asyncio
-    async def test_admin_returns_user(self) -> None:
-        """Assert admin user is returned successfully."""
-        admin_user = CasdoorUserFactory.build(is_admin=True)
-        result = await get_current_admin(admin_user)
-        assert result is admin_user
 
 
 class TestGetApiAuthenticatedAdmin:
@@ -666,13 +555,11 @@ class TestGetExecutorHosts:
     @pytest.mark.asyncio
     async def test_api_failure_returns_empty_dict(self) -> None:
         """Assert HTTPException from API returns empty dict and logs error."""
-        request = _make_request()
         mock_api = AsyncMock()
         mock_api.get.side_effect = HTTPException(
             status_code=500, detail="Service unavailable"
         )
-        result = await get_executor_hosts(request, mock_api)
-        assert result == {}
+        assert await get_executor_hosts(mock_api) == {}
 
 
 class TestGetCreatedEntity:
@@ -800,286 +687,6 @@ class TestGetTaskHistory:
 
         with pytest.raises(HTTPNotFoundException):
             await get_task_history(mock_api, 1, owner="ALTERS")
-
-
-class TestGetTasksContext:
-    """Test get_tasks_context dependency."""
-
-    @pytest.mark.asyncio
-    async def test_basic_context(self, created_service, mock_remote_api) -> None:
-        """Assert template context is assembled for task-dependent plugins."""
-        task_data = {
-            "name": "fakeTask",
-            "id": 1,
-            "created_by": None,
-            "last_updated_by": None,
-        }
-        extra_data = {"success": True, "extra": "extra_data"}
-        mock_remote_api.get = AsyncMock(
-            side_effect=[
-                {
-                    "items": [created_service.model_dump()],
-                    "total": 1,
-                    "offset": 0,
-                    "limit": 50,
-                },
-                {"items": [task_data], "total": 1, "offset": 0, "limit": 50},
-                {"items": [], "total": 0, "offset": 0, "limit": 50},
-                [],
-            ]
-        )
-
-        def get_task_info(_task):
-            return extra_data
-
-        executor_hosts_ctx = ExecutorHostsContext(
-            hosts={"host1": "address1", "host2": "address2"},
-            display_names={"address1": "DB Primary", "address2": "DB Replica"},
-        )
-        context = await get_tasks_context(
-            mock_remote_api,
-            mock_remote_api,
-            get_task_info,
-            executor_hosts_ctx,
-            service_type=ServiceTypeEnum.MYSQL,
-        )
-        assert context["services"][0]["id"] == created_service.id
-        assert context["executor_hosts"] == [
-            {"value": "host1", "label": "DB Primary"},
-            {"value": "host2", "label": "DB Replica"},
-        ]
-        assert len(context["tasks"]) == 1
-        task = context["tasks"][0]
-        assert task == task_data | extra_data
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("default_value", [True, False])
-    async def test_exposes_connectivity_check_default(
-        self, monkeypatch, default_value
-    ) -> None:
-        """Expose ``sep_settings.CONNECTIVITY_CHECK_DEFAULT`` in the template context."""
-        monkeypatch.setattr(sep_settings, "CONNECTIVITY_CHECK_DEFAULT", default_value)
-        mock_api = AsyncMock()
-        mock_api.get = AsyncMock(
-            side_effect=[
-                {"items": [], "total": 0, "offset": 0, "limit": 50},
-                {"items": [], "total": 0, "offset": 0, "limit": 50},
-                [],
-            ]
-        )
-        executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
-
-        context = await get_tasks_context(
-            mock_api,
-            mock_api,
-            lambda _: {},
-            executor_hosts_ctx,
-            service_type=ServiceTypeEnum.MYSQL,
-        )
-
-        assert context["connectivity_check_default"] is default_value
-
-    @pytest.mark.asyncio
-    async def test_status_branches(self) -> None:
-        """Assert PENDING, RUNNING, and completed histories are categorized correctly."""
-        mock_api = AsyncMock()
-        task_data = {
-            "name": "test-task",
-            "id": 1,
-            "created_by": None,
-            "last_updated_by": None,
-        }
-        pending_hist = {
-            "status": TaskHistoryStatusEnum.PENDING,
-            "id": PENDING_HISTORY_ID,
-        }
-        running_hist = {
-            "status": TaskHistoryStatusEnum.RUNNING,
-            "id": RUNNING_HISTORY_ID,
-        }
-        success_hist = {
-            "status": TaskHistoryStatusEnum.SUCCESS,
-            "id": SUCCESS_HISTORY_ID,
-        }
-
-        mock_api.get = AsyncMock(
-            side_effect=[
-                {"items": [], "total": 0, "offset": 0, "limit": 50},
-                {"items": [task_data], "total": 1, "offset": 0, "limit": 50},
-                {
-                    "items": [pending_hist, running_hist, success_hist],
-                    "total": 3,
-                    "offset": 0,
-                    "limit": 50,
-                },
-                [],
-            ]
-        )
-
-        executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
-        context = await get_tasks_context(
-            mock_api,
-            mock_api,
-            lambda _: {},
-            executor_hosts_ctx,
-            service_type=ServiceTypeEnum.MYSQL,
-        )
-        assert len(context["pending_tasks"]) == 1
-        assert context["pending_tasks"][0]["id"] == PENDING_HISTORY_ID
-        assert len(context["running_tasks"]) == 1
-        assert context["running_tasks"][0]["id"] == RUNNING_HISTORY_ID
-        assert len(context["history_tasks"]) == 1
-        assert context["history_tasks"][0]["id"] == SUCCESS_HISTORY_ID
-
-    @pytest.mark.asyncio
-    async def test_service_type_scopes_services_and_owner_filters_tasks(self) -> None:
-        """Assert the ``/services/`` fetch scopes by ``service_type``, tasks by owner.
-
-        Exercises AC6's ``get_tasks_context`` clause: a brand-new owner string no
-        core module knows still round-trips, with the caller-supplied
-        ``service_type`` driving the inventory fetch.
-        """
-        mock_api = AsyncMock()
-        mock_api.get = AsyncMock(
-            side_effect=[
-                {"items": [], "total": 0, "offset": 0, "limit": 50},
-                {"items": [], "total": 0, "offset": 0, "limit": 50},
-                [],
-            ]
-        )
-        executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
-
-        await get_tasks_context(
-            mock_api,
-            mock_api,
-            lambda _: {},
-            executor_hosts_ctx,
-            owner="CONTRACT_NEW_OWNER",
-            service_type=ServiceTypeEnum.POSTGRESQL,
-        )
-
-        calls = mock_api.get.await_args_list
-        services_call = next(call for call in calls if call.args[0] == "/services/")
-        assert (
-            services_call.kwargs["params"]["service_type"] == ServiceTypeEnum.POSTGRESQL
-        )
-        tasks_call = next(call for call in calls if call.args[0] == "/")
-        assert tasks_call.kwargs["params"]["owner"] == "CONTRACT_NEW_OWNER"
-
-
-class TestGetTasksIndexContext:
-    """Test get_tasks_index_context dependency."""
-
-    @pytest.mark.asyncio
-    async def test_assembles_context(self) -> None:
-        """Assert all API calls are made and context dict is structured correctly."""
-        mock_inv_api = AsyncMock()
-        mock_tasks_api = AsyncMock()
-        mock_tasks_api.get = AsyncMock(
-            side_effect=[
-                {
-                    "items": [{"id": 1, "status": "running"}],
-                    "total": 1,
-                    "offset": 0,
-                    "limit": 50,
-                },
-                {
-                    "items": [{"id": 2, "status": "pending"}],
-                    "total": 1,
-                    "offset": 0,
-                    "limit": 50,
-                },
-                [{"task": "backup-task", "enabled": True}],
-                {
-                    "items": [{"name": "backup-task", "owner": "BACKUPS"}],
-                    "total": 1,
-                    "offset": 0,
-                    "limit": 50,
-                },
-            ]
-        )
-        mock_inv_api.get = AsyncMock(
-            return_value={"nodes": EXPECTED_NODE_COUNT, "services": 3}
-        )
-
-        default_context = {"user": "test"}
-        executor_hosts_ctx = ExecutorHostsContext(
-            hosts={"host1": "addr1"}, display_names={}
-        )
-
-        with patch("app.sep.deps.sep_settings") as mock_sep:
-            mock_sep.APPS = []
-            context = await get_tasks_index_context(
-                mock_inv_api, mock_tasks_api, default_context, executor_hosts_ctx
-            )
-
-        assert "running_tasks" in context
-        assert "pending_tasks" in context
-        assert "periodic_tasks" in context
-        assert "is_task_manager_enabled" in context
-        assert context["is_task_manager_enabled"] is False
-        assert context["nodes"] == EXPECTED_NODE_COUNT
-        assert context["periodic_tasks"][0]["owner"] == "BACKUPS"
-
-    @pytest.mark.asyncio
-    async def test_task_manager_enabled(self) -> None:
-        """Assert is_task_manager_enabled is True when Task Manager plugin has sidebar."""
-        mock_inv_api = AsyncMock()
-        mock_tasks_api = AsyncMock()
-        mock_tasks_api.get = AsyncMock(
-            side_effect=[
-                {"items": [], "total": 0, "offset": 0, "limit": 50},
-                {"items": [], "total": 0, "offset": 0, "limit": 50},
-                [],
-                {"items": [], "total": 0, "offset": 0, "limit": 50},
-            ]
-        )
-        mock_inv_api.get = AsyncMock(return_value={})
-
-        mock_plugin = MagicMock()
-        mock_plugin.name = "Task Manager"
-        mock_plugin.sidebar = True
-
-        executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
-        # The Task Manager flag now derives from the already-filtered plugin
-        # list carried on the default context, not the raw settings.
-        context = await get_tasks_index_context(
-            mock_inv_api,
-            mock_tasks_api,
-            {"plugins": [mock_plugin]},
-            executor_hosts_ctx,
-        )
-
-        assert context["is_task_manager_enabled"] is True
-
-    @pytest.mark.asyncio
-    async def test_task_manager_disabled_when_filtered_out(self) -> None:
-        """Report False when Task Manager is absent from the filtered list."""
-        mock_inv_api = AsyncMock()
-        mock_tasks_api = AsyncMock()
-        mock_tasks_api.get = AsyncMock(
-            side_effect=[
-                {"items": [], "total": 0, "offset": 0, "limit": 50},
-                {"items": [], "total": 0, "offset": 0, "limit": 50},
-                [],
-                {"items": [], "total": 0, "offset": 0, "limit": 50},
-            ]
-        )
-        mock_inv_api.get = AsyncMock(return_value={})
-
-        other_plugin = MagicMock()
-        other_plugin.name = "Snippet Manager"
-        other_plugin.sidebar = True
-
-        executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
-        context = await get_tasks_index_context(
-            mock_inv_api,
-            mock_tasks_api,
-            {"plugins": [other_plugin]},
-            executor_hosts_ctx,
-        )
-
-        assert context["is_task_manager_enabled"] is False
 
 
 class TestCheckForConflictedRunningTasks:
@@ -1516,13 +1123,6 @@ class TestMakeRequestHelper:
         """
         assert _make_request(authorization="").headers["authorization"] == ""
 
-    def test_state_messages_initialized(self) -> None:
-        """``request.state.messages`` is initialized to an OrderedDict.
-
-        Many call sites consume this state; the refactor must preserve it.
-        """
-        assert isinstance(_make_request().state.messages, OrderedDict)
-
 
 class TestBearerHeaderEdgeCases:
     """Cover header-parsing edges for ``is_bearer_authenticated`` and the gates that wrap it.
@@ -1739,214 +1339,3 @@ class TestGetToggleableAppKey:
         )
         with pytest.raises(HTTPNotFoundException):
             get_toggleable_app_key("unknown")
-
-
-class TestGetDefaultContextPluginFiltering:
-    """Test that ``get_default_context`` filters the sidebar by app state."""
-
-    @staticmethod
-    def _plugins() -> list[App]:
-        """Build a representative inventory + two non-protected plugins."""
-        return [
-            App(name="Inventory", module_name="inventory"),
-            App(name="Snippet Manager", module_name="snippets"),
-            App(name="Checksums", module_name="checksums"),
-        ]
-
-    @pytest.mark.asyncio
-    @pytest.mark.usefixtures("mock_get_username_mapping")
-    @pytest.mark.parametrize(
-        "excluded_state",
-        [
-            AppLifecycleEnum.DISABLED,
-            AppLifecycleEnum.DISABLING,
-            AppLifecycleEnum.ENABLING,
-        ],
-    )
-    async def test_enabled_plugin_included_non_enabled_excluded(
-        self, session, dummy_request, regular_user, excluded_state
-    ) -> None:
-        """Only protected apps plus ``ENABLED`` non-protected apps reach the sidebar."""
-        session.add(
-            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
-        )
-        session.add(AppState(app_key="checksums", lifecycle_state=excluded_state))
-        await session.commit()
-
-        with (
-            patch(
-                "app.sep.apps.framework.registry.get_app_registry",
-                return_value=build_app_registry(self._plugins()),
-            ),
-            patch("app.sep.deps.settings"),
-        ):
-            context = await get_default_context(
-                dummy_request, regular_user, None, session
-            )
-
-        keys = {p.key for p in context["plugins"]}
-        assert keys == {"inventory", "snippets"}
-
-    @pytest.mark.asyncio
-    @pytest.mark.usefixtures("mock_get_username_mapping")
-    async def test_inventory_always_present_even_when_row_disabled(
-        self, session, dummy_request, regular_user
-    ) -> None:
-        """A protected app stays in the sidebar regardless of any DB row."""
-        session.add(
-            AppState(app_key="inventory", lifecycle_state=AppLifecycleEnum.DISABLED)
-        )
-        await session.commit()
-
-        with (
-            patch(
-                "app.sep.apps.framework.registry.get_app_registry",
-                return_value=build_app_registry(self._plugins()),
-            ),
-            patch("app.sep.deps.settings"),
-        ):
-            context = await get_default_context(
-                dummy_request, regular_user, None, session
-            )
-
-        keys = {p.key for p in context["plugins"]}
-        assert "inventory" in keys
-
-    @pytest.mark.asyncio
-    @pytest.mark.usefixtures("mock_get_username_mapping")
-    async def test_missing_row_includes_plugin(
-        self, session, dummy_request, regular_user
-    ) -> None:
-        """A configured plugin with no DB row is shown (missing -> enabled)."""
-        with (
-            patch(
-                "app.sep.apps.framework.registry.get_app_registry",
-                return_value=build_app_registry(self._plugins()),
-            ),
-            patch("app.sep.deps.settings"),
-        ):
-            context = await get_default_context(
-                dummy_request, regular_user, None, session
-            )
-
-        keys = {p.key for p in context["plugins"]}
-        assert keys == {"inventory", "snippets", "checksums"}
-
-    @staticmethod
-    def _dependent_registry() -> AppRegistry:
-        """Build a registry where ``dependent`` requires ``snippets``."""
-        return AppRegistry(
-            [
-                BaseApp(
-                    key="inventory",
-                    name="inventory",
-                    display_name="Inventory",
-                    uri_path="/inventory",
-                ),
-                BaseApp(
-                    key="snippets",
-                    name="snippets",
-                    display_name="Snippets",
-                    uri_path="/snippets",
-                ),
-                BaseApp(
-                    key="dependent",
-                    name="dependent",
-                    display_name="Dependent",
-                    uri_path="/dependent",
-                    requires_apps=("snippets",),
-                ),
-            ]
-        )
-
-    @pytest.mark.asyncio
-    @pytest.mark.usefixtures("mock_get_username_mapping")
-    async def test_app_hidden_when_dependency_disabled(
-        self, session, dummy_request, regular_user
-    ) -> None:
-        """Assert an app is dropped from the sidebar when a required app is disabled."""
-        session.add(
-            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
-        )
-        await session.commit()
-        with (
-            patch(
-                "app.sep.apps.framework.registry.get_app_registry",
-                return_value=self._dependent_registry(),
-            ),
-            patch("app.sep.deps.settings"),
-        ):
-            context = await get_default_context(
-                dummy_request, regular_user, None, session
-            )
-
-        keys = {p.key for p in context["plugins"]}
-        assert "dependent" not in keys
-        assert "snippets" not in keys
-        assert "inventory" in keys
-
-    @pytest.mark.asyncio
-    @pytest.mark.usefixtures("mock_get_username_mapping")
-    async def test_app_shown_when_dependency_enabled(
-        self, session, dummy_request, regular_user
-    ) -> None:
-        """Assert an app stays in the sidebar when its dependency is enabled (missing row)."""
-        with (
-            patch(
-                "app.sep.apps.framework.registry.get_app_registry",
-                return_value=self._dependent_registry(),
-            ),
-            patch("app.sep.deps.settings"),
-        ):
-            context = await get_default_context(
-                dummy_request, regular_user, None, session
-            )
-
-        keys = {p.key for p in context["plugins"]}
-        assert {"inventory", "snippets", "dependent"} <= keys
-
-    @pytest.mark.asyncio
-    @pytest.mark.usefixtures("mock_get_username_mapping")
-    async def test_alert_troubleshooting_hidden_when_snippets_disabled(
-        self, session, dummy_request, regular_user
-    ) -> None:
-        """Drop Alert Troubleshooting from the sidebar when snippets is disabled."""
-        session.add(
-            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
-        )
-        await session.commit()
-
-        with patch("app.sep.deps.settings"):
-            context = await get_default_context(
-                dummy_request, regular_user, None, session
-            )
-
-        keys = {p.key for p in context["plugins"]}
-        assert "alert_troubleshooting" not in keys
-        assert "snippets" not in keys
-        assert "inventory" in keys
-
-    @pytest.mark.asyncio
-    @pytest.mark.usefixtures("mock_get_username_mapping")
-    async def test_db_failure_degrades_to_showing_all_apps(
-        self, session, dummy_request, regular_user
-    ) -> None:
-        """Assert a DB read failure shows every app so the page (and error pages) render."""
-        with (
-            patch(
-                "app.sep.apps.framework.registry.get_app_registry",
-                return_value=build_app_registry(self._plugins()),
-            ),
-            patch("app.sep.deps.settings"),
-            patch.object(
-                AppStateManager,
-                "all_lifecycle_states",
-                side_effect=SQLAlchemyError("db down"),
-            ),
-        ):
-            context = await get_default_context(
-                dummy_request, regular_user, None, session
-            )
-
-        keys = {p.key for p in context["plugins"]}
-        assert keys == {"inventory", "snippets", "checksums"}

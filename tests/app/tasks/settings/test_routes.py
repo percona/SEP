@@ -192,6 +192,25 @@ class TestTasksSettingsApi:
         expected_rows = 2
         assert len(rows) == expected_rows
 
+    async def test_pre_execution_options_are_str_enum_members(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """Expose PreExecutionCheckMode members with string values."""
+        response = admin_test_client.get("/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        row = next(
+            s
+            for g in response.json()["groups"]
+            if g["setting_class"] == SettingClassEnum.TASKS_SETTINGS.value
+            for s in g["settings"]
+            if s["key"] == "PRE_EXECUTION_CONNECTIVITY_CHECK"
+        )
+        assert row["options"] == [
+            {"label": "DISABLED", "value": "disabled"},
+            {"label": "WARN", "value": "warn"},
+            {"label": "BLOCK", "value": "block"},
+        ]
+
     async def test_patch_inline_refresh(self, admin_test_client: TestClient) -> None:
         """Assert the proxy returns the new value after PATCH without the background refresher."""
         new_value = 99

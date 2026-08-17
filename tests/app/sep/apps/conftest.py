@@ -31,7 +31,7 @@ from app.core.auth.exceptions import HTTPUnauthorizedException
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import HTTPConflictException
 from app.sep.apps.framework.apps import TaskExecutionApp
-from app.sep.deps import check_for_conflicted_running_tasks, get_api_authenticated_user
+from app.sep.deps import check_for_conflicted_running_tasks, get_current_user
 from app.sep.main import sep_app
 from app.tasks.models import TaskBackendEnum, TaskWrite
 from tests.app.factories import GeneratedTaskFactory
@@ -156,6 +156,10 @@ def unauthenticated_contract_client(
     request: pytest.FixtureRequest,
 ) -> TestClient:
     """Return a contract client whose auth dep raises, to exercise the 401 path."""
+
+    def _raise_unauthorized() -> None:
+        raise HTTPUnauthorizedException
+
     app = mount_app(_bound_app_def(request))
-    app.dependency_overrides[get_api_authenticated_user] = _raise_unauthorized
+    app.dependency_overrides[get_current_user] = _raise_unauthorized
     return TestClient(app, raise_server_exceptions=False)

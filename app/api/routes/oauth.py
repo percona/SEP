@@ -24,10 +24,14 @@ from pydantic import BaseModel, ValidationError
 
 from app.api.deps import CurrentUser, RefreshTokenCookie
 from app.core.auth.exceptions import HTTPUnauthorizedException, InactiveUserException
-from app.core.auth.models import OAuthToken, SPAOAuthTokenResponse
+from app.core.auth.models import (
+    OAuthToken,
+    SessionExchangeTokenResponse,
+    SPAOAuthTokenResponse,
+)
 from app.core.auth.utils import get_user_model
-from app.sep.config import sep_settings
-from app.sep.deps import resolve_ambient_session_token
+from app.sep.config import prefixed_cookie_path, sep_settings
+from app.sep.deps import resolve_ambient_exchange_token, resolve_ambient_session_token
 
 logger = logging.getLogger(__name__)
 
@@ -55,34 +59,33 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
     """Set the ``HttpOnly`` refresh-token cookie on ``response``.
 
     Pull cookie attributes (name, path, max-age, samesite, secure) from
-    ``sep_settings.SESSION_REFRESH`` and set ``httponly=True`` explicitly.
+    ``sep_settings.SESSION_REFRESH`` and set ``httponly=True`` explicitly. The
+    ``path`` is anchored under the configured URL prefix so the browser sends
+    the cookie back to the refresh endpoint wherever SEP is served.
 
     :param response: The response on which to set the cookie.
-    :type response: Response
     :param refresh_token: The refresh token value to store in the cookie.
-    :type refresh_token: str
     """
-    response.set_cookie(
-        **sep_settings.SESSION_REFRESH.model_dump(by_alias=True),
-        value=refresh_token,
-        httponly=True,
-    )
+    cookie_options = sep_settings.SESSION_REFRESH.model_dump(by_alias=True)
+    cookie_options["path"] = prefixed_cookie_path(cookie_options["path"])
+    response.set_cookie(**cookie_options, value=refresh_token, httponly=True)
 
 
 def _clear_refresh_cookie(response: Response) -> None:
     """Delete the refresh-token cookie.
 
-    Pass ``path`` from ``SESSION_REFRESH.PATH`` so deletion mirrors how
-    the cookie was set: when a ``Path`` is configured, both set and delete
-    emit the same ``Path``; when ``PATH`` is ``None``, both omit the
-    attribute and the browser's default-path rules apply symmetrically.
+    Derive ``path`` from ``SESSION_REFRESH.PATH`` exactly as the set does, URL
+    prefix included, so deletion mirrors how the cookie was set: when a ``Path``
+    is configured, both emit the same one; when ``PATH`` is ``None``, both omit
+    the attribute and the browser's default-path rules apply symmetrically. A
+    delete whose ``Path`` differs from the set is silently ignored by the
+    browser, leaving the cookie in place.
 
     :param response: The response on which to delete the cookie.
-    :type response: Response
     """
     response.delete_cookie(
         key=sep_settings.SESSION_REFRESH.COOKIE_NAME,
-        path=sep_settings.SESSION_REFRESH.PATH,
+        path=prefixed_cookie_path(sep_settings.SESSION_REFRESH.PATH),
     )
 
 
@@ -176,6 +179,52 @@ async def spa_session_login(
         access_token=oauth_token.access_token,
         expires_in=oauth_token.expires_in,
     )
+
+
+@router.post("/session/exchange")
+async def spa_session_exchange(
+    request: Request,
+    response: Response,
+) -> SessionExchangeTokenResponse:
+    """Mint a short-lived SEP bearer from an ambient Grafana session.
+
+    Serves an embedded client that already carries the host's session cookie on
+    the same origin. Unlike ``POST /session``, set no cookie and issue no refresh
+    token: the caller holds the bearer in memory and exchanges again before it
+    expires, so the deployment never shares a long-lived credential.
+
+    Every exchange re-reads the identity from the provider and no validation is
+    cached, so a role change takes effect within one bearer lifetime. A
+    signed-out browser loses embedded access just as fast, because without the
+    session cookie it cannot obtain another bearer -- though whether a
+    *previously copied* host cookie stops working depends on the host revoking
+    its own session server-side, which is outside SEP's control.
+
+    Carries no auth dependency by design: the caller is not yet SEP-authenticated,
+    and the ambient session cookie is the credential being presented. No CSRF
+    primitive applies either: requiring a Bearer token cannot gate an
+    endpoint whose purpose is to issue one. That is safe because a cross-origin
+    attacker cannot read this response (the CORS posture is an explicit
+    per-environment origin allowlist, with the middleware absent when none is
+    configured), and the bearer-authenticated calls the token enables are
+    CSRF-exempt by design, since browsers never attach an ``Authorization``
+    header automatically.
+
+    Every failure -- no cookie, a rejected session, an unreachable provider --
+    denies with the same ``401`` rather than reporting a reason the route cannot
+    distinguish.
+
+    :param request: The incoming request, carrying the ambient session cookie.
+    :param response: The HTTP response, marked uncacheable so no intermediary
+        stores the minted bearer.
+    :return: The minted bearer and its lifetime.
+    :raises HTTPUnauthorizedException: If there is no valid ambient session.
+    """
+    exchange_token = await resolve_ambient_exchange_token(request)
+    if exchange_token is None:
+        raise HTTPUnauthorizedException("No valid ambient session.")
+    response.headers["Cache-Control"] = "no-store"
+    return exchange_token
 
 
 @router.post("/refresh")

@@ -16,37 +16,65 @@
 """Define tests for the app.sep.main module."""
 
 import importlib
-from unittest.mock import Mock
+import logging
+from contextlib import asynccontextmanager, contextmanager
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from fastapi import HTTPException, Request, status
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, status
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
+from starlette.datastructures import URL
 
 import app.sep.main as main_module
-from app.core.auth.exceptions import (
-    BaseAuthProviderException,
-    HTTPForbiddenException,
-    HTTPUnauthorizedException,
-)
-from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
+import app.sep.routes.artifacts as artifacts_module
+from app.core.alerts.config import alert_settings, AlertSettings
+from app.core.auth.exceptions import BaseAuthProviderException
+from app.core.security import crypto_timestamp_serializer
+from app.core.settings_override.lifecycle import ProxyEntry
+from app.core.settings_override.models import SettingClassEnum
 from app.sep.api.router import apps_router
-from app.sep.apps.framework.registry import get_app_registry
-from app.sep.config import App, sep_settings
-from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
-from app.sep.exceptions import LoginRedirectException
+from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
+from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.framework.registry import (
+    AppRegistry,
+    get_app_registry,
+)
+from app.sep.apps.report.config import health_report_settings, HealthReportSettings
+from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
+from app.sep.config import App, sep_settings, SEPSettings
+from app.sep.deps import get_session, PROTECTED_APP_KEYS
+from app.sep.main import lifespan as sep_module_lifespan
 from app.sep.main import (
-    _safe_next_path,
-    get_tasks_index_context,
     sep_app,
     sep_lifespan,
-    templates,
     warn_if_ambient_sso_inert,
+    warn_if_external_base_lacks_prefix,
 )
-from app.sep.main import lifespan as sep_module_lifespan
 from app.sep.models import AppLifecycleEnum, AppState
-from tests.app.factories import OAuthTokenFactory
+from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
+from tests.app.sep.conftest import REDUCED_ACTIVATION
+
+_ORIGINAL_SEP_APP = main_module.sep_app
+
+_BASE_URL_TARGET = "app.core.config.settings.BASE_URL"
+_SNIPPETS_BASE_URL_TARGET = (
+    "app.sep.snippets.config.snippets_settings.SNIPPETS_BASE_URL"
+)
+
+
+def _reload_restoring_identity() -> None:
+    """Reload ``app.sep.main`` and put the original ``sep_app`` object back.
+
+    ``importlib.reload`` re-executes the module in the same ``__dict__``,
+    rebuilding ``sep_app`` as a new object while every consumer that did
+    ``from app.sep.main import sep_app`` still holds the discarded one.
+    Restoring the original binding keeps those consumers live; the rebuilt
+    app is built over the real registry, so the two are interchangeable.
+    """
+    importlib.reload(main_module)
+    main_module.sep_app = _ORIGINAL_SEP_APP
 
 
 def _route_has_app_guard(route) -> bool:
@@ -78,248 +106,41 @@ def test_sep_app_lifespan_is_always_set():
 
 
 @pytest.fixture
-def test_client_with_session_cookie(test_client: TestClient) -> TestClient:
-    """Create an authenticated test client for the app with the session cookie set."""
-    test_client.cookies[sep_settings.SESSION.COOKIE_NAME] = "existing_session"
-    return test_client
-
-
-@pytest.fixture
 def logger_mock(mocker) -> Mock:
     """Mock the logger for the app.sep.main module."""
     return mocker.patch("app.sep.main.logger")
 
 
-@pytest.fixture
-def dummy_context() -> dict[str, str]:
-    """Override get_tasks_index_context and return dummy dict context."""
-    ctx = {"message": "Welcome Home"}
-    sep_app.dependency_overrides[get_tasks_index_context] = lambda: ctx
-    yield ctx
-    sep_app.dependency_overrides = {}
+@pytest.mark.asyncio
+class TestBootSnippetIngestion:
+    """Cover the ``SYNC_ON_STARTUP`` boot ingestion in ``sep_startup``.
 
+    The sync task is library-owned and statically included, so boot ingestion is
+    gated only on the setting -- never on the snippets app being activated. It is
+    deliberately not re-homed as an app-owned startup hook, which would run only
+    when the app ships.
+    """
 
-@pytest.fixture
-def dummy_access_token() -> str:
-    """Override get_access_token_from_cookie and return dummy access token."""
-    fake_access_token = "access-token"
-    sep_app.dependency_overrides[get_access_token_from_cookie] = lambda: (
-        fake_access_token
-    )
-    yield fake_access_token
-    sep_app.dependency_overrides = {}
+    async def test_enqueues_sync_with_the_snippets_app_deactivated(self, mocker):
+        """Fire the sync at boot from an activation list without snippets."""
+        mocker.patch.object(main_module, "init_sep_db", new_callable=AsyncMock)
+        mocker.patch.object(snippets_settings, "SYNC_ON_STARTUP", new=True)
+        mocker.patch.object(sep_settings, "APPS", [App(module_name="inventory")])
+        delay = mocker.patch.object(main_module.sync_snippets, "delay")
 
+        await main_module.sep_startup()
 
-class TestSafeNextPath:
-    """Define test suite for the ``_safe_next_path`` open-redirect guard."""
+        delay.assert_called_once_with()
 
-    @pytest.mark.parametrize(
-        ("next_path", "expected"),
-        [
-            ("/", "/"),
-            ("/apps/inventory", "/apps/inventory"),
-            ("/settings?tab=1", "/settings?tab=1"),
-            ("http://evil.com/x", "/"),
-            ("https://evil.com/x", "/"),
-            ("//evil.com", "/"),
-            ("//evil.com/path", "/"),
-            ("/\\evil.com", "/"),
-            ("relative/path", "/"),
-            ("", "/"),
-        ],
-    )
-    def test_collapses_unsafe_targets(self, next_path, expected):
-        """Pass through same-origin paths; collapse scheme/protocol-relative targets to ``/``."""
-        assert _safe_next_path(next_path) == expected
+    async def test_does_not_enqueue_when_the_setting_is_off(self, mocker):
+        """Leave the sync unqueued when ``SYNC_ON_STARTUP`` is disabled."""
+        mocker.patch.object(main_module, "init_sep_db", new_callable=AsyncMock)
+        mocker.patch.object(snippets_settings, "SYNC_ON_STARTUP", new=False)
+        delay = mocker.patch.object(main_module.sync_snippets, "delay")
 
+        await main_module.sep_startup()
 
-class TestLogin:
-    """Define test suite for GET and POST login routes."""
-
-    def test_login_form_renders_template(self, mocker, test_client):
-        """Test the GET /login route.
-
-        When an unauthenticated user GETs /login (no session cookie),
-        the login form route should call TemplateResponse with the correct
-        template name and context.
-        """
-        dummy_html = "<html>Login Form</html>"
-        dummy_response = HTMLResponse(content=dummy_html)
-        template_patch = mocker.patch(
-            "app.sep.main.templates.TemplateResponse", return_value=dummy_response
-        )
-
-        response = test_client.get("/login")
-
-        assert response.status_code == status.HTTP_200_OK
-        template_patch.assert_called_once()
-        _, kwargs = template_patch.call_args
-        assert kwargs.get("name") == "login.html.j2"
-        context = kwargs.get("context", {})
-        assert "csrf_token" in context
-
-    def test_get_login_redirects_if_authenticated(
-        self, test_client_with_session_cookie
-    ):
-        """Test the GET /login route for an already authenticated user.
-
-        If a user is already authenticated (i.e. has the session cookie)
-        then GET /login should raise a redirect.
-        """
-        response = test_client_with_session_cookie.get("/login", follow_redirects=False)
-
-        assert response.status_code == status.HTTP_303_SEE_OTHER
-        assert response.headers["location"] == "/"
-
-    @pytest.mark.parametrize(
-        ("next_path", "expected_location"),
-        [
-            (None, "/"),
-            ("", "/"),
-            ("/", "/"),
-            ("/fake-page", "/fake-page"),
-            ("http://127.0.0.1/fake-page", "/"),
-            ("//evil.com", "/"),
-            ("/\\evil.com", "/"),
-        ],
-    )
-    def test_post_login_success(
-        self, mocker, test_client, next_path, expected_location
-    ):
-        """Test the POST /login route.
-
-        A successful POST /login should (a) call the User.get_oauth_token
-        to verify credentials, (b) serialize the access token, (c) set a cookie,
-        and (d) return a redirect response.
-        """
-        username = "testuser"
-        fake_access_token = "fake_access_token"
-        get_oauth_token_patch = mocker.patch(
-            "app.sep.main.User.get_oauth_token",
-            new_callable=mocker.AsyncMock,
-            return_value=OAuthTokenFactory.build(access_token=fake_access_token),
-        )
-        invalidate_tokens_for_user_patch = mocker.patch(
-            "app.sep.main.User.invalidate_tokens_for_user",
-            new_callable=mocker.AsyncMock,
-        )
-        dumps_patch = mocker.patch(
-            "app.sep.main.crypto_timestamp_serializer.dumps",
-            return_value="serialized_fake_token",
-        )
-        form_data = {"username": username, "password": "secret"}
-
-        login_route = "/login"
-        if next_path is not None:
-            login_route += f"?next={next_path}"
-        response = test_client.post(login_route, data=form_data, follow_redirects=False)
-
-        assert response.status_code == status.HTTP_303_SEE_OTHER
-        assert response.headers["location"] == expected_location
-        cookie_header = response.headers.get("set-cookie", "")
-        assert sep_settings.SESSION.COOKIE_NAME in cookie_header
-        assert "serialized_fake_token" in cookie_header
-        get_oauth_token_patch.assert_awaited_once_with(
-            username=username, password="secret"
-        )
-        invalidate_tokens_for_user_patch.assert_awaited_once_with(
-            username, exclude_tokens=[fake_access_token]
-        )
-        dumps_patch.assert_called_once_with(fake_access_token)
-
-    def test_post_login_redirects_if_authenticated(
-        self, test_client_with_session_cookie
-    ):
-        """Test the POST /login route for an already authenticated user.
-
-        If the client sends a session cookie, the POST /login route
-        should not try to reauthenticate but instead immediately redirect.
-        """
-        form_data = {"username": "testuser", "password": "secret"}
-
-        response = test_client_with_session_cookie.post(
-            "/login", data=form_data, follow_redirects=False
-        )
-
-        assert response.status_code == status.HTTP_303_SEE_OTHER
-        assert response.headers["location"] == "/"
-
-    def test_get_login_auto_logs_in_from_ambient_session(
-        self, mocker, test_client, grafana_mock
-    ):
-        """Authenticate on GET /login from a valid ambient Grafana session, skipping the form."""
-        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
-        dumps_patch = mocker.patch(
-            "app.sep.main.crypto_timestamp_serializer.dumps",
-            return_value="serialized_ambient_token",
-        )
-
-        response = test_client.get(
-            "/login?next=/fake-page",
-            cookies={"grafana_session": "ambient"},
-            follow_redirects=False,
-        )
-
-        assert response.status_code == status.HTTP_303_SEE_OTHER
-        assert response.headers["location"] == "/fake-page"
-        cookie_header = response.headers.get("set-cookie", "")
-        assert sep_settings.SESSION.COOKIE_NAME in cookie_header
-        assert "serialized_ambient_token" in cookie_header
-        assert dumps_patch.called
-
-    def test_get_login_auto_login_sanitizes_external_next(
-        self, mocker, test_client, grafana_mock
-    ):
-        """Collapse an external ``next`` to ``/`` during ambient auto-login (open-redirect guard)."""
-        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
-        mocker.patch(
-            "app.sep.main.crypto_timestamp_serializer.dumps", return_value="tok"
-        )
-
-        response = test_client.get(
-            "/login?next=http://127.0.0.1/evil",
-            cookies={"grafana_session": "ambient"},
-            follow_redirects=False,
-        )
-
-        assert response.status_code == status.HTTP_303_SEE_OTHER
-        assert response.headers["location"] == "/"
-
-    def test_get_login_falls_back_to_form_on_rejected_session(
-        self, mocker, test_client, grafana_mock
-    ):
-        """Render the login form silently when Grafana rejects the ambient session."""
-        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
-        grafana_mock.get_current_user.side_effect = HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED
-        )
-        template_patch = mocker.patch(
-            "app.sep.main.templates.TemplateResponse",
-            return_value=HTMLResponse("<html>form</html>"),
-        )
-
-        response = test_client.get(
-            "/login", cookies={"grafana_session": "stale"}, follow_redirects=False
-        )
-
-        assert response.status_code == status.HTTP_200_OK
-        template_patch.assert_called_once()
-
-    def test_get_login_renders_form_when_toggle_off(
-        self, mocker, test_client, grafana_mock
-    ):
-        """Render the form on GET /login when ambient SSO is disabled, despite a cookie."""
-        template_patch = mocker.patch(
-            "app.sep.main.templates.TemplateResponse",
-            return_value=HTMLResponse("<html>form</html>"),
-        )
-
-        response = test_client.get(
-            "/login", cookies={"grafana_session": "ambient"}, follow_redirects=False
-        )
-
-        assert response.status_code == status.HTTP_200_OK
-        template_patch.assert_called_once()
+        delay.assert_not_called()
 
 
 class TestAmbientSsoStartupWarning:
@@ -352,501 +173,274 @@ class TestAmbientSsoStartupWarning:
         warning.assert_not_called()
 
 
-class TestLogout:
-    """Define test suite for logout route."""
+class TestExternalBaseStartupWarning:
+    """Cover the startup advisory for an external base that omits the URL prefix."""
 
-    def test_logout_success(
-        self, mocker, dummy_access_token, test_client_with_session_cookie
-    ):
-        """Test a successful logout request.
-
-        A successful POST /logout should delete the session cookie,
-        attempt to invalidate the OAuth token and return a redirect.
-        """
-        invalidate_patch = mocker.patch(
-            "app.sep.main.User.invalidate_oauth_token",
-            new_callable=mocker.AsyncMock,
-        )
-
-        response = test_client_with_session_cookie.post(
-            "/logout", follow_redirects=False
-        )
-
-        assert response.status_code == status.HTTP_303_SEE_OTHER
-        assert response.headers["location"] == "/"
-        cookie_header = response.headers.get("set-cookie", "")
-        assert sep_settings.SESSION.COOKIE_NAME in cookie_header
-        invalidate_patch.assert_awaited_once_with(dummy_access_token)
-
-    def test_logout_handles_invalidation_error(
-        self, mocker, dummy_access_token, test_client_with_session_cookie
-    ):
-        """Test that logout route always redirects.
-
-        Even if User.invalidate_oauth_token raises an error (e.g. KeyError)
-        the logout route should still return a redirect response.
-        """
-        mocker.patch(
-            "app.sep.main.User.invalidate_oauth_token",
-            new_callable=mocker.AsyncMock,
-            side_effect=KeyError("invalid token"),
-        )
-
-        response = test_client_with_session_cookie.post(
-            "/logout",
-            follow_redirects=False,
-        )
-
-        assert response.status_code == status.HTTP_303_SEE_OTHER
-        assert response.headers["location"] == "/"
-        cookie_header = response.headers.get("set-cookie", "")
-        assert sep_settings.SESSION.COOKIE_NAME in cookie_header
-
-
-def test_read_root_renders_homepage(mocker, dummy_context, test_client):
-    """Test that the index page properly renders the homepage template.
-
-    GET / (the homepage) should render the homepage template with the context
-    provided by get_tasks_index_context.
-    """
-    dummy_html = "<html>Homepage</html>"
-    template_patch = mocker.patch(
-        "app.sep.main.templates.TemplateResponse",
-        return_value=HTMLResponse(content=dummy_html),
+    @pytest.mark.parametrize(
+        ("offending", "unset"),
+        [
+            (_BASE_URL_TARGET, _SNIPPETS_BASE_URL_TARGET),
+            (_SNIPPETS_BASE_URL_TARGET, _BASE_URL_TARGET),
+        ],
     )
+    def test_warns_when_a_configured_base_omits_the_prefix(
+        self, mocker, caplog, offending, unset
+    ):
+        """Warn once per offending base, naming the setting an operator must fix."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+        mocker.patch(offending, new=URL("https://host"))
+        mocker.patch(unset, new=None)
 
-    response = test_client.get("/")
+        with caplog.at_level(logging.WARNING):
+            warn_if_external_base_lacks_prefix()
 
-    assert response.status_code == status.HTTP_200_OK
-    template_patch.assert_called_once()
-    _, kwargs = template_patch.call_args
-    assert kwargs.get("name") == "homepage.html.j2"
-    assert kwargs.get("context") == dummy_context
+        assert len(caplog.records) == 1
+        assert caplog.records[0].getMessage().startswith(offending.rsplit(".", 1)[1])
+
+    def test_stays_silent_when_the_bases_carry_the_prefix(self, mocker, caplog):
+        """Skip the warning when both bases already resolve under the prefix."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+        mocker.patch(_BASE_URL_TARGET, new=URL("https://host/sep"))
+        mocker.patch(_SNIPPETS_BASE_URL_TARGET, new=URL("https://host/sep"))
+
+        with caplog.at_level(logging.WARNING):
+            warn_if_external_base_lacks_prefix()
+
+        assert caplog.records == []
+
+    def test_stays_silent_when_no_external_base_is_configured(self, mocker, caplog):
+        """Skip the warning when a prefix is set but neither external base is."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+        mocker.patch(_BASE_URL_TARGET, new=None)
+        mocker.patch(_SNIPPETS_BASE_URL_TARGET, new=None)
+
+        with caplog.at_level(logging.WARNING):
+            warn_if_external_base_lacks_prefix()
+
+        assert caplog.records == []
+
+    def test_stays_silent_when_no_prefix_is_configured(self, mocker, caplog):
+        """Leave the unprefixed deployment unwarned, which is the regression contract."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="")
+        mocker.patch(_BASE_URL_TARGET, new=URL("https://host"))
+        mocker.patch(_SNIPPETS_BASE_URL_TARGET, new=URL("https://host"))
+
+        with caplog.at_level(logging.WARNING):
+            warn_if_external_base_lacks_prefix()
+
+        assert caplog.records == []
 
 
-def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
-    """Regression: task-infrastructure routers must be mounted for backup_pg-only installs.
+class TestPrefixedRouting:
+    """Cover routing when an ASGI server mounts ``sep_app`` under a URL prefix."""
 
-    When backup_pg is the only task-related plugin enabled, the shared routers
-    (periodic_tasks, stop_task, stream_logs, download_files, execution_events,
-    inventory_ajax) must still be mounted so that Jinja url_for() calls like
-    url_for('periodic_task_create') and url_for('stop_task_execution') resolve
-    without raising NoMatchFound.
+    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    def test_health_answers_under_the_configured_prefix(self, root_path):
+        """Resolve the liveness probe at the prefixed path PMM's nginx forwards."""
+        client = TestClient(sep_app, root_path=root_path)
+
+        assert client.get(f"{root_path}/health").status_code == status.HTTP_200_OK
+
+    def test_health_still_answers_unprefixed_under_a_prefix(self):
+        """Keep the container healthcheck working: it probes loopback unprefixed."""
+        client = TestClient(sep_app, root_path="/sep")
+
+        assert client.get("/health").status_code == status.HTTP_200_OK
+
+    def test_a_prefix_like_path_is_not_mis_stripped(self):
+        """Reject ``/september`` rather than mangling it into a ``/sep`` match."""
+        client = TestClient(sep_app, root_path="/sep", raise_server_exceptions=False)
+
+        assert client.get("/september").status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    @pytest.mark.usefixtures("guarded_client")
+    @pytest.mark.asyncio
+    async def test_a_json_api_route_resolves_under_the_prefix(self, root_path):
+        """Resolve an app's JSON route identically with and without the prefix."""
+        client = TestClient(sep_app, root_path=root_path, raise_server_exceptions=False)
+
+        response = client.get(f"{root_path}/api/apps/inventory/")
+
+        assert response.status_code == status.HTTP_200_OK
+
+    @pytest.mark.asyncio
+    async def test_async_client_resolves_under_the_prefix(self):
+        """Cover the ``ASGITransport`` path the async fixtures reach the app through."""
+        transport = ASGITransport(app=sep_app, root_path="/sep")
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        response = await client.get("/sep/health")
+        await client.aclose()
+
+        assert response.status_code == status.HTTP_200_OK
+
+
+def test_sep_app_rebuilds_without_alerts_and_dipper(mocker):
+    """Rebuild ``sep_app`` against the PMM-embedded activation list.
+
+    Proves the registry and mount composition survive an activation list that
+    omits alerts and dipper. It does **not** prove import-cleanliness against a
+    tree with those packages stripped -- the dev checkout can still import them.
+    ``tests/app/sep/test_import_boundary.py`` is what enforces that.
     """
-    original_plugins = sep_settings.APPS
-    mocker.patch.object(sep_settings, "APPS", [App(module_name="backup_pg")])
+    original_apps = sep_settings.APPS
+    mocker.patch.object(sep_settings, "APPS", REDUCED_ACTIVATION)
     get_app_registry.cache_clear()
 
     try:
         importlib.reload(main_module)
 
-        route_names = {r.name for r in main_module.sep_app.routes}
-        assert "periodic_task_create" in route_names
-        assert "stop_task_execution" in route_names
+        keys = {app.key for app in get_app_registry()}
+        assert "alerts" not in keys
+        assert "dipper" not in keys
     finally:
-        sep_settings.APPS = original_plugins
+        sep_settings.APPS = original_apps
         get_app_registry.cache_clear()
+        _reload_restoring_identity()
+
+
+def test_embedded_activation_list_serves_a_snippet_download(mocker, tmp_path):
+    """Serve an ATW-dispatched snippet download with the snippets app deactivated.
+
+    Both halves of the artifact surface are import-time decisions — the mount in
+    ``main`` and ``_BASE_DIRS`` in the route module — so both are rebuilt against
+    the embedded activation list before the request. A 404 here means the router
+    was not mounted; a 400 means the snippet type did not resolve.
+    """
+    original_apps = sep_settings.APPS
+    (tmp_path / "collect.sh").write_text("#!/bin/bash\necho hello")
+    token = crypto_timestamp_serializer.dumps(
+        {"type": ARTIFACT_TYPE_SNIPPET, "filename": "collect.sh", "md5": "abc123"},
+        salt=ARTIFACT_DOWNLOAD_SALT,
+    )
+
+    mocker.patch.object(sep_settings, "APPS", REDUCED_ACTIVATION)
+    get_app_registry.cache_clear()
+    try:
+        importlib.reload(artifacts_module)
         importlib.reload(main_module)
 
+        with patch("app.sep.snippets.config.snippets_settings.SNIPPETS_DIR", tmp_path):
+            client = TestClient(main_module.sep_app, raise_server_exceptions=False)
+            response = client.get(f"/artifacts/download/{token}")
 
-def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
-    """Regression: ``/periodic`` routes must be mounted for inventory-only installs.
+        assert response.status_code == status.HTTP_200_OK
+    finally:
+        sep_settings.APPS = original_apps
+        get_app_registry.cache_clear()
+        importlib.reload(artifacts_module)
+        _reload_restoring_identity()
 
-    The inventory plugin's node-list page renders ``url_for('periodic_task_create')``
-    unconditionally as part of the inline schedule UI, so the periodic-tasks router
-    must be mounted whenever the inventory plugin is enabled even if no task-oriented
-    plugin (tasks, backup, checksums, …) is configured.
+
+async def _refresher_proxy_map(mocker) -> dict[SettingClassEnum, ProxyEntry]:
+    """Return the proxy map ``sep_overrides_lifespan`` hands to the refresher.
+
+    :param mocker: The ``pytest-mock`` fixture used to stub the refresher.
+    :return: The composed app-owned-plus-SEP proxy map.
     """
-    original_plugins = sep_settings.APPS
-    mocker.patch.object(sep_settings, "APPS", [App(module_name="inventory")])
-    get_app_registry.cache_clear()
+    captured: dict[SettingClassEnum, ProxyEntry] = {}
 
+    @asynccontextmanager
+    async def fake_refresher(_session_maker, proxies, *_args, **_kwargs):
+        captured.update(proxies)
+        yield
+
+    mocker.patch.object(main_module, "settings_override_refresher", fake_refresher)
+    original_callbacks = getattr(main_module.sep_app.state, "override_callbacks", None)
+    try:
+        async with main_module.sep_overrides_lifespan(FastAPI()):
+            pass
+    finally:
+        main_module.sep_app.state.override_callbacks = original_callbacks
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_proxy_map_composes_app_owned_and_sep_entries(mocker):
+    """Compose the refresher map from the app-owned seam plus SEP's own set."""
+    proxies = await _refresher_proxy_map(mocker)
+
+    assert set(proxies) == {
+        SettingClassEnum.SEP_SETTINGS,
+        SettingClassEnum.SNIPPETS_SETTINGS,
+        SettingClassEnum.SETTINGS,
+        SettingClassEnum.ALERT_SETTINGS,
+        SettingClassEnum.ALERTS_SETTINGS,
+        SettingClassEnum.HEALTH_REPORT_SETTINGS,
+    }
+    alerts_entry = proxies[SettingClassEnum.ALERTS_SETTINGS]
+    assert alerts_entry.proxy is alerts_settings
+    assert alerts_entry.settings_cls is AlertsSettings
+    report_entry = proxies[SettingClassEnum.HEALTH_REPORT_SETTINGS]
+    assert report_entry.proxy is health_report_settings
+    assert report_entry.settings_cls is HealthReportSettings
+
+
+@pytest.mark.asyncio
+async def test_lifespan_refreshes_exactly_the_shared_builder_map(mocker):
+    """Hand the refresher whatever ``build_sep_override_proxies`` composes.
+
+    The Celery worker's SEP-side handler refreshes the same builder's output, so
+    delegating here -- rather than composing an equivalent set inline -- is what
+    keeps the two processes from drifting.
+    """
+    sentinel = {
+        SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
+    }
+    mocker.patch.object(
+        main_module, "build_sep_override_proxies", return_value=sentinel
+    )
+
+    proxies = await _refresher_proxy_map(mocker)
+
+    assert proxies == sentinel
+
+
+@pytest.mark.asyncio
+async def test_proxy_map_drops_alerts_but_keeps_core_alert_settings(mocker):
+    """Drop ``ALERTS_SETTINGS`` under reduced activation, keeping ``ALERT_SETTINGS``.
+
+    ``ALERT_SETTINGS`` arrives from SEP's own set rather than the app-owned
+    seam, so the PMM-embedded profile still refreshes the alert-delivery config
+    that the Tasks worker and seven non-alerts apps read.
+    """
+    mocker.patch.object(sep_settings, "APPS", REDUCED_ACTIVATION)
+    get_app_registry.cache_clear()
+    try:
+        proxies = await _refresher_proxy_map(mocker)
+    finally:
+        get_app_registry.cache_clear()
+
+    assert SettingClassEnum.ALERTS_SETTINGS not in proxies
+    assert SettingClassEnum.HEALTH_REPORT_SETTINGS not in proxies
+    alert_entry = proxies[SettingClassEnum.ALERT_SETTINGS]
+    assert alert_entry.proxy is alert_settings
+    assert alert_entry.settings_cls is AlertSettings
+
+
+@contextmanager
+def _reloaded_against(mocker, registry):
+    """Rebuild ``sep_app`` over ``registry``, restoring the real one on exit.
+
+    Patches the registry accessor at its **source** module: ``importlib.reload``
+    re-executes ``main``'s ``from ... import get_app_registry``, which would
+    rebind over a patch applied to ``app.sep.main``.
+
+    :param mocker: The ``pytest-mock`` fixture used to install the patch.
+    :param registry: The registry ``app.sep.main`` should be rebuilt over.
+    :return: The ``sep_app`` built from ``registry``.
+    """
+    mocker.patch(
+        "app.sep.apps.framework.registry.get_app_registry", return_value=registry
+    )
     try:
         importlib.reload(main_module)
-
-        route_names = {r.name for r in main_module.sep_app.routes}
-        assert "periodic_task_create" in route_names
-        assert "periodic_task_update" in route_names
-        assert "periodic_task_delete" in route_names
+        yield main_module.sep_app
     finally:
-        sep_settings.APPS = original_plugins
+        mocker.stopall()
         get_app_registry.cache_clear()
-        importlib.reload(main_module)
-
-
-class TestExceptionHandlers:
-    """Define test suite for exception handlers."""
-
-    def test_default_error_handler(self, mocker, dummy_context, test_client):
-        """Test that HTTPExceptions are caught and properly handled."""
-        error_detail = "Internal Server Error"
-        fake_referer = "/fake-page"
-        mocker.patch(
-            "app.sep.main.templates.TemplateResponse",
-            side_effect=HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=error_detail
-            ),
-        )
-        messages_error_mock = mocker.patch("app.sep.main.messages.error")
-
-        response = test_client.get(
-            "/", headers={"Referer": fake_referer}, follow_redirects=False
-        )
-
-        assert response.status_code == status.HTTP_303_SEE_OTHER
-        assert response.headers["location"] == fake_referer
-        messages_error_mock.assert_called_once_with(mocker.ANY, error_detail)
-
-    @pytest.mark.parametrize(
-        ("exc", "expected_status"),
-        [
-            pytest.param(
-                HTTPBadGatewayException("PMM is unreachable"),
-                status.HTTP_502_BAD_GATEWAY,
-                id="bad_gateway",
-            ),
-            pytest.param(
-                HTTPServiceUnavailableException("PMM is unavailable"),
-                status.HTTP_503_SERVICE_UNAVAILABLE,
-                id="service_unavailable",
-            ),
-        ],
-    )
-    def test_gateway_error_handler_returns_json_on_browser_path(
-        self, mocker, dummy_context, test_client, exc, expected_status
-    ):
-        """Answer a gateway error with JSON even on a browser/session path.
-
-        ``json_exception_handler`` is registered for the gateway exceptions, so a
-        502/503 answers in JSON regardless of path or auth mode -- it does not fall
-        through to ``default_exception_handler``'s flash-and-redirect. This pins the
-        behaviour after the upstream-error mapping was widened so a header-bearing
-        gateway error resolves to its mapped class instead of a bare HTTPException.
-        """
-        mocker.patch(
-            "app.sep.main.templates.TemplateResponse",
-            side_effect=exc,
-        )
-        messages_error_mock = mocker.patch("app.sep.main.messages.error")
-
-        response = test_client.get(
-            "/", headers={"Referer": "/fake-page"}, follow_redirects=False
-        )
-
-        assert response.status_code == expected_status
-        assert response.json()["detail"] == exc.detail
-        messages_error_mock.assert_not_called()
-
-    @pytest.mark.parametrize(
-        ("exc", "expected_status"),
-        [
-            pytest.param(
-                HTTPUnauthorizedException(),
-                status.HTTP_401_UNAUTHORIZED,
-                id="bearer_unauthorized",
-            ),
-            pytest.param(
-                HTTPForbiddenException("User is not active"),
-                status.HTTP_403_FORBIDDEN,
-                id="bearer_forbidden",
-            ),
-        ],
-    )
-    def test_default_error_handler_bearer_returns_json(
-        self, mocker, dummy_context, test_client, exc, expected_status
-    ):
-        """Test returning JSON for Bearer-authenticated HTTP exceptions."""
-        mocker.patch(
-            "app.sep.main.templates.TemplateResponse",
-            side_effect=exc,
-        )
-
-        response = test_client.get(
-            "/",
-            headers={"Authorization": "Bearer any-token"},
-            follow_redirects=False,
-        )
-
-        assert response.status_code == expected_status
-        assert response.json()["detail"] == exc.detail
-
-    def test_default_error_handler_unauthorized_without_bearer_redirects(
-        self, mocker, dummy_context, test_client
-    ):
-        """Test using referer redirect when Authorization Bearer is absent."""
-        mocker.patch(
-            "app.sep.main.templates.TemplateResponse",
-            side_effect=HTTPUnauthorizedException(),
-        )
-        messages_error_mock = mocker.patch("app.sep.main.messages.error")
-        fake_referer = "/some-page"
-
-        response = test_client.get(
-            "/",
-            headers={"Referer": fake_referer},
-            follow_redirects=False,
-        )
-
-        assert response.status_code == status.HTTP_303_SEE_OTHER
-        assert response.headers["location"] == fake_referer
-        messages_error_mock.assert_called_once()
-
-    def test_auth_provider_exception_handler(
-        self, mocker, dummy_access_token, dummy_context, test_client_with_session_cookie
-    ):
-        """Test that BaseAuthProviderException are caught and properly handled."""
-        error_detail = "Error getting response from auth provider."
-        mocker.patch(
-            "app.sep.main.templates.TemplateResponse",
-            side_effect=BaseAuthProviderException(
-                status_code=status.HTTP_502_BAD_GATEWAY, detail=error_detail
-            ),
-        )
-        messages_error_mock = mocker.patch("app.sep.main.messages.error")
-
-        response = test_client_with_session_cookie.get(
-            "/",
-            follow_redirects=False,
-        )
-
-        assert response.status_code == status.HTTP_303_SEE_OTHER
-        assert response.headers["location"] == "/login?next=/"
-        cookie_header = response.headers.get("set-cookie", "")
-        assert sep_settings.SESSION.COOKIE_NAME in cookie_header
-        messages_error_mock.assert_called_once_with(
-            mocker.ANY, error_detail, sticky=True
-        )
-
-    def test_internal_error_handler(
-        self,
-        mocker,
-        dummy_context,
-        dummy_access_token,
-        regular_user,
-        logger_mock,
-        test_client,
-    ):
-        """Test that unexpected 500 errors are caught and properly handled."""
-        error_msg = "Unexpected error"
-        unexpected_exc = ValueError(error_msg)
-        base_uri = "http://127.0.0.1"
-        formatted_exception = f"Line 1\nLine 2\n{error_msg}"
-        get_base_url_patch = mocker.patch(
-            "app.sep.main.get_base_url", return_value=base_uri
-        )
-        get_current_user_patch = mocker.patch(
-            "app.sep.main.get_current_user", return_value=regular_user
-        )
-        get_default_context_patch = mocker.patch(
-            "app.sep.main.get_default_context", return_value=dummy_context
-        )
-        template_patch = mocker.patch(
-            "app.sep.main.templates.TemplateResponse",
-            side_effect=[unexpected_exc, HTMLResponse(content="<html>Error</html>")],
-        )
-        messages_error_mock = mocker.patch("app.sep.main.messages.error")
-        format_exception_patch = mocker.patch(
-            "app.sep.main.format_exception",
-            return_value=formatted_exception.splitlines(keepends=True),
-        )
-
-        test_client.get("/")
-
-        get_base_url_patch.assert_called_once()
-        logger_mock.exception.assert_called_once_with(
-            "Unhandled exception:", exc_info=unexpected_exc
-        )
-        get_current_user_patch.assert_called_once()
-        messages_error_mock.assert_called_once_with(
-            mocker.ANY,
-            "Internal Server Error. Please contact the administrators for help.",
-            sticky=True,
-        )
-        format_exception_patch.assert_called_once_with(
-            unexpected_exc, limit=-1, chain=False
-        )
-        get_default_context_patch.assert_called_once_with(
-            mocker.ANY, regular_user, base_uri, mocker.ANY
-        )
-        template_patch.assert_called_with(
-            request=mocker.ANY,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            name="error.html.j2",
-            context={"exception": formatted_exception, **dummy_context},
-        )
-
-    def test_internal_error_handler_redirects_for_stale_session(
-        self,
-        mocker,
-        dummy_context,
-        logger_mock,
-        test_client,
-    ):
-        """Test stale-session 500 handling redirects to login."""
-        unexpected_exc = ValueError("Unexpected error")
-        redirect_exc = LoginRedirectException(
-            Request(
-                {
-                    "type": "http",
-                    "scheme": "http",
-                    "method": "GET",
-                    "path": "/",
-                    "raw_path": b"/",
-                    "query_string": b"",
-                    "headers": [],
-                    "server": ("testserver", 80),
-                    "client": ("testclient", 50000),
-                    "root_path": "",
-                    "app": sep_app,
-                }
-            )
-        )
-        mocker.patch(
-            "app.sep.main.templates.TemplateResponse",
-            side_effect=unexpected_exc,
-        )
-        mocker.patch("app.sep.main.get_current_user", side_effect=redirect_exc)
-        messages_error_mock = mocker.patch("app.sep.main.messages.error")
-
-        response = test_client.get("/", follow_redirects=False)
-
-        assert response.status_code == status.HTTP_303_SEE_OTHER
-        assert response.headers["location"] == "/login?next=/"
-        assert f'{sep_settings.SESSION.COOKIE_NAME}=""' in response.headers.get(
-            "set-cookie", ""
-        )
-        logger_mock.exception.assert_called_once_with(
-            "Unhandled exception:", exc_info=unexpected_exc
-        )
-        messages_error_mock.assert_not_called()
-
-    @pytest.mark.usefixtures("mock_get_username_mapping")
-    def test_404_error(self, mocker, regular_user, test_client):
-        """Test 404 errors renders the 404 template for authenticated users."""
-        mocker.patch("app.sep.main.get_current_user", return_value=regular_user)
-        mocker.patch("app.sep.main.get_default_context", return_value={})
-        template_spy = mocker.spy(templates, "TemplateResponse")
-
-        response = test_client.get("/non-existent-page")
-
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-        template_spy.assert_called_once()
-        _, kwargs = template_spy.call_args
-        assert kwargs.get("name") == "404.html.j2"
-
-        sep_app.dependency_overrides = {}
-
-    @pytest.mark.parametrize(
-        ("exception_cls", "expected_status", "expected_detail"),
-        [
-            pytest.param(
-                HTTPServiceUnavailableException,
-                status.HTTP_503_SERVICE_UNAVAILABLE,
-                "Service Unavailable",
-                id="503",
-            ),
-            pytest.param(
-                HTTPBadGatewayException,
-                status.HTTP_502_BAD_GATEWAY,
-                "Bad Gateway",
-                id="502",
-            ),
-        ],
-    )
-    def test_json_exception_handler(
-        self,
-        mocker,
-        dummy_context,
-        test_client,
-        exception_cls,
-        expected_status,
-        expected_detail,
-    ):
-        """Assert gateway exceptions return JSON instead of redirecting."""
-        mocker.patch(
-            "app.sep.main.templates.TemplateResponse",
-            side_effect=exception_cls(),
-        )
-
-        response = test_client.get("/", follow_redirects=False)
-
-        assert response.status_code == expected_status
-        assert response.json()["detail"] == expected_detail
-
-    def test_404_error_unauthenticated(self, regular_user, test_client):
-        """Test 404 errors redirects to the login page for unauthenticated users."""
-        non_existent_path = "/non-existent-page"
-        response = test_client.get(non_existent_path, follow_redirects=False)
-        assert response.status_code == status.HTTP_303_SEE_OTHER
-        assert response.headers["location"] == f"/login?next={non_existent_path}"
-        assert f'{sep_settings.SESSION.COOKIE_NAME}=""' in response.headers.get(
-            "set-cookie", ""
-        )
-
-    def test_request_validation_error_handler_redirects_with_flash(
-        self, mocker, dummy_context, test_client
-    ):
-        """Form-binding 422s become flash messages + 303 back to the form."""
-        validation_errors = [
-            {
-                "type": "less_than_equal",
-                "loc": ("body", "DEST_PORT"),
-                "msg": "Input should be less than or equal to 65535",
-                "input": "99999",
-            },
-            {
-                "type": "none_required",
-                "loc": ("body", "DEST_PORT"),
-                "msg": "Input should be None",
-                "input": "99999",
-            },
-        ]
-        mocker.patch(
-            "app.sep.main.templates.TemplateResponse",
-            side_effect=RequestValidationError(validation_errors),
-        )
-        from_validation_error_mock = mocker.patch(
-            "app.sep.main.messages.from_validation_error"
-        )
-        fake_referer = "/archives/"
-
-        response = test_client.get(
-            "/", headers={"Referer": fake_referer}, follow_redirects=False
-        )
-
-        assert response.status_code == status.HTTP_303_SEE_OTHER
-        assert response.headers["location"] == fake_referer
-        from_validation_error_mock.assert_called_once()
-        call_kwargs = from_validation_error_mock.call_args.kwargs
-        assert "none_required" in call_kwargs["exclude_types"]
-
-    def test_request_validation_error_handler_bearer_returns_json(
-        self, mocker, dummy_context, test_client
-    ):
-        """Bearer-authenticated callers keep the JSON 422 shape."""
-        validation_errors = [
-            {
-                "type": "less_than_equal",
-                "loc": ("body", "DEST_PORT"),
-                "msg": "Input should be less than or equal to 65535",
-                "input": "99999",
-            },
-        ]
-        mocker.patch(
-            "app.sep.main.templates.TemplateResponse",
-            side_effect=RequestValidationError(validation_errors),
-        )
-
-        response = test_client.get(
-            "/",
-            headers={"Authorization": "Bearer any-token"},
-            follow_redirects=False,
-        )
-
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-        # JSON serialization turns the ``loc`` tuple into a list.
-        expected = [{**e, "loc": list(e["loc"])} for e in validation_errors]
-        assert response.json()["detail"] == expected
+        _reload_restoring_identity()
 
 
 def test_sep_app_keeps_default_docs_urls():
@@ -875,7 +469,10 @@ class TestAppStateGuards:
 
     @pytest.mark.parametrize(
         ("plugin_key", "plugin_route"),
-        [("snippets", "/snippets/"), ("checksums", "/checksums/")],
+        [
+            ("snippets", "/api/apps/snippets/"),
+            ("checksums", "/api/apps/checksums/"),
+        ],
     )
     @pytest.mark.parametrize(
         "state",
@@ -886,10 +483,10 @@ class TestAppStateGuards:
         ],
     )
     @pytest.mark.asyncio
-    async def test_ui_guard_returns_503_for_non_enabled_states(
+    async def test_route_guard_returns_503_for_non_enabled_states(
         self, guarded_client: TestClient, session, plugin_key, plugin_route, state
     ) -> None:
-        """A non-protected plugin's UI route 503s whenever it is not ``ENABLED``."""
+        """Return 503 from a non-protected plugin's route whenever it is not ``ENABLED``."""
         session.add(AppState(app_key=plugin_key, lifecycle_state=state))
         await session.commit()
 
@@ -899,74 +496,49 @@ class TestAppStateGuards:
         assert plugin_key in response.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_child_ui_route_503s_when_parent_disabled(
+    async def test_child_route_503s_when_parent_disabled(
         self, guarded_client: TestClient, session
     ) -> None:
-        """Return 503 from a child app's UI route when its parent is disabled (gate uses parent_key)."""
+        """Return 503 from a child app's route when its parent is disabled (gate uses parent_key)."""
         session.add(
             AppState(app_key="backup_mongo", lifecycle_state=AppLifecycleEnum.DISABLED)
         )
         await session.commit()
 
-        response = guarded_client.get("/backup_mongo/restores/")
+        response = guarded_client.get("/api/apps/backup_mongo/restore/")
 
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
         assert "backup_mongo" in response.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_inventory_ui_route_never_503s(
+    async def test_inventory_route_never_503s(
         self, guarded_client: TestClient, session
     ) -> None:
-        """Inventory has no guard, so a disabled row never gates ``/inventory/``."""
+        """Leave inventory ungated: it is protected, so a disabled row never gates it."""
         session.add(
             AppState(app_key="inventory", lifecycle_state=AppLifecycleEnum.DISABLED)
         )
         await session.commit()
 
-        response = guarded_client.get("/inventory/")
-
-        assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
-
-    @pytest.mark.asyncio
-    async def test_atw_json_route_503s_when_snippets_disabled(
-        self, guarded_client: TestClient, session
-    ) -> None:
-        """Atw's JSON route 503s when the ``snippets`` app it requires is disabled.
-
-        The gate reports atw's own key, so the user never sees the raw
-        ``App 'snippets' is currently disabled`` leak from the execute path.
-        """
-        session.add(
-            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
-        )
-        await session.commit()
-
-        response = guarded_client.get("/api/apps/atw/")
-
-        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        assert "atw" in response.json()["detail"]
-
-    @pytest.mark.asyncio
-    async def test_atw_json_route_reachable_when_snippets_enabled(
-        self, guarded_client: TestClient, session
-    ) -> None:
-        """Atw's JSON route is reachable when snippets is enabled (no regression)."""
-        response = guarded_client.get("/api/apps/atw/")
+        response = guarded_client.get("/api/apps/inventory/")
 
         assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
 
     @pytest.mark.parametrize(
         "route",
-        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting/"],
+        [
+            "/api/apps/atw/",
+            "/api/apps/alert_troubleshooting/",
+        ],
     )
     @pytest.mark.asyncio
-    async def test_alert_troubleshooting_routes_503_when_snippets_disabled(
+    async def test_snippet_consumer_routes_survive_a_snippets_disable(
         self, guarded_client: TestClient, session, route: str
     ) -> None:
-        """Return 503 from Alert Troubleshooting routes when snippets is disabled.
+        """Keep ATW and Alert Troubleshooting routes reachable past a snippets disable.
 
-        The gate names ``alert_troubleshooting`` itself so callers never see the
-        raw ``App 'snippets' is currently disabled`` leak from the snippets path.
+        Both read snippet scripts from the library rather than the snippets app,
+        so neither declares ``requires_apps`` and the gate has nothing to trip on.
         """
         session.add(
             AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
@@ -975,44 +547,67 @@ class TestAppStateGuards:
 
         response = guarded_client.get(route)
 
-        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        assert (
-            response.json()["detail"]
-            == "App 'alert_troubleshooting' is currently disabled."
-        )
+        assert response.status_code != status.HTTP_503_SERVICE_UNAVAILABLE
 
     @pytest.mark.parametrize(
         "route",
-        ["/api/apps/alert_troubleshooting/", "/alert-troubleshooting/"],
+        [
+            "/api/apps/atw/",
+            "/api/apps/alert_troubleshooting/",
+        ],
     )
     @pytest.mark.asyncio
-    async def test_alert_troubleshooting_routes_reachable_when_snippets_enabled(
-        self, guarded_client: TestClient, session, route: str
+    async def test_snippet_consumer_routes_reachable_by_default(
+        self, guarded_client: TestClient, route: str
     ) -> None:
-        """Keep Alert Troubleshooting routes reachable when snippets is enabled."""
+        """Keep ATW and Alert Troubleshooting routes reachable with no state rows."""
         response = guarded_client.get(route)
 
         assert response.status_code == status.HTTP_200_OK
 
-    def test_ui_mount_loop_guards_non_protected_plugins(self) -> None:
-        """Every non-protected UI plugin route carries the app-state guard."""
-        guarded_prefixes = {
-            app.uri_path
-            for app in get_app_registry()
-            if app.key not in PROTECTED_APP_KEYS and app.jinja_router is not None
-        }
-        seen = set()
-        for route in sep_app.routes:
-            path = getattr(route, "path", "")
-            for prefix in guarded_prefixes:
-                if (
-                    path == prefix or path.startswith(f"{prefix}/")
-                ) and _route_has_app_guard(route):
-                    seen.add(prefix)
-        assert guarded_prefixes <= seen
+    @pytest.mark.asyncio
+    async def test_dependency_disabled_route_503s_naming_its_own_key(
+        self, guarded_client: TestClient, session, mocker
+    ) -> None:
+        """Return 503 naming the gated app, not the dependency that is off.
 
-    def test_inventory_ui_routes_are_not_guarded(self) -> None:
-        """The protected ``inventory`` plugin's UI routes carry no app-state guard."""
+        No shipped app declares ``requires_apps`` any more, so the guard's
+        dependency arm is exercised against a synthetic registry: the route stays
+        the real mounted one (the gate closure-captured ``atw`` at mount time)
+        while the graph it resolves through is injected.
+        """
+        registry = AppRegistry(
+            [
+                BaseApp(
+                    key="atw",
+                    name="atw",
+                    display_name="ATW",
+                    uri_path="/atw",
+                    requires_apps=("provider",),
+                ),
+                BaseApp(
+                    key="provider",
+                    name="provider",
+                    display_name="Provider",
+                    uri_path="/provider",
+                ),
+            ]
+        )
+        mocker.patch(
+            "app.sep.apps.framework.registry.get_app_registry", return_value=registry
+        )
+        session.add(
+            AppState(app_key="provider", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        response = guarded_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert response.json()["detail"] == "App 'atw' is currently disabled."
+
+    def test_inventory_api_routes_are_not_guarded(self) -> None:
+        """Carry no app-state guard on the protected ``inventory`` plugin's routes."""
         inventory_app = get_app_registry().get("inventory")
         assert inventory_app is not None
         inventory_prefix = inventory_app.uri_path
@@ -1038,3 +633,93 @@ class TestAppStateGuards:
                 ) and _route_has_app_guard(route):
                     seen.add(key)
         assert guarded_keys <= seen
+
+
+class TestJsonExceptionHandlers:
+    """Cover the exception handlers now that every branch returns JSON.
+
+    The handlers used to pick between a JSON body and a 303-redirect-with-flash
+    based on the request path; with the server-rendered UI gone, there is no
+    non-JSON branch left, so a non-``/api`` path must get the same JSON shape as
+    an ``/api`` one.
+    """
+
+    @staticmethod
+    def _raising_route(exc: Exception) -> TestClient:
+        """Return a client for a throwaway app that raises ``exc`` at ``/boom``."""
+        app = FastAPI(exception_handlers=sep_app.exception_handlers)
+
+        @app.get("/boom")
+        async def _boom() -> None:
+            raise exc
+
+        return TestClient(app, raise_server_exceptions=False)
+
+    def test_404_on_non_api_path_returns_json(self, test_client: TestClient) -> None:
+        """Return a JSON 404 body, never a redirect, for an unmatched non-API path."""
+        response = test_client.get("/no-such-path", follow_redirects=False)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json() == {"detail": "Not Found"}
+
+    def test_deleted_shell_routes_are_gone(self, test_client: TestClient) -> None:
+        """Assert the login/logout/homepage shell routes 404 after the SSR removal."""
+        for method, path in (
+            ("get", "/login"),
+            ("post", "/login"),
+            ("post", "/logout"),
+            ("get", "/"),
+        ):
+            response = getattr(test_client, method)(path, follow_redirects=False)
+            assert response.status_code == status.HTTP_404_NOT_FOUND, path
+
+    def test_http_exception_with_headers_returns_json(self) -> None:
+        """Forward ``headers`` on the JSON body instead of redirecting to the referer."""
+        client = self._raising_route(
+            HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="nope",
+                headers={"x-sep-test": "1"},
+            )
+        )
+
+        response = client.get("/boom", headers={"referer": "/somewhere"})
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json() == {"detail": "nope"}
+        assert response.headers["x-sep-test"] == "1"
+
+    def test_auth_provider_exception_returns_json(self) -> None:
+        """Return the provider failure as JSON rather than a 303 to the login page.
+
+        The handler used to build its ``Location`` with ``url_for("login")``,
+        which would now raise ``NoMatchFound`` — a 502-class upstream failure
+        would surface as an unhandled 500.
+        """
+        client = self._raising_route(BaseAuthProviderException())
+
+        response = client.get("/boom", follow_redirects=False)
+
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {
+            "detail": "Error getting response from auth provider."
+        }
+
+    def test_request_validation_error_returns_json(self) -> None:
+        """Return the encoded validator failures, not a flash-and-redirect."""
+        app = FastAPI(exception_handlers=sep_app.exception_handlers)
+
+        @app.post("/validate")
+        async def _validate(payload: dict[str, int]) -> None:
+            """Reject a malformed body through FastAPI's own validation."""
+
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.post(
+            "/validate", json={"n": "not-an-int"}, headers={"referer": "/form"}
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        detail = response.json()["detail"]
+        assert isinstance(detail, list)
+        assert {"loc", "msg"} <= set(detail[0])

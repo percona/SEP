@@ -16,6 +16,7 @@
 """Tests for the nested-override helpers in the classification registry."""
 
 import functools
+from collections.abc import Callable
 from datetime import timedelta
 from typing import ClassVar
 
@@ -41,11 +42,12 @@ from app.core.settings_override.registry import (
     NESTED_VALUE_MISSING,
     not_overridable_field,
     ReloadClassification,
+    rendered_leaf_keys,
     resolve_nested_field,
     resolve_nested_field_metadata,
     resolve_nested_value,
 )
-from app.sep.config import SEPSettings, SessionOptions
+from app.sep.config import CookieOptions, SEPSettings
 from app.tasks.config import TasksSettings
 
 
@@ -83,7 +85,7 @@ class _CachedModel(BaseModel):
 
 def test_resolve_field_in_model_exact_match() -> None:
     """An exact attribute-name match returns the canonical name and field."""
-    resolved = _resolve_field_in_model(SessionOptions, "MAX_AGE")
+    resolved = _resolve_field_in_model(CookieOptions, "MAX_AGE")
     assert resolved is not None
     canonical, _ = resolved
     assert canonical == "MAX_AGE"
@@ -111,15 +113,15 @@ def test_resolve_field_in_model_lowercase_fallback() -> None:
 
 def test_resolve_field_in_model_missing_segment() -> None:
     """An unknown segment returns ``None``."""
-    assert _resolve_field_in_model(SessionOptions, "NOPE") is None
+    assert _resolve_field_in_model(CookieOptions, "NOPE") is None
 
 
 def test_resolve_nested_field_single_level() -> None:
     """A single-level key resolves to a one-segment chain and its leaf field."""
-    resolved = resolve_nested_field(SEPSettings, "SESSION__MAX_AGE")
+    resolved = resolve_nested_field(SEPSettings, "SESSION_REFRESH__MAX_AGE")
     assert resolved is not None
     chain, _ = resolved
-    assert chain == ("SESSION", "MAX_AGE")
+    assert chain == ("SESSION_REFRESH", "MAX_AGE")
 
 
 def test_resolve_nested_field_multi_level() -> None:
@@ -139,7 +141,7 @@ def test_resolve_nested_field_unknown_top_level() -> None:
 
 def test_resolve_nested_field_unknown_nested_leaf() -> None:
     """An unknown nested leaf resolves to ``None``."""
-    assert resolve_nested_field(SEPSettings, "SESSION__BOGUS") is None
+    assert resolve_nested_field(SEPSettings, "SESSION_REFRESH__BOGUS") is None
 
 
 def test_resolve_nested_field_non_pydantic_intermediate() -> None:
@@ -149,7 +151,7 @@ def test_resolve_nested_field_non_pydantic_intermediate() -> None:
 
 def test_resolve_nested_field_primitive_past_leaf() -> None:
     """A path that descends past a primitive leaf resolves to ``None``."""
-    assert resolve_nested_field(SEPSettings, "SESSION__MAX_AGE__SUB") is None
+    assert resolve_nested_field(SEPSettings, "SESSION_REFRESH__MAX_AGE__SUB") is None
 
 
 def test_resolve_nested_field_empty_key() -> None:
@@ -159,8 +161,10 @@ def test_resolve_nested_field_empty_key() -> None:
 
 def test_coerce_nested_field_value_success() -> None:
     """A leaf value is coerced to the leaf's declared type (int → timedelta)."""
-    chain, value = coerce_nested_field_value(SEPSettings, "SESSION__MAX_AGE", 3600)
-    assert chain == ("SESSION", "MAX_AGE")
+    chain, value = coerce_nested_field_value(
+        SEPSettings, "SESSION_REFRESH__MAX_AGE", 3600
+    )
+    assert chain == ("SESSION_REFRESH", "MAX_AGE")
     assert value == timedelta(seconds=3600)
 
 
@@ -177,7 +181,7 @@ def test_coerce_nested_field_value_preserves_constraint() -> None:
 def test_coerce_nested_field_value_unresolvable_raises_keyerror() -> None:
     """An unresolvable path raises ``KeyError``."""
     with pytest.raises(KeyError):
-        coerce_nested_field_value(SEPSettings, "SESSION__BOGUS", 1)
+        coerce_nested_field_value(SEPSettings, "SESSION_REFRESH__BOGUS", 1)
 
 
 def test_coerce_nested_field_value_rejects_not_overridable_leaf() -> None:
@@ -254,14 +258,14 @@ def test_is_nested_overridable_parent_false_for_missing_field() -> None:
 
 
 def test_iter_nested_leaf_keys_session_yields_all_leaves() -> None:
-    """``SESSION`` enumerates its five leaves with canonical uppercase chains."""
-    leaves = dict(iter_nested_leaf_keys(SEPSettings, "SESSION"))
+    """``SESSION_REFRESH`` enumerates its five leaves with canonical uppercase chains."""
+    leaves = dict(iter_nested_leaf_keys(SEPSettings, "SESSION_REFRESH"))
     assert set(leaves) == {
-        "SESSION__COOKIE_NAME",
-        "SESSION__MAX_AGE",
-        "SESSION__SAMESITE",
-        "SESSION__SECURE",
-        "SESSION__PATH",
+        "SESSION_REFRESH__COOKIE_NAME",
+        "SESSION_REFRESH__MAX_AGE",
+        "SESSION_REFRESH__SAMESITE",
+        "SESSION_REFRESH__SECURE",
+        "SESSION_REFRESH__PATH",
     }
     for key, chain in leaves.items():
         assert "__".join(chain) == key
@@ -499,3 +503,41 @@ def test_overlay_nested_parent_leaves_unmarked_field_untouched() -> None:
     """Assert a submodel field with no overlay entry is not nested-overridable."""
     assert is_nested_overridable_parent(_OverlayNestedParent, "UNMARKED") is False
     assert "UNMARKED" not in nested_overridable_field_names(_OverlayNestedParent)
+
+
+def test_rendered_leaf_keys_yields_leaves_for_a_mixed_parent() -> None:
+    """Assert a parent with one unsealed leaf still renders as its leaves."""
+    assert dict(rendered_leaf_keys(_Outer, "NESTED")) == dict(
+        iter_nested_leaf_keys(_Outer, "NESTED")
+    )
+
+
+def test_rendered_leaf_keys_empty_for_a_locked_parent() -> None:
+    """Assert a field that takes no nested override at all renders as one row."""
+    assert rendered_leaf_keys(SEPSettings, "DIAGNOSTICS_DELIVERY") == []
+
+
+def test_rendered_leaf_keys_empty_for_a_scalar_hot_field() -> None:
+    """Assert a scalar HOT field renders as one row, enumerating no leaves."""
+    assert rendered_leaf_keys(SEPSettings, "FOOTER_TEMPLATE") == []
+
+
+def test_rendered_leaf_keys_empty_when_every_leaf_is_sealed() -> None:
+    """Assert an all-sealed parent renders whole, not as leaves no PATCH can target."""
+    assert list(iter_nested_leaf_keys(SEPSettings, "DIAGNOSTICS_DELIVERY_INPUTS"))
+    assert rendered_leaf_keys(SEPSettings, "DIAGNOSTICS_DELIVERY_INPUTS") == []
+
+
+def test_rendered_leaf_keys_keeps_allowlist_withheld_leaves(
+    restrict: Callable[..., None],
+) -> None:
+    """Assert an allowlist withholding every leaf still enumerates them.
+
+    A withheld leaf is not the sealed case: it stays listed so an admin can see
+    what the allowlist is holding back, which is why the selection asks whether
+    the key is addressable at all rather than whether the policy permits it.
+    """
+    restrict("Settings.LOGGING")
+    assert dict(rendered_leaf_keys(SEPSettings, "SESSION_REFRESH")) == dict(
+        iter_nested_leaf_keys(SEPSettings, "SESSION_REFRESH")
+    )

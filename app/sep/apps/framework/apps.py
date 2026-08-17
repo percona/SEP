@@ -30,7 +30,6 @@ from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Annotated, Any, Self
 
 from fastapi import APIRouter, Body, Depends, Form, params
@@ -44,6 +43,7 @@ from pydantic import (
     TypeAdapter,
 )
 
+from app.core.db.list_query import ListQuerySpec
 from app.core.pagination import make_pagination_dep, PaginationDependency
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.api import (
@@ -64,6 +64,7 @@ from app.sep.apps.framework.form_dsl import (
 from app.sep.apps.framework.responses import (
     BaseTaskResponse,
     build_default_task_response,
+    serialized_field_names,
     TaskResponseBuilder,
 )
 from app.sep.apps.framework.schema import (
@@ -93,7 +94,6 @@ __all__ = [
     "AppCapabilities",
     "Cascade",
     "ListFilterConfig",
-    "StaticMount",
     "TaskExecutionApp",
     "Views",
 ]
@@ -237,24 +237,6 @@ class Cascade:
     predecessors: tuple[ChainedPredecessor, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
-class StaticMount:
-    """Declare one authenticated static mount for a script app's payload directory.
-
-    Collected from the registry in ``app/sep/main.py`` and mounted through
-    :class:`~app.sep.utils.static.AuthenticatedStaticFiles`, so a payload directory
-    is never served anonymously.
-
-    :param path: The mount prefix (for example ``/static/snippets``).
-    :param directory: The directory served behind authentication.
-    :param name: The Starlette mount name used for reverse URL lookups.
-    """
-
-    path: str
-    directory: Path
-    name: str
-
-
 class TaskExecutionApp(BaseApp):
     """Compose the route-derivation helpers into a derived task-app router from one object.
 
@@ -372,6 +354,12 @@ class TaskExecutionApp(BaseApp):
         ``status`` / ``service_type`` query-parameter toggles plus the server-side
         ``roots_only`` and ``extra_params`` upstream filters. Defaults to an
         all-off :class:`ListFilterConfig`.
+    :param list_query_spec: The :class:`~app.core.db.list_query.ListQuerySpec`
+        backing a ``script_source`` app's list route sort/search allowlist. When set,
+        the derived paginated list route exposes exactly the Core ``sort`` param
+        (plus ``search`` when the spec has searchable columns) and hands the resolved
+        query to the source's ``list_scripts`` hook. Defaults to ``None`` (the
+        paginated list route fetches the full set and slices it client-side).
     :param response_builder: A sync list/detail builder override injecting the
         per-plugin response extras; replaces the framework default builder. When
         ``None`` (default) the framework builds a default list/detail builder
@@ -421,10 +409,9 @@ class TaskExecutionApp(BaseApp):
         sibling tabs under ``{route_base}/{route_segment}``. Threaded into the
         derived ``GET /schema`` (``AppSchema.related_apps``). Defaults to an
         empty tuple.
-    :param static_mounts: Authenticated static mounts for the app's payload
-        directories, collected from the registry and mounted in ``app/sep/main.py``
-        through :class:`~app.sep.utils.static.AuthenticatedStaticFiles`. Defaults to
-        an empty tuple.
+    :param uses_task_data: Overrides the :class:`BaseApp` default to ``True``: a
+        derived task app's list and detail surfaces always render the shared
+        task-history views. Defaults to ``True``.
     """
 
     owner: str
@@ -451,6 +438,12 @@ class TaskExecutionApp(BaseApp):
     capabilities_provider: Callable[..., BaseModel] | None = None
     service_type: ServiceTypeEnum | None = None
     list_filter: ListFilterConfig = Field(default_factory=ListFilterConfig)
+    # Contract is ``ListQuerySpec | None``, but even under ``SkipValidation`` pydantic
+    # walks the dataclass to build a schema and chokes on SQLAlchemy's
+    # ``ColumnExpressionArgument`` (a generic alias over an unresolvable ``_T``), raising
+    # ``PydanticUserError`` on first instantiation. ``_validate_list_query`` enforces the
+    # type at construction instead.
+    list_query_spec: SkipValidation[Any] = None
     response_builder: SkipValidation[TaskResponseBuilder | None] = None
     detail_response_builder: SkipValidation[TaskResponseBuilder | None] = None
     detail_response_model: type[BaseModel] | None = None
@@ -463,7 +456,7 @@ class TaskExecutionApp(BaseApp):
     delete_guard: tuple[params.Depends, ...] | _Unguarded = ()
     description: str | None = None
     related_apps: tuple[RelatedApp, ...] = ()
-    static_mounts: tuple[StaticMount, ...] = ()
+    uses_task_data: bool = True
 
     _task_getter: Callable[..., Awaitable[Task]] | None = PrivateAttr(default=None)
 
@@ -503,9 +496,9 @@ class TaskExecutionApp(BaseApp):
         """Reject an internally-inconsistent definition at construction.
 
         :raises ValueError: When the schema source, the create-payload path, the
-            connectivity references, the route knobs, the response/filter knobs, the
-            list-view columns, or the ``ArgFormat`` markers are inconsistent (see the
-            per-aspect helpers).
+            connectivity references, the route knobs, the list-query wiring, the
+            response/filter knobs, the list-view columns, or the ``ArgFormat`` markers
+            are inconsistent (see the per-aspect helpers).
         """
         self._validate_schema_source()
         self._validate_create_path()
@@ -513,6 +506,7 @@ class TaskExecutionApp(BaseApp):
         self._validate_route_knobs()
         self._validate_detail_suppress()
         self._validate_list_suppress()
+        self._validate_list_query()
         self._validate_response_knobs()
         self._validate_view_columns()
         self._validate_arg_formats()
@@ -883,6 +877,54 @@ class TaskExecutionApp(BaseApp):
                 "one or re-enable capabilities.list"
             )
 
+    def _validate_list_query(self) -> None:
+        """Reject a half-wired server-side sort/search capability.
+
+        ``list_query_spec`` and the script source's query knobs are two halves of one
+        opt-in: ``derive_script_routes`` only exposes the sort and search params — and
+        only calls the source's ``list_query_dep`` — when the app declares a spec, so a
+        source configured to resolve a query under a spec-less app would have its
+        filters silently dropped rather than rejected. Enforced here, at construction,
+        because the annotation cannot carry the type (see the field comment).
+
+        :raises ValueError: When ``list_query_spec`` is not a ``ListQuerySpec``; when it
+            is set on an app with no ``script_source`` or under ``NO_PAGINATION``, both
+            of which derive no query-bearing list route; or when the source resolves a
+            list query while the app declares no spec.
+        """
+        source = self.script_source
+        spec = self.list_query_spec
+        if spec is None:
+            if source is not None and (
+                source.list_query_dep is not None or source.in_memory_list_query
+            ):
+                raise ValueError(
+                    "TaskExecutionApp: the script source resolves a list query, but the "
+                    "derived list route only exposes one when list_query_spec is set — "
+                    "set list_query_spec or drop the source's list_query_dep / "
+                    "in_memory_list_query"
+                )
+            return
+        if not isinstance(spec, ListQuerySpec):
+            # ValueError, not TypeError, so Pydantic folds it into the model's own
+            # validation error rather than letting it escape the validator.
+            raise ValueError(  # noqa: TRY004
+                "TaskExecutionApp: list_query_spec must be a ListQuerySpec, got "
+                f"{type(spec).__name__}"
+            )
+        if source is None:
+            raise ValueError(
+                "TaskExecutionApp: list_query_spec backs only the derived script list "
+                "route; a model-first app derives its own list — drop list_query_spec"
+            )
+        if isinstance(self.pagination, _NoPagination):
+            # A misconfigured pairing, not a type error — see the note above on ValueError.
+            raise ValueError(  # noqa: TRY004
+                "TaskExecutionApp: the derived script list is unpaginated under "
+                "NO_PAGINATION and exposes no sort/search params — enable pagination "
+                "or drop list_query_spec"
+            )
+
     def _validate_detail_suppress(self) -> None:
         """Reject an inconsistent ``capabilities.detail`` suppress configuration.
 
@@ -920,20 +962,26 @@ class TaskExecutionApp(BaseApp):
             )
 
     def _validate_view_columns(self) -> None:
-        """Reject a ``list_view`` column key that is not a response-model field.
+        """Reject a ``list_view`` column key absent from the serialized list row.
 
         Enforce at construction — collecting every unknown column and raising once —
         so a column typo is rejected up front rather than rendering a blank column at
-        runtime. Skip ``schema=`` passthrough apps (no ``create_model``) and
-        model-first apps that declare no ``list_view``; detail-view ``data.*`` paths
-        stay free-form and are checked by the conformance suite instead.
+        runtime. Compare keys against the names
+        ``response_model.model_dump(by_alias=True)`` emits (see
+        :func:`~app.sep.apps.framework.responses.serialized_field_names`), not
+        ``model_fields`` alone. ``by_alias=True`` matches the derived list route,
+        which pins ``response_model_by_alias=True``. Keys are compared whole, so a
+        dotted path or a synthetic (``_actions``) key is rejected; no model-first
+        app uses one today. Skip ``schema=`` passthrough apps (no ``create_model``)
+        and model-first apps that declare no ``list_view``; detail-view ``data.*``
+        paths stay free-form and are checked by the conformance suite instead.
 
-        :raises ValueError: When a ``views.list_view`` column ``key`` is not a field
-            on ``response_model``.
+        :raises ValueError: When a ``views.list_view`` column ``key`` is not present
+            in the serialized ``response_model`` row.
         """
         if self.create_model is None or self.views.list_view is None:
             return
-        response_fields = set(self.response_model.model_fields)
+        response_fields = serialized_field_names(self.response_model)
         unknown = [
             column.key
             for column in self.views.list_view.columns
@@ -941,8 +989,8 @@ class TaskExecutionApp(BaseApp):
         ]
         if unknown:
             raise ValueError(
-                f"TaskExecutionApp: list_view column keys {unknown} are not fields "
-                f"on {self.response_model.__name__}"
+                f"TaskExecutionApp: list_view column keys {unknown} are not present "
+                f"in the serialized {self.response_model.__name__} row"
             )
 
     def _validate_arg_formats(self) -> None:
@@ -1045,6 +1093,7 @@ class TaskExecutionApp(BaseApp):
                 self.script_source,
                 name=self.name,
                 pagination_dep=pagination_dep,
+                list_query_spec=self.list_query_spec,
             )
             if self.capabilities_provider is not None:
                 capabilities_endpoint(router, self.capabilities_provider)

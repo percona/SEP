@@ -37,9 +37,13 @@ from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine, create_async_engine
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
+from sqlalchemy.sql import coercions, ColumnExpressionArgument, roles
+from sqlalchemy.sql.compiler import SQLCompiler
 from sqlalchemy.sql.dml import Insert as GenericInsert
 from sqlalchemy.sql.type_api import TypeEngine
+from sqlalchemy.sql.visitors import InternalTraversal
 from sqlmodel import AutoString, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -73,7 +77,8 @@ def create_app_async_engine(database: DatabaseOptions) -> AsyncEngine:
     """Build a service API async engine, forwarding only the set pool options.
 
     Unset pool fields are omitted so the engine keeps SQLAlchemy's own defaults,
-    leaving standalone deployments unchanged.
+    leaving standalone deployments unchanged. An unset or SQLite-inapplicable
+    ``CONNECT_TIMEOUT`` likewise omits ``connect_args`` entirely.
 
     :param database: The service database options carrying the URL and any
         configured pool sizing.
@@ -83,6 +88,7 @@ def create_app_async_engine(database: DatabaseOptions) -> AsyncEngine:
         database.URL,
         echo=False,
         json_serializer=json_serializer,
+        **database.connect_engine_kwargs,
         **database.pool_engine_kwargs,
     )
 
@@ -198,6 +204,78 @@ def idempotent_insert(engine_name: str, table: Any) -> GenericInsert:
     raise NotImplementedError(f"idempotent_insert: unsupported dialect {engine_name!r}")
 
 
+class NullsLastOrdering(ColumnElement):
+    """Render an ``ORDER BY`` term that places NULLs last on every supported dialect.
+
+    PostgreSQL and SQLite render the standard ``NULLS LAST`` clause. MySQL has no
+    such syntax, so its hook prepends ``ISNULL(<expr>) ASC`` -- ``ISNULL`` yields
+    ``1`` for NULL and ``0`` otherwise, pinning NULLs last independently of the
+    primary direction.
+
+    Takes the direction as a flag rather than a pre-directed expression: wrapping an
+    already-``desc()``-ed expression would make the MySQL hook emit the invalid
+    ``ISNULL(<expr> DESC)``.
+
+    Participates in SQLAlchemy's compiled-statement cache, with a key that
+    discriminates both column and direction.
+
+    :param column: The direction-free column expression to order by.
+    :param descending: Whether the primary ordering term is descending.
+    """
+
+    _traverse_internals: list[tuple[str, InternalTraversal]] = [
+        ("column", InternalTraversal.dp_clauseelement),
+        ("descending", InternalTraversal.dp_boolean),
+    ]
+
+    def __init__(
+        self,
+        column: ColumnExpressionArgument,
+        *,
+        descending: bool = False,
+    ) -> None:
+        self.column = coercions.expect(roles.ExpressionElementRole, column)
+        self.descending = descending
+
+
+@compiles(NullsLastOrdering)
+def _compile_nulls_last_ordering(
+    element: NullsLastOrdering, compiler: SQLCompiler, **kw: Any
+) -> str:
+    """Render the standard ``<expr> <direction> NULLS LAST`` ordering term.
+
+    :param element: The ordering construct being compiled.
+    :param compiler: The active SQL compiler.
+    :return: The rendered ``ORDER BY`` term.
+    """
+    direction = "DESC" if element.descending else "ASC"
+    return f"{compiler.process(element.column, **kw)} {direction} NULLS LAST"
+
+
+@compiles(NullsLastOrdering, DatabaseDialect.MYSQL)
+def _compile_nulls_last_ordering_mysql(
+    element: NullsLastOrdering, compiler: SQLCompiler, **kw: Any
+) -> str:
+    """Render MySQL's ``ISNULL(<expr>) ASC, <expr> <direction>`` equivalent.
+
+    The interpolated text is the compiler's own rendering of the wrapped
+    expression, never a client-supplied value: sort keys are allowlisted by
+    :attr:`~app.core.db.list_query.ListQuerySpec.sortable` before they reach the
+    construct, and :class:`NullsLastOrdering` coerces a raw string argument into a
+    bound parameter rather than SQL text. Path literals carried by
+    :func:`func_json_extract` use ``literal_execute``, so the dialect's literal
+    processor inlines them at execution -- the same rendering that function
+    documents, unchanged by the wrapper.
+
+    :param element: The ordering construct being compiled.
+    :param compiler: The active SQL compiler.
+    :return: The rendered pair of ``ORDER BY`` terms.
+    """
+    rendered = compiler.process(element.column, **kw)
+    direction = "DESC" if element.descending else "ASC"
+    return f"ISNULL({rendered}) ASC, {rendered} {direction}"
+
+
 def prepare_unsafe_value_for_json_comparison(db_engine: str, value: Any) -> Any:
     """Prepare a value for JSON comparison based on the database engine.
 
@@ -266,6 +344,23 @@ def acquire_pg_advisory_xact_lock(bind: Connection, lock_key: int) -> None:
         bind.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
 
 
+def table_exists(bind: Connection, table_name: str) -> bool:
+    """Return whether ``table_name`` is present on the bound database.
+
+    Enum-widening downgrades need this as a separate preflight from
+    :func:`check_constraint_lists_members`. That helper collapses "the table is
+    gone" and "the member is not listed" into a single ``False``, which reads
+    correctly for a narrowing guard (``if not lists_members: return``) but
+    inverts for a widening one (``if lists_members: return``) — there, a missing
+    table falls through into DDL against a table another track already dropped.
+
+    :param bind: The migration's bound connection (``op.get_bind()``).
+    :param table_name: The table to test for.
+    :return: ``True`` when the table exists.
+    """
+    return inspect(bind).has_table(table_name)
+
+
 def check_constraint_lists_members(
     bind: Connection,
     table_name: str,
@@ -280,10 +375,17 @@ def check_constraint_lists_members(
     tests membership by matching each value as a single-quoted SQL string
     literal, so ``"SETTINGS"`` does not spuriously match ``"SEP_SETTINGS"``.
 
-    Returns ``False`` when the table does not exist -- ``get_check_constraints``
+    Returns ``False`` when the table does not exist. ``get_check_constraints``
     raises ``NoSuchTableError`` for a missing table, and a missing table means
-    there is no constraint to list anything (so an enum-narrowing downgrade
-    correctly no-ops when another track already dropped the shared table).
+    there is no constraint to list anything.
+
+    That single ``False`` carries two meanings, so it only short-circuits DDL
+    for a guard written ``if not lists_members: return`` (enum widening on
+    upgrade, narrowing on downgrade). A guard with the opposite polarity —
+    ``if lists_members: return``, as enum *narrowing* needs on upgrade and its
+    widening downgrade needs in reverse — falls through on a missing table and
+    runs DDL against it. Those call sites must precede this check with
+    :func:`table_exists`.
 
     :param bind: The migration's bound connection (``op.get_bind()``).
     :param table_name: The table whose CHECK constraints are inspected.

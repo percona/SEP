@@ -7,6 +7,18 @@ default:
   LOGGING: WARNING  # LogLevel: DEBUG, INFO, WARNING, ERROR, CRITICAL
   SSL_CAFILE: null
   BASE_URL: null
+  # Restrict which settings the override API may write. null (the default)
+  # imposes no restriction. A list turns every unlisted setting read-only:
+  # entries are "<SettingsClassName>.<KEY>", where KEY is a top-level field or a
+  # __-delimited nested path. Listing a setting that is already read-only
+  # changes nothing -- this only ever restricts. Applies to all three services.
+  SETTINGS_OVERRIDE:
+    ALLOWED_KEYS: null
+    # ALLOWED_KEYS:
+    #   - Settings.LOGGING
+    #   - Settings.PMM__annotations_enabled
+    #   - SEPSettings.CONNECTIVITY_CHECK_DEFAULT
+    #   - TasksSettings.LOG_RETENTION_DAYS
   BACKEND_CORS_ORIGINS:
     - http://localhost:8000
     - http://127.0.0.1:8000
@@ -29,26 +41,26 @@ default:
     ANNOTATIONS_TIMEOUT: 5  # Optional: PMM annotation request timeout in seconds
   SEP:
     SNIPPETS:
-      FILTER_EXTENSIONS:
+      # Restrict snippet sync to shell scripts. Bare strings are parsed as
+      # extension filters; MIME-type filters use the "mime:<value>" form.
+      # Files that don't match are skipped, so add ".py" here to sync Python
+      # snippets even though an interpreter for them is configured by default.
+      SYNC_FILTER:
         - .sh
     UVICORN_HOST: "127.0.0.1"
     UVICORN_PORT: 8000
     SSL_KEYFILE: null
     SSL_CERTFILE: null
     PROXY_HEADERS: False
+    # The URL prefix a reverse proxy serves SEP under, passed through unstripped.
+    # "" is the origin root. Read once at startup, so env and this file are the
+    # only ways to set it. BASE_URL must include the prefix when one is set.
+    ROOT_PATH: ""
     ARTIFACT_DOWNLOAD_TTL: 600
     CONNECTIVITY_CHECK_DEFAULT: False
-    TEMPLATES_DIR: templates
-    STATIC_DIR: static
     ALERT_DEFINITIONS_DIR: null
     OAUTH:
       REDIRECT_URI: /oauth/callback
-    SESSION:
-      COOKIE_NAME: casdoorToken
-      SECURE: False
-      HTTP_ONLY: True
-      SAME_SITE: lax
-      MAX_AGE: 3600
     SESSION_REFRESH:
       COOKIE_NAME: refreshToken
       PATH: /api/oauth
@@ -110,9 +122,11 @@ default:
       ARTIFACT_TTL: 3600                  # Seconds to retain a staged PDF; mirror CELERY.RESULT_EXPIRES
       CLEANUP_INTERVAL: {EVERY: 15, PERIOD: minutes}  # purge_report_artifacts cadence
     # Diagnostic bundle delivery plan - unset by default (no receiver configured).
-    # Settable through this file and environment variables only: the whole plan is
-    # cross-validated as a unit at settings load, so the settings API rejects both a
-    # whole-object and a per-leaf write.
+    # The skeleton below is settable through this file and environment variables
+    # only: the whole plan is cross-validated as a unit at settings load, so the
+    # settings API rejects both a whole-object and a per-leaf write. The parts that
+    # differ per deployment - the receiver endpoint and the secret values - go
+    # through DIAGNOSTICS_DELIVERY_INPUTS, documented after the examples below.
     #
     # NOTE: unlike its neighbours, the keys inside this block are case-SENSITIVE and
     # lowercase. Header names, secret names and multipart field names go on the wire
@@ -172,6 +186,23 @@ default:
     #         table_name: {source: literal, value: sn_customerservice_case}
     #         table_sys_id: {source: output, step: lookup, output: sys_id}
     #       reference_pointer: /result/sys_id
+    #
+    # Per-deployment inputs for the plan above - unset by default. Supplies the
+    # values the skeleton leaves open, so an image can bake a plan whose secret
+    # names are declared but empty and an operator fill them in later. Unlike the
+    # skeleton this IS settable through the settings API, as one atomic
+    # whole-object write: both its leaves are sealed, so a `__`-delimited leaf
+    # write is refused, and the secret names submitted must be exactly the ones
+    # the plan declares. Delivery stays off until every declared secret has a
+    # non-empty value.
+    #   DIAGNOSTICS_DELIVERY_INPUTS:
+    #     endpoint: https://snow.example.com/  # optional; omit to keep the plan's
+    #     secrets:
+    #       api_key: "..."                     # keyed by the plan's secret names
+    # Secrets render as `**********` in the settings API and in the YAML export,
+    # and resubmitting the mask through PATCH keeps the stored value. Feeding an
+    # exported block back in through this file fails settings construction rather
+    # than sending the mask to the receiver as the credential.
     #
     # Staging and housekeeping for the diagnostics sends that use the plan above.
     # Read from YAML/env only (env prefix `SEP__ATW__`); defaults shown.
@@ -237,12 +268,22 @@ default:
       MINIFY_PAYLOAD: True  # Minify payloads before dispatch
       LOG_SOCKET_READ_TIMEOUT: 10  # Socket read timeout for logs
     ANONYMIZER:
-      DEFAULT_ENTITIES: "*"  # Default PII entities to anonymize
+      DEFAULT_ENTITIES:
+        - CREDIT_CARD
+        - EMAIL_ADDRESS
+        - IBAN_CODE
+        - IP_ADDRESS
+        - PHONE_NUMBER
+        - US_SSN
+        - US_ITIN
 
 development:
   PMM:
     ENDPOINT: https://127.0.0.1:8443
     VERIFY_SSL: false
+  TASKS:
+    ANONYMIZER:
+      DEFAULT_ENTITIES: []
   SEP:
     UVICORN_RELOAD: true
     # UVICORN_EXTRA_RELOAD_DIRS:
@@ -254,6 +295,7 @@ development:
     SNIPPETS:
       SYNC_INTERVAL: 60 seconds
       ENABLE_MANUAL_SYNC: true
+      AUTO_APPROVE_BUILTIN_SNIPPETS: true
     INVENTORY_ENDPOINT: http://localhost:8000/api/inventory
     TASKS_ENDPOINT: http://localhost:8000/api/tasks
     SECURITY_HEADERS:
@@ -355,9 +397,6 @@ production_docker:
         - /api/docs
         - /api/inventory/docs
         - /api/tasks/docs
-    SESSION:
-      COOKIE_NAME: casdoorToken
-      SECURE: True
     SESSION_REFRESH:
       COOKIE_NAME: refreshToken
       PATH: /api/oauth

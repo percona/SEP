@@ -214,6 +214,38 @@
         "title": "AppStateWrite",
         "type": "object"
       },
+      "BatchApprovalResponse": {
+        "description": "Successful response for the batch-approve endpoint.\n\n:param approved: Filenames whose approval state was toggled by this\n    request (newly approved as a result of the call).\n:type approved: list[str]\n:param skipped_already_approved: Filenames that were already approved\n    when the call started; the request is treated as a soft-skip\n    (idempotent).\n:type skipped_already_approved: list[str]",
+        "properties": {
+          "approved": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Approved",
+            "type": "array"
+          },
+          "count": {
+            "description": "Return the number of newly approved snippets.\n\n:return: Length of ``approved``.\n:rtype: int",
+            "readOnly": true,
+            "title": "Count",
+            "type": "integer"
+          },
+          "skipped_already_approved": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped Already Approved",
+            "type": "array"
+          }
+        },
+        "required": [
+          "approved",
+          "skipped_already_approved",
+          "count"
+        ],
+        "title": "BatchApprovalResponse",
+        "type": "object"
+      },
       "ConnectivityCheckRequest": {
         "description": "Carry the required set of services to probe.\n\n:param targets: The services to probe. Must name at least one; duplicates are\n    collapsed so a shared probe (Tasks/Nomad) still runs once.",
         "properties": {
@@ -230,6 +262,36 @@
           "targets"
         ],
         "title": "ConnectivityCheckRequest",
+        "type": "object"
+      },
+      "ConnectivityCheckResponse": {
+        "description": "Represent a connectivity check result.\n\n:param success: Whether the connectivity check succeeded.\n:param error: Error message if the check failed. Defaults to ``None``.\n:param task_history_id: The ID of the task history record for this check.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "task_history_id": {
+            "title": "Task History Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "success",
+          "task_history_id"
+        ],
+        "title": "ConnectivityCheckResponse",
         "type": "object"
       },
       "ConnectivityResult": {
@@ -423,6 +485,16 @@
         "type": "object"
       },
       "JsonValue": {},
+      "LogCaptureStatusEnum": {
+        "description": "Describe how completely SEP captured a task's log stream.\n\nDistinguishes a stream that genuinely produced nothing from one whose bytes\nwere lost before SEP could read them — the stored offsets alone cannot tell\nthose apart, since both leave the cursors at zero.\n\n``UNKNOWN`` is the honest verdict where no evidence survives: rows written\nbefore the column existed, and histories carrying no state rows at all.",
+        "enum": [
+          "complete",
+          "incomplete",
+          "unknown"
+        ],
+        "title": "LogCaptureStatusEnum",
+        "type": "string"
+      },
       "Node": {
         "description": "Represent a node in the inventory.\n\n:param address: The network address of the node.\n:type address: NonEmptyStr\n:param name: The name of the node.\n:type name: NonEmptyStr\n:param external_id: An external identifier for the node. Must be unique for source,\n    as defined by composite index ix_node_external_id_source.\n:type external_id: NonEmptyStr | None\n:param source: The source from which the node information is derived. Must be unique\n    for external_id, as defined by composite index ix_node_external_id_source.\n:type source: SourceEnum | None\n:param type: The type of the node (e.g., remote, generic).\n:type type: NonEmptyStr\n:param services: A list of services associated with the node.\n:type services: list[Service]",
         "properties": {
@@ -530,6 +602,38 @@
         "title": "PaginatedResponse[Any]",
         "type": "object"
       },
+      "PaginatedResponse_ArbitraryMapping_": {
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[ArbitraryMapping]",
+        "type": "object"
+      },
       "PaginatedResponse_ServiceResponse_": {
         "properties": {
           "items": {
@@ -559,6 +663,37 @@
           "limit"
         ],
         "title": "PaginatedResponse[ServiceResponse]",
+        "type": "object"
+      },
+      "PaginatedResponse_SnippetResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SnippetResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[SnippetResponse]",
         "type": "object"
       },
       "PaginatedResponse_TaskHistoryResponse_": {
@@ -592,35 +727,19 @@
         "title": "PaginatedResponse[TaskHistoryResponse]",
         "type": "object"
       },
-      "PaginatedResponse_dict_str__Any__": {
+      "RefreshResponse": {
+        "description": "Represent the successful result of a manual snippets-refresh operation.\n\n:param refreshed_at: UTC timestamp at which the refresh completed.\n:type refreshed_at: datetime",
         "properties": {
-          "items": {
-            "items": {
-              "type": "object"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "limit": {
-            "title": "Limit",
-            "type": "integer"
-          },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
+          "refreshed_at": {
+            "format": "date-time",
+            "title": "Refreshed At",
+            "type": "string"
           }
         },
         "required": [
-          "items",
-          "total",
-          "offset",
-          "limit"
+          "refreshed_at"
         ],
-        "title": "PaginatedResponse[dict[str, Any]]",
+        "title": "RefreshResponse",
         "type": "object"
       },
       "ReloadClassification": {
@@ -694,7 +813,7 @@
         "type": "string"
       },
       "ServiceResponse": {
-        "description": "Define the service API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param external_id: An external identifier for the service.\n:type external_id: NonEmptyStr | None\n:param name: The name of the service.\n:type name: NonEmptyStr\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:type type: ServiceTypeEnum\n:param port: The port number on which the service is running.\n:type port: int | None\n:param environment: The environment in which the service is running, if set.\n:type environment: str | None\n:param cluster: The cluster in which the service is running, if set.\n:type cluster: str | None\n:param replication_set: The replication set in which the service is running, if set.\n:type replication_set: str | None\n:param custom_labels: Custom labels associated with the service, if set.\n:type custom_labels: dict[str, Any] | None\n:param node_id: The unique identifier of the node on which the service is running.\n:type node_id: int\n:param schemas: A list of schemas associated with the service.\n:type schemas: list[Schema]\n:param node: The node to which the service is associated.\n:type node: Node",
+        "description": "Define the service API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param external_id: An external identifier for the service.\n:type external_id: NonEmptyStr | None\n:param name: The name of the service.\n:type name: NonEmptyStr\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:type type: ServiceTypeEnum\n:param port: The port number on which the service is running.\n:type port: int | None\n:param environment: The environment in which the service is running, if set.\n:type environment: str | None\n:param cluster: The cluster in which the service is running, if set.\n:type cluster: str | None\n:param replication_set: The replication set in which the service is running, if set.\n:type replication_set: str | None\n:param custom_labels: Custom labels associated with the service, if set.\n:param node_id: The unique identifier of the node on which the service is running.\n:type node_id: int\n:param schemas: A list of schemas associated with the service.\n:type schemas: list[Schema]\n:param node: The node to which the service is associated.\n:type node: Node",
         "properties": {
           "cluster": {
             "anyOf": [
@@ -715,6 +834,7 @@
           "custom_labels": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -840,16 +960,16 @@
         "type": "string"
       },
       "SettingClassEnum": {
-        "description": "Enumerate settings classes that may have HOT override rows.\n\nThe wired classes are ``SEPSettings``, ``TasksSettings``,\n``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,\n``AlertSettings``, ``AlertsSettings``, ``AnonymizerSettings`` and\n``InventorySettings``.\n\nTo wire a new settings class:\n\n1. Add a member here whose value matches the Pydantic class ``__name__``.\n2. Generate an Alembic migration on every consumer track that extends the\n   ``CHECK`` constraint on ``settingoverride.setting_class``. The column\n   uses ``native_enum=False`` so the value list lives in a constraint,\n   not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.\n   Note that the column and ``CHECK`` constraint persist the enum member\n   *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member\n   *value* (the Pydantic class name, e.g. ``SEPSettings``).\n3. Wire a ``ProxyEntry`` for the new class in the relevant service's\n   lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).",
+        "description": "Enumerate settings classes that may have HOT override rows.\n\nThe wired classes are ``SEPSettings``, ``TasksSettings``,\n``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,\n``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings`` and\n``InventorySettings``.\n\nTo wire a new settings class:\n\n1. Add a member here whose value matches the Pydantic class ``__name__``.\n2. Generate an Alembic migration on every consumer track that extends the\n   ``CHECK`` constraint on ``settingoverride.setting_class``. The column\n   uses ``native_enum=False`` so the value list lives in a constraint,\n   not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.\n   Note that the column and ``CHECK`` constraint persist the enum member\n   *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member\n   *value* (the Pydantic class name, e.g. ``SEPSettings``).\n3. Wire a ``ProxyEntry`` for the new class in the relevant service's\n   lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).",
         "enum": [
           "SEPSettings",
           "TasksSettings",
           "SnippetsSettings",
-          "MessagesSettings",
           "Settings",
           "AlertSettings",
           "AnonymizerSettings",
           "AlertsSettings",
+          "HealthReportSettings",
           "InventorySettings"
         ],
         "title": "SettingClassEnum",
@@ -914,8 +1034,26 @@
         "title": "SettingClassGroup",
         "type": "object"
       },
+      "SettingOption": {
+        "description": "Represent one selectable member for an enum-typed setting.\n\n:param label: The enum member name shown in the UI (e.g. ``WARNING``).\n:param value: The JSON-dumped member value the client must PATCH\n    (e.g. ``30`` for an ``IntEnum``).",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "SettingOption",
+        "type": "object"
+      },
       "SettingResponse": {
-        "description": "Represent a single setting's metadata and current value.\n\n:param setting_class: The settings class the field belongs to.\n:param key: The field name on the settings class.\n:param key_path: Carry the canonical key segments for ``key`` such that\n    ``\"__\".join(key_path) == key``.\n:param value: The current value visible through the proxy, dumped to a\n    JSON-safe shape via the field's annotation. ``SecretStr`` fields are\n    redacted to ``\"**********\"``.\n:param default_value: The field's declared default value, dumped via the\n    same JSON serialiser. ``None`` when no default exists.\n:param type: A human-readable representation of the field's declared\n    annotation (for operator visibility; validation uses the actual\n    ``FieldInfo``).\n:param reload: The reload classification (HOT or NOT_OVERRIDABLE).\n:param description: The field's free-text description, or ``None``.\n:param is_secret: Whether the field's annotation contains a Pydantic secret\n    (``SecretStr`` / ``SecretBytes``) at any depth.\n:param is_complex: Whether the field's annotation is or contains a Pydantic\n    ``BaseModel`` subclass (true for nested submodels).\n:param has_override: Whether a row exists in the ``settingoverride`` table\n    for this ``(setting_class, key)`` pair, regardless of ``is_active``.\n:param is_advanced: Whether the setting is flagged ``advanced`` so the UI can\n    present it separately from everyday settings. Display-only:\n    it does not affect PATCH/DELETE eligibility.\n:param is_applicable: Whether the setting applies under current runtime state\n    (e.g. the active auth provider). ``False`` lets the UI present the field\n    as inert. Display-only, like ``is_advanced``: it does not block\n    PATCH/DELETE server-side; the runtime gate is the real enforcement.",
+        "description": "Represent a single setting's metadata and current value.\n\n:param setting_class: The settings class the field belongs to.\n:param key: The field name on the settings class.\n:param key_path: Carry the canonical key segments for ``key`` such that\n    ``\"__\".join(key_path) == key``.\n:param value: The current value visible through the proxy, dumped to a\n    JSON-safe shape via the field's annotation. ``SecretStr`` fields are\n    redacted to ``\"**********\"``.\n:param default_value: The field's declared default value, dumped via the\n    same JSON serialiser. ``None`` when no default exists.\n:param type: A human-readable representation of the field's declared\n    annotation (for operator visibility; validation uses the actual\n    ``FieldInfo``).\n:param reload: The reload classification (HOT or NOT_OVERRIDABLE).\n:param description: The field's free-text description, or ``None``.\n:param is_secret: Whether the field's annotation contains a Pydantic secret\n    (``SecretStr`` / ``SecretBytes``) at any depth.\n:param is_complex: Whether the field's annotation is or contains a Pydantic\n    ``BaseModel`` subclass (true for nested submodels).\n:param has_override: Whether a row exists in the ``settingoverride`` table\n    for this ``(setting_class, key)`` pair, regardless of ``is_active``.\n:param is_advanced: Whether the setting is flagged ``advanced`` so the UI can\n    present it separately from everyday settings. Display-only:\n    it does not affect PATCH/DELETE eligibility.\n:param is_applicable: Whether the setting applies under current runtime state\n    (e.g. the active auth provider). ``False`` lets the UI present the field\n    as inert. Display-only, like ``is_advanced``: it does not block\n    PATCH/DELETE server-side; the runtime gate is the real enforcement.\n:param options: Selectable enum members for dropdown UIs, or ``None`` when\n    the field is not an ``Enum`` annotation. Aliased members are excluded.",
         "properties": {
           "default_value": {
             "title": "Default Value"
@@ -963,6 +1101,20 @@
             },
             "title": "Key Path",
             "type": "array"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SettingOption"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
           },
           "reload": {
             "$ref": "#/components/schemas/ReloadClassification"
@@ -1029,26 +1181,184 @@
         "title": "SnippetApprovalFilter",
         "type": "string"
       },
-      "SnippetSortDirection": {
-        "description": "Enumerate the sort direction.\n\n:cvar ASC: Ascending order.\n:cvar DESC: Descending order.",
-        "enum": [
-          "asc",
-          "desc"
+      "SnippetBatchApproveRequest": {
+        "description": "Represent the JSON body for ``PATCH /api/apps/snippets/approvals``.\n\nUnlike the Form-bound :class:`~app.sep.snippets.deps.SnippetBatchApproveForm`\ntwin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI\nparses it as JSON.\n\n:param filenames: Unique, non-empty list of snippet filenames to approve in a\n    single atomic operation. Duplicates are silently deduplicated by\n    ``UniqueList``.",
+        "properties": {
+          "filenames": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Filenames",
+            "type": "array"
+          }
+        },
+        "required": [
+          "filenames"
         ],
-        "title": "SnippetSortDirection",
-        "type": "string"
+        "title": "SnippetBatchApproveRequest",
+        "type": "object"
       },
-      "SnippetSortKey": {
-        "description": "Enumerate the allowlisted public sort keys.\n\nMembership is the type: an out-of-allowlist key fails to coerce at the\nrequest boundary, so no raw client-supplied column name can reach a query.\n\n:cvar CREATED_AT: Sort by the ``created_at`` column.\n:cvar FILENAME: Sort by the ``filename`` column.\n:cvar APPROVED_AT: Sort by the ``approved_at`` column.\n:cvar TITLE: Sort by the ``meta.title`` JSON value.\n:cvar SERVICE_TYPE: Sort by the ``meta.service_type`` JSON value.",
-        "enum": [
-          "created_at",
+      "SnippetResponse": {
+        "description": "Represent a snippet entity as exposed by the JSON API.\n\n:param filename: The snippet's filename on disk; doubles as its\n    identifier in the API.\n:type filename: NonEmptyStr\n:param title: The display title for the snippet (snippet metadata's\n    ``title`` field, falling back to ``filename`` when unset).\n:type title: NonEmptyStr\n:param description: The snippet's free-text description, or an empty\n    string when no description is set in metadata.\n:type description: str\n:param service_type: The snippet's free-form service type\n    (``service_type`` metadata field, for example ``\"mysql\"`` or\n    ``\"mongodb\"``), or ``None`` when the snippet declares no service\n    type. Distinct from the inventory ``ServiceTypeEnum``.\n:type service_type: str | None\n:param size: Snippet file size in bytes.\n:type size: int\n:param md5_digest: 32-character MD5 hex digest of the snippet file.\n:type md5_digest: str\n:param is_approved: Whether the snippet has been approved for execution.\n:type is_approved: bool\n:param approved_at: When the snippet was last approved, or ``None`` if\n    unapproved.\n:type approved_at: datetime | None\n:param updated_by: User id that last toggled the approval state, or\n    ``None`` if no toggle has occurred.\n:type updated_by: str | None\n:param reason: Free-form reason recorded the last time the snippet's\n    approval state changed.\n:type reason: str\n:param requires_sudo: Whether the snippet requires sudo for execution\n    (either always-sudo or sudo is user-toggleable).\n:type requires_sudo: bool\n:param sudo_optional: Whether the user can toggle sudo at execution\n    time.\n:type sudo_optional: bool\n:param sudo_default: Default value for the sudo toggle when\n    ``sudo_optional`` is ``True``.\n:type sudo_default: bool\n:param interpreter: The shell/interpreter command used to execute the\n    snippet (for example, ``\"bash\"`` or ``\"python3\"``); ``None`` when\n    no interpreter mapping resolves.\n:type interpreter: str | None\n:param created_at: When the snippet row was first inserted.\n:type created_at: datetime\n:param updated_at: When the snippet row was last updated, or ``None``\n    if never updated since insert.\n:type updated_at: datetime | None",
+        "properties": {
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "filename": {
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "interpreter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interpreter"
+          },
+          "is_approved": {
+            "title": "Is Approved",
+            "type": "boolean"
+          },
+          "md5_digest": {
+            "title": "Md5 Digest",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "requires_sudo": {
+            "title": "Requires Sudo",
+            "type": "boolean"
+          },
+          "service_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Type"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "sudo_default": {
+            "title": "Sudo Default",
+            "type": "boolean"
+          },
+          "sudo_optional": {
+            "title": "Sudo Optional",
+            "type": "boolean"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
           "filename",
-          "approved_at",
           "title",
-          "service_type"
+          "description",
+          "size",
+          "md5_digest",
+          "is_approved",
+          "reason",
+          "requires_sudo",
+          "sudo_optional",
+          "sudo_default",
+          "created_at"
         ],
-        "title": "SnippetSortKey",
-        "type": "string"
+        "title": "SnippetResponse",
+        "type": "object"
+      },
+      "SnippetServiceTypesResponse": {
+        "description": "Carry the whole-dataset service-type facet for the list filter.\n\nSourced across every snippet (not the loaded page) so the list page's\nservice-type dropdown can offer every value the dataset contains.\n\n:param service_types: The sorted distinct non-blank service types.\n:param has_uncategorized: Whether any snippet has an absent or blank service\n    type (surfaced as the \"Uncategorized\" filter option).",
+        "properties": {
+          "has_uncategorized": {
+            "title": "Has Uncategorized",
+            "type": "boolean"
+          },
+          "service_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Service Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "service_types",
+          "has_uncategorized"
+        ],
+        "title": "SnippetServiceTypesResponse",
+        "type": "object"
+      },
+      "SnippetsCapabilitiesResponse": {
+        "description": "Represent per-deployment capability flags for the Snippets plugin.\n\nExposes flags that gate the visibility of admin-only UI affordances\n(currently the manual refresh button) so the React shell can decide\nwhether to render those controls without probing the gated endpoints.\n\nDistinct from :class:`~app.sep.apps.framework.schema.Capabilities`,\nwhich describes static UI feature flags on\n:attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`\n(chaining, scheduling, alert_on_fail). This model is the per-\ndeployment runtime counterpart returned by ``GET /capabilities``.\n\n:param manual_sync_enabled: Whether manual snippet refresh is enabled\n    in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).\n:type manual_sync_enabled: bool",
+        "properties": {
+          "manual_sync_enabled": {
+            "title": "Manual Sync Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "manual_sync_enabled"
+        ],
+        "title": "SnippetsCapabilitiesResponse",
+        "type": "object"
       },
       "SourceEnum": {
         "const": "pmm",
@@ -1071,7 +1381,7 @@
       },
       "TaskExecutionRequest": {
         "additionalProperties": true,
-        "description": "Represent an execution request.\n\n:param task: The task name.\n:type task: str\n:param target: The target system or environment.\n:type target: str\n:param meta: Additional metadata for the task. Defaults to an empty dictionary.\n:type meta: dict | None\n:param payload: Optional payload or file path for parameterizing the task.\n    Defaults to None.\n:type payload: str | None\n:param tracking: Tracking information for task execution. Defaults to a dictionary\n    with keys for allocation and evaluation IDs.\n:type tracking: dict | None",
+        "description": "Represent an execution request.\n\n:param task: The task name.\n:type task: str\n:param target: The target system or environment.\n:type target: str\n:param meta: Additional metadata for the task. Defaults to an empty dictionary.\n:param payload: Optional payload or file path for parameterizing the task.\n    Defaults to None.\n:type payload: str | None\n:param tracking: Tracking information for task execution. Defaults to a dictionary\n    with keys for allocation and evaluation IDs.",
         "properties": {
           "eta": {
             "anyOf": [
@@ -1088,6 +1398,7 @@
           "meta": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -1119,6 +1430,7 @@
           "tracking": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -1137,7 +1449,7 @@
         "type": "object"
       },
       "TaskHistoryResponse": {
-        "description": "Represent a task history API response.\n\n:param execution_request: The request that triggered the task execution.\n:type execution_request: TaskExecutionRequest\n:param status: The status of the task execution.\n:type status: TaskHistoryStatusEnum\n:param started_at: The datetime when the task execution started.\n:type started_at: UTCDatetime | None\n:param finished_at: The datetime when the task execution finished.\n:type finished_at: UTCDatetime | None\n:param anonymize_mask: The bitmask representing PII entities to be anonymized in\n    logs and files generated by the execution. Defaults to None, meaning it uses\n    the value defined in the associated task's :attr:`Task.anonymize_mask`.\n:type anonymize_mask: int | None\n:param task: The task associated with this execution history.\n:type task: TaskResponse\n:param executed_by: The user ID of the user who executed the task.\n:type executed_by: str | None\n:param has_logs: Whether this task history has any readable log content --\n    either a chunk-store row or a legacy ``tracking[\"task_logs\"]`` blob.\n    Populated by list/retrieve routes; defaults to ``False``.\n:type has_logs: bool\n:param display_name: A user-meaningful label derived from the task name or\n    execution-request metadata. Read-only; computed on serialisation.",
+        "description": "Represent a task history API response.\n\n:param execution_request: The request that triggered the task execution.\n:param status: The status of the task execution.\n:param started_at: The datetime when the task execution started.\n:param finished_at: The datetime when the task execution finished.\n:param anonymize_mask: The bitmask representing PII entities to be anonymized in\n    logs and files generated by the execution. Defaults to None, meaning it uses\n    the value defined in the associated task's :attr:`Task.anonymize_mask`.\n:param task: The task associated with this execution history.\n:param executed_by: The user ID of the user who executed the task.\n:param has_logs: Whether this task history has any readable log content --\n    either a chunk-store row or a legacy ``tracking[\"task_logs\"]`` blob.\n    Populated by list/retrieve routes; defaults to ``False``.\n:param log_capture: How completely SEP captured this execution's logs,\n    aggregated over its state rows: any incomplete stream reports\n    ``\"incomplete\"``, else any unknown reports ``\"unknown\"``, else\n    ``\"complete\"``. Populated by list/retrieve routes; defaults to\n    ``\"unknown\"``, which is also what a history carrying no state rows\n    reports.\n:param display_name: A user-meaningful label derived from the task name or\n    execution-request metadata. Read-only; computed on serialisation.",
         "properties": {
           "anonymize_mask": {
             "anyOf": [
@@ -1215,6 +1527,10 @@
               }
             ],
             "title": "Id"
+          },
+          "log_capture": {
+            "$ref": "#/components/schemas/LogCaptureStatusEnum",
+            "default": "unknown"
           },
           "started_at": {
             "anyOf": [
@@ -1332,6 +1648,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -1485,7 +1802,7 @@
           },
           "snippets": {
             "items": {
-              "$ref": "#/components/schemas/snippets__SnippetResponse"
+              "$ref": "#/components/schemas/SnippetResponse"
             },
             "title": "Snippets",
             "type": "array"
@@ -1716,6 +2033,7 @@
             "type": "integer"
           },
           "metadata": {
+            "additionalProperties": true,
             "title": "Metadata",
             "type": "object"
           }
@@ -2039,6 +2357,7 @@
         "description": "Wrap the summary returned by the restore endpoint.\n\n:param status: ``\"success\"`` on a complete restore.\n:param details: Per-section restore counts as returned by\n    :func:`~app.sep.apps.alerts.restore.restore_from_backup`.",
         "properties": {
           "details": {
+            "additionalProperties": true,
             "title": "Details",
             "type": "object"
           },
@@ -2346,6 +2665,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -2961,7 +3281,7 @@
         "type": "object"
       },
       "atw__ATWBatchExecuteWrite": {
-        "description": "Define the batch-execute payload for one incident.\n\n:param executor_host: The executor every item in the batch runs on.\n:param sudo: The sudo choice applied to every item; snippets whose sudo\n    option is not optional ignore it.\n:param shared_args: Arguments offered to every item, filtered per snippet to\n    the parameters that snippet declares.\n:param items: The snippets to execute, at least one and at most\n    ``MAX_BATCH_SNIPPETS``.",
+        "description": "Define the batch-execute payload for one incident.\n\n:param executor_host: The executor every item in the batch runs on.\n:param sudo: The sudo choice applied to every item; snippets whose sudo\n    option is not optional ignore it.\n:param shared_args: Arguments offered to every item, filtered per snippet to\n    the parameters that snippet declares. ``NON_SHAREABLE_FIELD_NAMES`` (e.g.\n    Extra Args) are never applied from ``shared_args``, even for a snippet\n    that declares a field with that name.\n:param items: The snippets to execute, at least one and at most\n    ``MAX_BATCH_SNIPPETS``.",
         "properties": {
           "executor_host": {
             "minLength": 1,
@@ -3136,7 +3456,7 @@
         "type": "object"
       },
       "atw__ATWMergedSchemaResponse": {
-        "description": "Represent the execution form for a batch of selected snippets.\n\nA purpose-built DTO rather than a plain\n:class:`~app.sep.apps.framework.schema.AppSchema`: the renderer needs to map\nevery non-shared field back to the snippet that declared it, and an\n``AppSchema`` section carries only a display title.\n\n:param shared: The batch-level execution fields followed by every parameter\n    the selection declares identically.\n:param per_snippet: The remaining per-snippet fields, in request order.",
+        "description": "Represent the execution form for a batch of selected snippets.\n\nA purpose-built DTO rather than a plain\n:class:`~app.sep.apps.framework.schema.AppSchema`: the renderer needs to map\nevery non-shared field back to the snippet that declared it, and an\n``AppSchema`` section carries only a display title.\n\n:param shared: The batch-level execution fields followed by every parameter\n    the selection declares identically, excluding ``NON_SHAREABLE_FIELD_NAMES``\n    (e.g. Extra Args), which stay per-snippet even when every item declares\n    them.\n:param per_snippet: The remaining per-snippet fields, in request order.",
         "properties": {
           "per_snippet": {
             "items": {
@@ -3405,7 +3725,7 @@
         "type": "object"
       },
       "atw__AtwIncidentResponse": {
-        "description": "Represent a persisted diagnostic incident.\n\nEvery field is always present on a stored incident, so — unlike returning\nthe :class:`AtwIncident` table model directly — the generated client types\nthem as required rather than optional.\n\n:param id: The incident's UUID primary key.\n:param name: Human-readable incident label.\n:param case_ref: Support-case reference, if set.\n:param created_by: Username of the support engineer who created the incident.\n:param created_at: When the incident was created.\n:param updated_at: When the incident was last updated, if ever.",
+        "description": "Represent a persisted diagnostic incident.\n\nEvery field is always present on a stored incident, so — unlike returning\nthe :class:`AtwIncident` table model directly — the generated client types\nthem as required rather than optional.\n\n:param id: The incident's UUID primary key.\n:param name: Human-readable incident label.\n:param case_ref: Support-case reference, if set.\n:param created_by: Username of the support engineer who created the incident.\n:param created_at: When the incident was created.\n:param updated_at: When the incident was last updated, if ever.\n:param closed_at: When the incident was closed, if ever; ``None`` means open.",
         "properties": {
           "case_ref": {
             "anyOf": [
@@ -3417,6 +3737,18 @@
               }
             ],
             "title": "Case Ref"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
           },
           "created_at": {
             "format": "date-time",
@@ -3456,7 +3788,8 @@
           "case_ref",
           "created_by",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "closed_at"
         ],
         "title": "AtwIncidentResponse",
         "type": "object"
@@ -3546,6 +3879,7 @@
             "type": "string"
           },
           "detail": {
+            "additionalProperties": true,
             "title": "Detail",
             "type": "object"
           },
@@ -3645,6 +3979,37 @@
           "limit"
         ],
         "title": "PaginatedResponse[ATWIncidentExecutionResponse]",
+        "type": "object"
+      },
+      "atw__PaginatedResponse_ATWSnippetSummary_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/atw__ATWSnippetSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[ATWSnippetSummary]",
         "type": "object"
       },
       "atw__PaginatedResponse_AtwIncidentResponse_": {
@@ -3806,6 +4171,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -3983,6 +4349,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -4473,6 +4840,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -4644,6 +5012,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -5093,6 +5462,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -5274,6 +5644,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -5678,6 +6049,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -5821,6 +6193,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -6217,6 +6590,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -6394,6 +6768,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -7001,7 +7376,7 @@
       },
       "framework__DerivedTask": {
         "additionalProperties": false,
-        "description": "Represent a sibling task derived from a parent during cascade operations.\n\nThe cascade module (:mod:`app.sep.apps.framework.cascade`) consumes this\nspec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task\nis created first, then for each ``DerivedTask`` the parent payload is\ndeep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``\nare applied to ``data[\"meta\"][\"args\"]`` as literal :meth:`str.replace`\ncalls in dict insertion order, ``payload_substitutions`` are applied to\n``data[\"payload\"]`` as literal :meth:`str.replace` calls in dict insertion\norder, ``data_overrides`` entries are assigned directly onto ``data`` as\nliteral key/value pairs in iteration order, and ``data[\"parent\"]`` is set\nto the parent's name when ``parent_link`` is true.\n\n:param name_suffix: String appended to the parent's ``name`` to form the\n    derived task's name (for example ``\"-dry-run\"``).\n:type name_suffix: NonEmptyStr\n:param arg_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"meta\"][\"args\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type arg_substitutions: dict[str, str] | None\n:param payload_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"payload\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type payload_substitutions: dict[str, str] | None\n:param data_overrides: Optional mapping of literal key→value pairs\n    assigned directly onto ``data`` after substitutions run. Each\n    pair becomes ``data[key] = value`` in iteration order. Use this\n    for plugin-specific identity fields (e.g. ``{\"backup_type\":\n    \"pbm_logical\"}``) that the framework should not name itself.\n    Defaults to ``None``.\n:type data_overrides: dict[str, Any] | None\n:param parent_link: When true, set ``data[\"parent\"]`` on the derived\n    payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
+        "description": "Represent a sibling task derived from a parent during cascade operations.\n\nThe cascade module (:mod:`app.sep.apps.framework.cascade`) consumes this\nspec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task\nis created first, then for each ``DerivedTask`` the parent payload is\ndeep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``\nare applied to ``data[\"meta\"][\"args\"]`` as literal :meth:`str.replace`\ncalls in dict insertion order, ``payload_substitutions`` are applied to\n``data[\"payload\"]`` as literal :meth:`str.replace` calls in dict insertion\norder, ``data_overrides`` entries are assigned directly onto ``data`` as\nliteral key/value pairs in iteration order, and ``data[\"parent\"]`` is set\nto the parent's name when ``parent_link`` is true.\n\n:param name_suffix: String appended to the parent's ``name`` to form the\n    derived task's name (for example ``\"-dry-run\"``).\n:type name_suffix: NonEmptyStr\n:param arg_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"meta\"][\"args\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type arg_substitutions: dict[str, str] | None\n:param payload_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"payload\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type payload_substitutions: dict[str, str] | None\n:param data_overrides: Optional mapping of literal key→value pairs\n    assigned directly onto ``data`` after substitutions run. Each\n    pair becomes ``data[key] = value`` in iteration order. Use this\n    for plugin-specific identity fields (e.g. ``{\"backup_type\":\n    \"pbm_logical\"}``) that the framework should not name itself.\n    Defaults to ``None``.\n:param parent_link: When true, set ``data[\"parent\"]`` on the derived\n    payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
         "properties": {
           "arg_substitutions": {
             "anyOf": [
@@ -7020,6 +7395,7 @@
           "data_overrides": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -8439,6 +8815,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -8780,7 +9157,7 @@
       },
       "framework__RemoteChoiceField": {
         "additionalProperties": false,
-        "description": "Represent a field whose options are fetched at render from an app endpoint.\n\nThe renderer fetches ``endpoint_url`` and renders the returned\n``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``\n/ ``disabled_reason``). When ``depends_on`` is set, the fetch is\nparameterised by the dependency's value (appended as a query parameter named\nafter ``depends_on``) and the field stays disabled/empty until the\ndependency has a value. When ``allow_custom`` is set, the renderer also\naccepts a free-typed value. The endpoint response contract is a JSON array\nof objects shaped like :class:`Choice`: ``{\"value\": str, \"label\": str,\n\"disabled\"?: bool, \"disabled_reason\"?: str}``.\n\n:param field_type: The discriminator literal; always ``\"remote_choice\"``.\n    Serialised as the JSON key ``\"type\"``.\n:param endpoint_url: The fully-resolved URL the renderer fetches options\n    from, relative to the frontend ``apiClient`` base (``/api``).\n:param depends_on: Optional name of the sibling field whose value drives\n    (and parameterises) the option fetch. ``None`` (the default) omits the\n    key from the wire so plugins that do not cascade stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value. ``None`` (the default) omits the key from the wire so plugins\n    that do not opt in stay byte-identical.",
+        "description": "Represent a field whose options are fetched at render from an app endpoint.\n\nThe renderer fetches ``endpoint_url`` and renders the returned\n``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``\n/ ``disabled_reason``). When ``depends_on`` is set, the fetch is\nparameterised by the dependency's value (appended as a query parameter named\nafter ``depends_on``) and the field offers no options until the dependency\nhas a value, staying disabled while it waits unless ``allow_custom`` keeps\nfree-text entry open. When ``allow_custom`` is set, the renderer also\naccepts a free-typed value. The endpoint response contract is a JSON array\nof objects shaped like :class:`Choice`: ``{\"value\": str, \"label\": str,\n\"disabled\"?: bool, \"disabled_reason\"?: str}``.\n\n:param field_type: The discriminator literal; always ``\"remote_choice\"``.\n    Serialised as the JSON key ``\"type\"``.\n:param endpoint_url: The fully-resolved URL the renderer fetches options\n    from, relative to the frontend ``apiClient`` base (``/api``).\n:param depends_on: Optional name of the sibling field whose value drives\n    (and parameterises) the option fetch. ``None`` (the default) omits the\n    key from the wire so plugins that do not cascade stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value. ``None`` (the default) omits the key from the wire so plugins\n    that do not opt in stay byte-identical.",
         "properties": {
           "allow_custom": {
             "anyOf": [
@@ -9893,7 +10270,7 @@
         "type": "object"
       },
       "mysql_backups__BackupCreate": {
-        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the order here reproduces the hand-written schema\nbyte-for-byte. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption requires/forbidden pair, and the per-mode bool ``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool\n    outside its mode fails validation with a per-field message.",
+        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the derived section and field order matches the\nhand-written schema. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are\nindependent encryption modes that both produce an encrypted backup;\n``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside\n``post_run_encrypt`` so post-run takes precedence (matching the backend at\n``mydumper_payload``), and ``encryption_recipient`` is required iff either mode\nis on — and the per-mode bool\n``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool\n    outside its mode fails validation with a per-field message.",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -10451,6 +10828,127 @@
         "title": "BackupCreate",
         "type": "object"
       },
+      "mysql_backups__BackupRunResponse": {
+        "description": "Expose one catalog record over the per-service query path.\n\n:param id: The record's primary key.\n:param service_name: The inventory service the backup was taken from.\n:param service_id: The inventory id of that service, or ``None`` on a record\n    written before the id was stamped.\n:param hostname: The backup target host.\n:param backup_type: The backup tool, ``\"M\"`` (mydumper) or ``\"X\"`` (xtrabackup).\n    Narrower than :class:`BackupType`: binlog runs are never catalogued, so\n    ``\"B\"`` never appears here.\n:param location: The resolved on-disk directory the run produced.\n:param upload_destination: The upload destination when one was configured.\n:param size_bytes: The backup size in bytes, when the run reported it.\n:param started_at: When the run started.\n:param finished_at: When the run finished.",
+        "properties": {
+          "backup_type": {
+            "enum": [
+              "M",
+              "X"
+            ],
+            "title": "Backup Type",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "service_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Id"
+          },
+          "service_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Name"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "upload_destination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upload Destination"
+          }
+        },
+        "required": [
+          "id",
+          "service_name",
+          "service_id",
+          "hostname",
+          "backup_type",
+          "location",
+          "upload_destination",
+          "size_bytes",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "BackupRunResponse",
+        "type": "object"
+      },
       "mysql_backups__BackupTaskResponse": {
         "description": "Represent a backup task API response.\n\n:param backup_type: The backup type recorded in task config.",
         "properties": {
@@ -10525,6 +11023,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -10635,6 +11134,37 @@
         ],
         "title": "CompressionAlgorithm",
         "type": "string"
+      },
+      "mysql_backups__PaginatedResponse_BackupRunResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/mysql_backups__BackupRunResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[BackupRunResponse]",
+        "type": "object"
       },
       "mysql_backups__PaginatedResponse_BackupTaskResponse_": {
         "properties": {
@@ -11247,6 +11777,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -11661,6 +12192,7 @@
             "type": "string"
           },
           "period": {
+            "additionalProperties": true,
             "title": "Period",
             "type": "object"
           },
@@ -12013,9 +12545,9 @@
             "type": "boolean"
           },
           "result": {
-            "additionalProperties": true,
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -12139,263 +12671,6 @@
           }
         },
         "title": "UptimeSection",
-        "type": "object"
-      },
-      "snippets__BatchApprovalResponse": {
-        "description": "Successful response for the batch-approve endpoint.\n\n:param approved: Filenames whose approval state was toggled by this\n    request (newly approved as a result of the call).\n:type approved: list[str]\n:param skipped_already_approved: Filenames that were already approved\n    when the call started; the request is treated as a soft-skip\n    (idempotent).\n:type skipped_already_approved: list[str]",
-        "properties": {
-          "approved": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Approved",
-            "type": "array"
-          },
-          "count": {
-            "description": "Return the number of newly approved snippets.\n\n:return: Length of ``approved``.\n:rtype: int",
-            "readOnly": true,
-            "title": "Count",
-            "type": "integer"
-          },
-          "skipped_already_approved": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Skipped Already Approved",
-            "type": "array"
-          }
-        },
-        "required": [
-          "approved",
-          "skipped_already_approved",
-          "count"
-        ],
-        "title": "BatchApprovalResponse",
-        "type": "object"
-      },
-      "snippets__PaginatedResponse_SnippetResponse_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/snippets__SnippetResponse"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "limit": {
-            "title": "Limit",
-            "type": "integer"
-          },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "offset",
-          "limit"
-        ],
-        "title": "PaginatedResponse[SnippetResponse]",
-        "type": "object"
-      },
-      "snippets__RefreshResponse": {
-        "description": "Represent the successful result of a manual snippets-refresh operation.\n\n:param refreshed_at: UTC timestamp at which the refresh completed.\n:type refreshed_at: datetime",
-        "properties": {
-          "refreshed_at": {
-            "format": "date-time",
-            "title": "Refreshed At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "refreshed_at"
-        ],
-        "title": "RefreshResponse",
-        "type": "object"
-      },
-      "snippets__SnippetBatchApproveRequest": {
-        "description": "Represent the JSON body for ``PATCH /api/apps/snippets/approvals``.\n\nUnlike the Form-bound :class:`~app.sep.apps.snippets.deps.SnippetBatchApproveForm`\ntwin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI\nparses it as JSON.\n\n:param filenames: Unique, non-empty list of snippet filenames to approve in a\n    single atomic operation. Duplicates are silently deduplicated by\n    ``UniqueList``.\n:type filenames: UniqueList[NonEmptyStr]",
-        "properties": {
-          "filenames": {
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "minItems": 1,
-            "title": "Filenames",
-            "type": "array"
-          }
-        },
-        "required": [
-          "filenames"
-        ],
-        "title": "SnippetBatchApproveRequest",
-        "type": "object"
-      },
-      "snippets__SnippetResponse": {
-        "description": "Represent a snippet entity as exposed by the JSON API.\n\n:param filename: The snippet's filename on disk; doubles as its\n    identifier in the API.\n:type filename: NonEmptyStr\n:param title: The display title for the snippet (snippet metadata's\n    ``title`` field, falling back to ``filename`` when unset).\n:type title: NonEmptyStr\n:param description: The snippet's free-text description, or an empty\n    string when no description is set in metadata.\n:type description: str\n:param service_type: The snippet's free-form service type\n    (``service_type`` metadata field, for example ``\"mysql\"`` or\n    ``\"mongodb\"``), or ``None`` when the snippet declares no service\n    type. Distinct from the inventory ``ServiceTypeEnum``.\n:type service_type: str | None\n:param size: Snippet file size in bytes.\n:type size: int\n:param md5_digest: 32-character MD5 hex digest of the snippet file.\n:type md5_digest: str\n:param is_approved: Whether the snippet has been approved for execution.\n:type is_approved: bool\n:param approved_at: When the snippet was last approved, or ``None`` if\n    unapproved.\n:type approved_at: datetime | None\n:param updated_by: User id that last toggled the approval state, or\n    ``None`` if no toggle has occurred.\n:type updated_by: str | None\n:param reason: Free-form reason recorded the last time the snippet's\n    approval state changed.\n:type reason: str\n:param requires_sudo: Whether the snippet requires sudo for execution\n    (either always-sudo or sudo is user-toggleable).\n:type requires_sudo: bool\n:param sudo_optional: Whether the user can toggle sudo at execution\n    time.\n:type sudo_optional: bool\n:param sudo_default: Default value for the sudo toggle when\n    ``sudo_optional`` is ``True``.\n:type sudo_default: bool\n:param interpreter: The shell/interpreter command used to execute the\n    snippet (for example, ``\"bash\"`` or ``\"python3\"``); ``None`` when\n    no interpreter mapping resolves.\n:type interpreter: str | None\n:param created_at: When the snippet row was first inserted.\n:type created_at: datetime\n:param updated_at: When the snippet row was last updated, or ``None``\n    if never updated since insert.\n:type updated_at: datetime | None",
-        "properties": {
-          "approved_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Approved At"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "description": {
-            "title": "Description",
-            "type": "string"
-          },
-          "filename": {
-            "minLength": 1,
-            "title": "Filename",
-            "type": "string"
-          },
-          "interpreter": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Interpreter"
-          },
-          "is_approved": {
-            "title": "Is Approved",
-            "type": "boolean"
-          },
-          "md5_digest": {
-            "title": "Md5 Digest",
-            "type": "string"
-          },
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          },
-          "requires_sudo": {
-            "title": "Requires Sudo",
-            "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Service Type"
-          },
-          "size": {
-            "title": "Size",
-            "type": "integer"
-          },
-          "sudo_default": {
-            "title": "Sudo Default",
-            "type": "boolean"
-          },
-          "sudo_optional": {
-            "title": "Sudo Optional",
-            "type": "boolean"
-          },
-          "title": {
-            "minLength": 1,
-            "title": "Title",
-            "type": "string"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          },
-          "updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated By"
-          }
-        },
-        "required": [
-          "filename",
-          "title",
-          "description",
-          "size",
-          "md5_digest",
-          "is_approved",
-          "reason",
-          "requires_sudo",
-          "sudo_optional",
-          "sudo_default",
-          "created_at"
-        ],
-        "title": "SnippetResponse",
-        "type": "object"
-      },
-      "snippets__SnippetServiceTypesResponse": {
-        "description": "Carry the whole-dataset service-type facet for the list filter.\n\nSourced across every snippet (not the loaded page) so the list page's\nservice-type dropdown can offer every value the dataset contains.\n\n:param service_types: The sorted distinct non-blank service types.\n:param has_uncategorized: Whether any snippet has an absent or blank service\n    type (surfaced as the \"Uncategorized\" filter option).",
-        "properties": {
-          "has_uncategorized": {
-            "title": "Has Uncategorized",
-            "type": "boolean"
-          },
-          "service_types": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Service Types",
-            "type": "array"
-          }
-        },
-        "required": [
-          "service_types",
-          "has_uncategorized"
-        ],
-        "title": "SnippetServiceTypesResponse",
-        "type": "object"
-      },
-      "snippets__SnippetsCapabilitiesResponse": {
-        "description": "Represent per-deployment capability flags for the Snippets plugin.\n\nExposes flags that gate the visibility of admin-only UI affordances\n(currently the manual refresh button) so the React shell can decide\nwhether to render those controls without probing the gated endpoints.\n\nDistinct from :class:`~app.sep.apps.framework.schema.Capabilities`,\nwhich describes static UI feature flags on\n:attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`\n(chaining, scheduling, alert_on_fail). This model is the per-\ndeployment runtime counterpart returned by ``GET /capabilities``.\n\n:param manual_sync_enabled: Whether manual snippet refresh is enabled\n    in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).\n:type manual_sync_enabled: bool",
-        "properties": {
-          "manual_sync_enabled": {
-            "title": "Manual Sync Enabled",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "manual_sync_enabled"
-        ],
-        "title": "SnippetsCapabilitiesResponse",
         "type": "object"
       },
       "tasks__ExecutorHostMetadata": {
@@ -12539,6 +12814,7 @@
         "description": "Represent the aggregate payload for ``GET /api/apps/tasks/{task_name}``.\n\nBundle the task definition, execution history, periodic schedules, and\nexecutor host metadata into a single response for the React detail page.\n\n:param task: The task definition as returned by the tasks API.\n:type task: TaskResponse\n:param execution_history: Paginated task history from the tasks API\n    (``items``, ``total``, ``offset``, ``limit``).\n:type execution_history: dict[str, Any]\n:param periodic_summary: Read-only summaries of periodic schedules\n    attached to this task.\n:type periodic_summary: list[PeriodicTaskSummary]\n:param executor_hosts: Executor hosts available for display, with\n    inventory-resolved labels when possible.\n:type executor_hosts: list[ExecutorHostMetadata]",
         "properties": {
           "execution_history": {
+            "additionalProperties": true,
             "title": "Execution History",
             "type": "object"
           },
@@ -12692,6 +12968,7 @@
         "description": "Represent a dual-primary (mutually replicating) edge.",
         "properties": {
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -13525,7 +13802,7 @@
     }
   },
   "info": {
-    "description": "Percona Services Enablement Platform\n\nBrowser-oriented SEP routes (HTML, redirects, proxies, streams). JSON REST APIs for inventory and tasks live on the mounted sub-apps.",
+    "description": "Percona Services Enablement Platform\n\nBrowser-oriented SEP routes (proxies, streams, downloads). JSON REST APIs for inventory and tasks live on the mounted sub-apps.",
     "title": "SEP Web Application API",
     "version": "v1.0.0.dev0"
   },
@@ -14739,7 +15016,7 @@
     },
     "/api/apps/atw/": {
       "get": {
-        "description": "List ATW-tagged snippets grouped by category.\n\nCategories with no matching snippets are omitted to keep the payload small;\nthe ATW enum still defines the full taxonomy for validation (plugin schema).\n\n:param session: The database session.\n:return: One listing row per category that has at least one snippet.",
+        "description": "List ATW-tagged snippets grouped by category.\n\nCategories with no matching snippets are omitted to keep the payload small;\nthe ATW enum still defines the full taxonomy for validation (plugin schema).\n\n:param session: The database session.\n:return: One listing row per category that has at least one approved snippet.",
         "operationId": "atw_atw_api_list_api_apps_atw__get",
         "responses": {
           "200": {
@@ -15063,6 +15340,50 @@
         ]
       }
     },
+    "/api/apps/atw/incidents/{incident_id}/close/": {
+      "post": {
+        "description": "Close a diagnostic incident, stamping the current UTC time.\n\n:param session: The database session.\n:param incident: The open incident resolved from the ``incident_id`` path parameter.\n:return: The closed incident.\n:raises HTTPConflictException: If the incident is already closed.",
+        "operationId": "atw_atw_close_incident_api_apps_atw_incidents__incident_id__close__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwIncidentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Close Incident",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
     "/api/apps/atw/incidents/{incident_id}/executions/": {
       "get": {
         "description": "List one incident's snippet executions, newest first, with live task status.\n\nEach row also reports the command line its snippet ran with, credential values\nmasked. A row whose snippet or upstream payload cannot supply what masking\nneeds reports its arguments as withheld; the page still returns.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param pagination: The offset/limit window for the page.\n:param tasks_api: The authenticated Tasks API client.\n:return: A paginated page of executions hydrated from the Tasks API, each with\n    its masked arguments or the reason they are absent.",
@@ -15177,6 +15498,50 @@
           }
         },
         "summary": "Atw Batch Execute",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
+    "/api/apps/atw/incidents/{incident_id}/reopen/": {
+      "post": {
+        "description": "Reopen a closed diagnostic incident, clearing its close timestamp.\n\n:param session: The database session.\n:param incident: The closed incident resolved from the ``incident_id`` path parameter.\n:return: The reopened incident.\n:raises HTTPConflictException: If the incident is already open.",
+        "operationId": "atw_atw_reopen_incident_api_apps_atw_incidents__incident_id__reopen__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid4",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwIncidentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Reopen Incident",
         "tags": [
           "atw"
         ]
@@ -15372,6 +15737,105 @@
           }
         },
         "summary": "Get Schema",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
+    "/api/apps/atw/snippets/": {
+      "get": {
+        "description": "Search approved snippets by free text, independent of the ATW taxonomy.\n\nServed from ATW's own router over the snippets library, so the capability does\nnot depend on the Snippet Manager app being activated. The ``atw`` metadata tag\nis a presentation filter on the category listing and is deliberately not\napplied here, so search reaches snippets that listing never exposes.\n\n:param session: The database session.\n:param list_query: The vetted sort and search selections, pinned to approved.\n:param pagination: The offset/limit window for the page.\n:return: A paginated page of approved snippet summaries.\n:raises sqlalchemy.exc.SQLAlchemyError: When the count or data query fails to\n    execute.",
+        "operationId": "atw_atw_snippet_search_api_apps_atw_snippets__get",
+        "parameters": [
+          {
+            "description": "Sort key; prefix with '-' for descending order.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "-approved_at",
+              "description": "Sort key; prefix with '-' for descending order.",
+              "enum": [
+                "approved_at",
+                "-approved_at",
+                "created_at",
+                "-created_at",
+                "filename",
+                "-filename",
+                "service_type",
+                "-service_type",
+                "title",
+                "-title"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Case-insensitive search across the searchable columns.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive search across the searchable columns.",
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__PaginatedResponse_ATWSnippetSummary_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Snippet Search",
         "tags": [
           "atw"
         ]
@@ -16724,7 +17188,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse_dict_str__Any__"
+                  "$ref": "#/components/schemas/PaginatedResponse_ArbitraryMapping_"
                 }
               }
             },
@@ -17023,6 +17487,49 @@
           }
         },
         "summary": "Get Schema",
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/apps/inventory/services/{service_id}/check-connectivity/": {
+      "post": {
+        "description": "Run a database connectivity probe for a service from its executor host.\n\nBacks the React connectivity control on the service detail page. A probe\nthat ran but could not connect is reported as HTTP 200 with\n``success=false`` and the upstream message in ``error``; only a probe that\ncould not be attempted at all is an error status. This three-segment\nliteral path cannot collide with the two-segment\n``/{entity}/{item_id:int}`` detail matcher.\n\n:param service: The service to probe, resolved from the path id.\n:param tasks_api: Authenticated Tasks ``RemoteAPI`` client.\n:return: The upstream probe result.\n:raises HTTPBadRequestException: When the service cannot be probed —\n    unsupported type, missing node or port, or no executor registered for\n    the node address.\n:raises HTTPBadGatewayException: When the Tasks API is unreachable or\n    returns an unparseable body.",
+        "operationId": "inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "title": "Service Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectivityCheckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inventory Service Check Connectivity",
         "tags": [
           "inventory"
         ]
@@ -17515,6 +18022,62 @@
         ]
       }
     },
+    "/api/apps/mysql_backups/backup-sources/choices": {
+      "get": {
+        "description": "Return ``Choice`` options for a MySQL service's restore ``backup_source``.\n\nThe ``service_id`` query parameter (cascade parent name on the restore form)\nselects which catalog rows to map. Options are newest-first and capped at\n:data:`~app.core.pagination.DEFAULT_PAGINATION_LIMIT` (older runs remain\nreachable via free-text). An omitted, empty, sentinel, or unknown parent\nyields ``[]`` rather than a ``404``, so the RemoteChoices free-text escape\nhatch stays usable. Other Inventory API failures still propagate.\n\nFree-typed (non-numeric) parents query the catalog by that name without an\nInventory type check — matching ``ServiceRef(allow_custom=True)`` on the\nrestore form, where the destination may be a name that has no MySQL\ninventory row. Numeric parents still require a resolvable MySQL service, and\nare keyed on its inventory id so a rename does not empty the selector.\n\n:param session: The database session the catalog is queried on.\n:param service_key: The cascade parent resolved to the catalog query keys, or\n    ``None`` when the parent is unusable.\n:return: Choice-compatible options for the restore backup-source selector.",
+        "operationId": "mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get",
+        "parameters": [
+          {
+            "description": "Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service, keying the catalog query on its id; custom names query the catalog by name directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch.",
+            "in": "query",
+            "name": "service_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service, keying the catalog query on its id; custom names query the catalog by name directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch.",
+              "title": "Service Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/framework__Choice"
+                  },
+                  "title": "Response Mysql Backups List Backup Source Choices Api Apps Mysql Backups Backup Sources Choices Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Backup Source Choices",
+        "tags": [
+          "mysql_backups"
+        ]
+      }
+    },
     "/api/apps/mysql_backups/restore/": {
       "get": {
         "operationId": "mysql_backups_restore__list_paginated_api_apps_mysql_backups_restore__get",
@@ -17843,6 +18406,72 @@
           }
         },
         "summary": "Get Schema",
+        "tags": [
+          "mysql_backups"
+        ]
+      }
+    },
+    "/api/apps/mysql_backups/services/{service_id}/backups": {
+      "get": {
+        "description": "Return a page of a MySQL service's completed backup runs, newest run first.\n\nThe ``service_id`` path parameter is resolved by\n:data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`, which lets an\nunknown service surface as a ``404``. A resolvable service with no recorded\nruns yields an empty page, so a caller building a restore selector is never\nblocked by an empty catalog but is still told when the service itself is\nunknown.\n\nThe query is keyed on the resolved service's inventory id, so a rename between\nrecording a run and asking for it cannot detach the rows; runs recorded before\nthe id was stored are still matched by the name they were written with.\n\n:param service: The inventory service resolved from the ``service_id`` path\n    parameter.\n:param session: The database session the catalog is queried on.\n:param pagination: The requested offset/limit window.\n:return: The requested page of the service's recorded backup runs, newest\n    run first.",
+        "operationId": "mysql_backups_list_service_backups_api_apps_mysql_backups_services__service_id__backups_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "title": "Service Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/mysql_backups__PaginatedResponse_BackupRunResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Service Backups",
         "tags": [
           "mysql_backups"
         ]
@@ -18360,7 +18989,7 @@
     },
     "/api/apps/snippets/": {
       "get": {
-        "description": "List scripts as a server-filtered, sorted, paginated projection.",
+        "description": "List scripts as a filtered, sorted, paginated projection.",
         "operationId": "snippets_snippets_api_list_api_apps_snippets__get",
         "parameters": [
           {
@@ -18384,46 +19013,6 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
-            }
-          },
-          {
-            "description": "Case-insensitive search over filename, title, description.",
-            "in": "query",
-            "name": "search",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Case-insensitive search over filename, title, description.",
-              "title": "Search"
-            }
-          },
-          {
-            "description": "Sort key; one of the allowlisted public sort keys.",
-            "in": "query",
-            "name": "sort",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/SnippetSortKey",
-              "default": "created_at",
-              "description": "Sort key; one of the allowlisted public sort keys."
-            }
-          },
-          {
-            "description": "Sort direction.",
-            "in": "query",
-            "name": "order",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/SnippetSortDirection",
-              "default": "desc",
-              "description": "Sort direction."
             }
           },
           {
@@ -18466,6 +19055,48 @@
               "title": "Uncategorized",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Sort key; prefix with '-' for descending order.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "-approved_at",
+              "description": "Sort key; prefix with '-' for descending order.",
+              "enum": [
+                "approved_at",
+                "-approved_at",
+                "created_at",
+                "-created_at",
+                "filename",
+                "-filename",
+                "service_type",
+                "-service_type",
+                "title",
+                "-title"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Case-insensitive search across the searchable columns.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive search across the searchable columns.",
+              "title": "Search"
+            }
           }
         ],
         "responses": {
@@ -18473,7 +19104,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/snippets__PaginatedResponse_SnippetResponse_"
+                  "$ref": "#/components/schemas/PaginatedResponse_SnippetResponse_"
                 }
               }
             },
@@ -18504,7 +19135,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/snippets__SnippetBatchApproveRequest"
+                "$ref": "#/components/schemas/SnippetBatchApproveRequest"
               }
             }
           },
@@ -18515,7 +19146,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/snippets__BatchApprovalResponse"
+                  "$ref": "#/components/schemas/BatchApprovalResponse"
                 }
               }
             },
@@ -18547,7 +19178,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/snippets__SnippetsCapabilitiesResponse"
+                  "$ref": "#/components/schemas/SnippetsCapabilitiesResponse"
                 }
               }
             },
@@ -18569,7 +19200,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/snippets__RefreshResponse"
+                  "$ref": "#/components/schemas/RefreshResponse"
                 }
               }
             },
@@ -18613,7 +19244,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/snippets__SnippetServiceTypesResponse"
+                  "$ref": "#/components/schemas/SnippetServiceTypesResponse"
                 }
               }
             },
@@ -18684,7 +19315,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/snippets__SnippetResponse"
+                  "$ref": "#/components/schemas/SnippetResponse"
                 }
               }
             },
@@ -18827,6 +19458,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Snippets Snippets Api Script History Api Apps Snippets Snippet History Get",
                   "type": "object"
                 }
@@ -19361,7 +19993,7 @@
     },
     "/api/sep/admin/settings/{setting_class}/{key}": {
       "delete": {
-        "description": "Revert one override row to the field's declared default.\n\nFor a remote class the DELETE is forwarded to the owning sub-app, which\nowns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and\n``detail`` are preserved through the proxy.\n\nFor a local class: idempotent -- deleting a (class, key) pair that has no\noverride row succeeds with 204. Attempting to delete a NOT_OVERRIDABLE\nfield responds 409 -- the field cannot have an override row in the first\nplace, so the operator's intent is unsatisfiable.\n\nAfter republishing the snapshot, fires the rebind callbacks for the\nreverted key so a HOT target rebinds to its restored value without\nwaiting for the next background refresh cycle.\n\n:param request: The incoming request; its ``app.state`` carries the\n    sub-app's rebind-callback registry.\n:param setting_class: The settings class the field belongs to.\n:param key: The field name on the settings class.\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:raises HTTPNotFoundException: If the class isn't exposed or the key\n    doesn't exist on the class.\n:raises HTTPConflictException: If the field is NOT_OVERRIDABLE.\n:raises HTTPUnprocessableEntityException: If ``key`` names a\n    ``NESTED_ONLY`` parent (the whole parent cannot be overridden;\n    target an individual ``parent__leaf`` instead).\n:raises HTTPBadGatewayException: For a remote class, when the owning\n    sub-app returns a server error (status >= 500) or is unreachable.",
+        "description": "Revert one override row to the field's declared default.\n\nFor a remote class the DELETE is forwarded to the owning sub-app, which\nowns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and\n``detail`` are preserved through the proxy.\n\nFor a local class the DELETE is idempotent: deleting a (class, key) pair\nthat has no override row succeeds with 204. Attempting to delete a field\nthe code declares NOT_OVERRIDABLE responds 409, since it cannot have an\noverride row in the first place and the operator's intent is\nunsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld\nmay still carry a row written before the restriction applied, so that\nrow is deleted normally and only the no-row case answers 409.\n\nAfter republishing the snapshot, fires the rebind callbacks for the\nreverted key so a HOT target rebinds to its restored value without\nwaiting for the next background refresh cycle.\n\n:param request: The incoming request; its ``app.state`` carries the\n    sub-app's rebind-callback registry.\n:param setting_class: The settings class the field belongs to.\n:param key: The field name on the settings class.\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:raises HTTPNotFoundException: If the class isn't exposed or the key\n    doesn't exist on the class.\n:raises HTTPConflictException: If the field is NOT_OVERRIDABLE and has\n    no row to delete.\n:raises HTTPUnprocessableEntityException: If ``key`` names a\n    ``NESTED_ONLY`` parent (the whole parent cannot be overridden;\n    target an individual ``parent__leaf`` instead).\n:raises HTTPBadGatewayException: For a remote class, when the owning\n    sub-app returns a server error (status >= 500) or is unreachable.",
         "operationId": "sep_delete_setting_api_sep_admin_settings__setting_class___key__delete",
         "parameters": [
           {
@@ -19550,6 +20182,7 @@
               "application/json": {
                 "schema": {
                   "items": {
+                    "additionalProperties": true,
                     "type": "object"
                   },
                   "title": "Response Tasks List Periodic Tasks Api Sep Periodic Tasks  Get",
@@ -19655,6 +20288,7 @@
           "content": {
             "application/json": {
               "schema": {
+                "additionalProperties": true,
                 "title": "Body",
                 "type": "object"
               }
@@ -19667,6 +20301,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                   "type": "object"
                 }
@@ -19728,6 +20363,7 @@
           "content": {
             "application/json": {
               "schema": {
+                "additionalProperties": true,
                 "title": "Body",
                 "type": "object"
               }
@@ -19740,6 +20376,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Tasks Create Periodic Task Api Sep Periodic Tasks  Task Name   Post",
                   "type": "object"
                 }
@@ -20121,6 +20758,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Tasks Stop Task History Api Sep Task History  Task History Id  Stop  Post",
                   "type": "object"
                 }
@@ -20183,6 +20821,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "title": "Response Tasks Get Task Stats Api Sep Task Stats  Task Name  Get",
                   "type": "object"
                 }

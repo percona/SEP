@@ -21,6 +21,7 @@ import json
 import logging
 import tarfile
 import time
+from base64 import b64decode
 from binascii import b2a_base64
 from collections import defaultdict
 from collections.abc import AsyncGenerator
@@ -29,7 +30,7 @@ from enum import StrEnum
 from functools import cached_property
 from itertools import product
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 
 from aiohttp import (
     ClientError,
@@ -66,8 +67,13 @@ from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundError,
     JobNotFoundError,
 )
+from app.tasks.execution.executors.nomad.steps import (
+    LOG_CAPTURE_HOLD_DEFAULT_SECONDS,
+    NomadStep,
+)
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
+from app.tasks.logs.line_split import split_complete_lines
 from app.tasks.logs.log_reader import decompress_legacy_logs
 from app.tasks.logs.log_writer import (
     backfill_legacy_logs,
@@ -76,6 +82,7 @@ from app.tasks.logs.log_writer import (
 from app.tasks.models import (
     ExecutionEvent,
     FileMetadata,
+    LogCaptureStatusEnum,
     Task,
     TaskHistory,
     TaskHistoryStatusEnum,
@@ -87,9 +94,78 @@ logger = logging.getLogger(__name__)
 
 _ONE_MEBIBYTE = 1024 * 1024
 NOMAD_DEAD_JOB_STATUS = "dead"
+NOMAD_DEAD_TASK_STATE = "dead"
+NOMAD_RUNNING_TASK_STATE = "running"
+_CAPTURE_HOLD_RELEASE_SIGNAL = "SIGTERM"
 # Internal states returned by :meth:`NomadExecutor._consume_nomad_log_stream` (not Nomad task states).
 _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
+
+_ANONYMIZED_STEPS: frozenset[NomadStep] = NomadStep.anonymized()
+
+
+class StepLogDelta(NamedTuple):
+    """Carry one fetched log delta and the advanced cursor metadata.
+
+    :param text: The anonymized text fetched this cycle.
+    :param nomad_offset: The advanced raw-byte Nomad cursor for the next fetch.
+    :param producer_offset: The advanced post-anonymization byte cursor.
+    :param withheld_bytes: Raw-byte count withheld this cycle.
+    :param fetch_failed: Whether the underlying Nomad stream fetch failed.
+    """
+
+    text: str
+    nomad_offset: int
+    producer_offset: int
+    withheld_bytes: int
+    fetch_failed: bool
+
+
+def _should_anonymize(step: str, anonymize_entities: set[PIIEntity] | None) -> bool:
+    """Return whether ``step`` output should be anonymized for the given entities.
+
+    :param step: The Nomad task name within the allocation.
+    :param anonymize_entities: The requested PII entities, or ``None``.
+    :return: ``True`` when the step is anonymized and entities were requested.
+    """
+    return step in _ANONYMIZED_STEPS and bool(anonymize_entities)
+
+
+def _decode_and_anonymize(raw: bytes, anonymize_entities: set[PIIEntity] | None) -> str:
+    """Decode raw log bytes as UTF-8 and redact PII when entities are requested.
+
+    :param raw: The raw (pre-anonymization) log bytes.
+    :param anonymize_entities: PII entities to redact, or ``None`` to skip
+        anonymization.
+    :return: The decoded text, anonymized when entities were requested.
+    """
+    text = raw.decode("utf-8", errors="replace")
+    if anonymize_entities and text:
+        text = anonymize_text(text, anonymize_entities)
+    return text
+
+
+def _warn_forced_flush(
+    alloc_id: str, step: str, log_type: TaskLogType, ceiling: int, consequence: str
+) -> None:
+    """Warn that anonymization flushed an un-terminated line at the ceiling.
+
+    :param alloc_id: The Nomad allocation identifier.
+    :param step: The Nomad task name within the allocation.
+    :param log_type: The log stream type (stdout or stderr).
+    :param ceiling: The configured withheld-bytes ceiling that was exceeded.
+    :param consequence: What advancing past the flushed tail unblocks.
+    """
+    logger.warning(
+        "Forced anonymization flush of un-terminated log line "
+        "alloc_id=%s step=%s log_type=%s withheld_ceiling=%s; "
+        "accepting a redaction-boundary leak so %s",
+        alloc_id,
+        step,
+        log_type,
+        ceiling,
+        consequence,
+    )
 
 
 def _nomad_event_body_text(ev: dict) -> str:
@@ -107,8 +183,143 @@ def _nomad_event_exit_code(ev: dict) -> Any:
     return exit_code
 
 
-_STALE_SKIP_TASK_NAME = "check-staleness"
+_STALE_SKIP_TASK_NAME = NomadStep.CHECK_STALENESS
 _STALE_SKIP_EXIT_CODE = 75
+
+# Statuses a RUNNING row may reach on the allocation status alone, when the
+# allocation carries no task states to corroborate it. SUCCESS is excluded: an
+# allocation that started no task produced no output and no exit code, so
+# reporting a successful run off ``complete`` would both mislead operators and
+# release any chained task waiting on this one. A dead job cannot leave the row
+# RUNNING either, so anything outside this set resolves to LOST there.
+_DEAD_END_ALLOC_STATUSES = frozenset(
+    {
+        TaskHistoryStatusEnum.FAILED,
+        TaskHistoryStatusEnum.LOST,
+        TaskHistoryStatusEnum.STOPPED,
+    }
+)
+
+
+def _alloc_task_states(alloc: dict[str, Any]) -> dict[str, Any]:
+    """Return an allocation's Nomad task states as a mapping.
+
+    An allocation that has not started any task carries no ``TaskStates`` at
+    all, the shape a reschedule chain produces once the client running the
+    original allocation goes away, so the read degrades to an empty mapping
+    instead of raising. Anything present but not a mapping is upstream shape
+    drift rather than a task that never started, so it is logged before
+    degrading the same way: raising here aborts the very sync, stop and log
+    paths this guard exists to keep alive.
+
+    :param alloc: The allocation details from Nomad.
+    :return: The allocation's task states, empty when absent or malformed.
+    """
+    task_states = alloc.get("TaskStates")
+    if task_states is not None and not isinstance(task_states, dict):
+        logger.warning(
+            "Allocation %s reports non-mapping task states: %r",
+            alloc.get("ID"),
+            task_states,
+        )
+        return {}
+    return task_states or {}
+
+
+def _alloc_step_state(alloc: dict[str, Any], step: str) -> dict[str, Any]:
+    """Return one step's Nomad task state, or an empty dict when unavailable.
+
+    A rescheduled allocation may no longer carry a given step, and a malformed
+    state is treated the same way :func:`_alloc_task_states` treats a malformed
+    container.
+
+    :param alloc: The allocation details from Nomad.
+    :param step: The Nomad task (step) name to look up.
+    :return: The step's task state, empty when absent or malformed.
+    """
+    state = _alloc_task_states(alloc).get(step)
+    if state is not None and not isinstance(state, dict):
+        logger.warning(
+            "Allocation %s reports a non-mapping task state for step %r: %r",
+            alloc.get("ID"),
+            step,
+            state,
+        )
+        return {}
+    return state or {}
+
+
+def _alloc_step_sort_key(alloc: dict[str, Any], step: str) -> tuple[Any, Any, str]:
+    """Return the ordering key for one step within an allocation's task states.
+
+    :param alloc: The allocation details from Nomad.
+    :param step: The Nomad task (step) name to key.
+    :return: The step's start time, finish time and name, with ``"9"`` standing
+        in for an absent timestamp so an unstarted step sorts last.
+    """
+    state = _alloc_step_state(alloc, step)
+    return state.get("StartedAt") or "9", state.get("FinishedAt") or "9", step
+
+
+def _capture_hold_step_state(alloc: dict[str, Any]) -> str | None:
+    """Return the log-capture-hold step's Nomad state, or ``None`` when unreadable.
+
+    Answers "may the hold be signalled", not "does the allocation have one":
+    ``None`` covers both a step that is absent and one whose state is missing or
+    malformed, and neither is safe to signal. Use a membership test against the
+    task states to decide *presence*.
+
+    :param alloc: The allocation details from Nomad.
+    :return: The hold step's ``State``, or ``None`` when it cannot be read.
+    """
+    if NomadStep.LOG_CAPTURE_HOLD not in _alloc_task_states(alloc):
+        return None
+    return _alloc_step_state(alloc, NomadStep.LOG_CAPTURE_HOLD).get("State")
+
+
+def _detect_capture_hold_ready(alloc: dict[str, Any]) -> bool:
+    """Return ``True`` when every producing step is done and a hold is present.
+
+    This is the signal that the full producer set has stopped writing, which is
+    what makes "drained to EOF" knowable and the hold safe to release. It is
+    deliberately *not* the same question as whether the task history is
+    terminal: an allocation can be terminal by job status while a main task
+    still sits at ``pending``, and releasing there would signal the hold before
+    the producers finished, re-opening the race the hold exists to close.
+
+    :param alloc: The allocation details from Nomad.
+    :return: ``True`` when a hold step is present and every non-hold step
+        reports ``dead``; ``False`` otherwise.
+    """
+    task_states = _alloc_task_states(alloc)
+    if NomadStep.LOG_CAPTURE_HOLD not in task_states:
+        return False
+    producing_steps = [step for step in task_states if NomadStep.is_persistable(step)]
+    return bool(producing_steps) and all(
+        _alloc_step_state(alloc, step).get("State") == NOMAD_DEAD_TASK_STATE
+        for step in producing_steps
+    )
+
+
+def _status_from_step_states(alloc: dict[str, Any]) -> TaskHistoryStatusEnum:
+    """Return the task status implied by the non-hold steps' own outcomes.
+
+    Derived per-step rather than from ``ClientStatus`` because the allocation is
+    still ``running`` while the hold holds it — the client status cannot yet
+    report the payload's outcome. The hold's own exit is excluded so a failed
+    hold cannot re-label a task whose work succeeded.
+
+    :param alloc: The allocation details from Nomad.
+    :return: ``FAILED`` when any non-hold step reports a failure; ``SUCCESS``
+        otherwise.
+    """
+    task_states = _alloc_task_states(alloc)
+    failed = any(
+        _alloc_step_state(alloc, step).get("Failed")
+        for step in task_states
+        if NomadStep.is_persistable(step)
+    )
+    return TaskHistoryStatusEnum.FAILED if failed else TaskHistoryStatusEnum.SUCCESS
 
 
 def _detect_stale_skip(task_states: dict[str, Any] | None) -> bool:
@@ -295,6 +506,23 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         Defaults to 5.
     :param terminal_log_drain_interval: Seconds to wait before each post-terminal
         drain re-fetch, giving ``logmon`` time to flush the tail. Defaults to 0.5.
+    :param log_anonymization_max_withheld_bytes: Maximum raw byte length that
+        task-log anonymization may withhold while awaiting a line terminator.
+        When the trailing partial exceeds this ceiling it is flushed anyway,
+        accepting a single redaction-boundary leak so an un-terminated line
+        cannot stall log persistence, stall the live viewer, or drive
+        quadratic Nomad re-fetching. Setting the ceiling very low effectively
+        disables line-boundary anonymization, letting a PII token that straddles
+        two fetched chunks escape redaction, so the value must stay positive.
+        Defaults to 1 MiB, generous enough that ordinary line-oriented output
+        never trips it.
+    :param log_capture_hold_seconds: How long the ``log-capture-hold`` step
+        keeps a finished allocation alive so Nomad cannot garbage-collect logs
+        SEP has not read yet. Injected as dispatch meta and enforced on the
+        execution host, so it bounds allocation residency even when the tasks
+        service never returns; SEP releases the hold early on the normal path.
+        Must outlast at least two sync cadences, or a sub-cadence step's output
+        is collected before any sync samples it. Defaults to 90 seconds.
     :cvar INHERITED_MARKERS: Overlay marking the inherited ``BaseRemoteAPI`` TLS
         fields (``verify_ssl`` and the ``ssl_*`` paths) HOT and ``advanced``
         without redeclaring them; set to the shared :data:`REMOTE_API_TLS_MARKERS`.
@@ -311,6 +539,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     cert_expiry_warn_days: int = hot_field(7, ge=1, advanced=True)
     terminal_log_drain_max_attempts: int = hot_field(5, ge=0, advanced=True)
     terminal_log_drain_interval: float = hot_field(0.5, gt=0, advanced=True)
+    log_anonymization_max_withheld_bytes: int = hot_field(
+        _ONE_MEBIBYTE, gt=0, advanced=True
+    )
+    log_capture_hold_seconds: int = hot_field(
+        LOG_CAPTURE_HOLD_DEFAULT_SECONDS, ge=1, advanced=True
+    )
     check_cert_expiry_interval: IntervalSchedule | None = field_with_metadata(
         metadata={"reload": ReloadClassification.HOT, "advanced": True},
         default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
@@ -352,22 +586,19 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
     @staticmethod
     def get_task_history_status_from_alloc_status(
-        client_status: NomadAllocStatusEnum,
+        client_status: NomadAllocStatusEnum | None,
         default: TaskHistoryStatusEnum | None = None,
         *,
         stopped: bool = False,
     ) -> TaskHistoryStatusEnum | None:
         """Get the task history status based on the allocation status.
 
-        :param client_status: The Nomad allocation status.
-        :type client_status: NomadAllocStatusEnum
+        :param client_status: The Nomad allocation status, or ``None`` when the
+            allocation does not report one.
         :param default: The default status to return if no match is found. Defaults to
             None.
-        :type default: TaskHistoryStatusEnum | None
         :param stopped: Whether the Nomad job was stopped.
-        :type stopped: bool
         :return: The corresponding task history status.
-        :rtype: TaskHistoryStatusEnum | None
         """
         match client_status:
             case NomadAllocStatusEnum.COMPLETE if not stopped:
@@ -511,6 +742,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 int(eta.timestamp())
                 if eta is not None
                 else int(queue_item.created_at.timestamp())
+            )
+        if "log_capture_hold_seconds" in declared_meta:
+            filtered_meta["log_capture_hold_seconds"] = str(
+                self.log_capture_hold_seconds
             )
 
         custom_prefix = queue_item.execution_request.meta.get("_job_id_prefix", "")
@@ -657,14 +892,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             )
         logger.debug("Allocations: %r", [alloc["JobID"] for alloc in allocations])
         alloc = allocations[0]
-        if alloc["TaskStates"]:
+        if task_states := _alloc_task_states(alloc):
             alloc["TaskStates"] = sort_dict(
-                alloc["TaskStates"],
-                lambda item: (
-                    item[1]["StartedAt"] or "9",
-                    item[1]["FinishedAt"] or "9",
-                    item[0],
-                ),
+                task_states,
+                lambda item: _alloc_step_sort_key(alloc, item[0]),
             )
         return alloc
 
@@ -729,13 +960,32 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         This method calls the Nomad API to stop the job associated with the given
         task history. It updates the task history with the status of the operation.
 
+        Deregistering does not end a log-capture hold that is already holding the
+        allocation: the job goes ``dead`` while the allocation stays ``running``
+        for the rest of the hold's deadline. Nothing is being captured on this
+        path — the stop route persists no logs — so the hold is released
+        explicitly. The release polls for the hold to start, because the
+        poststop step only runs once Nomad has finished killing the payload:
+        signalling straight after the deregister would almost always find it
+        still ``pending``. A hold that never starts within that window still
+        expires on its own deadline.
+
         :param queue_item: The task history record for tracking this execution.
-        :type queue_item: TaskHistory
+        :raises ValueError: When the task history carries no Nomad job id.
         """
         job_id = queue_item.execution_request.tracking.get("job_id")
         if not job_id:
             raise ValueError("The job ID could not be determined")
         self.backend.job.deregister_job(job_id)
+        try:
+            alloc = self.get_allocation_for_task_history(queue_item)
+        except (AllocationNotFoundError, BaseNomadException):
+            logger.debug(
+                "No allocation to release a log-capture hold on for task history %s",
+                queue_item.id,
+            )
+            return
+        await self._release_capture_hold(alloc, await_hold_start=True)
 
     def _fetch_step_log_delta(
         self,
@@ -745,7 +995,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         nomad_start_offset: int,
         producer_start_offset: int,
         anonymize_entities: set[PIIEntity] | None,
-    ) -> tuple[str, int, int]:
+        *,
+        flush_partial: bool = False,
+    ) -> StepLogDelta:
         """Fetch the delta bytes and advanced offsets for a single step/log_type.
 
         The Nomad offset tracks the raw (pre-anonymization) byte position in
@@ -756,26 +1008,45 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :meth:`TaskHistoryLogWriter.append` from mixing raw and anonymized
         byte counts on retry.
 
+        Anonymization runs on complete lines only: a PII token split across two
+        Nomad frames (or across two sync cycles) is never seen whole by
+        Presidio and would escape redaction. The trailing partial line is
+        therefore withheld from anonymization -- the returned Nomad offset is
+        rolled back by its raw byte length so it is simply re-fetched next cycle
+        and joined with the new bytes. That re-fetch is idempotent because the
+        withheld bytes were never emitted, so ``producer_offset`` never advanced
+        past them; the writer's dedup covers a different case -- a retry after a
+        concurrent state update. When the withheld remainder would exceed
+        ``log_anonymization_max_withheld_bytes``, the buffer is flushed instead
+        (empty remainder, no rollback) so the cursor advances and the next cycle
+        does not re-fetch the same tail. ``flush_partial`` disables the
+        withholding so a terminal drain can emit a newline-less final line
+        instead of losing it forever.
+
         :param alloc_id: The Nomad allocation identifier.
-        :type alloc_id: str
         :param step: The Nomad task name within the allocation.
-        :type step: str
         :param log_type: The log stream type (stdout or stderr).
-        :type log_type: TaskLogType
         :param nomad_start_offset: The byte offset to start reading from in
             Nomad-space.
-        :type nomad_start_offset: int
         :param producer_start_offset: The producer-space byte offset
             corresponding to ``nomad_start_offset``.
-        :type producer_start_offset: int
         :param anonymize_entities: PII entities to anonymize for ``run-script``
             and ``step1`` content. When ``None``, no anonymization is performed.
-        :type anonymize_entities: set[PIIEntity] | None
-        :return: ``(delta_text, new_producer_fetch_offset, new_producer_offset)`` —
-            the anonymized bytes fetched this cycle, the advanced Nomad-space
-            offset for the next fetch, and the advanced producer-space offset
-            that the writer should persist.
-        :rtype: tuple[str, int, int]
+        :param flush_partial: When ``True``, emit the trailing partial line
+            instead of withholding it (terminal flush).
+        :return: A :class:`StepLogDelta` carrying the anonymized bytes fetched
+            this cycle, the advanced Nomad-space offset for the next fetch, the
+            advanced producer-space offset the writer should persist, the raw
+            byte length of the partial line withheld this cycle (``0`` when
+            nothing was withheld, including after a forced ceiling flush), and
+            whether the fetch itself failed.
+
+        A failed fetch is reported rather than raised. Letting it propagate
+        would abort the whole sync cycle for every step in the allocation, not
+        just the failing stream — trading a silent per-stream loss for a loud
+        whole-cycle one. The caller records the stream's capture as incomplete
+        instead, so the failure is surfaced without being mistaken for a valid
+        empty log.
         """
         try:
             raw_log_data = self.backend.client.stream_logs.stream(
@@ -791,53 +1062,99 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 alloc_id,
                 step,
             )
-            return "", nomad_start_offset, producer_start_offset
+            return StepLogDelta(
+                "",
+                nomad_start_offset,
+                producer_start_offset,
+                0,
+                fetch_failed=True,
+            )
         pieces = []
-        producer_fetch_offset = nomad_start_offset
+        nomad_offset = nomad_start_offset
         for raw_log_data_item in (
             "{" + item for item in raw_log_data.split("{") if item
         ):
             log_data = json.loads(raw_log_data_item)
             if raw_msg := log_data.get("Data"):
-                producer_fetch_offset = log_data.get("Offset", producer_fetch_offset)
-                msg = b64decode_str(raw_msg)
-                if step in ("run-script", "step1") and anonymize_entities:
-                    msg = anonymize_text(msg, anonymize_entities)
-                pieces.append(msg)
-        delta = "".join(pieces)
+                nomad_offset = log_data.get("Offset", nomad_offset)
+                pieces.append(b64decode(raw_msg))
+        raw_buf = b"".join(pieces)
+        anonymizing = _should_anonymize(step, anonymize_entities)
+        withheld = 0
+        if anonymizing and not flush_partial:
+            split = split_complete_lines(
+                raw_buf, max_withheld=self.log_anonymization_max_withheld_bytes
+            )
+            complete, remainder = split.complete, split.remainder
+            if split.forced:
+                _warn_forced_flush(
+                    alloc_id,
+                    step,
+                    log_type,
+                    self.log_anonymization_max_withheld_bytes,
+                    "the Nomad cursor can advance",
+                )
+            # A forced flush empties the remainder, so this is the no-rollback
+            # path the docstring describes.
+            withheld = len(remainder)
+            nomad_offset -= withheld
+        else:
+            complete = raw_buf
+        delta = _decode_and_anonymize(
+            complete, anonymize_entities if anonymizing else None
+        )
         producer_offset = producer_start_offset + len(delta.encode("utf-8"))
-        return delta, producer_fetch_offset, producer_offset
+        return StepLogDelta(
+            delta,
+            nomad_offset,
+            producer_offset,
+            withheld,
+            fetch_failed=False,
+        )
 
     def get_logs_for_allocation(
         self,
         alloc: dict[str, Any],
         initial_logs: dict[str, dict[str, Any]] | None = None,
         anonymize_entities: set[PIIEntity] | None = None,
+        *,
+        flush_partial: bool = False,
     ) -> dict[str, dict[str, Any]]:
         """Return the delta logs for an allocation since the previous offsets.
 
-        For every ``(step, log_type)`` with a started task state, fetch the
-        Nomad log stream starting at the offset provided in ``initial_logs`` (or
-        ``0`` when absent). The returned dict holds ONLY the bytes fetched this
-        cycle alongside the advanced ``f"{log_type}_last_offset"`` (Nomad-space,
-        used as the next fetch cursor) and ``f"{log_type}_producer_offset"``
-        (post-anonymization byte count, used by the writer) for each stream;
-        it is not an accumulator over cycles.
+        For every persistable ``(step, log_type)`` with a started task state,
+        fetch the Nomad log stream starting at the offset provided in
+        ``initial_logs`` (or ``0`` when absent). The returned dict holds ONLY
+        the bytes fetched this cycle alongside the advanced
+        ``f"{log_type}_last_offset"`` (Nomad-space, used as the next fetch
+        cursor) and ``f"{log_type}_producer_offset"`` (post-anonymization byte
+        count, used by the writer) for each stream; it is not an accumulator
+        over cycles.
+
+        The log-capture hold is skipped: it emits nothing, so its streams never
+        advance. Including it would add a pair of candidates the terminal drain
+        can never mark advanced, spending that drain's whole attempt budget on
+        every terminal sync, and would leave the live viewer waiting on a stream
+        that only ends when the hold does.
 
         :param alloc: The allocation details from Nomad.
-        :type alloc: dict[str, Any]
         :param initial_logs: Per-step starting offsets in the shape
             ``{step: {f"{log_type}_last_offset": int,
             f"{log_type}_producer_offset": int}}``. Content fields are ignored.
-        :type initial_logs: dict[str, dict[str, Any]] | None
         :param anonymize_entities: PII entities to anonymize in run-script /
             step1 output. When ``None``, no anonymization is performed.
-        :type anonymize_entities: set[PIIEntity] | None
+        :param flush_partial: When ``True``, emit each stream's trailing partial
+            line instead of withholding it (terminal flush).
         :return: A dict containing this cycle's delta log content and the new
             last offsets, shaped
             ``{step: {log_type: delta_text, f"{log_type}_last_offset": int,
-            f"{log_type}_producer_offset": int}}``.
-        :rtype: dict[str, dict[str, Any]]
+            f"{log_type}_producer_offset": int,
+            f"{log_type}_withheld": int,
+            f"{log_type}_fetch_failed": bool}}``. ``_withheld`` is the raw byte
+            length of the partial line withheld this cycle (``0`` when none);
+            ``_fetch_failed`` reports a stream whose fetch raised, so the caller
+            can record it as an incomplete capture rather than read the absent
+            bytes as a valid empty log.
         """
         alloc_id = alloc["ID"]
         task_logs = defaultdict(dict)
@@ -849,27 +1166,32 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 if isinstance(key, str) and key in log_type_values:
                     continue
                 task_logs[step][key] = value
-        task_states = alloc["TaskStates"] or {}
+        task_states = _alloc_task_states(alloc)
         for step, log_type in product(task_states, TaskLogType):
-            if task_states[step].get("StartedAt") is None:
+            if not NomadStep.is_persistable(step):
+                continue
+            if _alloc_step_state(alloc, step).get("StartedAt") is None:
                 continue
             last_offset_key = f"{log_type}_last_offset"
             producer_offset_key = f"{log_type}_producer_offset"
+            withheld_key = f"{log_type}_withheld"
+            fetch_failed_key = f"{log_type}_fetch_failed"
             nomad_start_offset = task_logs[step].get(last_offset_key) or 0
             producer_start_offset = task_logs[step].get(producer_offset_key) or 0
-            delta, new_producer_fetch_offset, new_producer_offset = (
-                self._fetch_step_log_delta(
-                    alloc_id,
-                    step,
-                    log_type,
-                    nomad_start_offset,
-                    producer_start_offset,
-                    anonymize_entities,
-                )
+            step_delta = self._fetch_step_log_delta(
+                alloc_id,
+                step,
+                log_type,
+                nomad_start_offset,
+                producer_start_offset,
+                anonymize_entities,
+                flush_partial=flush_partial,
             )
-            task_logs[step][last_offset_key] = new_producer_fetch_offset
-            task_logs[step][producer_offset_key] = new_producer_offset
-            task_logs[step][log_type] = delta
+            task_logs[step][last_offset_key] = step_delta.nomad_offset
+            task_logs[step][producer_offset_key] = step_delta.producer_offset
+            task_logs[step][withheld_key] = step_delta.withheld_bytes
+            task_logs[step][fetch_failed_key] = step_delta.fetch_failed
+            task_logs[step][log_type] = step_delta.text
         return task_logs
 
     def _resolve_running_allocation(
@@ -917,6 +1239,21 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             queue_item.status = TaskHistoryStatusEnum.LOST
         return None
 
+    def _stamp_finished_at(
+        self, queue_item: TaskHistory, alloc: dict[str, Any]
+    ) -> None:
+        """Set ``finished_at`` from the allocation's last modification time.
+
+        :param queue_item: The task history record reaching a terminal status.
+        :param alloc: The allocation details from Nomad.
+        """
+        last_modified_timestamp = alloc.get("ModifyTime")
+        queue_item.finished_at = (
+            self.timestamp_to_datetime(last_modified_timestamp)
+            if last_modified_timestamp
+            else utc_now()
+        )
+
     async def _sync_task_history(
         self,
         queue_item: TaskHistory,
@@ -931,13 +1268,19 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         the first post-deployment sync via :func:`backfill_legacy_logs`, so
         pre-existing records keep a continuous log stream.
 
+        An allocation that started no task carries no ``TaskStates``, leaving its
+        client status as the only signal. One of ``_DEAD_END_ALLOC_STATUSES``
+        moves the row out of RUNNING on that signal alone, because a row left
+        RUNNING blocks every later dispatch of the same task, target and payload
+        with a 409. While the job lives, a pending or running allocation is
+        simply still starting and is left alone. Once the job is dead nothing
+        will advance it, so any other status resolves to LOST: an allocation
+        that started no task produced no exit code to have earned SUCCESS.
+
         :param queue_item: The task history record for tracking this execution.
-        :type queue_item: TaskHistory
         :param writer_session: The dedicated session to use for log chunk
             persistence. When ``None``, log persistence is skipped.
-        :type writer_session: AsyncSession | None
         :return: The updated task history with execution details.
-        :rtype: TaskHistory
         """
         if queue_item.status != TaskHistoryStatusEnum.RUNNING:
             return queue_item
@@ -951,31 +1294,22 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             return queue_item
         alloc, job_id = resolved
 
-        task_states = alloc["TaskStates"]
+        task_states = _alloc_task_states(alloc)
         stale_skip = _detect_stale_skip(task_states)
+        capture_hold_ready = _detect_capture_hold_ready(alloc)
 
         try:
             job = self.get_job(job_id)
         except JobNotFoundError:
             queue_item.status = TaskHistoryStatusEnum.LOST
         else:
-            if job["Status"] == NOMAD_DEAD_JOB_STATUS:
-                last_modified_timestamp = alloc.get("ModifyTime")
-                if last_modified_timestamp:
-                    queue_item.finished_at = self.timestamp_to_datetime(
-                        last_modified_timestamp
-                    )
-                else:
-                    queue_item.finished_at = utc_now()
-
-                if stale_skip:
-                    queue_item.status = TaskHistoryStatusEnum.STALE
-                else:
-                    queue_item.status = self.get_task_history_status_from_alloc_status(
-                        alloc["ClientStatus"],
-                        queue_item.status,
-                        stopped=job.get("Stop", False),
-                    )
+            self._apply_terminal_status(
+                queue_item,
+                alloc,
+                job,
+                stale_skip=stale_skip,
+                capture_hold_ready=capture_hold_ready,
+            )
 
         if writer_session is not None:
             await self._persist_nomad_task_logs(
@@ -983,6 +1317,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 queue_item=queue_item,
                 alloc=alloc,
                 previous_allocation_id=previous_allocation_id,
+                capture_hold_ready=capture_hold_ready,
             )
 
         queue_item.execution_request.tracking.update(
@@ -994,6 +1329,85 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         queue_item.execution_request.tracking.pop("task_logs", None)
         return queue_item
 
+    def _apply_terminal_status(
+        self,
+        queue_item: TaskHistory,
+        alloc: dict[str, Any],
+        job: dict[str, Any],
+        *,
+        stale_skip: bool,
+        capture_hold_ready: bool,
+    ) -> None:
+        """Resolve and stamp the task history's status from the allocation.
+
+        Two detection paths, tried in order. The first keys on per-step task
+        states and fires while a hold still holds the allocation, so a held task
+        reaches its final status without waiting out the hold window. The second
+        is the pre-hold behaviour, retained unchanged both for allocations from
+        jobs registered before the hold step existed and as the fallback for any
+        case where Nomad skips a step rather than marking it ``dead``.
+
+        A stale-skip abort overrides the derived status on either path. An
+        operator stop overrides a success but never a failure, matching
+        :meth:`get_task_history_status_from_alloc_status`, where ``stopped``
+        guards only the ``COMPLETE`` arm: a payload that already failed is
+        reported ``FAILED`` even when a stop lands in the same window, so the
+        failure is not relabelled as an operator action.
+
+        :param queue_item: The running task history record to stamp.
+        :param alloc: The current Nomad allocation dict.
+        :param job: The Nomad job dict backing the allocation.
+        :param stale_skip: Whether the staleness preamble aborted the run.
+        :param capture_hold_ready: Whether every producing step has stopped
+            behind a live hold step.
+        """
+        task_states = _alloc_task_states(alloc)
+        if capture_hold_ready:
+            self._stamp_finished_at(queue_item, alloc)
+            if stale_skip:
+                queue_item.status = TaskHistoryStatusEnum.STALE
+                return
+            status = _status_from_step_states(alloc)
+            if job.get("Stop", False) and status is not TaskHistoryStatusEnum.FAILED:
+                status = TaskHistoryStatusEnum.STOPPED
+            queue_item.status = status
+            return
+
+        if job["Status"] == NOMAD_DEAD_JOB_STATUS:
+            self._stamp_finished_at(queue_item, alloc)
+            if stale_skip:
+                queue_item.status = TaskHistoryStatusEnum.STALE
+                return
+            status = self.get_task_history_status_from_alloc_status(
+                alloc.get("ClientStatus"),
+                queue_item.status,
+                stopped=job.get("Stop", False),
+            )
+            queue_item.status = (
+                status
+                if task_states or status in _DEAD_END_ALLOC_STATUSES
+                else TaskHistoryStatusEnum.LOST
+            )
+            return
+
+        if task_states:
+            return
+        dead_end_status = self.get_task_history_status_from_alloc_status(
+            alloc.get("ClientStatus"),
+            stopped=job.get("Stop", False),
+        )
+        if dead_end_status in _DEAD_END_ALLOC_STATUSES:
+            logger.warning(
+                "Allocation %s of task history %s reports %r with no task "
+                "states; marking %s",
+                alloc["ID"],
+                queue_item.id,
+                alloc.get("ClientStatus"),
+                dead_end_status,
+            )
+            self._stamp_finished_at(queue_item, alloc)
+            queue_item.status = dead_end_status
+
     async def _persist_nomad_task_logs(
         self,
         *,
@@ -1001,6 +1415,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         queue_item: TaskHistory,
         alloc: dict[str, Any],
         previous_allocation_id: str | None,
+        capture_hold_ready: bool = False,
     ) -> None:
         """Persist this sync cycle's delta logs into the chunk store.
 
@@ -1012,15 +1427,16 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         :param writer_session: The dedicated session used for log chunk
             persistence, supplied by the caller.
-        :type writer_session: AsyncSession
         :param queue_item: The running task history record.
-        :type queue_item: TaskHistory
         :param alloc: The current Nomad allocation dict.
-        :type alloc: dict[str, Any]
         :param previous_allocation_id: The ``allocation_id`` stored in
             ``tracking`` at the start of this sync cycle, or ``None`` when the
             record has not yet landed on an allocation.
-        :type previous_allocation_id: str | None
+        :param capture_hold_ready: Whether the allocation's producing steps have
+            all stopped behind a live hold step. Gates both the ``COMPLETE``
+            verdict and the release signal: while it is ``False`` some producer
+            may still be writing, so no stream can be called drained and the
+            hold must not be cut short.
         """
         alloc_id = alloc["ID"]
         alloc_epoch = alloc["CreateIndex"]
@@ -1051,10 +1467,169 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             force_flush=force_flush,
         )
         if force_flush:
-            await self._drain_terminal_logs(
+            drain_failures = await self._drain_terminal_logs(
                 writer_session, queue_item, alloc, alloc_epoch
             )
             await self._force_flush_remaining_streams(writer_session, queue_item.id)
+            await self._record_capture_outcomes(
+                writer_session,
+                queue_item,
+                alloc,
+                task_logs,
+                alloc_epoch,
+                drain_failures=drain_failures,
+                capture_hold_ready=capture_hold_ready,
+            )
+            if capture_hold_ready:
+                await self._release_capture_hold(alloc)
+
+    async def _record_capture_outcomes(
+        self,
+        writer_session: AsyncSession,
+        queue_item: TaskHistory,
+        alloc: dict[str, Any],
+        task_logs: dict[str, dict[str, Any]],
+        alloc_epoch: int,
+        *,
+        drain_failures: set[tuple[str, TaskLogType]],
+        capture_hold_ready: bool,
+    ) -> None:
+        """Record a capture verdict for every stream this allocation produced.
+
+        Writes a row per started ``(step, stream)`` pair even when the stream
+        emitted nothing, which is what lets a reader tell a silent step from a
+        lost one — the ordinary write path creates no row for an empty stream.
+        The hold step is skipped: it produces no task output and its own stream
+        only ends when the hold does.
+
+        A stream earns ``COMPLETE`` only when its own fetch succeeded *and* the
+        producer set is known to be finished. Where a hold is present but not
+        yet releasable, some step may still be writing, so "this stream is at
+        EOF" is not yet knowable and every verdict is capped at ``INCOMPLETE``.
+        An allocation with no hold at all — one registered before the hold step
+        existed — has nothing to wait on, so a clean fetch earns ``COMPLETE``
+        there on its own.
+
+        :param writer_session: The dedicated session used for log persistence.
+        :param queue_item: The task history record reaching a terminal status.
+        :param alloc: The current Nomad allocation dict.
+        :param task_logs: This cycle's per-step log payloads, carrying the
+            per-stream ``_fetch_failed`` flags from the pre-drain fetch.
+        :param alloc_epoch: The allocation ``CreateIndex`` the verdicts describe,
+            so a verdict from a superseded allocation cannot overwrite a newer.
+        :param drain_failures: The ``(step, stream)`` pairs whose re-fetch failed
+            during the terminal drain. A first fetch that succeeded says nothing
+            about the tail — the drain exists because ``logmon`` flushes
+            asynchronously — so a failure there means bytes may be missing.
+        :param capture_hold_ready: Whether the producing steps have all stopped
+            behind a live hold step.
+        """
+        # Presence is a membership test, not a readable state: a hold whose
+        # state is missing or malformed is still a hold, and treating it as
+        # absent would grant COMPLETE while a producer may still be writing.
+        hold_present = NomadStep.LOG_CAPTURE_HOLD in _alloc_task_states(alloc)
+        capture_known_final = capture_hold_ready or not hold_present
+        for step in _alloc_task_states(alloc):
+            if not NomadStep.is_persistable(step):
+                continue
+            if _alloc_step_state(alloc, step).get("StartedAt") is None:
+                continue
+            for stream in TaskLogType:
+                fetch_failed = (
+                    bool(task_logs.get(step, {}).get(f"{stream}_fetch_failed"))
+                    or (step, stream) in drain_failures
+                )
+                capture_status = (
+                    LogCaptureStatusEnum.COMPLETE
+                    if capture_known_final and not fetch_failed
+                    else LogCaptureStatusEnum.INCOMPLETE
+                )
+                await TaskHistoryLogWriter.record_capture_status(
+                    writer_session,
+                    queue_item.id,
+                    source=step,
+                    stream=stream,
+                    capture_status=capture_status,
+                    producer_epoch=alloc_epoch,
+                )
+
+    async def _release_capture_hold(
+        self, alloc: dict[str, Any], *, await_hold_start: bool = False
+    ) -> None:
+        """Signal the log-capture-hold step so Nomad may collect the allocation.
+
+        Re-reads the allocation first, because ``alloc`` is stale by the time a
+        release is due and the hold only reaches ``running`` shortly after the
+        last producing step dies. This is the only chance to release: the caller
+        has already stamped a terminal status, and the sync sweep only revisits
+        ``RUNNING`` histories. A hold still not running when the attempts run out
+        keeps the allocation until its own deadline, which is the bound the
+        design accepts.
+
+        How much slack the re-read needs differs by caller, which is what
+        ``await_hold_start`` selects. The sync path arrives after the terminal
+        drain's sleeps, so one read almost always finds the hold running. A stop
+        arrives immediately after deregistering, *before* Nomad has killed the
+        payload, so the poststop hold is typically still ``pending`` and a single
+        read would forfeit the release it exists to issue.
+
+        A failed release is not a failed capture. The bytes are already
+        persisted by the time this runs, and the step self-expires at its
+        deadline, so the failure is logged and the verdicts stand.
+
+        :param alloc: The Nomad allocation dict read at the start of the sync.
+        :param await_hold_start: Whether to poll for a hold that has not started
+            yet, on the terminal drain's cadence. ``False`` reads once.
+        """
+        alloc_id = alloc["ID"]
+        attempts = (
+            max(1, self.terminal_log_drain_max_attempts) if await_hold_start else 1
+        )
+        hold_state = None
+        for attempt in range(attempts):
+            if attempt:
+                await asyncio.sleep(self.terminal_log_drain_interval)
+            try:
+                current = self.backend.allocation.get_allocation(alloc_id)
+            except BaseNomadException:
+                logger.warning(
+                    "Could not re-read allocation %s to release the log-capture "
+                    "hold; it will expire at its own deadline",
+                    alloc_id,
+                    exc_info=True,
+                )
+                return
+            hold_state = _capture_hold_step_state(current)
+            if hold_state == NOMAD_RUNNING_TASK_STATE:
+                break
+            if hold_state is None or hold_state == NOMAD_DEAD_TASK_STATE:
+                # Absent, unreadable, or already over — waiting cannot make any
+                # of those signallable.
+                break
+
+        if hold_state != NOMAD_RUNNING_TASK_STATE:
+            logger.debug(
+                "Log-capture hold on allocation %s is %r rather than running; "
+                "leaving it to expire at its own deadline",
+                alloc_id,
+                hold_state,
+            )
+            return
+        try:
+            self.backend.client.allocation.signal_allocation(
+                alloc_id,
+                _CAPTURE_HOLD_RELEASE_SIGNAL,
+                task=NomadStep.LOG_CAPTURE_HOLD,
+            )
+        except (BaseNomadException, ValueError):
+            # ``signal_allocation`` decodes the response body, so a non-JSON or
+            # empty body surfaces as a ValueError rather than a Nomad error.
+            logger.warning(
+                "Could not release the log-capture hold on allocation %s; it will "
+                "expire at its own deadline",
+                alloc_id,
+                exc_info=True,
+            )
 
     async def _drain_terminal_logs(
         self,
@@ -1062,7 +1637,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         queue_item: TaskHistory,
         alloc: dict[str, Any],
         alloc_epoch: int,
-    ) -> None:
+    ) -> set[tuple[str, TaskLogType]]:
         """Fetch Nomad logs after terminal detection until every stream is quiet.
 
         Nomad's ``logmon`` flushes stdout/stderr to the readable log file
@@ -1084,14 +1659,25 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         only one stream polls the full window (correctness over latency; the
         window is ``hot``-tunable).
 
+        Anonymization withholds each stream's trailing partial line until a
+        newline completes it, so a stream holding a partial looks quiet. The
+        early-exit is suppressed while any stream is still withholding, and a
+        final ``flush_partial`` pass after the loop emits any line that never
+        received a newline (a process exiting without one) so it is persisted
+        rather than dropped.
+
         :param writer_session: The dedicated log writer session.
         :param queue_item: The terminal task history record being drained.
         :param alloc: The current Nomad allocation dict.
         :param alloc_epoch: The allocation's ``CreateIndex``, threaded into each
             write so a superseded allocation's bytes are discarded.
+        :return: The ``(step, stream)`` pairs whose re-fetch failed at any point
+            during the drain, so the caller can record their capture as
+            incomplete rather than trust the pre-drain fetch alone.
         """
-        advanced = set()
-        candidates = set()
+        advanced: set[tuple[str, TaskLogType]] = set()
+        candidates: set[tuple[str, TaskLogType]] = set()
+        fetch_failures: set[tuple[str, TaskLogType]] = set()
         for _ in range(self.terminal_log_drain_max_attempts):
             await asyncio.sleep(self.terminal_log_drain_interval)
             initial_offsets = await self._build_initial_log_offsets(
@@ -1103,11 +1689,23 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             candidates.update(
                 (step, log_type) for step in task_logs for log_type in TaskLogType
             )
+            fetch_failures.update(
+                (step, log_type)
+                for step in task_logs
+                for log_type in TaskLogType
+                if task_logs[step].get(f"{log_type}_fetch_failed")
+            )
             produced = {
                 (step, log_type)
                 for step in task_logs
                 for log_type in TaskLogType
                 if task_logs[step].get(log_type)
+            }
+            withholding = {
+                (step, log_type)
+                for step in task_logs
+                for log_type in TaskLogType
+                if task_logs[step].get(f"{log_type}_withheld")
             }
             if produced:
                 advanced |= produced
@@ -1118,8 +1716,40 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     task_logs,
                     force_flush=True,
                 )
-            elif advanced == candidates:
-                return
+            elif advanced == candidates and not withholding:
+                break
+
+        # Terminal flush: emit any trailing line that never received a newline.
+        # Runs on both loop-exit branches so a withheld remainder is never lost.
+        # Gated on whether withholding was even possible, not on the drain's
+        # polling budget -- ``_should_anonymize`` requires truthy entities, so
+        # this is an exact substitution that keeps AC3's no-loss guarantee
+        # independent of ``terminal_log_drain_max_attempts``.
+        if not queue_item.anonymized_entities:
+            return fetch_failures
+        final_offsets = await self._build_initial_log_offsets(
+            writer_session, queue_item.id, alloc_epoch
+        )
+        final_logs = self.get_logs_for_allocation(
+            alloc,
+            final_offsets,
+            queue_item.anonymized_entities,
+            flush_partial=True,
+        )
+        fetch_failures.update(
+            (step, log_type)
+            for step in final_logs
+            for log_type in TaskLogType
+            if final_logs[step].get(f"{log_type}_fetch_failed")
+        )
+        await self._write_nomad_deltas(
+            writer_session,
+            queue_item.id,
+            alloc_epoch,
+            final_logs,
+            force_flush=True,
+        )
+        return fetch_failures
 
     @staticmethod
     async def _build_initial_log_offsets(
@@ -1424,16 +2054,21 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     ) -> None:
         """Push logs to the asynchronous queue for processing.
 
+        Anonymization runs on complete lines only, so the trailing partial line
+        of each frame is withheld in ``pending`` and carried across reconnects
+        until a newline completes it (see :meth:`_decode_live_frame`). When the
+        stream ends with a withheld remainder still pending -- a process
+        exiting without a trailing newline -- it is redacted and pushed to the
+        queue before the ``msg=None`` sentinel, so it is delivered rather than
+        dropped.
+
         :param alloc: The allocation details containing the task states.
-        :type alloc: dict[str, Any]
         :param step: The task step name.
-        :type step: str
         :param log_type: The type of log to stream ('stdout' or 'stderr').
-        :type log_type: TaskLogType
         :param queue: The asyncio queue to push log lines into.
-        :type queue: asyncio.Queue
         :param start_offset: The offset to start reading logs from. Defaults to 0.
-        :type start_offset: int
+        :param anonymize_entities: PII entities to anonymize in run-script /
+            step1 output. When ``None``, no anonymization is performed.
         """
         timeout = ClientTimeout(sock_read=self.log_socket_read_timeout)
         params = {
@@ -1443,6 +2078,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             "offset": start_offset,
         }
         state = "running"
+        pending = bytearray()
         while state == "running":
             alloc_id = alloc["ID"]
             stream_start = None
@@ -1455,6 +2091,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     params=params,
                     client_timeout=timeout,
                     anonymize_entities=anonymize_entities,
+                    pending=pending,
                 )
             except asyncio.CancelledError:
                 self._log_stream_cancelled(
@@ -1487,7 +2124,76 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     start_offset,
                 )
                 break
+        if pending:
+            decoded_msg = _decode_and_anonymize(
+                bytes(pending), anonymize_entities or None
+            )
+            await queue.put(
+                TaskLog(
+                    step=step,
+                    type=log_type,
+                    msg=decoded_msg,
+                    offset=params["offset"],
+                )
+            )
         await queue.put(TaskLog(step=step, type=log_type, msg=None))
+
+    def _decode_live_frame(
+        self,
+        pending: bytearray,
+        raw_msg: str,
+        step: str,
+        offset: int,
+        anonymize_entities: set[PIIEntity] | None,
+        *,
+        alloc_id: str,
+        log_type: TaskLogType,
+    ) -> tuple[str | None, int]:
+        """Decode a live log frame, anonymizing per complete line.
+
+        For anonymized steps the trailing partial line is kept in ``pending``
+        and withheld until a later frame supplies its newline, so a PII token
+        split across frames is anonymized whole rather than per fragment.
+        When the withheld remainder would exceed
+        ``log_anonymization_max_withheld_bytes``, the whole buffer is flushed
+        instead and ``pending`` is cleared so the live viewer keeps advancing.
+        Non-anonymized steps decode and emit each frame unchanged.
+
+        :param pending: The withheld-remainder buffer, mutated in place.
+        :param raw_msg: This frame's base64-encoded ``Data`` field.
+        :param step: The Nomad task name within the allocation.
+        :param offset: The raw Nomad byte offset at the end of this frame.
+        :param anonymize_entities: PII entities to redact, or ``None``.
+        :param alloc_id: The Nomad allocation identifier (for forced-flush
+            diagnostics).
+        :param log_type: The log stream type (stdout or stderr).
+        :return: ``(text, resume_offset)`` to emit, where ``resume_offset`` is
+            rolled back over any withheld remainder so a reconnecting client
+            re-fetches it; ``(None, offset)`` when the whole buffer is still a
+            partial line and nothing should be emitted yet. After a forced
+            ceiling flush ``pending`` is empty, so the resume offset is not
+            rolled back.
+        """
+        if not _should_anonymize(step, anonymize_entities):
+            return b64decode_str(raw_msg), offset
+        pending.extend(b64decode(raw_msg))
+        split = split_complete_lines(
+            bytes(pending), max_withheld=self.log_anonymization_max_withheld_bytes
+        )
+        complete = split.complete
+        if not complete:
+            return None, offset
+        if split.forced:
+            _warn_forced_flush(
+                alloc_id,
+                step,
+                log_type,
+                self.log_anonymization_max_withheld_bytes,
+                "the live viewer can advance",
+            )
+        del pending[: len(complete)]
+        decoded_msg = _decode_and_anonymize(complete, anonymize_entities)
+        return decoded_msg, offset - len(pending)
 
     async def _consume_nomad_log_stream(
         self,
@@ -1498,6 +2204,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         params: dict[str, Any],
         client_timeout: ClientTimeout,
         anonymize_entities: set[PIIEntity] | None,
+        pending: bytearray,
     ) -> tuple[str, dict[str, Any], float | None]:
         """Perform a single Nomad log streaming HTTP request and consume chunks.
 
@@ -1524,6 +2231,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type client_timeout: ClientTimeout
         :param anonymize_entities: Optional PII entities to redact for specific steps.
         :type anonymize_entities: set[PIIEntity] | None
+        :param pending: Caller-owned buffer holding the trailing partial line
+            withheld from anonymization; mutated in place and carried across
+            reconnects so a token split at a frame boundary is redacted whole.
         :return: Nomad task ``State`` string, ``running`` to continue the outer
             loop, or a ``_NOMAD_LOG_STREAM_*`` sentinel; the allocation dict (possibly
             refreshed); and monotonic time when response body reads began, or
@@ -1541,9 +2251,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 timeout=client_timeout,
             ) as response:
                 logger.debug("Log response status: %s", response.status)
+                # The 404 clears once Nomad serves this step's logs, so retrying
+                # is only useful while the allocation still lists the step.
+                step_state = _alloc_step_state(alloc, step)
                 if (
                     response.status == status.HTTP_404_NOT_FOUND
-                    and alloc["TaskStates"][step]["StartedAt"] is None
+                    and step_state
+                    and step_state.get("StartedAt") is None
                 ):
                     logger.debug(
                         "Task %s of alloc %s has not started yet. Retrying in %s seconds...",
@@ -1592,14 +2306,23 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                                 offset,
                                 elapsed,
                             )
-                        decoded_msg = b64decode_str(msg)
-                        if step in ("run-script", "step1"):
-                            decoded_msg = anonymize_text(
-                                decoded_msg, anonymize_entities or set()
-                            )
+                        decoded_msg, emit_offset = self._decode_live_frame(
+                            pending,
+                            msg,
+                            step,
+                            offset,
+                            anonymize_entities,
+                            alloc_id=alloc_id,
+                            log_type=log_type,
+                        )
+                        if decoded_msg is None:
+                            continue
                         await queue.put(
                             TaskLog(
-                                step=step, type=log_type, msg=decoded_msg, offset=offset
+                                step=step,
+                                type=log_type,
+                                msg=decoded_msg,
+                                offset=emit_offset,
                             )
                         )
                     elif empty_data_count >= self.log_socket_read_timeout:
@@ -1611,7 +2334,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                             alloc["JobID"], alloc["EvalID"]
                         )
                         return (
-                            alloc["TaskStates"][step]["State"],
+                            # An empty state ends the caller's loop, so a step
+                            # the refreshed allocation dropped stops the stream.
+                            _alloc_step_state(alloc, step).get("State", ""),
                             alloc,
                             stream_start,
                         )
@@ -1629,7 +2354,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         self.get_last_allocation(job_id, eval_id)
 
     def job_eval_ids_for_stream_logs(self, queue_item: TaskHistory) -> tuple[str, str]:
-        """Return job_id and evaluation_id from task history tracking for log streaming."""
+        """Return job_id and evaluation_id from task history tracking for log streaming.
+
+        :param queue_item: The task history record whose tracking carries the ids.
+        :return: The job and evaluation identifiers, in that order.
+        """
         return (
             queue_item.execution_request.tracking["job_id"],
             queue_item.execution_request.tracking["evaluation_id"],
@@ -1645,24 +2374,27 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         Retrieves the allocation details and concurrently streams stdout and stderr logs
         for each task step. Yields ``TaskLog`` instances as log lines are received.
 
+        The log-capture hold is not a step a viewer sees: it emits nothing, and
+        its streams stay open for as long as it holds the allocation, so
+        following them would keep the viewer waiting past the payload's own end.
+
         :param queue_item: The task history record for tracking the logs.
-        :type queue_item: TaskHistory
         :param start_offsets: A dictionary containing the starting offsets for each
             step and log type. If None, defaults to starting from the beginning.
-        :type start_offsets: dict[str, dict[str, int]] | None
         :return: An async generator yielding ``TaskLog`` instances containing
             log messages.
-        :rtype: AsyncGenerator[TaskLog | None, None]
         """
         job_id, eval_id = self.job_eval_ids_for_stream_logs(queue_item)
         alloc = self.get_last_allocation(job_id, eval_id)
         active_streams = set()
         queue = asyncio.Queue()
         push_logs_tasks = []
-        task_states = alloc["TaskStates"]
+        task_states = _alloc_task_states(alloc)
         if task_states:
             start_offsets = defaultdict(dict, start_offsets or {})
             for step, log_type in product(task_states, TaskLogType):
+                if not NomadStep.is_persistable(step):
+                    continue
                 stream = (step, log_type)
                 logger.debug("Adding %s to active_streams", stream)
                 active_streams.add(stream)

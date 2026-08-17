@@ -15,15 +15,19 @@
 
 """Test the connectivity check service function."""
 
+import ast
 import json
 from itertools import product
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+import app.tasks.connectivity.service as connectivity_service
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.tasks import hook_resolver
 from app.tasks.connectivity.constants import (
     PROVISIONING_TIMEOUT,
 )
@@ -39,6 +43,7 @@ from app.tasks.connectivity.service import (
     POLL_INTERVAL,
 )
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
+from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
@@ -62,6 +67,25 @@ CONNECT_START_CALL = 3
 # 2 post-terminal-sync (SUCCESS, no logs), 3-4 ``_fetch_fresh_task_history``
 # retries (empty, then populated).
 FRESH_FETCH_POPULATE_CALL = 4
+
+
+def test_connectivity_module_has_no_bare_nomad_step_literals() -> None:
+    """Assert service.py spells Nomad step names through NomadStep, not literals.
+
+    Asserts the absence of every step wire value rather than the presence of one
+    enum reference: a presence check stays green when either call site reverts to
+    a literal, which is the only regression this guard exists to catch.
+    """
+    source = Path(connectivity_service.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    literals = sorted(
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value in set(NomadStep)
+    )
+    assert not literals, f"bare Nomad step literals in service.py: {literals}"
 
 
 @pytest.fixture(autouse=True)
@@ -206,6 +230,21 @@ class TestCheckConnectivityRealSession:
         return await TaskManager.create(session, task_write)
 
     @pytest_asyncio.fixture
+    async def recorder_run_python_task(self, session: AsyncSession) -> Task:
+        """Persist a ``run-python`` task row that declares a run-result recorder."""
+        task_write = TaskWrite.model_validate(
+            TaskFactory.build(
+                name="run-python",
+                backend=TaskBackendEnum.NOMAD,
+                is_template=False,
+                protected=False,
+                alert_on_fail=False,
+                run_result_recorder="pkg:rec",
+            )
+        )
+        return await TaskManager.create(session, task_write)
+
+    @pytest_asyncio.fixture
     async def async_session_maker(self, session: AsyncSession):
         """Return a session-maker bound to the current test engine."""
         return get_async_session_maker_from_engine(session.bind)
@@ -307,9 +346,70 @@ class TestCheckConnectivityRealSession:
 
         assert result.success is True
         assert result.error is None
-        assert await TaskHistoryLogManager.exists_for_task(
-            session, result.task_history_id
+        assert await TaskHistoryLogManager.exists(
+            session, task_history_id=result.task_history_id
         )
+
+    async def test_terminal_run_records_nothing(
+        self,
+        session: AsyncSession,
+        recorder_run_python_task: Task,
+        async_session_maker,
+        mocker,
+    ) -> None:
+        """Skip recording for the probe's own run even when it reaches SUCCESS.
+
+        The poll loop drives ``sync_task_history`` directly rather than through
+        either sync seam, so a recorder declared on the shared ``run-python`` task
+        must not observe it — the probe parses its own verdict.
+        """
+        recorded = []
+
+        async def _recorder(db, history, result):
+            recorded.append(result)
+
+        request = _make_request(timeout=POLL_INTERVAL * 2)
+
+        async def sync_task_history(
+            queue_item: TaskHistory,
+            writer_session: AsyncSession | None = None,
+        ) -> TaskHistory:
+            assert writer_session is not None
+            await self._append_log(
+                writer_session,
+                queue_item.id,
+                TaskLogType.STDOUT,
+                json.dumps({"success": True}),
+            )
+            queue_item.status = TaskHistoryStatusEnum.SUCCESS
+            return queue_item
+
+        mock_executor = MagicMock(spec=BaseExecutor)
+        mock_executor.sync_task_history = sync_task_history
+
+        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder}, clear=True)
+        with (
+            patch(
+                "app.tasks.connectivity.service.dispatch_queue_item",
+                side_effect=self._real_dispatch_running,
+            ),
+            patch(
+                "app.tasks.connectivity.service.get_executor_for_task",
+                return_value=mock_executor,
+            ),
+            patch(
+                "app.tasks.connectivity.service.get_async_session_maker",
+                return_value=async_session_maker,
+            ),
+            patch(
+                "app.tasks.run_result.get_async_session_maker",
+                return_value=async_session_maker,
+            ),
+        ):
+            result = await check_connectivity(session, request)
+
+        assert result.success is True
+        assert recorded == []
 
     async def test_unresolvable_payload_fails_terminally(
         self,
@@ -538,8 +638,6 @@ class TestCheckConnectivityRealSession:
         mock_executor = MagicMock(spec=BaseExecutor)
         mock_executor.sync_task_history = sync_task_history
 
-        from app.tasks.connectivity import service as connectivity_service
-
         original_expire_and_fetch = connectivity_service._expire_and_fetch
         logs_written = {"done": False}
 
@@ -602,8 +700,6 @@ class TestCheckConnectivityRealSession:
         mock_executor = MagicMock(spec=BaseExecutor)
         mock_executor.sync_task_history = sync_task_history
 
-        from app.tasks.connectivity import service as connectivity_service
-
         original_expire_and_fetch = connectivity_service._expire_and_fetch
         logs_written = {"done": False}
 
@@ -664,8 +760,6 @@ class TestCheckConnectivityRealSession:
 
         mock_executor = MagicMock(spec=BaseExecutor)
         mock_executor.sync_task_history = sync_task_history
-
-        from app.tasks.connectivity import service as connectivity_service
 
         original_expire_and_fetch = connectivity_service._expire_and_fetch
         expire_calls = {"n": 0}
@@ -763,7 +857,7 @@ class TestCheckConnectivityRealSession:
     ) -> None:
         """Verify the polling loop survives the deferred-column lazy-load race.
 
-        Reproduces the runtime bug surfaced by SEP-935 e2e QA: after the
+        Reproduces the runtime bug surfaced by e2e QA: after the
         production ``dispatch_queue_item`` commits and refreshes the fresh
         ``TaskHistory``, the ``execution_request`` attribute is **unloaded**
         because of the deferred ``column_property``. The very first polling
@@ -826,7 +920,7 @@ class TestCheckConnectivityRealSession:
         run_python_task: Task,
         async_session_maker,
     ) -> None:
-        """Regression for SEP-1034: supply a writer session to log persistence.
+        """Assert log persistence receives a writer session during polling.
 
         ``check_connectivity`` calls ``executor.sync_task_history`` inside its
         polling loop; the Nomad executor persists ``run-script`` stdout into
@@ -899,8 +993,8 @@ class TestCheckConnectivityRealSession:
         )
         assert result.success is True
         assert result.error is None
-        assert await TaskHistoryLogManager.exists_for_task(
-            session, result.task_history_id
+        assert await TaskHistoryLogManager.exists(
+            session, task_history_id=result.task_history_id
         )
 
     async def test_provisioning_phase_does_not_consume_connect_budget(

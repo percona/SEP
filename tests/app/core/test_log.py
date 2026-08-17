@@ -16,16 +16,26 @@
 """Test contextual logging utilities."""
 
 import logging
+import logging.config
 
+from app.core.config import LOGGING_CONFIG
 from app.core.log import (
     _CONTEXT_VARS,
     clear_log_context,
     ContextFilter,
+    ContextFormatter,
     correlation_id_var,
     request_id_var,
     set_log_context,
     user_var,
 )
+
+_DEFAULT_FORMATTER = LOGGING_CONFIG["formatters"]["default"]
+_UVICORN_FORMATTER = LOGGING_CONFIG["formatters"]["uvicorn"]
+_DEFAULT_FMT = _DEFAULT_FORMATTER["fmt"]
+_DEFAULT_SKIP_KEYS = _DEFAULT_FORMATTER["skip_keys"]
+_UVICORN_FMT = _UVICORN_FORMATTER["fmt"]
+_UVICORN_SKIP_KEYS = _UVICORN_FORMATTER["skip_keys"]
 
 
 def _make_record() -> logging.LogRecord:
@@ -39,6 +49,11 @@ def _make_record() -> logging.LogRecord:
         args=None,
         exc_info=None,
     )
+
+
+def _expected_base(record: logging.LogRecord, fmt: str) -> str:
+    """Render ``record`` with the base ``fmt`` only (no context suffix)."""
+    return logging.Formatter(fmt=fmt).format(record)
 
 
 class TestContextFilter:
@@ -124,3 +139,133 @@ class TestClearLogContext:
 
         for var in _CONTEXT_VARS.values():
             assert var.get() == "-"
+
+
+class TestContextFormatter:
+    """Test the ContextFormatter that appends non-default log context fields."""
+
+    def setup_method(self) -> None:
+        """Reset context vars before each test."""
+        clear_log_context()
+
+    def teardown_method(self) -> None:
+        """Reset context vars after each test."""
+        clear_log_context()
+
+    def test_defaults_render_base_only(self) -> None:
+        """Assert all ``"-"`` defaults are omitted from the appended context."""
+        correlation_id_var.set("corr-456")
+
+        record = _make_record()
+        ContextFilter().filter(record)
+
+        formatter = ContextFormatter(fmt=_DEFAULT_FMT, skip_keys=_DEFAULT_SKIP_KEYS)
+        result = formatter.format(record)
+
+        assert result == _expected_base(record, _DEFAULT_FMT)
+
+    def test_request_context_appends_fields(self) -> None:
+        """Assert request-context fields are appended in stable order."""
+        set_log_context(
+            request_id="req-123",
+            correlation_id="corr-456",
+            user="alice",
+            endpoint="/api/test",
+        )
+
+        record = _make_record()
+        ContextFilter().filter(record)
+
+        formatter = ContextFormatter(fmt=_DEFAULT_FMT, skip_keys=_DEFAULT_SKIP_KEYS)
+        result = formatter.format(record)
+
+        assert result == (
+            _expected_base(record, _DEFAULT_FMT)
+            + " request_id='req-123' user='alice' endpoint='/api/test'"
+        )
+        assert "correlation_id=" not in result
+
+    def test_task_context_appends_fields(self) -> None:
+        """Assert task-context fields are appended for Celery-like logs."""
+        set_log_context(
+            correlation_id="corr-456",
+            task_id="task-1",
+            task_name="my_task",
+        )
+
+        record = _make_record()
+        ContextFilter().filter(record)
+
+        formatter = ContextFormatter(fmt=_DEFAULT_FMT, skip_keys=_DEFAULT_SKIP_KEYS)
+        result = formatter.format(record)
+
+        assert (
+            result
+            == _expected_base(record, _DEFAULT_FMT)
+            + " task_id='task-1' task_name='my_task'"
+        )
+        assert "request_id=" not in result
+        assert "endpoint=" not in result
+        assert "user=" not in result
+
+    def test_uvicorn_layout_preserved(self) -> None:
+        """Assert the uvicorn base layout remains intact."""
+        set_log_context(correlation_id="corr-999", user="alice")
+
+        record = _make_record()
+        ContextFilter().filter(record)
+
+        formatter = ContextFormatter(fmt=_UVICORN_FMT, skip_keys=_UVICORN_SKIP_KEYS)
+        result = formatter.format(record)
+
+        assert result == _expected_base(record, _UVICORN_FMT) + " user='alice'"
+
+    def test_skip_keys_controls_suffix_omission(self) -> None:
+        """Assert only configured skip_keys are omitted from the suffix."""
+        set_log_context(correlation_id="corr-456", request_id="req-123", user="alice")
+
+        record = _make_record()
+        ContextFilter().filter(record)
+
+        without_skip = ContextFormatter(fmt=_DEFAULT_FMT)
+        with_skip = ContextFormatter(fmt=_DEFAULT_FMT, skip_keys=_DEFAULT_SKIP_KEYS)
+
+        assert "correlation_id='corr-456'" in without_skip.format(record)
+        assert "correlation_id=" not in with_skip.format(record)
+        assert "request_id='req-123'" in with_skip.format(record)
+
+    def test_control_characters_are_repr_escaped(self) -> None:
+        """Assert control characters in context values are escaped via repr."""
+        set_log_context(endpoint="/api/\x1b[31mfoo\nbar\x00")
+
+        record = _make_record()
+        ContextFilter().filter(record)
+
+        formatter = ContextFormatter(fmt=_DEFAULT_FMT, skip_keys=_DEFAULT_SKIP_KEYS)
+        result = formatter.format(record)
+
+        assert "\x1b" not in result
+        assert "\n" not in result.split(" endpoint=", 1)[-1]
+        assert "endpoint='/api/\\x1b[31mfoo\\nbar\\x00'" in result
+
+
+class TestLoggingConfig:
+    """Test that ``LOGGING_CONFIG`` wires ``ContextFormatter`` for every process."""
+
+    def test_dict_config_resolves_context_formatters(self) -> None:
+        """Assert both formatters resolve with matching fmt and skip_keys."""
+        logging.config.dictConfig(LOGGING_CONFIG)
+
+        default_formatter = logging.getLogger().handlers[0].formatter
+        uvicorn_formatter = logging.getLogger("uvicorn").handlers[0].formatter
+
+        assert isinstance(default_formatter, ContextFormatter)
+        assert isinstance(uvicorn_formatter, ContextFormatter)
+        assert default_formatter._style._fmt == _DEFAULT_FMT
+        assert uvicorn_formatter._style._fmt == _UVICORN_FMT
+        assert default_formatter._skip_keys == frozenset(_DEFAULT_SKIP_KEYS)
+        assert uvicorn_formatter._skip_keys == frozenset(_UVICORN_SKIP_KEYS)
+        for key in default_formatter._skip_keys:
+            assert f"%({key})s" in default_formatter._style._fmt
+        for key in uvicorn_formatter._skip_keys:
+            assert f"%({key})s" in uvicorn_formatter._style._fmt

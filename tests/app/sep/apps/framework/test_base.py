@@ -18,8 +18,10 @@
 from pathlib import Path
 
 from fastapi import APIRouter
+from sqlalchemy_celery_beat.models import Period
 
-from app.sep.apps.framework.base import BaseApp
+from app.core.celery.models import IntervalSchedule
+from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 
 
 class TestBaseAppDisplayName:
@@ -49,21 +51,17 @@ class TestBaseAppArbitraryTypes:
     def test_accepts_live_api_router(self) -> None:
         """A live ``APIRouter`` is accepted on the router fields."""
         api_router = APIRouter()
-        jinja_router = APIRouter()
         app = BaseApp(
             name="Checksums",
             uri_path="/checksums",
             api_router=api_router,
-            jinja_router=jinja_router,
         )
         assert app.api_router is api_router
-        assert app.jinja_router is jinja_router
 
     def test_router_fields_default_to_none(self) -> None:
         """Both router fields default to ``None`` when unset."""
         app = BaseApp(name="Inventory", uri_path="/inventory")
         assert app.api_router is None
-        assert app.jinja_router is None
 
 
 class TestBaseAppSchemaAlias:
@@ -106,3 +104,67 @@ class TestBaseAppArtifactBaseDirs:
             artifact_base_dirs={"dipper": lambda: Path("/tmp/payloads")},
         )
         assert app.artifact_base_dirs["dipper"]() == Path("/tmp/payloads")
+
+
+class TestBaseAppPeriodicTaskSchedules:
+    """Cover the ``periodic_task_schedules`` beat-contribution seam."""
+
+    def test_periodic_task_schedules_defaults_to_none(self) -> None:
+        """Return ``None`` when the field is unset."""
+        app = BaseApp(name="Inventory", uri_path="/inventory")
+        assert app.periodic_task_schedules is None
+
+    def test_periodic_task_schedules_carries_list_declaration(self) -> None:
+        """Carry a plain list of app-owned schedule specs."""
+        interval = IntervalSchedule(every=10, period=Period.MINUTES)
+        specs = [
+            AppPeriodicTask(
+                name="sep__example",
+                task="example_task",
+                schedule=lambda: interval,
+            ),
+        ]
+        app = BaseApp(
+            name="Example",
+            uri_path="/example",
+            periodic_task_schedules=specs,
+        )
+        assert app.periodic_task_schedules is specs
+        assert app.periodic_task_schedules[0].name == "sep__example"
+        assert app.periodic_task_schedules[0].schedule() == interval
+
+    def test_periodic_task_schedules_carries_callable_declaration(self) -> None:
+        """Carry a declared factory that returns specs when called."""
+        interval = IntervalSchedule(every=10, period=Period.MINUTES)
+        specs = [
+            AppPeriodicTask(
+                name="sep__example",
+                task="example_task",
+                schedule=lambda: interval,
+            ),
+        ]
+
+        def _factory() -> list[AppPeriodicTask]:
+            return specs
+
+        app = BaseApp(
+            name="Example",
+            uri_path="/example",
+            periodic_task_schedules=_factory,
+        )
+        assert app.periodic_task_schedules is _factory
+        assert app.periodic_task_schedules() == specs
+
+
+class TestBaseAppUsesTaskData:
+    """Cover the ``uses_task_data`` shared task-route opt-in."""
+
+    def test_uses_task_data_defaults_to_false(self) -> None:
+        """Return ``False`` when the field is unset, so the shared routes stay off."""
+        app = BaseApp(name="Inventory", uri_path="/inventory")
+        assert app.uses_task_data is False
+
+    def test_uses_task_data_accepts_explicit_opt_in(self) -> None:
+        """Carry an explicit opt-in on a plain ``BaseApp``."""
+        app = BaseApp(name="ATW", uri_path="/atw", uses_task_data=True)
+        assert app.uses_task_data is True

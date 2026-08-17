@@ -27,6 +27,7 @@ from app.tasks.crud import (
     TaskHistoryManager,
 )
 from app.tasks.models import (
+    LogCaptureStatusEnum,
     TaskHistoryLogState,
     TaskLogType,
 )
@@ -231,6 +232,95 @@ class TaskHistoryLogWriter:
         )
 
     @classmethod
+    async def record_capture_status(
+        cls,
+        session: AsyncSession,
+        task_history_id: int,
+        *,
+        source: str,
+        stream: TaskLogType,
+        capture_status: LogCaptureStatusEnum,
+        producer_epoch: int | None = None,
+    ) -> None:
+        """Record how completely ``(source, stream)`` was captured.
+
+        Creates the state row when none exists, which is what lets a reader
+        tell a stream that produced no bytes from one whose bytes were lost:
+        :meth:`append` returns early for a fresh empty stream, so without this
+        the most common case leaves no row at all. The offsets and the staging
+        bytes are re-written unchanged; the row's audit columns and ``version``
+        advance as they do on any state write, so this is not a free-standing
+        column update.
+
+        :param session: The SQLAlchemy asynchronous session. The writer commits
+            on success so callers are responsible only for rollback on failure.
+        :param task_history_id: The ``TaskHistory`` identifier.
+        :param source: The execution step name (Nomad task name or
+            ``"execution"`` for Celery callables).
+        :param stream: The log stream (stdout or stderr) being classified.
+        :param capture_status: The verdict to record for this stream.
+        :param producer_epoch: The producer-generation stamp the verdict
+            describes (for example a Nomad allocation ``CreateIndex``). When it
+            is *older* than the epoch the row (or, on the first-insert path, the
+            task-level high-water mark) already carries, the write is discarded:
+            it reports on a producer the frontier has moved past, and applying
+            it would overwrite a newer producer's verdict. ``None`` leaves the
+            row's epoch untouched.
+        :raises LogWriterConflictError: If the optimistic-locking retries are
+            exhausted without converging on a successful update.
+        """
+        for _ in range(_MAX_VERSION_RETRIES):
+            state = await TaskHistoryLogStateManager.get_for_stream(
+                session, task_history_id, source, stream
+            )
+            is_new = state is None
+            if state is None:
+                state = TaskHistoryLogStateManager.build_default(
+                    task_history_id, source, stream
+                )
+
+            if producer_epoch is not None:
+                guard_epoch = state.producer_epoch
+                if is_new:
+                    guard_epoch = await TaskHistoryManager.get_log_producer_epoch(
+                        session, task_history_id, for_update=True
+                    )
+                if producer_epoch < guard_epoch:
+                    await cls._release_first_insert_lock(session, is_new=is_new)
+                    return
+
+            new_producer_epoch = (
+                producer_epoch if producer_epoch is not None else state.producer_epoch
+            )
+            applied = await cls._persist_state(
+                session=session,
+                task_history_id=task_history_id,
+                source=source,
+                stream=stream,
+                is_new=is_new,
+                new_version=state.version + 1,
+                old_version=state.version,
+                persisted_offset=state.persisted_offset,
+                producer_offset=state.producer_offset,
+                producer_fetch_offset=state.producer_fetch_offset,
+                producer_epoch=new_producer_epoch,
+                staging=state.staging,
+                now=utc_now(),
+                capture_status=capture_status,
+            )
+
+            if applied:
+                await session.commit()
+                return
+            await session.rollback()
+
+        raise LogWriterConflictError(
+            f"TaskHistoryLogWriter: exhausted {_MAX_VERSION_RETRIES} capture-status "
+            f"retries for task_history_id={task_history_id} source={source!r} "
+            f"stream={stream}"
+        )
+
+    @classmethod
     async def drain_and_reset_allocation_frontier(
         cls,
         session: AsyncSession,
@@ -276,13 +366,14 @@ class TaskHistoryLogWriter:
                     now=now,
                 )
                 drained_bytes = len(row.staging)
-                applied = await TaskHistoryLogStateManager.update_row_if_version(
-                    session,
+                applied = await cls._persist_state(
+                    session=session,
                     task_history_id=task_history_id,
                     source=row.source,
                     stream=row.stream,
-                    old_version=row.version,
+                    is_new=False,
                     new_version=row.version + 1,
+                    old_version=row.version,
                     persisted_offset=new_persisted,
                     producer_offset=row.producer_offset,
                     producer_fetch_offset=row.producer_fetch_offset,
@@ -544,40 +635,37 @@ class TaskHistoryLogWriter:
         producer_epoch: int,
         staging: bytes,
         now: datetime,
+        capture_status: LogCaptureStatusEnum | None = None,
     ) -> bool:
         """Insert or update the state row and return whether we won the race.
 
         :param session: The SQLAlchemy asynchronous session.
-        :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier.
-        :type task_history_id: int
         :param source: The execution step name.
-        :type source: str
         :param stream: The log stream.
-        :type stream: TaskLogType
         :param is_new: Whether the state row was freshly built (``True``) or
             loaded from the DB (``False``).
-        :type is_new: bool
         :param new_version: The bumped version counter to write.
-        :type new_version: int
         :param old_version: The version observed on the loaded state row, or
             ``0`` for a new row.
-        :type old_version: int
         :param persisted_offset: The advanced user-facing persisted offset.
-        :type persisted_offset: int
         :param producer_offset: The producer-relative offset to persist.
-        :type producer_offset: int
         :param producer_fetch_offset: The raw producer-space fetch offset to
             persist.
         :param producer_epoch: The producer-generation stamp to persist.
         :param staging: The remaining staging buffer to persist.
-        :type staging: bytes
         :param now: The update timestamp.
-        :type now: datetime
+        :param capture_status: The capture verdict to write, or ``None`` to
+            leave the stored verdict untouched on an update and take the
+            column's own default on an insert. Omitting it is what keeps a
+            byte-appending write from downgrading a stream already recorded
+            ``COMPLETE``.
         :return: Whether the insert or optimistic-locked update succeeded.
-        :rtype: bool
         """
         if is_new:
+            insert_verdict = (
+                {"capture_status": capture_status} if capture_status is not None else {}
+            )
             return await TaskHistoryLogStateManager.insert_row_idempotent(
                 session,
                 task_history_id=task_history_id,
@@ -590,6 +678,7 @@ class TaskHistoryLogWriter:
                 staging=staging,
                 version=new_version,
                 now=now,
+                **insert_verdict,
             )
         return await TaskHistoryLogStateManager.update_row_if_version(
             session,
@@ -604,6 +693,7 @@ class TaskHistoryLogWriter:
             producer_epoch=producer_epoch,
             staging=staging,
             now=now,
+            capture_status=capture_status,
         )
 
     @classmethod

@@ -22,9 +22,10 @@ import {
   refreshAccessToken,
   setOnRefreshed,
   setOnUnauthorized,
+  setTokenMinter,
   setTokenProvider,
 } from '../src/client';
-import { postSession } from '../src/auth';
+import { postSession, postSessionExchange } from '../src/auth';
 import { ApiError } from '../src/errors';
 import { server } from './msw-server';
 
@@ -43,6 +44,7 @@ afterEach(() => {
   setTokenProvider(() => null);
   setOnUnauthorized(() => {});
   setOnRefreshed(() => {});
+  setTokenMinter(null);
 });
 
 describe('apiClient — Bearer token injection', () => {
@@ -194,6 +196,35 @@ describe('postSession — ambient auto-login', () => {
     );
 
     await expect(postSession()).rejects.toBeInstanceOf(ApiError);
+    expect(onUnauth).not.toHaveBeenCalled();
+  });
+});
+
+describe('postSessionExchange — embedded-UI bearer', () => {
+  it('returns the exchange token shape on a 200 from /oauth/session/exchange', async () => {
+    server.use(
+      http.post(`${BASE}/api/oauth/session/exchange`, () =>
+        HttpResponse.json({ access_token: 'exchanged', expires_in: 300 }),
+      ),
+    );
+
+    await expect(postSessionExchange()).resolves.toEqual({
+      access_token: 'exchanged',
+      expires_in: 300,
+    });
+  });
+
+  it('rejects a 401 without invoking the unauthorized handler', async () => {
+    const onUnauth = vi.fn();
+    setOnUnauthorized(onUnauth);
+
+    server.use(
+      http.post(`${BASE}/api/oauth/session/exchange`, () =>
+        HttpResponse.json({ detail: 'no ambient session' }, { status: 401 }),
+      ),
+    );
+
+    await expect(postSessionExchange()).rejects.toBeInstanceOf(ApiError);
     expect(onUnauth).not.toHaveBeenCalled();
   });
 });
@@ -368,5 +399,132 @@ describe('apiClient — 401 refresh-retry', () => {
     await expect(apiClient.get('/protected')).rejects.toBeInstanceOf(ApiError);
     expect(refreshCalls).toBe(1);
     expect(onUnauth).toHaveBeenCalledOnce();
+  });
+});
+
+describe('apiClient — pluggable token minter', () => {
+  it('recovers through the registered minter instead of /oauth/refresh', async () => {
+    let currentToken = 'old';
+    setTokenProvider(() => currentToken);
+    setOnRefreshed((token) => {
+      currentToken = token;
+    });
+    // The embedded-host wiring: exchange the host session cookie, no refresh
+    // cookie exists. `/oauth/refresh` is deliberately left unhandled — MSW is
+    // configured to error on unhandled requests, so reaching it fails the test.
+    setTokenMinter(() => postSessionExchange());
+    let exchanges = 0;
+
+    server.use(
+      http.get(`${BASE}/api/protected`, ({ request }) => {
+        if (request.headers.get('Authorization') === 'Bearer minted') {
+          return HttpResponse.json({ ok: true });
+        }
+        return HttpResponse.json({ detail: 'expired' }, { status: 401 });
+      }),
+      http.post(`${BASE}/api/oauth/session/exchange`, () => {
+        exchanges += 1;
+        return HttpResponse.json({ access_token: 'minted', expires_in: 300 });
+      }),
+    );
+
+    const res = await apiClient.get('/protected');
+
+    expect(res.status).toBe(200);
+    expect(exchanges).toBe(1);
+    expect(currentToken).toBe('minted');
+  });
+
+  it('coalesces a burst of 401s into one exchange', async () => {
+    let currentToken = 'old';
+    setTokenProvider(() => currentToken);
+    setOnRefreshed((token) => {
+      currentToken = token;
+    });
+    setTokenMinter(() => postSessionExchange());
+    let exchanges = 0;
+
+    const protectedHandler = ({ request }: { request: Request }) =>
+      request.headers.get('Authorization') === 'Bearer minted'
+        ? HttpResponse.json({ ok: true })
+        : HttpResponse.json({ detail: 'expired' }, { status: 401 });
+
+    server.use(
+      http.get(`${BASE}/api/a`, protectedHandler),
+      http.get(`${BASE}/api/b`, protectedHandler),
+      http.get(`${BASE}/api/c`, protectedHandler),
+      http.post(`${BASE}/api/oauth/session/exchange`, async () => {
+        exchanges += 1;
+        // Hold the exchange open so all three 401s land while it is in flight.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return HttpResponse.json({ access_token: 'minted', expires_in: 300 });
+      }),
+    );
+
+    const responses = await Promise.all([
+      apiClient.get('/a'),
+      apiClient.get('/b'),
+      apiClient.get('/c'),
+    ]);
+
+    expect(responses.map((r) => r.status)).toEqual([200, 200, 200]);
+    expect(exchanges).toBe(1);
+  });
+
+  it('does not re-enter the retry path when the exchange itself 401s', async () => {
+    // Regression guard: the mint is single-flighted, so routing its own 401
+    // back through the retry interceptor would hand that interceptor the very
+    // promise it is running inside — an await on itself that never settles.
+    // A hang here surfaces as a test timeout, not a failed assertion.
+    setTokenProvider(() => 'old');
+    const onUnauth = vi.fn();
+    setOnUnauthorized(onUnauth);
+    setTokenMinter(() => postSessionExchange());
+    let exchanges = 0;
+
+    server.use(
+      http.get(`${BASE}/api/protected`, () =>
+        HttpResponse.json({ detail: 'expired' }, { status: 401 }),
+      ),
+      http.post(`${BASE}/api/oauth/session/exchange`, () => {
+        exchanges += 1;
+        return HttpResponse.json({ detail: 'no session' }, { status: 401 });
+      }),
+    );
+
+    await expect(apiClient.get('/protected')).rejects.toBeInstanceOf(ApiError);
+    expect(exchanges).toBe(1);
+    expect(onUnauth).toHaveBeenCalled();
+  });
+
+  it('treats a minter resolving null as a failed mint', async () => {
+    setTokenProvider(() => 'old');
+    const onUnauth = vi.fn();
+    setOnUnauthorized(onUnauth);
+    const minter = vi.fn(async () => null);
+    setTokenMinter(minter);
+
+    server.use(
+      http.get(`${BASE}/api/protected`, () =>
+        HttpResponse.json({ detail: 'expired' }, { status: 401 }),
+      ),
+    );
+
+    await expect(apiClient.get('/protected')).rejects.toBeInstanceOf(ApiError);
+    expect(minter).toHaveBeenCalledOnce();
+    expect(onUnauth).toHaveBeenCalledOnce();
+  });
+
+  it('restores the default /oauth/refresh minter when passed null', async () => {
+    setTokenMinter(async () => ({ access_token: 'custom', expires_in: 1 }));
+    setTokenMinter(null);
+
+    server.use(
+      http.post(`${BASE}/api/oauth/refresh`, () =>
+        HttpResponse.json({ access_token: 'from-cookie', expires_in: 300 }),
+      ),
+    );
+
+    await expect(refreshAccessToken()).resolves.toBe('from-cookie');
   });
 });

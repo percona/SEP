@@ -25,14 +25,18 @@ field types, the snippets schema vocabulary, and the tasks-service status enum.
 
 import logging
 from collections.abc import Sequence
-from typing import Annotated, Any, cast
+from typing import Any, cast
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, UUID4
-from pydantic.json_schema import WithJsonSchema
 
 from app.core.requests import RemoteAPI
-from app.core.utils.fields import NonEmptyStr, UTCDatetime
+from app.core.utils.fields import (
+    ARBITRARY_ARGS_SCHEMA,
+    ArbitraryMapping,
+    NonEmptyStr,
+    UTCDatetime,
+)
 from app.sep.apps.framework.schema import (
     AnyField,
     BoolField,
@@ -43,17 +47,18 @@ from app.sep.apps.framework.schema import (
 )
 from app.sep.apps.framework.script_helpers import execute_script
 from app.sep.apps.framework.script_source import (
-    ARBITRARY_ARGS_SCHEMA,
     resolve_scripts,
     ScriptExecuteWrite,
     ScriptExecutionResponse,
 )
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
-from app.sep.apps.snippets.script_source import snippet_source, SnippetScript
+from app.sep.snippets.models.constants import EXTRA_ARGS_FIELD_NAME
+from app.sep.snippets.script_source import snippet_source, SnippetScript
 from app.tasks.models import TaskHistoryStatusEnum
 
 __all__ = [
     "MAX_BATCH_SNIPPETS",
+    "NON_SHAREABLE_FIELD_NAMES",
     "ATWBatchExecuteItemResponse",
     "ATWBatchExecuteItemWrite",
     "ATWBatchExecuteResponse",
@@ -61,6 +66,7 @@ __all__ = [
     "ATWIncidentExecutionResponse",
     "ATWMergedSchemaResponse",
     "ATWSnippetSchema",
+    "ArbitraryMapping",
     "batch_execution_fields",
     "dispatch_batch_item",
     "fetch_task_history",
@@ -83,20 +89,18 @@ adds an upstream call and a write, all in request order. The ceiling keeps one
 request's cost bounded; it sits far above any realistic diagnostic selection.
 """
 
-ArbitraryMapping = Annotated[
-    dict[str, Any], WithJsonSchema({"type": "object", **ARBITRARY_ARGS_SCHEMA})
-]
-"""Carry a free-form mapping that survives TypeScript generation.
-
-``ARBITRARY_ARGS_SCHEMA`` reaches a top-level field through ``json_schema_extra``;
-this alias carries the same open contract on a *nested* mapping, where a bare
-``dict[str, Any]`` would otherwise serialise as ``Record<string, never>``.
-"""
-
 _MIN_SHARED_DECLARERS = 2
 _SYNTHETIC_FIELD_NAMES = frozenset(
     {EXECUTOR_HOST_FIELD_NAME, SUDO_FIELD_NAME, SCRIPT_PREVIEW_FIELD_NAME}
 )
+NON_SHAREABLE_FIELD_NAMES = frozenset({EXTRA_ARGS_FIELD_NAME})
+"""Keep these fields per-snippet even when several snippets declare them identically.
+
+Unlike ``_SYNTHETIC_FIELD_NAMES`` (fields excluded entirely because a caller
+re-synthesises them), these are ordinary per-snippet fields that must never be
+promoted to the shared section: extra args are snippet-specific CLI flags, so
+merging them would silently apply one snippet's flags to another's command.
+"""
 
 
 async def resolve_snippets(filenames: Sequence[str]) -> dict[str, SnippetScript]:
@@ -138,7 +142,9 @@ class ATWMergedSchemaResponse(BaseModel):
     ``AppSchema`` section carries only a display title.
 
     :param shared: The batch-level execution fields followed by every parameter
-        the selection declares identically.
+        the selection declares identically, excluding ``NON_SHAREABLE_FIELD_NAMES``
+        (e.g. Extra Args), which stay per-snippet even when every item declares
+        them.
     :param per_snippet: The remaining per-snippet fields, in request order.
     """
 
@@ -165,7 +171,9 @@ class ATWBatchExecuteWrite(BaseModel):
     :param sudo: The sudo choice applied to every item; snippets whose sudo
         option is not optional ignore it.
     :param shared_args: Arguments offered to every item, filtered per snippet to
-        the parameters that snippet declares.
+        the parameters that snippet declares. ``NON_SHAREABLE_FIELD_NAMES`` (e.g.
+        Extra Args) are never applied from ``shared_args``, even for a snippet
+        that declares a field with that name.
     :param items: The snippets to execute, at least one and at most
         ``MAX_BATCH_SNIPPETS``.
     """
@@ -248,13 +256,15 @@ class ATWIncidentExecutionResponse(BaseModel):
 def parameter_fields(script: SnippetScript) -> list[AnyField]:
     """Return a snippet's parameter fields, without the synthetic execution ones.
 
-    The per-snippet schema appends an executor-host selector, a sudo toggle, and a
-    script-preview pane to the frontmatter parameters. Those are batch-level or
-    presentational, so a merged batch form owns them once (or not at all) rather
-    than repeating them per snippet.
+    The per-snippet schema appends an executor-host selector, a sudo toggle, a
+    script-preview pane, and — for a snippet that opts in — an Extra Args input to
+    the frontmatter parameters. The first three are batch-level or presentational,
+    so a merged batch form owns them once (or not at all) rather than repeating
+    them per snippet; Extra Args stays because it is per-snippet by nature.
 
     :param script: The resolved snippet whose form schema is flattened.
-    :return: Every parameter field the snippet declares, in schema order.
+    :return: Every parameter field the snippet declares, in schema order, plus the
+        synthesized Extra Args field when the snippet opts into it.
     """
     return [
         field
@@ -316,14 +326,15 @@ def shared_field_names(declarations: dict[str, list[AnyField]]) -> set[str]:
     every declaration serialises identically — the wire form is what the renderer
     consumes, so byte-identity there is the sharing contract. Cosmetically similar
     but differing declarations (a per-product default, a required-vs-optional
-    divergence) stay per-snippet, where they mean different things.
+    divergence) stay per-snippet, where they mean different things. A name in
+    ``NON_SHAREABLE_FIELD_NAMES`` never merges, however unanimous its declarations.
 
     :param declarations: Every declaration of each parameter name, keyed by name.
     :return: The names whose declarations are unanimous across two or more snippets.
     """
     shared = set()
     for name, fields in declarations.items():
-        if len(fields) < _MIN_SHARED_DECLARERS:
+        if name in NON_SHAREABLE_FIELD_NAMES or len(fields) < _MIN_SHARED_DECLARERS:
             continue
         dumps = [field.model_dump(by_alias=True) for field in fields]
         if all(dump == dumps[0] for dump in dumps[1:]):
@@ -339,10 +350,12 @@ async def dispatch_batch_item(
 ) -> ScriptExecutionResponse:
     """Narrow the shared args to one already-resolved batch item and dispatch it.
 
-    Shared arguments are filtered to the parameters the snippet actually declares,
-    so a batch may offer a value no single snippet accepts, and the item's own
-    ``args`` then override what remains. The snippet is resolved once for the whole
-    batch by the caller and handed in, so a repeated filename costs one lookup.
+    Shared arguments are filtered to the parameters the snippet actually declares
+    and excludes ``NON_SHAREABLE_FIELD_NAMES``, so a batch may offer a value no
+    single snippet accepts (or one no snippet may share, like Extra Args), and the
+    item's own ``args`` then override what remains. The snippet is resolved once
+    for the whole batch by the caller and handed in, so a repeated filename costs
+    one lookup.
 
     :param body: The batch payload supplying the executor host, sudo choice, and
         shared arguments.
@@ -356,7 +369,11 @@ async def dispatch_batch_item(
     :raises OSError: Propagated from ``execute_script`` when the Tasks API
         transport itself fails.
     """
-    declared = {field.name for field in parameter_fields(script)}
+    declared = {
+        field.name
+        for field in parameter_fields(script)
+        if field.name not in NON_SHAREABLE_FIELD_NAMES
+    }
     args = {name: value for name, value in body.shared_args.items() if name in declared}
     args.update(item.args)
     return await execute_script(

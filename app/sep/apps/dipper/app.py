@@ -20,13 +20,11 @@ exposes a service-keyed JSON surface (history listing, dynamic form schema, scri
 preview, execute) plus a static plugin schema — none of which map onto the
 framework's filename-keyed ``ScriptSource`` derived routes — so it is exported as a
 plain :class:`BaseApp` carrying its hand-written ``api_router`` unchanged, the same
-shape as ``backup_mongo`` and the bespoke ``inventory``/``report`` apps. The legacy
-Jinja UI is threaded as ``jinja_router``.
+shape as ``backup_mongo`` and the bespoke ``inventory``/``report`` apps.
 """
 
 from app.sep.apps.dipper.api_routes import router as api_router
 from app.sep.apps.dipper.constants import ARTIFACT_TYPE_DIPPER, DIPPER_PAYLOADS_DIR
-from app.sep.apps.dipper.routes import router as jinja_router
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.nav_icons import NavIcon
 
@@ -40,6 +38,6 @@ app = BaseApp(
     react_route="/dipper",
     nav_icon=NavIcon.SCIENCE,
     api_router=api_router,
-    jinja_router=jinja_router,
     artifact_base_dirs={ARTIFACT_TYPE_DIPPER: lambda: DIPPER_PAYLOADS_DIR},
+    uses_task_data=True,
 )

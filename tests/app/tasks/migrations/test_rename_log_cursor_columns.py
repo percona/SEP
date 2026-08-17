@@ -27,7 +27,7 @@ from app.tasks.config import tasks_settings
 REPO_ROOT = Path(__file__).resolve().parents[4]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 
-_PRE_RENAME_REVISION = "27a11549ef43"
+_PRE_RENAME_REVISION = "a19da5cf0bca"
 _RENAME_REVISION = "c8e4a2b91f70"
 
 _FETCH_OFFSET = 4096

@@ -15,6 +15,8 @@
 
 """Define tests for the app.core.db.config module."""
 
+from urllib.parse import unquote, urlsplit
+
 import pytest
 from pydantic import ValidationError
 
@@ -72,6 +74,36 @@ def test_database_options_url_with_postgresql():
     assert expected_url == db_options.URL
 
 
+def test_database_options_url_round_trips_a_password_with_reserved_characters():
+    """Encode a password whose reserved characters would otherwise end the authority."""
+    db_options = DatabaseOptions(
+        ENGINE=AsyncDatabaseEngine.POSTGRESQL,
+        HOST="localhost",
+        PORT=5432,
+        USER="user",
+        PASSWORD="p@ss:w/rd123",
+        NAME="testdb",
+    )
+
+    expected_url = "postgresql+asyncpg://user:p%40ss%3Aw%2Frd123@localhost:5432/testdb"
+    assert expected_url == db_options.URL
+    assert unquote(urlsplit(db_options.URL).password) == "p@ss:w/rd123"
+
+
+def test_database_options_url_round_trips_a_user_with_reserved_characters():
+    """Encode a user whose reserved characters would otherwise end the credentials."""
+    db_options = DatabaseOptions(
+        ENGINE=AsyncDatabaseEngine.POSTGRESQL,
+        HOST="localhost",
+        PORT=5432,
+        USER="us/er:name",
+        PASSWORD="pass",
+        NAME="testdb",
+    )
+
+    assert unquote(urlsplit(db_options.URL).username) == "us/er:name"
+
+
 def test_database_options_password_masked_in_repr():
     """Test that PASSWORD is masked in repr output."""
     db_options = DatabaseOptions(
@@ -119,11 +151,48 @@ def test_pool_engine_kwargs_includes_zero_max_overflow():
 
 
 @pytest.mark.parametrize(
+    ("engine", "expected"),
+    [
+        pytest.param(
+            AsyncDatabaseEngine.POSTGRESQL,
+            {"connect_args": {"timeout": 2.5}},
+            id="asyncpg-timeout",
+        ),
+        pytest.param(
+            AsyncDatabaseEngine.MYSQL,
+            {"connect_args": {"connect_timeout": 2.5}},
+            id="aiomysql-connect-timeout",
+        ),
+        pytest.param(AsyncDatabaseEngine.SQLITE, {}, id="sqlite-omitted"),
+    ],
+)
+def test_connect_engine_kwargs_maps_per_dialect(engine, expected):
+    """Map CONNECT_TIMEOUT to the driver key each dialect understands."""
+    db_options = DatabaseOptions(
+        ENGINE=engine, NAME="testdb", HOST="localhost", CONNECT_TIMEOUT=2.5
+    )
+
+    assert db_options.connect_engine_kwargs == expected
+
+
+def test_connect_engine_kwargs_empty_when_unset():
+    """Yield no connect_args when CONNECT_TIMEOUT is unset."""
+    db_options = DatabaseOptions(
+        ENGINE=AsyncDatabaseEngine.POSTGRESQL,
+        NAME="testdb",
+        HOST="localhost",
+    )
+
+    assert db_options.connect_engine_kwargs == {}
+
+
+@pytest.mark.parametrize(
     "field_kwargs",
     [
         {"POOL_SIZE": 0},
         {"MAX_OVERFLOW": -1},
         {"POOL_TIMEOUT": 0},
+        {"CONNECT_TIMEOUT": 0},
     ],
 )
 def test_pool_field_bounds_rejected_at_config_load(field_kwargs):

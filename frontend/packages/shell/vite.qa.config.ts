@@ -65,7 +65,6 @@ export default defineConfig({
     proxy: {
       '/api': proxyEntry,
       '/sep_app': proxyEntry,
-      '/legacy': proxyEntry,
       '/stream-logs': proxyEntry,
       '/execution-events': proxyEntry,
       '/files': proxyEntry,

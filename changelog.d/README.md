@@ -32,11 +32,19 @@ Example:
 
 ```bash
 make changelog-add TICKET=SEP-503 SECTION=added \
-    MSG="PagerDuty alert triggered on inventory sync item failure"
+    MSG="PagerDuty alert triggered on inventory sync item failure."
 ```
 
 This creates `changelog.d/SEP-503.added.md` containing just the description.
 Commit the file as part of your PR.
+
+**Write the description as a complete sentence, ending in `.`, `!`, or `?`.** A fragment
+is rendered verbatim as a release-note bullet, so whatever punctuation it carries
+is what users read. `make changelog-add` appends a terminal period when the `MSG`
+lacks sentence punctuation (recognising `.`, `!` and `?`, and looking past a trailing `)`, `]`,
+`}`, quote or backtick), and tells you when it did — so a fragment edited by hand
+is the only way to end up without one. Capitalise the first word; do not add a
+`- SEP-XXX:` prefix, which assembly supplies.
 
 **Skip this step when any of these applies:**
 
@@ -60,6 +68,47 @@ Commit the file as part of your PR.
    the checksums pilot (SEP-1370); a later plugin migrating onto the same
    spine does not re-document them, but does add a fragment for, say, a
    request-body casing narrowing that only that plugin undergoes.
+
+## What a fragment must say
+
+A fragment is read by an operator deciding whether a change affects them and
+when. Three things it must carry.
+
+**Name the asymmetry.** When the change does not land uniformly — for some
+installations and not others, for some processes and not others, or only after
+a delay — say so. Silence on an asymmetric axis reads as "works uniformly".
+Answer whichever of these three applies:
+
+| Axis | The question to answer | Say this, not that |
+|---|---|---|
+| **Who** | fresh installs only, or existing installations too? | "reaches fresh installs and installer re-runs only; an existing installation keeps its rendered config until the installer runs again" — not "the new default applies" |
+| **When** | at upgrade, at restart, or on the next occurrence of some event? | "an override lands on the next task the worker executes" — not "without a restart" |
+| **Lag** | how long between the triggering action and the effect, and what happens to work started inside that window? | "worker-side refresh advances while tasks run rather than on a wall-clock interval, so an override has no fixed upper bound on when it lands and work enqueued in the meantime may still run against the old value" — not "takes effect immediately" |
+
+**State the granularity an operator acts on.** When the fragment describes a
+*mechanism* — a directory that is consulted, a set of names that are derived, a
+pattern that is matched — say at what granularity it applies, and cite the
+surface carrying the full recipe. A mechanism summarised at the wrong
+granularity is worse than one left undescribed: the operator acts on the summary
+and does not go looking for the recipe.
+
+The tell is a plural noun standing in for a set whose members behave
+differently. "Consults `SECRETS_DIR` for every canonical name it derives" is
+true of the lookup and false of the outcome, because one derived name per
+service does not mean one mounted file per service — so an operator mounts one
+file and gets a container that fails to start. Naming the granularity ("a file
+supplies only the name it is named for, so keeping the password out of the
+environment means mounting all three") and pointing at `sidecar/README.md` costs
+one clause.
+
+**Pick the section from what the change *is*.** The work-item type decides only
+once that answer is "a modification to behaviour that already shipped".
+
+| Section | Use when |
+|---|---|
+| `added` | a surface that did not exist before — a new endpoint, image variant, CLI, published artifact, settings class. Applies whatever the work-item type says. |
+| `breaking` / `security` / `config` | the change is primarily that, regardless of type. |
+| `fixed` / `changed` | everything else. Both cover a modification to shipped behaviour, so the type is the tiebreak: Bug → `fixed`, Story → `changed`, even when two tickets do topically identical work. |
 
 ## File format
 

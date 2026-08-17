@@ -49,10 +49,6 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
-      '/legacy': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
       // Task log SSE and related routes live outside /api (see app/sep/main.py).
       '/stream-logs': {
         target: 'http://localhost:8000',
@@ -108,6 +104,7 @@ export default defineConfig({
           if (id.includes('/node_modules/@tanstack/react-query/')) {
             return 'vendor-query';
           }
+          return undefined;
         },
       },
     },

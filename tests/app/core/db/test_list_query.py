@@ -21,8 +21,9 @@ import pytest
 import pytest_asyncio
 from fastapi import Depends, FastAPI, status
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.dialects import mysql
 from sqlalchemy.ext.asyncio import create_async_engine
-from sqlmodel import col, SQLModel
+from sqlmodel import col, select, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
@@ -33,6 +34,8 @@ from app.core.db.list_query import (
     ListQuery,
     ListQuerySpec,
     make_list_query_dep,
+    SEARCH_PARAM_DESCRIPTION,
+    SORT_PARAM_DESCRIPTION,
     UnknownSortKeyError,
 )
 from app.core.db.utils import get_async_session_maker_from_engine
@@ -178,6 +181,19 @@ class TestResolveSort:
         with pytest.raises(UnknownSortKeyError):
             _spec().resolve_sort("-evil")
 
+    @pytest.mark.parametrize("raw_sort", [None, "-name"], ids=["asc", "desc"])
+    def test_resolved_ordering_renders_mysql_isnull_idiom(self, raw_sort) -> None:
+        """Emit MySQL's ``ISNULL`` idiom instead of the unparsable ``NULLS LAST``."""
+        order_by = _spec().resolve_sort(raw_sort)
+
+        rendered = str(
+            select(col(LQItem.id)).order_by(*order_by).compile(dialect=mysql.dialect())
+        )
+
+        assert "NULLS LAST" not in rendered
+        assert "ISNULL(" in rendered
+        assert rendered.rstrip().endswith("id ASC")
+
 
 class TestBuildSearchPredicate:
     """Cover ``build_search_predicate`` empty-term handling."""
@@ -313,6 +329,32 @@ class TestListQueryDependencyOpenAPI:
         names = {param["name"] for param in params}
         assert "sort" in names
         assert "search" not in names
+
+    def test_sort_param_publishes_the_allowlist_as_an_enum(self) -> None:
+        """Publish both directions of every sortable key, so a client can discover them."""
+        params = _SESSION_SENTINEL_APP.openapi()["paths"]["/lq"]["get"]["parameters"]
+        sort = next(param for param in params if param["name"] == "sort")
+
+        assert sort["schema"]["enum"] == [
+            "created_at",
+            "-created_at",
+            "name",
+            "-name",
+        ]
+
+    def test_query_params_carry_descriptions(self) -> None:
+        """Document both parameters, so the generated client is not bare strings."""
+        params = _SESSION_SENTINEL_APP.openapi()["paths"]["/lq"]["get"]["parameters"]
+        described = {
+            param["name"]: param.get("description")
+            for param in params
+            if param["name"] in {"sort", "search"}
+        }
+
+        assert described == {
+            "sort": SORT_PARAM_DESCRIPTION,
+            "search": SEARCH_PARAM_DESCRIPTION,
+        }
 
 
 class TestListQueryDependencyRequests:

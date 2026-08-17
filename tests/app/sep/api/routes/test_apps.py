@@ -32,10 +32,8 @@ from app.sep.api.routes.apps import build_navigation_react_route
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.registry import AppRegistry, get_app_registry
 from app.sep.deps import (
-    get_api_authenticated_user,
     get_current_user,
     get_session,
-    validate_csrf,
 )
 from app.sep.main import sep_app
 from app.sep.models import AppLifecycleEnum, AppState
@@ -85,9 +83,7 @@ def api_user_client_fixture(
     regular_user: CasdoorUser, override_session: AsyncSession
 ) -> Iterator[TestClient]:
     """Yield an authenticated (non-admin) client with the in-memory SEP session."""
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
@@ -251,14 +247,15 @@ class TestListAppsForNavigation:
         assert snippets["enabled"] is False
         assert "lifecycle_state" not in snippets
 
-    async def test_atw_reported_disabled_when_snippets_disabled(
+    async def test_snippet_consumers_stay_enabled_when_snippets_disabled(
         self, api_user_client: TestClient, override_session: AsyncSession
     ) -> None:
-        """Atw reports ``enabled=False`` when the ``snippets`` app it requires is disabled.
+        """Keep Atw and Alert Troubleshooting enabled through a snippets disable.
 
-        This pins the cross-app dependency on the nav surface: atw owns an
-        ``ENABLED`` row (or none) yet is projected disabled because a required
-        app is off, so the shell hides it.
+        Both consume snippet *scripts* from the library rather than the snippets
+        app package, so neither declares ``requires_apps`` any more and hiding the
+        snippets UI must not hide them. Snippets itself is self-disabled, so it
+        reports no blocker (generic splash).
         """
         override_session.add(
             AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
@@ -268,65 +265,97 @@ class TestListAppsForNavigation:
         response = api_user_client.get("/api/apps/")
         entries = {e["app_key"]: e for e in response.json()}
         assert entries["snippets"]["enabled"] is False
-        assert entries["atw"]["enabled"] is False
-        # atw is dependency-disabled -> it names snippets as the blocker, while
-        # snippets is self-disabled -> it reports no blocker (generic splash).
-        assert entries["atw"]["blocking_dependencies"] == ["snippets"]
         assert entries["snippets"]["blocking_dependencies"] == []
+        for key in ("atw", "alert_troubleshooting"):
+            assert entries[key]["enabled"] is True
+            assert entries[key]["blocking_dependencies"] == []
 
-    async def test_atw_reported_enabled_when_snippets_enabled(
-        self, api_user_client: TestClient
+    async def test_dependency_disabled_app_names_its_blocker(
+        self,
+        api_user_client: TestClient,
+        override_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Atw reports ``enabled=True`` when snippets is enabled (no regression)."""
-        response = api_user_client.get("/api/apps/")
-        entries = {e["app_key"]: e for e in response.json()}
-        assert entries["snippets"]["enabled"] is True
-        assert entries["atw"]["enabled"] is True
-        assert entries["atw"]["blocking_dependencies"] == []
+        """Project a dependent app disabled and naming the dependency that is off.
 
-    async def test_alert_troubleshooting_reported_disabled_when_snippets_disabled(
-        self, api_user_client: TestClient, override_session: AsyncSession
-    ) -> None:
-        """Report Alert Troubleshooting disabled with snippets as its blocker."""
+        No real app declares ``requires_apps`` any more, so the cross-app nav
+        gating is pinned against a synthetic registry: ``dependent`` owns an
+        ``ENABLED`` row (or none) yet is projected disabled because a required app
+        is off, and the shell hides it.
+        """
+        registry = AppRegistry(
+            [
+                _synthetic_app("dependent", requires_apps=("provider",)),
+                _synthetic_app("provider"),
+            ]
+        )
+        monkeypatch.setattr(
+            "app.sep.api.routes.apps.get_app_registry", lambda: registry
+        )
         override_session.add(
-            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+            AppState(app_key="provider", lifecycle_state=AppLifecycleEnum.DISABLED)
         )
         await override_session.commit()
 
         response = api_user_client.get("/api/apps/")
         entries = {e["app_key"]: e for e in response.json()}
+        assert entries["provider"]["enabled"] is False
+        assert entries["dependent"]["enabled"] is False
+        assert entries["dependent"]["blocking_dependencies"] == ["provider"]
+        assert entries["provider"]["blocking_dependencies"] == []
 
-        assert entries["alert_troubleshooting"]["enabled"] is False
-        assert entries["alert_troubleshooting"]["blocking_dependencies"] == ["snippets"]
-
-    async def test_alert_troubleshooting_reported_enabled_when_snippets_enabled(
-        self, api_user_client: TestClient
+    async def test_dependent_app_stays_enabled_when_dependency_enabled(
+        self,
+        api_user_client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Report Alert Troubleshooting enabled when snippets is enabled."""
+        """Leave a dependent app enabled and unblocked while its dependency is on."""
+        registry = AppRegistry(
+            [
+                _synthetic_app("dependent", requires_apps=("provider",)),
+                _synthetic_app("provider"),
+            ]
+        )
+        monkeypatch.setattr(
+            "app.sep.api.routes.apps.get_app_registry", lambda: registry
+        )
+
         response = api_user_client.get("/api/apps/")
         entries = {e["app_key"]: e for e in response.json()}
-
-        assert entries["alert_troubleshooting"]["enabled"] is True
-        assert entries["alert_troubleshooting"]["blocking_dependencies"] == []
+        assert entries["provider"]["enabled"] is True
+        assert entries["dependent"]["enabled"] is True
+        assert entries["dependent"]["blocking_dependencies"] == []
 
     async def test_self_disabled_app_reports_no_blocking_dependency(
-        self, api_user_client: TestClient, override_session: AsyncSession
+        self,
+        api_user_client: TestClient,
+        override_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Report no blocker for a directly-disabled app so the generic splash shows.
 
-        With atw's own state disabled (regardless of snippets), the disablement is
-        self-driven, so ``blocking_dependencies`` stays empty even though atw
-        declares ``requires_apps=("snippets",)``.
+        With ``dependent``'s own state disabled (regardless of ``provider``), the
+        disablement is self-driven, so ``blocking_dependencies`` stays empty even
+        though it declares ``requires_apps=("provider",)``.
         """
+        registry = AppRegistry(
+            [
+                _synthetic_app("dependent", requires_apps=("provider",)),
+                _synthetic_app("provider"),
+            ]
+        )
+        monkeypatch.setattr(
+            "app.sep.api.routes.apps.get_app_registry", lambda: registry
+        )
         override_session.add(
-            AppState(app_key="atw", lifecycle_state=AppLifecycleEnum.DISABLED)
+            AppState(app_key="dependent", lifecycle_state=AppLifecycleEnum.DISABLED)
         )
         await override_session.commit()
 
         response = api_user_client.get("/api/apps/")
         entries = {e["app_key"]: e for e in response.json()}
-        assert entries["atw"]["enabled"] is False
-        assert entries["atw"]["blocking_dependencies"] == []
+        assert entries["dependent"]["enabled"] is False
+        assert entries["dependent"]["blocking_dependencies"] == []
 
     @pytest.mark.parametrize(
         "state",
@@ -336,6 +365,7 @@ class TestListAppsForNavigation:
         self,
         api_user_client: TestClient,
         override_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
         state: AppLifecycleEnum,
     ) -> None:
         """Name a dependency mid-transition as the blocker, since only ENABLED is on.
@@ -343,13 +373,22 @@ class TestListAppsForNavigation:
         A dependency stuck in ``ENABLING``/``DISABLING`` is not effective-enabled,
         so a dependent app is projected disabled and must still name it.
         """
-        override_session.add(AppState(app_key="snippets", lifecycle_state=state))
+        registry = AppRegistry(
+            [
+                _synthetic_app("dependent", requires_apps=("provider",)),
+                _synthetic_app("provider"),
+            ]
+        )
+        monkeypatch.setattr(
+            "app.sep.api.routes.apps.get_app_registry", lambda: registry
+        )
+        override_session.add(AppState(app_key="provider", lifecycle_state=state))
         await override_session.commit()
 
         response = api_user_client.get("/api/apps/")
         entries = {e["app_key"]: e for e in response.json()}
-        assert entries["atw"]["enabled"] is False
-        assert entries["atw"]["blocking_dependencies"] == ["snippets"]
+        assert entries["dependent"]["enabled"] is False
+        assert entries["dependent"]["blocking_dependencies"] == ["provider"]
 
     async def test_protected_app_reports_no_blocking_dependency(
         self, api_user_client: TestClient

@@ -54,8 +54,24 @@ COPY --chown=0:1001 --chmod=440 ./alembic.ini .
 COPY --chown=0:1001 --chmod=440 ./sidecar/supervisord.conf ./supervisord.conf
 COPY --chown=0:1001 --chmod=550 ./sidecar/healthcheck.sh ./healthcheck.sh
 COPY --chown=0:1001 --chmod=550 ./sidecar/entrypoint.sh ./entrypoint.sh
+# Sourced by entrypoint.sh, never executed, hence 440 rather than 550
+COPY --chown=0:1001 --chmod=440 ./sidecar/settings-env.sh ./settings-env.sh
 
 ADD --chown=0:1001 --chmod=440 bundle.tgz $APP_HOME
+
+# The baked embedded profile. Copied after the bundle so it stays authoritative
+# even if `make pack` ever starts shipping a settings.yaml; a bind mount at this
+# path still replaces it wholesale.
+COPY --chown=0:1001 --chmod=440 ./sidecar/settings.yaml ./settings.yaml
+
+# Strip every app package the baked profile does not activate. The retained set
+# is derived from settings.yaml and named nowhere in this recipe.
+ARG SEP_RESTRICT_APPS=0
+COPY --chown=0:0 --chmod=400 ./sidecar/restrict_apps.py /tmp/restrict_apps.py
+RUN if [ "$SEP_RESTRICT_APPS" = "1" ]; then \
+        python /tmp/restrict_apps.py settings.yaml app/sep/apps; \
+    fi && \
+    rm -f /tmp/restrict_apps.py
 
 # No compose file injects this for the side-car, so the loader would otherwise
 # fall back to the development defaults

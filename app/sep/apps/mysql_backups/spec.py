@@ -28,13 +28,13 @@ from fastapi.encoders import jsonable_encoder
 
 from app.core.utils.path import payload_uri
 from app.sep.apps.framework.spec import ResolvedEntities, RunPythonSpec
-from app.sep.apps.mysql_backups.models import (
+from app.sep.apps.mysql_backups.forms import (
     BackupConfig,
     BackupConfigAll,
     BackupConfigServer,
     BackupCreate,
-    BackupType,
 )
+from app.sep.apps.mysql_backups.models import BackupType
 
 _BASE_REQUIREMENTS = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
 
@@ -84,6 +84,9 @@ def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPyth
         "upload": list(form.upload),
     }
 
+    # Keyed off the recipient (not the encrypt flags) so it survives whichever
+    # mode is on — post-run with in-place off still needs it. Safe only because
+    # BackupCreate's gates guarantee recipient <=> some encryption mode.
     if form.encryption_recipient:
         server_config["dir_encrypt_config"] = {
             "encryption_recipient": form.encryption_recipient

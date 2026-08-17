@@ -22,11 +22,6 @@ pipeline {
 				'3.11'
 			]
 		)
-		booleanParam(
-			name: 'notifySlack',
-			defaultValue: false,
-			description: 'Send notifications to Slack'
-		)
 	}
 
 	options {
@@ -37,8 +32,6 @@ pipeline {
 	environment {
 		BUILD_OPTIONS = ''
 		CMD = "${defaultCmd}"
-
-		NOTIFY_SLACK = "${notifySlack}"
 
 		POETRY_VIRTUALENVS_IN_PROJECT = "true"
 		PYTHON = "python${pyVersion}"
@@ -125,12 +118,17 @@ pipeline {
 
 			steps {
 				echo 'Running pre-commit ..'
-				sh '''
-					set -o errexit
-					set -o pipefail
+				// `language: system` hooks shell out to bare `python3`, so the agent's
+				// 3.9 gets the repo's 3.10+ syntax unless the venv leads PATH. CI has
+				// no such gap: setup-python makes 3.11 ambient there.
+				withEnv(["PATH+VENV=${env.WORKSPACE}/venv/bin"]) {
+					sh '''
+						set -o errexit
+						set -o pipefail
 
-					make run-pre-commit
-				'''
+						make run-pre-commit
+					'''
+				}
 			}
 		}
 

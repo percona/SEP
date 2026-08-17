@@ -21,6 +21,7 @@ a hand-constructed expected value — the same guarantee the unchanged OpenAPI
 snapshots prove end-to-end.
 """
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
@@ -45,9 +46,10 @@ from app.sep.apps.framework.script_helpers import (
     post_task_execution,
 )
 from app.sep.apps.framework.script_source import ScriptExecuteWrite, ScriptSource
-from app.sep.apps.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
+from app.sep.config import sep_settings
 from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.snippets.models.snippet import (
     EXECUTOR_HOSTS_INPUT_NAME,
     FilePreview,
@@ -76,15 +78,16 @@ def _execution_args(snippet: Snippet, extra: dict[str, object] | None = None):
     )
 
 
-def _make_request(host: str = "sep.example") -> Request:
-    """Return a minimal HTTPS request whose host derives the base URL."""
+def _make_request(host: str = "sep.example", root_path: str = "") -> Request:
+    """Return a minimal HTTPS request whose host and mount prefix derive the base URL."""
     return Request(
         {
             "type": "http",
             "method": "GET",
             "scheme": "https",
             "server": (host, 443),
-            "path": "/api/apps/snippets/snippet/download",
+            "root_path": root_path,
+            "path": f"{root_path}/api/apps/snippets/snippet/download",
             "query_string": b"",
             "headers": [(b"host", host.encode())],
         }
@@ -290,6 +293,102 @@ class TestBuildArtifactDownloadUrl:
         assert exc_info.value.detail == (
             "Snippet execution requires SNIPPETS_BASE_URL or BASE_URL to be set."
         )
+
+    def test_request_backed_carries_the_mount_prefix(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Keep the emitted URL inside the prefix the request arrived under.
+
+        The request-backed path reads the prefix off the ASGI scope, not off
+        ``ROOT_PATH``, so no setting is needed to exercise it.
+        """
+        monkeypatch.setattr(snippets_settings, "SNIPPETS_BASE_URL", None)
+        monkeypatch.setattr("app.core.config.settings.BASE_URL", None)
+
+        url = build_artifact_download_url(
+            _make_request(host="host.internal", root_path="/sep"),
+            artifact_type=ARTIFACT_TYPE_SNIPPET,
+            filename="x.sh",
+            md5_digest=_MD5,
+        )
+
+        assert url.startswith("https://host.internal/sep/artifacts/download/")
+
+    def test_request_less_preserves_a_prefixed_configured_base(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Join onto the configured base's path rather than replacing it."""
+        monkeypatch.setattr(snippets_settings, "SNIPPETS_BASE_URL", None)
+        monkeypatch.setattr(
+            "app.core.config.settings.BASE_URL", URL("https://pmm:8443/sep")
+        )
+        monkeypatch.setattr(sep_settings, "ROOT_PATH", "/sep")
+
+        url = build_artifact_download_url(
+            None,
+            artifact_type=ARTIFACT_TYPE_SNIPPET,
+            filename="x.sh",
+            md5_digest=_MD5,
+        )
+
+        assert url.startswith("https://pmm:8443/sep/artifacts/download/")
+
+    def test_configured_base_trailing_slash_does_not_double(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Absorb a trailing slash on the configured base instead of doubling it."""
+        monkeypatch.setattr(
+            snippets_settings, "SNIPPETS_BASE_URL", URL("https://sep.example/sep/")
+        )
+        monkeypatch.setattr(sep_settings, "ROOT_PATH", "/sep")
+
+        url = build_artifact_download_url(
+            None,
+            artifact_type=ARTIFACT_TYPE_SNIPPET,
+            filename="x.sh",
+            md5_digest=_MD5,
+        )
+
+        assert url.startswith("https://sep.example/sep/artifacts/download/")
+
+    def test_warns_when_a_hot_override_drops_the_prefix(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Warn at the point of use, and still emit, when a live base loses the prefix."""
+        monkeypatch.setattr(
+            snippets_settings, "SNIPPETS_BASE_URL", URL("https://sep.example")
+        )
+        monkeypatch.setattr(sep_settings, "ROOT_PATH", "/sep")
+
+        with caplog.at_level(logging.WARNING):
+            url = build_artifact_download_url(
+                None,
+                artifact_type=ARTIFACT_TYPE_SNIPPET,
+                filename="x.sh",
+                md5_digest=_MD5,
+            )
+
+        assert url.startswith("https://sep.example/artifacts/download/")
+        assert "SNIPPETS_BASE_URL" in caplog.text
+
+    def test_stays_silent_when_no_prefix_is_configured(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Leave the unprefixed deployment unwarned, which is the regression contract."""
+        monkeypatch.setattr(
+            snippets_settings, "SNIPPETS_BASE_URL", URL("https://sep.example")
+        )
+        monkeypatch.setattr(sep_settings, "ROOT_PATH", "")
+
+        with caplog.at_level(logging.WARNING):
+            build_artifact_download_url(
+                None,
+                artifact_type=ARTIFACT_TYPE_SNIPPET,
+                filename="x.sh",
+                md5_digest=_MD5,
+            )
+
+        assert "SNIPPETS_BASE_URL" not in caplog.text
 
 
 class TestPostTaskExecution:

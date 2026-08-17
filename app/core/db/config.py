@@ -15,6 +15,8 @@
 
 """Define database settings."""
 
+from urllib.parse import quote
+
 from pydantic import (
     AnyUrl,
     BaseModel,
@@ -26,6 +28,14 @@ from pydantic import (
 )
 
 from app.core.utils.fields import AsyncDatabaseEngine
+
+#: The driver kwarg each async dialect uses for its connect timeout. asyncpg
+#: takes ``timeout``, aiomysql takes ``connect_timeout``; aiosqlite's
+#: ``timeout`` means lock wait, not connect, so SQLite is absent.
+_CONNECT_TIMEOUT_KEYS: dict[AsyncDatabaseEngine, str] = {
+    AsyncDatabaseEngine.POSTGRESQL: "timeout",
+    AsyncDatabaseEngine.MYSQL: "connect_timeout",
+}
 
 
 class DatabaseOptions(BaseModel):
@@ -46,6 +56,11 @@ class DatabaseOptions(BaseModel):
         rejected.
     :param POOL_TIMEOUT: Seconds to wait for a free connection. Unset keeps
         SQLAlchemy's default. Must be ``> 0``.
+    :param CONNECT_TIMEOUT: Seconds to wait for a TCP connect. Unset passes no
+        ``connect_args``, leaving the driver's own default. Forwarded as
+        ``timeout`` for asyncpg and ``connect_timeout`` for aiomysql; omitted
+        for SQLite, where that key means lock wait rather than connect. Must
+        be ``> 0``.
     """
 
     ENGINE: AsyncDatabaseEngine = AsyncDatabaseEngine.SQLITE
@@ -57,26 +72,31 @@ class DatabaseOptions(BaseModel):
     POOL_SIZE: PositiveInt | None = None
     MAX_OVERFLOW: NonNegativeInt | None = None
     POOL_TIMEOUT: PositiveFloat | None = None
+    CONNECT_TIMEOUT: PositiveFloat | None = None
 
     @computed_field(repr=False)
     @property
     def URL(self) -> str:
         """Construct the database connection URL.
 
+        The credentials are percent-encoded first because ``AnyUrl.build`` escapes
+        ``@`` and ``:`` but leaves ``/`` alone, so a ``/`` in either would end the
+        authority and leave the port unparseable.
+
         :return: A string representing the connection URL based on the configuration.
-        :rtype: str
         """
         host = self.HOST
         name = self.NAME
         if self.HOST is None or self.HOST == "":
             host = f"/{self.NAME}"
             name = None
+        password = self.PASSWORD.get_secret_value() if self.PASSWORD else None
         return str(
             AnyUrl.build(
                 scheme=self.ENGINE,
                 host=host,
-                username=self.USER,
-                password=self.PASSWORD.get_secret_value() if self.PASSWORD else None,
+                username=None if self.USER is None else quote(self.USER, safe=""),
+                password=None if password is None else quote(password, safe=""),
                 port=self.PORT,
                 path=name,
             ),
@@ -100,3 +120,21 @@ class DatabaseOptions(BaseModel):
             }.items()
             if value is not None
         }
+
+    @property
+    def connect_engine_kwargs(self) -> dict[str, dict[str, float]]:
+        """Return ``connect_args`` as a ``create_engine`` kwarg, or ``{}``.
+
+        An unset ``CONNECT_TIMEOUT``, or an engine with no connect-timeout
+        meaning (SQLite), yields ``{}`` so the caller can omit ``connect_args``
+        from ``create_async_engine`` entirely — the same omit-when-empty
+        contract as :attr:`pool_engine_kwargs`.
+
+        :return: ``{"connect_args": {dialect_key: timeout}}`` or ``{}``.
+        """
+        if self.CONNECT_TIMEOUT is None:
+            return {}
+        key = _CONNECT_TIMEOUT_KEYS.get(self.ENGINE)
+        if key is None:
+            return {}
+        return {"connect_args": {key: self.CONNECT_TIMEOUT}}

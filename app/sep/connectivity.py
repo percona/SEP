@@ -15,27 +15,21 @@
 
 """Provide connectivity check helpers and an async LRU cache for task creation.
 
-These helpers serve the **form (Jinja) flow** — they emit flash messages via
-:func:`app.sep.middleware.messages.warning` and depend on a Starlette
-:class:`~starlette.requests.Request`. The **JSON API flow** uses the parallel
-helpers in :mod:`app.sep.apps.framework.connectivity`, which return a
-``ConnectivityWarning | None`` object instead of mutating request state.
+These are the shared primitives — the memoized probe and the latest-result
+snapshot. The request-facing wrapper that turns a probe into a
+``ConnectivityWarning | None`` lives in
+:mod:`app.sep.apps.framework.connectivity`.
 """
 
 import logging
 from collections import OrderedDict
-from collections.abc import Iterable
 from typing import Any, cast, NamedTuple
 
 from aiohttp import ClientError
 from async_lru import alru_cache
 from fastapi import HTTPException
-from pydantic import ValidationError
-from starlette.requests import Request
 
 from app.core.requests import RemoteAPI
-from app.core.utils import run_pydantic_type_validator
-from app.sep.middleware import messages
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +44,6 @@ CACHE_MAXSIZE = 128
 CONNECTIVITY_META_HOST_KEY = "_connectivity_host"
 CONNECTIVITY_META_PORT_KEY = "_connectivity_port"
 CONNECTIVITY_META_SERVICE_TYPE_KEY = "_connectivity_service_type"
-CONNECTIVITY_TARGET_KEY = "_connectivity_target"
-CONNECTIVITY_WARNING_KEY = "_connectivity_warning"
 
 _LATEST_RESULTS: OrderedDict[tuple[str, str], bool] = OrderedDict()
 
@@ -71,40 +63,15 @@ class ConnectivityResult(NamedTuple):
     task_history_id: int | None
 
 
-async def get_check_connectivity_flag(request: Request) -> bool:
-    """Return whether the task creation form requested a connectivity check.
-
-    Read ``check_connectivity`` from already-parsed form data. Starlette caches
-    :meth:`starlette.requests.Request.form` on the request, so this coexists
-    safely with CSRF validation and other dependencies that parse the body.
-
-    Delegate boolean coercion to Pydantic's built-in validator, which accepts
-    HTML checkbox submissions (``on``) and common programmatic values
-    (``true``/``false``, ``yes``/``no``, ``1``/``0``). Unparseable or missing
-    values fall back to ``False``.
-
-    :param request: The incoming HTTP request.
-    :return: ``True`` when the checkbox or equivalent field is set.
-    """
-    form = await request.form()
-    try:
-        return run_pydantic_type_validator(bool, form.get("check_connectivity"))
-    except ValidationError:
-        return False
-
-
 def _record_latest_result(target: str, service_type: str, *, success: bool) -> None:
     """Record the most recent connectivity outcome for sync UI annotations.
 
     Maintain a bounded LRU snapshot of the latest connectivity outcome per
-    ``(target, service_type)`` pair so the synchronous
-    ``annotate_tasks_with_connectivity`` can flag tasks without consulting
-    ``alru_cache`` (which exposes no public sync peek). The snapshot has no
-    TTL of its own; ``alru_cache`` remains the authoritative TTL store and
-    the snapshot is best-effort, refreshed each time
-    ``check_and_warn_connectivity`` (form path) or
-    ``app.sep.apps.framework.connectivity.record_connectivity_warning``
-    (JSON API path) runs.
+    ``(target, service_type)`` pair so a synchronous caller can read it without
+    consulting ``alru_cache`` (which exposes no public sync peek). The snapshot
+    has no TTL of its own; ``alru_cache`` remains the authoritative TTL store
+    and the snapshot is best-effort, refreshed each time
+    ``app.sep.apps.framework.connectivity.record_connectivity_warning`` runs.
 
     :param target: The Nomad node name.
     :param service_type: The lowercase service type (e.g. ``mysql``).
@@ -205,109 +172,3 @@ async def _fetch_connectivity_result(
         return ConnectivityResult(
             success=False, error="Could not reach the Tasks API", task_history_id=None
         )
-
-
-async def check_and_warn_connectivity(
-    request: Request,
-    tasks_api: RemoteAPI,
-    *,
-    target: str,
-    host: str,
-    port: int,
-    service_type: str,
-) -> None:
-    """Run a connectivity check and flash a warning on failure.
-
-    Delegate the actual Tasks API call to ``_fetch_connectivity_result`` so
-    its result is memoized via ``alru_cache``. Subsequent calls with the
-    same ``(tasks_api, target, host, port, service_type)`` tuple short-
-    circuit until ``CACHE_TTL`` seconds elapse.
-
-    :param request: The HTTP request (for flash messages).
-    :param tasks_api: Authenticated Tasks API client.
-    :param target: The Nomad node name.
-    :param host: The database host address.
-    :param port: The database port.
-    :param service_type: The lowercase service type (e.g. ``mysql``).
-    """
-    success, error, task_history_id = await _fetch_connectivity_result(
-        tasks_api, target, host, port, service_type
-    )
-    _record_latest_result(target, service_type, success=success)
-
-    if not success:
-        pointer = (
-            f" (see task #{task_history_id} logs)"
-            if task_history_id is not None
-            else ""
-        )
-        messages.warning(
-            request,
-            f"Connectivity warning for {host}:{port} ({service_type}) "
-            f"on executor {target}: {error or 'check failed'}{pointer}",
-        )
-
-
-async def maybe_check_connectivity(
-    request: Request,
-    tasks_api: RemoteAPI,
-    meta: dict[str, Any],
-    *,
-    check_connectivity: bool = True,
-) -> None:
-    """Run ``check_and_warn_connectivity`` when ``meta`` carries connectivity data.
-
-    Extract ``target``, ``_connectivity_host``, ``_connectivity_port``, and
-    ``_connectivity_service_type`` from ``meta`` and delegate to
-    ``check_and_warn_connectivity``. Return silently when ``check_connectivity``
-    is ``False`` or when any of those keys are missing or falsy, which lets
-    task-creation routes invoke this helper unconditionally without inspecting
-    the task payload themselves.
-
-    :param request: The HTTP request (for flash messages).
-    :param tasks_api: Authenticated Tasks API client.
-    :param meta: The ``task.data["meta"]`` mapping from the created task.
-    :param check_connectivity: If ``False``, skip both the Tasks API call and
-        the ``_LATEST_RESULTS`` cache write. Honors the per-task opt-out from
-        the SEP task creation forms.
-    """
-    if not check_connectivity:
-        return
-    target = meta.get("target")
-    host = meta.get(CONNECTIVITY_META_HOST_KEY)
-    port = meta.get(CONNECTIVITY_META_PORT_KEY)
-    service_type = meta.get(CONNECTIVITY_META_SERVICE_TYPE_KEY)
-    if target and host and port and service_type:
-        await check_and_warn_connectivity(
-            request,
-            tasks_api,
-            target=target,
-            host=host,
-            port=port,
-            service_type=service_type,
-        )
-
-
-def annotate_tasks_with_connectivity(tasks: Iterable[dict[str, Any]]) -> None:
-    """Add ``_connectivity_warning`` flag to tasks based on the latest results.
-
-    Support two task dict formats:
-
-    - Raw task dicts with ``data.meta`` containing ``target`` and
-      ``_connectivity_service_type``.
-    - Enriched ``task_info`` dicts with top-level ``_connectivity_target`` and
-      ``_connectivity_service_type`` keys.
-
-    :param tasks: The iterable of task dictionaries to annotate in-place.
-    """
-    for task in tasks:
-        target = task.get(CONNECTIVITY_TARGET_KEY)
-        service_type = task.get(CONNECTIVITY_META_SERVICE_TYPE_KEY)
-        if target is None or service_type is None:
-            meta = task.get("data", {}).get("meta", {})
-            target = meta.get("target")
-            service_type = meta.get(CONNECTIVITY_META_SERVICE_TYPE_KEY)
-        if target and service_type:
-            success = _LATEST_RESULTS.get((target, service_type))
-            if success is not None:
-                task[CONNECTIVITY_WARNING_KEY] = not success

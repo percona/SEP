@@ -53,9 +53,9 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       precommit: ${{ steps.filter.outputs.precommit }}
       frontend: ${{ steps.filter.outputs.frontend }}
-      docker: ${{ steps.filter.outputs.docker }}
       shell: ${{ steps.filter.outputs.shell }}
       sidecar: ${{ steps.filter.outputs.sidecar }}
+      pipeline: ${{ steps.filter.outputs.pipeline }}
     steps:
       - name: Checkout codebase
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -68,36 +68,37 @@ jobs:
             python:
               - '**/**.py'
               - 'pyproject.toml'
+              - 'alembic.ini'
               - 'poetry.lock'
               - 'poetry.toml'
               - 'settings.yaml'
+              - 'sidecar/settings.yaml'
+              - 'sidecar/settings-env.sh'
+              - 'sidecar/supervisord.conf'
+              - 'sidecar/healthcheck.sh'
+              - 'Makefile'
               - 'frontend/packages/api/specs/**'
             precommit:
               - '.pre-commit-config.yaml'
+              - '.github/workflows/ci.yml'
             shell:
               - '**/*.sh'
             frontend:
               - 'frontend/**'
               - 'package.json'
-            docker:
-              - 'Containerfile'
-              - 'Containerfile.base'
-              - 'app/**'
-              - 'frontend/**'
-              - 'pyproject.toml'
-              - 'poetry.lock'
-              - 'snippets/**'
-              - 'static/**'
-              - 'templates/**'
-              - 'entrypoint.sh'
-              - 'entrypoint_celery.sh'
-              - 'Makefile'
-              - 'alembic.ini'
+              - '.github/actions/setup-frontend-job/**'
             sidecar:
               - 'sidecar/**'
               - 'Containerfile.base'
               - 'alembic.ini'
               - 'Makefile'
+              - 'app/**'
+              - 'snippets/**'
+              - 'pyproject.toml'
+              - 'poetry.lock'
+            pipeline:
+              - 'build/**/*.pipeline'
+              - 'scripts/lint_pipelines.groovy'
 
   precommit-light:
     if: ${{ github.event.pull_request.draft == false }}
@@ -153,7 +154,8 @@ jobs:
         (
           needs.changes.outputs.python == 'true' ||
           needs.changes.outputs.precommit == 'true' ||
-          needs.changes.outputs.docker == 'true' ||
+          needs.changes.outputs.sidecar == 'true' ||
+          needs.changes.outputs.frontend == 'true' ||
           needs.changes.outputs.shell == 'true'
         )
       }}
@@ -203,21 +205,8 @@ jobs:
       - name: Checkout codebase
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
-        with:
-          version: 11.1.3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: "22.22.0"
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
-        working-directory: frontend
+      - name: Setup frontend job
+        uses: ./.github/actions/setup-frontend-job
 
       - name: Run oxfmt
         run: pnpm run format:check
@@ -256,51 +245,9 @@ jobs:
     # Runs concurrently with the python test matrix — the docker image build
     # consumes no test output, so it no longer gates on `python`. It starts as
     # soon as label-gate and changes succeed, while tests are still running.
-    # running. Merge correctness is preserved by ci-success below, which
+    # Merge correctness is preserved by ci-success below, which
     # aggregates python, frontend, and build.
     # `lint-fmt-only`: audit-group deps not in the production image.
-    if: >-
-      ${{
-        github.event.pull_request.draft == false &&
-        needs.label-gate.result == 'success' &&
-        needs.changes.result == 'success' &&
-        needs.changes.outputs.docker == 'true' &&
-        !contains(github.event.pull_request.labels.*.name, 'lint-fmt-only')
-      }}
-    runs-on: ubuntu-latest
-    needs:
-      - label-gate
-      - changes
-    steps:
-      - name: Checkout codebase
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@a0c73a10bb6782f082cd6714666c87911e4fc7d3 # v4.0.0
-
-      - name: Build base image
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        with:
-          context: .
-          file: Containerfile.base
-          tags: sep:builder
-          load: true
-          cache-from: type=gha,scope=base
-          cache-to: type=gha,mode=max,scope=base
-
-      - name: Prepare app bundle
-        run: make pack
-
-      - name: Build app image
-        run: >-
-          docker build
-          --build-context "localhost/sep:builder=docker-image://sep:builder"
-          -f Containerfile -t "sep:HEAD" .
-
-      - name: Smoke test
-        run: docker run --rm --entrypoint /bin/sh "sep:HEAD" -c 'sleep 1'
-
-  build-sidecar:
     if: >-
       ${{
         github.event.pull_request.draft == false &&
@@ -333,15 +280,17 @@ jobs:
       - name: Prepare app bundle
         run: make pack
 
-      - name: Build side-car image
+      - name: Build app image
         run: >-
           docker build
           --build-context "localhost/sep:builder=docker-image://sep:builder"
-          -f sidecar/Containerfile.sidecar -t "sep:HEAD-sidecar" .
+          -f sidecar/Containerfile.sidecar
+          --build-arg SEP_RESTRICT_APPS=1
+          -t "sep:HEAD" .
 
       - name: Smoke test - verify binaries and config files
         run: |
-          docker run --rm --entrypoint /bin/sh "sep:HEAD-sidecar" -c '
+          docker run --rm --entrypoint /bin/sh "sep:HEAD" -c '
             set -e
             command -v valkey-server
             command -v valkey-cli
@@ -349,21 +298,23 @@ jobs:
             test -f /home/sep/app/supervisord.conf
             test -f /home/sep/app/healthcheck.sh
             test -x /home/sep/app/entrypoint.sh
+            test -f /home/sep/app/settings-env.sh
+            test -f /home/sep/app/settings.yaml
           '
 
       - name: Smoke test - verify HEALTHCHECK instruction
         run: |
-          healthcheck_test=$(docker inspect --format='{{json .Config.Healthcheck.Test}}' "sep:HEAD-sidecar")
+          healthcheck_test=$(docker inspect --format='{{json .Config.Healthcheck.Test}}' "sep:HEAD")
           if [ -z "$healthcheck_test" ] || [ "$healthcheck_test" = "null" ] || [ "$healthcheck_test" = "[\"NONE\"]" ]; then
             echo "::error::HEALTHCHECK instruction is missing or disabled (HEALTHCHECK NONE) in the side-car image"
             exit 1
           fi
-          healthcheck=$(docker inspect --format='{{json .Config.Healthcheck}}' "sep:HEAD-sidecar")
+          healthcheck=$(docker inspect --format='{{json .Config.Healthcheck}}' "sep:HEAD")
           echo "HEALTHCHECK present: $healthcheck"
 
       - name: Smoke test - verify ENTRYPOINT is the side-car wrapper
         run: |
-          entrypoint=$(docker inspect --format='{{json .Config.Entrypoint}}' "sep:HEAD-sidecar")
+          entrypoint=$(docker inspect --format='{{json .Config.Entrypoint}}' "sep:HEAD")
           case "$entrypoint" in
             *entrypoint.sh*) ;;
             *)
@@ -372,6 +323,38 @@ jobs:
               ;;
           esac
           echo "ENTRYPOINT present: $entrypoint"
+
+      - name: Smoke test - restricted image ships exactly the activated apps
+        run: sidecar/verify_image_apps.sh "sep:HEAD" restricted
+
+  pipeline-syntax:
+    if: >-
+      ${{
+        github.event.pull_request.draft == false &&
+        needs.changes.outputs.pipeline == 'true'
+      }}
+    needs:
+      - label-gate
+      - changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Parse Jenkins pipeline Groovy syntax
+        run: |
+          pipelines=()
+          while IFS= read -r pipeline; do
+            pipelines+=("$pipeline")
+          done < <(git ls-files -- ':(glob)build/**/*.pipeline')
+          ((${#pipelines[@]})) || {
+            echo "::error::No build/**/*.pipeline files found."
+            exit 1
+          }
+          docker run --rm -v "$PWD:/w" -w /w \
+            groovy@sha256:fcfaaa9eba20ccc3b438a70cb599e721996758ecf22de70dc0a85302c97822aa \
+            groovy scripts/lint_pipelines.groovy \
+            "${pipelines[@]}"
 
   ci-success:
     if: always()
@@ -384,7 +367,7 @@ jobs:
       - python
       - frontend
       - build
-      - build-sidecar
+      - pipeline-syntax
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any dependency failed or was cancelled

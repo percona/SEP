@@ -163,6 +163,58 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/oauth/session/exchange': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Spa Session Exchange
+     * @description Mint a short-lived SEP bearer from an ambient Grafana session.
+     *
+     *     Serves an embedded client that already carries the host's session cookie on
+     *     the same origin. Unlike ``POST /session``, set no cookie and issue no refresh
+     *     token: the caller holds the bearer in memory and exchanges again before it
+     *     expires, so the deployment never shares a long-lived credential.
+     *
+     *     Every exchange re-reads the identity from the provider and no validation is
+     *     cached, so a role change takes effect within one bearer lifetime. A
+     *     signed-out browser loses embedded access just as fast, because without the
+     *     session cookie it cannot obtain another bearer -- though whether a
+     *     *previously copied* host cookie stops working depends on the host revoking
+     *     its own session server-side, which is outside SEP's control.
+     *
+     *     Carries no auth dependency by design: the caller is not yet SEP-authenticated,
+     *     and the ambient session cookie is the credential being presented. No CSRF
+     *     primitive applies either: requiring a Bearer token cannot gate an
+     *     endpoint whose purpose is to issue one. That is safe because a cross-origin
+     *     attacker cannot read this response (the CORS posture is an explicit
+     *     per-environment origin allowlist, with the middleware absent when none is
+     *     configured), and the bearer-authenticated calls the token enables are
+     *     CSRF-exempt by design, since browsers never attach an ``Authorization``
+     *     header automatically.
+     *
+     *     Every failure -- no cookie, a rejected session, an unreachable provider --
+     *     denies with the same ``401`` rather than reporting a reason the route cannot
+     *     distinguish.
+     *
+     *     :param request: The incoming request, carrying the ambient session cookie.
+     *     :param response: The HTTP response, marked uncacheable so no intermediary
+     *         stores the minted bearer.
+     *     :return: The minted bearer and its lifetime.
+     *     :raises HTTPUnauthorizedException: If there is no valid ambient session.
+     */
+    post: operations['oauth_spa_session_exchange_api_oauth_session_exchange_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/oauth/token': {
     parameters: {
       query?: never;
@@ -460,6 +512,25 @@ export interface components {
       /** Expires In */
       expires_in: number;
     };
+    /**
+     * SessionExchangeTokenResponse
+     * @description Represent the bearer returned when an ambient session is exchanged.
+     *
+     *     Mirror :class:`SPAOAuthTokenResponse`'s field names so a client's token
+     *     provider reads the same shape, but keep the contract separate: no refresh
+     *     token is issued and no cookie is set, so the holder renews by exchanging
+     *     again rather than by refreshing.
+     *
+     *     :param access_token: The short-lived token used to access protected
+     *         resources.
+     *     :param expires_in: The time duration after which the token expires.
+     */
+    SessionExchangeTokenResponse: {
+      /** Access Token */
+      access_token: string;
+      /** Expires In */
+      expires_in: number;
+    };
     /** ValidationError */
     ValidationError: {
       /** Context */
@@ -600,6 +671,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['SPAOAuthTokenResponse'];
+        };
+      };
+    };
+  };
+  oauth_spa_session_exchange_api_oauth_session_exchange_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SessionExchangeTokenResponse'];
         };
       };
     };

@@ -24,9 +24,11 @@ export {
   getToken,
   refreshAccessToken,
   setTokenProvider,
+  setTokenMinter,
   setOnUnauthorized,
   setOnRefreshed,
 } from './client';
+export type { MintedToken } from './client';
 
 // Query client
 export { createQueryClient, defaultQueryClientConfig } from './queryClient';
@@ -36,10 +38,22 @@ export { ApiError, normalizeAxiosError, parseFieldErrors } from './errors';
 export type { ApiErrorDetails, ApiErrorKind, FieldValidationError } from './errors';
 
 // Auth
-export { postLogin, postRefresh, postSession, postLogout, fetchCurrentUser } from './auth';
+export {
+  postLogin,
+  postRefresh,
+  postSession,
+  postSessionExchange,
+  postLogout,
+  fetchCurrentUser,
+} from './auth';
 
 // Types (re-exported from generated OpenAPI schemas)
-export type { OAuthTokenResponse, SPAOAuthTokenResponse, User } from './types/api';
+export type {
+  OAuthTokenResponse,
+  SessionExchangeTokenResponse,
+  SPAOAuthTokenResponse,
+  User,
+} from './types/api';
 
 // Generated OpenAPI type surfaces — use for typed openapi-fetch clients
 // and for type-only imports in plugins and framework code.

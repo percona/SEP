@@ -39,6 +39,10 @@ from app.tasks.execution.executors.nomad.constants import (
     CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
     RUN_SCRIPT_OUTPUT_FILES_PATH,
 )
+from app.tasks.execution.executors.nomad.steps import (
+    LOG_CAPTURE_HOLD_DEFAULT_SECONDS,
+    NomadStep,
+)
 from app.tasks.models import (
     INVENTORY_SYNC_TASK_NAME,
     SYNC_RUNNING_TASKS_TASK_NAME,
@@ -74,7 +78,7 @@ STALENESS_PREAMBLE_SHELL = (
 )
 
 _CHECK_STALENESS_TASK = {
-    "Name": "check-staleness",
+    "Name": NomadStep.CHECK_STALENESS,
     "Lifecycle": {"hook": "prestart", "sidecar": False},
     "Driver": "raw_exec",
     "User": "",
@@ -87,6 +91,38 @@ _CHECK_STALENESS_TASK = {
 }
 
 _STALENESS_META_OPTIONAL = ["scheduled_at", "staleness_threshold_seconds"]
+
+#: POSIX sh body of the log-capture hold: keep the allocation non-terminal after
+#: the payload exits so Nomad cannot garbage-collect logs SEP has not read yet,
+#: until either SEP signals the step or the deadline elapses.
+#:
+#: ``sleep`` is backgrounded and waited on because a POSIX shell runs traps only
+#: between foreground commands -- ``trap ...; sleep N`` would ignore the signal
+#: for the full N seconds, which is the whole duration the trap exists to cut
+#: short.
+LOG_CAPTURE_HOLD_SHELL = (
+    'trap "exit 0" TERM INT; '
+    "hold=$NOMAD_META_log_capture_hold_seconds; "
+    '[ -n "$hold" ] || hold=' + str(LOG_CAPTURE_HOLD_DEFAULT_SECONDS) + "; "
+    'sleep "$hold" & '
+    "wait $!; "
+    "exit 0"
+)
+
+_LOG_CAPTURE_HOLD_TASK = {
+    "Name": NomadStep.LOG_CAPTURE_HOLD,
+    "Lifecycle": {"hook": "poststop", "sidecar": False},
+    "Driver": "raw_exec",
+    "User": "",
+    "Config": {
+        "command": "sh",
+        "args": ["-c", LOG_CAPTURE_HOLD_SHELL],
+    },
+    "Meta": {},
+    "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+}
+
+_LOG_CAPTURE_HOLD_META_OPTIONAL = ["log_capture_hold_seconds"]
 
 NOMAD_RUN_COMMAND = {
     "ID": "run-command",
@@ -103,7 +139,11 @@ NOMAD_RUN_COMMAND = {
     "ParameterizedJob": {
         "Payload": "forbidden",
         "MetaRequired": ["target", "command"],
-        "MetaOptional": ["args", *_STALENESS_META_OPTIONAL],
+        "MetaOptional": [
+            "args",
+            *_STALENESS_META_OPTIONAL,
+            *_LOG_CAPTURE_HOLD_META_OPTIONAL,
+        ],
     },
     "TaskGroups": [
         {
@@ -113,7 +153,7 @@ NOMAD_RUN_COMMAND = {
             "Tasks": [
                 deepcopy(_CHECK_STALENESS_TASK),
                 {
-                    "Name": "run-script",
+                    "Name": NomadStep.RUN_SCRIPT,
                     "Driver": "raw_exec",
                     "User": "",
                     "Config": {
@@ -133,6 +173,7 @@ NOMAD_RUN_COMMAND = {
                         },
                     ],
                 },
+                deepcopy(_LOG_CAPTURE_HOLD_TASK),
             ],
         },
     ],
@@ -153,7 +194,12 @@ NOMAD_RUN_PYTHON = {
     "ParameterizedJob": {
         "Payload": "required",
         "MetaRequired": ["target"],
-        "MetaOptional": ["config", "requirements", *_STALENESS_META_OPTIONAL],
+        "MetaOptional": [
+            "config",
+            "requirements",
+            *_STALENESS_META_OPTIONAL,
+            *_LOG_CAPTURE_HOLD_META_OPTIONAL,
+        ],
     },
     "TaskGroups": [
         {
@@ -164,7 +210,7 @@ NOMAD_RUN_PYTHON = {
             "Tasks": [
                 deepcopy(_CHECK_STALENESS_TASK),
                 {
-                    "Name": "prepare-env",
+                    "Name": NomadStep.PREPARE_ENV,
                     "Lifecycle": {"hook": "prestart", "sidecar": False},
                     "Driver": "raw_exec",
                     "User": "",
@@ -187,7 +233,7 @@ NOMAD_RUN_PYTHON = {
                     ],
                 },
                 {
-                    "Name": "run-script",
+                    "Name": NomadStep.RUN_SCRIPT,
                     "Driver": "raw_exec",
                     "User": "",
                     "Config": {
@@ -215,7 +261,7 @@ NOMAD_RUN_PYTHON = {
                     "DispatchPayload": {"file": "script.py.gz"},
                 },
                 {
-                    "Name": "clean-up",
+                    "Name": NomadStep.CLEAN_UP,
                     "Lifecycle": {"hook": "poststop", "sidecar": False},
                     "Driver": "raw_exec",
                     "User": "",
@@ -231,6 +277,7 @@ NOMAD_RUN_PYTHON = {
                     "Meta": {},
                     "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
                 },
+                deepcopy(_LOG_CAPTURE_HOLD_TASK),
             ],
         },
     ],
@@ -256,7 +303,11 @@ NOMAD_EXEC_ARTIFACT = {
             "interpreter",
             "md5_checksum",
         ],
-        "MetaOptional": ["args", *_STALENESS_META_OPTIONAL],
+        "MetaOptional": [
+            "args",
+            *_STALENESS_META_OPTIONAL,
+            *_LOG_CAPTURE_HOLD_META_OPTIONAL,
+        ],
     },
     "TaskGroups": [
         {
@@ -264,7 +315,7 @@ NOMAD_EXEC_ARTIFACT = {
             "Tasks": [
                 deepcopy(_CHECK_STALENESS_TASK),
                 {
-                    "Name": "run-script",
+                    "Name": NomadStep.RUN_SCRIPT,
                     "Driver": "raw_exec",
                     "User": "",
                     "Config": {
@@ -303,6 +354,7 @@ NOMAD_EXEC_ARTIFACT = {
                         }
                     ],
                 },
+                deepcopy(_LOG_CAPTURE_HOLD_TASK),
             ],
         },
     ],
@@ -328,7 +380,12 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
             "interpreter",
             "md5_checksum",
         ],
-        "MetaOptional": ["args", "requirements", *_STALENESS_META_OPTIONAL],
+        "MetaOptional": [
+            "args",
+            "requirements",
+            *_STALENESS_META_OPTIONAL,
+            *_LOG_CAPTURE_HOLD_META_OPTIONAL,
+        ],
     },
     "TaskGroups": [
         {
@@ -339,7 +396,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
             "Tasks": [
                 deepcopy(_CHECK_STALENESS_TASK),
                 {
-                    "Name": "prepare-env",
+                    "Name": NomadStep.PREPARE_ENV,
                     "Lifecycle": {"hook": "prestart", "sidecar": False},
                     "Driver": "raw_exec",
                     "User": "",
@@ -362,7 +419,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
                     ],
                 },
                 {
-                    "Name": "run-script",
+                    "Name": NomadStep.RUN_SCRIPT,
                     "Driver": "raw_exec",
                     "User": "",
                     "Config": {
@@ -402,7 +459,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
                     ],
                 },
                 {
-                    "Name": "clean-up",
+                    "Name": NomadStep.CLEAN_UP,
                     "Lifecycle": {"hook": "poststop", "sidecar": False},
                     "Driver": "raw_exec",
                     "User": "",
@@ -417,6 +474,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
                     "Meta": {},
                     "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
                 },
+                deepcopy(_LOG_CAPTURE_HOLD_TASK),
             ],
         },
     ],

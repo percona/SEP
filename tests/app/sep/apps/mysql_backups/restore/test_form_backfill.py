@@ -22,7 +22,6 @@ import yaml
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill import (
     _backfill_single_task,
-    _BackfillApp,
     FormBackfillContext,
 )
 from app.sep.apps.framework.form_backfill_inventory import (
@@ -31,8 +30,8 @@ from app.sep.apps.framework.form_backfill_inventory import (
 )
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.models import BackupType
-from app.sep.apps.mysql_backups.restore.app import app as mysql_restores_app
 from app.sep.apps.mysql_backups.restore.form_backfill import (
+    FORM_BACKFILL_ENTRY,
     reconstruct_mysql_restores_form,
 )
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate
@@ -329,9 +328,7 @@ def test_backfill_single_task_stamps_mysql_restores_form():
         dest_port=3306,
         alert_on_fail=True,
     )
-    entry = _BackfillApp(
-        app=mysql_restores_app, reconstructor=reconstruct_mysql_restores_form
-    )
+    entry = FORM_BACKFILL_ENTRY
     ctx = FormBackfillContext(
         log=__import__("logging").getLogger("test"),
         service_lookup=service_lookup,

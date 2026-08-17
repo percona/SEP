@@ -1,0 +1,182 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Record a completed MySQL backup run into the catalog.
+
+This module owns the map from a terminal backup run onto one persisted
+:class:`~app.sep.apps.mysql_backups.models.MysqlBackupRun`. The tasks service
+resolves it lazily through :func:`app.tasks.hook_resolver.resolve_hook`,
+following the ``"module:function"`` path the backup task carries in
+``Task.run_result_recorder`` (stamped at creation from
+:data:`RUN_RESULT_RECORDER`), so this catalog knowledge stays inside the plugin
+rather than leaking into ``app/tasks``.
+
+The recorder is invoked at every terminal status with the payload-reported
+result (``None`` when a run reported nothing — an older payload, or a
+non-success run). It records exactly one row per *successful* mydumper or
+xtrabackup run and nothing for anything else: binlog runs, non-success
+terminals, and unknown tools leave no record. A success that reported no result
+(or a partial one) still records the run, leaving the unreported fields empty.
+"""
+
+import logging
+from typing import Any, TypeVar
+
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.sep.apps.meta_keys import SERVICE_ID_META_KEY, SERVICE_NAME_META_KEY
+from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
+from app.sep.apps.mysql_backups.models import (
+    BackupType,
+    extract_backup_type_marker,
+    MysqlBackupRun,
+)
+from app.sep.db import get_async_session_maker
+from app.tasks.models import TaskHistory, TaskHistoryStatusEnum
+
+logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+#: Importable ``"module:function"`` path of this module's run-result recorder.
+#: The backups app stamps it onto every backup task (``Task.run_result_recorder``)
+#: at creation so the tasks service resolves the recorder lazily without
+#: statically importing the plugin.
+RUN_RESULT_RECORDER = f"{__name__}:record_backup_run"
+
+#: Tools that produce a per-run artifact worth cataloguing. Binlog runs
+#: continuously and has no per-run completion to record, so it is excluded.
+_CATALOGUED_TYPES = frozenset({BackupType.MYDUMPER, BackupType.XTRABACKUP})
+
+
+def _coerce(value: Any, expected: type[T], field: str) -> T | None:
+    """Return ``value`` only when it is exactly ``expected``, else ``None``.
+
+    The result dict is written by a payload on a remote host, so every field is
+    untrusted: a wrong-typed value is dropped rather than stored. ``bool`` is
+    rejected for an ``int`` field, since ``True``/``False`` are ``int`` subclasses
+    and never a valid size. A *present* value of the wrong type is a contract
+    violation and is logged before being dropped; an absent field (``None``)
+    passes through silently.
+
+    :param value: The candidate value pulled from the reported result.
+    :param expected: The type the field must be to be kept.
+    :param field: The field name, used only in the drop warning.
+    :return: ``value`` when it matches ``expected``, otherwise ``None``.
+    """
+    if expected is int and isinstance(value, bool):
+        kept: T | None = None
+    else:
+        kept = value if isinstance(value, expected) else None
+    if kept is None and value is not None:
+        logger.warning(
+            "Dropping malformed run-result field %r: expected %s, got %r.",
+            field,
+            expected.__name__,
+            value,
+        )
+    return kept
+
+
+def _positive_int(value: Any, field: str) -> int | None:
+    """Return ``value`` only when it is a positive ``int``, else ``None``.
+
+    Layers a range guard over :func:`_coerce` for the inventory ids carried in
+    task meta, which start at 1. A non-positive id would key the row to a service
+    that cannot exist *and* drop it out of the ``service_id IS NULL`` name
+    fallback the catalog query uses, leaving the row unreachable — recording it as
+    absent keeps the name path open.
+
+    :param value: The candidate value pulled from the task meta.
+    :param field: The meta key name, used only in the drop warning.
+    :return: ``value`` when it is a positive ``int``, otherwise ``None``.
+    """
+    coerced = _coerce(value, int, field)
+    if coerced is not None and coerced <= 0:
+        logger.warning(
+            "Dropping out-of-range meta field %r: expected a positive id, got %r.",
+            field,
+            coerced,
+        )
+        return None
+    return coerced
+
+
+async def record_backup_run(
+    session: AsyncSession,  # noqa: ARG001 — seam contract; see below
+    history: TaskHistory,
+    result: dict[str, Any] | None,
+) -> None:
+    """Persist one catalog record for a successful mydumper/xtrabackup run.
+
+    No-ops for every case that must leave no record: a non-success terminal
+    (failed, stopped, lost), a binlog or unknown-tool run, and a run already
+    catalogued (idempotent on ``task_history_id``, so a re-invocation or a
+    concurrent second call cannot create a duplicate). For a success worth
+    recording, writes one row filling only the fields the run actually reported;
+    a ``None`` or partial ``result`` leaves ``location``/``size_bytes``/
+    ``upload_destination`` empty rather than failing.
+
+    The ``mysql_backup_run`` table is owned by the **sep** database, but the
+    recorder seam opens and passes a *tasks*-database session — the two are
+    distinct engines under SQLite (and only coincidentally the same shared
+    database under Postgres). So the write is done on a fresh sep session this
+    function opens itself; the passed ``session`` is intentionally unused (all
+    reads come off the already-loaded ``history``), kept only to satisfy the
+    seam's ``(session, history, result)`` contract.
+
+    :param session: The tasks-database session opened by the recorder seam;
+        unused — kept for the seam contract (see above).
+    :param history: The terminal ``TaskHistory``, with ``task`` loaded.
+    :param result: The payload-reported result, or ``None`` when none was read.
+    """
+    if history.status != TaskHistoryStatusEnum.SUCCESS:
+        return
+
+    task = history.task
+    task_data = task.data if task else None
+    marker = extract_backup_type_marker(task_data)
+    try:
+        backup_type = BackupType(marker)
+    except ValueError:
+        return
+    if backup_type not in _CATALOGUED_TYPES:
+        return
+
+    meta = task_data.get("meta") if isinstance(task_data, dict) else None
+    meta = meta if isinstance(meta, dict) else {}
+    reported = result if isinstance(result, dict) else {}
+
+    record = MysqlBackupRun(
+        task_history_id=history.id,
+        service_name=_coerce(
+            meta.get(SERVICE_NAME_META_KEY), str, SERVICE_NAME_META_KEY
+        ),
+        service_id=_positive_int(meta.get(SERVICE_ID_META_KEY), SERVICE_ID_META_KEY),
+        hostname=_coerce(meta.get("target"), str, "target"),
+        backup_type=backup_type,
+        location=_coerce(reported.get("backup_dir"), str, "backup_dir"),
+        upload_destination=_coerce(
+            reported.get("upload_destination"), str, "upload_destination"
+        ),
+        size_bytes=_coerce(reported.get("size_bytes"), int, "size_bytes"),
+        started_at=history.started_at,
+        finished_at=history.finished_at,
+    )
+
+    async with get_async_session_maker()() as sep_session:
+        await MysqlBackupRunManager.get_or_create(
+            sep_session, record, filter_include={"task_history_id"}
+        )

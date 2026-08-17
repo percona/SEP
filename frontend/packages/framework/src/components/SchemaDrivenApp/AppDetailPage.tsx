@@ -15,12 +15,13 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Routes, Route, useParams, useNavigate, useLocation, Link } from 'react-router';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
+import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -46,7 +47,9 @@ import {
   useDeleteAppTask,
   useAppEntityDetail,
   useAppTask,
+  useAppTasks,
   type DetailSection,
+  type ListView,
   type SepComponents,
   type AppEntitySchema,
   type AppSchema,
@@ -60,6 +63,7 @@ import {
 } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
 import { ScheduleSummary } from '../ScheduleSummary';
+import { ChainBuilder, type ChainValue } from '../ChainBuilder';
 import {
   useExecuteTask,
   useStopTaskHistory,
@@ -246,6 +250,9 @@ const BASELINE_OVERVIEW_HIDDEN_FIELDS = [
   'anonymized_entities',
 ] as const;
 
+/** Stable empty column set so a schema without a `list_view` never re-memoizes. */
+const EMPTY_LIST_COLUMNS: ListView['columns'] = [];
+
 function formatLabel(key: string): string {
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -403,7 +410,10 @@ function OverviewTab({
   const navState = (location.state ?? null) as { connectivityWarning?: unknown } | null;
   const connectivityWarning = task.connectivity_warning ?? navState?.connectivityWarning;
   const taskName = typeof task.name === 'string' && task.name.trim() ? task.name.trim() : undefined;
-  const columns = schema.list_view!.columns;
+  // `list_view` is optional: an entity schema reached through an unresolved
+  // detail route has no top-level list view, so fall back to the task's own
+  // fields (rendered below as `extraEntries`) rather than crashing.
+  const columns = schema.list_view?.columns ?? EMPTY_LIST_COLUMNS;
   const schemaHiddenFields = schema.list_view?.overview_hidden_fields;
 
   const suppressedFields = useMemo(() => {
@@ -578,6 +588,10 @@ interface ActionBarProps {
   hasStoredForm: boolean;
 }
 
+function emptyChain(): ChainValue {
+  return { chain_task_names: [], chain_on_failure: false };
+}
+
 function ActionBar({
   schema,
   pluginName,
@@ -592,6 +606,26 @@ function ActionBar({
   const executeTask = useExecuteTask(pluginName);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingExecute, setPendingExecute] = useState<TaskExecuteAction | null>(null);
+  const [chain, setChain] = useState<ChainValue>(emptyChain);
+
+  const chainingEnabled = !!schema.capabilities?.chaining;
+  const {
+    data: appTasksData,
+    isLoading: appTasksLoading,
+    isError: appTasksError,
+    error: appTasksLoadError,
+  } = useAppTasks<{ name: string }>(pluginName, undefined, {
+    fetchAllPages: true,
+    enabled: chainingEnabled,
+  });
+  const availableTasks = useMemo(
+    () => (appTasksData?.items ?? []).map((t) => ({ name: t.name })),
+    [appTasksData],
+  );
+
+  useEffect(() => {
+    setChain(emptyChain());
+  }, [pendingExecute]);
 
   const resolvedExecuteActions =
     executeActions ??
@@ -607,20 +641,28 @@ function ActionBar({
     if (!pendingExecute) {
       return;
     }
+    const hasChain = chain.chain_task_names.length > 0;
+    let executeBody = pendingExecute.executeBody;
+    if (hasChain) {
+      executeBody = {
+        ...pendingExecute.executeBody,
+        chain_task_names: chain.chain_task_names,
+        chain_on_failure: chain.chain_on_failure,
+      };
+    }
     try {
-      await executeTask.mutateAsync({
-        taskName: pendingExecute.taskName,
-        executeBody: pendingExecute.executeBody,
-      });
+      const executeArgs = executeBody
+        ? { taskName: pendingExecute.taskName, executeBody }
+        : { taskName: pendingExecute.taskName };
+      await executeTask.mutateAsync(executeArgs);
       enqueueSnackbar(`${schema.display_name} task "${pendingExecute.taskName}" started`, {
         variant: 'success',
       });
+      setPendingExecute(null);
     } catch (e) {
       enqueueSnackbar(e instanceof Error ? e.message : 'Failed to execute task', {
         variant: 'error',
       });
-    } finally {
-      setPendingExecute(null);
     }
   };
 
@@ -708,7 +750,16 @@ function ActionBar({
         </Button>
       </Stack>
 
-      <Dialog open={pendingExecute !== null} onClose={() => setPendingExecute(null)}>
+      <Dialog
+        open={pendingExecute !== null}
+        onClose={() => {
+          if (!executeTask.isPending) {
+            setPendingExecute(null);
+          }
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>
           {pendingExecute?.label ?? 'Execute'} {schema.display_name} task?
         </DialogTitle>
@@ -717,6 +768,28 @@ function ActionBar({
             {pendingExecute?.confirmMessage ??
               `Are you sure you want to execute the task ${pendingExecute?.taskName ?? taskName} now?`}
           </DialogContentText>
+          {chainingEnabled && pendingExecute && (
+            <Box sx={{ mt: 2 }}>
+              {appTasksLoading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                  <CircularProgress size={24} data-testid="chain-tasks-loading" />
+                </Box>
+              ) : appTasksError ? (
+                <Alert severity="error" data-testid="chain-tasks-error">
+                  Couldn&apos;t load tasks available to chain
+                  {appTasksLoadError instanceof Error ? `: ${appTasksLoadError.message}` : ''}
+                </Alert>
+              ) : (
+                <ChainBuilder
+                  availableTasks={availableTasks}
+                  currentTaskName={pendingExecute.taskName}
+                  value={chain}
+                  onChange={setChain}
+                  disabled={executeTask.isPending}
+                />
+              )}
+            </Box>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setPendingExecute(null)} disabled={executeTask.isPending}>

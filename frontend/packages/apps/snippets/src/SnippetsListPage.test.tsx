@@ -33,6 +33,16 @@ vi.mock('react-router', () => ({
   useNavigate: () => vi.fn(),
 }));
 
+// The download button owns a mutation now (the SPA fetches the file through the
+// Bearer-authenticated JSON endpoint), so the download-before-approve guard
+// flips on the mutation's success callback rather than on a plain anchor click.
+vi.mock('@sep/framework', () => ({
+  useSnippetDownload: vi.fn(() => ({
+    mutate: (_params: unknown, callbacks?: { onSuccess?: () => void }) => callbacks?.onSuccess?.(),
+    isPending: false,
+  })),
+}));
+
 vi.mock('./hooks', () => ({
   useSnippets: vi.fn(),
   useApproveSnippet: vi.fn(),
@@ -142,7 +152,7 @@ describe('SnippetsListPage — ApproveButton', () => {
     it('download action enables the approval confirmation flow', () => {
       render(<SnippetsListPage isAdmin />);
 
-      fireEvent.click(screen.getByRole('link', { name: /download/i }));
+      fireEvent.click(screen.getByRole('button', { name: /download/i }));
       fireEvent.click(screen.getByRole('button', { name: /approve/i }));
 
       expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -152,7 +162,7 @@ describe('SnippetsListPage — ApproveButton', () => {
     it('dialog warns about approving without inspection', () => {
       render(<SnippetsListPage isAdmin />);
 
-      fireEvent.click(screen.getByRole('link', { name: /download/i }));
+      fireEvent.click(screen.getByRole('button', { name: /download/i }));
       fireEvent.click(screen.getByRole('button', { name: /approve/i }));
 
       const dialog = screen.getByRole('dialog');
@@ -162,7 +172,7 @@ describe('SnippetsListPage — ApproveButton', () => {
     it('dialog includes the snippet filename', () => {
       render(<SnippetsListPage isAdmin />);
 
-      fireEvent.click(screen.getByRole('link', { name: /download/i }));
+      fireEvent.click(screen.getByRole('button', { name: /download/i }));
       fireEvent.click(screen.getByRole('button', { name: /approve/i }));
 
       expect(screen.getByRole('dialog')).toHaveTextContent('check.sh');
@@ -171,7 +181,7 @@ describe('SnippetsListPage — ApproveButton', () => {
     it('Cancel closes the dialog without approving', async () => {
       render(<SnippetsListPage isAdmin />);
 
-      fireEvent.click(screen.getByRole('link', { name: /download/i }));
+      fireEvent.click(screen.getByRole('button', { name: /download/i }));
       fireEvent.click(screen.getByRole('button', { name: /approve/i }));
       expect(screen.getByRole('dialog')).toBeInTheDocument();
 
@@ -186,7 +196,7 @@ describe('SnippetsListPage — ApproveButton', () => {
     it('Confirm in dialog calls approve mutation', () => {
       render(<SnippetsListPage isAdmin />);
 
-      fireEvent.click(screen.getByRole('link', { name: /download/i }));
+      fireEvent.click(screen.getByRole('button', { name: /download/i }));
       fireEvent.click(screen.getByRole('button', { name: /approve/i }));
       fireEvent.click(screen.getByRole('button', { name: /^approve$/i }));
 
@@ -448,7 +458,7 @@ describe('SnippetsListPage — RefreshButton', () => {
     render(<SnippetsListPage isAdmin />);
 
     // Download enables the Approve button.
-    fireEvent.click(screen.getByRole('link', { name: /download/i }));
+    fireEvent.click(screen.getByRole('button', { name: /download/i }));
     expect(screen.getByRole('button', { name: /approve/i })).not.toBeDisabled();
 
     // Trigger refresh.

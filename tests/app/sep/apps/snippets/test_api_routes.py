@@ -24,24 +24,24 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.sep.apps.snippets.extra_routes as snippets_extra_routes
-from app.sep.apps.snippets.models import (
-    BatchApprovalErrorResponse,
-    RefreshResponse,
-    SnippetResponse,
-    SnippetsCapabilitiesResponse,
-)
+import app.sep.snippets.models.responses as snippets_models
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
-    get_api_authenticated_user,
     get_current_user,
     get_session,
     require_bearer_for_unsafe_methods,
-    validate_csrf,
 )
 from app.sep.main import sep_app
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
+from app.sep.snippets.models.responses import (
+    BatchApprovalErrorResponse,
+    RefreshResponse,
+    SnippetBatchApproveRequest,
+    SnippetResponse,
+    SnippetsCapabilitiesResponse,
+)
 from app.tasks.models import TaskHistoryStatusEnum
 
 API_BASE = "/api/apps/snippets"
@@ -82,23 +82,17 @@ class TestSnippetsApprovalApiReviewContracts:
 
     def test_approval_response_collapses_into_snippet_response(self):
         """Single approval returns the snippet entity plus admin attribution."""
-        from app.sep.apps.snippets import models as snippets_models
-
         assert "SnippetApprovalResponse" not in snippets_models.__all__
         assert not hasattr(snippets_models, "SnippetApprovalResponse")
         assert "updated_by" in SnippetResponse.model_fields
 
     def test_batch_approve_base_is_not_exported(self):
         """``SnippetBatchApproveBase`` is gone; callers use ``SnippetBatchApproveRequest``."""
-        from app.sep.apps.snippets import models as snippets_models
-
         assert "SnippetBatchApproveBase" not in snippets_models.__all__
         assert not hasattr(snippets_models, "SnippetBatchApproveBase")
 
     def test_batch_approve_request_has_filenames_directly(self):
         """``SnippetBatchApproveRequest`` owns ``filenames`` — no delegation to a base."""
-        from app.sep.apps.snippets.models import SnippetBatchApproveRequest
-
         assert "filenames" in SnippetBatchApproveRequest.model_fields
 
     def test_batch_approval_error_defaults_use_independent_factories(self):
@@ -187,6 +181,53 @@ class TestSnippetsApiList:
         assert body["total"] == 1
         assert [row["filename"] for row in body["items"]] == ["mysql-dump.sh"]
 
+    async def test_sort_orders_rows_ascending_and_descending(
+        self, test_client, create_snippet
+    ):
+        """Honor the Core ``sort`` param (``-`` prefix = descending) over filename."""
+        for name in ("b.sh", "a.sh", "c.sh"):
+            await create_snippet(name, approved=True)
+
+        ascending = test_client.get(f"{API_BASE}/", params={"sort": "filename"})
+        descending = test_client.get(f"{API_BASE}/", params={"sort": "-filename"})
+
+        assert ascending.status_code == status.HTTP_200_OK
+        assert [row["filename"] for row in ascending.json()["items"]] == [
+            "a.sh",
+            "b.sh",
+            "c.sh",
+        ]
+        assert [row["filename"] for row in descending.json()["items"]] == [
+            "c.sh",
+            "b.sh",
+            "a.sh",
+        ]
+
+    async def test_invalid_sort_key_is_rejected_at_the_boundary(
+        self, test_client, create_snippet
+    ):
+        """Reject an out-of-allowlist sort key with 422 before any query runs."""
+        await create_snippet("hello.sh", approved=True)
+
+        response = test_client.get(f"{API_BASE}/", params={"sort": "meta"})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["detail"] == "Invalid sort key: 'meta'"
+
+    async def test_invalid_approval_selection_is_rejected_at_the_boundary(
+        self, test_client
+    ):
+        """Reject an out-of-enum approval selection with 422 before querying."""
+        response = test_client.get(f"{API_BASE}/", params={"approval": "maybe"})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        assert any(
+            err.get("loc") == ["query", "approval"]
+            for err in detail
+            if isinstance(err, dict)
+        )
+
     async def test_service_type_and_approval_filters_combine_server_side(
         self, test_client, create_snippet, session
     ):
@@ -211,47 +252,52 @@ class TestSnippetsApiList:
         assert body["total"] == 1
         assert [row["filename"] for row in body["items"]] == ["a.sh"]
 
-    async def test_invalid_sort_key_is_rejected_at_the_boundary(
-        self, test_client, create_snippet
+    async def test_filters_combine_with_the_core_sort_and_search(
+        self, test_client, create_snippet, session
     ):
-        """Reject an out-of-allowlist sort key with 422 before any query runs."""
-        await create_snippet("hello.sh", approved=True)
-
-        response = test_client.get(f"{API_BASE}/", params={"sort": "meta"})
-
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        detail = response.json()["detail"]
-        assert any(
-            err.get("loc") == ["query", "sort"]
-            for err in detail
-            if isinstance(err, dict)
+        """Intersect the filters with the Core sort and search on one request."""
+        approved_mysql = 2
+        await _seed_meta_snippet(
+            create_snippet,
+            session,
+            "mysql-dump.sh",
+            title="MySQL dump",
+            service_type="mysql",
+            approved=True,
+        )
+        await _seed_meta_snippet(
+            create_snippet,
+            session,
+            "mysql-locks.sh",
+            title="MySQL locks",
+            service_type="mysql",
+            approved=True,
+        )
+        await _seed_meta_snippet(
+            create_snippet,
+            session,
+            "mysql-pending.sh",
+            title="MySQL pending",
+            service_type="mysql",
         )
 
-    @pytest.mark.parametrize(
-        ("param", "value"),
-        [("order", "sideways"), ("approval", "maybe")],
-    )
-    async def test_invalid_enum_query_param_is_rejected_at_the_boundary(
-        self, test_client, param, value
-    ):
-        """Reject an out-of-enum order/approval selection with 422 before querying."""
-        response = test_client.get(f"{API_BASE}/", params={param: value})
-
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        detail = response.json()["detail"]
-        assert any(
-            err.get("loc") == ["query", param]
-            for err in detail
-            if isinstance(err, dict)
+        response = test_client.get(
+            f"{API_BASE}/",
+            params={
+                "search": "mysql",
+                "approval": "approved",
+                "service_type": "mysql",
+                "sort": "-title",
+            },
         )
 
-    async def test_unauthenticated_caller_is_rejected(self, api_unauthenticated_client):
-        """Reject anonymous callers with a structured 401, not a redirect or a page."""
-        response = api_unauthenticated_client.get(
-            f"{API_BASE}/", follow_redirects=False
-        )
-
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == approved_mysql
+        assert [row["filename"] for row in body["items"]] == [
+            "mysql-locks.sh",
+            "mysql-dump.sh",
+        ]
 
     async def test_uncategorized_flag_filters_to_snippets_without_a_type(
         self, test_client, create_snippet, session
@@ -286,6 +332,14 @@ class TestSnippetsApiList:
         body = response.json()
         assert body["total"] == 1
         assert [row["filename"] for row in body["items"]] == ["special.sh"]
+
+    async def test_unauthenticated_caller_is_rejected(self, api_unauthenticated_client):
+        """Reject anonymous callers with a structured 401, not a redirect or a page."""
+        response = api_unauthenticated_client.get(
+            f"{API_BASE}/", follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 @pytest.mark.asyncio
@@ -1008,6 +1062,7 @@ class TestSnippetsApiDeleteApproval:
         await session.refresh(snippet)
         assert snippet.is_approved is False
         assert snippet.updated_by == str(admin_user.id)
+        assert snippet.is_human_revoked is True
         assert f"Approval removed by {admin_user.username}" in snippet.reason
 
     async def test_idempotent_when_never_approved(
@@ -1665,10 +1720,8 @@ class TestSnippetsApiNestedFilenameContract:
 @pytest.fixture
 def test_client(regular_user, session, snippets_dir):
     """Return a TestClient sharing the in-memory session and snippets dir."""
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}

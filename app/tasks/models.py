@@ -55,6 +55,8 @@ from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
 from app.core.db.sql_types import AutoJSON, MaybeCompressedText
 from app.core.utils.fields import (
+    ARBITRARY_ARGS_SCHEMA,
+    ArbitraryMapping,
     EmptyStrToNone,
     UTCDatetime,
 )
@@ -220,6 +222,33 @@ class TaskLogType(StrEnum):
     STDERR = "stderr"
 
 
+class LogCaptureStatusEnum(StrEnum):
+    """Describe how completely SEP captured a task's log stream.
+
+    Distinguishes a stream that genuinely produced nothing from one whose bytes
+    were lost before SEP could read them — the stored offsets alone cannot tell
+    those apart, since both leave the cursors at zero.
+
+    ``UNKNOWN`` is the honest verdict where no evidence survives: rows written
+    before the column existed, and histories carrying no state rows at all.
+    """
+
+    COMPLETE = "complete"
+    INCOMPLETE = "incomplete"
+    UNKNOWN = "unknown"
+
+
+#: Severity order for reducing a task's per-stream verdicts to one. A single
+#: lost stream makes the whole execution's logs untrustworthy, so ``INCOMPLETE``
+#: outranks the rest; ``UNKNOWN`` outranks ``COMPLETE`` so an unclassified
+#: stream is never rounded up into a clean bill of health.
+CAPTURE_STATUS_PRECEDENCE: tuple[LogCaptureStatusEnum, ...] = (
+    LogCaptureStatusEnum.INCOMPLETE,
+    LogCaptureStatusEnum.UNKNOWN,
+    LogCaptureStatusEnum.COMPLETE,
+)
+
+
 class TaskLog(BaseModel):
     """Define a task log line.
 
@@ -245,21 +274,19 @@ class TaskExecutionRequest(BaseModel):
     :param target: The target system or environment.
     :type target: str
     :param meta: Additional metadata for the task. Defaults to an empty dictionary.
-    :type meta: dict | None
     :param payload: Optional payload or file path for parameterizing the task.
         Defaults to None.
     :type payload: str | None
     :param tracking: Tracking information for task execution. Defaults to a dictionary
         with keys for allocation and evaluation IDs.
-    :type tracking: dict | None
     """
 
     model_config = ConfigDict(extra="allow")
     task: str
     target: str
-    meta: dict | None = {}
+    meta: ArbitraryMapping | None = {}
     payload: str | None = None
-    tracking: dict | None = {"allocation_id": None, "evaluation_id": None}
+    tracking: ArbitraryMapping | None = {"allocation_id": None, "evaluation_id": None}
     eta: datetime | None = None
 
     @cached_property
@@ -361,7 +388,10 @@ class TaskBase(SQLModel):
     """
 
     name: str = SQLField(min_length=1, max_length=255, unique=True, index=True)
-    data: dict = SQLField(sa_column=Column(JSON, nullable=False))
+    data: dict = SQLField(
+        sa_column=Column(JSON, nullable=False),
+        schema_extra={"json_schema_extra": {"additionalProperties": True}},
+    )
     backend: TaskBackendEnum = SQLField(
         default=TaskBackendEnum.NOMAD,
         sa_column=Column(EnumField(TaskBackendEnum, native_enum=False), nullable=False),
@@ -546,7 +576,7 @@ class TaskExecuteRequest(BaseModel):
     :type chain_on_failure: bool
     """
 
-    meta: dict[str, Any] = {}
+    meta: dict[str, Any] = Field(default={}, json_schema_extra=ARBITRARY_ARGS_SCHEMA)
     payload: str | None = None
     eta: datetime | EmptyStrToNone = None
     anonymize_mask: int | None = None
@@ -876,20 +906,15 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
     always look rows up by that natural tuple rather than by the surrogate id.
 
     :param task_history_id: The ID of the ``TaskHistory`` this state row tracks.
-    :type task_history_id: int
     :param source: The execution step name this state row tracks (for example a
         Nomad task name).
-    :type source: str
     :param stream: The log stream (stdout or stderr) this state row tracks.
-    :type stream: TaskLogType
     :param persisted_offset: The absolute user-facing byte offset already
         flushed into the chunk store.
-    :type persisted_offset: int
     :param producer_offset: The producer-relative byte offset already consumed
         from the current producer epoch (resets when the producer switches, for
         example on a Nomad follow-up allocation). May diverge from
         ``persisted_offset`` after such a switch.
-    :type producer_offset: int
     :param producer_fetch_offset: The raw producer-space byte offset for the
         next log fetch (for example the ``offset=`` kwarg of a Nomad
         ``stream_logs.stream`` call). Producer-relative like
@@ -902,13 +927,14 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
         sentinel (pre-migration rows and streams without a producer epoch)
         that the seed and write guards trust unconditionally.
     :param staging: Bytes pending flush to the chunk store.
-    :type staging: bytes
     :param staging_updated_at: When ``staging`` was last modified; used to age
         out small buffers after ``MAX_AGE_SEC``.
-    :type staging_updated_at: datetime
+    :param capture_status: How completely SEP captured this ``(source, stream)``
+        pair. New rows start ``INCOMPLETE`` and are upgraded once the stream is
+        drained to EOF; rows predating the column take ``UNKNOWN`` from the
+        column's server default.
     :param version: Optimistic-locking version counter; incremented on every
         successful state update.
-    :type version: int
     """
 
     __tablename__ = "taskhistory_log_state"
@@ -976,6 +1002,17 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
             server_default=func.now(),
         ),
     )
+    capture_status: LogCaptureStatusEnum = SQLField(
+        sa_column=Column(
+            EnumField(LogCaptureStatusEnum, native_enum=False, create_constraint=True),
+            nullable=False,
+            # ``EnumField`` persists member *names*, so the server default must
+            # be spelled as one: a value here writes a string the mapped type
+            # cannot read back.
+            server_default=LogCaptureStatusEnum.UNKNOWN.name,
+        ),
+        default=LogCaptureStatusEnum.INCOMPLETE,
+    )
     version: int = SQLField(default=0, nullable=False)
 
 
@@ -1007,31 +1044,30 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     """Represent a task history API response.
 
     :param execution_request: The request that triggered the task execution.
-    :type execution_request: TaskExecutionRequest
     :param status: The status of the task execution.
-    :type status: TaskHistoryStatusEnum
     :param started_at: The datetime when the task execution started.
-    :type started_at: UTCDatetime | None
     :param finished_at: The datetime when the task execution finished.
-    :type finished_at: UTCDatetime | None
     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
         logs and files generated by the execution. Defaults to None, meaning it uses
         the value defined in the associated task's :attr:`Task.anonymize_mask`.
-    :type anonymize_mask: int | None
     :param task: The task associated with this execution history.
-    :type task: TaskResponse
     :param executed_by: The user ID of the user who executed the task.
-    :type executed_by: str | None
     :param has_logs: Whether this task history has any readable log content --
         either a chunk-store row or a legacy ``tracking["task_logs"]`` blob.
         Populated by list/retrieve routes; defaults to ``False``.
-    :type has_logs: bool
+    :param log_capture: How completely SEP captured this execution's logs,
+        aggregated over its state rows: any incomplete stream reports
+        ``"incomplete"``, else any unknown reports ``"unknown"``, else
+        ``"complete"``. Populated by list/retrieve routes; defaults to
+        ``"unknown"``, which is also what a history carrying no state rows
+        reports.
     :param display_name: A user-meaningful label derived from the task name or
         execution-request metadata. Read-only; computed on serialisation.
     """
 
     task: TaskResponse
     has_logs: bool = False
+    log_capture: LogCaptureStatusEnum = LogCaptureStatusEnum.UNKNOWN
 
     @computed_field
     @property
@@ -1106,7 +1142,7 @@ class TaskStats(BaseModel):
 
     @computed_field
     @property
-    def status(self) -> dict:
+    def status(self) -> dict[str, int]:
         """Return the task status summary.
 
         :return: A dictionary summarizing the number of passed and failed tasks.
@@ -1125,7 +1161,7 @@ class TaskStats(BaseModel):
 
     @computed_field
     @property
-    def duration(self) -> dict:
+    def duration(self) -> ArbitraryMapping:
         """Return the task duration summary.
 
         :return: A dictionary summarizing average, last, and total task durations.

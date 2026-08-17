@@ -13,18 +13,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define FastAPI dependencies for the ATW plugin's incident routes."""
+"""Define FastAPI dependencies for the ATW plugin's API routes."""
 
 from typing import Annotated
 
 from fastapi import Depends
 from pydantic import UUID4
 
-from app.core.exceptions import HTTPServiceUnavailableException
+from app.core.exceptions import HTTPConflictException, HTTPServiceUnavailableException
 from app.sep.apps.atw.crud import AtwIncidentManager
 from app.sep.apps.atw.models import AtwIncident
-from app.sep.config import sep_settings
+from app.sep.bundle_upload.resolver import resolve_delivery_plan
 from app.sep.deps import SessionDep
+from app.sep.snippets.deps import CoreListQueryDep
+from app.sep.snippets.list_query import SnippetApprovalFilter, SnippetListQuery
 
 
 async def get_atw_incident(session: SessionDep, incident_id: UUID4) -> AtwIncident:
@@ -41,17 +43,54 @@ async def get_atw_incident(session: SessionDep, incident_id: UUID4) -> AtwIncide
 AtwIncidentDep = Annotated[AtwIncident, Depends(get_atw_incident)]
 
 
+async def require_open_incident(incident: AtwIncidentDep) -> AtwIncident:
+    """Return the incident or raise if it has been closed.
+
+    :param incident: The incident resolved from the ``incident_id`` path parameter.
+    :return: The matching open incident.
+    :raises HTTPConflictException: If the incident is closed.
+    """
+    if incident.closed_at is not None:
+        raise HTTPConflictException(detail="This incident is closed.")
+    return incident
+
+
+OpenAtwIncidentDep = Annotated[AtwIncident, Depends(require_open_incident)]
+
+
+async def require_closed_incident(incident: AtwIncidentDep) -> AtwIncident:
+    """Return the incident or raise if it is still open.
+
+    :param incident: The incident resolved from the ``incident_id`` path parameter.
+    :return: The matching closed incident.
+    :raises HTTPConflictException: If the incident is already open.
+    """
+    if incident.closed_at is None:
+        raise HTTPConflictException(detail="This incident is already open.")
+    return incident
+
+
+ClosedAtwIncidentDep = Annotated[AtwIncident, Depends(require_closed_incident)]
+
+
 def diagnostics_send_disabled_reasons() -> list[str]:
     """Return why the incident send action is unavailable, empty when it is not.
 
-    ``DIAGNOSTICS_DELIVERY`` is validated as a whole at settings load, so a
-    partially-configured receiver cannot exist at run time and the list carries
-    at most this one reason.
+    The plan is resolved from the baked skeleton and its runtime inputs on every
+    call, so a partially-configured receiver — a declared secret left without a
+    value — is reported here rather than failing mid-send. Delivery that was
+    working until stored inputs stopped matching the plan is reported
+    separately, because re-supplying the inputs and configuring delivery for the
+    first time are opposite actions.
+
+    ``resolve_delivery_plan`` logs which secret names are involved; the reason
+    surfaced to the UI names none of them, because it reaches an operator who
+    cannot act on the receiver's internal secret names.
 
     :return: The reasons to withhold the send action from the UI.
     """
-    if sep_settings.DIAGNOSTICS_DELIVERY is None:
-        return ["Diagnostics delivery is not configured"]
+    if (reason := resolve_delivery_plan().unavailable_reason) is not None:
+        return [reason]
     return []
 
 
@@ -65,3 +104,21 @@ async def require_diagnostics_send_configured() -> None:
 
 
 IsDiagnosticsSendConfigured = Depends(require_diagnostics_send_configured)
+
+
+def get_atw_snippet_search_query(core: CoreListQueryDep) -> SnippetListQuery:
+    """Compose the Core-vetted sort and search with an approved-only filter.
+
+    ``approval`` is pinned rather than declared as a query parameter: the picker
+    must not be able to offer a snippet that execution would reject, so widening
+    the set cannot be a client input.
+
+    :param core: The Core-resolved sort and search.
+    :return: A snippets list query restricted to approved snippets.
+    """
+    return SnippetListQuery(core=core, approval=SnippetApprovalFilter.APPROVED)
+
+
+AtwSnippetSearchQueryDep = Annotated[
+    SnippetListQuery, Depends(get_atw_snippet_search_query)
+]

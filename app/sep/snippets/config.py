@@ -362,41 +362,34 @@ class SnippetsSettings(BaseYamlSettings):
 
     :cvar SETTINGS_PREFIXES: The prefixes for snippets related settings in the
         configuration file. Set to `["SEP", "SNIPPETS"]`.
-    :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
     :param SNIPPETS_DIR: The directory containing support snippets. Defaults to
         `Path("snippets")`.
-    :type SNIPPETS_DIR: RelativeDirectoryPathField
     :param SNIPPETS_BASE_URL: The base URL for accessing snippets. If `None`, the URL
-        is dynamically built on execution. Defaults to `None`.
-    :type SNIPPETS_BASE_URL: URL | None
+        is dynamically built on execution. Defaults to `None`. Its path is preserved,
+        with download URLs appended to it rather than replacing it, so it must
+        already include ``SEP.ROOT_PATH`` when a URL prefix is configured.
     :param META: Metadata options for snippets. See `SnippetsMetaOptions`.
-    :type META: SnippetsMetaOptions
     :param SYNC_FILTER: A set of filters to apply when loading snippets from
         `SNIPPETS_DIR`. Each filter can specify a file extension or MIME type. If
         `None`, no filtering is applied. Defaults to `None`.
-    :type SYNC_FILTER: set[SnippetFilter] | None
     :param INTERPRETERS: A mapping of `SnippetFilter` to interpreter configs. This
         defines which interpreter to use for snippets matching the specified filter.
         Defaults to a predefined set of common script types.
-    :type INTERPRETERS: dict[SnippetFilter, SnippetInterpreterConfig]
     :param USE_MAGIC: Whether to use the `python-magic` package to determine file types.
         Defaults to `False`. If `True`, the `python-magic` package must be installed.
-    :type USE_MAGIC: bool
     :param SYNC_INTERVAL: The interval schedule for synchronizing snippets. Defaults to
         every 1 hour.
-    :type SYNC_INTERVAL: IntervalSchedule
     :param ENABLE_MANUAL_SYNC: Whether to enable manual synchronization of snippets.
         Defaults to `False`.
-    :type ENABLE_MANUAL_SYNC: bool
+    :param AUTO_APPROVE_BUILTIN_SNIPPETS: Whether sync may auto-approve snippets
+        whose filename and SHA-256 digest match the built-in checksum manifest.
+        Defaults to ``True``. When ``False``, sync never auto-approves any snippet.
     :param SYNC_ON_STARTUP: Whether to synchronize snippets on application startup.
         Defaults to `True`.
-    :type SYNC_ON_STARTUP: bool
     :param PREVIEW_MAX_CHARS: The maximum number of characters to include in the snippet
         preview. Defaults to 10,000.
-    :type PREVIEW_MAX_CHARS: PositiveInt
     :param PREVIEW_MAX_LINES: The maximum number of lines to include in the snippet
         preview. Defaults to 500.
-    :type PREVIEW_MAX_LINES: PositiveInt
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "SNIPPETS"]
@@ -418,6 +411,7 @@ class SnippetsSettings(BaseYamlSettings):
         IntervalSchedule(every=1, period=Period.HOURS)
     )
     ENABLE_MANUAL_SYNC: bool = hot_field(default=False)
+    AUTO_APPROVE_BUILTIN_SNIPPETS: bool = hot_field(default=True)
     SYNC_ON_STARTUP: bool = True
     PREVIEW_MAX_CHARS: PositiveInt = hot_field(10000)
     PREVIEW_MAX_LINES: PositiveInt = hot_field(500)
@@ -432,9 +426,7 @@ class SnippetsSettings(BaseYamlSettings):
         defaults.
 
         :param data: The input data to validate.
-        :type data: Any
         :return: The validated data with merged interpreters.
-        :rtype: Any
         """
         if isinstance(data, dict) and "INTERPRETERS" not in data:
             data["INTERPRETERS"] = DEFAULT_INTERPRETERS

@@ -36,6 +36,7 @@ from fastapi import Depends
 from pydantic import BaseModel, Field
 
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
+from app.core.pagination import Pagination
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import ConnectivityWarning
 from app.sep.apps.framework.apps import (
@@ -819,8 +820,16 @@ def _synth_script_source(scripts: Sequence[_SynthScript]) -> ScriptSource[_Synth
         :class:`SynthScriptListRow`.
     """
 
-    async def _list_scripts() -> list[_SynthScript]:
-        return list(scripts)
+    # Deliberately ignores ``list_query``: the synthetic app declares no
+    # ``list_query_spec``, so the derived route never resolves one. Routing this through
+    # the framework's applier would mean inventing a spec no assertion covers.
+    async def _list_scripts(
+        _list_query: Any, pagination: Pagination | None
+    ) -> tuple[list[_SynthScript], int]:
+        items = list(scripts)
+        if pagination is None:
+            return items, len(items)
+        return pagination.slice(items), len(items)
 
     async def _load_script(filename: str) -> _SynthScript:
         return _SynthScript(filename)

@@ -57,7 +57,7 @@ from app.sep.apps.framework.conformance import (
 from app.sep.apps.framework.registry import build_app_registry
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.config import App
-from app.sep.deps import get_api_authenticated_user, IsApiAuthenticated
+from app.sep.deps import get_current_user, IsApiAuthenticated
 from app.sep.snippets.config import snippets_settings
 from tests.app.sep.apps.framework.contract_suite import (
     app_base_url,
@@ -90,6 +90,16 @@ def _cleanup(name: str) -> None:
         ):
             del sys.modules[module]
     importlib.invalidate_caches()
+
+
+def _venv_root() -> Path:
+    """Return the active virtualenv root for Makefile ``VIRTUAL_ENV`` forwarding.
+
+    Use ``sys.prefix`` rather than resolving ``sys.executable``: following the
+    interpreter symlink lands in the base install and breaks
+    ``VIRTUAL_ENV/bin/python``.
+    """
+    return Path(sys.prefix)
 
 
 @contextmanager
@@ -198,7 +208,7 @@ def _mount_api_first(app_def: BaseApp, user: CasdoorUser) -> TestClient:
     api_router.include_router(apps_router)
     fastapi_app = FastAPI()
     fastapi_app.include_router(api_router)
-    fastapi_app.dependency_overrides[get_api_authenticated_user] = lambda: user
+    fastapi_app.dependency_overrides[get_current_user] = lambda: user
     return TestClient(fastapi_app, raise_server_exceptions=False)
 
 
@@ -596,7 +606,6 @@ def test_task_flavor_scaffolds_conformant_app(
         registry = build_app_registry([App(module_name=name)])
         app = registry.get(name)
         assert isinstance(app, TaskExecutionApp)
-        assert app.jinja_router is None
         assert not _task_conformance(app)
         assert not check_route_collisions(registry)
 
@@ -629,7 +638,6 @@ def test_script_flavor_scaffolds_snippet_routes(
         registry = build_app_registry([App(module_name=name)])
         app = registry.get(name)
         assert isinstance(app, TaskExecutionApp)
-        assert app.jinja_router is None
         assert not _task_conformance(app)
 
         tasks_api = AsyncMock(spec=RemoteAPI)
@@ -665,7 +673,6 @@ def test_base_flavor_scaffolds_api_first_app(
         registry = build_app_registry([App(module_name=name)])
         app = registry.get(name)
         assert app is not None
-        assert app.jinja_router is None
         assert app.api_router is not None
         assert not check_route_collisions(registry)
 
@@ -1126,7 +1133,7 @@ def test_makefile_forwards_quoted_values() -> None:
     name = "_scaffold_ci_makeforward"
     description = 'describe the "cool" widget here'
     settings_backup = scaffold.SETTINGS_FILE.read_text()
-    venv_root = Path(sys.executable).resolve().parent.parent
+    venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
             [
@@ -1171,7 +1178,7 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
     script_src = tmp_path / "seed.sh"
     script_src.write_text("#!/usr/bin/env bash\necho hi\n")
     settings_backup = scaffold.SETTINGS_FILE.read_text()
-    venv_root = Path(sys.executable).resolve().parent.parent
+    venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
             [

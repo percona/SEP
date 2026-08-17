@@ -38,12 +38,15 @@ from functools import lru_cache
 from pathlib import Path
 
 from pydantic import BaseModel, create_model, Field
+from sqlalchemy import column
 
+from app.core.db.list_query import ListQuerySpec
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.sep.apps.framework.list_query import in_memory_list_scripts
 from app.sep.apps.framework.schema import (
     AppSchema,
     BoolField,
@@ -60,7 +63,6 @@ from app.sep.apps.framework.script_helpers import (
     build_execution_meta,
 )
 from app.sep.apps.framework.script_source import ScriptExecuteWrite, ScriptSource
-from app.sep.apps.snippets.schema import evaluate_snippet_gates, field_for
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import (
     BaseSnippet,
@@ -68,11 +70,28 @@ from app.sep.snippets.models.snippet import (
     EXECUTOR_HOSTS_INPUT_NAME,
     SnippetExecutionMeta,
 )
+from app.sep.snippets.schema import evaluate_snippet_gates, field_for
 
 __all__ = [
+    "DISK_SCRIPT_LIST_QUERY_SPEC",
     "DiskScriptListRow",
     "build_disk_script_source",
 ]
+
+#: Every disk-backed source lists the same shape — a flat directory of scripts, one row
+#: per file — so the allowlist is fully determined by ``_DiskScript``'s attributes and is
+#: shared rather than restated per app. ``filename`` is the tie-breaker because a
+#: directory cannot hold two entries under one name, which makes it unique by
+#: construction where no surrogate id exists.
+DISK_SCRIPT_LIST_QUERY_SPEC = ListQuerySpec(
+    sortable={
+        "filename": column("filename"),
+        "execution_task_name": column("execution_task_name"),
+    },
+    default_sort="filename",
+    tie_breaker=column("filename"),
+    searchable=(column("filename"),),
+)
 
 
 class DiskScriptListRow(BaseModel):
@@ -286,6 +305,7 @@ def build_disk_script_source(
     artifact_type: str,
     name: str,
     display_name: str,
+    list_query_spec: ListQuerySpec = DISK_SCRIPT_LIST_QUERY_SPEC,
 ) -> ScriptSource[_DiskScript]:
     """Wire a disk-backed ``BaseSnippet`` subclass into a framework ``ScriptSource``.
 
@@ -296,21 +316,37 @@ def build_disk_script_source(
         download URL (register it in the app's ``artifact_base_dirs``).
     :param name: The app name recorded on the derived schemas.
     :param display_name: The plugin-level display name served at ``GET /schema``.
+    :param list_query_spec: The sort/search allowlist the source replays in-process on
+        every list call; its public keys must name ``_DiskScript`` attributes
+        (``filename``, ``execution_task_name``). Defaults to the shared
+        :data:`DISK_SCRIPT_LIST_QUERY_SPEC`, which suits any flat script directory;
+        pass the same value as the app's ``list_query_spec``, since the app's copy is
+        what the derived route exposes.
     :return: A ``ScriptSource`` carrying the disk-backed listing, form, and execute
         hooks for ``derive_script_routes``.
+    :raises TypeError: When ``list_query_spec`` is not a ``ListQuerySpec``. Checked
+        here, at wiring time, because the source replays it on every list call; a
+        ``None`` slipped past the annotation would otherwise fail per request.
     """
+    if not isinstance(list_query_spec, ListQuerySpec):
+        raise TypeError(
+            "build_disk_script_source: list_query_spec must be a ListQuerySpec, got "
+            f"{type(list_query_spec).__name__}; the source replays it on every list call"
+        )
 
     async def load_script(filename: str) -> _DiskScript:
         if not (script_dir / filename).is_file():
             raise HTTPNotFoundException(detail=f"Script {filename!r} not found.")
         return _DiskScript(await script_cls.from_path(filename, update_meta=True))
 
-    async def list_scripts() -> list[_DiskScript]:
+    async def materialize_scripts() -> list[_DiskScript]:
         return [
             _DiskScript(await script_cls.from_path(path.name, update_meta=True))
             for path in sorted(script_dir.iterdir())
             if path.is_file()
         ]
+
+    list_scripts = in_memory_list_scripts(materialize_scripts, list_query_spec)
 
     def build_form_schema(script: _DiskScript) -> AppSchema:
         return _build_form_schema(script, name=name)
@@ -331,4 +367,5 @@ def build_disk_script_source(
             name=name, display_name=display_name, list_view=_list_view()
         ),
         list_response_model=DiskScriptListRow,
+        in_memory_list_query=True,
     )

@@ -870,7 +870,7 @@
       },
       "framework__DerivedTask": {
         "additionalProperties": false,
-        "description": "Represent a sibling task derived from a parent during cascade operations.\n\nThe cascade module (:mod:`app.sep.apps.framework.cascade`) consumes this\nspec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task\nis created first, then for each ``DerivedTask`` the parent payload is\ndeep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``\nare applied to ``data[\"meta\"][\"args\"]`` as literal :meth:`str.replace`\ncalls in dict insertion order, ``payload_substitutions`` are applied to\n``data[\"payload\"]`` as literal :meth:`str.replace` calls in dict insertion\norder, ``data_overrides`` entries are assigned directly onto ``data`` as\nliteral key/value pairs in iteration order, and ``data[\"parent\"]`` is set\nto the parent's name when ``parent_link`` is true.\n\n:param name_suffix: String appended to the parent's ``name`` to form the\n    derived task's name (for example ``\"-dry-run\"``).\n:type name_suffix: NonEmptyStr\n:param arg_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"meta\"][\"args\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type arg_substitutions: dict[str, str] | None\n:param payload_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"payload\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type payload_substitutions: dict[str, str] | None\n:param data_overrides: Optional mapping of literal key→value pairs\n    assigned directly onto ``data`` after substitutions run. Each\n    pair becomes ``data[key] = value`` in iteration order. Use this\n    for plugin-specific identity fields (e.g. ``{\"backup_type\":\n    \"pbm_logical\"}``) that the framework should not name itself.\n    Defaults to ``None``.\n:type data_overrides: dict[str, Any] | None\n:param parent_link: When true, set ``data[\"parent\"]`` on the derived\n    payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
+        "description": "Represent a sibling task derived from a parent during cascade operations.\n\nThe cascade module (:mod:`app.sep.apps.framework.cascade`) consumes this\nspec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task\nis created first, then for each ``DerivedTask`` the parent payload is\ndeep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``\nare applied to ``data[\"meta\"][\"args\"]`` as literal :meth:`str.replace`\ncalls in dict insertion order, ``payload_substitutions`` are applied to\n``data[\"payload\"]`` as literal :meth:`str.replace` calls in dict insertion\norder, ``data_overrides`` entries are assigned directly onto ``data`` as\nliteral key/value pairs in iteration order, and ``data[\"parent\"]`` is set\nto the parent's name when ``parent_link`` is true.\n\n:param name_suffix: String appended to the parent's ``name`` to form the\n    derived task's name (for example ``\"-dry-run\"``).\n:type name_suffix: NonEmptyStr\n:param arg_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"meta\"][\"args\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type arg_substitutions: dict[str, str] | None\n:param payload_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"payload\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type payload_substitutions: dict[str, str] | None\n:param data_overrides: Optional mapping of literal key→value pairs\n    assigned directly onto ``data`` after substitutions run. Each\n    pair becomes ``data[key] = value`` in iteration order. Use this\n    for plugin-specific identity fields (e.g. ``{\"backup_type\":\n    \"pbm_logical\"}``) that the framework should not name itself.\n    Defaults to ``None``.\n:param parent_link: When true, set ``data[\"parent\"]`` on the derived\n    payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
         "properties": {
           "arg_substitutions": {
             "anyOf": [
@@ -889,6 +889,7 @@
           "data_overrides": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -2308,6 +2309,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -2618,7 +2620,7 @@
       },
       "framework__RemoteChoiceField": {
         "additionalProperties": false,
-        "description": "Represent a field whose options are fetched at render from an app endpoint.\n\nThe renderer fetches ``endpoint_url`` and renders the returned\n``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``\n/ ``disabled_reason``). When ``depends_on`` is set, the fetch is\nparameterised by the dependency's value (appended as a query parameter named\nafter ``depends_on``) and the field stays disabled/empty until the\ndependency has a value. When ``allow_custom`` is set, the renderer also\naccepts a free-typed value. The endpoint response contract is a JSON array\nof objects shaped like :class:`Choice`: ``{\"value\": str, \"label\": str,\n\"disabled\"?: bool, \"disabled_reason\"?: str}``.\n\n:param field_type: The discriminator literal; always ``\"remote_choice\"``.\n    Serialised as the JSON key ``\"type\"``.\n:param endpoint_url: The fully-resolved URL the renderer fetches options\n    from, relative to the frontend ``apiClient`` base (``/api``).\n:param depends_on: Optional name of the sibling field whose value drives\n    (and parameterises) the option fetch. ``None`` (the default) omits the\n    key from the wire so plugins that do not cascade stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value. ``None`` (the default) omits the key from the wire so plugins\n    that do not opt in stay byte-identical.",
+        "description": "Represent a field whose options are fetched at render from an app endpoint.\n\nThe renderer fetches ``endpoint_url`` and renders the returned\n``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``\n/ ``disabled_reason``). When ``depends_on`` is set, the fetch is\nparameterised by the dependency's value (appended as a query parameter named\nafter ``depends_on``) and the field offers no options until the dependency\nhas a value, staying disabled while it waits unless ``allow_custom`` keeps\nfree-text entry open. When ``allow_custom`` is set, the renderer also\naccepts a free-typed value. The endpoint response contract is a JSON array\nof objects shaped like :class:`Choice`: ``{\"value\": str, \"label\": str,\n\"disabled\"?: bool, \"disabled_reason\"?: str}``.\n\n:param field_type: The discriminator literal; always ``\"remote_choice\"``.\n    Serialised as the JSON key ``\"type\"``.\n:param endpoint_url: The fully-resolved URL the renderer fetches options\n    from, relative to the frontend ``apiClient`` base (``/api``).\n:param depends_on: Optional name of the sibling field whose value drives\n    (and parameterises) the option fetch. ``None`` (the default) omits the\n    key from the wire so plugins that do not cascade stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value. ``None`` (the default) omits the key from the wire so plugins\n    that do not opt in stay byte-identical.",
         "properties": {
           "allow_custom": {
             "anyOf": [
@@ -3578,7 +3580,7 @@
         "type": "object"
       },
       "mysql_backups__BackupCreate": {
-        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the order here reproduces the hand-written schema\nbyte-for-byte. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption requires/forbidden pair, and the per-mode bool ``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool\n    outside its mode fails validation with a per-field message.",
+        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the derived section and field order matches the\nhand-written schema. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are\nindependent encryption modes that both produce an encrypted backup;\n``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside\n``post_run_encrypt`` so post-run takes precedence (matching the backend at\n``mydumper_payload``), and ``encryption_recipient`` is required iff either mode\nis on — and the per-mode bool\n``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool\n    outside its mode fails validation with a per-field message.",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -4136,6 +4138,127 @@
         "title": "BackupCreate",
         "type": "object"
       },
+      "mysql_backups__BackupRunResponse": {
+        "description": "Expose one catalog record over the per-service query path.\n\n:param id: The record's primary key.\n:param service_name: The inventory service the backup was taken from.\n:param service_id: The inventory id of that service, or ``None`` on a record\n    written before the id was stamped.\n:param hostname: The backup target host.\n:param backup_type: The backup tool, ``\"M\"`` (mydumper) or ``\"X\"`` (xtrabackup).\n    Narrower than :class:`BackupType`: binlog runs are never catalogued, so\n    ``\"B\"`` never appears here.\n:param location: The resolved on-disk directory the run produced.\n:param upload_destination: The upload destination when one was configured.\n:param size_bytes: The backup size in bytes, when the run reported it.\n:param started_at: When the run started.\n:param finished_at: When the run finished.",
+        "properties": {
+          "backup_type": {
+            "enum": [
+              "M",
+              "X"
+            ],
+            "title": "Backup Type",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "service_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Id"
+          },
+          "service_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Name"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "upload_destination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upload Destination"
+          }
+        },
+        "required": [
+          "id",
+          "service_name",
+          "service_id",
+          "hostname",
+          "backup_type",
+          "location",
+          "upload_destination",
+          "size_bytes",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "BackupRunResponse",
+        "type": "object"
+      },
       "mysql_backups__BackupTaskResponse": {
         "description": "Represent a backup task API response.\n\n:param backup_type: The backup type recorded in task config.",
         "properties": {
@@ -4210,6 +4333,7 @@
             "title": "Created By"
           },
           "data": {
+            "additionalProperties": true,
             "title": "Data",
             "type": "object"
           },
@@ -4320,6 +4444,37 @@
         ],
         "title": "CompressionAlgorithm",
         "type": "string"
+      },
+      "mysql_backups__PaginatedResponse_BackupRunResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/mysql_backups__BackupRunResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[BackupRunResponse]",
+        "type": "object"
       },
       "mysql_backups__PaginatedResponse_BackupTaskResponse_": {
         "properties": {
@@ -4488,6 +4643,62 @@
         ]
       }
     },
+    "/api/apps/mysql_backups/backup-sources/choices": {
+      "get": {
+        "description": "Return ``Choice`` options for a MySQL service's restore ``backup_source``.\n\nThe ``service_id`` query parameter (cascade parent name on the restore form)\nselects which catalog rows to map. Options are newest-first and capped at\n:data:`~app.core.pagination.DEFAULT_PAGINATION_LIMIT` (older runs remain\nreachable via free-text). An omitted, empty, sentinel, or unknown parent\nyields ``[]`` rather than a ``404``, so the RemoteChoices free-text escape\nhatch stays usable. Other Inventory API failures still propagate.\n\nFree-typed (non-numeric) parents query the catalog by that name without an\nInventory type check — matching ``ServiceRef(allow_custom=True)`` on the\nrestore form, where the destination may be a name that has no MySQL\ninventory row. Numeric parents still require a resolvable MySQL service, and\nare keyed on its inventory id so a rename does not empty the selector.\n\n:param session: The database session the catalog is queried on.\n:param service_key: The cascade parent resolved to the catalog query keys, or\n    ``None`` when the parent is unusable.\n:return: Choice-compatible options for the restore backup-source selector.",
+        "operationId": "mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get",
+        "parameters": [
+          {
+            "description": "Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service, keying the catalog query on its id; custom names query the catalog by name directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch.",
+            "in": "query",
+            "name": "service_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service, keying the catalog query on its id; custom names query the catalog by name directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch.",
+              "title": "Service Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/framework__Choice"
+                  },
+                  "title": "Response Mysql Backups List Backup Source Choices Api Apps Mysql Backups Backup Sources Choices Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Backup Source Choices",
+        "tags": [
+          "mysql_backups"
+        ]
+      }
+    },
     "/api/apps/mysql_backups/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
@@ -4505,6 +4716,72 @@
           }
         },
         "summary": "Get Schema",
+        "tags": [
+          "mysql_backups"
+        ]
+      }
+    },
+    "/api/apps/mysql_backups/services/{service_id}/backups": {
+      "get": {
+        "description": "Return a page of a MySQL service's completed backup runs, newest run first.\n\nThe ``service_id`` path parameter is resolved by\n:data:`~app.sep.apps.mysql_backups.deps.ResolvedMysqlService`, which lets an\nunknown service surface as a ``404``. A resolvable service with no recorded\nruns yields an empty page, so a caller building a restore selector is never\nblocked by an empty catalog but is still told when the service itself is\nunknown.\n\nThe query is keyed on the resolved service's inventory id, so a rename between\nrecording a run and asking for it cannot detach the rows; runs recorded before\nthe id was stored are still matched by the name they were written with.\n\n:param service: The inventory service resolved from the ``service_id`` path\n    parameter.\n:param session: The database session the catalog is queried on.\n:param pagination: The requested offset/limit window.\n:return: The requested page of the service's recorded backup runs, newest\n    run first.",
+        "operationId": "mysql_backups_list_service_backups_api_apps_mysql_backups_services__service_id__backups_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "title": "Service Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/mysql_backups__PaginatedResponse_BackupRunResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Service Backups",
         "tags": [
           "mysql_backups"
         ]

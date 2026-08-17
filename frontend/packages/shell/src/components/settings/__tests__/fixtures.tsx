@@ -36,6 +36,7 @@ export function makeSetting(overrides: Partial<SettingResponse> = {}): SettingRe
     has_override: false,
     is_advanced: false,
     is_applicable: true,
+    options: null,
     ...overrides,
   };
 }
@@ -51,7 +52,7 @@ export const sepListResponse = {
         makeSetting({
           key: 'CONNECTIVITY_CHECK_DEFAULT',
           value: true,
-          default_value: true,
+          default_value: false,
           type: 'bool',
         }),
         makeSetting({
@@ -112,7 +113,12 @@ export const tasksListResponse = {
           key: 'PRE_EXECUTION_CONNECTIVITY_CHECK',
           value: 'warn',
           default_value: 'warn',
-          type: "Literal['warn', 'fail', 'skip']",
+          type: 'PreExecutionCheckMode',
+          options: [
+            { label: 'DISABLED', value: 'disabled' },
+            { label: 'WARN', value: 'warn' },
+            { label: 'BLOCK', value: 'block' },
+          ],
         }),
       ],
     },

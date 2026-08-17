@@ -16,7 +16,7 @@
 """rename Nomad-named log cursor columns to executor-neutral names
 
 Revision ID: c8e4a2b91f70
-Revises: 27a11549ef43
+Revises: a19da5cf0bca
 Create Date: 2026-07-30 13:00:00.000000
 
 Rename the three Nomad-vocabulary log-cursor columns in place (metadata-only;
@@ -32,7 +32,7 @@ from alembic import op
 
 
 revision: str = "c8e4a2b91f70"
-down_revision: Union[str, None] = "27a11549ef43"
+down_revision: Union[str, None] = "a19da5cf0bca"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

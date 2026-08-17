@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for AppState seeding in :func:`app.sep.db.seed.init_sep_db`."""
+"""Cover SEP database seeding and system periodic-task contributions."""
 
 from collections.abc import AsyncIterator
 
@@ -35,9 +35,12 @@ from app.sep.apps.framework.registry import get_app_registry
 from app.sep.config import App
 from app.sep.crud import AppStateManager, SEPPluginPeriodicTaskManager
 from app.sep.db import seed as seed_module
-from app.sep.models import AppLifecycleEnum, AppState
+from app.sep.models import AppLifecycleEnum, AppState, SEPPluginPeriodicTask
 
 SNIPPETS_TASK = "sep__sync_snippets"
+ALERTS_TASK = "sep__backup_alert_config"
+REPORT_PURGE_TASK = "sep__purge_report_artifacts"
+ATW_PURGE_TASK = "sep__purge_atw_bundles"
 CELERY_RESULT_EXPIRES_SECONDS = 3600
 
 
@@ -279,7 +282,9 @@ class TestAppOwnedScheduleGating:
         """Omit an app's schedule when it contributes no Celery module.
 
         Interpolating an absent module path once produced a beat ``task_name``
-        like ``None.sync_snippets`` pointing at nothing the worker registers.
+        like ``None.backup_alert_config`` pointing at nothing the worker
+        registers. The guard still covers alerts, report and atw; snippet sync is
+        exempt because its task is statically included, not app-derived.
         """
         mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("inventory")])
 
@@ -287,19 +292,178 @@ class TestAppOwnedScheduleGating:
 
         prefixes = [task.task_name for schedule in tasks for task in schedule.tasks]
         assert not any(name.startswith("None.") for name in prefixes)
-        assert SNIPPETS_TASK not in self._task_names(tasks)
+        assert ALERTS_TASK not in self._task_names(tasks)
 
     def test_celery_opt_out_yields_no_schedule(self, mocker) -> None:
-        """Omit the snippets schedule when snippets opts out of the Celery include."""
+        """Omit the alerts schedule when alerts opts out of the Celery include."""
         mocker.patch.object(
             seed_module.sep_settings,
             "APPS",
-            [App(module_name="snippets", celery_module_path=None)],
+            [App(module_name="alerts", celery_module_path=None)],
         )
 
         tasks = seed_module.get_system_periodic_tasks()
 
-        assert SNIPPETS_TASK not in self._task_names(tasks)
+        assert ALERTS_TASK not in self._task_names(tasks)
+
+    def test_snippet_sync_is_seeded_without_the_app(self, mocker) -> None:
+        """Seed the snippet-sync schedule against the static path, unowned.
+
+        Ingestion is library-owned, so it must survive an activation list that
+        never mounts the snippets app, and must carry no ``owner_app_key`` -- an
+        owner would let an operator disable gate it off.
+        """
+        mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("inventory")])
+
+        tasks = seed_module.get_system_periodic_tasks()
+
+        snippet_task = next(
+            task
+            for schedule in tasks
+            for task in schedule.tasks
+            if task.name == SNIPPETS_TASK
+        )
+        assert snippet_task.task_name == "app.sep.snippets.celery.sync_snippets"
+        assert snippet_task.owner_app_key is None
+
+
+class TestAppScheduleContribution:
+    """Cover per-app ``periodic_task_schedules`` specs folded by seed."""
+
+    @staticmethod
+    def _tasks_by_name(
+        schedules: list[SystemPeriodicTaskSchedule],
+    ) -> dict[str, SystemPeriodicTaskData]:
+        """Index every task in ``schedules`` by ``name``."""
+        return {task.name: task for schedule in schedules for task in schedule.tasks}
+
+    @staticmethod
+    def _schedule_for(
+        schedules: list[SystemPeriodicTaskSchedule], task_name: str
+    ) -> SystemPeriodicTaskSchedule:
+        """Return the schedule carrying ``task_name``."""
+        return next(
+            schedule
+            for schedule in schedules
+            if any(task.name == task_name for task in schedule.tasks)
+        )
+
+    def test_contributing_apps_set_owner_and_celery_prefix(self, mocker) -> None:
+        """Assert owner keys and Celery task-name prefixes on contributed schedules."""
+        mocker.patch.object(
+            seed_module.sep_settings,
+            "APPS",
+            [_plugin("alerts"), _plugin("report"), _plugin("atw")],
+        )
+
+        tasks = self._tasks_by_name(seed_module.get_system_periodic_tasks())
+
+        assert tasks[ALERTS_TASK].owner_app_key == "alerts"
+        assert tasks[ALERTS_TASK].task_name == (
+            "app.sep.apps.alerts.celery.backup_alert_config"
+        )
+        assert tasks[REPORT_PURGE_TASK].owner_app_key == "report"
+        assert tasks[REPORT_PURGE_TASK].task_name == (
+            "app.sep.apps.report.celery.purge_report_artifacts"
+        )
+        assert tasks[ATW_PURGE_TASK].owner_app_key == "atw"
+        assert tasks[ATW_PURGE_TASK].task_name == (
+            "app.sep.apps.atw.celery.purge_atw_bundles"
+        )
+
+    def test_non_contributing_app_adds_no_owned_schedule(self, mocker) -> None:
+        """Contribute only the unowned schedules when no app declares a factory."""
+        mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("inventory")])
+
+        schedules = seed_module.get_system_periodic_tasks()
+        tasks = [task for schedule in schedules for task in schedule.tasks]
+
+        assert {task.name for task in tasks} == {
+            "sep__reconcile_disabling_apps",
+            SNIPPETS_TASK,
+        }
+        assert all(task.owner_app_key is None for task in tasks)
+
+    def test_builder_reads_backup_interval_at_call_time(self, mocker) -> None:
+        """Reflect a live ``BACKUP_INTERVAL`` override on each builder call."""
+        from app.core.celery.models import IntervalSchedule as CoreIntervalSchedule
+        from app.sep.apps.alerts.config import alerts_settings
+
+        mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("alerts")])
+
+        alerts_settings._set_snapshot(
+            {"BACKUP_INTERVAL": CoreIntervalSchedule(every=6, period=Period.HOURS)}
+        )
+        try:
+            schedule = self._schedule_for(
+                seed_module.get_system_periodic_tasks(), ALERTS_TASK
+            )
+            assert schedule.schedule == CoreIntervalSchedule(
+                every=6, period=Period.HOURS
+            )
+        finally:
+            alerts_settings._set_snapshot({})
+
+        alerts_settings._set_snapshot(
+            {"BACKUP_INTERVAL": CoreIntervalSchedule(every=12, period=Period.HOURS)}
+        )
+        try:
+            schedule = self._schedule_for(
+                seed_module.get_system_periodic_tasks(), ALERTS_TASK
+            )
+            assert schedule.schedule == CoreIntervalSchedule(
+                every=12, period=Period.HOURS
+            )
+        finally:
+            alerts_settings._set_snapshot({})
+
+    def test_report_kwargs_assemble_from_non_default_entry(self, mocker) -> None:
+        """Carry kwargs only for non-default report schedule-entry fields."""
+        from app.core.celery.models import IntervalSchedule as CoreIntervalSchedule
+        from app.sep.apps.report.config import (
+            health_report_settings,
+            ReportScheduleEntry,
+        )
+
+        mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("report")])
+        mocker.patch.object(
+            health_report_settings,
+            "schedules",
+            [
+                ReportScheduleEntry(
+                    schedule=CoreIntervalSchedule(every=7, period=Period.DAYS),
+                    since="now-10d",
+                    full=False,
+                    upload=True,
+                )
+            ],
+        )
+
+        tasks = self._tasks_by_name(seed_module.get_system_periodic_tasks())
+        generation = tasks["sep__generate_health_report"]
+
+        assert generation.owner_app_key == "report"
+        assert generation.task_name == (
+            "app.sep.apps.report.celery.generate_health_report"
+        )
+        assert generation.extra_kwargs == {
+            "kwargs": '{"since": "now-10d", "full": false, "upload": true}'
+        }
+        assert REPORT_PURGE_TASK in tasks
+
+    def test_registry_entry_exposes_schedule_specs(self, mocker) -> None:
+        """Carry app-owned schedule specs on a contributing registry entry."""
+        mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("alerts")])
+
+        app = get_app_registry().get("alerts")
+        assert app is not None
+        assert app.periodic_task_schedules is not None
+        contributed = (
+            app.periodic_task_schedules()
+            if callable(app.periodic_task_schedules)
+            else app.periodic_task_schedules
+        )
+        assert ALERTS_TASK in {spec.name for spec in contributed}
 
 
 def test_celery_result_expires_configured() -> None:
@@ -329,25 +493,28 @@ async def beat_maker_fixture() -> AsyncIterator:
 class TestInitSepDbPeriodicTaskGating:
     """Tests for the periodic-task gating wired into ``init_sep_db``."""
 
-    @pytest.mark.parametrize("app_enabled", [True, False])
-    async def test_gate_reflects_app_state(
-        self, mocker, seed_maker, beat_maker, app_enabled
+    @staticmethod
+    async def _seed_beat_row(
+        beat_maker, name: str, task_name: str, *, enabled: bool = True
     ) -> None:
-        """``init_sep_db`` seeds wrapper rows and writes ``effective_enabled`` through."""
+        """Insert a beat row so the gate has something to write through."""
         async with beat_maker() as session:
             schedule = IntervalSchedule(every=10, period=Period.MINUTES)
             session.add(schedule)
             await session.flush()
             session.add(
                 PeriodicTask(
-                    name=SNIPPETS_TASK,
-                    task="app.sep.apps.snippets.celery.sync_snippets",
-                    enabled=True,
+                    name=name,
+                    task=task_name,
+                    enabled=enabled,
                     schedule_model=schedule,
                 )
             )
             await session.commit()
 
+    @staticmethod
+    def _patch_gate_session_makers(mocker, seed_maker, beat_maker) -> None:
+        """Point the seed and gating modules at the in-memory session makers."""
         mocker.patch.object(
             seed_module, "get_async_session_maker", return_value=seed_maker
         )
@@ -362,6 +529,15 @@ class TestInitSepDbPeriodicTaskGating:
             "get_celery_beat_session_maker",
             return_value=beat_maker,
         )
+
+    @pytest.mark.parametrize("app_enabled", [True, False])
+    async def test_gate_reflects_app_state(
+        self, mocker, seed_maker, beat_maker, app_enabled
+    ) -> None:
+        """``init_sep_db`` seeds wrapper rows and writes ``effective_enabled`` through."""
+        task_name = "app.sep.apps.alerts.celery.backup_alert_config"
+        await self._seed_beat_row(beat_maker, ALERTS_TASK, task_name)
+        self._patch_gate_session_makers(mocker, seed_maker, beat_maker)
         mocker.patch.object(
             seed_module,
             "get_system_periodic_tasks",
@@ -370,9 +546,9 @@ class TestInitSepDbPeriodicTaskGating:
                     schedule=IntervalSchedule(every=10, period=Period.MINUTES),
                     tasks=[
                         SystemPeriodicTaskData(
-                            name=SNIPPETS_TASK,
-                            task_name="app.sep.apps.snippets.celery.sync_snippets",
-                            owner_app_key="snippets",
+                            name=ALERTS_TASK,
+                            task_name=task_name,
+                            owner_app_key="alerts",
                         ),
                     ],
                 ),
@@ -381,15 +557,89 @@ class TestInitSepDbPeriodicTaskGating:
         mocker.patch.object(
             seed_module.sep_settings,
             "APPS",
-            [_plugin("snippets", enabled=app_enabled)],
+            [_plugin("alerts", enabled=app_enabled)],
         )
 
         await seed_module.init_sep_db()
 
         async with seed_maker() as session:
             rows = await SEPPluginPeriodicTaskManager.list(session)
-        assert {r.periodic_task_name for r in rows} == {SNIPPETS_TASK}
+        assert {r.periodic_task_name for r in rows} == {ALERTS_TASK}
+
+        async with beat_maker() as session:
+            task = await BasePeriodicTaskManager.first(session, name=ALERTS_TASK)
+        assert task.enabled is app_enabled
+
+    async def test_unowned_snippet_sync_is_never_gated(
+        self, mocker, seed_maker, beat_maker
+    ) -> None:
+        """Leave the snippet-sync beat row enabled with the snippets app disabled.
+
+        The real schedule carries no ``owner_app_key``, so ``init_sep_db`` writes
+        no ``SEPPluginPeriodicTask`` wrapper row for it and ``apply_effective_enabled``
+        has nothing to gate on -- ingestion keeps running through an operator
+        disable.
+        """
+        await self._seed_beat_row(
+            beat_maker, SNIPPETS_TASK, "app.sep.snippets.celery.sync_snippets"
+        )
+        self._patch_gate_session_makers(mocker, seed_maker, beat_maker)
+        mocker.patch.object(
+            seed_module.sep_settings,
+            "APPS",
+            [_plugin("snippets", enabled=False)],
+        )
+
+        await seed_module.init_sep_db()
+
+        async with seed_maker() as session:
+            rows = await SEPPluginPeriodicTaskManager.list(session)
+        assert SNIPPETS_TASK not in {r.periodic_task_name for r in rows}
 
         async with beat_maker() as session:
             task = await BasePeriodicTaskManager.first(session, name=SNIPPETS_TASK)
-        assert task.enabled is app_enabled
+        assert task.enabled is True
+
+    async def test_upgrade_releases_a_gate_left_by_the_previous_owner(
+        self, mocker, seed_maker, beat_maker
+    ) -> None:
+        """Enable a snippet-sync beat row an earlier owned regime left disabled.
+
+        An instance upgrading with the snippets app already disabled carries a
+        ``PeriodicTask.enabled = False`` written by the gate back when the schedule
+        was owned, plus its now-orphan wrapper row. Seeding drops the wrapper, which
+        leaves ``apply_effective_enabled`` nothing to iterate -- so without an
+        explicit release the stale ``False`` is permanent and ingestion never
+        restarts.
+        """
+        await self._seed_beat_row(
+            beat_maker,
+            SNIPPETS_TASK,
+            "app.sep.snippets.celery.sync_snippets",
+            enabled=False,
+        )
+        async with seed_maker() as session:
+            session.add(
+                SEPPluginPeriodicTask(
+                    periodic_task_name=SNIPPETS_TASK,
+                    app_key="snippets",
+                    user_enabled=True,
+                )
+            )
+            await session.commit()
+        self._patch_gate_session_makers(mocker, seed_maker, beat_maker)
+        mocker.patch.object(
+            seed_module.sep_settings,
+            "APPS",
+            [_plugin("snippets", enabled=False)],
+        )
+
+        await seed_module.init_sep_db()
+
+        async with seed_maker() as session:
+            rows = await SEPPluginPeriodicTaskManager.list(session)
+        assert SNIPPETS_TASK not in {r.periodic_task_name for r in rows}
+
+        async with beat_maker() as session:
+            task = await BasePeriodicTaskManager.first(session, name=SNIPPETS_TASK)
+        assert task.enabled is True

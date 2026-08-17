@@ -13,9 +13,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define reusable model factories for tests."""
+"""Define reusable model factories for tests.
+
+Core, cross-app factories only. A factory for an activatable app's model belongs
+in ``tests/app/sep/apps/<app>/factories.py``, beside that app's tests.
+"""
 
 from datetime import datetime, UTC
+from itertools import count
 
 from polyfactory import Use
 from polyfactory.factories.pydantic_factory import ModelFactory
@@ -34,11 +39,9 @@ from app.inventory.models import (
     ServiceWrite,
     TableWrite,
 )
-from app.sep.apps.alters.models import AltersCreate
-from app.sep.apps.archives.models import ArchivesCreate
-from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution, AtwSendLog
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.tasks.models import (
+    LogCaptureStatusEnum,
     Task,
     TaskBackendEnum,
     TaskExecutionRequest,
@@ -115,24 +118,6 @@ class PeriodicTaskFactory(SQLAlchemyFactory[PeriodicTask]):
     """Define factory for PeriodicTasks instances."""
 
 
-class AtwIncidentFactory(SQLAlchemyFactory[AtwIncident]):
-    """Define factory for AtwIncident instances."""
-
-
-class AtwIncidentExecutionFactory(SQLAlchemyFactory[AtwIncidentExecution]):
-    """Define factory for AtwIncidentExecution instances."""
-
-
-class AtwSendLogFactory(SQLAlchemyFactory[AtwSendLog]):
-    """Define factory for AtwSendLog instances.
-
-    ``detail`` is pinned to an empty mapping because polyfactory cannot generate a
-    value for the untyped JSON column.
-    """
-
-    detail = Use(dict)
-
-
 class GeneratedTaskFactory(ModelFactory[TaskWrite]):
     """Define factory for GenerateTask instances."""
 
@@ -162,25 +147,12 @@ class TaskHistoryResponseFactory(ModelFactory[TaskHistoryResponse]):
 
     status: TaskHistoryStatusEnum = TaskHistoryStatusEnum.SUCCESS
     has_logs: bool = False
+    log_capture: LogCaptureStatusEnum = LogCaptureStatusEnum.UNKNOWN
     started_at = None
     finished_at = None
     anonymize_mask = None
     executed_by = None
     task = Use(TaskResponseFactory.build)
-
-
-class AltersCreateFactory(ModelFactory[AltersCreate]):
-    """Define factory for AltersCreate instances."""
-
-    db_schema = 1
-    db_table = 2
-    recursion_method = "processlist"
-    dsn_table = ""
-    continue_on_pre_check_failure = False
-
-
-class ArchivesCreateFactory(ModelFactory[ArchivesCreate]):
-    """Define factory for ArchivesCreate instances."""
 
 
 class NodeWriteFactory(ModelFactory[NodeWrite]):
@@ -190,11 +162,18 @@ class NodeWriteFactory(ModelFactory[NodeWrite]):
     external_id = None
 
 
+# Service has a unique (port, node_id) index, so a randomly generated port can
+# land on one a test pinned by hand and turn that create into a silent 409. Hand
+# out ports from a sequence above every port the tests hardcode instead.
+_service_ports = count(20000)
+
+
 class ServiceWriteFactory(ModelFactory[ServiceWrite]):
     """Define factory for ServiceWrite instances."""
 
     node_id = None
     external_id = None
+    port = Use(lambda: next(_service_ports))
 
 
 class SchemaWriteFactory(ModelFactory[SchemaWrite]):

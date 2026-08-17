@@ -16,82 +16,15 @@
 """Define tests for the app.sep.apps.mysql_backups.restore.deps module."""
 
 import pytest
-from fastapi import HTTPException, status
 
-from app.core.exceptions import HTTPNotFoundException
-from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.deps import (
     build_restore_payload,
-    build_restore_task_payload,
     resolve_restore_entities,
 )
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate
 from app.sep.inventory import CreatedService
-from app.sep.models import SyncInventoryEntityTypeEnum
-from app.tasks.models import TaskWrite
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "backup_type",
-    [BackupType.MYDUMPER, BackupType.XTRABACKUP, BackupType.BINLOG],
-)
-async def test_build_restore_task_payload_includes_service_name_when_service_id_set(
-    backup_type: BackupType,
-    mocker,
-    mock_remote_api,
-    created_service: CreatedService,
-):
-    """All MySQL restore branches inject ``_service_name`` when service_id is set."""
-    mocker.patch(
-        "app.sep.apps.mysql_backups.restore.deps.get_created_entity",
-        return_value=created_service,
-    )
-
-    form = RestoreCreate(
-        hostname="restore-host",
-        task_name="restore-task",
-        service_id=str(created_service.id),
-        backup_type=backup_type,
-        backup_source="/var/backups/latest",
-        datadir="/var/lib/mysql",
-    )
-    task_payload = await build_restore_task_payload(form, mock_remote_api)
-
-    assert isinstance(task_payload, TaskWrite)
-    assert task_payload.owner == "RESTORES"
-    assert task_payload.data["meta"]["_service_name"] == created_service.name
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "backup_type",
-    [BackupType.XTRABACKUP, BackupType.BINLOG],
-)
-async def test_build_restore_task_payload_omits_service_name_when_service_id_unset(
-    backup_type: BackupType,
-    mocker,
-    mock_remote_api,
-):
-    """xtrabackup/binlog skip the service lookup and meta key when service_id is None."""
-    get_created_entity = mocker.patch(
-        "app.sep.apps.mysql_backups.restore.deps.get_created_entity",
-    )
-
-    form = RestoreCreate(
-        hostname="restore-host",
-        task_name="restore-task",
-        service_id=None,
-        backup_type=backup_type,
-        backup_source="/var/backups/latest",
-        datadir="/var/lib/mysql",
-    )
-    task_payload = await build_restore_task_payload(form, mock_remote_api)
-
-    assert "_service_name" not in task_payload.data["meta"]
-    get_created_entity.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -127,72 +60,6 @@ async def test_resolve_restore_entities_mydumper_splits_address_and_resolves_sch
 
 
 @pytest.mark.asyncio
-async def test_build_restore_task_payload_mydumper_without_service_id_raises(
-    mocker,
-    mock_remote_api,
-):
-    """MYDUMPER preserves the eager-raise contract when service_id is unset."""
-    get_created_entity = mocker.patch(
-        "app.sep.apps.mysql_backups.restore.deps.get_created_entity",
-        side_effect=HTTPNotFoundException(),
-    )
-
-    form = RestoreCreate(
-        hostname="restore-host",
-        task_name="restore-task",
-        service_id=None,
-        backup_type=BackupType.MYDUMPER,
-        backup_source="/var/backups/latest",
-        datadir="/var/lib/mysql",
-    )
-
-    with pytest.raises(HTTPException) as exc_info:
-        await build_restore_task_payload(form, mock_remote_api)
-
-    assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
-    # Tighten the eager-raise contract: assert the lookup ran with the exact
-    # args the MYDUMPER branch promises (None service_id, MYSQL filter). A
-    # future refactor that gates the lookup behind ``if form.service_id`` would
-    # silently keep ``assert_awaited_once`` green; ``assert_awaited_once_with``
-    # surfaces the regression.
-    get_created_entity.assert_awaited_once_with(
-        mock_remote_api,
-        SyncInventoryEntityTypeEnum.SERVICE,
-        None,
-        type=ServiceTypeEnum.MYSQL,
-    )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "backup_type",
-    [BackupType.XTRABACKUP, BackupType.BINLOG],
-)
-async def test_build_restore_task_payload_skips_lookup_for_unknown_service_sentinel(
-    backup_type: BackupType,
-    mocker,
-    mock_remote_api,
-):
-    """xtrabackup/binlog with the ``-1`` UI sentinel skip the lookup entirely."""
-    get_created_entity = mocker.patch(
-        "app.sep.apps.mysql_backups.restore.deps.get_created_entity",
-    )
-
-    form = RestoreCreate(
-        hostname="restore-host",
-        task_name="restore-task",
-        service_id="-1",
-        backup_type=backup_type,
-        backup_source="/var/backups/latest",
-        datadir="/var/lib/mysql",
-    )
-    task_payload = await build_restore_task_payload(form, mock_remote_api)
-
-    assert "_service_name" not in task_payload.data["meta"]
-    get_created_entity.assert_not_called()
-
-
-@pytest.mark.asyncio
 async def test_build_restore_payload_stamps_form_without_new_secret_exposure(
     mock_remote_api,
 ):
@@ -215,36 +82,3 @@ async def test_build_restore_payload_stamps_form_without_new_secret_exposure(
 
     assert task_payload.data[RESERVED_FORM_KEY]["master_password"] == "s3cret-pw"
     assert "s3cret-pw" in task_payload.data["meta"]["config"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "backup_type",
-    [BackupType.XTRABACKUP, BackupType.BINLOG],
-)
-async def test_build_restore_task_payload_swallows_404_for_non_mydumper(
-    backup_type: BackupType,
-    mocker,
-    mock_remote_api,
-):
-    """Resolve xtrabackup/binlog to node-only annotations on a stale service_id.
-
-    ``RemoteAPI.get`` raises the project's ``HTTPNotFoundException`` on 404, which
-    the narrowed handler swallows to fall back to a node-only annotation.
-    """
-    mocker.patch(
-        "app.sep.apps.mysql_backups.restore.deps.get_created_entity",
-        side_effect=HTTPNotFoundException(),
-    )
-
-    form = RestoreCreate(
-        hostname="restore-host",
-        task_name="restore-task",
-        service_id="999999",
-        backup_type=backup_type,
-        backup_source="/var/backups/latest",
-        datadir="/var/lib/mysql",
-    )
-    task_payload = await build_restore_task_payload(form, mock_remote_api)
-
-    assert "_service_name" not in task_payload.data["meta"]

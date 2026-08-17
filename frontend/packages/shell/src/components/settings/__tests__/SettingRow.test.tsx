@@ -170,6 +170,22 @@ describe('SettingRow', () => {
     expect(screen.getAllByText('{"a":1}')).toHaveLength(1);
   });
 
+  it('renders the enum option label in the Current column instead of the wire value', () => {
+    renderRow(
+      makeSetting({
+        key: 'LOGGING',
+        type: 'LogLevel',
+        value: 30,
+        options: [
+          { label: 'WARNING', value: 30 },
+          { label: 'DEBUG', value: 10 },
+        ],
+      }),
+    );
+    expect(screen.getByTestId('setting-value-LOGGING')).toHaveTextContent('WARNING');
+    expect(screen.queryByText('30')).not.toBeInTheDocument();
+  });
+
   it('truncates long values behind a "View more" modal that pretty-prints JSON', async () => {
     const value = { items: Array.from({ length: 40 }, (_, i) => `entry-${i}`) };
     renderRow(makeSetting({ key: 'BIG_LIST', reload: 'not_overridable', value }));

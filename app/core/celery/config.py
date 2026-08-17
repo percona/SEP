@@ -32,9 +32,17 @@ from pydantic import (
 from app.core.models import BaseLowercaseModel
 from app.core.utils.fields import StrCredentialAnyUrl, StrDatabaseUrl, StrRelativePath
 
-#: Service modules seeding the Celery ``include`` base. Not ``SEP.APPS`` apps, so
-#: they are not registry-derived; ``build_celery_include`` prepends them.
-STATIC_CELERY_INCLUDE: tuple[str, ...] = ("app.tasks.celery",)
+#: Modules seeding the Celery ``include`` base. Not ``SEP.APPS`` apps, so they are
+#: not registry-derived; ``build_celery_include`` prepends them. Every entry must
+#: register regardless of which apps an image ships -- the tasks service, the
+#: library-owned snippet ingestion, the drain reconciler whose beat row is
+#: seeded unconditionally, and the SEP-side settings-override refresher.
+STATIC_CELERY_INCLUDE: tuple[str, ...] = (
+    "app.tasks.celery",
+    "app.sep.snippets.celery",
+    "app.sep.app_drain",
+    "app.sep.settings_override",
+)
 
 
 class PoolEngineOptions(BaseModel):
@@ -67,7 +75,9 @@ class CeleryOptions(BaseLowercaseModel):
     :param task_track_started: Whether to track when tasks start. Defaults to True.
     :param result_backend: The URL of the result backend. Defaults to None.
     :param beat_dburi: The database URI for storing scheduled tasks. Defaults to
-        ``"sqlite:///schedule.db"``.
+        ``"sqlite:///schedule.db"`` for a bare ``CeleryOptions``; under ``Settings``
+        a lower-priority source supplies the resolved SEP database connection, so
+        the beat store follows ``SEP__DATABASE__*`` unless something configures it.
     :param worker_state_db: Filesystem path where the Celery worker persists state
         such as revoked task ids. Defaults to ``.celery_worker_state``.
     :param beat_schema: The schema to store the beat tables in the database.
@@ -78,8 +88,9 @@ class CeleryOptions(BaseLowercaseModel):
     :param beat_engine_options: SQLAlchemy pool options (``pool_size``,
         ``max_overflow``, ``pool_timeout``) for both celery-beat-database engines
         -- the async worker engine and the sync beat scheduler engine. Empty by
-        default so standalone deployments keep SQLAlchemy's own defaults; the
-        installer sets it only for the forked side-car beat.
+        default: the non-forked path runs on ``NullPool``, which rejects
+        ``max_overflow`` outright and silently drops the other two, so only a
+        deployment running a forked beat should set it.
     """
 
     model_config = ConfigDict(extra="allow")

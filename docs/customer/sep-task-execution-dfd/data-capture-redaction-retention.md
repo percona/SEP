@@ -35,7 +35,22 @@ SEP has an optional anonymization filter for task logs and task output files. Th
 - SEP controls which entity categories are enabled through an integer `anonymize_mask` on tasks and task history records.
 - If a task does not set an explicit mask, SEP can use the configured default entities from `TASKS.ANONYMIZER.DEFAULT_ENTITIES`.
 
-The current default settings file configures `TASKS.ANONYMIZER.DEFAULT_ENTITIES: "*"`, meaning all SEP-supported Presidio entities are selected by default when a task or execution does not override the mask. Existing or explicitly configured tasks can still set `anonymize_mask` to `0`, which disables anonymization for that task.
+The current default settings file configures `TASKS.ANONYMIZER.DEFAULT_ENTITIES` to the following high-confidence set when a task or execution does not override the mask:
+
+- `CREDIT_CARD`
+- `EMAIL_ADDRESS`
+- `IBAN_CODE`
+- `IP_ADDRESS`
+- `PHONE_NUMBER`
+- `US_SSN`
+- `US_ITIN`
+
+These are checksum-validated or strong-regex recognizers suited to database-tool logs (DSN strings, DDL, row counts, offsets, LSNs, and GTIDs). The following supported entities are intentionally excluded from the shipped default because they corrupt operational detail or collide with numeric tool output:
+
+- `PERSON`, `LOCATION`, and `NRP` (spaCy NER) misread hostnames, `schema.table` names, column names, and tool names as people or places.
+- `US_BANK_NUMBER`, `US_PASSPORT`, `US_DRIVER_LICENSE`, and `MEDICAL_LICENSE` are loose numeric patterns that collide with row counts, byte offsets, LSNs, and GTIDs.
+
+The `development:` profile overrides `DEFAULT_ENTITIES` to an empty list so local task-log and pulled-file reads perform no anonymization. Existing or explicitly configured tasks can still set `anonymize_mask` to `0`, which disables anonymization for that task. Any of the fourteen SEP-supported entities below can be restored through `settings.yaml` or a runtime settings override without a code change.
 
 SEP-supported PII entity categories are:
 
@@ -112,13 +127,13 @@ In the current implementation:
 
 SEP does distinguish admin users for some operations, such as snippet approval and certain administrative routes, but task log viewing is not currently restricted to admin users only.
 
-Customer access depends on deployment and identity configuration. The current SEP application has no built-in customer-tenant identity model. If customer users are provisioned in Casdoor as authenticated SEP users, they can see all task history and logs that any other authenticated user can see — there is no per-customer or per-tenant row filter. The standard deployment pattern is that customers are not provisioned in SEP, and the SEP UI is reachable only by Percona personnel.
+Customer access depends on deployment and identity configuration. The current SEP application has no built-in customer-tenant identity model. If customer users are provisioned in the configured identity provider (Grafana in the embedded deployment) as authenticated SEP users, they can see all task history and logs that any other authenticated user can see — there is no per-customer or per-tenant row filter. The standard deployment pattern is that customers are not provisioned in SEP, and the SEP UI is reachable only by Percona personnel.
 
 Access is controlled by:
 
-- Casdoor OAuth/JWT authentication for human users. The React SPA carries a Casdoor-issued access token as an `Authorization: Bearer` header; the refresh token is held by the browser as an `HttpOnly` cookie scoped to `/api/oauth`. Legacy Jinja2 routes (during the API-First migration window) carry a signed session cookie; those routes also require a CSRF token.
+- Grafana session exchange for human users in the shipped PMM-embedded deployment. The browser's PMM session cookie rides a same-origin request to `POST /api/oauth/session/exchange`; SEP validates the session against Grafana and returns a short-lived SEP-signed bearer in the response body — no SEP cookie is set and no refresh token is issued. Casdoor OAuth/JWT remains a configurable alternative.
 - Optional internal bearer-token authentication through `SEP_INTERNAL_TOKEN` for service-to-service calls.
-- Transport security, including HTTPS at the Nginx ingress and configured service-to-service TLS/mTLS for SEP↔Tasks/Inventory and Tasks↔Nomad.
+- Transport security, including HTTPS at PMM's Nginx ingress and configured service-to-service TLS/mTLS for SEP↔Tasks/Inventory and Tasks↔Nomad.
 - Deployment-level controls around network access, database access, Nomad API access, and infrastructure log access.
 
 The current application does not implement customer-specific log tenancy or role-based filtering for task stdout/stderr logs.

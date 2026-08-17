@@ -43,6 +43,17 @@ def test_sep_openapi_json_endpoint_returns_valid_schema(test_client):
     assert body["info"].get("title")
 
 
+def test_sep_mounted_at_the_root_is_unaffected_by_the_prefix_parameter(test_client):
+    """Serve the mounted SEP app from ``/`` while no URL prefix is configured.
+
+    ``FastAPI.__call__`` overwrites the scope ``root_path`` a ``Mount`` sets, so
+    only an unset prefix keeps the composite app's URLs anchored where it mounts
+    SEP. The side-car runs ``app.sep.main`` directly and is the only deployment
+    that configures one.
+    """
+    assert test_client.get("/health").status_code == status.HTTP_200_OK
+
+
 def test_sep_openapi_helper_is_hidden_from_core_spec(test_client):
     """The schema-helper route must not appear in the core ``/openapi.json``."""
     core_spec = test_client.get("/openapi.json").json()

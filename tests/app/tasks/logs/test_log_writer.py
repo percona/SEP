@@ -40,6 +40,7 @@ from app.tasks.logs.log_writer import (
     TaskHistoryLogWriter,
 )
 from app.tasks.models import (
+    LogCaptureStatusEnum,
     TaskHistory,
     TaskLogType,
     TaskWrite,
@@ -87,6 +88,158 @@ async def test_append_creates_state_row_when_below_min_flush(
 
     chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert chunks == []
+
+
+@pytest.mark.asyncio
+async def test_record_capture_status_creates_row_for_a_silent_stream(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert a stream that emitted nothing still gets a state row.
+
+    This is the gap that makes "printed nothing" and "lost" indistinguishable
+    today: ``append`` returns early for a fresh empty stream, so no row is ever
+    written and the reader has nothing to classify.
+    """
+    history = created_task_with_history
+
+    await TaskHistoryLogWriter.record_capture_status(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+
+    state = await TaskHistoryLogStateManager.get_for_stream(
+        session, history.id, "run-script", TaskLogType.STDOUT
+    )
+    assert state is not None
+    assert state.capture_status == LogCaptureStatusEnum.COMPLETE
+    assert state.producer_offset == 0
+    assert state.staging == b""
+
+
+@pytest.mark.asyncio
+async def test_record_capture_status_updates_an_existing_row_in_place(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert recording a verdict preserves the row's offsets and staging."""
+    history = created_task_with_history
+    payload = b"hello"
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=payload,
+        producer_offset_after=len(payload),
+    )
+
+    await TaskHistoryLogWriter.record_capture_status(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+
+    state = await TaskHistoryLogStateManager.get_for_stream(
+        session, history.id, "run-script", TaskLogType.STDOUT
+    )
+    assert state.capture_status == LogCaptureStatusEnum.COMPLETE
+    assert state.staging == payload
+    assert state.producer_offset == len(payload)
+
+
+@pytest.mark.asyncio
+async def test_append_does_not_downgrade_a_recorded_verdict(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert a later byte-appending write leaves a ``COMPLETE`` verdict alone.
+
+    A second terminal sync re-runs the drain; if the ordinary write path reset
+    the verdict to the model default the reader would see a task regress from
+    complete to incomplete for no reason.
+    """
+    history = created_task_with_history
+    await TaskHistoryLogWriter.record_capture_status(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+
+    await TaskHistoryLogWriter.append(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        new_bytes=b"trailing",
+        force_flush=True,
+        producer_offset_after=8,
+    )
+
+    state = await TaskHistoryLogStateManager.get_for_stream(
+        session, history.id, "run-script", TaskLogType.STDOUT
+    )
+    assert state.capture_status == LogCaptureStatusEnum.COMPLETE
+
+
+@pytest.mark.asyncio
+async def test_record_capture_status_discards_a_stale_epoch_verdict(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert a superseded allocation cannot overwrite a newer verdict.
+
+    A sync that overlapped a reschedule reports on the allocation the frontier
+    has already moved past; letting it write would mark the *current*
+    allocation's capture incomplete on the strength of the old one's outcome.
+    """
+    history = created_task_with_history
+    await TaskHistoryLogWriter.record_capture_status(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+        producer_epoch=ALLOCATION_EPOCH_NEW,
+    )
+
+    await TaskHistoryLogWriter.record_capture_status(
+        session,
+        history.id,
+        source="run-script",
+        stream=TaskLogType.STDOUT,
+        capture_status=LogCaptureStatusEnum.INCOMPLETE,
+        producer_epoch=ALLOCATION_EPOCH_OLD,
+    )
+
+    state = await TaskHistoryLogStateManager.get_for_stream(
+        session, history.id, "run-script", TaskLogType.STDOUT
+    )
+    assert state.capture_status == LogCaptureStatusEnum.COMPLETE
+    assert state.producer_epoch == ALLOCATION_EPOCH_NEW
+
+
+@pytest.mark.asyncio
+async def test_record_capture_status_is_idempotent(
+    session: AsyncSession, created_task_with_history: TaskHistory
+):
+    """Assert re-recording the same verdict creates no duplicate row."""
+    history = created_task_with_history
+    for _ in range(2):
+        await TaskHistoryLogWriter.record_capture_status(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            capture_status=LogCaptureStatusEnum.COMPLETE,
+        )
+
+    rows = await TaskHistoryLogStateManager.list_for_task(session, history.id)
+    assert len(rows) == 1
+    assert rows[0].capture_status == LogCaptureStatusEnum.COMPLETE
 
 
 @pytest.mark.asyncio

@@ -43,12 +43,10 @@ from app.core.requests import RemoteAPI
 from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
 from app.sep.deps import (
-    get_api_authenticated_user,
     get_current_user,
     get_session,
     get_tasks_api,
     require_bearer_for_unsafe_methods,
-    validate_csrf,
 )
 from app.sep.main import sep_app
 
@@ -118,9 +116,7 @@ def admin_client_fixture(
     admin_user: CasdoorUser, override_session: AsyncSession, mock_tasks: AsyncMock
 ) -> Iterator[TestClient]:
     """Yield an admin client (Bearer gate satisfied) with the Tasks API mocked."""
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     yield TestClient(sep_app, raise_server_exceptions=False)
@@ -132,9 +128,7 @@ def non_admin_client_fixture(
     regular_user: CasdoorUser, override_session: AsyncSession, mock_tasks: AsyncMock
 ) -> Iterator[TestClient]:
     """Yield a non-admin client (admin gate should reject) with the Tasks API mocked."""
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     yield TestClient(sep_app, raise_server_exceptions=False)
@@ -150,9 +144,7 @@ def cookie_admin_client_fixture(
     ``require_bearer_for_unsafe_methods`` is deliberately left un-overridden so
     unsafe methods (PATCH / DELETE) without a Bearer header reject with 401.
     """
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
@@ -169,17 +161,18 @@ class TestListAggregation:
         response = admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         classes = [g["setting_class"] for g in response.json()["groups"]]
-        assert {"SEPSettings", "SnippetsSettings", "MessagesSettings"}.issubset(
+        assert {"SEPSettings", "SnippetsSettings", "AlertSettings"}.issubset(
             set(classes)
         )
-        assert classes[-2] == SettingClassEnum.TASKS_SETTINGS.value
-        assert classes[-1] == SettingClassEnum.ALERT_SETTINGS.value
+        assert classes[-3] == SettingClassEnum.TASKS_SETTINGS.value
+        assert classes[-2] == SettingClassEnum.ALERTS_SETTINGS.value
+        assert classes[-1] == SettingClassEnum.HEALTH_REPORT_SETTINGS.value
         mock_tasks.get.assert_awaited_once_with(f"{REMOTE_BASE}/")
 
     def test_list_emits_is_advanced_for_sep_settings(
         self, admin_client: TestClient, mock_tasks: AsyncMock
     ) -> None:
-        """The SEP group flags advanced settings (incl. every SESSION leaf) and only those."""
+        """Flag advanced settings (incl. every SESSION_REFRESH leaf) and only those."""
         mock_tasks.get.return_value = _tasks_list()
         response = admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
@@ -193,11 +186,9 @@ class TestListAggregation:
         assert advanced["INVENTORY_ENDPOINT"] is True
         assert advanced["TASKS_ENDPOINT"] is True
         assert advanced["FOOTER_TEMPLATE"] is True
-        # Every expanded SESSION / SESSION_REFRESH leaf inherits the flag.
-        session_leaves = [
-            k for k in advanced if k.startswith(("SESSION__", "SESSION_REFRESH__"))
-        ]
-        assert session_leaves  # the parents expand into leaves, not a single entry
+        # Every expanded SESSION_REFRESH leaf inherits the flag.
+        session_leaves = [k for k in advanced if k.startswith("SESSION_REFRESH__")]
+        assert session_leaves  # the parent expands into leaves, not a single entry
         assert all(advanced[k] is True for k in session_leaves)
         # A basic setting stays False.
         assert advanced["SYNC_REFRESH_TIME"] is False

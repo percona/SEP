@@ -49,6 +49,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import SearchIcon from '@mui/icons-material/Search';
 import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
+import { useSnippetDownload } from '@sep/framework';
 import {
   useSnippets,
   useApproveSnippet,
@@ -125,8 +126,29 @@ interface BatchResult {
   generic?: string;
 }
 
-function buildSnippetDownloadUrl(filename: string) {
-  return `/static/snippets/${filename.split('/').map(encodeURIComponent).join('/')}`;
+function DownloadButton({
+  snippet,
+  onDownloaded,
+}: {
+  snippet: SnippetResponse;
+  onDownloaded: () => void;
+}) {
+  const download = useSnippetDownload();
+
+  return (
+    <Tooltip title="Download snippet">
+      <Button
+        size="small"
+        startIcon={
+          download.isPending ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />
+        }
+        disabled={download.isPending}
+        onClick={() => download.mutate({ filename: snippet.filename }, { onSuccess: onDownloaded })}
+      >
+        Download
+      </Button>
+    </Tooltip>
+  );
 }
 
 function ApproveButton({
@@ -686,18 +708,10 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
                     {isAdmin && (
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <Stack direction="row" spacing={1}>
-                          <Tooltip title="Download snippet">
-                            <Button
-                              component="a"
-                              href={buildSnippetDownloadUrl(snippet.filename)}
-                              download
-                              size="small"
-                              startIcon={<DownloadIcon />}
-                              onClick={() => markDownloaded(snippet.filename)}
-                            >
-                              Download
-                            </Button>
-                          </Tooltip>
+                          <DownloadButton
+                            snippet={snippet}
+                            onDownloaded={() => markDownloaded(snippet.filename)}
+                          />
                           <ApproveButton
                             snippet={snippet}
                             hasDownloaded={downloaded.has(snippet.filename)}

@@ -17,16 +17,23 @@
 
 Capture the full ``TaskWrite`` envelope produced by the model-first spec path
 (``build_backup_spec`` + ``assemble_envelope``) across the three backup types and
-their per-type host logic, and compare each against a committed golden captured
-from the pre-migration ``build_backup_task_payload_from_model``. The ``file://``
-payload path is normalized to the package-relative anchor so the golden is
-machine-independent (both the old builder and the new spec compute the same
-``Path(__file__).parent`` within the package).
+their per-type host logic, and compare each against a committed golden. The
+migration-era goldens were captured from the now-removed
+``build_backup_task_payload_from_model`` and are cross-implementation evidence
+the spec path reproduces the old builder byte-for-byte; later additions (the
+encryption-mode cases) are self-captures of the code under test via
+``assert_or_update`` — regression guards going forward, not cross-implementation
+checks. The ``file://`` payload path is normalized to the package-relative anchor
+so the golden is machine-independent (both the old builder and the new spec
+compute the same ``Path(__file__).parent`` within the package).
 """
+
+import pytest
+import yaml
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.spec import assemble_envelope, ResolvedEntities
-from app.sep.apps.mysql_backups.models import BackupCreate
+from app.sep.apps.mysql_backups.forms import BackupCreate
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.inventory import CreatedService
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
@@ -40,8 +47,9 @@ _PAYLOAD_ANCHOR = "app/sep/apps/mysql_backups/"
 
 # Each case names a slug and the backups field values; the cases cover the three
 # backup types, their per-type server host (M → service address, X → localhost,
-# B → alternative host or service address), and the requirements / payload-file
-# selection.
+# B → alternative host or service address), the requirements / payload-file
+# selection, and the encryption modes (tmpdir, post-run with in-place on, and
+# post-run standalone with in-place off).
 _CASES = [
     {
         "slug": "mydumper_rsync",
@@ -66,6 +74,41 @@ _CASES = [
             "encryption_recipient": "ops@example.com",
             "compression_algorithm": "zstd",
             "xtrabackup_prepare": True,
+        },
+        "alert_on_fail": False,
+    },
+    {
+        "slug": "mydumper_s3_encrypt_tmpdir",
+        "form": {
+            "backup_type": "M",
+            "upload": ["S3"],
+            "s3_bucket": "my-s3-bucket",
+            "encrypt": True,
+            "encrypt_using_tmpdir": True,
+            "encryption_recipient": "ops@example.com",
+        },
+        "alert_on_fail": False,
+    },
+    {
+        "slug": "mydumper_s3_encrypt_post_run",
+        "form": {
+            "backup_type": "M",
+            "upload": ["S3"],
+            "s3_bucket": "my-s3-bucket",
+            "encrypt": True,
+            "post_run_encrypt": True,
+            "encryption_recipient": "ops@example.com",
+        },
+        "alert_on_fail": False,
+    },
+    {
+        "slug": "mydumper_s3_post_run_only",
+        "form": {
+            "backup_type": "M",
+            "upload": ["S3"],
+            "s3_bucket": "my-s3-bucket",
+            "post_run_encrypt": True,
+            "encryption_recipient": "ops@example.com",
         },
         "alert_on_fail": False,
     },
@@ -142,3 +185,56 @@ def test_spec_path_payload_matrix_matches_golden():
     assert_or_update(
         PAYLOAD_DIR / "mysql_backups__spec_path.json", canonical_json(payloads)
     )
+
+
+def _all_servers_config(
+    backup_type: str, encryption: dict[str, object]
+) -> dict[str, object]:
+    """Return the ``ALL_SERVERS`` block of the YAML config ``build_backup_spec`` emits.
+
+    :param backup_type: The ``BackupType`` code (``M``/``X``/``B``).
+    :param encryption: The encryption fields to pass to the form, if any.
+    """
+    service = _service()
+    resolved = ResolvedEntities(
+        service=service,
+        entities={"service_id": service},
+        executor_host=_HOSTNAME,
+    )
+    form = BackupCreate(
+        task_name=_TASK_NAME,
+        hostname=_HOSTNAME,
+        service_id=service.id,
+        backup_type=backup_type,
+        **encryption,
+    )
+    return yaml.safe_load(build_backup_spec(form, resolved).config)["ALL_SERVERS"]
+
+
+@pytest.mark.parametrize("backup_type", ["M", "X", "B"])
+@pytest.mark.parametrize(
+    "encryption",
+    [
+        pytest.param(
+            {"encrypt": True, "encryption_recipient": "ops@example.com"},
+            id="encrypt_true",
+        ),
+        pytest.param({"encrypt": False}, id="encrypt_false"),
+        pytest.param({}, id="encrypt_omitted"),
+    ],
+)
+def test_build_backup_spec_always_emits_encrypt_key(backup_type: str, encryption: dict):
+    """Pin that every generated config carries an explicit ``ENCRYPT`` key.
+
+    Drives ``build_backup_spec`` directly for each backup type and for an
+    ``encrypt=True`` form, an ``encrypt=False`` form, and a form built without any
+    encryption fields, then asserts the serialised YAML always names ``ENCRYPT``
+    with the form's value. This is the producer-side invariant the payload scripts
+    rely on: they read ``settings.get("ENCRYPT", True)``, so a config that ever
+    omitted the key would flip a stored backup from unencrypted to encrypted. The
+    assertion fails if ``exclude_unset``/``exclude_defaults`` (which would drop the
+    ``False`` default) is ever introduced into the builder.
+    """
+    all_servers = _all_servers_config(backup_type, encryption)
+    assert "ENCRYPT" in all_servers
+    assert all_servers["ENCRYPT"] is encryption.get("encrypt", False)

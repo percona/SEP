@@ -31,12 +31,21 @@ from app.sep.snippets.models.meta import (
 SeedSnippet = Callable[..., Awaitable[Snippet]]
 
 
+@pytest.fixture(autouse=True)
+def _bind_request_less_session(request_less_session: AsyncSession) -> None:
+    """Apply the request-less session binding to every test in this subtree.
+
+    Autouse so the ``script_source`` tests see the seeded data; a no-op for tests
+    that never open a request-less session.
+    """
+
+
 @pytest.fixture
 def seed_snippet() -> SeedSnippet:
     """Return an async factory persisting a Snippet with given meta and approval.
 
-    Promoted here so the SQLite and PostgreSQL list-query tests share one seeding
-    definition instead of re-declaring the row shape per module.
+    Promoted here so the SQLite, PostgreSQL and MySQL list-query tests share one
+    seeding definition instead of re-declaring the row shape per module.
 
     :return: An awaitable ``(session, filename, *, title, description,
         service_type, approved)`` factory returning the persisted snippet.
