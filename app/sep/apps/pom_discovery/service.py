@@ -183,11 +183,11 @@ def _record_for(entry: Any, host_results: dict[str, HostProbeResult]) -> dict | 
 
 #: Probe-record fields that describe the **host** rather than any service on it.
 #:
-#: The payload collects these once per dispatch and echoes them on every record it
-#: returns, so any one record from a host carries them. Splitting them out here is
-#: what keeps ``repo.reachable`` from being stored three times on a host running three
-#: mongods -- and from those three copies being free to disagree once a partial sweep
-#: updates some and not others.
+#: Lifted from the payload's own host record, which it prints once per dispatch
+#: whether or not the host runs a database. Keeping these on the host row is what
+#: stops ``repo.reachable`` being stored three times on a host running three mongods,
+#: and those three copies being free to disagree once a partial sweep updates some and
+#: not others.
 HOST_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("os", ("system", "os_name")),
     ("kernel", ("system", "kernel")),
@@ -310,9 +310,24 @@ async def _sweep(observed_at: str) -> SweepOutcome:
         # mapped: a host with no database has no service to derive it from, and that
         # is the host worth having a row for.
         hosts = build_hosts(nodes, services, executor_hosts)
-        host_results = await probe_all(tasks_api, mapped)
+        # Every host with an executor is dispatched to, service or no service:
+        # a machine with a PMM client and no database is the one an install
+        # decision is about, and it has no service to be reached through.
+        host_results = await probe_all(
+            tasks_api,
+            mapped,
+            executor_hosts=[host.executor_host for host in hosts if host.executor_host],
+        )
 
     outcome = SweepOutcome(total=len(mapped), hosts=hosts, dispatched=set(host_results))
+    # One document per host that answered, from the host's own record rather than
+    # from whichever of its services happened to report.
+    for executor_host, result in host_results.items():
+        if result.host_record is not None:
+            outcome.host_documents[executor_host] = build_document(
+                result.host_record, HOST_FIELDS, observed_at
+            )
+
     node_ids = _index_hosts(outcome)
 
     for entry in mapped:
@@ -432,12 +447,6 @@ def _record_entity(
     outcome.service_documents[entry.service.external_id] = build_document(
         record, SERVICE_FIELDS, observed_at
     )
-    if entry.executor_host:
-        # Host attributes come off whichever record answered; they are the same on
-        # every record from one dispatch.
-        outcome.host_documents.setdefault(
-            entry.executor_host, build_document(record, HOST_FIELDS, observed_at)
-        )
 
 
 async def _persist_estate(outcome: SweepOutcome, run_id: UUID) -> None:

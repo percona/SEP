@@ -398,15 +398,24 @@ def credentials_path(config):
 
 
 def main():
-    """Collect every configured target and print one JSON object per line."""
+    """Print one JSON object for the host, then one per configured target.
+
+    The host line comes first and is emitted whether or not there are targets. A
+    dispatch with no targets is not a misconfiguration: a machine carrying a PMM
+    client and no database is exactly what POM wants to describe, and it is the state
+    a host is in before anything is installed on it. Refusing to run there -- which
+    this did, exiting 1 on an empty target list -- left the only hosts worth an
+    install decision as the only hosts POM could say nothing about.
+
+    The host line also stops host attributes being read off whichever service record
+    happened to answer. They belong to the host, they are collected once per
+    dispatch, and now they are reported once too.
+    """
     config = load_config()
     targets = config.get("targets") or []
-    if not targets:
-        print("config names no targets", file=sys.stderr)
-        sys.exit(1)
 
-    # Host-level facts are identical for every target on this dispatch, so collect
-    # them once rather than per target.
+    # Collected once: identical for every target on this dispatch, because they all
+    # run on the same executor host.
     process_facts = collect_process_facts()
     host_facts = {
         "system": collect_os_facts(),
@@ -415,6 +424,16 @@ def main():
         # version rather than whatever mongod binary happens to be installed.
         "binary_version": collect_binary_version(process_facts.get("program")),
     }
+
+    # ``service: null`` is what marks this the host's own record. The consumer keys
+    # service records by name, so a record with no name cannot be mistaken for one.
+    host_record = {
+        "service": None,
+        "collected_at": int(time.time()),
+        "status": STATUS_OK,
+    }
+    host_record.update(host_facts)
+    print(json.dumps(host_record, default=str), flush=True)
 
     for target in targets:
         record = probe(target, config, host_facts)

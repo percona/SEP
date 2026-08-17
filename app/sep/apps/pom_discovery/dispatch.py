@@ -33,6 +33,7 @@ import asyncio
 import json
 import logging
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import monotonic
@@ -66,6 +67,10 @@ class HostProbeResult:
     :param executor_host: The host the payload ran on.
     :param task_history_id: The dispatched run's history id, when dispatch succeeded.
     :param records: The parsed NDJSON records, keyed by service name.
+    :param host_record: The host's own record -- OS, kernel, the installed binary --
+        collected once per dispatch. ``None`` when the payload never printed it,
+        which is the only way to tell "the host did not answer" from "the host
+        answered and has no database on it".
     :param duration_seconds: Wall-clock from dispatch to collected output, including
         the wait for Nomad to schedule the job. Measured here rather than read back
         from the task history because this is the number that explains a slow sweep:
@@ -77,6 +82,7 @@ class HostProbeResult:
     executor_host: str
     task_history_id: int | None = None
     records: dict[str, dict[str, Any]] = field(default_factory=dict)
+    host_record: dict[str, Any] | None = None
     duration_seconds: float | None = None
     error: str | None = None
 
@@ -123,17 +129,25 @@ def build_config(entries: list[MappedService]) -> str:
     )
 
 
-def parse_ndjson(stdout: str) -> dict[str, dict[str, Any]]:
-    """Parse the payload's stdout into records keyed by service name.
+def parse_ndjson(
+    stdout: str,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any] | None]:
+    """Parse the payload's stdout into service records and the host's own record.
+
+    The payload emits one line for the host and one per service. They are told apart
+    by ``service``: the host's is null, and a service record always carries a name.
+    That is the whole discriminator, and it is why the host line cannot be confused
+    for a service even on a host running a service called nothing useful.
 
     Non-JSON lines are skipped rather than failing the host: the run-python job
     template's prestart step and pip itself write to the same stream, so the payload's
     records are interleaved with output it does not control.
 
     :param stdout: The dispatched run's captured stdout.
-    :return: One record per service that reported.
+    :return: One record per service that reported, and the host record if it came.
     """
     records: dict[str, dict[str, Any]] = {}
+    host_record: dict[str, Any] | None = None
     for raw_line in stdout.splitlines():
         line = raw_line.strip()
         if not line.startswith("{"):
@@ -142,9 +156,13 @@ def parse_ndjson(stdout: str) -> dict[str, dict[str, Any]]:
             record = json.loads(line)
         except ValueError:
             continue
-        if isinstance(record, dict) and record.get("service"):
+        if not isinstance(record, dict):
+            continue
+        if record.get("service"):
             records[record["service"]] = record
-    return records
+        elif "service" in record:
+            host_record = record
+    return records, host_record
 
 
 async def _wait_for_terminal(tasks_api: RemoteAPI, task_history_id: int) -> str:
@@ -295,12 +313,20 @@ async def probe_host(
 
         status = await _wait_for_terminal(tasks_api, result.task_history_id)
         stdout, stderr = await _read_stdout(tasks_api, result.task_history_id)
-        result.records = parse_ndjson(stdout)
+        result.records, result.host_record = parse_ndjson(stdout)
 
         # A FAILED status with parsed records still yields those records: the payload
         # exits non-zero only when it could not start, but the job template's own
         # steps can fail after the payload printed. Report the status, keep the data.
-        if status != TaskHistoryStatusEnum.SUCCESS.value and not result.records:
+        #
+        # The host record counts as data: on a host with no database it is the *only*
+        # thing the dispatch had to produce, so treating "no service records" as
+        # failure would fail every empty host by construction.
+        if (
+            status != TaskHistoryStatusEnum.SUCCESS.value
+            and not result.records
+            and result.host_record is None
+        ):
             result.error = f"probe run {status}: {stderr.strip()[:500] or 'no output'}"
     except Exception as err:
         logger.exception("POM discovery: probe of %s failed", executor_host)
@@ -326,20 +352,34 @@ async def probe_host(
 
 
 async def probe_all(
-    tasks_api: RemoteAPI, mapped: list[MappedService]
+    tasks_api: RemoteAPI,
+    mapped: list[MappedService],
+    executor_hosts: Iterable[str] = (),
 ) -> dict[str, HostProbeResult]:
-    """Probe every executor host serving a resolved service, concurrently.
+    """Probe every executor host in reach, concurrently.
+
+    Hosts come from two places and the second is the point: the executor hosts of
+    resolved services, *and* every executor host the estate knows about. A machine
+    with a PMM client and no database has no service to be reached through, and it is
+    exactly the machine an install decision is about -- so dispatching only to hosts
+    that serve a service would leave the interesting ones permanently undescribed.
 
     Concurrency is bounded by ``max_concurrent_probes``: each dispatch is a Nomad
     job, and a large estate would otherwise submit hundreds at once.
 
     :param tasks_api: The tasks API client.
     :param mapped: Every mapped service, resolved or orphaned.
+    :param executor_hosts: Executor hosts to probe even if they serve no service.
     :return: One result per executor host, keyed by host.
     """
     grouped = group_by_executor(mapped)
+    # ``setdefault`` rather than a union: a host that serves services must keep them
+    # as its targets, and one that serves none is dispatched to with an empty list.
+    for host in executor_hosts:
+        grouped.setdefault(host, [])
+
     if not grouped:
-        logger.warning("POM discovery: no service resolved to an executor host")
+        logger.warning("POM discovery: no executor host to probe")
         return {}
 
     semaphore = asyncio.Semaphore(pom_discovery_settings.MAX_CONCURRENT_PROBES)
