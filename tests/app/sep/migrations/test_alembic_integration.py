@@ -31,6 +31,7 @@ from alembic.util import CommandError
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.exc import IntegrityError
 
+from app.core.db.utils import check_constraint_name
 from app.sep.apps.alerts.models import AlertBackup
 
 from .conftest import ALEMBIC_INI, ALERTS_HEAD, UNKNOWN_REVISION
@@ -424,6 +425,63 @@ def test_setting_class_enum_rejects_new_members_before_upgrade(sep_alembic_confi
     try:
         with engine.begin() as conn, pytest.raises(IntegrityError):
             _insert_override(conn, "SETTINGS")
+    finally:
+        engine.dispose()
+
+
+def test_setting_class_check_is_dropped_after_upgrade(sep_alembic_config):
+    """After ``upgrade heads``, ``setting_class`` is an unconstrained string."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, "heads")
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            unconstrained = ("UNREGISTERED_SETTINGS", "X" * 50)
+            assert (
+                check_constraint_name(conn, "settingoverride", "setting_class") is None
+            )
+            for token in unconstrained:
+                _insert_override(conn, token)
+            count = conn.exec_driver_sql(
+                "SELECT COUNT(*) FROM settingoverride"
+            ).scalar()
+        assert count == len(unconstrained)
+    finally:
+        engine.dispose()
+
+
+def test_setting_class_check_downgrade_deletes_unknown_rows(sep_alembic_config, caplog):
+    """Downgrade deletes out-of-list rows, logs the count, and restores the CHECK."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, "heads")
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            _insert_override(conn, "UNREGISTERED_SETTINGS")
+            _insert_override(conn, "SEP_SETTINGS")
+    finally:
+        engine.dispose()
+
+    with caplog.at_level(logging.INFO, logger="app.core.settings_override.alembic_ops"):
+        command.downgrade(cfg, "sep_main@-1")
+
+    assert "Deleted 1 settingoverride row(s)" in caplog.text
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            assert (
+                check_constraint_name(conn, "settingoverride", "setting_class")
+                == "settingclassenum"
+            )
+            remaining = conn.exec_driver_sql(
+                "SELECT setting_class FROM settingoverride"
+            ).fetchall()
+            assert remaining == [("SEP_SETTINGS",)]
+            with pytest.raises(IntegrityError):
+                _insert_override(conn, "UNREGISTERED_SETTINGS")
     finally:
         engine.dispose()
 
