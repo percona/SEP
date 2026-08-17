@@ -28,7 +28,7 @@ on the **artifact** rather than on the commit that built it:
 ```bash
 TAG=<the tag you are pinning>
 
-# It must read secrets from a directory (SECRETS_DIR); expect 4.
+# It must read secrets from a directory (SECRETS_DIR); expect a non-zero count.
 docker run --rm --entrypoint sh docker.io/percona/percona-sep:$TAG \
   -c 'grep -c SECRETS_DIR /home/sep/app/settings-env.sh'
 
