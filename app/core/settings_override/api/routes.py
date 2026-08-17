@@ -55,7 +55,11 @@ from app.core.settings_override.lifecycle import (
     publish_snapshot,
 )
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import (
+    setting_class_token,
+    SettingClassEnum,
+    SettingOverride,
+)
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
     _resolve_field_in_model,
@@ -315,7 +319,7 @@ async def collect_class_setting_responses(
     :return: One :class:`SettingResponse` per LIST row for the class.
     """
     rows = await SettingsOverrideManager.list(
-        session, setting_class=setting_class, is_active=True
+        session, setting_class=setting_class_token(settings_cls), is_active=True
     )
     override_keys = override_keys_for_rows(settings_cls, rows)
     return [
@@ -980,7 +984,7 @@ def build_settings_router(
         key = canonical_override_key(settings_cls, key)
         field_meta = _field_meta_or_404(settings_cls, key)
         rows = await SettingsOverrideManager.list(
-            session, setting_class=setting_class, is_active=True
+            session, setting_class=setting_class_token(settings_cls), is_active=True
         )
         override_keys = override_keys_for_rows(settings_cls, rows)
         return _settings_response_from_field(
@@ -1036,7 +1040,7 @@ def build_settings_router(
         )
         await _persist_overrides(
             session=session,
-            setting_class=setting_class,
+            settings_cls=settings_cls,
             to_apply=to_apply,
         )
         previous = proxy.get_snapshot()
@@ -1112,13 +1116,13 @@ def build_settings_router(
         key = canonical_override_key(settings_cls, key)
         field_meta = _field_meta_or_404(settings_cls, key)
         has_override_row = await SettingsOverrideManager.exists(
-            session, setting_class=setting_class, key=key
+            session, setting_class=setting_class_token(settings_cls), key=key
         )
         _assert_key_deletable(
             settings_cls, field_meta, has_override_row=has_override_row
         )
         await SettingsOverrideManager.delete_where(
-            session, setting_class=setting_class, key=key
+            session, setting_class=setting_class_token(settings_cls), key=key
         )
         previous = proxy.get_snapshot()
         await publish_snapshot(proxy, session, settings_cls)
@@ -1263,7 +1267,7 @@ def _assert_key_deletable(
 async def _persist_overrides(
     *,
     session: AsyncSession,
-    setting_class: SettingClassEnum,
+    settings_cls: type[BaseYamlSettings],
     to_apply: list[tuple[str, Any]],
 ) -> None:
     """Insert or update each ``(setting_class, key)`` row in a single transaction.
@@ -1281,30 +1285,33 @@ async def _persist_overrides(
     its values cleanly.
 
     :param session: The sub-app's database session.
-    :param setting_class: The settings class the rows belong to.
+    :param settings_cls: The Pydantic settings class whose storage token is
+        written to ``settingoverride.setting_class``.
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
     """
+    token = setting_class_token(settings_cls)
     try:
         await _stage_and_commit_overrides(
-            session=session, setting_class=setting_class, to_apply=to_apply
+            session=session, setting_class=token, to_apply=to_apply
         )
     except IntegrityError:
         await session.rollback()
         await _stage_and_commit_overrides(
-            session=session, setting_class=setting_class, to_apply=to_apply
+            session=session, setting_class=token, to_apply=to_apply
         )
 
 
 async def _stage_and_commit_overrides(
     *,
     session: AsyncSession,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     to_apply: list[tuple[str, Any]],
 ) -> None:
     """Stage every (setting_class, key) row and commit the batch.
 
     :param session: The sub-app's database session.
-    :param setting_class: The settings class the rows belong to.
+    :param setting_class: The storage token written to
+        ``settingoverride.setting_class``.
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
     """
     for key, value in to_apply:
