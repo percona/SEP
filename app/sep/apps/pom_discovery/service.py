@@ -191,6 +191,12 @@ def _record_for(entry: Any, host_results: dict[str, HostProbeResult]) -> dict | 
 HOST_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("os", ("system", "os_name")),
     ("kernel", ("system", "kernel")),
+    # Mongods running here that PMM has no service for. They are host observations
+    # rather than service rows because there is no service id to key a row on -- see
+    # the payload's find_unregistered. An arbiter is the ordinary case: it holds no
+    # data, therefore no user documents, therefore SCRAM cannot authenticate and
+    # `pmm-admin add mongodb` fails for it.
+    ("unregistered_mongods", ("unregistered_mongods",)),
 )
 
 #: Probe-record fields that belong to one **service**.

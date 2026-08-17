@@ -184,6 +184,127 @@ def collect_process_facts():
     }
 
 
+def parse_config_path(argv):
+    """Read the ``--config`` path out of a server's command line.
+
+    :param argv: The full command line.
+    :return: The configuration file path, or ``None``.
+    """
+    tokens = argv.split()
+    for index, token in enumerate(tokens):
+        if token in ("-f", "--config") and index + 1 < len(tokens):
+            return tokens[index + 1]
+        if token.startswith("--config="):
+            return token.split("=", 1)[1]
+    return None
+
+
+def parse_port(argv, config_path):
+    """Determine the port a server process listens on.
+
+    The command line wins when it carries one. Otherwise the configuration file is
+    read, because that is where the port usually lives -- every node in the sandbox
+    is started as ``mongod --config <file>`` with the port set inside it, so an
+    argv-only reading would find nothing on any of them.
+
+    :param argv: The full command line.
+    :param config_path: The configuration file the process was started with.
+    :return: The port as an int, or ``None`` when neither source names one.
+    """
+    tokens = argv.split()
+    for index, token in enumerate(tokens):
+        if token == "--port" and index + 1 < len(tokens):
+            if tokens[index + 1].isdigit():
+                return int(tokens[index + 1])
+        if token.startswith("--port="):
+            value = token.split("=", 1)[1]
+            if value.isdigit():
+                return int(value)
+
+    if not config_path:
+        return None
+    try:
+        with open(config_path) as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                # Matches the YAML `port: 27018` and the legacy `port=27018` alike,
+                # without taking a YAML parser as a dependency on the host.
+                if not line.startswith("port"):
+                    continue
+                remainder = line[len("port") :].lstrip()
+                if remainder.startswith((":", "=")):
+                    value = remainder[1:].strip().split("#")[0].strip()
+                    if value.isdigit():
+                        return int(value)
+    except OSError:
+        return None
+    return None
+
+
+def collect_server_processes():
+    """Return every mongod and mongos running on this host.
+
+    :func:`collect_process_facts` deliberately reports only the first, because a
+    probe of one service wants one answer. This is the other question -- what is
+    *actually running here* -- and it has to see all of them, because the ones PMM
+    has no service for are precisely the ones nothing else can tell you about.
+
+    :return: One mapping per server process, each with its program, pid, port,
+        configuration path and command line.
+    """
+    processes = []
+    for program in SERVER_PROGRAMS:
+        output = run_command(["ps", "-o", "pid=,args=", "-C", program])
+        if not output:
+            continue
+        for raw_line in output.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            parts = line.split(None, 1)
+            if len(parts) < 2:
+                continue
+            pid, argv = parts
+            config_path = parse_config_path(argv)
+            processes.append(
+                {
+                    "program": program,
+                    "pid": int(pid) if pid.isdigit() else None,
+                    "port": parse_port(argv, config_path),
+                    "config_path": config_path,
+                    "argv": argv,
+                }
+            )
+    return processes
+
+
+def find_unregistered(processes, targets):
+    """Return the server processes no target accounts for.
+
+    A "target" is a service PMM has registered and asked us to probe, identified by
+    its port. Anything else listening is a database PMM does not know about --
+    normal rather than exotic, because an arbiter holds no data and therefore no user
+    documents, so SCRAM cannot authenticate and ``pmm-admin add mongodb`` fails for
+    it. Any estate with arbiters and authentication enabled has them.
+
+    A process whose port could not be determined is reported as unregistered rather
+    than dropped: it cannot be matched to a target, and silently discarding a running
+    database would be exactly the dishonesty this list exists to prevent.
+
+    :param processes: Every server process found on the host.
+    :param targets: The configured targets, each carrying a ``port``.
+    :return: The processes that matched no target.
+    """
+    registered_ports = {
+        target.get("port") for target in targets if target.get("port") is not None
+    }
+    return [
+        process
+        for process in processes
+        if process.get("port") is None or process["port"] not in registered_ports
+    ]
+
+
 def collect_binary_version(program=None):
     """Return the installed server binary's version string, or ``None``.
 
@@ -433,6 +554,14 @@ def main():
         "status": STATUS_OK,
     }
     host_record.update(host_facts)
+    # What is running here that PMM did not ask about. Reported on the host rather
+    # than as a service of its own: there is no service id to key one on, and
+    # inventing an identity for a database PMM does not monitor would commit to a
+    # shape before anyone needs it. Dropping them instead would let the estate view
+    # claim a host is empty while a mongod is running on it.
+    host_record["unregistered_mongods"] = find_unregistered(
+        collect_server_processes(), targets
+    )
     print(json.dumps(host_record, default=str), flush=True)
 
     for target in targets:
