@@ -15,9 +15,11 @@
 
 """Define the persistent ``SettingOverride`` model and class identifier enum."""
 
-__all__ = ["SettingClassEnum", "SettingOverride"]
+__all__ = ["SettingClassEnum", "SettingOverride", "setting_class_token"]
 
+import re
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from pydantic import JsonValue
 from sqlalchemy import Column, Index
@@ -26,6 +28,33 @@ from sqlmodel import Field as SQLField
 
 from app.core.db.models import BaseSQLModel
 from app.core.db.sql_types import AutoJSON
+
+if TYPE_CHECKING:
+    from app.core.config import BaseYamlSettings
+
+#: Acronym-aware CamelCase split: ``SEPSettings`` -> ``SEP_Settings``,
+#: ``HealthReportSettings`` -> ``Health_Report_Settings``.
+_CAMEL_SPLIT = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+
+def setting_class_token(settings_cls: type["BaseYamlSettings"]) -> str:
+    """Return the storage token written to ``settingoverride.setting_class``.
+
+    The token is the SCREAMING_SNAKE form of the class ``__name__``, derived by
+    an acronym-aware CamelCase split so ``SEPSettings`` stores as
+    ``SEP_SETTINGS`` -- the spelling every existing override row already uses.
+    A class may pin a different token by declaring ``__setting_class_token__``,
+    the same escape hatch shape as SQLAlchemy's ``__tablename__``.
+
+    :param settings_cls: The settings class whose override rows are stored.
+    :type settings_cls: type[BaseYamlSettings]
+    :return: The token written to ``settingoverride.setting_class``.
+    :rtype: str
+    """
+    override = getattr(settings_cls, "__setting_class_token__", None)
+    if isinstance(override, str) and override:
+        return override
+    return _CAMEL_SPLIT.sub("_", settings_cls.__name__).upper()
 
 
 class SettingClassEnum(StrEnum):
