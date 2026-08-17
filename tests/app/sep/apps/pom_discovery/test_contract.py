@@ -16,8 +16,9 @@
 """Smoke-test the API-first surface of the POM Discovery app.
 
 A ``BaseApp`` exposes a declared ``api_router`` rather than the derived task
-contract, so this mounts that router behind the production auth guard and asserts
-``GET /schema`` and the sample list route both answer.
+contract, so this mounts that router behind the production auth guard and asserts it
+answers. Deliberately only ``GET /schema``, which needs no database: what the estate
+routes serve is tested against a real session in test_estate_api.py.
 """
 
 from fastapi import APIRouter, FastAPI, status
@@ -51,8 +52,10 @@ def test_schema_200(regular_user: CasdoorUser) -> None:
     assert response.status_code == status.HTTP_200_OK
 
 
-def test_list_200(regular_user: CasdoorUser) -> None:
-    """Return 200 from the sample ``GET /`` list route."""
-    response = _client(regular_user).get(f"{_BASE}/")
-
-    assert response.status_code == status.HTTP_200_OK
+# The scaffold's ``test_list_200`` was removed rather than repaired. It asserted a
+# ``GET /`` list route this app has never had -- it declares a purpose-built router
+# instead of the derived task contract -- so it had been failing since the app was
+# written, asserting a shape nobody intended. What it meant to prove, that the router
+# is mounted and reachable behind the auth guard, is proved by ``test_schema_200``
+# above without needing a database; what the routes actually serve is pinned in
+# ``test_estate_api.py``.

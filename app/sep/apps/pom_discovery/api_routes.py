@@ -40,13 +40,24 @@ from app.core.utils.date_time import utc_now
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.pom_discovery.config import pom_discovery_settings
 from app.sep.apps.pom_discovery.crud import (
+    delete_host,
+    delete_service,
+    get_host,
     get_run,
+    get_service,
     latest_terminal_run,
+    list_hosts,
+    list_services,
     ProbeRunManager,
     recent_runs,
     running_run,
 )
-from app.sep.apps.pom_discovery.models import ProbeRun, ProbeRunStatus
+from app.sep.apps.pom_discovery.models import (
+    PomHost,
+    PomService,
+    ProbeRun,
+    ProbeRunStatus,
+)
 from app.sep.apps.pom_discovery.schema import pom_discovery_schema
 from app.sep.deps import SessionDep
 
@@ -203,6 +214,127 @@ class ProbeRunAccepted(BaseModel):
     started_at: datetime
 
 
+class ServiceResponse(BaseModel):
+    """One MongoDB service PMM has registered, as POM currently holds it.
+
+    Keyed on **PMM's** service id, which is the whole benefit of storing it that way:
+    the path and the payload carry the id every consumer already has, with nothing to
+    translate on either side.
+
+    :param service_id: PMM's service id.
+    :param node_id: The host it runs on.
+    :param name: The service name as PMM registered it.
+    :param port: The port it listens on.
+    :param role: What the probe found it to be, when a probe determined one.
+    :param observed: Everything collected, with its own ``collected_at``. Empty when
+        this service has never been successfully probed.
+    :param first_seen_at: When POM first wrote a row for it.
+    :param last_attempt_at: When a run last targeted it. ``None`` means no run ever
+        has, which is different from having tried and failed.
+    :param last_success_at: When it last answered. This is the data's age.
+    :param failing_since: The first failure after the last success; ``None`` while
+        healthy.
+    :param consecutive_failures: Failures since the last success.
+    :param last_error: The most recent failure detail.
+    """
+
+    service_id: str
+    node_id: str
+    name: str | None = None
+    port: int | None = None
+    role: str | None = None
+    observed: dict[str, Any] = Field(default_factory=dict)
+    first_seen_at: datetime
+    last_attempt_at: datetime | None = None
+    last_success_at: datetime | None = None
+    failing_since: datetime | None = None
+    consecutive_failures: int = 0
+    last_error: str | None = None
+
+
+class HostResponse(BaseModel):
+    """One host, with the services POM knows are on it.
+
+    A host is a row whether or not any MongoDB was found on it: that is what makes
+    "which hosts have no database" a query rather than an absence, and it is the only
+    way a machine that has never run one appears at all.
+
+    :param node_id: PMM's node id.
+    :param name: The node's registered name.
+    :param address: The node's registered address.
+    :param executor_host: The Nomad client serving it. ``None`` means nothing can be
+        run there, which is a fact about the estate rather than a probe failure.
+    :param observed: Everything collected about the host, including
+        ``unregistered_mongods`` where the probe found a database PMM has no service
+        for. Empty when the host has never been successfully probed.
+    :param first_seen_at: When POM first wrote a row for it.
+    :param last_attempt_at: When a run last probed it.
+    :param last_success_at: When it last answered.
+    :param failing_since: The first failure after the last success.
+    :param consecutive_failures: Failures since the last success.
+    :param last_error: The most recent failure detail.
+    :param services: The services on it. Empty is a meaningful answer, not a gap.
+    """
+
+    node_id: str
+    name: str
+    address: str | None = None
+    executor_host: str | None = None
+    observed: dict[str, Any] = Field(default_factory=dict)
+    first_seen_at: datetime
+    last_attempt_at: datetime | None = None
+    last_success_at: datetime | None = None
+    failing_since: datetime | None = None
+    consecutive_failures: int = 0
+    last_error: str | None = None
+    services: list[ServiceResponse] = Field(default_factory=list)
+
+
+def _service_response(service: PomService) -> ServiceResponse:
+    """Project one service row for the wire.
+
+    :param service: The stored row.
+    :return: The response.
+    """
+    return ServiceResponse(
+        service_id=service.service_id,
+        node_id=service.node_id,
+        name=service.name,
+        port=service.port,
+        role=service.role,
+        observed=service.observed or {},
+        first_seen_at=service.first_seen_at,
+        last_attempt_at=service.last_attempt_at,
+        last_success_at=service.last_success_at,
+        failing_since=service.failing_since,
+        consecutive_failures=service.consecutive_failures,
+        last_error=service.last_error,
+    )
+
+
+def _host_response(host: PomHost, services: list[PomService]) -> HostResponse:
+    """Project one host row, with its services nested.
+
+    :param host: The stored row.
+    :param services: Its service rows.
+    :return: The response.
+    """
+    return HostResponse(
+        node_id=host.node_id,
+        name=host.name,
+        address=host.address,
+        executor_host=host.executor_host,
+        observed=host.observed or {},
+        first_seen_at=host.first_seen_at,
+        last_attempt_at=host.last_attempt_at,
+        last_success_at=host.last_success_at,
+        failing_since=host.failing_since,
+        consecutive_failures=host.consecutive_failures,
+        last_error=host.last_error,
+        services=[_service_response(service) for service in services],
+    )
+
+
 def _counts(run: ProbeRun) -> ProbeCounts:
     """Project a run's counters.
 
@@ -232,6 +364,158 @@ def _run_response(run: ProbeRun) -> ProbeRunResponse:
         facts_collected=len(run.facts or []),
         error=run.error,
     )
+
+
+@router.get("/hosts", response_model=list[HostResponse])
+async def list_estate_hosts(
+    session: SessionDep,
+    has_service: bool | None = Query(
+        default=None,
+        description="True for hosts running a MongoDB service, False for those with "
+        "none. Omit for all of them.",
+    ),
+    failing: bool | None = Query(
+        default=None, description="Restrict to hosts that are, or are not, failing."
+    ),
+    executor: bool | None = Query(
+        default=None,
+        description="True for hosts a payload can run on, False for those with no "
+        "executor.",
+    ),
+) -> list[HostResponse]:
+    """Return every host POM holds, each with its services.
+
+    ``has_service=false`` is the question this table exists to answer: which machines
+    carry a PMM client and no database. It is a filter rather than an endpoint of its
+    own so there is one list contract to learn, and because the same list with the
+    filter inverted is the ordinary estate view.
+
+    Counts describe the *tables*, not the last run. A scoped refresh must not make the
+    estate look one host wide.
+
+    :param session: The database session.
+    :param has_service: Filter on whether a MongoDB service is registered here.
+    :param failing: Filter on whether the host is currently failing.
+    :param executor: Filter on whether an executor serves it.
+    :return: The hosts, by name.
+    """
+    hosts = await list_hosts(session)
+    services = await list_services(session)
+
+    by_node: dict[str, list[PomService]] = {}
+    for service in services:
+        by_node.setdefault(service.node_id, []).append(service)
+
+    return [
+        _host_response(host, by_node.get(host.node_id, []))
+        for host in hosts
+        if (has_service is None or bool(by_node.get(host.node_id)) is has_service)
+        and (failing is None or (host.failing_since is not None) is failing)
+        and (executor is None or (host.executor_host is not None) is executor)
+    ]
+
+
+@router.get("/hosts/{node_id}", response_model=HostResponse)
+async def get_estate_host(node_id: str, session: SessionDep) -> HostResponse:
+    """Return one host, with its services.
+
+    :param node_id: PMM's node id.
+    :param session: The database session.
+    :raises HTTPNotFoundException: When POM holds no such host.
+    :return: The host.
+    """
+    host = await get_host(session, node_id)
+    if host is None:
+        raise HTTPNotFoundException(detail=f"Host {node_id} not found")
+    return _host_response(host, await list_services(session, node_id=node_id))
+
+
+@router.get("/services", response_model=list[ServiceResponse])
+async def list_estate_services(
+    session: SessionDep,
+    node_id: str | None = Query(default=None, description="Restrict to one host."),
+    failing: bool | None = Query(
+        default=None, description="Restrict to services that are, or are not, failing."
+    ),
+) -> list[ServiceResponse]:
+    """Return the services POM holds, flat.
+
+    For a consumer that works in services and would otherwise walk every host document
+    to find them. ``GET /hosts/{node_id}`` already nests a host's services, so there is
+    deliberately no ``/hosts/{node_id}/services``: it would be a second spelling of the
+    same list, and ``?node_id=`` covers wanting them without the host.
+
+    :param session: The database session.
+    :param node_id: Restrict to one host.
+    :param failing: Filter on whether the service is currently failing.
+    :return: The services, by name.
+    """
+    return [
+        _service_response(service)
+        for service in await list_services(session, node_id=node_id)
+        if failing is None or (service.failing_since is not None) is failing
+    ]
+
+
+@router.get("/services/{service_id}", response_model=ServiceResponse)
+async def get_estate_service(service_id: str, session: SessionDep) -> ServiceResponse:
+    """Return one service, by PMM's service id.
+
+    :param service_id: PMM's service id.
+    :param session: The database session.
+    :raises HTTPNotFoundException: When POM holds no such service.
+    :return: The service.
+    """
+    service = await get_service(session, service_id)
+    if service is None:
+        raise HTTPNotFoundException(detail=f"Service {service_id} not found")
+    return _service_response(service)
+
+
+@router.delete("/hosts/{node_id}", status_code=http_status.HTTP_204_NO_CONTENT)
+async def delete_estate_host(node_id: str, session: SessionDep) -> None:
+    """Forget one host, and by cascade its services.
+
+    For rows PMM no longer has, which is not hypothetical: restarting a node's
+    pmm-agent runs ``setup --force``, which *replaces* the node and mints a new id, so
+    POM gains a row and keeps the old one. Nothing prunes automatically yet, and the
+    alternative to this endpoint is ``psql`` against a schema an operator should never
+    need to know exists.
+
+    Deliberately not suppression. An entity PMM still knows about comes straight back
+    on the next sweep, because POM's job is to describe what PMM says exists, not to
+    hold an opinion about it.
+
+    Its services go with it. That is done explicitly rather than left to the
+    ``ON DELETE CASCADE`` on ``pom.service.node_id``, because SQLite enforces no
+    foreign key without a per-connection pragma SEP never sets -- and SQLite is the
+    shipped default. See :func:`~app.sep.apps.pom_discovery.crud.delete_host`.
+
+    :param node_id: PMM's node id.
+    :param session: The database session.
+    :raises HTTPNotFoundException: When POM holds no such host.
+    """
+    host = await get_host(session, node_id)
+    if host is None:
+        raise HTTPNotFoundException(detail=f"Host {node_id} not found")
+    await delete_host(session, host)
+
+
+@router.delete("/services/{service_id}", status_code=http_status.HTTP_204_NO_CONTENT)
+async def delete_estate_service(service_id: str, session: SessionDep) -> None:
+    """Forget one service, leaving its host alone.
+
+    Same contract as deleting a host: for a row PMM no longer has, and no defence
+    against one it still does.
+
+    :param service_id: PMM's service id.
+    :param session: The database session.
+    :raises HTTPNotFoundException: When POM holds no such service.
+    """
+    service = await get_service(session, service_id)
+    if service is None:
+        raise HTTPNotFoundException(detail=f"Service {service_id} not found")
+    await delete_service(session, service)
 
 
 @router.get("/facts", response_model=FactsResponse)

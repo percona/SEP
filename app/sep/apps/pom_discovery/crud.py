@@ -203,6 +203,59 @@ async def upsert_service(
     return service
 
 
+async def get_host(session: AsyncSession, node_id: str) -> PomHost | None:
+    """Return one host by PMM's node id.
+
+    :param session: The database session.
+    :param node_id: PMM's node id.
+    :return: The host, or ``None``.
+    """
+    return await session.get(PomHost, node_id)
+
+
+async def get_service(session: AsyncSession, service_id: str) -> PomService | None:
+    """Return one service by PMM's service id.
+
+    :param session: The database session.
+    :param service_id: PMM's service id.
+    :return: The service, or ``None``.
+    """
+    return await session.get(PomService, service_id)
+
+
+async def delete_host(session: AsyncSession, host: PomHost) -> None:
+    """Delete one host row and the services on it.
+
+    The services are deleted **here**, not left to ``ON DELETE CASCADE``, even though
+    the constraint says cascade. SQLite enforces no foreign key unless
+    ``PRAGMA foreign_keys=ON`` is set per connection, SEP sets it nowhere, and SQLite
+    is the shipped default in ``settings.yaml`` -- so on a default deployment the
+    cascade is decoration and deleting a host would leave service rows pointing at a
+    host that no longer exists.
+
+    The constraint stays as the backstop it is on PostgreSQL. What changes is that the
+    *promise* -- "forgetting a host forgets what was on it" -- no longer depends on
+    which database someone configured.
+
+    :param session: The database session.
+    :param host: The row to delete.
+    """
+    for service in await list_services(session, node_id=host.node_id):
+        await session.delete(service)
+    await session.delete(host)
+    await session.commit()
+
+
+async def delete_service(session: AsyncSession, service: PomService) -> None:
+    """Delete one service row, leaving its host alone.
+
+    :param session: The database session.
+    :param service: The row to delete.
+    """
+    await session.delete(service)
+    await session.commit()
+
+
 async def list_hosts(session: AsyncSession) -> list[PomHost]:
     """Return every host row, by name.
 
