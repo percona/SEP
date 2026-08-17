@@ -18,7 +18,7 @@
 import importlib
 import logging
 from contextlib import asynccontextmanager, contextmanager
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import FastAPI, HTTPException, status
@@ -27,8 +27,10 @@ from httpx import ASGITransport, AsyncClient
 from starlette.datastructures import URL
 
 import app.sep.main as main_module
+import app.sep.routes.artifacts as artifacts_module
 from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.auth.exceptions import BaseAuthProviderException
+from app.core.security import crypto_timestamp_serializer
 from app.core.settings_override.lifecycle import ProxyEntry
 from app.core.settings_override.models import SettingClassEnum
 from app.sep.api.router import apps_router
@@ -38,6 +40,8 @@ from app.sep.apps.framework.registry import (
     AppRegistry,
     get_app_registry,
 )
+from app.sep.apps.report.config import health_report_settings, HealthReportSettings
+from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
 from app.sep.config import App, sep_settings, SEPSettings
 from app.sep.deps import get_session, PROTECTED_APP_KEYS
 from app.sep.main import lifespan as sep_module_lifespan
@@ -49,6 +53,7 @@ from app.sep.main import (
 )
 from app.sep.models import AppLifecycleEnum, AppState
 from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from tests.app.sep.conftest import REDUCED_ACTIVATION
 
 _ORIGINAL_SEP_APP = main_module.sep_app
@@ -295,6 +300,39 @@ def test_sep_app_rebuilds_without_alerts_and_dipper(mocker):
         _reload_restoring_identity()
 
 
+def test_embedded_activation_list_serves_a_snippet_download(mocker, tmp_path):
+    """Serve an ATW-dispatched snippet download with the snippets app deactivated.
+
+    Both halves of the artifact surface are import-time decisions — the mount in
+    ``main`` and ``_BASE_DIRS`` in the route module — so both are rebuilt against
+    the embedded activation list before the request. A 404 here means the router
+    was not mounted; a 400 means the snippet type did not resolve.
+    """
+    original_apps = sep_settings.APPS
+    (tmp_path / "collect.sh").write_text("#!/bin/bash\necho hello")
+    token = crypto_timestamp_serializer.dumps(
+        {"type": ARTIFACT_TYPE_SNIPPET, "filename": "collect.sh", "md5": "abc123"},
+        salt=ARTIFACT_DOWNLOAD_SALT,
+    )
+
+    mocker.patch.object(sep_settings, "APPS", REDUCED_ACTIVATION)
+    get_app_registry.cache_clear()
+    try:
+        importlib.reload(artifacts_module)
+        importlib.reload(main_module)
+
+        with patch("app.sep.snippets.config.snippets_settings.SNIPPETS_DIR", tmp_path):
+            client = TestClient(main_module.sep_app, raise_server_exceptions=False)
+            response = client.get(f"/artifacts/download/{token}")
+
+        assert response.status_code == status.HTTP_200_OK
+    finally:
+        sep_settings.APPS = original_apps
+        get_app_registry.cache_clear()
+        importlib.reload(artifacts_module)
+        _reload_restoring_identity()
+
+
 async def _refresher_proxy_map(mocker) -> dict[SettingClassEnum, ProxyEntry]:
     """Return the proxy map ``sep_overrides_lifespan`` hands to the refresher.
 
@@ -329,10 +367,14 @@ async def test_proxy_map_composes_app_owned_and_sep_entries(mocker):
         SettingClassEnum.SETTINGS,
         SettingClassEnum.ALERT_SETTINGS,
         SettingClassEnum.ALERTS_SETTINGS,
+        SettingClassEnum.HEALTH_REPORT_SETTINGS,
     }
     alerts_entry = proxies[SettingClassEnum.ALERTS_SETTINGS]
     assert alerts_entry.proxy is alerts_settings
     assert alerts_entry.settings_cls is AlertsSettings
+    report_entry = proxies[SettingClassEnum.HEALTH_REPORT_SETTINGS]
+    assert report_entry.proxy is health_report_settings
+    assert report_entry.settings_cls is HealthReportSettings
 
 
 @pytest.mark.asyncio
@@ -371,6 +413,7 @@ async def test_proxy_map_drops_alerts_but_keeps_core_alert_settings(mocker):
         get_app_registry.cache_clear()
 
     assert SettingClassEnum.ALERTS_SETTINGS not in proxies
+    assert SettingClassEnum.HEALTH_REPORT_SETTINGS not in proxies
     alert_entry = proxies[SettingClassEnum.ALERT_SETTINGS]
     assert alert_entry.proxy is alert_settings
     assert alert_entry.settings_cls is AlertSettings

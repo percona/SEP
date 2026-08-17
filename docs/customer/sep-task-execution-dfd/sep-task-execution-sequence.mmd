@@ -6,7 +6,7 @@ sequenceDiagram
     autonumber
     actor Eng as Engineer
     participant UI as SEP UI
-    participant Casdoor as Casdoor IdP
+    participant Grafana as Grafana IdP
     participant SEP as SEP app API
     participant Inv as Inventory API
     participant Tasks as Tasks API
@@ -16,13 +16,13 @@ sequenceDiagram
     participant Node as Remote Nomad client
 
     rect rgb(232, 244, 252)
-        Note over Eng,Casdoor: Authentication OAuth JWT
-        Eng->>UI: Login form, username and password
-        UI->>SEP: POST api oauth login JSON
-        SEP->>Casdoor: OAuth2 password grant, server-to-server
-        Casdoor-->>SEP: access_token and refresh_token
-        SEP-->>UI: access_token JSON, Set-Cookie refreshToken Path api oauth HttpOnly
-        Eng->>UI: API calls with Bearer JWT
+        Note over Eng,Grafana: Authentication Grafana session exchange
+        Eng->>UI: Navigate to SEP within PMM
+        UI->>SEP: POST api oauth session exchange with PMM session cookie
+        SEP->>Grafana: Validate session, map org role
+        Grafana-->>SEP: User identity and role
+        SEP-->>UI: Short-lived SEP bearer in response body, no cookie, no refresh token
+        Eng->>UI: API calls with Authorization Bearer SEP token
     end
 
     rect rgb(255, 248, 225)

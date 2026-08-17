@@ -39,6 +39,7 @@ from weasyprint import CSS, HTML
 from app.core.config import settings
 from app.core.exceptions import HTTPServiceUnavailableException
 from app.core.requests import RemoteAPI
+from app.sep.apps.report.config import health_report_settings, HealthReportSettings
 from app.sep.bundle_upload.factory import split_endpoint
 from app.sep.bundle_upload.plan import (
     DeliveryPlan,
@@ -50,7 +51,6 @@ from app.sep.bundle_upload.plan import (
 )
 from app.sep.bundle_upload.seam import BundleSource
 from app.sep.clients.pmm import PMMRemoteAPI
-from app.sep.config import HealthReportSettings, sep_settings
 from app.sep.utils.jinja import DEFAULT_FILTERS
 
 if TYPE_CHECKING:
@@ -1051,7 +1051,7 @@ async def upload_pdf_report(
         an intake error status to.
     :raises OSError: Propagates connection and timeout failures.
     """
-    upload = sep_settings.HEALTH_REPORT
+    upload = health_report_settings
     if not upload.is_upload_configured:
         raise HTTPServiceUnavailableException(detail="Report upload is not configured")
 

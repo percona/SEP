@@ -28,8 +28,11 @@ from starlette.status import (
 
 from app.core.security import crypto_timestamp_serializer
 from app.sep.apps.framework.base import BaseApp
-from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
+from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT, STATIC_ARTIFACT_BASE_DIRS
 from app.sep.routes.artifacts import collect_base_dirs
+from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
+
+_SNIPPETS_DIR_TARGET = "app.sep.snippets.config.snippets_settings.SNIPPETS_DIR"
 
 
 def _make_token(payload: dict, salt: str = ARTIFACT_DOWNLOAD_SALT) -> str:
@@ -60,29 +63,69 @@ class TestCollectBaseDirs:
             collect_base_dirs()
 
     def test_flattens_distinct_artifact_types(self, mocker) -> None:
-        """Merge distinct per-app declarations into one map."""
-        snippet_dir = Path("/tmp/snippets")
+        """Merge distinct per-app declarations over the static seed."""
         dipper_dir = Path("/tmp/dipper")
-        first = BaseApp(
-            name="snippets",
-            uri_path="/snippets",
-            artifact_base_dirs={"snippet": lambda: snippet_dir},
-        )
-        second = BaseApp(
+        other_dir = Path("/tmp/other")
+        dipper = BaseApp(
             name="dipper",
             uri_path="/dipper",
             artifact_base_dirs={"dipper": lambda: dipper_dir},
         )
+        other = BaseApp(
+            name="other",
+            uri_path="/other",
+            artifact_base_dirs={"other": lambda: other_dir},
+        )
         mocker.patch(
             "app.sep.routes.artifacts.get_app_registry",
-            return_value=[first, second],
+            return_value=[dipper, other],
         )
 
         result = collect_base_dirs()
 
-        assert result.keys() == {"snippet", "dipper"}
-        assert result["snippet"]() == snippet_dir
+        assert result.keys() == {ARTIFACT_TYPE_SNIPPET, "dipper", "other"}
         assert result["dipper"]() == dipper_dir
+        assert result["other"]() == other_dir
+
+    def test_seeds_the_static_snippet_type_without_the_snippets_app(
+        self, mocker
+    ) -> None:
+        """Resolve the snippet type from the static map, with no app declaring it."""
+        mocker.patch(
+            "app.sep.routes.artifacts.get_app_registry",
+            return_value=[BaseApp(name="atw", uri_path="/atw")],
+        )
+
+        assert ARTIFACT_TYPE_SNIPPET in collect_base_dirs()
+
+    def test_raises_when_an_app_redeclares_a_static_type(self, mocker) -> None:
+        """Reject an app that re-declares a statically registered type."""
+        redeclaring = BaseApp(
+            name="snippets",
+            uri_path="/snippets",
+            artifact_base_dirs={ARTIFACT_TYPE_SNIPPET: lambda: Path("/tmp/other")},
+        )
+        mocker.patch(
+            "app.sep.routes.artifacts.get_app_registry", return_value=[redeclaring]
+        )
+
+        with pytest.raises(ValueError, match=ARTIFACT_TYPE_SNIPPET):
+            collect_base_dirs()
+
+    def test_does_not_mutate_the_static_map(self, mocker) -> None:
+        """Return a fresh dict so an app declaration cannot leak into the constant."""
+        declaring = BaseApp(
+            name="dipper",
+            uri_path="/dipper",
+            artifact_base_dirs={"dipper": lambda: Path("/tmp/dipper")},
+        )
+        mocker.patch(
+            "app.sep.routes.artifacts.get_app_registry", return_value=[declaring]
+        )
+
+        collect_base_dirs()
+
+        assert "dipper" not in STATIC_ARTIFACT_BASE_DIRS
 
 
 class TestDownloadArtifact:
@@ -100,9 +143,7 @@ class TestDownloadArtifact:
         }
         token = _make_token(payload)
 
-        with patch(
-            "app.sep.apps.snippets.app.snippets_settings.SNIPPETS_DIR", tmp_path
-        ):
+        with patch(_SNIPPETS_DIR_TARGET, tmp_path):
             response = test_client.get(f"/artifacts/download/{token}")
 
         assert response.status_code == HTTP_200_OK
@@ -143,7 +184,7 @@ class TestDownloadArtifact:
 
         with (
             patch("app.sep.routes.artifacts.sep_settings.ARTIFACT_DOWNLOAD_TTL", 60),
-            patch("app.sep.apps.snippets.app.snippets_settings.SNIPPETS_DIR", tmp_path),
+            patch(_SNIPPETS_DIR_TARGET, tmp_path),
         ):
             response = test_client.get(
                 f"/artifacts/download/{token}", follow_redirects=False
@@ -176,9 +217,7 @@ class TestDownloadArtifact:
         }
         token = _make_token(payload)
 
-        with patch(
-            "app.sep.apps.snippets.app.snippets_settings.SNIPPETS_DIR", tmp_path
-        ):
+        with patch(_SNIPPETS_DIR_TARGET, tmp_path):
             response = test_client.get(
                 f"/artifacts/download/{token}", follow_redirects=False
             )
@@ -194,9 +233,7 @@ class TestDownloadArtifact:
         }
         token = _make_token(payload)
 
-        with patch(
-            "app.sep.apps.snippets.app.snippets_settings.SNIPPETS_DIR", tmp_path
-        ):
+        with patch(_SNIPPETS_DIR_TARGET, tmp_path):
             response = test_client.get(
                 f"/artifacts/download/{token}", follow_redirects=False
             )

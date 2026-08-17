@@ -398,12 +398,11 @@ class TestListServicesByNode:
         """Return only services whose name matches the search case-insensitively."""
         match = ServiceWriteFactory.build(name="AlphaSearchByNode", port=4701)
         other = ServiceWriteFactory.build(name="OtherByNode", port=4702)
-        test_client.post(
-            f"/nodes/{node.id}/services/", json=match.model_dump(mode="json")
-        )
-        test_client.post(
-            f"/nodes/{node.id}/services/", json=other.model_dump(mode="json")
-        )
+        for payload in (match, other):
+            create_response = test_client.post(
+                f"/nodes/{node.id}/services/", json=payload.model_dump(mode="json")
+            )
+            assert create_response.status_code == status.HTTP_201_CREATED
 
         response = test_client.get(
             f"/nodes/{node.id}/services/",
@@ -429,10 +428,11 @@ class TestListServicesByNode:
             )
             assert create_response.status_code == status.HTTP_201_CREATED
         other = ServiceWriteFactory.build(name="UnrelatedByNode", port=4899)
-        test_client.post(
+        create_response = test_client.post(
             f"/nodes/{node.id}/services/",
             json=other.model_dump(mode="json"),
         )
+        assert create_response.status_code == status.HTTP_201_CREATED
 
         response = test_client.get(
             f"/nodes/{node.id}/services/",

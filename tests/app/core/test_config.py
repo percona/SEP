@@ -54,6 +54,7 @@ from app.core.config import (
 from app.inventory.config import InventorySettings
 from app.sep.apps.alerts.config import AlertsSettings
 from app.sep.apps.atw.config import AtwSettings
+from app.sep.apps.report.config import HealthReportSettings
 from app.sep.config import SEPSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
@@ -514,6 +515,14 @@ SECRET_FILE_MATRIX = [
         "Matrix Folder",
         lambda s: s.ALERT_FOLDER_NAME,
         id="AlertsSettings",
+    ),
+    pytest.param(
+        HealthReportSettings,
+        "SEP__HEALTH_REPORT__API_KEY",
+        "matrix-health-report-key",
+        "matrix-health-report-key",
+        lambda s: s.api_key.get_secret_value(),
+        id="HealthReportSettings",
     ),
     pytest.param(
         AtwSettings,

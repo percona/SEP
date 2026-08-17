@@ -285,6 +285,15 @@ class TestReducedActivationSettings:
         assert SettingClassEnum.ALERTS_SETTINGS.value not in groups
         assert SettingClassEnum.ALERT_SETTINGS.value in groups
 
+    async def test_health_report_settings_not_wired_at_all(
+        self, reduced_activation_client: TestClient
+    ) -> None:
+        """Omit ``HealthReportSettings`` entirely when the report app is deactivated."""
+        response = reduced_activation_client.get(f"{REDUCED_SETTINGS_PREFIX}/")
+        assert response.status_code == status.HTTP_200_OK
+        groups = {group["setting_class"] for group in response.json()["groups"]}
+        assert SettingClassEnum.HEALTH_REPORT_SETTINGS.value not in groups
+
     async def test_patch_on_deactivated_class_is_not_found(
         self, reduced_activation_client: TestClient
     ) -> None:
@@ -327,6 +336,7 @@ class TestSepSettingsList:
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             SettingClassEnum.ALERTS_SETTINGS.value,
+            SettingClassEnum.HEALTH_REPORT_SETTINGS.value,
             SettingClassEnum.SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
             SettingClassEnum.ALERT_SETTINGS.value,
@@ -1925,6 +1935,46 @@ class TestGlobalSettingsClass:
             override_session, setting_class=SettingClassEnum.SETTINGS
         )
         assert [r.key for r in rows] == ["LOGGING"]
+
+    async def test_logging_options_list_unique_members(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Expose six LogLevel options (aliases excluded) with int values."""
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        logging_row = _find_setting(
+            response.json(), SettingClassEnum.SETTINGS.value, "LOGGING"
+        )
+        assert logging_row["options"] == [
+            {"label": "CRITICAL", "value": 50},
+            {"label": "ERROR", "value": 40},
+            {"label": "WARNING", "value": 30},
+            {"label": "INFO", "value": 20},
+            {"label": "DEBUG", "value": 10},
+            {"label": "NOTSET", "value": 0},
+        ]
+        non_enum = _find_setting(
+            response.json(),
+            SettingClassEnum.SEP_SETTINGS.value,
+            "SYNC_REFRESH_TIME",
+        )
+        assert non_enum["options"] is None
+
+    async def test_logging_patch_integer_value_still_works(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Accept an integer PATCH value for LOGGING (the shape the UI sends)."""
+        debug_level = 10
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={"LOGGING": debug_level},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        get_resp = api_admin_client.get("/api/sep/admin/settings/Settings/LOGGING")
+        assert get_resp.status_code == status.HTTP_200_OK
+        body = get_resp.json()
+        assert body["value"] == debug_level
+        assert {"label": "DEBUG", "value": debug_level} in body["options"]
 
     async def test_logging_invalid_level_rejected(
         self, api_admin_client: TestClient, override_session: AsyncSession
