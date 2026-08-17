@@ -227,6 +227,14 @@ default:
       HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
       PORT: null
       NAME: sep.db
+    POM:
+      # Shared by every POM app, so it sits here rather than under one of them.
+      #
+      # The schema POM's tables live in, inside the SEP database above. `null` puts
+      # them in the default schema alongside everything else. Honoured on PostgreSQL
+      # only: SQLite has no schemas, and MySQL's "schema" is a database, so on either
+      # of those the setting is ignored and the tables use the default schema.
+      SCHEMA: pom
     SYNCERS:
       - SYNCER: PMMSyncer
       - SYNCER: MySQLSyncer
