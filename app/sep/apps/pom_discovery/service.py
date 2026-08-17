@@ -43,8 +43,18 @@ from app.core.security import require_internal_token
 from app.core.utils.date_time import utc_now
 from app.inventory.config import inventory_settings
 from app.sep.apps.pom_discovery.config import pom_discovery_settings
-from app.sep.apps.pom_discovery.crud import ProbeRunManager, prune_runs
+from app.sep.apps.pom_discovery.crud import (
+    ProbeRunManager,
+    prune_runs,
+    upsert_host,
+    upsert_service,
+)
 from app.sep.apps.pom_discovery.dispatch import HostProbeResult, probe_all
+from app.sep.apps.pom_discovery.enumeration import (
+    build_hosts,
+    InventoryHost,
+    list_inventory_nodes,
+)
 from app.sep.apps.pom_discovery.inventory import (
     InventoryService,
     list_mongodb_services,
@@ -171,6 +181,60 @@ def _record_for(entry: Any, host_results: dict[str, HostProbeResult]) -> dict | 
     return result.records.get(entry.service.name)
 
 
+#: Probe-record fields that describe the **host** rather than any service on it.
+#:
+#: The payload collects these once per dispatch and echoes them on every record it
+#: returns, so any one record from a host carries them. Splitting them out here is
+#: what keeps ``repo.reachable`` from being stored three times on a host running three
+#: mongods -- and from those three copies being free to disagree once a partial sweep
+#: updates some and not others.
+HOST_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("os", ("system", "os_name")),
+    ("kernel", ("system", "kernel")),
+)
+
+#: Probe-record fields that belong to one **service**.
+SERVICE_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("probe_status", ("status",)),
+    ("installed_version", ("binary_version",)),
+    ("version", ("database", "db_version")),
+    ("git_version", ("database", "git_version")),
+    ("storage_engine", ("database", "storage_engine")),
+    ("replication_set", ("database", "set_name")),
+    ("config_path", ("process", "config_path")),
+    ("argv", ("process", "argv")),
+    ("server_process", ("process", "program")),
+    ("server_running", ("process", "running")),
+    ("uptime_seconds", ("process", "uptime_sec")),
+)
+
+
+def build_document(
+    record: dict[str, Any],
+    fields: tuple[tuple[str, tuple[str, ...]], ...],
+    collected_at: str,
+) -> dict[str, Any]:
+    """Build one ``observed`` document out of a probe record.
+
+    ``collected_at`` sits on the document rather than on each field: everything in one
+    probe is collected at the same instant, and the granularity that can genuinely
+    differ is the row -- a host can be reachable while a mongod on it is not, and those
+    are already two rows.
+
+    :param record: One probe record.
+    :param fields: The ``(key, path)`` pairs to lift out of it.
+    :param collected_at: When the probe ran, ISO 8601.
+    :return: The document, always carrying at least ``collected_at``.
+    """
+    document: dict[str, Any] = {"collected_at": collected_at}
+    for key, path in fields:
+        value = _dig(record, path)
+        if value is None or value in ("", []):
+            continue
+        document[key] = value
+    return document
+
+
 @dataclass
 class SweepOutcome:
     """Carry everything one sweep produced.
@@ -185,6 +249,24 @@ class SweepOutcome:
     :param answered: Services whose host returned a usable record.
     :param facts: The collected facts.
     :param nodes: One record per mapped service; see :class:`ProbeRun`.
+    :param hosts: The hosts in scope this sweep, whether or not they carry a service.
+    :param host_documents: The ``observed`` document per host that answered, keyed by
+        executor host -- the level those attributes belong to.
+    :param service_documents: The ``observed`` document per service that answered,
+        keyed by PMM's service id.
+    :param service_errors: Why a service did not answer, keyed by PMM's service id.
+        Only for services a run actually attempted: an entity nobody targeted must
+        not have its timestamps touched at all.
+    :param seen: ``(service, node_id)`` for every service PMM knows that resolved to
+        a host in scope, orphans included -- all of them get a row.
+    :param attempted: PMM's service ids for the subset this run actually probed. The
+        rest keep the freshness columns they already had.
+    :param dispatched: Executor hosts a payload was actually sent to. A host with an
+        executor and no MongoDB service is *not* in here: dispatch is driven by
+        targets, so nothing ran there. Recording it as a failed attempt would have it
+        accumulate a failure every sweep for a condition that is not a failure --
+        probing a host that has no database is §11 work and does not exist yet.
+    :param host_errors: Why a host did not answer, keyed by PMM's node id.
     """
 
     total: int = 0
@@ -193,6 +275,14 @@ class SweepOutcome:
     answered: int = 0
     facts: list[dict[str, Any]] = dc_field(default_factory=list)
     nodes: list[dict[str, Any]] = dc_field(default_factory=list)
+    hosts: list[InventoryHost] = dc_field(default_factory=list)
+    host_documents: dict[str, dict[str, Any]] = dc_field(default_factory=dict)
+    service_documents: dict[str, dict[str, Any]] = dc_field(default_factory=dict)
+    service_errors: dict[str, str] = dc_field(default_factory=dict)
+    seen: list[tuple[InventoryService, str]] = dc_field(default_factory=list)
+    attempted: set[str] = dc_field(default_factory=set)
+    dispatched: set[str] = dc_field(default_factory=set)
+    host_errors: dict[str, str] = dc_field(default_factory=dict)
 
 
 async def _sweep(observed_at: str) -> SweepOutcome:
@@ -213,11 +303,18 @@ async def _sweep(observed_at: str) -> SweepOutcome:
     token = require_internal_token()
     with inventory_api.auth(token), tasks_api.auth(token):
         services = await list_mongodb_services(inventory_api)
+        nodes = await list_inventory_nodes(inventory_api)
         executor_hosts = await get_executor_hosts(tasks_api)
         mapped = map_services(services, executor_hosts)
+        # Hosts are enumerated from nodes rather than derived from the services just
+        # mapped: a host with no database has no service to derive it from, and that
+        # is the host worth having a row for.
+        hosts = build_hosts(nodes, services, executor_hosts)
         host_results = await probe_all(tasks_api, mapped)
 
-    outcome = SweepOutcome(total=len(mapped))
+    outcome = SweepOutcome(total=len(mapped), hosts=hosts, dispatched=set(host_results))
+    node_ids = _index_hosts(outcome)
+
     for entry in mapped:
         host_result = host_results.get(entry.executor_host or "")
         record = _record_for(entry, host_results)
@@ -256,7 +353,148 @@ async def _sweep(observed_at: str) -> SweepOutcome:
             }
         )
 
+        _record_entity(outcome, entry, record, host_result, node_ids, observed_at)
+
     return outcome
+
+
+def _index_hosts(outcome: SweepOutcome) -> dict[str | None, str]:
+    """Index the enumerated hosts by every name a service might know them by.
+
+    A service carries its node's *name and address*; the host rows carry PMM's node
+    id. This is the one place the two are joined, and it is why enumeration keeps
+    both.
+
+    :param outcome: The sweep in progress.
+    :return: Node ids keyed by host name and address.
+    """
+    node_ids: dict[str | None, str] = {}
+    for host in outcome.hosts:
+        node_ids[host.name] = host.node_id
+        if host.address:
+            node_ids.setdefault(host.address, host.node_id)
+    return node_ids
+
+
+def _record_entity(
+    outcome: SweepOutcome,
+    entry: Any,
+    record: dict[str, Any] | None,
+    host_result: HostProbeResult | None,
+    node_ids: dict[str | None, str],
+    observed_at: str,
+) -> None:
+    """Fold one mapped service into the entity writes the sweep will make.
+
+    An orphan still gets a row -- it is a service PMM knows about, and a listing that
+    hid it would report a healthier estate than exists. What it does not get is an
+    *attempt*: nothing was run against it, so marking it failed would make a host
+    whose executor is simply absent look like a host that refused to answer.
+
+    :param outcome: The sweep in progress.
+    :param entry: The mapped service.
+    :param record: Its probe record, or ``None`` when it did not answer.
+    :param host_result: The dispatch result for its executor host.
+    :param node_ids: Node ids keyed by host name and address.
+    :param observed_at: When the sweep began, ISO 8601.
+    """
+    if entry.service.external_id is None:
+        # No PMM service id, no row: the key is what the consumer joins on, and an
+        # unkeyable row could never be read back.
+        return
+
+    node_id = node_ids.get(entry.service.node_name) or node_ids.get(
+        entry.service.node_address
+    )
+    if node_id is None:
+        logger.warning(
+            "POM discovery: not storing service %r -- its node (name=%r address=%r) "
+            "is not in the enumerated estate",
+            entry.service.name,
+            entry.service.node_name,
+            entry.service.node_address,
+        )
+        return
+
+    outcome.seen.append((entry.service, node_id))
+    if entry.resolution == NodeResolution.ORPHANED:
+        return
+    outcome.attempted.add(entry.service.external_id)
+
+    if record is None:
+        outcome.service_errors[entry.service.external_id] = (
+            host_result.error
+            if host_result and host_result.error
+            else "the host answered, but returned no record for this service"
+        )
+        return
+
+    outcome.service_documents[entry.service.external_id] = build_document(
+        record, SERVICE_FIELDS, observed_at
+    )
+    if entry.executor_host:
+        # Host attributes come off whichever record answered; they are the same on
+        # every record from one dispatch.
+        outcome.host_documents.setdefault(
+            entry.executor_host, build_document(record, HOST_FIELDS, observed_at)
+        )
+
+
+async def _persist_estate(outcome: SweepOutcome, run_id: UUID) -> None:
+    """Write what the sweep saw into ``pom.host`` and ``pom.service``.
+
+    Hosts first, and in one transaction with the services: ``pom.service.node_id`` is
+    a real foreign key, so a service whose host row does not exist yet cannot be
+    inserted.
+
+    Every enumerated entity is written; only the ones this run actually probed have
+    their freshness columns moved. A host with no executor is *seen* every sweep and
+    *probed* by none of them, so its row and its ``executor_host`` stay current while
+    its failure history stays where it was -- which is what keeps "unreachable for
+    three days" from resetting to "unreachable since the last sweep".
+
+    :param outcome: What the sweep produced.
+    :param run_id: The run being recorded.
+    """
+    session_maker = get_async_session_maker()
+    async with session_maker() as session:
+        for host in outcome.hosts:
+            document = outcome.host_documents.get(host.executor_host or "")
+            attempted = host.executor_host in outcome.dispatched
+            await upsert_host(
+                session,
+                node_id=host.node_id,
+                name=host.name,
+                address=host.address,
+                executor_host=host.executor_host,
+                observed=document,
+                error=(
+                    None
+                    if document
+                    else "the host has an executor but returned no probe record"
+                ),
+                run_id=run_id,
+                attempted=attempted,
+            )
+        # Before the services: ``pom.service.node_id`` is a real foreign key, so the
+        # host rows have to be in the transaction first.
+        await session.flush()
+
+        for service, node_id in outcome.seen:
+            service_id = service.external_id or ""
+            await upsert_service(
+                session,
+                service_id=service_id,
+                node_id=node_id,
+                name=service.name,
+                port=service.port,
+                role=None,
+                observed=outcome.service_documents.get(service_id),
+                error=outcome.service_errors.get(service_id),
+                run_id=run_id,
+                attempted=service_id in outcome.attempted,
+            )
+        await session.commit()
 
 
 def _terminal_status(resolved: int, answered: int) -> ProbeRunStatus:
@@ -318,6 +556,10 @@ async def run_probe(execution_id: UUID | None = None) -> UUID:
         logger.exception("POM discovery: sweep %s failed", run_id)
         await _fail_run(run_id, str(exc))
         return run_id
+
+    # The estate goes in before the run reaches a terminal status, so a reader that
+    # sees a finished run always finds the rows that run produced.
+    await _persist_estate(outcome, run_id)
 
     status = _terminal_status(outcome.resolved, outcome.answered)
     async with session_maker() as session:

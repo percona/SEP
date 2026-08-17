@@ -19,9 +19,8 @@ Revision ID: a3f1c8d24b71
 Revises:
 Create Date: 2026-08-11 12:00:00.000000
 
-Creates the ``pom`` schema and the run table inside it. The table was
-``pom_discovery_run`` in the default schema; inside ``pom`` the prefix is stutter,
-so it is simply ``discovery_run``.
+The whole POM schema in one revision: ``pom.host`` and ``pom.service`` for what the
+estate *is*, ``pom.discovery_run`` for what one sweep *did*.
 
 Rewritten in place rather than extended by follow-up revisions, because none of this
 has shipped -- there is no deployment whose data a move migration would preserve. The
@@ -59,6 +58,48 @@ branch_labels: Union[str, Sequence[str], None] = ("pom_discovery",)
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _observed_column() -> sa.Column:
+    """Build an ``observed`` document column.
+
+    Non-nullable with a ``{}`` server default rather than nullable: SEP's ``AutoJSON``
+    stores a Python ``None`` as the JSON scalar ``null``, which would make "never
+    probed" and "probed, found nothing" the same value in the column.
+
+    :return: The column.
+    """
+    return sa.Column(
+        "observed",
+        postgresql.JSONB(astext_type=sa.Text()).with_variant(sa.JSON(), "sqlite"),
+        nullable=False,
+        server_default="{}",
+    )
+
+
+def _freshness_columns() -> list[sa.Column]:
+    """Build the per-entity freshness and failure columns.
+
+    Identical on both entity tables by construction -- a host can be perfectly
+    reachable while one mongod on it cannot be probed, which is one of the reasons
+    these are two rows rather than one.
+
+    :return: The columns, in declaration order.
+    """
+    return [
+        sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("last_attempt_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("last_success_at", sa.DateTime(timezone=True), nullable=True),
+        # The *first* failure after the last success, maintained with COALESCE so it
+        # keeps saying "failing for three days" rather than "failed a minute ago".
+        sa.Column("failing_since", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "consecutive_failures", sa.Integer(), nullable=False, server_default="0"
+        ),
+        sa.Column("last_error", sa.String(), nullable=True),
+        sa.Column("last_run_id", sa.Uuid(), nullable=True),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+    ]
+
+
 def _create_schema_if_needed() -> str | None:
     """Create POM's schema on a bind that has one, and report what it is called.
 
@@ -78,6 +119,66 @@ def upgrade() -> None:
     # the token is not a schema anything can be inspected in. Inspecting the default
     # schema would report "absent" against a database that already has them.
     existing = set(sa.inspect(op.get_bind()).get_table_names(schema=schema))
+
+    if "host" not in existing:
+        op.create_table(
+            "host",
+            # PMM's node id. text, not uuid: PMM's ids are usually UUIDs but not
+            # always -- the PMM server's own node is the literal string
+            # ``pmm-server``, in every deployment, so a uuid column would reject the
+            # one node every installation has.
+            sa.Column("node_id", sa.Text(), nullable=False),
+            sa.Column("name", sa.Text(), nullable=False),
+            sa.Column("address", sa.Text(), nullable=True),
+            sa.Column("executor_host", sa.Text(), nullable=True),
+            _observed_column(),
+            *_freshness_columns(),
+            sa.PrimaryKeyConstraint("node_id"),
+            schema=POM_SCHEMA_SYMBOL,
+        )
+        op.create_index(
+            "ix_pom_host_failing_since",
+            "host",
+            ["failing_since"],
+            unique=False,
+            schema=POM_SCHEMA_SYMBOL,
+            # Partial: the healthy majority never enters the index. Ignored on
+            # SQLite, which is fine -- the index is still created, just complete.
+            postgresql_where=sa.text("failing_since IS NOT NULL"),
+        )
+
+    if "service" not in existing:
+        op.create_table(
+            "service",
+            sa.Column("service_id", sa.Text(), nullable=False),
+            sa.Column("node_id", sa.Text(), nullable=False),
+            sa.Column("name", sa.Text(), nullable=True),
+            sa.Column("port", sa.Integer(), nullable=True),
+            # Observed rather than declared, so plain text: a role nobody thought of
+            # should land in the column rather than raise.
+            sa.Column("role", sa.Text(), nullable=True),
+            _observed_column(),
+            *_freshness_columns(),
+            sa.PrimaryKeyConstraint("service_id"),
+            # Safe because both tables belong to this app. Across apps the pom schema
+            # takes no foreign keys at all: every app's migrations are an independent
+            # branch, an image that strips an app removes its versions/ directory, and
+            # there is no ordering between branches -- so a cross-app FK can reference
+            # a table that legitimately vanishes.
+            sa.ForeignKeyConstraint(
+                ["node_id"],
+                [f"{POM_SCHEMA_SYMBOL}.host.node_id"],
+                ondelete="CASCADE",
+            ),
+            schema=POM_SCHEMA_SYMBOL,
+        )
+        op.create_index(
+            "ix_pom_service_node_id",
+            "service",
+            ["node_id"],
+            unique=False,
+            schema=POM_SCHEMA_SYMBOL,
+        )
 
     if "discovery_run" not in existing:
         op.create_table(
@@ -161,3 +262,11 @@ def downgrade() -> None:
         schema=POM_SCHEMA_SYMBOL,
     )
     op.drop_table("discovery_run", schema=POM_SCHEMA_SYMBOL)
+    op.drop_index(
+        "ix_pom_service_node_id", table_name="service", schema=POM_SCHEMA_SYMBOL
+    )
+    op.drop_table("service", schema=POM_SCHEMA_SYMBOL)
+    op.drop_index(
+        "ix_pom_host_failing_since", table_name="host", schema=POM_SCHEMA_SYMBOL
+    )
+    op.drop_table("host", schema=POM_SCHEMA_SYMBOL)

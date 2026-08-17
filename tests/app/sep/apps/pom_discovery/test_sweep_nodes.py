@@ -118,6 +118,11 @@ async def run_sweep(
         patch(f"{base}._build_clients", AsyncMock(return_value=clients)),
         patch(f"{base}.require_internal_token", return_value="token"),
         patch(f"{base}.list_mongodb_services", AsyncMock(return_value=[])),
+        # The host half of enumeration, stubbed empty for the same reason as the
+        # service half: these tests are about what a sweep concludes from a mapping,
+        # and the hosts it would write have their own tests in test_enumeration.py.
+        patch(f"{base}.list_inventory_nodes", AsyncMock(return_value=[])),
+        patch(f"{base}.build_hosts", return_value=[]),
         patch(f"{base}.get_executor_hosts", AsyncMock(return_value={})),
         patch(f"{base}.map_services", return_value=mapped_services),
         patch(f"{base}.probe_all", AsyncMock(return_value=host_results)),
