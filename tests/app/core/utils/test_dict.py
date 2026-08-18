@@ -55,7 +55,6 @@ from app.core.utils.dict import (
         "nested-empty-list-clears",
         "scalar-overwrite",
     ],
-
 )
 def test_deep_dict_update(main_dict, update_dict, expected):
     """Assert list overlays prepend when non-empty and clear when empty."""

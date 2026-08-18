@@ -140,7 +140,7 @@ def test_yaml_prefix_config_settings_source_multiple_prefixes(mock_yaml_file):
 
 
 def test_yaml_prefix_config_settings_source_base_profile(mock_yaml_file, mock_yaml_data):
-    """Selecting the base profile returns its data without doubling any list."""
+    """Select the base profile and return its data without doubling any list."""
     prefixes = ("default",)
     base_prefix = "default"
 
