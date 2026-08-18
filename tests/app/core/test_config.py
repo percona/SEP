@@ -97,7 +97,11 @@ class DummySettings(BaseSettings):
 def mock_yaml_data():
     """Provide mock YAML data for testing."""
     return {
-        "default": {"key1": "default_value1", "key2": "default_value2", "items": ["a", "b"]},
+        "default": {
+            "key1": "default_value1",
+            "key2": "default_value2",
+            "items": ["a", "b"],
+        },
         "env1": {"key1": "env1_value1", "nested": {"key2": "env1_nested_value2"}},
         "env2": {
             "key3": "env2_value3",
@@ -139,7 +143,9 @@ def test_yaml_prefix_config_settings_source_multiple_prefixes(mock_yaml_file):
     )
 
 
-def test_yaml_prefix_config_settings_source_base_profile(mock_yaml_file, mock_yaml_data):
+def test_yaml_prefix_config_settings_source_base_profile(
+    mock_yaml_file, mock_yaml_data
+):
     """Select the base profile and return its data without doubling any list."""
     prefixes = ("default",)
     base_prefix = "default"
