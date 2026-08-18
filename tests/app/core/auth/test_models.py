@@ -117,10 +117,10 @@ class TestUserRoleOrdering:
         with pytest.raises(TypeError):
             compare(UserRole.ADMIN, "editor")
 
-    def test_members_keep_string_identity(self):
-        """Verify a member still equals its wire value."""
-        assert UserRole.ADMIN == "admin"
-        assert UserRole.SUPER_ADMIN == "super_admin"
+    def test_members_are_not_strings(self):
+        """Verify a member does not compare equal to a bare string."""
+        assert UserRole.ADMIN != "admin"
+        assert UserRole.SUPER_ADMIN != "super_admin"
 
 
 class TestIsAdmin:

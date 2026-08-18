@@ -18,8 +18,8 @@
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from datetime import datetime
-from enum import StrEnum
-from functools import cached_property
+from enum import Enum
+from functools import cached_property, total_ordering
 from typing import Any, Final, Self
 
 from pydantic import (
@@ -133,16 +133,18 @@ class BaseTokenPayload(BaseModel, ABC):
         """
 
 
-class UserRole(EnumFieldMixin, StrEnum):
+@total_ordering
+class UserRole(EnumFieldMixin, Enum):
     """Enumerate an identity's access level, lowest to highest.
 
     Members and ordering mirror PMM's own authorization vocabulary so the two
     products stay semantically aligned; ``SUPER_ADMIN`` is SEP's
     provider-neutral name for the rank PMM calls ``grafanaAdmin``.
 
-    Members compare by rank rather than by name: ``EDITOR < ADMIN`` even
-    though ``"editor" > "admin"`` lexicographically. Equality is untouched, so
-    ``ADMIN == "admin"`` still holds.
+    Members compare by declared rank rather than by name: ``EDITOR < ADMIN``
+    even though ``"editor" > "admin"`` lexicographically. Members are not
+    ``str``, so ``ADMIN == "admin"`` is False; the serialized value is
+    unchanged at ``"admin"``.
     """
 
     NONE = "none"
@@ -152,39 +154,12 @@ class UserRole(EnumFieldMixin, StrEnum):
     SUPER_ADMIN = "super_admin"
 
     def __lt__(self, other: object) -> bool:
-        return _rank(self) < _rank(other)
-
-    def __le__(self, other: object) -> bool:
-        return _rank(self) <= _rank(other)
-
-    def __gt__(self, other: object) -> bool:
-        return _rank(self) > _rank(other)
-
-    def __ge__(self, other: object) -> bool:
-        return _rank(self) >= _rank(other)
+        if not isinstance(other, UserRole):
+            raise TypeError(f"cannot order UserRole against {type(other).__name__}")
+        return _USER_ROLE_ORDER.index(self) < _USER_ROLE_ORDER.index(other)
 
 
 _USER_ROLE_ORDER: Final = tuple(UserRole)
-
-
-def _rank(role: object) -> int:
-    """Return a role's position in the declared order, lowest first.
-
-    Every ordering operator on :class:`UserRole` routes through here, and all
-    four are spelled out on the class because ``str`` supplies its own
-    alphabetical implementations: an operator left to ``str`` ranks ``EDITOR``
-    above ``ADMIN``.
-
-    :param role: The value to rank.
-    :return: The role's rank.
-    :raises TypeError: If ``role`` is not a :class:`UserRole`. Returning
-        ``NotImplemented`` instead would hand the comparison back to ``str``,
-        which answers it alphabetically, making ``UserRole.EDITOR >= "admin"``
-        True.
-    """
-    if not isinstance(role, UserRole):
-        raise TypeError(f"cannot order UserRole against {type(role).__name__}")
-    return _USER_ROLE_ORDER.index(role)
 
 
 _ADMIN_FLAG_ADAPTER: Final = TypeAdapter(bool)

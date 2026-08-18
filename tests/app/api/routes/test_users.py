@@ -112,7 +112,7 @@ class TestUserRoleIsServed:
 
         body = test_client.get("/api/users/me").json()
 
-        assert body["role"] == regular_user.role
+        assert body["role"] == regular_user.role.value
         assert body["isAdmin"] is False
 
     def test_self_lookup_carries_the_role(self, test_client, admin_user):
@@ -121,7 +121,7 @@ class TestUserRoleIsServed:
 
         body = test_client.get(f"/api/users/{admin_user.username}").json()
 
-        assert body["role"] == UserRole.ADMIN
+        assert body["role"] == UserRole.ADMIN.value
         assert body["isAdmin"] is True
 
     def test_listing_carries_the_role_on_every_element(
@@ -136,6 +136,6 @@ class TestUserRoleIsServed:
         body = test_client.get("/api/users/").json()
 
         assert [element["role"] for element in body] == [
-            UserRole.ADMIN,
-            UserRole.VIEWER,
+            UserRole.ADMIN.value,
+            UserRole.VIEWER.value,
         ]
