@@ -190,7 +190,7 @@ class TestExtractModelFromInstance:
             extract_model_from_instance(source, TargetModel)
 
     def test_extract_ignores_missing_fields(self):
-        """Handle target model fields missing from the source gracefully."""
+        """Fall back to the target field's default when the source omits it."""
 
         class SourceModel(BaseModel):
             name: str

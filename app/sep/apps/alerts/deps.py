@@ -80,7 +80,7 @@ async def get_pmm_present_names(pmm_api: PMMAPIDep) -> set[str] | None:
 
     Fetch all templates from the PMM API in a single batch call and extract
     their names into a set. Return ``None`` when the PMM client is unavailable
-    or when the API call fails, enabling graceful degradation in the UI.
+    or when the API call fails, rather than propagating the error to the UI route.
 
     :param pmm_api: The PMM API client dependency, or ``None`` if PMM is not
         configured.
@@ -132,7 +132,7 @@ async def get_or_create_alert_folder(pmm_api: PMMAPIDep) -> Folder | None:
     """Return the SEP alert folder in PMM, creating it if missing.
 
     Return ``None`` when the PMM client is unavailable or when the API call
-    fails, enabling graceful degradation in the push route.
+    fails, rather than propagating the error to the push route.
 
     :param pmm_api: The PMM API client dependency, or ``None`` if PMM is not
         configured.

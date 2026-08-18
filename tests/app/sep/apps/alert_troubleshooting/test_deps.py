@@ -243,7 +243,7 @@ class TestCollectGroupedAlerts:
         assert names == {"custom", "HighCPUUsage"}
 
     def test_invalid_alert_entries_skipped(self):
-        """Assert invalid alert entries are skipped gracefully."""
+        """Assert non-string alert entries are dropped without raising."""
         snippets = [
             _fake_snippet(
                 {
