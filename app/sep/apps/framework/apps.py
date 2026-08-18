@@ -976,11 +976,11 @@ class TaskExecutionApp(BaseApp):
 
         Two widenings are applied before comparison:
 
-        • Columns whose ``format`` is in
+        * Columns whose ``format`` is in
           :data:`~app.sep.apps.framework.schema.NON_ROW_BOUND_FORMATS` (for example
           ``ACTIONS``, ``SCHEDULE``) are exempt — their cells are not derived from the
           column's own row value.
-        • A dotted column key (for example ``target.service``) is resolved to its root
+        * A dotted column key (for example ``target.service``) is resolved to its root
           segment (``target``) via
           :func:`~app.sep.apps.framework.responses.root_segment`; sub-paths are
           free-form and not validated.

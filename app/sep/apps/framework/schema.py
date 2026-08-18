@@ -207,9 +207,9 @@ NON_ROW_BOUND_FORMATS: frozenset[ColumnFormat] = frozenset(
 )
 """Column formats whose cells are not derived from the column's own row value.
 
-Columns with these formats use a synthetic key (not present in the serialized row)
-and are exempt from the list-view column validation gate in
-:meth:`~app.sep.apps.framework.apps.TaskExecutionApp._validate_view_columns`.
+Their keys are therefore exempt from the list-view column validation gate in
+:meth:`~app.sep.apps.framework.apps.TaskExecutionApp._validate_view_columns`, so such
+a column may use a synthetic key absent from the serialized row.
 """
 
 
