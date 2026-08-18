@@ -149,6 +149,57 @@
         "title": "ExecutionEvent",
         "type": "object"
       },
+      "ExecutorHostState": {
+        "description": "Describe one executor host in more detail than \"usable or absent\".\n\n:func:`BaseExecutor.get_hosts` answers a yes/no question -- can a job be placed\nhere -- by collapsing several conditions into presence in a mapping. That is the\nright answer for *dispatching*, and the wrong one for *reporting*: a host that is\nmissing from it may never have been onboarded, or may be onboarded and down, or up\nwith a broken driver, and those are three different jobs for whoever has to fix it.\n\n:param name: The host's name as the backend knows it.\n:param address: Its network address.\n:param reachable: Whether the backend currently has contact with it. ``False``\n    means the machine is down, the agent is stopped, or it never registered.\n:param driver_healthy: Whether it can actually run this executor's job type. A\n    reachable host with an unhealthy driver is onboarded but broken - a different\n    problem from one that was never onboarded, and the distinction this type\n    exists for.\n:param status: The backend's own word for its state, passed through unmapped so a\n    reader can look it up in the backend's documentation.\n:param detail: Why the driver is unhealthy, when the backend says.",
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "driver_healthy": {
+            "title": "Driver Healthy",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reachable": {
+            "title": "Reachable",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "name",
+          "address",
+          "reachable",
+          "driver_healthy"
+        ],
+        "title": "ExecutorHostState",
+        "type": "object"
+      },
       "FileMetadata": {
         "description": "Represent file metadata for task artifacts.",
         "properties": {
@@ -2963,6 +3014,58 @@
           }
         ],
         "summary": "Get Executor Hosts",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/hosts/states/": {
+      "get": {
+        "description": "Return every host the executor knows about, usable or not.\n\n``GET /hosts/`` answers \"where can I place a job\", which is what a dispatcher\nneeds and all it needs. This answers \"what is the state of the fleet\", which is a\ndifferent question: a host missing from the other list may never have been\nonboarded, or be onboarded and down, or be up with a broken driver, and those are\nthree different things for whoever has to fix it.\n\nWrapped the same way as ``/hosts/`` so an unreachable backend surfaces as a 502\nrather than a 500 with a text/plain body.\n\n:param executor: The task executor backend used to fetch host metadata.\n:return: One entry per host the backend knows about.\n:raises HTTPBadGatewayException: If the executor backend is unreachable or\n    answers with something the client cannot parse.",
+        "operationId": "tasks_get_executor_host_states_hosts_states__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "backend",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TaskBackendEnum",
+              "default": "nomad"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExecutorHostState"
+                  },
+                  "title": "Response Tasks Get Executor Host States Hosts States  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Executor Host States",
         "tags": [
           "tasks"
         ]
