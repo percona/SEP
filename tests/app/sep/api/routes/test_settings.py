@@ -31,6 +31,7 @@ from sqlmodel import SQLModel
 
 from app.core.alerts.config import alert_settings
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.config import PMMSettings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
 from app.core.settings_override.api import build_settings_router
@@ -1719,6 +1720,60 @@ class TestSepSettingsCredentialUrlWriteback:
             assert "cannot be stored" in response.text
         finally:
             sep_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+class TestSettingsNestedCredentialUrlWriteback:
+    """Pin preserve-then-validate on the nested ``PMM__ENDPOINT`` PATCH path.
+
+    ``Settings.PMM`` is a hot nested parent and ``PMMSettings.endpoint`` is a
+    ``StrCredentialHttpUrl``, so ``PMM__ENDPOINT`` goes through
+    ``_validate_nested_key`` rather than the top-level ``_validate_patch_body``
+    leg covered by :class:`TestSepSettingsCredentialUrlWriteback`.
+    """
+
+    async def test_patch_redacted_pmm_endpoint_preserves_password(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Keep the real password when saving an unchanged redacted ``PMM__ENDPOINT``.
+
+        Preserve runs before validation on the nested leaf: a masked resubmit
+        is swapped for the stored password first, so the shared mask-rejecting
+        validator never sees the display value and the round-trip succeeds.
+        """
+        full_url = "https://pmm-user:pmm-secret@pmm.example.com:8443"
+        redacted_url = "https://pmm-user:****@pmm.example.com:8443"
+        try:
+            settings._set_snapshot({"PMM": PMMSettings(endpoint=full_url)})
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/Settings",
+                json={"PMM__ENDPOINT": redacted_url},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            assert "pmm-secret" in str(settings.PMM.endpoint)
+            assert "****" not in str(settings.PMM.endpoint)
+        finally:
+            settings._set_snapshot({})
+
+    async def test_patch_masked_pmm_endpoint_without_stored_password_is_rejected(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Reject a masked ``PMM__ENDPOINT`` when there is no stored password.
+
+        The YAML/env baseline has no userinfo password, so preserve leaves the
+        mask intact and the shared type validator fails the PATCH with 422.
+        """
+        redacted_url = "https://pmm-user:****@pmm.example.com:8443"
+        try:
+            settings._set_snapshot({})
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/Settings",
+                json={"PMM__ENDPOINT": redacted_url},
+            )
+            assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+            assert "cannot be stored" in response.text
+        finally:
+            settings._set_snapshot({})
 
 
 @pytest.mark.asyncio
