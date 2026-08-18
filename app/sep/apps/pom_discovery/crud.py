@@ -103,6 +103,7 @@ async def upsert_host(
     address: str | None,
     executor_host: str | None,
     observed: dict[str, Any] | None = None,
+    executor: dict[str, Any] | None = None,
     error: str | None = None,
     run_id: UUID | None = None,
     attempted: bool = True,
@@ -126,6 +127,10 @@ async def upsert_host(
     :param address: The node's registered address.
     :param executor_host: The Nomad client serving it, or ``None``.
     :param observed: The collected document, or ``None`` when the attempt failed.
+    :param executor: What the executor backend says about this host. Written on every
+        sweep regardless of ``attempted``, because SEP knows it without running
+        anything -- and the hosts it cannot run anything on are exactly the ones whose
+        document would otherwise be empty with no explanation for it.
     :param error: The failure detail.
     :param run_id: The run this attempt belongs to.
     :param attempted: Whether this run actually probed the host.
@@ -147,6 +152,11 @@ async def upsert_host(
 
     if attempted:
         _apply_attempt(host, observed=observed, error=error, run_id=run_id)
+
+    # After the attempt, not before: a successful probe replaces ``observed``
+    # wholesale, which would drop these on exactly the hosts that did answer.
+    if executor is not None:
+        host.observed = {**(host.observed or {}), "executor": executor}
     return host
 
 

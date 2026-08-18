@@ -59,7 +59,11 @@ from app.sep.apps.pom_discovery.inventory import (
     InventoryService,
     list_mongodb_services,
 )
-from app.sep.apps.pom_discovery.mapping import get_executor_hosts, map_services
+from app.sep.apps.pom_discovery.mapping import (
+    get_executor_states,
+    map_services,
+    usable_executor_hosts,
+)
 from app.sep.apps.pom_discovery.models import (
     NodeResolution,
     ProbeRun,
@@ -318,12 +322,16 @@ async def _sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOu
     with inventory_api.auth(token), tasks_api.auth(token):
         services = await list_mongodb_services(inventory_api)
         nodes = await list_inventory_nodes(inventory_api)
-        executor_hosts = await get_executor_hosts(tasks_api)
-        mapped = map_services(services, executor_hosts)
+        # Every known executor, not only the usable ones: a host served by a
+        # registered-but-broken client has to resolve, or its row reports "no
+        # executor" and sends the reader after an onboarding problem that is not
+        # there. Dispatch still works from the usable subset.
+        executor_states = await get_executor_states(tasks_api)
+        mapped = map_services(services, usable_executor_hosts(executor_states))
         # Hosts are enumerated from nodes rather than derived from the services just
         # mapped: a host with no database has no service to derive it from, and that
         # is the host worth having a row for.
-        hosts = build_hosts(nodes, services, executor_hosts)
+        hosts = build_hosts(nodes, services, executor_states)
         if node_ids:
             hosts, services, mapped = _narrow_to_scope(
                 hosts, services, mapped, node_ids
@@ -334,7 +342,7 @@ async def _sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOu
         host_results = await probe_all(
             tasks_api,
             mapped,
-            executor_hosts=[host.executor_host for host in hosts if host.executor_host],
+            executor_hosts=[host.executor_host for host in hosts if host.has_executor],
         )
 
     outcome = SweepOutcome(total=len(mapped), hosts=hosts, dispatched=set(host_results))
@@ -540,6 +548,11 @@ async def _persist_estate(outcome: SweepOutcome, run_id: UUID) -> None:
                 address=host.address,
                 executor_host=host.executor_host,
                 observed=document,
+                # Passed separately from ``observed`` because it is not a probe
+                # fact: SEP knows it without running anything, so it is refreshed
+                # on every sweep like the host's name and address, including for
+                # the hosts no probe was ever dispatched to.
+                executor=host.executor_document,
                 error=(
                     None
                     if document

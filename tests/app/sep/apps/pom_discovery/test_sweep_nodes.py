@@ -123,7 +123,7 @@ async def run_sweep(
         # and the hosts it would write have their own tests in test_enumeration.py.
         patch(f"{base}.list_inventory_nodes", AsyncMock(return_value=[])),
         patch(f"{base}.build_hosts", return_value=[]),
-        patch(f"{base}.get_executor_hosts", AsyncMock(return_value={})),
+        patch(f"{base}.get_executor_states", AsyncMock(return_value={})),
         patch(f"{base}.map_services", return_value=mapped_services),
         patch(f"{base}.probe_all", AsyncMock(return_value=host_results)),
     ):

@@ -32,7 +32,9 @@ The last one has nothing to protect yet, which is exactly why the test is writte
 it is the one that cannot be added after the fact, because by then the data is gone.
 """
 
+from contextlib import nullcontext
 from datetime import timedelta
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -44,7 +46,10 @@ from app.sep.apps.pom_discovery.crud import (
     upsert_host,
     upsert_service,
 )
-from app.sep.apps.pom_discovery.models import PomHost, PomService
+from app.sep.apps.pom_discovery.enumeration import InventoryHost
+from app.sep.apps.pom_discovery.mapping import ExecutorState
+from app.sep.apps.pom_discovery.models import NodeResolution, PomHost, PomService
+from app.sep.apps.pom_discovery.service import _persist_estate, SweepOutcome
 
 NODE_ID = "id-db00"
 SERVICE_ID = "svc-db00"
@@ -382,3 +387,84 @@ async def test_tables_live_in_poms_own_schema(session: AsyncSession) -> None:
     assert PomService.__table__.schema == "pom_schema"
     assert PomHost.__tablename__ == "host"
     assert PomService.__tablename__ == "service"
+
+
+class TestExecutorFactsReachTheRow:
+    """Assert the executor facts survive the trip from enumeration into the row.
+
+    They are the one part of a host's document that does **not** come from the probe:
+    SEP knows them without running anything, which is precisely why they must be
+    written for hosts that were never probed. Those are the rows where the document
+    would otherwise be empty, and an empty document is the case a reader most needs
+    explained.
+    """
+
+    @pytest.mark.asyncio
+    async def test_an_unprobeable_host_still_records_why(
+        self, session: AsyncSession
+    ) -> None:
+        """A host nothing can run on gets a document saying so, not an empty one.
+
+        :param session: The database session.
+        """
+        host = InventoryHost(
+            node_id=NODE_ID,
+            name="db00",
+            address="10.0.0.1",
+            executor_host="db00",
+            resolution=NodeResolution.NAME,
+            executor_state=ExecutorState(
+                name="db00",
+                address="10.0.0.1",
+                reachable=True,
+                driver_healthy=False,
+                detail="Failed to find raw_exec",
+            ),
+        )
+        outcome = SweepOutcome(total=0, hosts=[host])
+
+        with patch(
+            "app.sep.apps.pom_discovery.service.get_async_session_maker",
+            return_value=lambda: nullcontext(session),
+        ):
+            await _persist_estate(outcome, uuid4())
+
+        stored = (await list_hosts(session))[0]
+        assert stored.observed["executor"] == {
+            "registered": True,
+            "reachable": True,
+            "driver_healthy": False,
+            "detail": "Failed to find raw_exec",
+        }
+
+    @pytest.mark.asyncio
+    async def test_probe_facts_and_executor_facts_share_the_document(
+        self, session: AsyncSession
+    ) -> None:
+        """Merging the two must not drop either half.
+
+        :param session: The database session.
+        """
+        host = InventoryHost(
+            node_id=NODE_ID,
+            name="db00",
+            address="10.0.0.1",
+            executor_host="db00",
+            resolution=NodeResolution.NAME,
+            executor_state=ExecutorState(
+                "db00", "10.0.0.1", reachable=True, driver_healthy=True
+            ),
+        )
+        outcome = SweepOutcome(total=0, hosts=[host])
+        outcome.host_documents["db00"] = dict(GOOD_DOCUMENT)
+        outcome.dispatched.add("db00")
+
+        with patch(
+            "app.sep.apps.pom_discovery.service.get_async_session_maker",
+            return_value=lambda: nullcontext(session),
+        ):
+            await _persist_estate(outcome, uuid4())
+
+        stored = (await list_hosts(session))[0]
+        assert stored.observed["os"] == GOOD_DOCUMENT["os"]
+        assert stored.observed["executor"]["driver_healthy"] is True

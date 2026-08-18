@@ -47,6 +47,7 @@ from dataclasses import dataclass
 from app.core.pagination import fetch_all_dict_items
 from app.core.requests import RemoteAPI
 from app.sep.apps.pom_discovery.inventory import InventoryService
+from app.sep.apps.pom_discovery.mapping import ExecutorState
 from app.sep.apps.pom_discovery.models import NodeResolution
 
 logger = logging.getLogger(__name__)
@@ -61,8 +62,12 @@ class InventoryHost:
         passes, and the only identifier that means anything on the other side.
     :param name: The node's registered name.
     :param address: The node's registered address, if any.
-    :param executor_host: The Nomad client serving it, or ``None``.
+    :param executor_host: The Nomad client serving it, or ``None`` when no executor
+        matched at all.
     :param resolution: How the executor was matched, or that it was not.
+    :param executor_state: What the executor backend says about that client, when one
+        matched. ``None`` means nothing is registered for this host, which is a
+        different fact from a client that is registered and broken.
     """
 
     node_id: str
@@ -70,20 +75,57 @@ class InventoryHost:
     address: str | None
     executor_host: str | None
     resolution: NodeResolution
+    executor_state: ExecutorState | None = None
 
     @property
     def has_executor(self) -> bool:
-        """Return whether a payload can run on this host.
+        """Return whether a payload can actually run on this host.
 
-        :return: ``True`` when an executor host was matched.
+        Narrower than "an executor matched": a matched client that is down or whose
+        driver is unhealthy cannot be dispatched to, and treating it as though it
+        could would produce a dispatch that times out instead of a row that explains
+        itself.
+
+        :return: ``True`` when a usable executor host was matched.
         """
-        return self.executor_host is not None
+        return self.executor_state is not None and self.executor_state.usable
+
+    @property
+    def executor_document(self) -> dict[str, object]:
+        """Return the executor facts to merge into this host's document.
+
+        Always emitted, for every host, so "why can POM not probe this machine" is
+        answered by the row rather than by its absence. §11 asks for the split
+        between *no client registered* and *client registered but unusable*, and
+        ``registered`` is what carries it: a caller seeing ``registered: false``
+        knows to onboard the machine, and ``registered: true`` with
+        ``driver_healthy: false`` knows to go and look at the agent.
+
+        :return: The ``executor`` sub-document.
+        """
+        if self.executor_state is None:
+            return {
+                "registered": False,
+                "reachable": False,
+                "driver_healthy": False,
+                "detail": None,
+            }
+        return {
+            "registered": True,
+            "reachable": self.executor_state.reachable,
+            "driver_healthy": self.executor_state.driver_healthy,
+            "detail": self.executor_state.detail,
+        }
 
 
 def _match_executor(
-    name: str | None, address: str | None, executor_hosts: dict[str, str]
-) -> tuple[str | None, NodeResolution]:
+    name: str | None, address: str | None, states: dict[str, ExecutorState]
+) -> tuple[ExecutorState | None, NodeResolution]:
     """Resolve one host to an executor, by name then by address.
+
+    Matched against *every* known executor rather than the usable ones: a client that
+    is registered and broken must resolve, or the host it serves reports "no executor"
+    and the operator goes looking for an onboarding problem that does not exist.
 
     Deliberately without the fallback ``BaseTaskSyncer.get_task_target`` has: with
     ``strict_executor_matching`` off it resolves an unmatched node to an arbitrary
@@ -92,15 +134,15 @@ def _match_executor(
 
     :param name: The node's registered name.
     :param address: The node's registered address.
-    :param executor_hosts: The available executor hosts, ``{name: address}``.
-    :return: The executor host and how it was matched.
+    :param states: Every known executor host, keyed by name.
+    :return: The executor state and how it was matched.
     """
-    if name and name in executor_hosts:
-        return name, NodeResolution.NAME
+    if name and name in states:
+        return states[name], NodeResolution.NAME
     if address:
-        for host, host_address in executor_hosts.items():
-            if host_address == address:
-                return host, NodeResolution.ADDRESS
+        for state in states.values():
+            if state.address == address:
+                return state, NodeResolution.ADDRESS
     return None, NodeResolution.ORPHANED
 
 
@@ -118,7 +160,7 @@ async def list_inventory_nodes(inventory_api: RemoteAPI) -> list[dict]:
 def build_hosts(
     nodes: list[dict],
     services: list[InventoryService],
-    executor_hosts: dict[str, str],
+    executor_states: dict[str, ExecutorState],
 ) -> list[InventoryHost]:
     """Cross the sources into the hosts POM keeps rows for.
 
@@ -129,7 +171,7 @@ def build_hosts(
 
     :param nodes: Raw node entries from SEP's inventory.
     :param services: The MongoDB services, used only to decide scope.
-    :param executor_hosts: The available executor hosts, ``{name: address}``.
+    :param executor_states: Every known executor host, keyed by name.
     :return: The hosts in scope, in inventory order.
     """
     # Scope by *name and address* rather than by node id: a service entry carries its
@@ -144,13 +186,9 @@ def build_hosts(
     for entry in nodes:
         name = entry.get("name") or ""
         address = entry.get("address") or None
-        executor_host, resolution = _match_executor(name, address, executor_hosts)
+        state, resolution = _match_executor(name, address, executor_states)
 
-        if (
-            executor_host is None
-            and name not in with_service
-            and address not in with_service
-        ):
+        if state is None and name not in with_service and address not in with_service:
             # Neither a database nor a place to run anything: some other machine PMM
             # monitors. Keeping it would put PMM's own server node in the estate.
             continue
@@ -170,19 +208,24 @@ def build_hosts(
                 node_id=node_id,
                 name=name,
                 address=address,
-                executor_host=executor_host,
+                executor_host=state.name if state else None,
                 resolution=resolution,
+                executor_state=state,
             )
         )
 
-    with_executor = sum(1 for host in hosts if host.has_executor)
+    probeable = sum(1 for host in hosts if host.has_executor)
+    unusable = sum(
+        1 for host in hosts if host.executor_state and not host.executor_state.usable
+    )
     logger.info(
         "POM discovery: %d node(s) in inventory -> %d host(s) in scope "
-        "(%d with an executor, %d without), %d unkeyable",
+        "(%d probeable, %d with an unusable executor, %d with none), %d unkeyable",
         len(nodes),
         len(hosts),
-        with_executor,
-        len(hosts) - with_executor,
+        probeable,
+        unusable,
+        len(hosts) - probeable - unusable,
         skipped,
     )
     return hosts

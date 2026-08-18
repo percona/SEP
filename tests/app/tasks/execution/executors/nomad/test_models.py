@@ -997,7 +997,9 @@ class TestGetHostStates:
                 "Name": "down",
                 "Address": "10.0.0.1",
                 "Status": "down",
-                "Drivers": {"raw_exec": {"Healthy": True}},
+                "Drivers": {
+                    "raw_exec": {"Healthy": True, "HealthDescription": "Healthy"}
+                },
             },
             {
                 "Name": "broken-driver",
@@ -1023,6 +1025,9 @@ class TestGetHostStates:
             states["broken-driver"].driver_healthy,
         ) == (True, False)
         assert states["broken-driver"].detail == "Failed to find raw_exec"
+        # Nomad says "Healthy" on a working driver; a field for explaining failures
+        # full of the word "Healthy" gives a reader nothing to scan by.
+        assert states["down"].detail is None
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_a_missing_driver_entry_is_not_healthy(self, mock_nomad_cls):

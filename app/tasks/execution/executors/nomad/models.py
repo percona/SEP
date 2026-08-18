@@ -855,7 +855,16 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     # never-onboarded case worth telling apart.
                     driver_healthy=bool(driver.get("Healthy")),
                     status=node.get("Status"),
-                    detail=driver.get("HealthDescription") or None,
+                    # Only when it is a problem. Nomad sets HealthDescription to
+                    # the literal "Healthy" on a working driver, and a field that
+                    # explains failures must not be full of the word "Healthy" --
+                    # a reader scanning for the broken ones would find nothing to
+                    # scan by.
+                    detail=(
+                        None
+                        if driver.get("Healthy")
+                        else driver.get("HealthDescription") or None
+                    ),
                 )
             )
         return states
