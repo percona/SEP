@@ -1381,7 +1381,7 @@ def preserve_patch_credential_url_value(
     Routing is decided by the payload shape before
     :func:`is_credential_url_field` is consulted. That predicate descends into
     nested models, so it answers "does this subtree carry a credential URL",
-    not "is this field itself one" -- and a model-typed field holding a
+    not "is this field itself one". A model-typed field holding a
     credential-URL leaf answers ``True`` to the first question while needing
     the model-payload walk, not the scalar restore.
 

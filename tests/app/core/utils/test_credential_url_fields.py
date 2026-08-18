@@ -210,7 +210,7 @@ class TestStrCredentialAnyUrl:
         assert model.broker_url == _BROKER_URL
 
     def test_mask_constant_matches_ticket_example(self) -> None:
-        """Match the SEP-1381 default redaction mask format."""
+        """Match the default redaction mask format."""
         assert CREDENTIAL_URL_MASK == "****"
 
     def test_accepts_passwordless_url(self) -> None:

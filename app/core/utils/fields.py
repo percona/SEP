@@ -736,9 +736,10 @@ def _reject_credential_url_mask(value: Any, info: ValidationInfo) -> Any:
 
     The mask is what every JSON read surface emits, so it round-trips back as a
     plausible-looking value on the YAML and environment paths (and on any future
-    import that coerces through the annotated types). A PATCH that resubmits an
-    unchanged masked endpoint never reaches this validator: the preserve step
-    swaps the mask for the stored password first.
+    import that coerces through the annotated types). A PATCH that resubmits a
+    masked endpoint reaches this validator only when there is no stored password
+    to restore: whenever the current value carries one, the preserve step swaps
+    the mask back for it first.
 
     :param value: The validated URL value (``HttpUrl`` or ``str``).
     :param info: Pydantic validation info; ``field_name`` names the field when
@@ -751,7 +752,7 @@ def _reject_credential_url_mask(value: Any, info: ValidationInfo) -> Any:
         field = info.field_name or "value"
         raise ValueError(
             f"{field} carries the redacted display value in its password "
-            f"segment and cannot be stored; supply the real credential."
+            "segment and cannot be stored; supply the real credential."
         )
     return value
 
