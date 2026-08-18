@@ -18,10 +18,17 @@
 from collections.abc import Sequence
 from typing import Annotated, Any, cast, Literal, Self
 
-from pydantic import AliasChoices, computed_field, ConfigDict, Field, field_validator
+from pydantic import (
+    AliasChoices,
+    computed_field,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 from pydantic.alias_generators import to_camel
 
-from app.core.auth.models import BaseTokenPayload, BaseUser, OAuthToken
+from app.core.auth.models import BaseTokenPayload, BaseUser, OAuthToken, UserRole
 from app.core.auth.providers.casdoor.sdk import CasdoorSDK
 
 CasdoorUsernameField = Annotated[
@@ -107,7 +114,8 @@ class CasdoorUser(BaseUser):
     :param email: The email address of the user.
     :param first_name: The first name of the user.
     :param last_name: The last name of the user.
-    :param is_admin: Whether the user has administrative privileges. Defaults to False.
+    :param role: The user's access level, derived from Casdoor's admin flag when
+        the payload carries no role of its own.
     :param created_time: The datetime when the user was created. Defaults to current
         datetime.
     :param updated_time: The datetime when the user was last updated. Defaults to
@@ -125,6 +133,32 @@ class CasdoorUser(BaseUser):
     owner: str
     is_forbidden: bool = False
     is_deleted: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_role(cls, data: Any) -> Any:
+        """Derive the ordered role from Casdoor's admin flag.
+
+        Casdoor exposes no role concept, so the payload's admin boolean is the
+        only signal. An unset flag resolves to ``VIEWER`` rather than the lowest
+        role, keeping the read access a non-admin Casdoor user has today; a flag
+        that is present keeps the boolean semantics it had as a model field,
+        including its rejection of a non-boolean.
+
+        Both wire spellings are read because ``model_config`` accepts either:
+        Casdoor's API sends ``isAdmin``, SEP's own fixtures ``is_admin``.
+
+        :param data: The raw model input.
+        :return: The input with a ``role`` filled in, or ``data`` unchanged.
+        :raises ValueError: If the admin flag is not a value Pydantic accepts as
+            a boolean.
+        """
+        if not isinstance(data, dict) or "role" in data:
+            return data
+        for key in ("isAdmin", "is_admin"):
+            if key in data:
+                return {**data, "role": cls._role_from_admin_flag(data[key])}
+        return {**data, "role": UserRole.VIEWER}
 
     @computed_field
     @property

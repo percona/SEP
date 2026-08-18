@@ -30,6 +30,7 @@ from app.core.auth.exceptions import (
     HTTPUnauthorizedException,
     InactiveUserException,
 )
+from app.core.auth.models import UserRole
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.log import set_log_context
@@ -53,6 +54,7 @@ _SERVICE_PRINCIPAL = User.build_service_principal(
     username="sep-service",
     first_name="SEP",
     last_name="Service",
+    role=UserRole.VIEWER,
 )
 
 
@@ -166,8 +168,9 @@ async def require_admin_for_unsafe_methods(request: Request) -> None:
 
     ``SEP_INTERNAL_TOKEN``'s service principal is admitted by identity so
     scheduled inventory sync and scheduled execution keep working. The bypass is
-    scoped to this gate: the principal keeps ``is_admin=False`` and every
-    pre-existing ``IsApiAdmin`` / ``IsAdminDep`` check refuses it as before.
+    scoped to this gate: the principal holds ``UserRole.VIEWER``, so it keeps
+    ``is_admin=False`` and every pre-existing ``IsApiAdmin`` / ``IsAdminDep``
+    check refuses it as before.
 
     :param request: The incoming HTTP request.
     :raises HTTPUnauthorizedException: When the method is unsafe and the request

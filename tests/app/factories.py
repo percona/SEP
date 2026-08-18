@@ -27,7 +27,7 @@ from polyfactory.factories.pydantic_factory import ModelFactory
 from polyfactory.factories.sqlalchemy_factory import SQLAlchemyFactory
 from sqlalchemy_celery_beat import PeriodicTask
 
-from app.core.auth.models import OAuthToken
+from app.core.auth.models import OAuthToken, UserRole
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.auth.providers.casdoor.sdk import CasdoorSDK
 from app.core.auth.providers.grafana.models import GrafanaUser
@@ -100,10 +100,13 @@ class CasdoorUserFactory(ModelFactory[CasdoorUser]):
 
     is_forbidden: bool = False
     is_deleted: bool = False
+    role: UserRole = UserRole.VIEWER
 
 
 class GrafanaUserFactory(ModelFactory[GrafanaUser]):
     """Define factory for GrafanaUser instances."""
+
+    role: UserRole = UserRole.VIEWER
 
 
 class TaskFactory(ModelFactory[Task]):

@@ -18,8 +18,9 @@
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from datetime import datetime
+from enum import StrEnum
 from functools import cached_property
-from typing import Any, Self
+from typing import Any, Final, Self
 
 from pydantic import (
     BaseModel,
@@ -27,11 +28,18 @@ from pydantic import (
     Field,
     FutureDatetime,
     PastDatetime,
+    TypeAdapter,
     UUID4,
+    ValidationError,
 )
 
 from app.core.utils.date_time import utc_now
-from app.core.utils.fields import EmptyStrToNone, NonEmptyStr, TimedeltaSeconds
+from app.core.utils.fields import (
+    EmptyStrToNone,
+    EnumFieldMixin,
+    NonEmptyStr,
+    TimedeltaSeconds,
+)
 
 
 class OAuthToken(BaseModel):
@@ -125,6 +133,62 @@ class BaseTokenPayload(BaseModel, ABC):
         """
 
 
+class UserRole(EnumFieldMixin, StrEnum):
+    """Enumerate an identity's access level, lowest to highest.
+
+    Members and ordering mirror PMM's own authorization vocabulary so the two
+    products stay semantically aligned; ``SUPER_ADMIN`` is SEP's
+    provider-neutral name for the rank PMM calls ``grafanaAdmin``.
+
+    Members compare by rank rather than by name: ``EDITOR < ADMIN`` even
+    though ``"editor" > "admin"`` lexicographically. All four comparisons are
+    spelled out, and each refuses a non-member, because ``str`` supplies its own
+    alphabetical implementations. Whatever this class leaves to ``str`` — an
+    operator it does not override, or an operand it declines — silently ranks
+    ``EDITOR`` above ``ADMIN``. Equality is untouched, so ``ADMIN == "admin"``
+    still holds.
+    """
+
+    NONE = "none"
+    VIEWER = "viewer"
+    EDITOR = "editor"
+    ADMIN = "admin"
+    SUPER_ADMIN = "super_admin"
+
+    def __lt__(self, other: object) -> bool:
+        return _rank(self) < _rank(other)
+
+    def __le__(self, other: object) -> bool:
+        return _rank(self) <= _rank(other)
+
+    def __gt__(self, other: object) -> bool:
+        return _rank(self) > _rank(other)
+
+    def __ge__(self, other: object) -> bool:
+        return _rank(self) >= _rank(other)
+
+
+_USER_ROLE_ORDER: Final = tuple(UserRole)
+
+
+def _rank(role: object) -> int:
+    """Return a role's position in the declared order, lowest first.
+
+    :param role: The value to rank.
+    :return: The role's rank.
+    :raises TypeError: If ``role`` is not a :class:`UserRole`. Returning
+        ``NotImplemented`` instead would hand the comparison back to ``str``,
+        which answers it alphabetically, making ``UserRole.EDITOR >= "admin"``
+        True.
+    """
+    if not isinstance(role, UserRole):
+        raise TypeError(f"cannot order UserRole against {type(role).__name__}")
+    return _USER_ROLE_ORDER.index(role)
+
+
+_ADMIN_FLAG_ADAPTER: Final = TypeAdapter(bool)
+
+
 class BaseUser(BaseModel, ABC):
     """Represent the abstract base for a user.
 
@@ -133,8 +197,7 @@ class BaseUser(BaseModel, ABC):
     :param email: The email address of the user.
     :param first_name: The first name of the user.
     :param last_name: The last name of the user.
-    :param is_admin: Whether the user has administrative privileges. Defaults
-        to False.
+    :param role: The user's access level. ``is_admin`` is derived from it.
     :param created_time: The datetime when the user was created. Defaults to
         current datetime.
     :param updated_time: The datetime when the user was last updated. Defaults
@@ -146,7 +209,7 @@ class BaseUser(BaseModel, ABC):
     email: str = ""
     first_name: str = ""
     last_name: str = ""
-    is_admin: bool = False
+    role: UserRole
     created_time: datetime | EmptyStrToNone = Field(default_factory=utc_now)
     updated_time: datetime | EmptyStrToNone = Field(default_factory=utc_now)
     _access_token: str = ""
@@ -170,6 +233,38 @@ class BaseUser(BaseModel, ABC):
         :rtype: bool
         """
         return True
+
+    @computed_field
+    @property
+    def is_admin(self) -> bool:
+        """Indicate whether the user holds administrative privileges.
+
+        :return: True from ``ADMIN`` upwards, False below it.
+        """
+        return self.role >= UserRole.ADMIN
+
+    @staticmethod
+    def _role_from_admin_flag(flag: Any) -> UserRole:
+        """Map a legacy admin flag onto the ordered role.
+
+        The flag carries one bit, so it resolves only to the two roles the
+        admin gates already distinguish: ``ADMIN`` preserves the access the flag
+        granted, ``VIEWER`` the reads a non-admin has today.
+
+        The flag is validated rather than tested for truthiness, so a payload
+        spelling the boolean as ``"false"`` or ``"0"`` keeps the meaning the
+        removed ``is_admin`` field gave it instead of resolving to ``ADMIN``.
+
+        :param flag: The raw admin flag carried by a provider payload.
+        :return: The role the flag maps to.
+        :raises ValueError: If the flag is not a value Pydantic accepts as a
+            boolean, matching the error the removed field raised.
+        """
+        try:
+            is_admin = _ADMIN_FLAG_ADAPTER.validate_python(flag)
+        except ValidationError as exc:
+            raise ValueError(f"invalid admin flag: {flag!r}") from exc
+        return UserRole.ADMIN if is_admin else UserRole.VIEWER
 
     @property
     def access_token(self) -> str:
@@ -195,10 +290,10 @@ class BaseUser(BaseModel, ABC):
         *,
         user_id: UUID4,
         username: NonEmptyStr,
+        role: UserRole,
         email: str = "",
         first_name: str = "",
         last_name: str = "",
-        is_admin: bool = False,
         **provider_fields: Any,
     ) -> Self:
         """Build the synthetic service-principal user for SEP-internal auth.
@@ -209,11 +304,10 @@ class BaseUser(BaseModel, ABC):
 
         :param user_id: The service principal's stable unique identifier.
         :param username: The service principal's username.
+        :param role: The service principal's access level.
         :param email: The service principal's email address; empty by default.
         :param first_name: The service principal's first name; empty by default.
         :param last_name: The service principal's last name; empty by default.
-        :param is_admin: Whether the principal has administrative privileges;
-            ``False`` by default.
         :return: A user instance representing the service principal.
         """
         return cls(
@@ -222,7 +316,7 @@ class BaseUser(BaseModel, ABC):
             email=email,
             first_name=first_name,
             last_name=last_name,
-            is_admin=is_admin,
+            role=role,
             **provider_fields,
         )
 
