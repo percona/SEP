@@ -166,6 +166,45 @@ async def test_the_service_principal_can_still_dispatch_an_execution(
     assert response.json()["status"] == TaskHistoryStatusEnum.RUNNING.value
 
 
+def test_the_log_stream_reconciliation_is_refused_for_a_non_admin(
+    bearer_client: TestClient, created_task_with_history
+) -> None:
+    """Refuse the task-history reconciliation for a non-admin.
+
+    It is a genuine write — it persists ``status``, ``started_at`` and
+    ``finished_at`` — so it stays gated rather than joining the exemption
+    allowlist. The SEP log stream that triggers it is open to any authenticated
+    user, which is why that caller sends the internal token instead.
+    """
+    response = bearer_client.post(
+        f"/history/{created_task_with_history.id}/sync/", headers=BEARER_HEADERS
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_the_log_stream_reconciliation_is_accepted_for_the_service_principal(
+    bearer_client: TestClient,
+    created_task_with_history,
+    mock_executor: AsyncMock,
+    mocker: MockerFixture,
+) -> None:
+    """Accept the same reconciliation when it carries the internal token.
+
+    This is the identity the SEP log stream sends, so a non-admin's stream still
+    reaches its finish frame.
+    """
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mock_executor.sync_task_history.return_value = created_task_with_history
+
+    response = bearer_client.post(
+        f"/history/{created_task_with_history.id}/sync/",
+        headers={"Authorization": f"Bearer {SERVICE_TOKEN}"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+
+
 def test_the_batch_read_stays_reachable_for_a_non_admin(
     bearer_client: TestClient,
 ) -> None:

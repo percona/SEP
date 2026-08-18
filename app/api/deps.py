@@ -173,10 +173,9 @@ async def require_admin_for_unsafe_methods(request: Request) -> None:
     :raises HTTPUnauthorizedException: When the method is unsafe and the request
         carries no Bearer credential, or the credential does not validate.
     :raises HTTPForbiddenException: When the resolved user is not an admin, or is
-        inactive. Resolving a user at all is new on routes that previously met
-        only a header check, so both refusals are new there.
+        inactive.
     :raises BaseAuthProviderException: When the auth provider errors while
-        validating the credential, for the same reason.
+        validating the credential.
     """
     if request.method in SAFE_HTTP_METHODS:
         return

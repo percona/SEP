@@ -100,7 +100,7 @@ async def test_exactly_one_route_is_exempt_from_the_gate() -> None:
     raises for every other, which also pins that ``allow_non_admin_mutation``
     registered the object FastAPI stores as ``APIRoute.endpoint``.
     """
-    exempt = set()
+    exempt: set[Callable[..., Any]] = set()
     for app in (sep_app, inventory_app, tasks_app):
         for route in _api_routes(app):
             request = make_request("POST", endpoint=route.endpoint)
