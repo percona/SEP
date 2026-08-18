@@ -41,6 +41,7 @@ from app.core.exceptions import (
 )
 from app.core.pagination import fetch_all_dict_items
 from app.core.requests import RemoteAPI
+from app.core.security import is_bearer_authenticated, SAFE_HTTP_METHODS
 from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
 from app.sep.clients.pmm import PMMRemoteAPI
@@ -81,19 +82,6 @@ def get_base_url(request: Request) -> URL:
     if settings.BASE_URL is not None:
         return settings.BASE_URL
     return URL(str(request.base_url))
-
-
-def is_bearer_authenticated(request: Request) -> bool:
-    """Return whether the request carries an ``Authorization: Bearer`` header.
-
-    Inspects only the ``Authorization`` header prefix — the token itself is not
-    validated. Used to reject a credential-less request before ``oauth2_scheme``
-    can raise a bare Starlette error, and to gate mutating methods.
-
-    :param request: The incoming HTTP request.
-    :return: ``True`` when the header starts with ``Bearer ``, ``False`` otherwise.
-    """
-    return request.headers.get("authorization", "").lower().startswith("bearer ")
 
 
 async def get_current_user(
@@ -145,7 +133,7 @@ async def require_bearer_for_unsafe_methods(request: Request) -> None:
     :raises HTTPUnauthorizedException: When the method is unsafe and the
         request lacks an ``Authorization: Bearer`` header.
     """
-    if request.method in {"GET", "HEAD", "OPTIONS"}:
+    if request.method in SAFE_HTTP_METHODS:
         return
     if not is_bearer_authenticated(request):
         raise HTTPUnauthorizedException(detail=BEARER_REQUIRED_DETAIL)

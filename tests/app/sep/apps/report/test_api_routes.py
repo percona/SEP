@@ -394,10 +394,8 @@ class TestReportJobApi:
         report_json = make_report().model_dump(mode="json")
         with (
             patch(
-                f"{_API}.sep_settings",
-                SimpleNamespace(
-                    HEALTH_REPORT=SimpleNamespace(is_upload_configured=True)
-                ),
+                f"{_API}.health_report_settings",
+                SimpleNamespace(is_upload_configured=True),
             ),
             patch(f"{_API}.upload_report_snapshot_job.delay") as mock_delay,
             patch(

@@ -29,19 +29,25 @@ __all__ = [
 
 
 def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> None:
-    """Merge `update_dict` into `main_dict` recursively.
+    """Merge ``update_dict`` into ``main_dict`` recursively.
 
-    Update `main_dict` with the contents of `update_dict` recursively. For each
-    key in `update_dict`, if the key exists in `main_dict` and both values are
-    dictionaries, merge them recursively. If the key exists in `main_dict` and
-    both values are lists, prepend the non-empty list from `update_dict` to the
-    list in `main_dict`, or replace it with an empty list when the overlay is
-    empty. Otherwise, overwrite the value in `main_dict` with the value from
-    `update_dict`.
+    Update ``main_dict`` with the contents of ``update_dict`` recursively. For each
+    key in ``update_dict``, if the key exists in ``main_dict`` and both values are
+    dictionaries, merge them recursively. If the key exists in ``main_dict`` and
+    both values are lists, prepend the non-empty list from ``update_dict`` to the
+    list in ``main_dict``, or replace it with an empty list when the overlay is
+    empty. Otherwise, overwrite the value in ``main_dict`` with the value from
+    ``update_dict``.
+
+    When both arguments are the same object the merge is a no-op. This can
+    happen when the selected YAML profile *is* the base profile, or when two
+    distinct profiles share a nested mapping through a YAML anchor.
 
     :param main_dict: The dictionary to be updated.
     :param update_dict: The dictionary containing updates to apply.
     """
+    if main_dict is update_dict:
+        return
     for key, value in update_dict.items():
         if (
             key in main_dict
