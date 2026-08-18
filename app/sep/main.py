@@ -133,9 +133,7 @@ def _make_remote_api_rebinder(
         ``tasks_api``).
     :type name: str
     :param proxy: The overridable settings proxy that owns the endpoint field.
-    :type proxy: OverridableSettingsProxy
     :param key: The top-level snapshot key for the endpoint field.
-    :type key: str
     :param ssl: SSL keyword arguments forwarded to :class:`RemoteAPI` (not HOT,
         captured once at wiring time).
     :type ssl: Any

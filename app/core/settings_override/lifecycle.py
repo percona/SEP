@@ -72,9 +72,7 @@ class SnapshotChange(NamedTuple):
     through the proxy's wrapped instance.
 
     :param previous: The snapshot in effect before the republish.
-    :type previous: Mapping[str, object]
     :param current: The snapshot now in effect.
-    :type current: Mapping[str, object]
     """
 
     previous: Mapping[str, object]

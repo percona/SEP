@@ -65,7 +65,6 @@ async def _reconcile_nomad(_: SnapshotChange) -> None:
 
     :param _: The override snapshots on either side of the republish. Unused --
         the holder reads the live ``NOMAD`` config itself when reconciling.
-    :type _: SnapshotChange
     """
     holder = getattr(tasks_app.state, "nomad_lifecycle", None)
     if holder is not None:
