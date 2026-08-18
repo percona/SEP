@@ -98,6 +98,19 @@ def test_previous_or_base_falls_back_to_wrapped_instance() -> None:
     )
 
 
+def test_previous_or_base_keeps_an_explicit_none_override() -> None:
+    """Return ``None`` when the key is present in previous holding ``None``.
+
+    Membership decides the fallback, not truthiness: a nullable field whose
+    override was explicitly ``None`` had ``None`` as its previous effective
+    value, so falling back to the YAML/env base here would report a value that
+    was never in effect.
+    """
+    proxy, _ = _make_proxies()
+    change = SnapshotChange({"INVENTORY_ENDPOINT": None}, {})
+    assert previous_or_base(change, proxy, "INVENTORY_ENDPOINT") is None
+
+
 @pytest.mark.asyncio
 async def test_refresh_all_swaps_snapshot(
     session_maker: async_sessionmaker,
@@ -453,7 +466,7 @@ async def test_refresh_all_fires_callback_for_changed_key(
 
 @pytest.mark.asyncio
 async def test_fire_change_callbacks_delivers_snapshot_change_on_delete() -> None:
-    """Callbacks receive a SnapshotChange; on delete the key is absent from current."""
+    """Deliver a SnapshotChange, with the changed key absent from current on delete."""
     previous = {"CONNECTIVITY_CHECK_DEFAULT": True}
     current: dict[str, object] = {}
     received: list[object] = []
@@ -475,6 +488,40 @@ async def test_fire_change_callbacks_delivers_snapshot_change_on_delete() -> Non
     assert change.current == current
     assert "CONNECTIVITY_CHECK_DEFAULT" not in change.current
     assert change.previous["CONNECTIVITY_CHECK_DEFAULT"] is True
+
+
+@pytest.mark.asyncio
+async def test_fire_change_callbacks_hands_every_callback_the_whole_change() -> None:
+    """Hand each changed key's callback both snapshots, not just its own key.
+
+    Two keys change in one republish, so the loop runs twice. The payload is
+    snapshot-wide rather than per-key, which only a multi-key cycle can pin: a
+    per-key rebuild would pass each callback a mapping holding its own key alone.
+    """
+    previous: dict[str, object] = {"CONNECTIVITY_CHECK_DEFAULT": True, "APP_DRAIN": 1}
+    current: dict[str, object] = {"CONNECTIVITY_CHECK_DEFAULT": False}
+    received: dict[str, SnapshotChange] = {}
+
+    def _recorder(name: str):
+        async def _callback(change: SnapshotChange) -> None:
+            received[name] = change
+
+        return _callback
+
+    await fire_change_callbacks(
+        {
+            _CALLBACK_KEY: _recorder("connectivity"),
+            (SettingClassEnum.SEP_SETTINGS, "APP_DRAIN"): _recorder("drain"),
+        },
+        SettingClassEnum.SEP_SETTINGS,
+        previous,
+        current,
+    )
+
+    assert sorted(received) == ["connectivity", "drain"]
+    for change in received.values():
+        assert change.previous == previous
+        assert change.current == current
 
 
 @pytest.mark.asyncio

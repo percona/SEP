@@ -128,11 +128,11 @@ async def invalidate_pmm_clients(change: SnapshotChange) -> None:
 
     :param change: The override snapshots on either side of the republish.
     """
-    previous_pmm = cast(PMMSettings | None, previous_or_base(change, settings, "PMM"))
+    previous_pmm = cast(PMMSettings, previous_or_base(change, settings, "PMM"))
     for endpoint in dict.fromkeys(
         str(pmm.endpoint)
         for pmm in (previous_pmm, settings.PMM)
-        if pmm is not None and pmm.endpoint is not None
+        if pmm.endpoint is not None
     ):
         await settings.invalidate_client(endpoint)
 

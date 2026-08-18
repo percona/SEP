@@ -67,8 +67,8 @@ def _drain_cancelled_seed_task(task: asyncio.Task) -> None:
 class SnapshotChange(NamedTuple):
     """Represent the override snapshots on either side of a republish.
 
-    A snapshot holds active overrides only -- never an effective view -- so a
-    key may be absent from ``previous``, ``current``, or both. When a key is
+    A snapshot holds active overrides only, never an effective view, so a key
+    may be absent from ``previous``, ``current``, or both. When a key is
     absent the prior (or new) effective value is the YAML/env one reachable
     through the proxy's wrapped instance.
 
@@ -87,15 +87,18 @@ def previous_or_base(
 
     A snapshot holds active overrides only, so ``key`` may be absent from
     ``change.previous``. The YAML/env value on the proxy's wrapped instance is
-    then the prior effective value.
+    then the prior effective value. Membership decides the fallback rather than
+    the value being ``None``, so an override that sets a nullable field to
+    ``None`` reports ``None`` instead of the base.
 
     :param change: The override snapshots on either side of the republish.
     :param proxy: The overridable settings proxy that owns ``key``.
     :param key: The top-level snapshot key to read.
+    :return: The previous override value, or the YAML/env base when ``key`` was
+        not overridden.
     """
-    previous = change.previous.get(key)
-    if previous is not None:
-        return previous
+    if key in change.previous:
+        return change.previous[key]
     return getattr(proxy._resolve(), key)  # noqa: SLF001
 
 
@@ -167,9 +170,9 @@ async def fire_change_callbacks(
     callback runs inside its own ``try/except`` so one failure neither aborts
     the cycle nor blocks the remaining callbacks.
 
-    Both mappings are override snapshots only -- never an effective view -- so a
-    key may be absent from either side (for example on the override-delete path
-    the changed key is gone from ``current``). Callbacks that need the previous
+    Both mappings are override snapshots only, never an effective view, so a key
+    may be absent from either side (for example on the override-delete path the
+    changed key is gone from ``current``). Callbacks that need the previous
     effective value when the key is absent recover it through the proxy's
     wrapped YAML/env instance.
 
@@ -180,13 +183,9 @@ async def fire_change_callbacks(
 
     :param callbacks: The registered rebind callbacks keyed by
         ``(setting_class, key)``.
-    :type callbacks: CallbackRegistry
     :param setting_class: The class whose snapshot was just republished.
-    :type setting_class: SettingClassEnum
     :param previous: The override snapshot in effect before the republish.
-    :type previous: Mapping[str, object]
     :param current: The override snapshot now in effect.
-    :type current: Mapping[str, object]
     """
     change = SnapshotChange(previous, current)
     for key in previous.keys() | current.keys():
