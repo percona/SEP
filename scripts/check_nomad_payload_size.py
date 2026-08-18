@@ -35,12 +35,16 @@ def payload_size(path: str) -> int:
 
     The source is minified with ``python_minifier`` (falling back to the
     original text on ``SyntaxError``) then gzip-compressed.
+
+    :param path: Payload file path.
+    :return: Minify+gzip size in bytes.
+    :raises SystemExit: When ``python_minifier`` is not importable.
     """
     if minify is None:
         raise SystemExit(
             "python_minifier is not installed for this Python interpreter.\n"
-            "Use the project venv: venv/bin/python scripts/check_nomad_payload_size.py ...\n"
-            "Or: make check-nomad-payload-size ARGS='--report <path>...'"
+            "Use the project venv interpreter, or let make resolve it:\n"
+            "  make check-nomad-payload-size ARGS='--report <path>...'"
         )
 
     with open(path, encoding="utf-8") as f:  # noqa: PTH123
@@ -70,10 +74,8 @@ def payload_size(path: str) -> int:
 def check_payload(path: str) -> tuple[str, int] | None:
     """Minify and gzip a Python file, returning ``(path, size)`` if it exceeds the Nomad limit.
 
-    The source is minified with ``python_minifier`` (falling back to the
-    original text on ``SyntaxError``) then gzip-compressed.  If the
-    compressed size is within :data:`NOMAD_PAYLOAD_SIZE_LIMIT`, returns
-    ``None``; otherwise returns the path and offending size in bytes.
+    :param path: Payload file path.
+    :return: ``(path, size)`` when the size exceeds the limit, otherwise ``None``.
     """
     sz = payload_size(path)
     if sz > NOMAD_PAYLOAD_SIZE_LIMIT:
@@ -85,11 +87,8 @@ def format_report_line(path: str, size: int) -> str:
     """Format one ``--report`` output line for ``path`` at minify+gzip ``size``.
 
     :param path: Payload file path.
-    :type path: str
     :param size: Minify+gzip size in bytes.
-    :type size: int
     :return: Human-readable report line.
-    :rtype: str
     """
     limit = NOMAD_PAYLOAD_SIZE_LIMIT
     if size <= limit:
@@ -103,8 +102,12 @@ def main(argv: list[str] | None = None) -> int:
     """Check every file path passed as a CLI argument against the Nomad payload limit.
 
     Returns 0 when all payloads are within the limit, or 1 after printing
-    a summary of the offending files.  With ``--report``, prints size and
-    headroom for each path and always returns 0.
+    a summary of the offending files.  With ``--report``, print one line per
+    path giving its size against the limit and its remaining headroom (or the
+    number of bytes over), and return 0.
+
+    :param argv: CLI arguments (defaults to ``sys.argv[1:]``).
+    :return: Process exit code.
     """
     parser = argparse.ArgumentParser(
         description="Check Nomad dispatch payload sizes after minify+gzip.",
@@ -120,7 +123,6 @@ def main(argv: list[str] | None = None) -> int:
         metavar="path",
         help="Payload file path(s) to check.",
     )
-    argv = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(argv)
 
     if args.report:
