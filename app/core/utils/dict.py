@@ -39,9 +39,15 @@ def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> 
     empty. Otherwise, overwrite the value in `main_dict` with the value from
     `update_dict`.
 
+    When both arguments are the same object the merge is a no-op.  This can
+    happen when the selected YAML profile *is* the base profile, or when two
+    distinct profiles share a nested mapping through a YAML anchor.
+
     :param main_dict: The dictionary to be updated.
     :param update_dict: The dictionary containing updates to apply.
     """
+    if main_dict is update_dict:
+        return
     for key, value in update_dict.items():
         if (
             key in main_dict
