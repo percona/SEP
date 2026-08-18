@@ -31,7 +31,11 @@ from app import __summary__, __version__
 from app.api.main import api_router
 from app.celery import celery as celery_app
 from app.core.auth.config import detect_removed_auth_user_model
-from app.core.config import create_app, settings
+from app.core.config import (
+    create_app,
+    detect_removed_settings_override_keys,
+    settings,
+)
 from app.core.middleware.log_context import LogContextMiddleware
 from app.core.utils import validate_importable_settings
 from app.core.utils.openapi import merge_openapi_documents
@@ -60,6 +64,7 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :yield: None
     """
     detect_removed_auth_user_model()
+    detect_removed_settings_override_keys()
     validate_importable_settings(*(s.syncer for s in sep_settings.SYNCERS))
     await sep_startup()
     async with (
@@ -168,9 +173,18 @@ def _disabled_top_level_docs() -> Response:
     """Reject ``/docs`` and ``/redoc`` with a 404.
 
     The auto-generated Swagger UI on the top-level app is disabled (see
-    ``docs_url=None`` / ``redoc_url=None`` on ``create_app``). Use ``/api/docs``
-    instead. Without these explicit handlers, the ``sep_app`` mount at ``/``
-    would serve its auth redirect for unknown paths and these would not return 404.
+    ``docs_url=None`` / ``redoc_url=None`` on ``create_app``).  Use ``/api/docs``
+    instead.
+
+    These explicit handlers must stay registered because ``sep_app`` keeps
+    FastAPI's default ``docs_url="/docs"`` and ``redoc_url="/redoc"`` so it
+    remains self-describing in standalone use.  Without these routes the
+    ``sep_app`` mount at ``/`` would answer ``/docs`` and ``/redoc`` with its own
+    partial spec — and those paths are not in the CSP exemption list
+    (``SECURITY_HEADERS.CONTENT_SECURITY_POLICY_EXCLUDE_PATHS``), so the pages
+    would render broken.  By registering these 404 handlers before
+    ``app.mount("/", sep_app)``, mount-order precedence ensures the top-level app
+    wins and returns a clean 404.
     """
     return Response(status_code=status.HTTP_404_NOT_FOUND)
 

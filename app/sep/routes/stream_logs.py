@@ -25,24 +25,24 @@ from aiohttp import ClientTimeout
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import StreamingResponse
 
+from app.core.security import require_internal_token
 from app.sep.deps import (
-    CurrentUser,
+    ApiCurrentUser,
     get_task_history,
-    IsAuthenticated,
+    IsApiAuthenticated,
     TasksClient,
 )
-from app.sep.utils.decorators import csrf_exempt
+from app.sep.routes import STREAMING_PROXY_HEADERS
 from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["tasks"])
 
 
-@router.get("/{task_history_id}/execution-events", dependencies=[IsAuthenticated])
-@csrf_exempt
+@router.get("/{task_history_id}/execution-events", dependencies=[IsApiAuthenticated])
 async def task_execution_events_stream(
     request: Request,
-    user: CurrentUser,
+    user: ApiCurrentUser,
     task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
     tasks_client: TasksClient,
 ) -> StreamingResponse:
@@ -52,6 +52,7 @@ async def task_execution_events_stream(
             tasks_client, task_history.id, request, user.access_token
         ),
         media_type="text/event-stream",
+        headers=STREAMING_PROXY_HEADERS,
     )
 
 
@@ -132,21 +133,20 @@ async def task_history_events_event_stream(
         yield f"event: sep-error\ndata: {json.dumps({'detail': str(exc)})}\n\n"
 
 
-@router.get("/{task_history_id}", dependencies=[IsAuthenticated])
-@csrf_exempt
+@router.get("/{task_history_id}", dependencies=[IsApiAuthenticated])
 async def task_logs_event_stream(
     request: Request,
-    user: CurrentUser,
+    user: ApiCurrentUser,
     task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
     tasks_client: TasksClient,
 ) -> StreamingResponse:
     """Stream a task history's logs as server-sent events."""
-    logger.debug("request.state.is_csrf_exempt is %s", request.state.is_csrf_exempt)
     return StreamingResponse(
         task_history_logs_event_stream(
             tasks_client, task_history.id, request, user.access_token
         ),
         media_type="text/event-stream",
+        headers=STREAMING_PROXY_HEADERS,
     )
 
 
@@ -160,14 +160,18 @@ async def task_history_logs_event_stream(
     Streams log lines for a given task history ID from the Tasks API and yields them
     formatted as server-sent events.
 
+    The log read carries ``access_token`` so it is attributed to the viewing user.
+    The reconciliation that follows it is a mutating Tasks API call, which the
+    unsafe-method admin gate admits only for an admin or the service principal —
+    and this stream is open to any authenticated user, so that call carries the
+    internal token instead.
+
     :param tasks_client: The TaskAPI client for interacting with the Tasks service.
-    :type tasks_client: RemoteAPI
     :param task_history_id: The ID of the task history whose logs to stream.
-    :type task_history_id: int
     :param request: The FastAPI request object, used to access query parameters.
-    :type request: Request
-    :yield: Log entries formatted as server-sent events.
-    :rtype: str
+    :param access_token: Bearer token authenticating the log read as the viewing
+        user.
+    :return: Log entries formatted as server-sent events.
     """
     try:
         with tasks_client.auth(access_token) as tasks_api:
@@ -180,7 +184,8 @@ async def task_history_logs_event_stream(
             ):
                 if log_entry:
                     yield f"data: {log_entry.decode()}\n\n"
-            task_history = await tasks_api.post(f"/history/{task_history_id}/sync/")
+        with tasks_client.auth(require_internal_token()) as sync_api:
+            task_history = await sync_api.post(f"/history/{task_history_id}/sync/")
         yield f"event: finish\ndata: {json.dumps({'status': task_history['status']})}\n\n"
     except TimeoutError as exc:
         logger.warning(

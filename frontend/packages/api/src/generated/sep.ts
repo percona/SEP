@@ -650,7 +650,7 @@ export interface paths {
      *     the ATW enum still defines the full taxonomy for validation (plugin schema).
      *
      *     :param session: The database session.
-     *     :return: One listing row per category that has at least one snippet.
+     *     :return: One listing row per category that has at least one approved snippet.
      */
     get: operations['atw_atw_api_list_api_apps_atw__get'];
     put?: never;
@@ -979,6 +979,38 @@ export interface paths {
      *     :return: The plugin schema instance.
      */
     get: operations['atw_get_schema_api_apps_atw_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/atw/snippets/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Snippet Search
+     * @description Search approved snippets by free text, independent of the ATW taxonomy.
+     *
+     *     Served from ATW's own router over the snippets library, so the capability does
+     *     not depend on the Snippet Manager app being activated. The ``atw`` metadata tag
+     *     is a presentation filter on the category listing and is deliberately not
+     *     applied here, so search reaches snippets that listing never exposes.
+     *
+     *     :param session: The database session.
+     *     :param list_query: The vetted sort and search selections, pinned to approved.
+     *     :param pagination: The offset/limit window for the page.
+     *     :return: A paginated page of approved snippet summaries.
+     *     :raises sqlalchemy.exc.SQLAlchemyError: When the count or data query fails to
+     *         execute.
+     */
+    get: operations['atw_atw_snippet_search_api_apps_atw_snippets__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1811,11 +1843,12 @@ export interface paths {
      *     Free-typed (non-numeric) parents query the catalog by that name without an
      *     Inventory type check — matching ``ServiceRef(allow_custom=True)`` on the
      *     restore form, where the destination may be a name that has no MySQL
-     *     inventory row. Numeric parents still require a resolvable MySQL service.
+     *     inventory row. Numeric parents still require a resolvable MySQL service, and
+     *     are keyed on its inventory id so a rename does not empty the selector.
      *
      *     :param session: The database session the catalog is queried on.
-     *     :param service_name: The cascade parent resolved to a catalog service name,
-     *         or ``None`` when the parent is unusable.
+     *     :param service_key: The cascade parent resolved to the catalog query keys, or
+     *         ``None`` when the parent is unusable.
      *     :return: Choice-compatible options for the restore backup-source selector.
      */
     get: operations['mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get'];
@@ -1945,6 +1978,10 @@ export interface paths {
      *     runs yields an empty page, so a caller building a restore selector is never
      *     blocked by an empty catalog but is still told when the service itself is
      *     unknown.
+     *
+     *     The query is keyed on the resolved service's inventory id, so a rename between
+     *     recording a run and asking for it cannot detach the rows; runs recorded before
+     *     the id was stored are still matched by the name they were written with.
      *
      *     :param service: The inventory service resolved from the ``service_id`` path
      *         parameter.
@@ -2197,7 +2234,7 @@ export interface paths {
     };
     /**
      * List
-     * @description List scripts as a server-filtered, sorted, paginated projection.
+     * @description List scripts as a filtered, sorted, paginated projection.
      */
     get: operations['snippets_snippets_api_list_api_apps_snippets__get'];
     put?: never;
@@ -2852,7 +2889,7 @@ export interface paths {
      *     that has no override row succeeds with 204. Attempting to delete a field
      *     the code declares NOT_OVERRIDABLE responds 409, since it cannot have an
      *     override row in the first place and the operator's intent is
-     *     unsatisfiable. A field only ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withheld
+     *     unsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld
      *     may still carry a row written before the restriction applied, so that
      *     row is deleted normally and only the no-row case answers 409.
      *
@@ -3759,6 +3796,19 @@ export interface components {
     };
     JsonValue: unknown;
     /**
+     * LogCaptureStatusEnum
+     * @description Describe how completely SEP captured a task's log stream.
+     *
+     *     Distinguishes a stream that genuinely produced nothing from one whose bytes
+     *     were lost before SEP could read them — the stored offsets alone cannot tell
+     *     those apart, since both leave the cursors at zero.
+     *
+     *     ``UNKNOWN`` is the honest verdict where no evidence survives: rows written
+     *     before the column existed, and histories carrying no state rows at all.
+     * @enum {string}
+     */
+    LogCaptureStatusEnum: 'complete' | 'incomplete' | 'unknown';
+    /**
      * Node
      * @description Represent a node in the inventory.
      *
@@ -4036,8 +4086,8 @@ export interface components {
      * @description Enumerate settings classes that may have HOT override rows.
      *
      *     The wired classes are ``SEPSettings``, ``TasksSettings``,
-     *     ``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,
-     *     ``AlertSettings``, ``AlertsSettings``, ``AnonymizerSettings`` and
+     *     ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
+     *     ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings`` and
      *     ``InventorySettings``.
      *
      *     To wire a new settings class:
@@ -4058,11 +4108,11 @@ export interface components {
       | 'SEPSettings'
       | 'TasksSettings'
       | 'SnippetsSettings'
-      | 'MessagesSettings'
       | 'Settings'
       | 'AlertSettings'
       | 'AnonymizerSettings'
       | 'AlertsSettings'
+      | 'HealthReportSettings'
       | 'InventorySettings';
     /**
      * SettingClassGroup
@@ -4105,6 +4155,19 @@ export interface components {
       settings: components['schemas']['SettingResponse'][];
     };
     /**
+     * SettingOption
+     * @description Represent one selectable member for an enum-typed setting.
+     *
+     *     :param label: The enum member name shown in the UI (e.g. ``WARNING``).
+     *     :param value: The JSON-dumped member value the client must PATCH
+     *         (e.g. ``30`` for an ``IntEnum``).
+     */
+    SettingOption: {
+      /** Label */
+      label: string;
+      value: components['schemas']['JsonValue'];
+    };
+    /**
      * SettingResponse
      * @description Represent a single setting's metadata and current value.
      *
@@ -4135,6 +4198,8 @@ export interface components {
      *         (e.g. the active auth provider). ``False`` lets the UI present the field
      *         as inert. Display-only, like ``is_advanced``: it does not block
      *         PATCH/DELETE server-side; the runtime gate is the real enforcement.
+     *     :param options: Selectable enum members for dropdown UIs, or ``None`` when
+     *         the field is not an ``Enum`` annotation. Aliased members are excluded.
      */
     SettingResponse: {
       /** Default Value */
@@ -4161,6 +4226,8 @@ export interface components {
       key: string;
       /** Key Path */
       key_path?: string[];
+      /** Options */
+      options?: components['schemas']['SettingOption'][] | null;
       reload: components['schemas']['ReloadClassification'];
       setting_class: components['schemas']['SettingClassEnum'];
       /** Type */
@@ -4325,30 +4392,6 @@ export interface components {
       service_types: string[];
     };
     /**
-     * SnippetSortDirection
-     * @description Enumerate the sort direction.
-     *
-     *     :cvar ASC: Ascending order.
-     *     :cvar DESC: Descending order.
-     * @enum {string}
-     */
-    SnippetSortDirection: 'asc' | 'desc';
-    /**
-     * SnippetSortKey
-     * @description Enumerate the allowlisted public sort keys.
-     *
-     *     Membership is the type: an out-of-allowlist key fails to coerce at the
-     *     request boundary, so no raw client-supplied column name can reach a query.
-     *
-     *     :cvar CREATED_AT: Sort by the ``created_at`` column.
-     *     :cvar FILENAME: Sort by the ``filename`` column.
-     *     :cvar APPROVED_AT: Sort by the ``approved_at`` column.
-     *     :cvar TITLE: Sort by the ``meta.title`` JSON value.
-     *     :cvar SERVICE_TYPE: Sort by the ``meta.service_type`` JSON value.
-     * @enum {string}
-     */
-    SnippetSortKey: 'created_at' | 'filename' | 'approved_at' | 'title' | 'service_type';
-    /**
      * SnippetsCapabilitiesResponse
      * @description Represent per-deployment capability flags for the Snippets plugin.
      *
@@ -4439,25 +4482,23 @@ export interface components {
      * @description Represent a task history API response.
      *
      *     :param execution_request: The request that triggered the task execution.
-     *     :type execution_request: TaskExecutionRequest
      *     :param status: The status of the task execution.
-     *     :type status: TaskHistoryStatusEnum
      *     :param started_at: The datetime when the task execution started.
-     *     :type started_at: UTCDatetime | None
      *     :param finished_at: The datetime when the task execution finished.
-     *     :type finished_at: UTCDatetime | None
      *     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
      *         logs and files generated by the execution. Defaults to None, meaning it uses
      *         the value defined in the associated task's :attr:`Task.anonymize_mask`.
-     *     :type anonymize_mask: int | None
      *     :param task: The task associated with this execution history.
-     *     :type task: TaskResponse
      *     :param executed_by: The user ID of the user who executed the task.
-     *     :type executed_by: str | None
      *     :param has_logs: Whether this task history has any readable log content --
      *         either a chunk-store row or a legacy ``tracking["task_logs"]`` blob.
      *         Populated by list/retrieve routes; defaults to ``False``.
-     *     :type has_logs: bool
+     *     :param log_capture: How completely SEP captured this execution's logs,
+     *         aggregated over its state rows: any incomplete stream reports
+     *         ``"incomplete"``, else any unknown reports ``"unknown"``, else
+     *         ``"complete"``. Populated by list/retrieve routes; defaults to
+     *         ``"unknown"``, which is also what a history carrying no state rows
+     *         reports.
      *     :param display_name: A user-meaningful label derived from the task name or
      *         execution-request metadata. Read-only; computed on serialisation.
      */
@@ -4504,6 +4545,8 @@ export interface components {
       has_logs: boolean;
       /** Id */
       id: number | null;
+      /** @default unknown */
+      log_capture: components['schemas']['LogCaptureStatusEnum'];
       /** Started At */
       started_at?: string | null;
       /** @default pending */
@@ -5835,6 +5878,17 @@ export interface components {
     atw__PaginatedResponse_ATWIncidentExecutionResponse_: {
       /** Items */
       items: components['schemas']['atw__ATWIncidentExecutionResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[ATWSnippetSummary] */
+    atw__PaginatedResponse_ATWSnippetSummary_: {
+      /** Items */
+      items: components['schemas']['atw__ATWSnippetSummary'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -8968,6 +9022,8 @@ export interface components {
      *
      *     :param id: The record's primary key.
      *     :param service_name: The inventory service the backup was taken from.
+     *     :param service_id: The inventory id of that service, or ``None`` on a record
+     *         written before the id was stamped.
      *     :param hostname: The backup target host.
      *     :param backup_type: The backup tool, ``"M"`` (mydumper) or ``"X"`` (xtrabackup).
      *         Narrower than :class:`BackupType`: binlog runs are never catalogued, so
@@ -8992,6 +9048,8 @@ export interface components {
       id: number;
       /** Location */
       location: string | null;
+      /** Service Id */
+      service_id: number | null;
       /** Service Name */
       service_name: string | null;
       /** Size Bytes */
@@ -11711,6 +11769,52 @@ export interface operations {
       };
     };
   };
+  atw_atw_snippet_search_api_apps_atw_snippets__get: {
+    parameters: {
+      query?: {
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?:
+          | 'approved_at'
+          | '-approved_at'
+          | 'created_at'
+          | '-created_at'
+          | 'filename'
+          | '-filename'
+          | 'service_type'
+          | '-service_type'
+          | 'title'
+          | '-title';
+        /** @description Case-insensitive search across the searchable columns. */
+        search?: string | null;
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__PaginatedResponse_ATWSnippetSummary_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   backup_mongo__list_paginated_api_apps_backup_mongo__get: {
     parameters: {
       query?: {
@@ -13169,7 +13273,7 @@ export interface operations {
   mysql_backups_list_backup_source_choices_api_apps_mysql_backups_backup_sources_choices_get: {
     parameters: {
       query?: {
-        /** @description Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service name; custom names query the catalog directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch. */
+        /** @description Cascade parent from the restore form. Inventory numeric ids are resolved to a MySQL service, keying the catalog query on its id; custom names query the catalog by name directly. Omitted, blank, sentinel, or unknown values yield an empty list so free-text entry is never blocked by a failed options fetch. */
         service_id?: string | null;
       };
       header?: never;
@@ -13819,18 +13923,26 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
-        /** @description Case-insensitive search over filename, title, description. */
-        search?: string | null;
-        /** @description Sort key; one of the allowlisted public sort keys. */
-        sort?: components['schemas']['SnippetSortKey'];
-        /** @description Sort direction. */
-        order?: components['schemas']['SnippetSortDirection'];
         /** @description Approval-status filter. */
         approval?: components['schemas']['SnippetApprovalFilter'];
         /** @description Service-type equality filter, or omitted for no filter. */
         service_type?: string | null;
         /** @description When true, keep only snippets with no (absent or blank) service type. A separate flag so a real service type can never collide with a reserved sentinel. Takes precedence over 'service_type'. */
         uncategorized?: boolean;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?:
+          | 'approved_at'
+          | '-approved_at'
+          | 'created_at'
+          | '-created_at'
+          | 'filename'
+          | '-filename'
+          | 'service_type'
+          | '-service_type'
+          | 'title'
+          | '-title';
+        /** @description Case-insensitive search across the searchable columns. */
+        search?: string | null;
       };
       header?: never;
       path?: never;

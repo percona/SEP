@@ -22,15 +22,12 @@ Create and update are derived from the model-first
 :class:`~app.sep.apps.archives.models.ArchivesCreate` through the
 ``run-python`` pt-archiver spec builder; the connectivity probe and the source
 service selection ride on the source ``ServiceRef(check_connectivity=True)``, and
-the archiver failure-alert builder is stamped via ``alert_detail_builder``. The
-deprecated Jinja UI router is threaded as ``jinja_router``; its flat form body is
-folded into the one-of model in ``deps``.
+the archiver failure-alert builder is stamped via ``alert_detail_builder``.
 """
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.archives.alerts import ALERT_DETAIL_BUILDER
 from app.sep.apps.archives.models import ArchivesCreate, OWNER
-from app.sep.apps.archives.routes import router as jinja_router
 from app.sep.apps.archives.spec import build_archives_spec
 from app.sep.apps.archives.views import archives_views
 from app.sep.apps.framework.apps import (
@@ -56,5 +53,4 @@ app = TaskExecutionApp(
     capabilities=AppCapabilities(update=True, delete=True),
     service_type=ServiceTypeEnum.MYSQL,
     list_filter=ListFilterConfig(status=True),
-    jinja_router=jinja_router,
 )

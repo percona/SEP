@@ -34,6 +34,8 @@ from app.core.db.list_query import (
     ListQuery,
     ListQuerySpec,
     make_list_query_dep,
+    SEARCH_PARAM_DESCRIPTION,
+    SORT_PARAM_DESCRIPTION,
     UnknownSortKeyError,
 )
 from app.core.db.utils import get_async_session_maker_from_engine
@@ -327,6 +329,32 @@ class TestListQueryDependencyOpenAPI:
         names = {param["name"] for param in params}
         assert "sort" in names
         assert "search" not in names
+
+    def test_sort_param_publishes_the_allowlist_as_an_enum(self) -> None:
+        """Publish both directions of every sortable key, so a client can discover them."""
+        params = _SESSION_SENTINEL_APP.openapi()["paths"]["/lq"]["get"]["parameters"]
+        sort = next(param for param in params if param["name"] == "sort")
+
+        assert sort["schema"]["enum"] == [
+            "created_at",
+            "-created_at",
+            "name",
+            "-name",
+        ]
+
+    def test_query_params_carry_descriptions(self) -> None:
+        """Document both parameters, so the generated client is not bare strings."""
+        params = _SESSION_SENTINEL_APP.openapi()["paths"]["/lq"]["get"]["parameters"]
+        described = {
+            param["name"]: param.get("description")
+            for param in params
+            if param["name"] in {"sort", "search"}
+        }
+
+        assert described == {
+            "sort": SORT_PARAM_DESCRIPTION,
+            "search": SEARCH_PARAM_DESCRIPTION,
+        }
 
 
 class TestListQueryDependencyRequests:

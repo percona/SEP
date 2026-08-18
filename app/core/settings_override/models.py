@@ -32,8 +32,8 @@ class SettingClassEnum(StrEnum):
     """Enumerate settings classes that may have HOT override rows.
 
     The wired classes are ``SEPSettings``, ``TasksSettings``,
-    ``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,
-    ``AlertSettings``, ``AlertsSettings``, ``AnonymizerSettings`` and
+    ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
+    ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings`` and
     ``InventorySettings``.
 
     To wire a new settings class:
@@ -53,11 +53,11 @@ class SettingClassEnum(StrEnum):
     SEP_SETTINGS = "SEPSettings"
     TASKS_SETTINGS = "TasksSettings"
     SNIPPETS_SETTINGS = "SnippetsSettings"
-    MESSAGES_SETTINGS = "MessagesSettings"
     SETTINGS = "Settings"
     ALERT_SETTINGS = "AlertSettings"
     ANONYMIZER_SETTINGS = "AnonymizerSettings"
     ALERTS_SETTINGS = "AlertsSettings"
+    HEALTH_REPORT_SETTINGS = "HealthReportSettings"
     INVENTORY_SETTINGS = "InventorySettings"
 
 

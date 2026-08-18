@@ -21,9 +21,6 @@ at the consumer's call shape -- which varies by consumer:
 
 * ``test_snippets_refresh_route_observes_enable_manual_sync_override`` issues
   a real ``TestClient`` request and spies on the sync helper.
-* ``test_messages_middleware_observes_level_override`` calls the middleware's
-  ``add_message`` helper directly (the path the middleware itself takes per
-  request), without a full HTTP round-trip.
 * ``test_sep_proxy_visible_after_refresh`` reads the proxy attribute
   directly -- the exact shape ``app/sep/deps.py`` uses per request.
 
@@ -37,13 +34,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
-from fastapi import Request
 from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.pool import StaticPool
 
+from app.api.deps import require_admin_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
@@ -52,15 +49,10 @@ from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.utils import json_serializer
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import (
-    get_api_authenticated_user,
     get_current_user,
     get_session,
-    validate_csrf,
 )
 from app.sep.main import sep_app
-from app.sep.middleware.messages._utils import add_message
-from app.sep.middleware.messages.config import messages_settings, MessagesSettings
-from app.sep.middleware.messages.models import MessageLevel
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
 
@@ -88,9 +80,6 @@ def _sep_proxies() -> dict:
         SettingClassEnum.SNIPPETS_SETTINGS: ProxyEntry(
             snippets_settings, SnippetsSettings
         ),
-        SettingClassEnum.MESSAGES_SETTINGS: ProxyEntry(
-            messages_settings, MessagesSettings
-        ),
     }
 
 
@@ -114,18 +103,16 @@ async def test_snippets_refresh_route_observes_enable_manual_sync_override(
     admin_user: CasdoorUser,
     mocker: MockerFixture,
 ) -> None:
-    """``POST /snippets/refresh`` reads ``ENABLE_MANUAL_SYNC`` through the proxy.
+    """``POST /api/apps/snippets/refresh`` reads ``ENABLE_MANUAL_SYNC`` via the proxy.
 
     The repository's ``settings.yaml`` sets ``ENABLE_MANUAL_SYNC: true``, so
     the baseline request invokes the actual sync. Inserting an override row
     that flips the flag to ``false`` and running ``refresh_all`` must cause
-    the route to raise ``HTTPForbiddenException`` -- skipping the sync
-    helper. We assert on the spied helper's call count, since SEP's global
-    exception handler converts HTTP errors into 303 redirects for
-    non-JSON-API routes, masking the status code distinction.
+    the route's ``IsManualSyncEnabled`` guard to reject the request before the
+    sync helper runs, leaving the spy's await count unchanged.
     """
     update_snippets_spy = mocker.patch(
-        "app.sep.apps.snippets.routes.update_snippets",
+        "app.sep.apps.snippets.extra_routes.update_snippets",
         new=AsyncMock(return_value=None),
     )
 
@@ -137,9 +124,8 @@ async def test_snippets_refresh_route_observes_enable_manual_sync_override(
         async with override_session_maker() as guard_session:
             yield guard_session
 
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
+    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = _guard_session
     try:
         # Per tests/CLAUDE.md: never wrap TestClient(sep_app) in `with` --
@@ -149,7 +135,7 @@ async def test_snippets_refresh_route_observes_enable_manual_sync_override(
         # below, so the route observes the override without needing the
         # lifespan to start the refresher.
         client = TestClient(sep_app, raise_server_exceptions=False)
-        client.post("/snippets/refresh", follow_redirects=False)
+        client.post("/api/apps/snippets/refresh", headers={"Authorization": "Bearer t"})
         assert update_snippets_spy.await_count == 1
 
         await _insert_override(
@@ -160,47 +146,11 @@ async def test_snippets_refresh_route_observes_enable_manual_sync_override(
         )
         await refresh_all(lambda: override_session_maker, _sep_proxies())
 
-        client.post("/snippets/refresh", follow_redirects=False)
+        client.post("/api/apps/snippets/refresh", headers={"Authorization": "Bearer t"})
         # The HOT override must short-circuit the route before update_snippets.
         assert update_snippets_spy.await_count == 1
     finally:
         sep_app.dependency_overrides = {}
-
-
-@pytest.mark.asyncio
-async def test_messages_middleware_observes_level_override(
-    override_session_maker: async_sessionmaker,
-) -> None:
-    """``add_message`` reads ``messages_settings.LEVEL`` at call time.
-
-    ``MessagesMiddleware`` dispatches each request-time message through
-    ``add_message``, which gates on ``messages_settings.LEVEL`` per call.
-    Verifying via the helper covers the middleware's actual proxy contract
-    without needing to drive a full response-flashing round-trip.
-    """
-    scope = {
-        "type": "http",
-        "headers": [],
-        "client": ("127.0.0.1", "80"),
-        "path": "/",
-    }
-    request = Request(scope)
-    request.state.messages = {}
-
-    add_message(request, MessageLevel.INFO, "before-override")
-    assert any(m.text == "before-override" for m in request.state.messages)
-
-    await _insert_override(
-        override_session_maker,
-        SettingClassEnum.MESSAGES_SETTINGS,
-        "LEVEL",
-        value=MessageLevel.WARNING,
-    )
-    await refresh_all(lambda: override_session_maker, _sep_proxies())
-
-    request.state.messages = {}
-    add_message(request, MessageLevel.INFO, "filtered-after-override")
-    assert all(m.text != "filtered-after-override" for m in request.state.messages)
 
 
 @pytest.mark.asyncio

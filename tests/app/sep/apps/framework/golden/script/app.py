@@ -25,6 +25,7 @@ so the script directory is registered under ``artifact_base_dirs``.
 from app.sep.apps.golden_script.constants import ARTIFACT_TYPE_GOLDEN_SCRIPT, SCRIPT_DIR
 from app.sep.apps.golden_script.source import golden_script_source
 from app.sep.apps.framework.apps import TaskExecutionApp
+from app.sep.apps.shared.disk_script_source import DISK_SCRIPT_LIST_QUERY_SPEC
 from app.tasks.models import ANY_OWNER
 
 app = TaskExecutionApp(
@@ -34,5 +35,6 @@ app = TaskExecutionApp(
     description="TODO: describe what the Golden Script scripts do.",
     owner=ANY_OWNER,
     script_source=golden_script_source,
+    list_query_spec=DISK_SCRIPT_LIST_QUERY_SPEC,
     artifact_base_dirs={ARTIFACT_TYPE_GOLDEN_SCRIPT: lambda: SCRIPT_DIR},
 )

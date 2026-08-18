@@ -53,7 +53,6 @@ talk to the PMM HTTP API instead.
 For deeper technical detail on the deployment topology and per-task data flow, see the
 companion customer docs:
 
-- [SEP Architecture — Deployment Topology](../sep-architecture/README.md)
 - [SEP Task Execution — Data Flow](../sep-task-execution-dfd/README.md)
 
 ## Apps

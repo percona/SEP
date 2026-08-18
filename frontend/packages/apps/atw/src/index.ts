@@ -24,6 +24,8 @@ export { ResultsPane } from './ResultsPane';
 export { SendDialog } from './SendDialog';
 export {
   useAtwCategories,
+  useAtwSnippetSearch,
+  ATW_SNIPPET_SEARCH_LIMIT,
   useAtwIncidents,
   useAtwIncident,
   useCreateAtwIncident,

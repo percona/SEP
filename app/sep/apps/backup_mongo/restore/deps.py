@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form
+from fastapi import Depends
 
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import fetch_all_dict_items, PaginatedResponse, Pagination
@@ -37,10 +37,7 @@ from app.sep.apps.backup_mongo.restore.models import (
     RestoreTaskResponse,
     RestoreTaskWrite,
 )
-from app.sep.apps.backup_mongo.restore.spec import (
-    build_force_resync_payload,
-    build_restore_payloads,
-)
+from app.sep.apps.backup_mongo.restore.spec import build_restore_payloads
 from app.sep.apps.framework import (
     batch_get_latest_statuses,
     build_default_task_response,
@@ -59,10 +56,7 @@ from app.sep.apps.framework.cascade import (
 from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.deps import (
     check_group_for_conflicted_running_tasks,
-    DefaultContext,
-    ExecutorHostsCtx,
     get_created_entity,
-    get_tasks_context,
     InventoryAPI,
     reject_if_protected,
     TaskAPI,
@@ -110,100 +104,6 @@ async def _resolve_service_name(
     return service.name
 
 
-async def build_restore_config_task_payload(
-    form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build task payload for restore config operation in PBM format."""
-    service_name = await _resolve_service_name(form, inventory_api)
-    return build_restore_payloads(form, service_name).config_task
-
-
-async def build_restore_task_payload(
-    form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build task payload for a restore operation in PBM format."""
-    service_name = await _resolve_service_name(form, inventory_api)
-    return build_restore_payloads(form, service_name).restore_task
-
-
-async def build_pbm_list_task_payload(
-    form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build task payload for pbm list command."""
-    service_name = await _resolve_service_name(form, inventory_api)
-    return build_restore_payloads(form, service_name).pbm_list_task
-
-
-async def build_pbm_force_resync_task_payload(
-    form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build task payload for pbm config --force-resync command (physical restores only)."""
-    service_name = await _resolve_service_name(form, inventory_api)
-    return build_force_resync_payload(form, service_name)
-
-
-def _parse_restore_config_options(restore_config: dict[str, Any]) -> dict[str, Any]:
-    """Parse restore configuration options from task data."""
-    result = {}
-    if "batchSize" in restore_config:
-        result["restore_batch_size"] = restore_config["batchSize"]
-    if "numInsertionWorkers" in restore_config:
-        result["restore_num_insertion_workers"] = restore_config["numInsertionWorkers"]
-    if "numParallelCollections" in restore_config:
-        result["restore_num_parallel_collections"] = restore_config[
-            "numParallelCollections"
-        ]
-    if "numDownloadWorkers" in restore_config:
-        result["restore_num_download_workers"] = restore_config["numDownloadWorkers"]
-    if "maxDownloadBufferMb" in restore_config:
-        result["restore_max_download_buffer_mb"] = restore_config["maxDownloadBufferMb"]
-    if "downloadChunkMb" in restore_config:
-        result["restore_download_chunk_mb"] = restore_config["downloadChunkMb"]
-    if "mongodLocation" in restore_config:
-        result["restore_mongod_location"] = restore_config["mongodLocation"]
-    if "mongodLocationMap" in restore_config:
-        result["restore_mongod_location_map"] = yaml.dump(
-            restore_config["mongodLocationMap"]
-        )
-    return result
-
-
-def parse_restore_task_data(task: dict[str, Any]) -> dict[str, Any]:
-    """Parse restore task data for editing.
-
-    Extracts configuration from an existing restore task to populate the edit form.
-    Reads from PBM format config (lowercase keys, camelCase values).
-
-    :param task: The task data retrieved from the Tasks API.
-    :type task: dict[str, Any]
-    :return: A dictionary containing parsed restore configuration.
-    :rtype: dict[str, Any]
-    """
-    data = task["data"]
-    meta = data["meta"]
-    task_config = yaml.safe_load(meta["config"])
-    restore_config = task_config.get("restore", {})
-
-    result = {
-        "name": task["name"],
-        "hostname": meta["target"],
-        "backup_type": task_config.get("backupType"),
-        "service_id": None,
-        "backup_source": task_config.get("backupSource"),
-        "credentials_path": task_config.get("credentials_path"),
-    }
-
-    # Add restore options
-    if restore_config:
-        result.update(_parse_restore_config_options(restore_config))
-
-    return result
-
-
 def restore_create_from_write(body: RestoreTaskWrite) -> RestoreCreate:
     """Convert a :class:`RestoreTaskWrite` JSON body into :class:`RestoreCreate`.
 
@@ -245,24 +145,6 @@ def restore_update_form_from_write(
         },
         from_attributes=False,
     )
-
-
-async def build_restore_update_task_payload(
-    form: RestoreCreate,
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build the parent restore-config payload for a JSON API update request.
-
-    :param form: The restore update input with ``task_name`` pinned to the
-        parent config task from the URL path.
-    :type form: RestoreCreate
-    :param inventory_api: The Inventory API to look up services.
-    :type inventory_api: InventoryAPI
-    :return: A ``TaskWrite`` payload for the parent config task.
-    :rtype: TaskWrite
-    """
-    service_name = await _resolve_service_name(form, inventory_api)
-    return build_restore_payloads(form, service_name).config_task
 
 
 async def update_restore_task_group(
@@ -324,44 +206,6 @@ async def build_restore_task_group(
     """
     service_name = await _resolve_service_name(form, inventory_api)
     return build_restore_payloads(form, service_name)
-
-
-async def build_restore_tasks(
-    form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
-) -> RestoreTaskGroupPayloads:
-    """Build restore task group payloads from an HTML form submission.
-
-    Delegates to :func:`build_restore_task_group` after FastAPI form parsing.
-
-    :param form: The restore creation form.
-    :type form: RestoreCreate
-    :param inventory_api: The Inventory API to look up services.
-    :type inventory_api: InventoryAPI
-    :return: Named payloads for config, restore, pbm-list, and optional force-resync legs.
-    :rtype: RestoreTaskGroupPayloads
-    """
-    return await build_restore_task_group(form, inventory_api)
-
-
-async def build_restore_task_group_from_body(
-    body: RestoreTaskWrite,
-    inventory_api: InventoryAPI,
-) -> RestoreTaskGroupPayloads:
-    """Build restore task group payloads from a JSON API request body.
-
-    Delegates to :func:`build_restore_task_group` after converting the body
-    to :class:`RestoreCreate`.
-
-    :param body: The JSON request body for restore task creation.
-    :type body: RestoreTaskWrite
-    :param inventory_api: The Inventory API to look up services.
-    :type inventory_api: InventoryAPI
-    :return: Named payloads for config, restore, pbm-list, and optional force-resync legs.
-    :rtype: RestoreTaskGroupPayloads
-    """
-    form = restore_create_from_write(body)
-    return await build_restore_task_group(form, inventory_api)
 
 
 async def build_restore_cascade_plan(
@@ -752,87 +596,7 @@ async def delete_restore_task_group(
     result.raise_if_failed(op="delete")
 
 
-RestoreTasks = Annotated[RestoreTaskGroupPayloads, Depends(build_restore_tasks)]
-RestoreTaskGroupFromBody = Annotated[
-    RestoreTaskGroupPayloads,
-    Depends(build_restore_task_group_from_body),
-]
 RestoreUpdateFormFromBody = Annotated[
     RestoreCreate,
     Depends(build_restore_update_form_from_body),
 ]
-RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
-
-
-RestoresTask = Annotated[Task, Depends(get_restores_task)]
-
-
-def get_restores_task_info(task: dict[str, Any]) -> dict[str, Any]:
-    """Extract relevant information from a task for the Restores plugin.
-
-    Processes the task data to extract hostname and backup information.
-    Reads from PBM format config (lowercase keys, camelCase values).
-
-    :param task: The task data retrieved from the Tasks API.
-    :type task: dict[str, Any]
-    :return: A dictionary containing hostname and backup information.
-    :rtype: dict[str, Any]
-    """
-    data = task["data"]
-    meta = data["meta"]
-
-    task_config = {}
-    if "config" in meta:
-        task_config = yaml.safe_load(meta["config"]) or {}
-
-    backup_type = None
-    if task_config.get("backupType"):
-        backup_type = BackupType(task_config.get("backupType")).name
-
-    return {
-        "config": task_config,
-        "parent": data.get("parent"),
-        "target": meta["target"],
-        "hostname": meta["target"],
-        "backup_type": backup_type,
-        "created_at": task.get("created_at"),
-        "created_by": task.get("created_by"),
-        "last_updated_by": task.get("last_updated_by"),
-    }
-
-
-async def get_restores_index_context(
-    inventory_api: InventoryAPI,
-    tasks_api: TaskAPI,
-    context: DefaultContext,
-    executor_hosts_ctx: ExecutorHostsCtx,
-) -> dict[str, Any]:
-    """Assemble the context for the Restores plugin index view.
-
-    Retrieves MongoDB services and associated tasks, organizing them based on their
-    execution status. Integrates this information into the default context for
-    rendering in templates.
-
-    :param inventory_api: The Inventory API client for fetching service and schema data.
-    :type inventory_api: InventoryAPI
-    :param tasks_api: The TaskAPI client for fetching task data.
-    :type tasks_api: TaskAPI
-    :param context: The default context to be updated with Restores-specific information.
-    :type context: DefaultContext
-    :param executor_hosts_ctx: The executor hosts context for the Restore tasks.
-    :type executor_hosts_ctx: ExecutorHostsCtx
-    :return: An updated context dictionary containing Restores-related data.
-    :rtype: dict[str, Any]
-    """
-    return await get_tasks_context(
-        inventory_api,
-        tasks_api,
-        get_restores_task_info,
-        executor_hosts_ctx,
-        context,
-        OWNER,
-        service_type=ServiceTypeEnum.MONGODB,
-    )
-
-
-RestoresIndexContext = Annotated[dict[str, Any], Depends(get_restores_index_context)]

@@ -31,20 +31,22 @@ so the fixture exercises the same code path a real consumer hits.
 """
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import APIRouter, Depends, FastAPI, status
+from fastapi import APIRouter, Depends, status
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, create_model
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
+from app.core.pagination import Pagination
 from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
-from app.sep.apps.framework import ScriptSource, StaticMount, TaskExecutionApp
+from app.sep.apps.framework import ScriptSource, TaskExecutionApp
 from app.sep.apps.framework.apps import NO_PAGINATION
 from app.sep.apps.framework.conformance import (
     check_capability_route_consistency,
@@ -61,7 +63,6 @@ from app.sep.apps.framework.schema import (
 )
 from app.sep.apps.framework.script_source import resolve_scripts, ScriptExecuteWrite
 from app.sep.deps import IsApiAuthenticated
-from app.sep.utils.static import AuthenticatedStaticFiles
 from tests.app.sep.apps.framework.contract_suite import build_contract_client
 from tests.app.sep.apps.framework.contract_suite import routes_of as _routes
 
@@ -202,12 +203,20 @@ def _make_source(
         name: _FixtureScript(name, params) for name, params in _SCRIPT_PARAMS.items()
     }
 
-    async def _list_scripts() -> list[_FixtureScript]:
-        return [
+    # Deliberately ignores ``list_query``: this fixture exercises the source's loader
+    # and non-query behaviour, and declares no ``list_query_spec`` for the framework's
+    # applier to replay.
+    async def _list_scripts(
+        _list_query: object, pagination: Pagination | None
+    ) -> tuple[list[_FixtureScript], int]:
+        scripts = [
             registry[path.name]
             for path in sorted(scripts_dir.iterdir())
             if path.name in registry
         ]
+        if pagination is None:
+            return scripts, len(scripts)
+        return pagination.slice(scripts), len(scripts)
 
     async def _load_script(filename: str) -> _FixtureScript:
         if filename not in registry or not (scripts_dir / filename).is_file():
@@ -293,11 +302,12 @@ class TestScriptSourceHooks:
         self, source: ScriptSource
     ) -> None:
         """Return one script per file discovered in the fixture directory."""
-        scripts = await source.list_scripts()
+        scripts, total = await source.list_scripts(None, None)
         assert sorted(script.filename for script in scripts) == [
             "noparams.sh",
             "report.sh",
         ]
+        assert total == len(scripts)
 
     async def test_load_script_unknown_raises_404(self, source: ScriptSource) -> None:
         """Raise the loader's 404 when the filename is absent from the directory."""
@@ -518,8 +528,10 @@ class TestDerivedRouteHTTP:
         """Return ``200`` with an empty paginated envelope when no scripts exist."""
         source = _make_source(scripts_dir)
 
-        async def _empty() -> list[_FixtureScript]:
-            return []
+        async def _empty(
+            _list_query: object, _pagination: Pagination | None
+        ) -> tuple[list[_FixtureScript], int]:
+            return [], 0
 
         source = ScriptSource(
             script_dir=source.script_dir,
@@ -843,6 +855,21 @@ class TestScriptSourceValidation:
         with pytest.raises(ValueError, match="derives no create route"):
             _script_app(source, create_extra_deps=(Depends(_guard),))
 
+    def test_list_query_dep_with_in_memory_flag_raises(
+        self, source: ScriptSource
+    ) -> None:
+        """Reject a source whose two list-query dependency knobs disagree.
+
+        The framework prefers ``list_query_dep``, so pairing it with the in-memory flag
+        would drop the flag silently rather than telling the author which one wins.
+        """
+        with pytest.raises(ValueError, match="list_query_dep supersedes"):
+            replace(
+                source,
+                list_query_dep=lambda: object(),
+                in_memory_list_query=True,
+            )
+
 
 class TestConformanceGuards:
     """Cover the scoped conformance guards for the script flavor."""
@@ -862,40 +889,3 @@ class TestConformanceGuards:
     ) -> None:
         """Return no findings for a script app from the create-model derivation check."""
         assert check_schema_derivation_succeeds(_script_app(source)) == []
-
-
-class TestStaticMount:
-    """Cover the authenticated static-mount knob (auth parity AC)."""
-
-    def test_static_mounts_field_carries_declaration(
-        self, source: ScriptSource
-    ) -> None:
-        """Carry the declared static mounts on the app definition."""
-        mount = StaticMount(
-            path="/static/fixture", directory=source.script_dir, name="fixture_files"
-        )
-        app_def = _script_app(source, static_mounts=(mount,))
-        assert app_def.static_mounts == (mount,)
-
-    def test_static_mount_enforces_authentication(self, source: ScriptSource) -> None:
-        """Mount the payload dir behind ``AuthenticatedStaticFiles`` (no anon access)."""
-        mount = StaticMount(
-            path="/static/fixture", directory=source.script_dir, name="fixture_files"
-        )
-        app = FastAPI()
-        for declared in _script_app(source, static_mounts=(mount,)).static_mounts:
-            app.mount(
-                declared.path,
-                AuthenticatedStaticFiles(directory=declared.directory),
-                name=declared.name,
-            )
-        mounted = [
-            route
-            for route in app.routes
-            if getattr(route, "path", "") == "/static/fixture"
-        ]
-        assert mounted
-        assert isinstance(mounted[0].app, AuthenticatedStaticFiles)
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.get("/static/fixture/report.sh")
-        assert response.status_code != status.HTTP_200_OK

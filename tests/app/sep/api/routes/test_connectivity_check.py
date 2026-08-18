@@ -21,6 +21,7 @@ import pytest
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
+from app.api.deps import require_admin_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import (
     HTTPBadGatewayException,
@@ -36,7 +37,7 @@ from app.sep.apps.alerts.deps import get_pmm_api
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.deps import (
     get_api_authenticated_admin,
-    get_api_authenticated_user,
+    get_current_user,
     require_bearer_for_unsafe_methods,
 )
 from app.sep.main import sep_app
@@ -57,9 +58,10 @@ def _reachable(service: str, version: str | None = None) -> ConnectivityResult:
 @pytest.fixture
 def admin_client(admin_user: CasdoorUser) -> TestClient:
     """Yield an admin TestClient with the Bearer gate satisfied."""
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
+    sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_api_authenticated_admin] = lambda: admin_user
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 

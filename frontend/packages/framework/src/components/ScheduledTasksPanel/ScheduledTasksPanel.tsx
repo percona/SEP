@@ -83,15 +83,26 @@ export function ScheduledTasksPanel({
 
   const handleToggleEnabled = async (task: PeriodicTaskResponse, nextEnabled: boolean) => {
     // PeriodicTaskUpdate requires `kwargs` and `description`, but
-    // PeriodicTaskResponse exposes only `description`. Tasks created elsewhere
-    // with non-default kwargs will have them reset to '{}' on toggle. Tracked
-    // upstream as a backend schema gap.
+    // PeriodicTaskResponse declares only `description`. Preserve `kwargs` when
+    // the response happens to carry it so a plain enable/disable toggle does
+    // not silently wipe a task's arguments; '{}' stays the last-resort
+    // fallback. Tracked upstream as a backend schema gap.
+    const rawKwargs = (task as { kwargs?: unknown }).kwargs;
+    // The wire shape is unverified either way, so accept both: a JSON string
+    // passes through, a decoded object is re-serialised. Anything else (or a
+    // blank value) falls back to '{}' — the only case that still loses data.
+    let preservedKwargs = '{}';
+    if (typeof rawKwargs === 'string' && rawKwargs.trim() !== '') {
+      preservedKwargs = rawKwargs;
+    } else if (rawKwargs !== null && typeof rawKwargs === 'object') {
+      preservedKwargs = JSON.stringify(rawKwargs);
+    }
     const body: PeriodicTaskUpdate = {
       name: task.name,
       task: task.task,
       enabled: nextEnabled,
       description: task.description,
-      kwargs: '{}',
+      kwargs: preservedKwargs,
       start_time: task.start_time,
       interval: task.interval ?? null,
       crontab: task.crontab ?? null,

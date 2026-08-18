@@ -22,7 +22,7 @@ type Schemas = SepComponents['schemas'];
 // ── Category browser ─────────────────────────────────────────────────────
 
 export interface AtwSnippetSummary {
-  /** Snippet filename; use with snippets app API path helpers. */
+  /** Snippet filename; the identity the batch-execute payload sends. */
   name: string;
   title: string;
   description: string;
