@@ -708,6 +708,10 @@ CredentialHttpUrl = Annotated[
 The in-memory / python-mode value retains the real credential for outbound
 requests. Pass :data:`PRESERVE_CREDENTIALS_CONTEXT` when dumping internal
 config fingerprints that must store the full URL.
+
+Validation rejects a URL whose userinfo password equals
+:data:`CREDENTIAL_URL_MASK`. A literal ``****`` password is therefore
+unusable on this type: it is indistinguishable from the mask by construction.
 """
 
 StrCredentialHttpUrl = Annotated[
@@ -720,6 +724,10 @@ StrCredentialHttpUrl = Annotated[
 
 Validates as :class:`~pydantic.HttpUrl`, stores as a string with trailing
 slashes stripped, and masks any embedded password in JSON dumps.
+
+Validation rejects a URL whose userinfo password equals
+:data:`CREDENTIAL_URL_MASK`. A literal ``****`` password is therefore
+unusable on this type: it is indistinguishable from the mask by construction.
 """
 
 StrCredentialAnyUrl = Annotated[
@@ -731,6 +739,10 @@ StrCredentialAnyUrl = Annotated[
 """Define a string URL (any scheme) that redacts embedded passwords on JSON serialization.
 
 Use for broker/backend URLs that may carry credentials in the userinfo segment.
+
+Validation rejects a URL whose userinfo password equals
+:data:`CREDENTIAL_URL_MASK`. A literal ``****`` password is therefore
+unusable on this type: it is indistinguishable from the mask by construction.
 """
 
 URIPath = Annotated[str, StringConstraints(pattern=r"^\/[^\s]*$")]
