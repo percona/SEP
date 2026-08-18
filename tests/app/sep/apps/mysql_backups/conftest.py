@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock
 from httpx import ASGITransport, AsyncClient, Response
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api.deps import require_admin_for_unsafe_methods
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
@@ -96,6 +97,7 @@ async def authenticated_get(
     sep_app.dependency_overrides[get_session] = lambda: session
     sep_app.dependency_overrides[get_current_user] = lambda: user
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_inventory_api] = lambda: inventory
     try:
         transport = ASGITransport(app=sep_app)
