@@ -27,6 +27,7 @@ from alembic import op
 from app.core.db.utils import (
     acquire_pg_advisory_xact_lock,
     check_constraint_lists_members,
+    check_constraint_name,
 )
 from app.core.settings_override.constants import SETTINGOVERRIDE_MIGRATION_LOCK_KEY
 
@@ -53,6 +54,8 @@ def upgrade() -> None:
     """Add ``INVENTORY_SETTINGS`` to the setting_class constraint."""
     bind = op.get_bind()
     acquire_pg_advisory_xact_lock(bind, SETTINGOVERRIDE_MIGRATION_LOCK_KEY)
+    if check_constraint_name(bind, "settingoverride", "setting_class") is None:
+        return
     if check_constraint_lists_members(
         bind, "settingoverride", "setting_class", ("INVENTORY_SETTINGS",)
     ):
