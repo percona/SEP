@@ -120,8 +120,8 @@ def test_sync_hop_is_authenticated_as_the_service_principal(
         "app.sep.routes.stream_logs.require_internal_token",
         return_value="internal-token",
     )
-    active_tokens = []
-    sync_token = {}
+    active_tokens: list[str] = []
+    sync_token: dict[str, str] = {}
 
     @contextmanager
     def recording_auth(token: str):
