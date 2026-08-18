@@ -39,7 +39,7 @@ from app.sep.apps.framework.form_dsl import (
     check_form_conformance,
     derive_form_sections,
 )
-from app.sep.apps.framework.responses import root_segment as _root_segment
+from app.sep.apps.framework.responses import root_segment
 from app.sep.apps.framework.schema import Capabilities
 
 if TYPE_CHECKING:
@@ -234,10 +234,10 @@ def check_view_fields_reference_real_fields(app: "TaskExecutionApp") -> list[str
         for field in section.fields
     ]
     return [
-        f"detail_view field {path!r} references {_root_segment(path)!r}, absent from "
+        f"detail_view field {path!r} references {root_segment(path)!r}, absent from "
         f"{detail_model.__name__}"
         for path in paths
-        if _root_segment(path) != "data" and _root_segment(path) not in response_fields
+        if root_segment(path) != "data" and root_segment(path) not in response_fields
     ]
 
 
