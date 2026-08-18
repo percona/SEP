@@ -94,14 +94,36 @@ class TestTopLevelGate:
     def test_fail_closed_for_unknown_settings_class(
         self, restrict: Callable[..., None]
     ) -> None:
-        """Assert a class the override table cannot name is locked, not allowed."""
+        """Assert a class with no allowlist entries is locked, not allowed."""
 
         class ProbeSettings(Settings):
-            """Stand in for a settings class the enum does not know."""
+            """Stand in for a settings class the allowlist does not name."""
 
         restrict("Settings.LOGGING")
         assert is_hot_reloadable(Settings, "LOGGING") is True
         assert is_hot_reloadable(ProbeSettings, "LOGGING") is False
+
+    def test_unregistered_class_honours_allowlist_by_name(
+        self, restrict: Callable[..., None]
+    ) -> None:
+        """Assert a class outside the enum still matches ``ALLOWED_KEYS`` by ``__name__``.
+
+        Once app-owned members leave ``SettingClassEnum``, mapping ``__name__``
+        through the enum would withhold every key, including ones the allowlist
+        already names. The gate must key on the class name as a string.
+        """
+
+        class ProbeSettings(Settings):
+            """Stand in for an app-owned class that has left the enum."""
+
+        restrict("ProbeSettings.LOGGING")
+        assert is_hot_reloadable(ProbeSettings, "LOGGING") is True
+        assert is_hot_reloadable(Settings, "LOGGING") is False
+        assert is_nested_overridable_parent(ProbeSettings, "PMM") is False
+
+        restrict("ProbeSettings.PMM__annotations_enabled")
+        assert is_nested_overridable_parent(ProbeSettings, "PMM") is True
+        assert is_nested_overridable_parent(Settings, "PMM") is False
 
     def test_listing_reports_the_gated_classification(
         self, restrict: Callable[..., None]

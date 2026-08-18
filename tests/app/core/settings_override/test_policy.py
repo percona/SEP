@@ -253,48 +253,58 @@ class TestPredicates:
 
     def test_inactive_allows_every_key(self) -> None:
         """Assert every key stays allowed while the restriction is unset."""
-        assert is_key_allowed(SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT")
-        assert has_allowed_key_under(SettingClassEnum.TASKS_SETTINGS, "NOMAD")
+        assert is_key_allowed("SEPSettings", "INVENTORY_ENDPOINT")
+        assert has_allowed_key_under("TasksSettings", "NOMAD")
 
     def test_active_locks_unlisted_key(self, restrict: Callable[..., None]) -> None:
         """Assert an entry set locks every key it does not name."""
         restrict("Settings.LOGGING")
         assert is_restriction_active() is True
-        assert is_key_allowed(SettingClassEnum.SETTINGS, "LOGGING") is True
-        assert is_key_allowed(SettingClassEnum.SEP_SETTINGS, "LOGGING") is False
-        assert (
-            is_key_allowed(SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT") is False
-        )
+        assert is_key_allowed("Settings", "LOGGING") is True
+        assert is_key_allowed("SEPSettings", "LOGGING") is False
+        assert is_key_allowed("SEPSettings", "INVENTORY_ENDPOINT") is False
 
     def test_unknown_entry_allows_nothing(self, restrict: Callable[..., None]) -> None:
         """Assert an entry naming no real class or field grants no access."""
         restrict("BogusSettings.WHATEVER")
-        assert is_key_allowed(SettingClassEnum.SETTINGS, "WHATEVER") is False
-        assert is_key_allowed(SettingClassEnum.SETTINGS, "LOGGING") is False
+        assert is_key_allowed("Settings", "WHATEVER") is False
+        assert is_key_allowed("Settings", "LOGGING") is False
+
+    def test_unregistered_class_matches_allowlist_by_name(
+        self, restrict: Callable[..., None]
+    ) -> None:
+        """Assert a class token outside the enum still matches ``ALLOWED_KEYS``.
+
+        ``_setting_class_or_none`` used to map ``settings_cls.__name__`` through
+        ``SettingClassEnum`` and withhold everything on ``ValueError``. App-owned
+        classes leaving the enum would then lock keys the allowlist already names.
+        """
+        restrict("UnregisteredSettings.FOO")
+        assert is_key_allowed("UnregisteredSettings", "FOO") is True
+        assert is_key_allowed("UnregisteredSettings", "BAR") is False
+        assert is_key_allowed("ALERTS_SETTINGS", "FOO") is False
 
     def test_parent_addressable_via_allowed_leaf(
         self, restrict: Callable[..., None]
     ) -> None:
         """Assert an allowed leaf keeps its parent addressable for nested writes."""
         restrict(CARVE_OUT_KEY)
-        assert has_allowed_key_under(SettingClassEnum.SETTINGS, "PMM") is True
-        assert has_allowed_key_under(SettingClassEnum.SETTINGS, "SECURITY_HEADERS") is (
-            False
-        )
+        assert has_allowed_key_under("Settings", "PMM") is True
+        assert has_allowed_key_under("Settings", "SECURITY_HEADERS") is False
 
     def test_parent_addressable_via_exact_entry(
         self, restrict: Callable[..., None]
     ) -> None:
         """Assert an entry naming the parent itself keeps the parent addressable."""
         restrict("Settings.PMM")
-        assert has_allowed_key_under(SettingClassEnum.SETTINGS, "PMM") is True
+        assert has_allowed_key_under("Settings", "PMM") is True
 
     def test_prefix_match_requires_a_segment_boundary(
         self, restrict: Callable[..., None]
     ) -> None:
         """Assert a shared textual prefix does not make an unrelated parent open."""
         restrict("SEPSettings.SESSION_REFRESH__ENABLED")
-        assert has_allowed_key_under(SettingClassEnum.SEP_SETTINGS, "SESSION") is False
+        assert has_allowed_key_under("SEPSettings", "SESSION") is False
 
 
 class TestShippedValue:

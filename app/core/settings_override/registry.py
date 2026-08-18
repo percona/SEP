@@ -74,7 +74,7 @@ from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter, WrapSeriali
 from pydantic.errors import PydanticSchemaGenerationError
 from pydantic_core import PydanticUndefined
 
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import SettingOverride
 from app.core.settings_override.policy import (
     has_allowed_key_under,
     is_key_allowed,
@@ -315,24 +315,14 @@ def _effective_field_markers(
     return {**entry, **markers}
 
 
-def _setting_class_or_none(settings_cls: type[BaseModel]) -> SettingClassEnum | None:
-    """Return the override-table identifier for a settings class, if it has one.
-
-    Every class a settings router exposes is an enum member, so ``None`` means
-    the class can carry no override row at all. Each policy gate reads that as
-    "withhold", closing rather than widening the overridable surface.
-
-    :param settings_cls: The Pydantic settings class to identify.
-    :return: The matching enum member, or ``None`` when the class has none.
-    """
-    try:
-        return SettingClassEnum(settings_cls.__name__)
-    except ValueError:
-        return None
-
-
 def _policy_locked(settings_cls: type[BaseModel], canonical_key: str) -> bool:
     """Return whether ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withholds one canonical key.
+
+    Keys the allowlist on ``settings_cls.__name__``, the same token
+    ``ALLOWED_KEYS`` entries use. A class that is not a
+    :class:`~app.core.settings_override.models.SettingClassEnum` member is
+    therefore still reachable when the allowlist names it, and still withheld
+    when it does not.
 
     :param settings_cls: The top-level Pydantic settings class owning the key.
     :param canonical_key: The canonical override key: a top-level field name or
@@ -341,10 +331,7 @@ def _policy_locked(settings_cls: type[BaseModel], canonical_key: str) -> bool:
     """
     if not is_restriction_active():
         return False
-    setting_class = _setting_class_or_none(settings_cls)
-    if setting_class is None:
-        return True
-    return not is_key_allowed(setting_class, canonical_key)
+    return not is_key_allowed(settings_cls.__name__, canonical_key)
 
 
 def is_hot_reloadable(
@@ -782,10 +769,7 @@ def is_nested_overridable_parent(
         return False
     if not include_policy_gate or not is_restriction_active():
         return True
-    setting_class = _setting_class_or_none(settings_cls)
-    if setting_class is None:
-        return False
-    return has_allowed_key_under(setting_class, field_name)
+    return has_allowed_key_under(settings_cls.__name__, field_name)
 
 
 def nested_overridable_field_names(
