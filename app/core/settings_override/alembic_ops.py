@@ -56,8 +56,11 @@ def upgrade_drop_setting_class_check() -> None:
     name = check_constraint_name(bind, _TABLE, _COLUMN)
     if name is None:
         return
+    if bind.dialect.name == "postgresql":
+        op.execute(sa.text(f'ALTER TABLE {_TABLE} DROP CONSTRAINT IF EXISTS "{name}"'))
     with op.batch_alter_table(_TABLE, schema=None) as batch_op:
-        batch_op.drop_constraint(name, type_="check")
+        if bind.dialect.name != "postgresql":
+            batch_op.drop_constraint(name, type_="check")
         batch_op.alter_column(
             _COLUMN,
             existing_type=sa.String(length=_PRE_TICKET_VARCHAR_LENGTH),
