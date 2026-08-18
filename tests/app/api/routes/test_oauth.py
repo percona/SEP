@@ -771,7 +771,9 @@ def test_spa_session_login_contract_survives_the_extraction(
         "/api/oauth/logout",
     ],
 )
-def test_oauth_routes_stay_outside_the_unsafe_method_admin_gate(test_client, path):
+def test_oauth_routes_stay_outside_the_unsafe_method_admin_gate(
+    test_client, casdoor_mock, path
+):
     """Assert the identity tree keeps its own authentication semantics.
 
     These routes are included beside ``api_router`` rather than through it, so
@@ -779,7 +781,13 @@ def test_oauth_routes_stay_outside_the_unsafe_method_admin_gate(test_client, pat
     to be able to mint one, and ``logout`` stays bearer-authenticated by its own
     ``CurrentUser``. Only the absence of a 403 is asserted; each route's own
     status is pinned by the tests above.
+
+    The request carries a credential resolving to a non-admin, which is the only
+    input that makes the gate answer 403. A credential-less request answers 401
+    whether or not the gate is attached, so it could not falsify the claim.
     """
-    response = test_client.post(path)
+    response = test_client.post(
+        path, headers={"Authorization": "Bearer non-admin-token"}
+    )
 
     assert response.status_code != status.HTTP_403_FORBIDDEN
