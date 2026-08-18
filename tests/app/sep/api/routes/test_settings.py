@@ -282,7 +282,7 @@ class TestReducedActivationSettings:
         response = reduced_activation_client.get(f"{REDUCED_SETTINGS_PREFIX}/")
         assert response.status_code == status.HTTP_200_OK
         groups = {group["setting_class"] for group in response.json()["groups"]}
-        assert SettingClassEnum.ALERTS_SETTINGS.value not in groups
+        assert "AlertsSettings" not in groups
         assert SettingClassEnum.ALERT_SETTINGS.value in groups
 
     async def test_health_report_settings_not_wired_at_all(
@@ -292,14 +292,14 @@ class TestReducedActivationSettings:
         response = reduced_activation_client.get(f"{REDUCED_SETTINGS_PREFIX}/")
         assert response.status_code == status.HTTP_200_OK
         groups = {group["setting_class"] for group in response.json()["groups"]}
-        assert SettingClassEnum.HEALTH_REPORT_SETTINGS.value not in groups
+        assert "HealthReportSettings" not in groups
 
     async def test_patch_on_deactivated_class_is_not_found(
         self, reduced_activation_client: TestClient
     ) -> None:
         """Reject a PATCH against the deactivated ``AlertsSettings`` class."""
         response = reduced_activation_client.patch(
-            f"{REDUCED_SETTINGS_PREFIX}/{SettingClassEnum.ALERTS_SETTINGS.value}",
+            f"{REDUCED_SETTINGS_PREFIX}/{'AlertsSettings'}",
             json={"ALERT_FOLDER_NAME": "Nope"},
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -309,8 +309,7 @@ class TestReducedActivationSettings:
     ) -> None:
         """Reject a DELETE against the deactivated ``AlertsSettings`` class."""
         response = reduced_activation_client.delete(
-            f"{REDUCED_SETTINGS_PREFIX}/{SettingClassEnum.ALERTS_SETTINGS.value}"
-            "/ALERT_FOLDER_NAME",
+            f"{REDUCED_SETTINGS_PREFIX}/{'AlertsSettings'}/ALERT_FOLDER_NAME",
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -335,8 +334,8 @@ class TestSepSettingsList:
         assert groups == {
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
-            SettingClassEnum.ALERTS_SETTINGS.value,
-            SettingClassEnum.HEALTH_REPORT_SETTINGS.value,
+            "AlertsSettings",
+            "HealthReportSettings",
             SettingClassEnum.SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
             SettingClassEnum.ALERT_SETTINGS.value,
@@ -384,7 +383,7 @@ class TestSepSettingsList:
         assert response.status_code == status.HTTP_200_OK
         alerts_group = _find_group(
             response.json(),
-            SettingClassEnum.ALERTS_SETTINGS.value,
+            "AlertsSettings",
         )
         assert alerts_group["is_app_owned"] is True
         assert alerts_group["app_id"] == "alerts"
@@ -406,7 +405,7 @@ class TestSepSettingsList:
         assert response.status_code == status.HTTP_200_OK
         alerts_group = _find_group(
             response.json(),
-            SettingClassEnum.ALERTS_SETTINGS.value,
+            "AlertsSettings",
         )
         assert alerts_group["is_app_owned"] is True
         assert alerts_group["app_id"] == "alerts"
@@ -1842,7 +1841,7 @@ class TestSepOverridesLifespanWiring:
                 (SettingClassEnum.SETTINGS, "PMM"),
                 (SettingClassEnum.SETTINGS, "LOGGING"),
                 (SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"),
-                (SettingClassEnum.ALERTS_SETTINGS, "BACKUP_INTERVAL"),
+                ("AlertsSettings", "BACKUP_INTERVAL"),
                 (SettingClassEnum.SEP_SETTINGS, "APP_DRAIN"),
             }
         finally:

@@ -51,8 +51,6 @@ from app.core.settings_override.registry import (
     resolve_nested_field_metadata,
 )
 from app.inventory.config import InventorySettings
-from app.sep.apps.alerts.config import AlertsSettings
-from app.sep.apps.report.config import HealthReportSettings
 from app.sep.config import SEPSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
@@ -67,8 +65,6 @@ SETTINGS_CLASSES: dict[SettingClassEnum, type] = {
     SettingClassEnum.TASKS_SETTINGS: TasksSettings,
     SettingClassEnum.SNIPPETS_SETTINGS: SnippetsSettings,
     SettingClassEnum.ALERT_SETTINGS: AlertSettings,
-    SettingClassEnum.ALERTS_SETTINGS: AlertsSettings,
-    SettingClassEnum.HEALTH_REPORT_SETTINGS: HealthReportSettings,
     SettingClassEnum.ANONYMIZER_SETTINGS: AnonymizerSettings,
     SettingClassEnum.INVENTORY_SETTINGS: InventorySettings,
 }

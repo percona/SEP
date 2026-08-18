@@ -16,7 +16,7 @@
 """drop setting_class CHECK constraint
 
 Revision ID: a38607bba456
-Revises: f3a4b5c6d7e8
+Revises: 34e6108ea194
 Create Date: 2026-08-17 22:10:00.000000
 
 Widen ``settingoverride.setting_class`` from a CHECK-constrained enum to a
@@ -35,7 +35,7 @@ from app.core.settings_override.alembic_ops import (
 
 # revision identifiers, used by Alembic.
 revision = "a38607bba456"
-down_revision = "f3a4b5c6d7e8"
+down_revision = "34e6108ea194"
 branch_labels = None
 depends_on = None
 

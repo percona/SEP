@@ -23,7 +23,6 @@ from pydantic import PositiveInt
 
 from app.core.celery.models import IntervalSchedule, Period
 from app.core.config import BaseYamlSettings
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import hot_field
 
@@ -50,5 +49,5 @@ class AlertsSettings(BaseYamlSettings):
 
 
 alerts_settings: AlertsSettings = OverridableSettingsProxy(
-    AlertsSettings, setting_class=SettingClassEnum.ALERTS_SETTINGS
+    AlertsSettings, setting_class=AlertsSettings.__name__
 )

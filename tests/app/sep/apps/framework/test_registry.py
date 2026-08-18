@@ -630,7 +630,7 @@ class TestCollectAppOwnedSettingsClasses:
         entries = collect_app_owned_settings_classes([App(module_name="alerts")])
         assert len(entries) == 1
         entry = entries[0]
-        assert entry.setting_class == SettingClassEnum.ALERTS_SETTINGS
+        assert entry.setting_class == AlertsSettings.__name__
         assert entry.app_key == "alerts"
         assert entry.settings_cls is AlertsSettings
         assert entry.proxy is alerts_settings
@@ -640,7 +640,7 @@ class TestCollectAppOwnedSettingsClasses:
         entries = collect_app_owned_settings_classes([App(module_name="report")])
         assert len(entries) == 1
         entry = entries[0]
-        assert entry.setting_class == SettingClassEnum.HEALTH_REPORT_SETTINGS
+        assert entry.setting_class == HealthReportSettings.__name__
         assert entry.app_key == "report"
         assert entry.settings_cls is HealthReportSettings
         assert entry.proxy is health_report_settings
@@ -648,10 +648,8 @@ class TestCollectAppOwnedSettingsClasses:
     def test_reduced_activation_declares_no_alerts_entry(self) -> None:
         """Yield no alerts entry under the PMM-embedded activation list."""
         entries = collect_app_owned_settings_classes(REDUCED_ACTIVATION)
-        assert SettingClassEnum.ALERTS_SETTINGS not in {
-            entry.setting_class for entry in entries
-        }
-        assert SettingClassEnum.HEALTH_REPORT_SETTINGS not in {
+        assert AlertsSettings.__name__ not in {entry.setting_class for entry in entries}
+        assert HealthReportSettings.__name__ not in {
             entry.setting_class for entry in entries
         }
         assert "alerts" not in {entry.app_key for entry in entries}
@@ -665,12 +663,12 @@ class TestCollectAppOwnedSettingsClasses:
     def test_rejects_duplicate_setting_class(self, mocker: MockerFixture) -> None:
         """Fail when the same settings class is declared by two distinct apps.
 
-        Two entries share ``ALERTS_SETTINGS`` across two distinctly-keyed apps
+        Two entries share ``AlertsSettings`` across two distinctly-keyed apps
         (``alerts`` and ``checksums``), so the duplicate-setting-class guard --
         not the duplicate-app-key guard -- is what trips.
         """
         dup_entry = AppOwnedClassEntry(
-            setting_class=SettingClassEnum.ALERTS_SETTINGS,
+            setting_class=AlertsSettings.__name__,
             settings_cls=AlertsSettings,
             proxy=alerts_settings,
             app_key="checksums",

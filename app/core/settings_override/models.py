@@ -61,17 +61,18 @@ def setting_class_token(settings_cls: type["BaseYamlSettings"]) -> str:
 class SettingClassEnum(StrEnum):
     """Enumerate settings classes that may have HOT override rows.
 
-    The wired classes are ``SEPSettings``, ``TasksSettings``,
+    The wired core classes are ``SEPSettings``, ``TasksSettings``,
     ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
-    ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings`` and
-    ``InventorySettings``.
+    ``AnonymizerSettings``, and ``InventorySettings``. App-owned classes
+    (``AlertsSettings``, ``HealthReportSettings``) declare themselves under
+    ``app/sep/apps/<app>/`` and do not need a member here.
 
     Members are in-process constants. The ``settingoverride.setting_class``
     column is a plain string whose stored token is derived by
     :func:`setting_class_token`; adding a member no longer requires a
     migration.
 
-    To wire a new settings class:
+    To wire a new core settings class:
 
     1. Add a member here whose value matches the Pydantic class ``__name__``.
     2. Wire a ``ProxyEntry`` for the new class in the relevant service's
@@ -84,8 +85,6 @@ class SettingClassEnum(StrEnum):
     SETTINGS = "Settings"
     ALERT_SETTINGS = "AlertSettings"
     ANONYMIZER_SETTINGS = "AnonymizerSettings"
-    ALERTS_SETTINGS = "AlertsSettings"
-    HEALTH_REPORT_SETTINGS = "HealthReportSettings"
     INVENTORY_SETTINGS = "InventorySettings"
 
 

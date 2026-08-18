@@ -254,7 +254,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "SYNC_INTERVAL",
         ): _reseed_system_periodic_tasks,
         (
-            SettingClassEnum.ALERTS_SETTINGS,
+            "AlertsSettings",
             "BACKUP_INTERVAL",
         ): _reseed_system_periodic_tasks,
         (

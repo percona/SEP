@@ -88,11 +88,10 @@ class TestAlertsSettingsProxy:
         assert alerts_settings.ALERT_FOLDER_NAME == "SEP Alerts"
         assert alerts_settings.BACKUP_RETENTION == DEFAULT_BACKUP_RETENTION
 
-    def test_enum_member_exists(self) -> None:
-        """The new section has a distinct ``SettingClassEnum`` member."""
-        assert SettingClassEnum.ALERTS_SETTINGS.value == "AlertsSettings"
-        # Must not collide with the core ``AlertSettings`` section.
-        assert SettingClassEnum.ALERTS_SETTINGS != SettingClassEnum.ALERT_SETTINGS
+    def test_proxy_uses_class_name_identifier(self) -> None:
+        """The proxy is keyed by the Pydantic class ``__name__``, not an enum member."""
+        assert alerts_settings._setting_class == AlertsSettings.__name__
+        assert AlertsSettings.__name__ != SettingClassEnum.ALERT_SETTINGS
 
 
 class TestAlertsSettingsHotFields:
