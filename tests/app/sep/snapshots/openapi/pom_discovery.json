@@ -14,6 +14,17 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "JsonValue": {},
+      "ReloadClassification": {
+        "description": "Declare the reload behavior of an overridable settings field.\n\n:cvar HOT: Field can be overridden via a DB row and the new value takes\n    effect on the next snapshot refresh, without restarting the service.\n    For a nested-model field, ``HOT`` permits both whole-object override\n    (``PATCH {parent: {...}}``) and per-child override (``parent__leaf``).\n:vartype HOT: str\n:cvar NESTED_ONLY: Nested-model field whose children may be overridden\n    (``parent__leaf``) while the parent itself rejects whole-object\n    override (``PATCH {parent: {...}}`` → 422). Children default to\n    HOT-inherit unless explicitly marked :func:`not_overridable_field`.\n:vartype NESTED_ONLY: str\n:cvar NOT_OVERRIDABLE: Field is not overridable from the database; YAML\n    and environment variables remain the only sources of truth.\n:vartype NOT_OVERRIDABLE: str",
+        "enum": [
+          "hot",
+          "nested_only",
+          "not_overridable"
+        ],
+        "title": "ReloadClassification",
+        "type": "string"
+      },
       "ServiceTypeEnum": {
         "description": "Enumerate the supported service types.\n\n:cvar MYSQL: Represents the MySQL service type.\n:vartype MYSQL: str\n:cvar POSTGRESQL: Represents the PostgreSQL service type.\n:vartype POSTGRESQL: str\n:cvar MONGODB: Represents the MongoDB service type.\n:vartype MONGODB: str\n:cvar PROXYSQL: Represents the ProxySQL service type.\n:vartype PROXYSQL: str\n:cvar HAPROXY: Represents the HAProxy service type.\n:vartype HAPROXY: str\n:cvar EXTERNAL: Represents an external service type.\n:vartype EXTERNAL: str\n:cvar VALKEY: Represents the Valkey service type.\n:vartype VALKEY: str",
         "enum": [
@@ -27,6 +38,111 @@
         ],
         "title": "ServiceTypeEnum",
         "type": "string"
+      },
+      "SettingClassEnum": {
+        "description": "Enumerate settings classes that may have HOT override rows.\n\nThe wired classes are ``SEPSettings``, ``TasksSettings``,\n``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,\n``AlertSettings``, ``AlertsSettings``, ``AnonymizerSettings``,\n``InventorySettings`` and ``PomDiscoverySettings``.\n\nTo wire a new settings class:\n\n1. Add a member here whose value matches the Pydantic class ``__name__``.\n2. Generate an Alembic migration on every consumer track that extends the\n   ``CHECK`` constraint on ``settingoverride.setting_class``. The column\n   uses ``native_enum=False`` so the value list lives in a constraint,\n   not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.\n   Note that the column and ``CHECK`` constraint persist the enum member\n   *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member\n   *value* (the Pydantic class name, e.g. ``SEPSettings``).\n3. Wire a ``ProxyEntry`` for the new class in the relevant service's\n   lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).",
+        "enum": [
+          "SEPSettings",
+          "TasksSettings",
+          "SnippetsSettings",
+          "MessagesSettings",
+          "Settings",
+          "AlertSettings",
+          "AnonymizerSettings",
+          "AlertsSettings",
+          "InventorySettings",
+          "PomDiscoverySettings"
+        ],
+        "title": "SettingClassEnum",
+        "type": "string"
+      },
+      "SettingResponse": {
+        "description": "Represent a single setting's metadata and current value.\n\n:param setting_class: The settings class the field belongs to.\n:param key: The field name on the settings class.\n:param key_path: Carry the canonical key segments for ``key`` such that\n    ``\"__\".join(key_path) == key``.\n:param value: The current value visible through the proxy, dumped to a\n    JSON-safe shape via the field's annotation. ``SecretStr`` fields are\n    redacted to ``\"**********\"``.\n:param default_value: The field's declared default value, dumped via the\n    same JSON serialiser. ``None`` when no default exists.\n:param type: A human-readable representation of the field's declared\n    annotation (for operator visibility; validation uses the actual\n    ``FieldInfo``).\n:param reload: The reload classification (HOT or NOT_OVERRIDABLE).\n:param description: The field's free-text description, or ``None``.\n:param is_secret: Whether the field's annotation contains a Pydantic secret\n    (``SecretStr`` / ``SecretBytes``) at any depth.\n:param is_complex: Whether the field's annotation is or contains a Pydantic\n    ``BaseModel`` subclass (true for nested submodels).\n:param has_override: Whether a row exists in the ``settingoverride`` table\n    for this ``(setting_class, key)`` pair, regardless of ``is_active``.\n:param is_advanced: Whether the setting is flagged ``advanced`` so the UI can\n    present it separately from everyday settings. Display-only:\n    it does not affect PATCH/DELETE eligibility.\n:param is_applicable: Whether the setting applies under current runtime state\n    (e.g. the active auth provider). ``False`` lets the UI present the field\n    as inert. Display-only, like ``is_advanced``: it does not block\n    PATCH/DELETE server-side; the runtime gate is the real enforcement.",
+        "properties": {
+          "default_value": {
+            "title": "Default Value"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "has_override": {
+            "title": "Has Override",
+            "type": "boolean"
+          },
+          "is_advanced": {
+            "default": false,
+            "title": "Is Advanced",
+            "type": "boolean"
+          },
+          "is_applicable": {
+            "default": true,
+            "title": "Is Applicable",
+            "type": "boolean"
+          },
+          "is_complex": {
+            "title": "Is Complex",
+            "type": "boolean"
+          },
+          "is_secret": {
+            "title": "Is Secret",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "key_path": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Key Path",
+            "type": "array"
+          },
+          "reload": {
+            "$ref": "#/components/schemas/ReloadClassification"
+          },
+          "setting_class": {
+            "$ref": "#/components/schemas/SettingClassEnum"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "required": [
+          "setting_class",
+          "key",
+          "value",
+          "default_value",
+          "type",
+          "reload",
+          "description",
+          "is_secret",
+          "is_complex",
+          "has_override"
+        ],
+        "title": "SettingResponse",
+        "type": "object"
+      },
+      "SettingsPatch": {
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "description": "Batch PATCH payload: a flat ``{field_name: new_value, ...}`` mapping.\n\nAn empty body is rejected as 422 because a no-op PATCH is a client bug, not\na valid request. The server coerces each value to the field's declared\ntype via :func:`coerce_field_value`; validation is all-or-nothing -- if any\nkey fails, nothing is written.",
+        "minProperties": 1,
+        "title": "SettingsPatch",
+        "type": "object"
       },
       "ValidationError": {
         "properties": {
@@ -3856,6 +3972,112 @@
     }
   },
   "paths": {
+    "/api/apps/pom_discovery/config": {
+      "get": {
+        "description": "Return this app's configuration: every field, its value and its origin.\n\nServed here rather than pointing the caller at ``/api/sep/admin/settings``\nbecause that router is admin-gated and PMM's principal is not an admin: the\n``--sep-token`` bearer resolves to the synthetic ``sep-service`` user, built\nwith ``is_admin=False`` deliberately, since it is a deployment-level shared\nsecret with no person behind it. An app-owned endpoint keeps a schedule change\nscoped to this app instead of requiring SEP-wide administrative access.\n\nEvery field is listed, not only the overridden ones, and each row carries\nwhether an override is in effect - so \"why is it sweeping every 10 minutes\"\nis answerable without also reading the deployment's YAML.\n\n:param session: The database session.\n:return: One row per configuration field.",
+        "operationId": "pom_discovery_get_config_api_apps_pom_discovery_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SettingResponse"
+                  },
+                  "title": "Response Pom Discovery Get Config Api Apps Pom Discovery Config Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Config",
+        "tags": [
+          "pom_discovery"
+        ]
+      },
+      "patch": {
+        "description": "Change this app's configuration at runtime.\n\nThe batch is atomic: a single bad key rejects all of it with a per-key 422 and\nwrites nothing, so a caller never has to work out how far a partial apply got.\n\nOnly ``hot_field`` fields are accepted. ``CREDENTIALS_PATH`` is deliberately\nnot one: it names a file the payload reads on every database *host* and hands\nto a driver as a URI, so making it settable here would widen \"configure this\napp\" into \"read a chosen file across the estate\".\n\nA ``SCHEDULE`` change lands without a restart - ``periodic_task_schedules`` is\na thunk re-read on registry rebuild - but beat runs as a forked side-car\nprocess, which reaches the new value through its own settings refresher rather\nthan through this request.\n\n:param request: The incoming request; its ``app.state`` carries the rebind\n    callbacks fired for the keys this changed.\n:param body: The ``{key: value, ...}`` batch.\n:param session: The database session.\n:return: One row per applied key, in input order.",
+        "operationId": "pom_discovery_patch_config_api_apps_pom_discovery_config_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SettingResponse"
+                  },
+                  "title": "Response Pom Discovery Patch Config Api Apps Pom Discovery Config Patch",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Config",
+        "tags": [
+          "pom_discovery"
+        ]
+      }
+    },
+    "/api/apps/pom_discovery/config/{key}": {
+      "delete": {
+        "description": "Put one field back to whatever the deployment configured.\n\nWithout this, an operator who once changed a value can only ever change it to\nanother one: \"no override\" stops being a reachable state, and the YAML the\ndeployment ships becomes unrecoverable through the API. Idempotent, so\nclearing a field that was never overridden is not an error.\n\n:param request: The incoming request; its ``app.state`` carries the rebind\n    callbacks fired for the reverted key.\n:param key: The field name, or a ``__``-delimited nested key such as\n    ``SCHEDULE__every``.\n:param session: The database session.",
+        "operationId": "pom_discovery_delete_config_override_api_apps_pom_discovery_config__key__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Config Override",
+        "tags": [
+          "pom_discovery"
+        ]
+      }
+    },
     "/api/apps/pom_discovery/hosts": {
       "get": {
         "description": "Return every host POM holds, each with its services.\n\n``has_service=false`` is the question this table exists to answer: which machines\ncarry a PMM client and no database. It is a filter rather than an endpoint of its\nown so there is one list contract to learn, and because the same list with the\nfilter inverted is the ordinary estate view.\n\nCounts describe the *tables*, not the last run. A scoped refresh must not make the\nestate look one host wide.\n\n:param session: The database session.\n:param has_service: Filter on whether a MongoDB service is registered here.\n:param failing: Filter on whether the host is currently failing.\n:param executor: Filter on whether an executor serves it.\n:return: The hosts, by name.",

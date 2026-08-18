@@ -14,5 +14,6 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from app.sep.apps.pom_discovery.app import app
+from app.sep.apps.pom_discovery.app_owned_settings import APP_OWNED_SETTINGS_CLASSES
 
-__all__ = ["app"]
+__all__ = ["APP_OWNED_SETTINGS_CLASSES", "app"]

@@ -326,7 +326,13 @@ class TestSepSettingsList:
 
         SEP serves its own classes locally (including ``AlertSettings``),
         proxies ``TasksSettings`` from the Tasks sub-app, and appends
-        app-owned classes such as ``AlertsSettings``.
+        app-owned classes such as ``AlertsSettings`` and ``PomDiscoverySettings``.
+
+        An app-owned class appears here *and* on its own app's endpoint. That is
+        deliberate rather than duplication: this router is admin-gated, and an app
+        whose configuration a non-admin service principal must reach serves its own
+        (``pom_discovery`` does, for PMM). Both read and write the same override
+        rows through the same manager, so they cannot disagree.
         """
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
@@ -340,6 +346,7 @@ class TestSepSettingsList:
             SettingClassEnum.SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
             SettingClassEnum.ALERT_SETTINGS.value,
+            SettingClassEnum.POM_DISCOVERY_SETTINGS.value,
         }
 
     async def test_all_sealed_nested_parent_is_listed_whole(

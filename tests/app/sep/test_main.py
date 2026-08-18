@@ -368,6 +368,7 @@ async def test_proxy_map_composes_app_owned_and_sep_entries(mocker):
         SettingClassEnum.ALERT_SETTINGS,
         SettingClassEnum.ALERTS_SETTINGS,
         SettingClassEnum.HEALTH_REPORT_SETTINGS,
+        SettingClassEnum.POM_DISCOVERY_SETTINGS,
     }
     alerts_entry = proxies[SettingClassEnum.ALERTS_SETTINGS]
     assert alerts_entry.proxy is alerts_settings

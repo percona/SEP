@@ -32,16 +32,26 @@ from pydantic import PositiveInt
 
 from app.core.celery.models import IntervalSchedule, Period
 from app.core.config import BaseYamlSettings
+from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.settings_override.registry import hot_field
 from app.core.utils.fields import TimedeltaSeconds
 
 
 class PomDiscoverySettings(BaseYamlSettings):
     """Configure the on-host probe.
 
-    The defaults assume the consumer is PMM polling :func:`get_facts`, which serves
-    whatever the last completed probe stored. That is why ``SCHEDULE`` matters more
-    here than it does for a job someone triggers by hand: nothing else makes the
-    facts appear, and a puller must never be the thing that waits for a Nomad job.
+    The defaults assume the consumer is PMM reading the estate, which serves whatever
+    each row last reported. That is why ``SCHEDULE`` matters more here than it does for
+    a job someone triggers by hand: nothing else refreshes a row, and a puller must
+    never be the thing that waits for a Nomad job.
+
+    Every field is ``hot_field`` except ``CREDENTIALS_PATH``, which stays YAML/env only
+    on purpose. It names a file the payload reads off the *node* and hands to a MongoDB
+    driver as a URI; making it settable over the API would turn "change this app's
+    configuration" into "read a chosen file on every database host", which is a
+    different permission from the one §10 argues for. It is a deployment fact, and it
+    belongs with the deployment.
 
     :cvar SETTINGS_PREFIXES: Places this section under ``SEP.POM_DISCOVERY``.
     :param SCHEDULE: How often the probe sweeps the estate. ``None`` unregisters the
@@ -69,19 +79,21 @@ class PomDiscoverySettings(BaseYamlSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "POM_DISCOVERY"]
 
-    SCHEDULE: IntervalSchedule | None = IntervalSchedule(
-        every=10, period=Period.MINUTES
+    SCHEDULE: IntervalSchedule | None = hot_field(
+        IntervalSchedule(every=10, period=Period.MINUTES)
     )
-    PROBE_DATABASE: bool = True
+    PROBE_DATABASE: bool = hot_field(default=True)
     CREDENTIALS_PATH: str | None = None
-    CONNECT_TIMEOUT: PositiveInt = 5
-    TASK_TIMEOUT: PositiveInt = 180
-    POLL_INTERVAL: PositiveInt = 3
-    MAX_CONCURRENT_PROBES: PositiveInt = 8
-    RUN_RETENTION: PositiveInt = 50
-    STALE_RUN_AFTER: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = timedelta(
-        minutes=30
+    CONNECT_TIMEOUT: PositiveInt = hot_field(5, advanced=True)
+    TASK_TIMEOUT: PositiveInt = hot_field(180, advanced=True)
+    POLL_INTERVAL: PositiveInt = hot_field(3, advanced=True)
+    MAX_CONCURRENT_PROBES: PositiveInt = hot_field(8, advanced=True)
+    RUN_RETENTION: PositiveInt = hot_field(50, advanced=True)
+    STALE_RUN_AFTER: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = hot_field(
+        timedelta(minutes=30), advanced=True
     )
 
 
-pom_discovery_settings: PomDiscoverySettings = PomDiscoverySettings()
+pom_discovery_settings: PomDiscoverySettings = OverridableSettingsProxy(
+    PomDiscoverySettings, setting_class=SettingClassEnum.POM_DISCOVERY_SETTINGS
+)

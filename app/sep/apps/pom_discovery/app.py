@@ -43,9 +43,13 @@ def _pom_discovery_periodic_tasks() -> list[AppPeriodicTask]:
     unregister the sweep, so the contribution is variable-length and a literal would
     commit to a fixed set at ``BaseApp(...)`` construction.
 
-    The sweep is what makes ``GET /facts`` answerable at all: the endpoint never
-    probes, so with no schedule the facts only ever change when someone posts to
-    ``/runs``.
+    That the ``None`` check lives *inside* the thunk is what makes ``SCHEDULE``
+    genuinely hot in both directions: turning the sweep back on over ``PATCH /config``
+    re-registers the task on the next registry rebuild, where a literal guarded by an
+    import-time ``if`` would have decided once and stayed decided.
+
+    The sweep is what keeps the estate current at all: no endpoint probes, so with no
+    schedule a row only changes when someone posts to ``/runs``.
 
     :return: The sweep contribution, or an empty list when it is disabled.
     """

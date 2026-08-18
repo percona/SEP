@@ -36,14 +36,25 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi import status as http_status
 from pydantic import BaseModel, Field
 
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
+from app.core.settings_override.api import (
+    apply_class_overrides,
+    clear_class_override,
+    collect_class_setting_responses,
+    SettingResponse,
+    SettingsPatch,
+)
+from app.core.settings_override.models import SettingClassEnum
 from app.core.utils.date_time import make_datetime_utc, utc_now
 from app.sep.apps.framework.api import schema_endpoint
-from app.sep.apps.pom_discovery.config import pom_discovery_settings
+from app.sep.apps.pom_discovery.config import (
+    pom_discovery_settings,
+    PomDiscoverySettings,
+)
 from app.sep.apps.pom_discovery.crud import (
     delete_host,
     delete_service,
@@ -643,4 +654,92 @@ async def trigger_probe(
         status=str(run.status),
         started_at=run.started_at,
         scope=run.scope,
+    )
+
+
+@router.get("/config", response_model=list[SettingResponse])
+async def get_config(session: SessionDep) -> list[SettingResponse]:
+    """Return this app's configuration: every field, its value and its origin.
+
+    Served here rather than pointing the caller at ``/api/sep/admin/settings``
+    because that router is admin-gated and PMM's principal is not an admin: the
+    ``--sep-token`` bearer resolves to the synthetic ``sep-service`` user, built
+    with ``is_admin=False`` deliberately, since it is a deployment-level shared
+    secret with no person behind it. An app-owned endpoint keeps a schedule change
+    scoped to this app instead of requiring SEP-wide administrative access.
+
+    Every field is listed, not only the overridden ones, and each row carries
+    whether an override is in effect - so "why is it sweeping every 10 minutes"
+    is answerable without also reading the deployment's YAML.
+
+    :param session: The database session.
+    :return: One row per configuration field.
+    """
+    return await collect_class_setting_responses(
+        session=session,
+        setting_class=SettingClassEnum.POM_DISCOVERY_SETTINGS,
+        settings_cls=PomDiscoverySettings,
+        proxy=pom_discovery_settings,
+    )
+
+
+@router.patch("/config", response_model=list[SettingResponse])
+async def patch_config(
+    request: Request, body: SettingsPatch, session: SessionDep
+) -> list[SettingResponse]:
+    """Change this app's configuration at runtime.
+
+    The batch is atomic: a single bad key rejects all of it with a per-key 422 and
+    writes nothing, so a caller never has to work out how far a partial apply got.
+
+    Only ``hot_field`` fields are accepted. ``CREDENTIALS_PATH`` is deliberately
+    not one: it names a file the payload reads on every database *host* and hands
+    to a driver as a URI, so making it settable here would widen "configure this
+    app" into "read a chosen file across the estate".
+
+    A ``SCHEDULE`` change lands without a restart - ``periodic_task_schedules`` is
+    a thunk re-read on registry rebuild - but beat runs as a forked side-car
+    process, which reaches the new value through its own settings refresher rather
+    than through this request.
+
+    :param request: The incoming request; its ``app.state`` carries the rebind
+        callbacks fired for the keys this changed.
+    :param body: The ``{key: value, ...}`` batch.
+    :param session: The database session.
+    :return: One row per applied key, in input order.
+    """
+    return await apply_class_overrides(
+        request=request,
+        session=session,
+        setting_class=SettingClassEnum.POM_DISCOVERY_SETTINGS,
+        settings_cls=PomDiscoverySettings,
+        proxy=pom_discovery_settings,
+        body=body,
+    )
+
+
+@router.delete("/config/{key}", status_code=http_status.HTTP_204_NO_CONTENT)
+async def delete_config_override(
+    request: Request, key: str, session: SessionDep
+) -> None:
+    """Put one field back to whatever the deployment configured.
+
+    Without this, an operator who once changed a value can only ever change it to
+    another one: "no override" stops being a reachable state, and the YAML the
+    deployment ships becomes unrecoverable through the API. Idempotent, so
+    clearing a field that was never overridden is not an error.
+
+    :param request: The incoming request; its ``app.state`` carries the rebind
+        callbacks fired for the reverted key.
+    :param key: The field name, or a ``__``-delimited nested key such as
+        ``SCHEDULE__every``.
+    :param session: The database session.
+    """
+    await clear_class_override(
+        request=request,
+        session=session,
+        setting_class=SettingClassEnum.POM_DISCOVERY_SETTINGS,
+        settings_cls=PomDiscoverySettings,
+        proxy=pom_discovery_settings,
+        key=key,
     )
