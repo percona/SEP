@@ -37,6 +37,8 @@ from dataclasses import field as dc_field
 from typing import Any
 from uuid import UUID
 
+from sqlmodel.ext.asyncio.session import AsyncSession
+
 from app.core.config import settings
 from app.core.requests import RemoteAPI
 from app.core.security import require_internal_token
@@ -525,6 +527,43 @@ def _record_entity(
     )
 
 
+async def _finalise(
+    session: AsyncSession, run_id: UUID, outcome: SweepOutcome
+) -> ProbeRun:
+    """Write what the sweep did onto its run row, and close it.
+
+    A function rather than a block inside the sweep so the counters can be asserted
+    without dispatching anything. They are the run's whole receipt, and every one of
+    them is derived - a mistake here is invisible until someone reads a history and
+    draws the wrong conclusion from it.
+
+    Both sets are taken from the same lists the estate was written from rather than
+    counted independently, so the receipt and the rows cannot disagree about what
+    happened.
+
+    :param session: The database session.
+    :param run_id: The run being closed.
+    :param outcome: What the sweep produced.
+    :return: The stored row.
+    """
+    finished = await ProbeRunManager.get(session, id=run_id)
+    finished.status = _terminal_status(outcome)
+    finished.finished_at = utc_now()
+    finished.services_total = outcome.total
+    finished.services_resolved = outcome.resolved
+    finished.services_orphaned = outcome.orphaned
+    finished.services_answered = outcome.answered
+    # Hosts as well as services, because a sweep attempts both. A host-only refresh
+    # would otherwise report "0 of 0 services", which reads exactly like a run that
+    # did nothing -- on the one host POM most exists to describe.
+    finished.hosts_total = len(outcome.hosts)
+    finished.hosts_probeable = sum(1 for host in outcome.hosts if host.has_executor)
+    finished.hosts_answered = len(outcome.host_documents)
+    finished.facts = outcome.facts
+    finished.nodes = outcome.nodes
+    return await ProbeRunManager.save(session, finished)
+
+
 async def _persist_estate(outcome: SweepOutcome, run_id: UUID) -> None:
     """Write what the sweep saw into ``pom.host`` and ``pom.service``.
 
@@ -666,19 +705,10 @@ async def run_probe(
     # sees a finished run always finds the rows that run produced.
     await _persist_estate(outcome, run_id)
 
-    status = _terminal_status(outcome)
     async with session_maker() as session:
-        finished = await ProbeRunManager.get(session, id=run_id)
-        finished.status = status
-        finished.finished_at = utc_now()
-        finished.services_total = outcome.total
-        finished.services_resolved = outcome.resolved
-        finished.services_orphaned = outcome.orphaned
-        finished.services_answered = outcome.answered
-        finished.facts = outcome.facts
-        finished.nodes = outcome.nodes
-        await ProbeRunManager.save(session, finished)
+        await _finalise(session, run_id, outcome)
         await prune_runs(session, pom_discovery_settings.RUN_RETENTION)
+    status = _terminal_status(outcome)
 
     logger.info(
         "POM discovery: sweep %s %s -- %d service(s), %d resolved, %d answered, %d fact(s)",

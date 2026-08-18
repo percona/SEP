@@ -298,6 +298,11 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
     :param services_resolved: ...of which mapped to a live executor host.
     :param services_orphaned: ...of which did not. Not an error.
     :param services_answered: Services that returned a usable probe record.
+    :param hosts_total: Hosts in scope this sweep, service or no service.
+    :param hosts_probeable: ...of which had a usable executor to dispatch to. The
+        difference from ``hosts_total`` is the estate nothing can be run on, which is
+        a fact about onboarding rather than a failure of the sweep.
+    :param hosts_answered: Hosts that returned a usable record.
     :param facts: The collected facts, each ``{service_id, field, value,
         observed_at}`` where ``service_id`` is **PMM's** service UUID -- the only key
         the consumer can join on, and the reason the API translates away SEP's own
@@ -342,6 +347,14 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
     services_resolved: int = SQLField(default=0)
     services_orphaned: int = SQLField(default=0)
     services_answered: int = SQLField(default=0)
+
+    # A sweep attempts hosts as well as services, and has since a host became
+    # probeable for its own sake. Counting only services made a refresh of a
+    # pmm-client host with no database read as "0 of 0", which is indistinguishable
+    # from a run that did nothing.
+    hosts_total: int = SQLField(default=0)
+    hosts_probeable: int = SQLField(default=0)
+    hosts_answered: int = SQLField(default=0)
 
     # Explicit JSONB rather than ``AutoJSON``: the latter silently drops
     # ``none_as_null`` on PostgreSQL, so a Python ``None`` lands as the JSON scalar

@@ -108,12 +108,21 @@ class ProbeCounts(BaseModel):
     :param services_resolved: ...of which mapped to a live executor host.
     :param services_orphaned: ...of which did not. Not an error.
     :param services_answered: Services that returned a usable probe record.
+    :param hosts_total: Hosts in scope this sweep, service or no service.
+    :param hosts_probeable: ...of which had a usable executor to dispatch to.
+    :param hosts_answered: Hosts that returned a usable record.
     """
 
     services_total: int
     services_resolved: int
     services_orphaned: int
     services_answered: int
+    # A sweep attempts hosts too, and has since a host became probeable for its own
+    # sake. Counting only services makes a refresh of a host with no database read as
+    # "0 of 0", which is indistinguishable from a run that did nothing.
+    hosts_total: int = 0
+    hosts_probeable: int = 0
+    hosts_answered: int = 0
 
 
 class ProbeRunResponse(BaseModel):
@@ -350,6 +359,9 @@ def _counts(run: ProbeRun) -> ProbeCounts:
         services_resolved=run.services_resolved,
         services_orphaned=run.services_orphaned,
         services_answered=run.services_answered,
+        hosts_total=run.hosts_total,
+        hosts_probeable=run.hosts_probeable,
+        hosts_answered=run.hosts_answered,
     )
 
 

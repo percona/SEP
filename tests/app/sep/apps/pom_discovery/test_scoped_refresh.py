@@ -47,9 +47,10 @@ from app.sep.apps.pom_discovery.config import pom_discovery_settings
 from app.sep.apps.pom_discovery.crud import ProbeRunManager, upsert_host
 from app.sep.apps.pom_discovery.enumeration import InventoryHost
 from app.sep.apps.pom_discovery.inventory import InventoryService
-from app.sep.apps.pom_discovery.mapping import MappedService
+from app.sep.apps.pom_discovery.mapping import ExecutorState, MappedService
 from app.sep.apps.pom_discovery.models import NodeResolution, ProbeRun, ProbeRunStatus
 from app.sep.apps.pom_discovery.service import (
+    _finalise,
     _narrow_to_scope,
     _terminal_status,
     SweepOutcome,
@@ -66,6 +67,9 @@ from app.sep.main import sep_app
 BASE = "/api/apps/pom_discovery"
 NODE_A = "id-db00"
 NODE_B = "id-db01"
+#: One host with an executor and one without, which is the smallest estate that can
+#: tell hosts_total and hosts_probeable apart.
+TWO_HOSTS = 2
 
 
 @pytest_asyncio.fixture
@@ -395,3 +399,97 @@ class TestConflict:
         reaped = await ProbeRunManager.get(two_hosts, id=stale.id)
         assert reaped.status == ProbeRunStatus.FAILED
         assert "abandoned" in (reaped.error or "")
+
+
+class TestHostCounters:
+    """Assert a run's receipt counts hosts, not only the services on them.
+
+    A sweep has attempted hosts as well as services since a host became probeable for
+    its own sake, and until these columns existed the receipt could not say so. A
+    refresh of a pmm-client host read as "0 of 0 services", which is exactly what a
+    run that did nothing at all looks like - on the one host POM most exists to
+    describe.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_host_only_refresh_reports_what_it_reached(
+        self, session: AsyncSession
+    ) -> None:
+        """A host with no database produces non-zero counters.
+
+        :param session: The database session.
+        """
+        host = InventoryHost(
+            node_id="id-pmm-client-node00",
+            name="pmm-client-node00",
+            address="10.0.0.2",
+            executor_host="pmm-client-node00",
+            resolution=NodeResolution.NAME,
+            executor_state=ExecutorState(
+                "pmm-client-node00",
+                "10.0.0.2",
+                reachable=True,
+                driver_healthy=True,
+            ),
+        )
+        run = await ProbeRunManager.save(session, ProbeRun())
+        outcome = SweepOutcome(
+            hosts=[host],
+            dispatched={"pmm-client-node00"},
+            host_documents={"pmm-client-node00": {"os": "Ubuntu 24.04"}},
+        )
+
+        await _finalise(session, run.id, outcome)
+
+        stored = await ProbeRunManager.get(session, id=run.id)
+        assert (stored.hosts_total, stored.hosts_probeable, stored.hosts_answered) == (
+            1,
+            1,
+            1,
+        )
+        # Zero services is the honest answer here, and it is why the host counters had
+        # to exist rather than the service ones being reinterpreted.
+        assert stored.services_total == 0
+
+    @pytest.mark.asyncio
+    async def test_a_host_with_no_executor_counts_but_is_not_probeable(
+        self, session: AsyncSession
+    ) -> None:
+        """``total`` and ``probeable`` differ, which is the point of having both.
+
+        The gap between them is the estate nothing can be run on - a fact about
+        onboarding rather than a failure of the sweep, and one a single "hosts" count
+        would hide.
+
+        :param session: The database session.
+        """
+        reachable = InventoryHost(
+            node_id="id-a",
+            name="a",
+            address=None,
+            executor_host="a",
+            resolution=NodeResolution.NAME,
+            executor_state=ExecutorState(
+                "a", "10.0.0.1", reachable=True, driver_healthy=True
+            ),
+        )
+        stranded = InventoryHost(
+            node_id="id-b",
+            name="b",
+            address=None,
+            executor_host=None,
+            resolution=NodeResolution.ORPHANED,
+        )
+        run = await ProbeRunManager.save(session, ProbeRun())
+        outcome = SweepOutcome(
+            hosts=[reachable, stranded],
+            dispatched={"a"},
+            host_documents={"a": {"os": "Ubuntu 24.04"}},
+        )
+
+        await _finalise(session, run.id, outcome)
+
+        stored = await ProbeRunManager.get(session, id=run.id)
+        assert stored.hosts_total == TWO_HOSTS
+        assert stored.hosts_probeable == 1
+        assert stored.hosts_answered == 1
