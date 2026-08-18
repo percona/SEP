@@ -79,7 +79,13 @@ from app.sep.apps.inventory.models import (
 from app.sep.apps.inventory.schema import inventory_schema
 from app.sep.apps.inventory.sync import run_inventory_sync
 from app.sep.crud import SyncItemManager
-from app.sep.deps import CreatedServiceDep, InventoryAPI, SessionDep, TaskAPI
+from app.sep.deps import (
+    CreatedServiceDep,
+    InventoryAPI,
+    IsApiAdmin,
+    SessionDep,
+    TaskAPI,
+)
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.connectivity.models import ConnectivityCheckResponse
 
@@ -261,7 +267,10 @@ async def inventory_service_system_observation(
     )
 
 
-@router.post("/services/{service_id:int}/check-connectivity/")
+@router.post(
+    "/services/{service_id:int}/check-connectivity/",
+    dependencies=[IsApiAdmin],
+)
 async def inventory_service_check_connectivity(
     service: CreatedServiceDep,
     tasks_api: TaskAPI,

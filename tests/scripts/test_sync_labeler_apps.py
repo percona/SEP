@@ -65,7 +65,9 @@ def _make_app(
     :param e2e: Optional e2e spec stem to materialize as ``<value>.spec.ts``.
     """
     if backend:
-        (repo / "app" / "sep" / "apps" / name).mkdir(parents=True, exist_ok=True)
+        app_dir = repo / "app" / "sep" / "apps" / name
+        app_dir.mkdir(parents=True, exist_ok=True)
+        (app_dir / "__init__.py").touch(exist_ok=True)
     if frontend:
         (repo / "frontend" / "packages" / "apps" / name).mkdir(
             parents=True, exist_ok=True
@@ -176,6 +178,22 @@ def test_framework_and_shared_are_excluded(tmp_path):
     assert "app:framework:" not in text
     assert "app:shared:" not in text
     assert "__pycache__" not in text
+
+
+def test_leftover_pycache_only_directory_is_not_an_app(tmp_path):
+    """Exclude leftover ``__pycache__``-only directories from app discovery."""
+    repo = _valid_repo(tmp_path)
+    leftover = repo / "app" / "sep" / "apps" / "ghost_app"
+    leftover.mkdir(parents=True)
+    (leftover / "__pycache__").mkdir()
+
+    apps = sync_labeler_apps.discover_apps(_apps_root(repo))
+    assert "ghost_app" not in apps
+
+    labeler = _write_labeler(repo, _EXISTING_RULES)
+    sync_labeler_apps.sync_labeler(labeler, _apps_root(repo), repo)
+    text = labeler.read_text(encoding="utf-8")
+    assert "app:ghost_app:" not in text
 
 
 def test_preserves_surrounding_rules(tmp_path):

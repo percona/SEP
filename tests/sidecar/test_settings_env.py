@@ -12,7 +12,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-"""Tests for the side-car entrypoint's deployment-input expansion."""
+"""Verify the side-car entrypoint's deployment-input expansion."""
 
 import os
 import re

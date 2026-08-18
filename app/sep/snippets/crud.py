@@ -54,21 +54,15 @@ class SnippetManager(BaseSQLModelManager):
 
     :cvar Model: The SQLModel class this manager is responsible for (`Snippet`).
     :vartype Model: type[Snippet]
-    :cvar ordering: The legacy approved-first ordering, now unreachable —
-        :meth:`BaseManager._get_ordering` prefers ``list_query_spec`` whenever one is
-        set, and no caller pins it. Kept only so a follow-up can delete it as a pure
-        subtraction.
     :cvar list_query_spec: The request-boundary sort/search allowlist backing the
         derived list route, and the single authority for the default ordering.
         First-class columns sort and search directly; ``title`` and ``service_type``
         resolve through :func:`_meta_text`. ``-approved_at`` keeps the approved-first
-        intent of ``ordering`` with an explicit null placement the legacy clause
-        lacked, and the unique ``id`` tie-breaker — in place of the non-unique
-        ``created_at`` — keeps pagination deterministic across page boundaries.
+        default with explicit null placement, and the unique ``id`` tie-breaker keeps
+        pagination deterministic across page boundaries.
     """
 
     Model = Snippet
-    ordering = [col(Snippet.approved_at).desc(), "created_at"]
     list_query_spec = ListQuerySpec(
         sortable={
             "created_at": col(Snippet.created_at),
