@@ -415,7 +415,9 @@ async def iter_task_history_logs(
     offsets: defaultdict[str, dict[str | TaskLogType, int]] = defaultdict(
         dict, start_offsets or {}
     )
-    has_chunks = await TaskHistoryLogManager.exists_for_task(session, task_history.id)
+    has_chunks = await TaskHistoryLogManager.exists(
+        session, task_history_id=task_history.id
+    )
     if tail_lines is not None and tail_lines > 0:
         if has_chunks:
             tail_offsets = await compute_tail_offsets_from_chunks(

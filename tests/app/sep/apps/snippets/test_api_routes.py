@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.sep.apps.snippets.extra_routes as snippets_extra_routes
 import app.sep.snippets.models.responses as snippets_models
+from app.api.deps import require_admin_for_unsafe_methods
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
     get_current_user,
@@ -1721,6 +1722,7 @@ class TestSnippetsApiNestedFilenameContract:
 def test_client(regular_user, session, snippets_dir):
     """Return a TestClient sharing the in-memory session and snippets dir."""
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)

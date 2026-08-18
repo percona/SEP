@@ -63,23 +63,27 @@ The resolution order is: an explicitly-set canonical environment variable, then 
 file of that name, then the value derived from the raw `SEP_*` input.
 
 **To keep the database password out of the environment, mount all three
-`{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` files.** A file supplies exactly the
-one canonical name it is named for: the fan-out of a single password to all three
-services happens only through the `SEP_DB_PASSWORD` input, which is an
-environment variable and so the very thing this mount avoids. Mounting
+`{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` files.** A password file supplies
+exactly the one canonical name it is named for: the fan-out of a single password
+to all three services happens only through the `SEP_DB_PASSWORD` input, which is
+an environment variable and so the very thing this mount avoids. Mounting
 `SEP__DATABASE__PASSWORD` alone leaves `InventorySettings` and `TasksSettings`
 with no password at all.
+
+**`SEP__DATABASE__HOST` and `SEP__DATABASE__PORT` are the exception — they move
+every service, not just SEP.** Unlike a password file, these two seed the
+`SEP_DB_HOST` / `SEP_DB_PORT` shell inputs, which the migrate wait loops read and
+which all three services derive their host and port from. Mounting
+`SEP__DATABASE__HOST` therefore also sets `INVENTORY__DATABASE__HOST` and
+`TASKS__DATABASE__HOST`; likewise `SEP__DATABASE__PORT` fans out to
+`INVENTORY__DATABASE__PORT` and `TASKS__DATABASE__PORT`. There is no way to point
+one service at a different host or port with a file alone — to do that, set the
+per-service canonical variables explicitly rather than mounting the SEP file.
 
 The celery-beat store needs no file of its own: it follows `SEP__DATABASE__*`, so
 the mounted `SEP__DATABASE__PASSWORD` reaches it through the same settings
 resolution the services use. Mount `CELERY__BEAT_DBURI` only to point beat at a
 *different* store.
-
-`SEP__DATABASE__HOST` and `SEP__DATABASE__PORT` are the exception to that
-one-name rule. Each seeds the `SEP_DB_HOST` / `SEP_DB_PORT` shell input the wait
-loops and all three services derive from, so mounting either moves every service
-rather than only SEP — there is no way to point one service at a different host
-with a file alone.
 
 Constraints on the directory: entries must be regular files directly inside it (a
 name in a subdirectory matches no setting). File names are matched
@@ -135,8 +139,9 @@ owning none needs no entry, and must not carry one.
 
 On this image an `SEP.APPS` override can therefore only **narrow** the baked
 set, never widen it. Registry construction imports each activated module, so
-activating a package the image does not ship raises `ModuleNotFoundError` and
-the container fails to start. The two surfaces that reach `SEP.APPS` are a bind
+activating a package the image does not ship raises a pydantic `ValidationError`
+(wrapping `No module named app.sep.apps.<name>`) and the container fails to
+start. The two surfaces that reach `SEP.APPS` are a bind
 mount at `/home/sep/app/settings.yaml` (which, per above, replaces the profile
 wholesale — so its `SEP.APPS` must be a subset of the baked one) and the
 `SEP__APPS` environment variable; the runtime settings-override API cannot,

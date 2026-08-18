@@ -112,6 +112,7 @@ class _FakeUploader:
         self.result = result or UploadResult(reference="att-9", detail=_UPLOAD_DETAIL)
         self.error = error
         self.step_observer = step_observer
+        self.plan: DeliveryPlan | None = None
         self.bundle_bytes: bytes | None = None
         self.manifest: dict[str, Any] | None = None
         self.case_ref: str | None = None
@@ -275,10 +276,11 @@ def uploader_fixture(mocker: MockerFixture) -> _FakeUploader:
 
     @asynccontextmanager
     async def _factory(
-        _plan: DeliveryPlan,
+        plan: DeliveryPlan,
         *,
         step_observer: Callable[[StepRecord], None] | None = None,
     ) -> AsyncIterator[_FakeUploader]:
+        fake.plan = plan
         fake.step_observer = step_observer
         try:
             yield fake
@@ -332,20 +334,29 @@ def _unconfigured_skeleton(plan: DeliveryPlan) -> DeliveryPlan:
     )
 
 
-async def _seed_delivery_inputs(session: AsyncSession, secrets: dict[str, str]) -> None:
+async def _seed_delivery_inputs(
+    session: AsyncSession,
+    secrets: dict[str, str],
+    *,
+    endpoint: str | None = None,
+) -> None:
     """Store a delivery-inputs override carrying ``secrets``.
 
     :param session: The database session.
     :param secrets: The secret values keyed by name. The names must be exactly
         the ones the baked skeleton declares, or the materializer drops the row
         while the snapshot is built and delivery stays unconfigured.
+    :param endpoint: Optional receiver base URL stored alongside the secrets.
     """
+    value: dict[str, Any] = {"secrets": secrets}
+    if endpoint is not None:
+        value["endpoint"] = endpoint
     await SettingsOverrideManager.create(
         session,
         SettingOverride(
             setting_class=SettingClassEnum.SEP_SETTINGS,
             key="DIAGNOSTICS_DELIVERY_INPUTS",
-            value={"secrets": secrets},
+            value=value,
         ),
     )
 
@@ -839,7 +850,7 @@ class TestRunSendLateDelivery:
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("tasks_api")
 class TestRunSendStaleSnapshot:
-    """Cover a send whose worker snapshot predates the enabling settings write."""
+    """Cover a send whose worker snapshot predates a delivery-settings write."""
 
     async def test_stored_inputs_reach_the_send_after_a_forced_refresh(
         self,
@@ -863,13 +874,13 @@ class TestRunSendStaleSnapshot:
         assert reloaded.status is AtwSendStatusEnum.SUCCESS
         assert uploader.called is True
 
-    async def test_a_plan_resolving_on_the_first_read_is_not_re_read(
+    async def test_a_plan_resolving_on_the_first_read_is_re_read_anyway(
         self,
         send_session: AsyncSession,
         uploader: _FakeUploader,
         mocker: MockerFixture,
     ) -> None:
-        """Read no override row when the first resolve already succeeds."""
+        """Read the override row again even when the held snapshot already resolves."""
         overrides_read = mocker.spy(SettingsOverrideManager, "list")
         row = await _seed_send_log(send_session)
 
@@ -878,7 +889,53 @@ class TestRunSendStaleSnapshot:
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.SUCCESS
         assert uploader.called is True
-        overrides_read.assert_not_called()
+        assert overrides_read.await_count == 1
+
+    async def test_a_rotated_secret_and_endpoint_reach_the_send(
+        self,
+        send_session: AsyncSession,
+        uploader: _FakeUploader,
+        delivery_plan: DeliveryPlan,
+    ) -> None:
+        """Deliver against stored inputs that differ from a still-valid stale snapshot.
+
+        A stale-but-valid snapshot resolves on the first read, so a refresh gated on
+        an unresolved plan would never fire; the send must still pick up the rotated
+        secret and the repointed endpoint from the stored row.
+
+        The stale values are published as a proxy snapshot rather than patched onto
+        the wrapped instance, so the snapshot precedence a worker child actually
+        holds is what the republish has to supersede.
+        """
+        rotated_secret = "rotated-api-key"
+        new_endpoint = "https://intake-rotated.example.com"
+        sep_settings._set_snapshot(
+            {
+                "DIAGNOSTICS_DELIVERY_INPUTS": DeliveryPlanInputs(
+                    endpoint="https://intake-stale.example.com",
+                    secrets=dict.fromkeys(
+                        delivery_plan.secrets, SecretStr("stale-api-key")
+                    ),
+                )
+            }
+        )
+        await _seed_delivery_inputs(
+            send_session,
+            dict.fromkeys(delivery_plan.secrets, rotated_secret),
+            endpoint=new_endpoint,
+        )
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.SUCCESS
+        assert uploader.plan is not None
+        assert str(uploader.plan.endpoint).rstrip("/") == new_endpoint
+        assert {
+            name: secret.get_secret_value()
+            for name, secret in uploader.plan.secrets.items()
+        } == dict.fromkeys(delivery_plan.secrets, rotated_secret)
 
 
 @pytest.mark.asyncio
@@ -970,6 +1027,33 @@ class TestRunSendFailures:
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
         assert "not configured" in reloaded.detail["error"]
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_a_failing_refresh_still_delivers_against_the_held_snapshot(
+        self,
+        send_session: AsyncSession,
+        uploader: _FakeUploader,
+        mocker: MockerFixture,
+    ) -> None:
+        """Keep delivering when the re-read fails but the held snapshot is usable.
+
+        A transient database error must not convert a deliverable send into a
+        terminal "not configured" row once the re-read is unconditional.
+        """
+        mocker.patch.object(
+            SettingsOverrideManager,
+            "list",
+            side_effect=SQLAlchemyError("database unreachable"),
+        )
+        rollback = mocker.spy(AsyncSession, "rollback")
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        assert rollback.await_count == 1
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.SUCCESS
+        assert uploader.called is True
 
     async def test_a_failing_refresh_keeps_the_reason_already_resolved(
         self,
