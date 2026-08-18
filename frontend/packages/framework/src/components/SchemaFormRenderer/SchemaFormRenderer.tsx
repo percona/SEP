@@ -297,7 +297,9 @@ function SchemaFormBody({
     appliedServerErrorPaths.current = applied;
   }, [fieldErrors, setError, clearErrors]);
 
-  const isGuarded = useUnsavedChangesGuard(submitError);
+  const isGuarded = useUnsavedChangesGuard(
+    submitAlertSeverity === 'error' ? submitError : undefined,
+  );
   const inDataRouter = Boolean(useContext(UNSAFE_DataRouterContext));
   const allFields = useMemo(() => flattenFields(sections), [sections]);
   const beforeSubmitSections = useMemo(
