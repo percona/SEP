@@ -31,6 +31,13 @@ from tests.app.factories import CasdoorUserFactory
 User = get_user_model()
 
 
+@pytest.fixture(autouse=True)
+def _clear_dependency_overrides():
+    """Clear the overrides a test installed, whether or not it passed."""
+    yield
+    app.dependency_overrides = {}
+
+
 @pytest.fixture
 def test_client():
     """Create a test client for the app."""
@@ -54,7 +61,6 @@ def test_list_users_admin(test_client, mocker, admin_user):
     response = test_client.get("/api/users/")
     assert response.status_code == status.HTTP_200_OK
     assert len(response.json()) == 1
-    app.dependency_overrides = {}
 
 
 def test_retrieve_current_user(test_client, regular_user):
@@ -63,7 +69,6 @@ def test_retrieve_current_user(test_client, regular_user):
     response = test_client.get("/api/users/me")
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["id"] == str(regular_user.id)
-    app.dependency_overrides = {}
 
 
 def test_retrieve_user_self(test_client, regular_user):
@@ -72,7 +77,6 @@ def test_retrieve_user_self(test_client, regular_user):
     response = test_client.get(f"/api/users/{regular_user.username}")
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["username"] == regular_user.username
-    app.dependency_overrides = {}
 
 
 def test_retrieve_user_as_admin(test_client, mocker, admin_user, other_user):
@@ -82,7 +86,6 @@ def test_retrieve_user_as_admin(test_client, mocker, admin_user, other_user):
     response = test_client.get(f"/api/users/{other_user.username}")
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["username"] == other_user.username
-    app.dependency_overrides = {}
 
 
 def test_retrieve_user_non_admin_other_user(test_client, regular_user, other_user):
@@ -93,7 +96,6 @@ def test_retrieve_user_non_admin_other_user(test_client, regular_user, other_use
     assert (
         response.json()["detail"] == "You don't have permission to perform this action"
     )
-    app.dependency_overrides = {}
 
 
 class TestUserRoleIsServed:
@@ -112,7 +114,6 @@ class TestUserRoleIsServed:
 
         assert body["role"] == regular_user.role
         assert body["isAdmin"] is False
-        app.dependency_overrides = {}
 
     def test_self_lookup_carries_the_role(self, test_client, admin_user):
         """Verify the by-username self route serves the same key set."""
@@ -122,7 +123,6 @@ class TestUserRoleIsServed:
 
         assert body["role"] == UserRole.ADMIN
         assert body["isAdmin"] is True
-        app.dependency_overrides = {}
 
     def test_listing_carries_the_role_on_every_element(
         self, test_client, mocker, admin_user, other_user
@@ -139,4 +139,3 @@ class TestUserRoleIsServed:
             UserRole.ADMIN,
             UserRole.VIEWER,
         ]
-        app.dependency_overrides = {}
