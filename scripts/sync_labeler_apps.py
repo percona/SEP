@@ -73,6 +73,7 @@ def discover_apps(apps_root: Path) -> list[str]:
         if entry.is_dir()
         and entry.name not in EXCLUDED_APPS
         and not entry.name.startswith("__")
+        and (entry / "__init__.py").is_file()
     ]
     return sorted(names)
 
