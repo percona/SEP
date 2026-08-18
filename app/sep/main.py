@@ -38,6 +38,7 @@ from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableE
 from app.core.health import build_health_router
 from app.core.requests import RemoteAPI
 from app.core.settings_override.lifecycle import (
+    CallbackRegistry,
     RefreshCallback,
     settings_override_refresher,
 )
@@ -226,7 +227,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         callbacks against ``app.state``.
     :return: None
     """
-    callbacks = {
+    callbacks: CallbackRegistry = {
         (
             SettingClassEnum.SEP_SETTINGS,
             "INVENTORY_ENDPOINT",

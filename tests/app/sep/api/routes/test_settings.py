@@ -574,14 +574,14 @@ class TestSepSettingsGet:
         assert body["key_path"] == ["SESSION_REFRESH", "MAX_AGE"]
         assert "__".join(body["key_path"]) == body["key"]
 
-    async def test_unknown_class_returns_422(
+    async def test_unknown_class_returns_404(
         self, api_admin_client: TestClient
     ) -> None:
-        """Reject an unknown settings class with 422 via FastAPI's enum validation."""
+        """Reject an unknown settings class with 404; the path param is an unconstrained str."""
         response = api_admin_client.get(
             "/api/sep/admin/settings/NonExistentSettings/SYNC_REFRESH_TIME"
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_unknown_key_returns_404(self, api_admin_client: TestClient) -> None:
         """Return 404 for an unknown key on a wired class."""

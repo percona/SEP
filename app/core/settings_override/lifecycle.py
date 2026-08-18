@@ -38,7 +38,6 @@ from typing import NamedTuple, TYPE_CHECKING
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.settings_override.cache import build_snapshot
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 
 if TYPE_CHECKING:
@@ -67,7 +66,7 @@ def _drain_cancelled_seed_task(task: asyncio.Task) -> None:
 #: snapshot mapping for its setting class; any exception it raises is caught and
 #: logged by :func:`refresh_all` so one failing callback cannot break the cycle.
 RefreshCallback = Callable[[Mapping[str, object]], Awaitable[None]]
-CallbackRegistry = dict[tuple[SettingClassEnum, str], RefreshCallback]
+CallbackRegistry = dict[tuple[str, str], RefreshCallback]
 
 
 async def publish_snapshot(
@@ -111,12 +110,12 @@ class ProxyEntry(NamedTuple):
     settings_cls: type[BaseYamlSettings]
 
 
-ProxyRegistry = dict[SettingClassEnum, ProxyEntry]
+ProxyRegistry = dict[str, ProxyEntry]
 
 
 async def fire_change_callbacks(
     callbacks: CallbackRegistry,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     previous: Mapping[str, object],
     current: Mapping[str, object],
 ) -> None:
@@ -136,7 +135,7 @@ async def fire_change_callbacks(
         ``(setting_class, key)``.
     :type callbacks: CallbackRegistry
     :param setting_class: The class whose snapshot was just republished.
-    :type setting_class: SettingClassEnum
+    :type setting_class: str
     :param previous: The snapshot in effect before the republish.
     :type previous: Mapping[str, object]
     :param current: The snapshot now in effect.
@@ -153,7 +152,7 @@ async def fire_change_callbacks(
         except Exception:
             logger.exception(
                 "Rebind callback for %s.%s failed; keeping previous binding",
-                setting_class.name,
+                setting_class,
                 key,
             )
 
@@ -211,7 +210,7 @@ async def refresh_all(
             except Exception:
                 logger.exception(
                     "Failed to refresh overrides for %s; keeping previous snapshot",
-                    setting_class.name,
+                    setting_class,
                 )
                 # Roll back so a Postgres ``InFailedSqlTransaction`` from this
                 # proxy does not cascade into every subsequent proxy's
