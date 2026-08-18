@@ -20,9 +20,18 @@ from typing import Annotated, ClassVar
 
 import pytest
 from annotated_types import Gt, Le
-from pydantic import BaseModel, Field, PositiveInt, SecretStr, Strict, ValidationError
+from pydantic import (
+    BaseModel,
+    Field,
+    PositiveInt,
+    SecretStr,
+    Strict,
+    TypeAdapter,
+    ValidationError,
+)
 
-from app.core.config import BaseYamlSettings
+from app.core.celery.config import CeleryOptions
+from app.core.config import BaseYamlSettings, PMMSettings
 from app.core.settings_override.api.routes import (
     _remote_wiring,
     _settings_response_from_field,
@@ -42,6 +51,8 @@ from app.core.settings_override.registry import (
     ReloadClassification,
     resolve_nested_field_metadata,
 )
+from app.core.utils.fields import CredentialHttpUrl
+from app.sep.config import SEPSettings
 
 
 class _NestedWithSecret(BaseModel):
@@ -182,11 +193,6 @@ def test_dump_field_value_redacts_secret_str() -> None:
 
 def test_dump_field_value_redacts_credential_http_url() -> None:
     """A credential-bearing URL is redacted by its field metadata serializer."""
-    from pydantic import TypeAdapter
-
-    from app.core.utils.fields import CredentialHttpUrl
-    from app.sep.config import SEPSettings
-
     field = SEPSettings.model_fields["INVENTORY_ENDPOINT"]
     url = TypeAdapter(CredentialHttpUrl).validate_python(
         "http://inv-user:inv-secret@inventory.internal:8080"
@@ -203,10 +209,6 @@ def test_is_credential_url_field_recognises_all_aliases() -> None:
     The shared mask-rejecting validator adds metadata beside the serializer; this
     pins that detection still keys off serializer-function identity alone.
     """
-    from app.core.celery.config import CeleryOptions
-    from app.core.config import PMMSettings
-    from app.sep.config import SEPSettings
-
     for field in (
         SEPSettings.model_fields["INVENTORY_ENDPOINT"],
         PMMSettings.model_fields["endpoint"],
