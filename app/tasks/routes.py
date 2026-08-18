@@ -31,7 +31,7 @@ from sqlalchemy_celery_beat import PeriodicTask
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.deps import CurrentUserID, IsAuthenticatedDep
+from app.api.deps import allow_non_admin_mutation, CurrentUserID, IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
 from app.core.exceptions import (
@@ -435,6 +435,7 @@ async def list_task_history(
     "/history/latest",
     dependencies=[IsAuthenticatedDep],
 )
+@allow_non_admin_mutation
 async def latest_task_history(
     session: SessionDep,
     body: TaskHistoryLatestStatusRequest,
