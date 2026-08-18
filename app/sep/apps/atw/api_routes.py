@@ -24,6 +24,7 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, HTTPException, Query, status
 from kombu.exceptions import KombuError
 from pydantic import BaseModel, UUID4
+from sqlmodel import col
 
 from app.core.exceptions import (
     HTTPNotFoundException,
@@ -62,8 +63,11 @@ from app.sep.apps.atw.crud import (
 )
 from app.sep.apps.atw.deps import (
     AtwIncidentDep,
+    AtwSnippetSearchQueryDep,
+    ClosedAtwIncidentDep,
     diagnostics_send_disabled_reasons,
     IsDiagnosticsSendConfigured,
+    OpenAtwIncidentDep,
 )
 from app.sep.apps.atw.models import (
     AtwConfigResponse,
@@ -151,10 +155,23 @@ schema_endpoint(router=router, plugin_schema=atw_schema)
 
 
 def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
+    """Project a snippet onto the ATW summary shape.
+
+    ``Snippet.title`` and ``Snippet.description`` default only when the frontmatter
+    key is **absent**, so a snippet declaring an empty or valueless one arrives here
+    as ``""`` or ``None``. Both are coerced, and the ``None`` half is what keeps one
+    malformed snippet from 500-ing the whole page: this model types both fields
+    ``str``, so a valueless ``title:`` or ``description:`` fails validation for the
+    entire response rather than for the offending row. ``title: ""`` validates and
+    the fallback merely relabels it, from a blank label to the filename.
+
+    :param snippet: The snippet to project.
+    :return: The snippet's identifying name, display title, and description.
+    """
     return ATWSnippetSummary(
         name=snippet.filename,
-        title=snippet.title,
-        description=snippet.description,
+        title=snippet.title or snippet.filename,
+        description=snippet.description or "",
     )
 
 
@@ -166,9 +183,9 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     the ATW enum still defines the full taxonomy for validation (plugin schema).
 
     :param session: The database session.
-    :return: One listing row per category that has at least one snippet.
+    :return: One listing row per category that has at least one approved snippet.
     """
-    snippets = await SnippetManager.list(session)
+    snippets = await SnippetManager.list(session, col(Snippet.approved_at).is_not(None))
     snippets_by_cell = defaultdict(list)
     for snippet in snippets:
         root = derive_category_root(snippet.meta.get("service_type"))
@@ -206,6 +223,33 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
             )
 
     return grouped
+
+
+@router.get("/snippets/")
+async def atw_snippet_search(
+    session: SessionDep,
+    list_query: AtwSnippetSearchQueryDep,
+    pagination: PaginationDep,
+) -> PaginatedResponse[ATWSnippetSummary]:
+    """Search approved snippets by free text, independent of the ATW taxonomy.
+
+    Served from ATW's own router over the snippets library, so the capability does
+    not depend on the Snippet Manager app being activated. The ``atw`` metadata tag
+    is a presentation filter on the category listing and is deliberately not
+    applied here, so search reaches snippets that listing never exposes.
+
+    :param session: The database session.
+    :param list_query: The vetted sort and search selections, pinned to approved.
+    :param pagination: The offset/limit window for the page.
+    :return: A paginated page of approved snippet summaries.
+    :raises sqlalchemy.exc.SQLAlchemyError: When the count or data query fails to
+        execute.
+    """
+    page = await SnippetManager.snippet_list_page(
+        session, list_query=list_query, pagination=pagination
+    )
+    items = [_build_summary(snippet) for snippet in page.items]
+    return PaginatedResponse.from_pagination(items, page.total, pagination)
 
 
 @router.post("/incidents/", status_code=status.HTTP_201_CREATED)
@@ -279,6 +323,38 @@ async def atw_delete_incident(session: SessionDep, incident: AtwIncidentDep) -> 
     await AtwIncidentManager.delete(session, incident)
 
 
+@router.post("/incidents/{incident_id}/close/")
+async def atw_close_incident(
+    session: SessionDep, incident: OpenAtwIncidentDep
+) -> AtwIncidentResponse:
+    """Close a diagnostic incident, stamping the current UTC time.
+
+    :param session: The database session.
+    :param incident: The open incident resolved from the ``incident_id`` path parameter.
+    :return: The closed incident.
+    :raises HTTPConflictException: If the incident is already closed.
+    """
+    incident.closed_at = utc_now()
+    saved = await AtwIncidentManager.save(session, incident)
+    return AtwIncidentResponse.model_validate(saved)
+
+
+@router.post("/incidents/{incident_id}/reopen/")
+async def atw_reopen_incident(
+    session: SessionDep, incident: ClosedAtwIncidentDep
+) -> AtwIncidentResponse:
+    """Reopen a closed diagnostic incident, clearing its close timestamp.
+
+    :param session: The database session.
+    :param incident: The closed incident resolved from the ``incident_id`` path parameter.
+    :return: The reopened incident.
+    :raises HTTPConflictException: If the incident is already open.
+    """
+    incident.closed_at = None
+    saved = await AtwIncidentManager.save(session, incident)
+    return AtwIncidentResponse.model_validate(saved)
+
+
 @router.get("/execution-schema/")
 async def atw_execution_schema(
     snippet_filename: Annotated[
@@ -349,7 +425,7 @@ def _failure_detail(exc: Exception) -> str | list[dict[str, Any]]:
 )
 async def atw_batch_execute(
     session: SessionDep,
-    incident: AtwIncidentDep,
+    incident: OpenAtwIncidentDep,
     body: ATWBatchExecuteWrite,
     tasks_api: TaskAPI,
 ) -> ATWBatchExecuteResponse:

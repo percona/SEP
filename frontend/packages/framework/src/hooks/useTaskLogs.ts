@@ -230,7 +230,15 @@ export function useTaskLogs(
           return;
         }
         const { msg, step, type, offset } = payload;
-        if (typeof msg !== 'string' || !step || !type || typeof offset !== 'number') {
+        // `step: ''` is a valid stepless line, not a malformed payload:
+        // `useExecutionEvents` buckets it under the same empty key and the
+        // viewer labels that bucket "General". Rejecting it would drop output.
+        if (
+          typeof msg !== 'string' ||
+          typeof step !== 'string' ||
+          !type ||
+          typeof offset !== 'number'
+        ) {
           return;
         }
         const key = `${step}_${type}`;

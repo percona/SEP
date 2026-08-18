@@ -155,3 +155,87 @@ class TestServiceBackupsRoute:
         """Reject an unauthenticated caller."""
         response = unauthenticated_client.get(_URL.format(service_id=1))
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    @pytest.mark.asyncio
+    async def test_renamed_service_still_returns_its_backups(
+        self, session, regular_user
+    ) -> None:
+        """Keep a recorded run reachable after its service was renamed.
+
+        The row was written when the service was called ``old-name``; inventory
+        now resolves the same id to ``new-name``. Keying on the name alone lost the
+        row and answered with the same empty page a service with no backups gives.
+        """
+        await MysqlBackupRunManager.save(
+            session,
+            MysqlBackupRun(
+                task_history_id=1,
+                service_name="old-name",
+                service_id=1,
+                backup_type="M",
+                location="/data/mydumper/old-name/0",
+            ),
+        )
+
+        response = await self._get(
+            session, 1, inventory_mock(service_payload("new-name")), regular_user
+        )
+
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"][0]["location"] == "/data/mydumper/old-name/0"
+        assert body["items"][0]["service_id"] == 1
+
+    @pytest.mark.asyncio
+    async def test_row_without_service_id_still_returned_by_name(
+        self, session, regular_user
+    ) -> None:
+        """Serve a row predating the id through the name it was written with."""
+        await MysqlBackupRunManager.save(
+            session,
+            MysqlBackupRun(task_history_id=1, service_name="svc-a", backup_type="M"),
+        )
+
+        response = await self._get(
+            session, 1, inventory_mock(service_payload("svc-a")), regular_user
+        )
+
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"][0]["service_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_same_named_services_do_not_leak_each_others_runs(
+        self, session, regular_user
+    ) -> None:
+        """Isolate two MySQL services that share a name once ids are recorded.
+
+        ``Service.name`` carries no uniqueness constraint, so keying on the name
+        returned both services' runs under either id.
+        """
+        await MysqlBackupRunManager.save(
+            session,
+            MysqlBackupRun(
+                task_history_id=1,
+                service_name="shared",
+                service_id=1,
+                backup_type="M",
+            ),
+        )
+        await MysqlBackupRunManager.save(
+            session,
+            MysqlBackupRun(
+                task_history_id=2,
+                service_name="shared",
+                service_id=2,
+                backup_type="M",
+            ),
+        )
+
+        response = await self._get(
+            session, 1, inventory_mock(service_payload("shared")), regular_user
+        )
+
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"][0]["service_id"] == 1

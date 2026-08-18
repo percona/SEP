@@ -15,7 +15,7 @@
 
 """Cover the allowlist gate folded into the classification and snapshot layers.
 
-Every case pins ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` explicitly; the unrestricted
+Every case pins ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` explicitly; the unrestricted
 counterparts assert that the default leaves each helper's answer unchanged.
 """
 

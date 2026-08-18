@@ -23,16 +23,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
+from app.api.deps import require_admin_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.deps import (
-    get_api_authenticated_user,
     get_current_user,
     get_session,
     require_bearer_for_unsafe_methods,
-    validate_csrf,
 )
 from app.sep.main import sep_app
 
@@ -122,10 +121,9 @@ async def async_api_client(
     asserting cascade deletes): the request and the DB check then run on the same
     event loop and session, which a sync ``TestClient`` cannot offer.
     """
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session
     transport = ASGITransport(app=sep_app)
     client = AsyncClient(

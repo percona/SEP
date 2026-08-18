@@ -16,34 +16,40 @@
 """Define ``BaseApp``, the uniform registry entry for a mounted SEP app."""
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field, model_validator, SkipValidation
 
+from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import URIPath
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.nav_icons import NavIcon
 
 
-@dataclass(frozen=True, slots=True)
-class StaticMount:
-    """Declare one authenticated static mount for an app's payload directory.
+class AppPeriodicTask(NamedTuple):
+    """Carry one app's beat-schedule contribution.
 
-    Collected from the registry in ``app/sep/main.py`` and mounted through
-    :class:`~app.sep.utils.static.AuthenticatedStaticFiles`, so a payload directory
-    is never served anonymously.
+    Holds only what an app knows about its own periodic work. The system
+    periodic-task rebuild stamps ``owner_app_key`` from the registry entry's
+    ``key`` and prefixes ``task`` with the app's Celery module path.
+    ``schedule`` is a thunk so hot interval overrides (``BACKUP_INTERVAL``,
+    ``SYNC_INTERVAL``, …) are re-read on each seed rather than frozen at
+    ``BaseApp(...)`` construction.
 
-    :param path: The mount prefix (for example ``/static/snippets``).
-    :param directory: The directory served behind authentication.
-    :param name: The Starlette mount name used for reverse URL lookups.
+    :param name: Beat periodic-task name (e.g. ``sep__sync_snippets``).
+    :param task: Unqualified Celery task attribute on the app's celery module
+        (e.g. ``sync_snippets``).
+    :param schedule: Zero-arg callable returning the live interval or crontab.
+    :param extra_kwargs: Optional kwargs forwarded to the beat ``PeriodicTask``
+        row (e.g. serialized task kwargs).
     """
 
-    path: str
-    directory: Path
     name: str
+    task: str
+    schedule: Callable[[], IntervalSchedule | CrontabSchedule]
+    extra_kwargs: dict[str, Any] | None = None
 
 
 class BaseApp(BaseModel):
@@ -62,7 +68,7 @@ class BaseApp(BaseModel):
         module-path-derived key; set explicitly, the author's value wins.
     :param name: The app's internal name.
     :param display_name: The human-facing label; defaults to ``name`` when absent.
-    :param uri_path: The Jinja mount prefix and sidebar link target.
+    :param uri_path: The app's URI prefix and sidebar link target.
     :param css_class: The sidebar CSS class.
     :param sidebar: Whether the app appears in the sidebar.
     :param group: The nav group key this app nests under; ``None`` renders it
@@ -76,7 +82,6 @@ class BaseApp(BaseModel):
     :param enabled: The seed-time enabled default; stamped by the registry.
     :param custom_ui: Whether the app ships a bespoke React UI.
     :param api_router: The plugin's JSON ``APIRouter``, when it exposes one.
-    :param jinja_router: The plugin's Jinja ``APIRouter``.
     :param app_schema: The plugin's schema definition, aliased ``schema`` for
         authoring; ``None`` for legacy-wrapped apps.
     :param parent_key: The key of the parent app that structurally owns this one,
@@ -99,10 +104,12 @@ class BaseApp(BaseModel):
         this app owns to a thunk returning that type's download base directory.
         The generic artifact-download route flattens these across the registry
         to resolve a signed token to a file on disk; defaults to empty.
-    :param static_mounts: Authenticated static mounts for the app's payload
-        directories, collected from the registry and mounted in ``app/sep/main.py``
-        through :class:`~app.sep.utils.static.AuthenticatedStaticFiles`. Defaults to
-        an empty tuple.
+    :param periodic_task_schedules: This app's beat contributions as a plain
+        list of :class:`AppPeriodicTask`, a zero-arg callable returning such a
+        list (for variable-length expansion), or ``None`` when the app owns
+        none. Resolved on every system periodic-task rebuild; each entry's
+        ``schedule`` thunk is invoked then so hot intervals are re-read.
+        Defaults to ``None``.
     :param uses_task_data: Whether the app's UI consumes the shared task-history
         routes (``/files``, ``/stream-logs``, ``/execution-events``). Any app in the
         registry declaring it mounts those routers for the whole deployment.
@@ -126,7 +133,6 @@ class BaseApp(BaseModel):
     enabled: bool = True
     custom_ui: bool = False
     api_router: APIRouter | None = None
-    jinja_router: APIRouter | None = None
     app_schema: AppSchema | None = Field(default=None, alias="schema")
     parent_key: str | None = None
     child_apps: tuple["BaseApp", ...] = ()
@@ -134,7 +140,9 @@ class BaseApp(BaseModel):
     artifact_base_dirs: SkipValidation[Mapping[str, Callable[[], Path]]] = Field(
         default_factory=dict
     )
-    static_mounts: tuple[StaticMount, ...] = ()
+    periodic_task_schedules: SkipValidation[
+        list[AppPeriodicTask] | Callable[[], list[AppPeriodicTask]] | None
+    ] = None
     uses_task_data: bool = False
 
     @model_validator(mode="before")

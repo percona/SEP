@@ -27,7 +27,7 @@ ancestor.
 
 This module also holds shared SEP-subtree test constants. ``REDUCED_ACTIVATION``
 mirrors the side-car embedded activation profile
-(``sidecar/settings.embedded.yaml``), which several modules across the subtree
+(``sidecar/settings.yaml``), which several modules across the subtree
 assert against; defining it once here keeps those copies from drifting away from
 the profile as apps are activated or dropped.
 """
@@ -37,10 +37,11 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from alembic.config import Config
 from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.sep.config import App
+from app.sep.config import App, sep_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 from tests.app.conftest import (  # noqa: F401
@@ -56,10 +57,37 @@ from tests.app.conftest import (  # noqa: F401
     unauthenticated_client,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+ALEMBIC_INI = REPO_ROOT / "alembic.ini"
+
 REDUCED_ACTIVATION = [
-    App(module_name=name) for name in ("inventory", "snippets", "atw", "mysql_backups")
+    App(module_name=name) for name in ("inventory", "atw", "mysql_backups")
 ]
-"""The PMM-embedded side-car activation list (``sidecar/settings.embedded.yaml``)."""
+"""The PMM-embedded side-car activation list (``sidecar/settings.yaml``)."""
+
+
+@pytest.fixture
+def sep_alembic_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Config, str]:
+    """Return an Alembic ``Config`` pointing at a temp SQLite file.
+
+    Patch ``sep_settings.DATABASE.HOST`` and ``NAME`` so that the
+    computed ``DATABASE.URL`` property evaluates to a temp SQLite path
+    when ``env.py`` reads it.
+
+    :param tmp_path: Pytest's per-test temporary directory.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :return: A tuple of (Config, sync sqlite URL) for the test DB.
+    """
+    db_path = tmp_path / "test_sep.sqlite"
+    sync_url = f"sqlite:///{db_path}"
+
+    monkeypatch.setattr(sep_settings.DATABASE, "HOST", "")
+    monkeypatch.setattr(sep_settings.DATABASE, "NAME", str(db_path))
+
+    cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    return cfg, sync_url
 
 
 @pytest.fixture

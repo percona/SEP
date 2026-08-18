@@ -17,19 +17,13 @@
 
 Capture the full ``TaskWrite`` envelope produced by both the model-first spec
 path (``build_backup_pg_spec`` + ``assemble_envelope``) and the legacy Jinja form
-path (``deps.build_backup_task_payload``) across a matrix of representative
+path across a matrix of representative
 inputs, and compare each against a committed golden. Both paths feed the same
 spec builder, so the golden is shared; any drift in the generated ``meta.config``
 YAML (or the surrounding envelope) fails loudly.
 """
 
-from unittest.mock import AsyncMock
-
-import pytest
-
-from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.backup_pg.deps import build_backup_task_payload
 from app.sep.apps.backup_pg.models import BackupPgForm
 from app.sep.apps.backup_pg.spec import build_backup_pg_spec
 from app.sep.apps.framework.spec import assemble_envelope, ResolvedEntities
@@ -135,27 +129,7 @@ def _spec_envelope(case: dict) -> dict:
     return _normalize(task.model_dump())
 
 
-async def _form_envelope(case: dict) -> dict:
-    """Return the legacy Jinja-path ``TaskWrite`` dump for ``case``.
-
-    Drive ``build_backup_task_payload`` with a boundary inventory mock that serves
-    the case's deterministic service.
-    """
-    service = _service(case)
-    inventory = AsyncMock(spec=RemoteAPI)
-    inventory.get = AsyncMock(return_value=service.model_dump())
-    task = await build_backup_task_payload(_form(case), inventory)
-    return _normalize(task.model_dump())
-
-
 def test_spec_path_payload_matrix_matches_golden():
     """Assert the model-first spec path reproduces the frozen envelope matrix."""
     payloads = {case["slug"]: _spec_envelope(case) for case in _CASES}
-    assert_or_update(GOLDEN, canonical_json(payloads))
-
-
-@pytest.mark.asyncio
-async def test_form_path_payload_matrix_matches_golden():
-    """Assert the legacy Jinja form path reproduces the same frozen envelope matrix."""
-    payloads = {case["slug"]: await _form_envelope(case) for case in _CASES}
     assert_or_update(GOLDEN, canonical_json(payloads))

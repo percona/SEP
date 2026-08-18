@@ -15,8 +15,9 @@
 
 """Fixtures for ``tests/app/core/settings_override/``."""
 
+import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 import pytest
 import pytest_asyncio
@@ -28,6 +29,50 @@ from sqlmodel.pool import StaticPool
 from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
+
+#: Importable path patched when tests replace ``start_refresh_task``.
+START_REFRESH_TASK = "app.core.settings_override.worker.start_refresh_task"
+
+
+class HangingSession:
+    """Stand in for an async session whose enter hangs until cancelled."""
+
+    async def __aenter__(self) -> "HangingSession":
+        await asyncio.Event().wait()
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+
+def hanging_session_maker_factory() -> type[HangingSession]:
+    """Return a session maker whose sessions hang on enter."""
+    return HangingSession
+
+
+def recording_start_refresh_task(
+    recorded: dict[str, object],
+) -> Callable[..., Awaitable[asyncio.Task]]:
+    """Build a stand-in ``start_refresh_task`` that records call kwargs.
+
+    :param recorded: Mutable mapping filled with ``callbacks`` and
+        ``seed_timeout`` from each invocation.
+    :return: An async callable matching ``start_refresh_task``'s signature.
+    """
+
+    async def _fake_start(
+        session_maker_factory: object,
+        proxies: object,
+        interval: object,
+        callbacks: object = None,
+        *,
+        seed_timeout: float | None = None,
+    ) -> asyncio.Task:
+        recorded["callbacks"] = callbacks
+        recorded["seed_timeout"] = seed_timeout
+        return asyncio.create_task(asyncio.sleep(3600))
+
+    return _fake_start
 
 
 @pytest.fixture(autouse=True)
@@ -48,7 +93,7 @@ def _propagate_cache_logs() -> None:
 
 @pytest.fixture(name="restrict")
 def restrict_fixture(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
-    """Return a callable pinning ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` to given entries.
+    """Return a callable pinning ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` to given entries.
 
     Pins the value on the already-constructed proxy rather than through the
     environment, which the singleton no longer reads.
@@ -58,7 +103,7 @@ def restrict_fixture(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     """
 
     def _restrict(*entries: str) -> None:
-        monkeypatch.setattr(settings, "SETTINGS_OVERRIDE_ALLOWED_KEYS", set(entries))
+        monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "ALLOWED_KEYS", set(entries))
 
     return _restrict
 

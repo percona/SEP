@@ -18,8 +18,10 @@
 from pathlib import Path
 
 from fastapi import APIRouter
+from sqlalchemy_celery_beat.models import Period
 
-from app.sep.apps.framework.base import BaseApp, StaticMount
+from app.core.celery.models import IntervalSchedule
+from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 
 
 class TestBaseAppDisplayName:
@@ -49,21 +51,17 @@ class TestBaseAppArbitraryTypes:
     def test_accepts_live_api_router(self) -> None:
         """A live ``APIRouter`` is accepted on the router fields."""
         api_router = APIRouter()
-        jinja_router = APIRouter()
         app = BaseApp(
             name="Checksums",
             uri_path="/checksums",
             api_router=api_router,
-            jinja_router=jinja_router,
         )
         assert app.api_router is api_router
-        assert app.jinja_router is jinja_router
 
     def test_router_fields_default_to_none(self) -> None:
         """Both router fields default to ``None`` when unset."""
         app = BaseApp(name="Inventory", uri_path="/inventory")
         assert app.api_router is None
-        assert app.jinja_router is None
 
 
 class TestBaseAppSchemaAlias:
@@ -108,23 +106,54 @@ class TestBaseAppArtifactBaseDirs:
         assert app.artifact_base_dirs["dipper"]() == Path("/tmp/payloads")
 
 
-class TestBaseAppStaticMounts:
-    """Cover the ``static_mounts`` registry-collected authenticated mounts."""
+class TestBaseAppPeriodicTaskSchedules:
+    """Cover the ``periodic_task_schedules`` beat-contribution seam."""
 
-    def test_static_mounts_defaults_to_empty(self) -> None:
-        """Return an empty tuple when the field is unset."""
+    def test_periodic_task_schedules_defaults_to_none(self) -> None:
+        """Return ``None`` when the field is unset."""
         app = BaseApp(name="Inventory", uri_path="/inventory")
-        assert app.static_mounts == ()
+        assert app.periodic_task_schedules is None
 
-    def test_static_mounts_carries_declaration(self) -> None:
-        """Carry a declared mount on a plain ``BaseApp``."""
-        mount = StaticMount(
-            path="/static/dipper",
-            directory=Path("/tmp/payloads"),
-            name="dipper_files",
+    def test_periodic_task_schedules_carries_list_declaration(self) -> None:
+        """Carry a plain list of app-owned schedule specs."""
+        interval = IntervalSchedule(every=10, period=Period.MINUTES)
+        specs = [
+            AppPeriodicTask(
+                name="sep__example",
+                task="example_task",
+                schedule=lambda: interval,
+            ),
+        ]
+        app = BaseApp(
+            name="Example",
+            uri_path="/example",
+            periodic_task_schedules=specs,
         )
-        app = BaseApp(name="Dipper", uri_path="/dipper", static_mounts=(mount,))
-        assert app.static_mounts == (mount,)
+        assert app.periodic_task_schedules is specs
+        assert app.periodic_task_schedules[0].name == "sep__example"
+        assert app.periodic_task_schedules[0].schedule() == interval
+
+    def test_periodic_task_schedules_carries_callable_declaration(self) -> None:
+        """Carry a declared factory that returns specs when called."""
+        interval = IntervalSchedule(every=10, period=Period.MINUTES)
+        specs = [
+            AppPeriodicTask(
+                name="sep__example",
+                task="example_task",
+                schedule=lambda: interval,
+            ),
+        ]
+
+        def _factory() -> list[AppPeriodicTask]:
+            return specs
+
+        app = BaseApp(
+            name="Example",
+            uri_path="/example",
+            periodic_task_schedules=_factory,
+        )
+        assert app.periodic_task_schedules is _factory
+        assert app.periodic_task_schedules() == specs
 
 
 class TestBaseAppUsesTaskData:

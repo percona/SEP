@@ -25,7 +25,7 @@ from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
-from app.core.utils.fields import NonEmptyStr, UTCDatetime
+from app.core.utils.fields import ArbitraryMapping, NonEmptyStr, UTCDatetime
 
 
 class SourceEnum(StrEnum):
@@ -203,7 +203,6 @@ class ServiceBase(SQLModel):
     :param replication_set: The replication set in which the service is running. Defaults to None.
     :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
-    :type custom_labels: dict[str, Any] | None
     :param node_id: The foreign key referencing the node to which the service belongs.
     :type node_id: int
     """
@@ -222,7 +221,7 @@ class ServiceBase(SQLModel):
     )
     cluster: str | None = None
     replication_set: str | None = None
-    custom_labels: dict[str, Any] | None = SQLField(
+    custom_labels: ArbitraryMapping | None = SQLField(
         default=None,
         sa_column=Column(JSON),
     )
@@ -249,7 +248,6 @@ class ServiceWrite(ServiceBase):
     :param replication_set: The replication set in which the service is running. Defaults to None.
     :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
-    :type custom_labels: dict[str, Any] | None
     :param node_id: The foreign key referencing the node to which the service belongs.
         Defaults to None.
     :type node_id: int | None
@@ -291,7 +289,6 @@ class Service(BaseSQLModel, ServiceBase, table=True):
     :param replication_set: The replication set in which the service is running, if set.
     :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service, if set.
-    :type custom_labels: dict[str, Any] | None
     :param node_id: The unique identifier of the node on which the service is running.
         Must be unique for external_id, as defined by composite index
         ix_service_external_id_node_id, and for port, as defined by composite index
@@ -341,7 +338,6 @@ class ServiceResponse(BaseSQLModel, ServiceBase):
     :param replication_set: The replication set in which the service is running, if set.
     :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service, if set.
-    :type custom_labels: dict[str, Any] | None
     :param node_id: The unique identifier of the node on which the service is running.
     :type node_id: int
     :param schemas: A list of schemas associated with the service.
@@ -380,7 +376,6 @@ class ServiceDetailResponse(ServiceResponse):
     :param replication_set: The replication set in which the service is running, if set.
     :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service, if set.
-    :type custom_labels: dict[str, Any] | None
     :param node_id: The unique identifier of the node on which the service is running.
     :type node_id: int
     :param schemas: A list of schemas associated with the service.
@@ -538,6 +533,7 @@ class TableBase(SQLModel):
     # SEP-203
     keys: dict[str, Any] = SQLField(
         sa_column=Column(JSON, nullable=False),
+        schema_extra={"json_schema_extra": {"additionalProperties": True}},
     )
 
 
@@ -641,9 +637,7 @@ class HostSystemObservationBase(SQLModel):
     :param os_version: The observed operating system version. Defaults to None.
     :type os_version: str | None
     :param installed_packages: Snapshot of installed packages. Defaults to None.
-    :type installed_packages: list[dict[str, Any]] | None
     :param config: Snapshot of host configuration. Defaults to None.
-    :type config: dict[str, Any] | None
     :param observed_at: When this observation was collected (domain provenance).
     :type observed_at: UTCDatetime
     """
@@ -655,11 +649,11 @@ class HostSystemObservationBase(SQLModel):
         ondelete="CASCADE",
     )
     os_version: str | None = None
-    installed_packages: list[dict[str, Any]] | None = SQLField(
+    installed_packages: list[ArbitraryMapping] | None = SQLField(
         default=None,
         sa_column=Column(JSON),
     )
-    config: dict[str, Any] | None = SQLField(
+    config: ArbitraryMapping | None = SQLField(
         default=None,
         sa_column=Column(JSON),
     )
@@ -705,9 +699,7 @@ class HostSystemObservation(BaseSQLModel, HostSystemObservationBase, table=True)
     :param os_version: The observed operating system version, if set.
     :type os_version: str | None
     :param installed_packages: Snapshot of installed packages, if set.
-    :type installed_packages: list[dict[str, Any]] | None
     :param config: Snapshot of host configuration, if set.
-    :type config: dict[str, Any] | None
     :param observed_at: When this observation was collected.
     :type observed_at: UTCDatetime
     """
@@ -721,9 +713,7 @@ class HostSystemObservationWrite(HostSystemObservationBase):
     :param os_version: The observed operating system version. Defaults to None.
     :type os_version: str | None
     :param installed_packages: Snapshot of installed packages. Defaults to None.
-    :type installed_packages: list[dict[str, Any]] | None
     :param config: Snapshot of host configuration. Defaults to None.
-    :type config: dict[str, Any] | None
     :param observed_at: When this observation was collected.
     :type observed_at: UTCDatetime
     """
@@ -812,9 +802,7 @@ class HostSystemObservationResponse(BaseSQLModel, HostSystemObservationBase):
     :param os_version: The observed operating system version.
     :type os_version: str | None
     :param installed_packages: Snapshot of installed packages.
-    :type installed_packages: list[dict[str, Any]] | None
     :param config: Snapshot of host configuration.
-    :type config: dict[str, Any] | None
     :param observed_at: When this observation was collected.
     :type observed_at: UTCDatetime
     """

@@ -138,7 +138,7 @@ export interface paths {
      *     that has no override row succeeds with 204. Attempting to delete a field
      *     the code declares NOT_OVERRIDABLE responds 409, since it cannot have an
      *     override row in the first place and the operator's intent is
-     *     unsatisfiable. A field only ``SETTINGS_OVERRIDE_ALLOWED_KEYS`` withheld
+     *     unsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld
      *     may still carry a row written before the restriction applied, so that
      *     row is deleted normally and only the no-row case answers 409.
      *
@@ -239,9 +239,13 @@ export interface paths {
      * Create Task History
      * @description Create a new task history.
      *
-     *     ``has_logs`` is not populated on this response -- a row that was just
-     *     created has no chunk-store entry or legacy tracking blob yet, so the
-     *     field defaults to ``False`` on serialization.
+     *     Neither ``has_logs`` nor ``log_capture`` is populated on this response — a
+     *     row that was just created has no chunk-store entry, legacy tracking blob or
+     *     capture verdict yet, so both fall back to their serialization defaults.
+     *
+     *     :param session: The SQLAlchemy asynchronous session.
+     *     :param task: The task history to persist.
+     *     :return: The saved task history record.
      */
     post: operations['tasks_create_task_history_history__post'];
     delete?: never;
@@ -787,6 +791,19 @@ export interface components {
       period: components['schemas']['Period'];
     };
     JsonValue: unknown;
+    /**
+     * LogCaptureStatusEnum
+     * @description Describe how completely SEP captured a task's log stream.
+     *
+     *     Distinguishes a stream that genuinely produced nothing from one whose bytes
+     *     were lost before SEP could read them — the stored offsets alone cannot tell
+     *     those apart, since both leave the cursors at zero.
+     *
+     *     ``UNKNOWN`` is the honest verdict where no evidence survives: rows written
+     *     before the column existed, and histories carrying no state rows at all.
+     * @enum {string}
+     */
+    LogCaptureStatusEnum: 'complete' | 'incomplete' | 'unknown';
     /** PaginatedResponse[TaskHistoryResponse] */
     PaginatedResponse_TaskHistoryResponse_: {
       /** Items */
@@ -897,7 +914,9 @@ export interface components {
        * Meta
        * @default {}
        */
-      meta: Record<string, never>;
+      meta: {
+        [key: string]: unknown;
+      };
       /** Payload */
       payload?: string | null;
     };
@@ -1060,8 +1079,8 @@ export interface components {
      * @description Enumerate settings classes that may have HOT override rows.
      *
      *     The wired classes are ``SEPSettings``, ``TasksSettings``,
-     *     ``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,
-     *     ``AlertSettings``, ``AlertsSettings``, ``AnonymizerSettings`` and
+     *     ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
+     *     ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings`` and
      *     ``InventorySettings``.
      *
      *     To wire a new settings class:
@@ -1082,11 +1101,11 @@ export interface components {
       | 'SEPSettings'
       | 'TasksSettings'
       | 'SnippetsSettings'
-      | 'MessagesSettings'
       | 'Settings'
       | 'AlertSettings'
       | 'AnonymizerSettings'
       | 'AlertsSettings'
+      | 'HealthReportSettings'
       | 'InventorySettings';
     /**
      * SettingClassGroup
@@ -1129,6 +1148,19 @@ export interface components {
       settings: components['schemas']['SettingResponse'][];
     };
     /**
+     * SettingOption
+     * @description Represent one selectable member for an enum-typed setting.
+     *
+     *     :param label: The enum member name shown in the UI (e.g. ``WARNING``).
+     *     :param value: The JSON-dumped member value the client must PATCH
+     *         (e.g. ``30`` for an ``IntEnum``).
+     */
+    SettingOption: {
+      /** Label */
+      label: string;
+      value: components['schemas']['JsonValue'];
+    };
+    /**
      * SettingResponse
      * @description Represent a single setting's metadata and current value.
      *
@@ -1159,6 +1191,8 @@ export interface components {
      *         (e.g. the active auth provider). ``False`` lets the UI present the field
      *         as inert. Display-only, like ``is_advanced``: it does not block
      *         PATCH/DELETE server-side; the runtime gate is the real enforcement.
+     *     :param options: Selectable enum members for dropdown UIs, or ``None`` when
+     *         the field is not an ``Enum`` annotation. Aliased members are excluded.
      */
     SettingResponse: {
       /** Default Value */
@@ -1185,6 +1219,8 @@ export interface components {
       key: string;
       /** Key Path */
       key_path?: string[];
+      /** Options */
+      options?: components['schemas']['SettingOption'][] | null;
       reload: components['schemas']['ReloadClassification'];
       setting_class: components['schemas']['SettingClassEnum'];
       /** Type */
@@ -1267,7 +1303,9 @@ export interface components {
        * Meta
        * @default {}
        */
-      meta: Record<string, never>;
+      meta: {
+        [key: string]: unknown;
+      };
       /** Payload */
       payload?: string | null;
     };
@@ -1280,13 +1318,11 @@ export interface components {
      *     :param target: The target system or environment.
      *     :type target: str
      *     :param meta: Additional metadata for the task. Defaults to an empty dictionary.
-     *     :type meta: dict | None
      *     :param payload: Optional payload or file path for parameterizing the task.
      *         Defaults to None.
      *     :type payload: str | None
      *     :param tracking: Tracking information for task execution. Defaults to a dictionary
      *         with keys for allocation and evaluation IDs.
-     *     :type tracking: dict | None
      */
     TaskExecutionRequest: {
       /** Eta */
@@ -1295,7 +1331,9 @@ export interface components {
        * Meta
        * @default {}
        */
-      meta: Record<string, never> | null;
+      meta: {
+        [key: string]: unknown;
+      } | null;
       /** Payload */
       payload?: string | null;
       /** Target */
@@ -1306,7 +1344,9 @@ export interface components {
        * Tracking
        * @default {}
        */
-      tracking: Record<string, never> | null;
+      tracking: {
+        [key: string]: unknown;
+      } | null;
     } & {
       [key: string]: unknown;
     };
@@ -1400,25 +1440,23 @@ export interface components {
      * @description Represent a task history API response.
      *
      *     :param execution_request: The request that triggered the task execution.
-     *     :type execution_request: TaskExecutionRequest
      *     :param status: The status of the task execution.
-     *     :type status: TaskHistoryStatusEnum
      *     :param started_at: The datetime when the task execution started.
-     *     :type started_at: UTCDatetime | None
      *     :param finished_at: The datetime when the task execution finished.
-     *     :type finished_at: UTCDatetime | None
      *     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
      *         logs and files generated by the execution. Defaults to None, meaning it uses
      *         the value defined in the associated task's :attr:`Task.anonymize_mask`.
-     *     :type anonymize_mask: int | None
      *     :param task: The task associated with this execution history.
-     *     :type task: TaskResponse
      *     :param executed_by: The user ID of the user who executed the task.
-     *     :type executed_by: str | None
      *     :param has_logs: Whether this task history has any readable log content --
      *         either a chunk-store row or a legacy ``tracking["task_logs"]`` blob.
      *         Populated by list/retrieve routes; defaults to ``False``.
-     *     :type has_logs: bool
+     *     :param log_capture: How completely SEP captured this execution's logs,
+     *         aggregated over its state rows: any incomplete stream reports
+     *         ``"incomplete"``, else any unknown reports ``"unknown"``, else
+     *         ``"complete"``. Populated by list/retrieve routes; defaults to
+     *         ``"unknown"``, which is also what a history carrying no state rows
+     *         reports.
      *     :param display_name: A user-meaningful label derived from the task name or
      *         execution-request metadata. Read-only; computed on serialisation.
      */
@@ -1465,6 +1503,8 @@ export interface components {
       has_logs: boolean;
       /** Id */
       id: number | null;
+      /** @default unknown */
+      log_capture: components['schemas']['LogCaptureStatusEnum'];
       /** Started At */
       started_at?: string | null;
       /** @default pending */
@@ -1556,7 +1596,9 @@ export interface components {
       /** Created By */
       created_by: string | null;
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /** Deleted At */
       deleted_at: string | null;
       /** Id */
@@ -1604,7 +1646,9 @@ export interface components {
        *     :return: A dictionary summarizing average, last, and total task durations.
        *     :rtype: dict[str, Any]
        */
-      readonly duration: Record<string, never>;
+      readonly duration: {
+        [key: string]: unknown;
+      };
       /**
        * Engine
        * @default nomad
@@ -1625,7 +1669,9 @@ export interface components {
        *     :return: A dictionary summarizing the number of passed and failed tasks.
        *     :rtype: dict[str, int]
        */
-      readonly status: Record<string, never>;
+      readonly status: {
+        [key: string]: number;
+      };
       /**
        * Total
        * @description Return the total number of tasks.
@@ -1670,7 +1716,9 @@ export interface components {
       /** @default nomad */
       backend: components['schemas']['TaskBackendEnum'];
       /** Data */
-      data: Record<string, never>;
+      data: {
+        [key: string]: unknown;
+      };
       /**
        * Is Template
        * @default false
@@ -1753,6 +1801,20 @@ export interface operations {
         self_parent?: boolean | null;
         offset?: number;
         limit?: number;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?:
+          | 'backend'
+          | '-backend'
+          | 'created_at'
+          | '-created_at'
+          | 'name'
+          | '-name'
+          | 'owner'
+          | '-owner'
+          | 'updated_at'
+          | '-updated_at';
+        /** @description Case-insensitive search across the searchable columns. */
+        search?: string | null;
       };
       header?: never;
       path?: never;
@@ -2005,6 +2067,20 @@ export interface operations {
         exclude_internal?: boolean;
         offset?: number;
         limit?: number;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?:
+          | 'created_at'
+          | '-created_at'
+          | 'executed_by'
+          | '-executed_by'
+          | 'finished_at'
+          | '-finished_at'
+          | 'started_at'
+          | '-started_at'
+          | 'status'
+          | '-status';
+        /** @description Case-insensitive search across the searchable columns. */
+        search?: string | null;
       };
       header?: never;
       path?: never;
@@ -2730,6 +2806,20 @@ export interface operations {
         snippet_filename?: string | null;
         offset?: number;
         limit?: number;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?:
+          | 'created_at'
+          | '-created_at'
+          | 'executed_by'
+          | '-executed_by'
+          | 'finished_at'
+          | '-finished_at'
+          | 'started_at'
+          | '-started_at'
+          | 'status'
+          | '-status';
+        /** @description Case-insensitive search across the searchable columns. */
+        search?: string | null;
       };
       header?: never;
       path: {

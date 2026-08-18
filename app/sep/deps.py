@@ -15,15 +15,12 @@
 
 """Define SEP dependencies."""
 
-import hmac
 import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from typing import Annotated, Any
-from zoneinfo import available_timezones
 
 import aiohttp
-from fastapi import Depends, HTTPException, Request, status
-from itsdangerous import BadSignature
+from fastapi import Depends, HTTPException, Request
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -31,7 +28,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app import __summary__, __version__
 from app.api.deps import get_current_user as get_current_user_api
 from app.api.deps import oauth2_scheme
-from app.core.alerts.config import alert_settings
 from app.core.auth import config as auth_config
 from app.core.auth.base import BaseAuthProvider
 from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
@@ -39,30 +35,19 @@ from app.core.auth.models import OAuthToken, SessionExchangeTokenResponse
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import (
-    HTTPBadRequestException,
     HTTPConflictException,
     HTTPNotFoundException,
-    HTTPRedirectException,
     HTTPServiceUnavailableException,
 )
-from app.core.log import set_log_context
 from app.core.pagination import fetch_all_dict_items
 from app.core.requests import RemoteAPI
-from app.core.security import crypto_timestamp_serializer
+from app.core.security import is_bearer_authenticated, SAFE_HTTP_METHODS
 from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
-from app.inventory.models import ServiceTypeEnum
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
-from app.sep.connectivity import (
-    annotate_tasks_with_connectivity,
-    CONNECTIVITY_META_SERVICE_TYPE_KEY,
-    CONNECTIVITY_TARGET_KEY,
-    get_check_connectivity_flag,
-)
 from app.sep.crud import AppStateManager
 from app.sep.db import get_async_session_maker
-from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import (
     CreatedEntity,
     CreatedNode,
@@ -70,12 +55,6 @@ from app.sep.inventory import (
     CreatedService,
     CreatedTable,
     ENTITY_MAPPING,
-)
-from app.sep.middleware import messages
-from app.sep.middleware.csrf import (
-    CSRF_COOKIE_NAME,
-    CSRF_FORM_FIELD,
-    request_has_bearer_authorization,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
@@ -87,164 +66,47 @@ from app.tasks.models import (
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
-AVAILABLE_TIMEZONES = sorted(available_timezones())
 
 
 def get_base_url(request: Request) -> URL:
     """Return the application's base URL.
 
-    If the `BASE_URL` setting is defined, returns it. Otherwise, the function extracts
-    the base URL from an incoming request by removing the path.
+    If the ``BASE_URL`` setting is defined, returns it. Otherwise the base is
+    derived from the incoming request, and carries the URL prefix the application
+    is served under, so a URL composed on it stays inside that prefix. It always
+    ends in a trailing slash, which callers joining a path onto it must absorb.
 
     :param request: The HTTP request object from which the base URL is derived.
-    :type request: Request
-    :return: The base URL with the path removed.
-    :rtype: Any
+    :return: The application's base URL.
     """
     if settings.BASE_URL is not None:
         return settings.BASE_URL
-    return request.url.replace(path="", query="", fragment="")
-
-
-BaseURL = Annotated[URL, Depends(get_base_url)]
-
-
-def get_access_token_from_cookie(
-    request: Request,
-) -> str:
-    """Retrieve and verify the access token from a session cookie.
-
-    Extracts the signed access token from the request cookies, verifies it, and
-    returns the unsigned token. If verification fails, raises a login
-    redirect exception.
-
-    :param request: The HTTP request containing the session cookie.
-    :type request: Request
-    :return: The verified and unsigned access token.
-    :rtype: str
-    :raises LoginRedirectException: If the token is invalid or cannot be
-        verified due to a `BadSignature`.
-    """
-    signed_access_token = request.cookies.get(sep_settings.SESSION.COOKIE_NAME, "")
-    try:
-        return crypto_timestamp_serializer.loads(
-            signed_access_token,
-            max_age=sep_settings.SESSION.MAX_AGE.total_seconds(),
-        )
-    except BadSignature:
-        logger.debug("Failed to unsign token")
-        raise LoginRedirectException(request) from None
-
-
-AccessTokenCookie = Annotated[str, Depends(get_access_token_from_cookie)]
-
-
-async def get_current_user_from_cookie(request: Request) -> User:
-    """Return the authenticated user from the signed session cookie.
-
-    Loads and verifies the session cookie, decodes the JWT into a user, and
-    rejects inactive accounts with a login redirect (legacy Jinja2 behavior).
-
-    :param request: The incoming HTTP request.
-    :type request: Request
-    :return: The authenticated user.
-    :rtype: User
-    :raises LoginRedirectException: If the cookie or JWT is invalid or the user
-        is inactive.
-    """
-    token = get_access_token_from_cookie(request)
-    try:
-        user = await User.from_jwt(token)
-    except (BadSignature, ValidationError) as exc:
-        logger.debug("Failed to authenticate user: %s", exc, exc_info=True)
-        raise LoginRedirectException(request) from None
-    if not user.is_active:
-        logger.debug("User %s is not active", user.username)
-        # TODO: Message on inactive  # noqa: TD002, TD003
-        raise LoginRedirectException(request)
-    set_log_context(user=user.username)
-    return user
-
-
-def is_bearer_authenticated(request: Request) -> bool:
-    """Return whether the request carries an ``Authorization: Bearer`` header.
-
-    Inspects only the ``Authorization`` header prefix — the token itself is not
-    validated. Intended as a routing signal to pick between Bearer and cookie
-    authentication, and to render API-style error responses for SPA clients.
-
-    :param request: The incoming HTTP request.
-    :type request: Request
-    :return: ``True`` when the header starts with ``Bearer ``, ``False`` otherwise.
-    :rtype: bool
-    """
-    return request.headers.get("authorization", "").lower().startswith("bearer ")
+    return URL(str(request.base_url))
 
 
 async def get_current_user(
     request: Request,
 ) -> User:
-    """Return the authenticated user from a Bearer token or session cookie.
+    """Return the authenticated user from the ``Authorization: Bearer`` header.
 
-    The ``Authorization: Bearer`` header is tried first (React SPA) and, when
-    present, failures from :func:`app.api.deps.get_current_user` are raised as
-    HTTP API errors (401/403) rather than converted into a login redirect —
-    including the case of a malformed/empty Bearer token. When the header is
-    absent, authentication falls back to the signed session cookie (legacy
-    Jinja2).
+    The header is checked explicitly before delegating to ``oauth2_scheme``:
+    that scheme carries ``auto_error=True`` and would raise a bare Starlette
+    ``HTTPException`` for a header-less request, bypassing SEP's project
+    exceptions.
 
     :param request: The incoming HTTP request.
-    :type request: Request
     :return: The authenticated user.
-    :rtype: User
-    :raises HTTPUnauthorizedException: If a Bearer token is present but invalid.
-    :raises HTTPForbiddenException: If the user resolved from Bearer is inactive.
-    :raises LoginRedirectException: If cookie-based auth fails or the cookie user
-        is inactive.
+    :raises HTTPUnauthorizedException: If no Bearer token is present, or the
+        token is invalid.
+    :raises HTTPForbiddenException: If the resolved user is inactive.
     """
-    if is_bearer_authenticated(request):
-        bearer_token = await oauth2_scheme(request)
-        return await get_current_user_api(bearer_token)
-
-    return await get_current_user_from_cookie(request)
-
-
-IsAuthenticated = Depends(get_current_user)
-CurrentUser = Annotated[User, IsAuthenticated]
+    if not is_bearer_authenticated(request):
+        raise HTTPUnauthorizedException
+    bearer_token = await oauth2_scheme(request)
+    return await get_current_user_api(bearer_token)
 
 
-async def get_api_authenticated_user(request: Request) -> User:
-    """Return the authenticated user for API surfaces.
-
-    Wrap :func:`get_current_user` so cookie-based API callers receive an
-    ``HTTPUnauthorizedException`` (401) instead of the
-    ``LoginRedirectException`` (303) used by Jinja pages. The
-    ``set-cookie`` header that ``LoginRedirectException`` uses to clear a
-    stale session cookie is preserved on the 401 response so the invalid
-    cookie does not linger on the client. Bearer-token failures from
-    :func:`get_current_user` (``HTTPUnauthorizedException`` /
-    ``HTTPForbiddenException``) propagate unchanged.
-
-    :param request: The incoming HTTP request.
-    :type request: Request
-    :return: The authenticated user.
-    :rtype: User
-    :raises HTTPUnauthorizedException: If cookie-based authentication fails
-        (converted from :class:`LoginRedirectException`), or if a Bearer
-        token is missing or invalid.
-    :raises HTTPForbiddenException: If the user resolved from the Bearer
-        token is inactive.
-    """
-    try:
-        return await get_current_user(request)
-    except HTTPRedirectException as exc:
-        unauthorized = HTTPUnauthorizedException()
-        if "set-cookie" in exc.headers:
-            unauthorized.headers = {"set-cookie": exc.headers["set-cookie"]}
-        raise unauthorized from None
-
-
-IsApiAuthenticated = Depends(get_api_authenticated_user)
+IsApiAuthenticated = Depends(get_current_user)
 ApiCurrentUser = Annotated[User, IsApiAuthenticated]
 
 
@@ -254,25 +116,24 @@ BEARER_REQUIRED_DETAIL = "Bearer authentication required for state-changing requ
 async def require_bearer_for_unsafe_methods(request: Request) -> None:
     """Require a Bearer Authorization header on mutating HTTP methods.
 
-    Cookie-authenticated mutations would bypass CSRF protection because
-    :func:`validate_csrf` operates on form-body fields and JSON requests
-    carry no form body. Browsers never attach an ``Authorization`` header
-    automatically, so requiring a Bearer token on mutating routes blocks
-    cross-site JSON POSTs from a malicious origin. ``GET``, ``HEAD`` and
-    ``OPTIONS`` pass through (cookie-authenticated SSR reads and CORS
-    preflights are unaffected). ``POST``, ``PUT``, ``PATCH`` and ``DELETE``
-    require ``Authorization: Bearer ...``; cookie-authenticated cross-site
-    JSON mutations are rejected with ``401`` before any business logic runs.
+    Browsers never attach an ``Authorization`` header automatically, so
+    requiring a Bearer token on mutating routes blocks cross-site JSON POSTs
+    from a malicious origin. ``GET``, ``HEAD`` and ``OPTIONS`` pass through
+    (reads and CORS preflights are unaffected). ``POST``, ``PUT``, ``PATCH``
+    and ``DELETE`` require ``Authorization: Bearer ...``.
 
-    Intended to be attached at router level to ``/api/apps/*`` so every
-    plugin's JSON mutation routes inherit the guard uniformly.
+    This is a backstop rather than the primary control: :func:`get_current_user`
+    already rejects a header-less request on every method, so wherever
+    ``IsApiAuthenticated`` is also attached this dependency cannot be the one
+    that rejects. It is kept at router level so that a route reachable without
+    that alias, or a future non-Bearer authentication path, still inherits the
+    guard uniformly.
 
     :param request: The incoming HTTP request.
-    :type request: Request
     :raises HTTPUnauthorizedException: When the method is unsafe and the
         request lacks an ``Authorization: Bearer`` header.
     """
-    if request.method in {"GET", "HEAD", "OPTIONS"}:
+    if request.method in SAFE_HTTP_METHODS:
         return
     if not is_bearer_authenticated(request):
         raise HTTPUnauthorizedException(detail=BEARER_REQUIRED_DETAIL)
@@ -281,31 +142,8 @@ async def require_bearer_for_unsafe_methods(request: Request) -> None:
 RequireBearerForUnsafeMethods = Depends(require_bearer_for_unsafe_methods)
 
 
-async def get_current_admin(current_user: CurrentUser) -> User:
-    """Return the authenticated admin.
-
-    :param current_user: The current logged-in user.
-    :type current_user: CurrentUser
-    :return: The authenticated admin user.
-    :rtype: User
-    :raises HTTPForbiddenException: If the user is not an admin.
-    """
-    if not current_user.is_admin:
-        raise HTTPForbiddenException
-    return current_user
-
-
-IsAdminDep = Depends(get_current_admin)
-AdminUser = Annotated[User, IsAdminDep]
-
-
 async def get_api_authenticated_admin(api_user: ApiCurrentUser) -> User:
     """Return the authenticated API admin user.
-
-    Mirror :func:`get_current_admin` but ride on the API auth path
-    (:func:`get_api_authenticated_user`) so failures surface as 401 / 403
-    JSON responses rather than the cookie-based 303 redirect to the login
-    page.
 
     :param api_user: The current API-authenticated user.
     :type api_user: ApiCurrentUser
@@ -320,23 +158,6 @@ async def get_api_authenticated_admin(api_user: ApiCurrentUser) -> User:
 
 IsApiAdmin = Depends(get_api_authenticated_admin)
 ApiAdminUser = Annotated[User, IsApiAdmin]
-
-
-async def redirect_if_user_is_authenticated(request: Request) -> None:
-    """Redirect authenticated users to homepage.
-
-    This dependency function checks if the session cookie is set in the request and,
-    if so, redirects the authenticated user to the homepage.
-
-    :param request: The HTTP request object.
-    :type request: Request
-    :raises HTTPRedirectException: If the session cookie is set.
-    """
-    if request.cookies.get(sep_settings.SESSION.COOKIE_NAME):
-        raise HTTPRedirectException("/", status_code=status.HTTP_303_SEE_OTHER)
-
-
-IsNotAuthenticated = Depends(redirect_if_user_is_authenticated)
 
 
 def _ambient_session_provider() -> BaseAuthProvider | None:
@@ -402,58 +223,6 @@ async def resolve_ambient_exchange_token(
             exc_info=True,
         )
         return None
-
-
-async def validate_csrf(request: Request) -> None:
-    """Validate the CSRF token submitted in the request form data.
-
-    Requests with ``Authorization: Bearer ...`` that do *not* also carry a
-    session cookie skip CSRF validation; Bearer tokens are not sent
-    automatically by browsers, so CSRF protection is not required for that
-    path (authentication is enforced separately).  When a session cookie is
-    also present the request is treated as cookie-authenticated and CSRF
-    validation is enforced normally, regardless of any Bearer header.
-
-    For authenticated requests (session cookie present), verify the HMAC
-    signature using the session cookie as salt.  For unauthenticated requests
-    (login page), verify using a double-submit cookie comparison plus
-    signature verification.
-
-    :param request: The HTTP request object.
-    :type request: Request
-    :raises HTTPBadRequestException: If the CSRF token is missing from the
-        form data.
-    :raises HTTPForbiddenException: If the CSRF token fails validation.
-    """
-    session_cookie = request.cookies.get(sep_settings.SESSION.COOKIE_NAME)
-    if request_has_bearer_authorization(request) and not session_cookie:
-        return
-
-    form_data = await request.form()
-    form_token = str(form_data.get(CSRF_FORM_FIELD, ""))
-    if not form_token:
-        raise HTTPBadRequestException(detail="Missing CSRF token.")
-
-    max_age = int(sep_settings.SESSION.MAX_AGE.total_seconds())
-
-    if session_cookie:
-        try:
-            crypto_timestamp_serializer.loads(
-                form_token, salt=session_cookie, max_age=max_age
-            )
-        except BadSignature:
-            raise HTTPForbiddenException(detail="CSRF validation failed.") from None
-    else:
-        csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
-        if not csrf_cookie or not hmac.compare_digest(form_token, csrf_cookie):
-            raise HTTPForbiddenException(detail="CSRF validation failed.")
-        try:
-            crypto_timestamp_serializer.loads(form_token, max_age=max_age)
-        except BadSignature:
-            raise HTTPForbiddenException(detail="CSRF validation failed.") from None
-
-
-IsCsrfValidated = Depends(validate_csrf)
 
 
 async def get_username_mapping() -> dict[str, str]:
@@ -535,14 +304,12 @@ def require_app_enabled(app_key: str) -> Callable[[AsyncSession], Awaitable[None
 
     A failed app-state read degrades to ENABLED rather than failing the request:
     a configured plugin stays reachable when the DB is unreachable (or the
-    ``appstate`` table is missing), mirroring :func:`get_default_context`. This
-    is fail-open by design -- the gate is an operator convenience, not a security
-    boundary, so a transient DB fault must not 500 every guarded route.
+    ``appstate`` table is missing). This is fail-open by design: the gate is an
+    operator convenience, not a security boundary, so a transient DB fault must
+    not 500 every guarded route.
 
     :param app_key: The plugin module key to gate on.
-    :type app_key: str
     :return: A FastAPI dependency coroutine that raises 503 when disabled.
-    :rtype: Callable[[AsyncSession], Awaitable[None]]
     """
 
     async def _gate(session: SessionDep) -> None:
@@ -603,9 +370,7 @@ def render_footer_text() -> str:
 
     Read :attr:`sep_settings.FOOTER_TEMPLATE` per call (it is a hot,
     materializer-backed setting) so a live ``SEP__FOOTER_TEMPLATE`` override is
-    reflected without restarting the application. This is the single source of
-    truth shared by the Jinja default context and the JSON app-info endpoint so
-    the two frontends cannot drift.
+    reflected without restarting the application.
 
     :return: The rendered footer text (application summary and version by default).
     """
@@ -614,75 +379,12 @@ def render_footer_text() -> str:
     )
 
 
-async def get_default_context(
-    request: Request,
-    user: CurrentUser,
-    base_uri: BaseURL,
-    session: SessionDep,
-) -> dict[str, Any]:
-    """Return the default context for templates.
-
-    The sidebar ``plugins`` list is filtered by *effective* app state via
-    :meth:`AppRegistry.resolve_effective_enabled`: protected apps always pass
-    through; every other app is shown only when its own
-    :class:`app.sep.models.AppState` row is ``ENABLED`` (a missing row is treated
-    as enabled) **and** every app it declares in ``requires_apps`` is itself
-    effectively enabled. A child app owns no row, so it resolves through its
-    parent via :attr:`~app.sep.apps.framework.base.BaseApp.state_key`. This
-    shares the one resolver used by the mount gate and the JSON app listing.
-
-    :param request: The HTTP request object.
-    :param user: The authenticated user.
-    :param base_uri: The base URI of the application.
-    :param session: The database session used to read app state.
-    :return: The default context.
-    """
-    try:
-        states = await AppStateManager.all_lifecycle_states(session)
-    except SQLAlchemyError:
-        # Error pages rebuild this context from a fresh session; keep them
-        # renderable when the DB is down.
-        logger.warning(
-            "Could not read app state; rendering all apps in the sidebar.",
-            exc_info=True,
-        )
-        states = {}
-    # Deferred: the framework package __init__ imports back into this module,
-    # so a top-level import here would cycle.
-    from app.sep.apps.framework.registry import get_app_registry
-
-    registry = get_app_registry()
-    memo: dict[str, bool] = {}
-    plugins = [
-        app
-        for app in registry
-        if registry.resolve_effective_enabled(app.key, states, memo)
-    ]
-    return {
-        "user": user,
-        "base_uri": base_uri,
-        "plugins": plugins,
-        "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
-        "csrf_token": getattr(request.state, "csrf_token", ""),
-        "pmm_url": settings.PMM.frontend,
-        "footer_text": render_footer_text(),
-        "user_id_to_username": await get_username_mapping(),
-    }
-
-
-DefaultContext = Annotated[dict[str, Any], Depends(get_default_context)]
-
-CheckConnectivityFlag = Annotated[bool, Depends(get_check_connectivity_flag)]
-
-
 async def get_inventory_client(request: Request) -> RemoteAPI:
-    """Construct a `RemoteAPI` instance for interacting with the Inventory API.
+    """Construct a ``RemoteAPI`` instance for interacting with the Inventory API.
 
     :param request: The HTTP request object.
-    :type request: Request
-    :return: An instance of `RemoteAPI` configured for the Inventory service, including
-        the endpoint, API key, and SSL settings.
-    :rtype: RemoteAPI
+    :return: An instance of ``RemoteAPI`` configured for the Inventory service,
+        including the endpoint, API key, and SSL settings.
     """
     return getattr(
         request.app.state, "inventory_api", None
@@ -701,18 +403,15 @@ InventoryClient = Annotated[RemoteAPI, Depends(get_inventory_client)]
 # TODO(yan): Proper SDK
 # SEP-130
 async def get_inventory_api(
-    inventory_client: InventoryClient, user: CurrentUser
+    inventory_client: InventoryClient, user: ApiCurrentUser
 ) -> AsyncGenerator[RemoteAPI]:
     """Construct a `RemoteAPI` instance for interacting with the Inventory API.
 
     :param inventory_client: The Inventory API client.
-    :type inventory_client: RemoteAPI
     :param user: The current authenticated user, from which the access token is
         extracted.
-    :type user: User
-    :return: An instance of `RemoteAPI` configured for the Inventory service, including
-        the endpoint, API key, and SSL settings.
-    :rtype: RemoteAPI
+    :return: An instance of ``RemoteAPI`` configured for the Inventory service,
+        including the endpoint, API key, and SSL settings.
     """
     with inventory_client.auth(user.access_token) as authenticated_api:
         yield authenticated_api
@@ -745,18 +444,15 @@ TasksClient = Annotated[RemoteAPI, Depends(get_tasks_client)]
 
 
 async def get_tasks_api(
-    tasks_client: TasksClient, user: CurrentUser
+    tasks_client: TasksClient, user: ApiCurrentUser
 ) -> AsyncGenerator[RemoteAPI]:
     """Construct a `RemoteAPI` instance for interacting with the Tasks API.
 
     :param tasks_client: The Tasks API client.
-    :type tasks_client: RemoteAPI
     :param user: The current authenticated user, from which the access token is
         extracted.
-    :type user: User
     :return: An instance of `RemoteAPI` configured for the Tasks service, including
         the endpoint, API key, and SSL settings.
-    :rtype: RemoteAPI
     """
     with tasks_client.auth(user.access_token) as authenticated_api:
         yield authenticated_api
@@ -857,9 +553,6 @@ async def get_created_node(inventory_api: InventoryAPI, node_id: int) -> Created
     )
 
 
-CreatedNodeDep = Annotated[CreatedNode, Depends(get_created_node)]
-
-
 async def get_created_service(
     inventory_api: InventoryAPI,
     service_id: int,
@@ -912,9 +605,6 @@ async def get_created_schema(
     return schema
 
 
-CreatedSchemaDep = Annotated[CreatedSchema, Depends(get_created_schema)]
-
-
 async def get_created_table(inventory_api: InventoryAPI, table_id: int) -> CreatedTable:
     """Retrieve a CreatedTable instance based on the given table ID.
 
@@ -931,9 +621,6 @@ async def get_created_table(inventory_api: InventoryAPI, table_id: int) -> Creat
     return await get_created_entity(
         inventory_api, SyncInventoryEntityTypeEnum.TABLE, table_id
     )
-
-
-CreatedTableDep = Annotated[CreatedTable, Depends(get_created_table)]
 
 
 class ExecutorHostsContext:
@@ -1045,200 +732,25 @@ async def get_executor_hosts_context(
 ExecutorHostsCtx = Annotated[ExecutorHostsContext, Depends(get_executor_hosts_context)]
 
 
-async def get_executor_hosts(request: Request, tasks_api: TaskAPI) -> dict[str, str]:
+async def get_executor_hosts(tasks_api: TaskAPI) -> dict[str, str]:
     """Retrieve executor hosts from the Tasks API.
 
-    :param request: The HTTP request object.
-    :type request: Request
+    An upstream failure degrades to an empty mapping rather than propagating, so
+    a Tasks-service outage leaves the consuming surfaces renderable.
+
     :param tasks_api: The API client used to interact with the tasks service.
-    :type tasks_api: TaskAPI
     :return: A dictionary of executor hosts.
-    :rtype: dict[str, str]
     """
     try:
         return await tasks_api.get("/hosts/")
-    except HTTPException as exc:
-        messages.error(request, exc.detail)
+    except HTTPException:
+        logger.warning(
+            "Could not read executor hosts from the Tasks API.", exc_info=True
+        )
     return {}
 
 
 ExecutorHosts = Annotated[dict[str, str], Depends(get_executor_hosts)]
-
-
-async def get_tasks_context(
-    inventory_api: InventoryAPI,
-    tasks_api: TaskAPI,
-    get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]],
-    executor_hosts_ctx: ExecutorHostsCtx,
-    default_context: DefaultContext | None = None,
-    owner: str | None = None,
-    *,
-    service_type: ServiceTypeEnum,
-    alert_on_fail_default: bool = False,
-) -> dict[str, Any]:
-    """Assemble the template context for task-dependent plugins.
-
-    This function retrieves inventory services (scoped by ``service_type``),
-    tasks (filtered by ``owner``), and their histories from the Inventory and
-    Tasks APIs. It organizes tasks based on their status and integrates them
-    into the provided context.
-
-    :param inventory_api: The API client used to interact with the inventory service.
-    :param tasks_api: The API client used to interact with the tasks service.
-    :param get_task_info_func: A callable that receives a task and returns
-        the processed task information.
-    :param executor_hosts_ctx: The enriched executor hosts context with display names.
-    :param default_context: The base context dictionary to update. If None (default),
-        initializes an empty dictionary.
-    :param owner: The owner filter for retrieving tasks. Defaults to ``None``.
-    :param service_type: The inventory service type whose services scope the
-        ``/services/`` fetch.
-    :param alert_on_fail_default: Default value for the alert on failure setting.
-    :return: The assembled context dictionary containing tasks and services
-        information, including ``connectivity_check_default`` sourced from
-        ``sep_settings.CONNECTIVITY_CHECK_DEFAULT``.
-    """
-    services = await fetch_all_dict_items(
-        lambda pagination: inventory_api.get(
-            "/services/",
-            params={"service_type": service_type, **pagination.model_dump()},
-        )
-    )
-
-    tasks = []
-    history_tasks = []
-    scheduled_tasks = []
-    running_tasks = []
-    tasks_response = await tasks_api.get("/", params={"owner": owner})
-    for task in tasks_response["items"]:
-        task_info = {
-            "name": task["name"],
-            "id": task["id"],
-            "created_by": task.get("created_by"),
-            "last_updated_by": task.get("last_updated_by"),
-        }
-        task_info |= get_task_info_func(task)
-        meta = task.get("data", {}).get("meta", {})
-        if CONNECTIVITY_META_SERVICE_TYPE_KEY in meta:
-            task_info[CONNECTIVITY_TARGET_KEY] = meta.get("target", "")
-            task_info[CONNECTIVITY_META_SERVICE_TYPE_KEY] = meta[
-                CONNECTIVITY_META_SERVICE_TYPE_KEY
-            ]
-        tasks.append(task_info)
-        response = await tasks_api.get(f"/{task['name']}/history/")
-        for hist in response["items"]:
-            match TaskHistoryStatusEnum(hist["status"]):
-                case TaskHistoryStatusEnum.PENDING:
-                    scheduled_tasks.append(hist)
-                case TaskHistoryStatusEnum.RUNNING:
-                    running_tasks.append(hist)
-                case _:
-                    history_tasks.append(hist)
-    annotate_tasks_with_connectivity(tasks)
-    periodic_tasks = await tasks_api.get("/periodic/", params={"owner": owner})
-
-    alert_on_fail_available = bool(alert_settings.PROVIDERS)
-    context = default_context or {}
-    context.update(
-        {
-            "executor_hosts": executor_hosts_ctx.as_template_list(),
-            "services": services,
-            "tasks": tasks,
-            "pending_tasks": scheduled_tasks,
-            "running_tasks": running_tasks,
-            "history_tasks": history_tasks,
-            "periodic_tasks": periodic_tasks,
-            "chainable_tasks": tasks,
-            "AVAILABLE_TIMEZONES": AVAILABLE_TIMEZONES,
-            "alert_on_fail_default": alert_on_fail_available and alert_on_fail_default,
-            "alert_on_fail_available": alert_on_fail_available,
-            "connectivity_check_default": sep_settings.CONNECTIVITY_CHECK_DEFAULT,
-        }
-    )
-    return context
-
-
-async def get_chainable_tasks(
-    tasks_api: RemoteAPI,
-    owner: str,
-    target: str,
-    exclude_task_name: str,
-) -> list[dict[str, Any]]:
-    """Fetch tasks that can be chained after a given task.
-
-    Return tasks matching the same owner and target, excluding the current task.
-
-    :param tasks_api: The Tasks API client.
-    :type tasks_api: RemoteAPI
-    :param owner: The task owner to filter by.
-    :type owner: str
-    :param target: The execution target to filter by.
-    :type target: str
-    :param exclude_task_name: The current task name to exclude from results.
-    :type exclude_task_name: str
-    :return: A list of chainable task dicts.
-    :rtype: list[dict[str, Any]]
-    """
-    response = await tasks_api.get("/", params={"owner": owner, "target": target})
-    return [t for t in response["items"] if t["name"] != exclude_task_name]
-
-
-async def get_tasks_index_context(
-    inventory_api: InventoryAPI,
-    tasks_api: TaskAPI,
-    default_context: DefaultContext,
-    executor_hosts_ctx: ExecutorHostsCtx,
-) -> dict[str, Any]:
-    """Assemble the context for the Homepage.
-
-    Retrieve services and associated tasks, organizing them based on their
-    execution status. Integrate this information into the default context for
-    rendering in templates.
-
-    :param inventory_api: The Inventory API client for fetching service and schema data.
-    :type inventory_api: InventoryAPI
-    :param tasks_api: The TaskAPI client for fetching task data.
-    :type tasks_api: TaskAPI
-    :param default_context: The default context to be updated with Alters-specific information.
-    :type default_context: DefaultContext
-    :param executor_hosts_ctx: The enriched executor hosts context with display names.
-    :type executor_hosts_ctx: ExecutorHostsCtx
-    :return: An updated context dictionary containing tasks' data.
-    :rtype: dict[str, Any]
-    """
-    response = await tasks_api.get(
-        "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
-    )
-    running_tasks = response["items"]
-    response = await tasks_api.get(
-        "/history/", params={"status": TaskHistoryStatusEnum.PENDING}
-    )
-    scheduled_tasks = response["items"]
-    periodic_tasks = await tasks_api.get("/periodic/", params={"enabled": "True"})
-    response = await tasks_api.get("/")
-    task_owner_mapping = {task["name"]: task["owner"] for task in response["items"]}
-    for periodic_task in periodic_tasks:
-        task_name = periodic_task.get("task")
-        periodic_task["owner"] = task_owner_mapping.get(task_name)
-    inventories = await inventory_api.get("/summary/")
-    # Derive from the already-filtered plugin list so a disabled Task Manager
-    # does not leave the homepage rendering links into 503-returning routes.
-    plugins = default_context.get("plugins", [])
-    is_task_manager_enabled = any(
-        p.name == "Task Manager" and p.sidebar for p in plugins
-    )
-    context = default_context
-    context.update(
-        {
-            **inventories,
-            "running_tasks": running_tasks,
-            "pending_tasks": scheduled_tasks,
-            "periodic_tasks": periodic_tasks,
-            "executor_hosts": executor_hosts_ctx.as_host_metrics(),
-            "is_task_manager_enabled": is_task_manager_enabled,
-        },
-    )
-    return context
 
 
 # TODO(yan): Put get_task in a proper TasksAPI SDK class

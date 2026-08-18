@@ -33,11 +33,13 @@ from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
+from jinja2 import Environment, FileSystemLoader
 from weasyprint import CSS, HTML
 
 from app.core.config import settings
 from app.core.exceptions import HTTPServiceUnavailableException
 from app.core.requests import RemoteAPI
+from app.sep.apps.report.config import health_report_settings, HealthReportSettings
 from app.sep.bundle_upload.factory import split_endpoint
 from app.sep.bundle_upload.plan import (
     DeliveryPlan,
@@ -49,7 +51,7 @@ from app.sep.bundle_upload.plan import (
 )
 from app.sep.bundle_upload.seam import BundleSource
 from app.sep.clients.pmm import PMMRemoteAPI
-from app.sep.config import HealthReportSettings, sep_settings
+from app.sep.utils.jinja import DEFAULT_FILTERS
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -913,9 +915,23 @@ async def generate_report(
 
 # PDF generation helpers
 
-_LOGO_PNG_PATH = (
-    Path(__file__).resolve().parents[4] / "static" / "img" / "percona-logo.png"
-)
+_ASSETS_DIR = Path(__file__).parent / "assets"
+_TEMPLATES_DIR = Path(__file__).parent / "templates"
+_LOGO_PNG_PATH = _ASSETS_DIR / "percona-logo.png"
+
+
+@functools.lru_cache(maxsize=1)
+def _get_pdf_environment() -> Environment:
+    """Return the Jinja environment that renders the report PDF template.
+
+    The report PDF is the only server-rendered surface left, so it owns its
+    loader and filter set rather than sharing a SEP-wide environment.
+
+    :return: An environment loading from this app's ``templates`` directory.
+    """
+    env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), autoescape=True)
+    env.filters |= DEFAULT_FILTERS
+    return env
 
 
 @functools.lru_cache(maxsize=1)
@@ -946,9 +962,7 @@ async def generate_pdf_report(report: ReportData) -> bytes:
     :return: The PDF file contents.
     :rtype: bytes
     """
-    from app.sep.config import sep_settings
-
-    template = sep_settings.JINJA_ENVIRONMENT.get_template("report/result_pdf.html.j2")
+    template = _get_pdf_environment().get_template("result_pdf.html.j2")
     html = template.render(
         report=report,
         service_names=SERVICE_NAMES,
@@ -1037,7 +1051,7 @@ async def upload_pdf_report(
         an intake error status to.
     :raises OSError: Propagates connection and timeout failures.
     """
-    upload = sep_settings.HEALTH_REPORT
+    upload = health_report_settings
     if not upload.is_upload_configured:
         raise HTTPServiceUnavailableException(detail="Report upload is not configured")
 

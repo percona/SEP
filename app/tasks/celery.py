@@ -43,7 +43,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.celery import celery
 from app.core.alerts.config import alert_service
 from app.core.alerts.models import AlertSeverity
-from app.core.config import settings
 from app.core.db.utils import (
     func_json_extract,
     prepare_unsafe_value_for_json_comparison,
@@ -138,12 +137,14 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
     resolves it. The enabled gate, the idempotent early-return, the initial inline
     refresh and the shutdown drain all live in :class:`WorkerRefresher`; periodic
     progress thereafter is best-effort, advancing only while a task drives
-    ``celery.loop.run_until_complete``.
+    ``celery.loop.run_until_complete``. The inline seed is bounded by a fraction
+    of ``celery.conf.worker_proc_alive_timeout`` so a hanging database cannot
+    push the child past the prefork pool's liveness deadline; on expiry the
+    periodic refresher still starts and the child runs with env-only overrides
+    until a later cycle lands.
 
     ``anonymizer_settings._resolve()`` runs unconditionally for validation even
-    when the refresher is disabled, as ``messages_settings._resolve()`` does in
-    ``sep_overrides_lifespan``. The two differ in consequence: the lifespan's
-    call aborts startup, while Celery catches and logs whatever a signal
+    when the refresher is disabled. Celery catches and logs whatever a signal
     receiver raises, so an invalid config here leaves the child running without
     this refresher.
 
@@ -152,14 +153,12 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
         when the anonymizer config is invalid. Celery logs it and carries on
         dispatching; the child starts without this refresher.
     :raises Exception: Propagates a session-maker failure from the initial
-        inline refresh, absorbed the same way. Per-proxy refresh failures are
-        caught and logged inside ``refresh_all``.
+        inline refresh, absorbed the same way. Per-proxy refresh failures and
+        a bounded-seed expiry are caught and logged inside the refresher; the
+        latter still starts the periodic task.
     """
     anonymizer_settings._resolve()  # noqa: SLF001
-    _refresher.start(
-        settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
-        enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
-    )
+    _refresher.start(proc_alive_timeout=celery.conf.worker_proc_alive_timeout)
 
 
 @worker_process_shutdown.connect
@@ -688,10 +687,13 @@ async def _dispatch_queue_item(
             await await_annotation(result, "STARTED")
         else:
             schedule_annotation(result, "STARTED")
-        return result
     finally:
         async with lock_session_maker() as async_session:
             await DispatchLockManager.delete(async_session, dispatch_lock)
+
+    if result.status.is_terminal():
+        await maybe_record_run(result.id, executor)
+    return result
 
 
 async def _raise_if_identical_task_conflict(

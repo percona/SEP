@@ -17,23 +17,48 @@
 
 import hashlib
 import hmac
+import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
-from pydantic import SecretStr, ValidationError
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field, SecretStr, ValidationError
+from pydantic_settings import (
+    BaseSettings,
+    NestedSecretsSettingsSource,
+    SecretsSettingsSource,
+    SettingsConfigDict,
+)
+from pydantic_settings.exceptions import SettingsError
+from pydantic_settings.sources import (
+    DotEnvSettingsSource,
+    EnvSettingsSource,
+    InitSettingsSource,
+)
 
+from app.core.alerts.config import AlertSettings
+from app.core.auth.config import AuthSettings
 from app.core.config import (
     _sanitize_client_kwargs,
+    _SEPDatabaseSettings,
     BaseYamlAppSettings,
     create_app,
     default_lifespan,
+    detect_removed_settings_override_keys,
     PMMSettings,
+    PreEnvSettings,
     Settings,
     settings,
     YamlPrefixConfigSettingsSource,
 )
+from app.inventory.config import InventorySettings
+from app.sep.apps.alerts.config import AlertsSettings
+from app.sep.apps.atw.config import AtwSettings
+from app.sep.apps.report.config import HealthReportSettings
+from app.sep.config import SEPSettings
+from app.sep.snippets.config import SnippetsSettings
+from app.tasks.anonymizer.config import AnonymizerSettings
+from app.tasks.config import TasksSettings
 
 DEFAULT_ANNOTATIONS_TIMEOUT = 5
 CUSTOM_ANNOTATIONS_TIMEOUT = 7
@@ -72,7 +97,11 @@ class DummySettings(BaseSettings):
 def mock_yaml_data():
     """Provide mock YAML data for testing."""
     return {
-        "default": {"key1": "default_value1", "key2": "default_value2"},
+        "default": {
+            "key1": "default_value1",
+            "key2": "default_value2",
+            "items": ["a", "b"],
+        },
         "env1": {"key1": "env1_value1", "nested": {"key2": "env1_nested_value2"}},
         "env2": {
             "key3": "env2_value3",
@@ -112,6 +141,24 @@ def test_yaml_prefix_config_settings_source_multiple_prefixes(mock_yaml_file):
     assert settings_source.yaml_data == expected_data, (
         f"Expected {expected_data} but got {settings_source.yaml_data}"
     )
+
+
+def test_yaml_prefix_config_settings_source_base_profile(
+    mock_yaml_file, mock_yaml_data
+):
+    """Select the base profile and return its data without doubling any list."""
+    prefixes = ("default",)
+    base_prefix = "default"
+
+    settings_source = YamlPrefixConfigSettingsSource(
+        DummySettings,
+        yaml_file=mock_yaml_file,
+        prefixes=prefixes,
+        base_prefix=base_prefix,
+    )
+
+    assert settings_source.yaml_data == mock_yaml_data["default"]
+    assert settings_source.yaml_data["items"] == ["a", "b"]
 
 
 class MockSettings(BaseSettings):
@@ -162,20 +209,22 @@ def settings_class():
 
 
 @pytest.fixture
-def mock_file_secret_settings():
-    """Mock for file secret settings."""
-    file_secret_settings = MagicMock()
-    file_secret_settings.env_vars = {
-        "prefix__SOME_SECRET": "supersecret",
-    }
-    return file_secret_settings
+def file_secret_settings(settings_class, tmp_path):
+    """Provide a real file-secret source over a directory holding one prefixed secret.
+
+    A ``MagicMock`` cannot stand in here: ``NestedSecretsSettingsSource`` reads
+    ``settings_cls.model_config`` and rejects the ``MagicMock`` that every
+    ``conf.get(...)`` returns with an opaque ``SettingsError``.
+    """
+    (tmp_path / "prefix__SOME_SECRET").write_text("supersecret", encoding="utf-8")
+    return SecretsSettingsSource(settings_class, secrets_dir=tmp_path)
 
 
 def test_settings_customise_sources(
     settings_class,
     mock_env_settings,
     mock_dotenv_settings,
-    mock_file_secret_settings,
+    file_secret_settings,
     mock_yaml_prefix_source,
 ):
     """Test the settings_customise_sources method."""
@@ -186,10 +235,10 @@ def test_settings_customise_sources(
         mock_yaml_prefix_source,
         mock_env_settings,
         mock_dotenv_settings,
-        mock_file_secret_settings,
+        file_secret_settings,
     )
 
-    expected_length = 4
+    expected_length = 5
     assert isinstance(customised_sources, tuple)
     assert len(customised_sources) == expected_length
 
@@ -204,6 +253,10 @@ def test_settings_customise_sources(
     assert "SSL_CERTFILE" in processed_dotenv_vars
     assert processed_dotenv_vars["SSL_KEYFILE"] == "/path/to/keyfile"
     assert processed_dotenv_vars["SSL_CERTFILE"] == "/path/to/certfile"
+
+    secret_source = customised_sources[3]
+    assert isinstance(secret_source, NestedSecretsSettingsSource)
+    assert secret_source.env_vars == {"some_secret": "supersecret"}
 
 
 @pytest.mark.asyncio
@@ -386,6 +439,16 @@ def test_create_app_custom_docs_url():
     assert app.redoc_url == "/custom-redoc"
 
 
+def test_create_app_defaults_to_no_root_path():
+    """``create_app`` without a prefix leaves ``root_path`` empty."""
+    assert create_app().root_path == ""
+
+
+def test_create_app_forwards_root_path():
+    """``create_app`` forwards ``root_path`` to FastAPI."""
+    assert create_app(root_path="/sep").root_path == "/sep"
+
+
 class TestDeriveInternalToken:
     """Cover SEP_INTERNAL_TOKEN derivation from SECRET_KEY."""
 
@@ -439,3 +502,766 @@ class TestDeriveInternalToken:
         """An empty secret key with no explicit token fails fast at construction."""
         with pytest.raises(ValidationError, match="SECRET_KEY must be set"):
             Settings(SECRET_KEY=SecretStr(""), SEP_INTERNAL_TOKEN=None)
+
+
+SECRET_FILE_MATRIX = [
+    pytest.param(
+        Settings,
+        "SECRET_KEY",
+        "matrix-secret-key",
+        "matrix-secret-key",
+        lambda s: s.SECRET_KEY.get_secret_value(),
+        id="Settings",
+    ),
+    pytest.param(
+        AlertSettings,
+        "ALERTING__SOURCE_PREFIX",
+        "matrix-prefix",
+        "matrix-prefix",
+        lambda s: s.SOURCE_PREFIX,
+        id="AlertSettings",
+    ),
+    pytest.param(
+        AuthSettings,
+        "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET",
+        "matrix-client-secret",
+        "matrix-client-secret",
+        lambda s: s.PROVIDER["casdoor"].client_secret.get_secret_value(),
+        id="AuthSettings",
+    ),
+    pytest.param(
+        InventorySettings,
+        "INVENTORY__DATABASE__PASSWORD",
+        "matrix-inventory-pw",
+        "matrix-inventory-pw",
+        lambda s: s.DATABASE.PASSWORD.get_secret_value(),
+        id="InventorySettings",
+    ),
+    pytest.param(
+        SEPSettings,
+        "SEP__DATABASE__PASSWORD",
+        "matrix-sep-pw",
+        "matrix-sep-pw",
+        lambda s: s.DATABASE.PASSWORD.get_secret_value(),
+        id="SEPSettings",
+    ),
+    pytest.param(
+        AlertsSettings,
+        "SEP__ALERTS__ALERT_FOLDER_NAME",
+        "Matrix Folder",
+        "Matrix Folder",
+        lambda s: s.ALERT_FOLDER_NAME,
+        id="AlertsSettings",
+    ),
+    pytest.param(
+        HealthReportSettings,
+        "SEP__HEALTH_REPORT__API_KEY",
+        "matrix-health-report-key",
+        "matrix-health-report-key",
+        lambda s: s.api_key.get_secret_value(),
+        id="HealthReportSettings",
+    ),
+    pytest.param(
+        AtwSettings,
+        "SEP__ATW__BUNDLE_TTL",
+        "77",
+        77,
+        lambda s: s.bundle_ttl,
+        id="AtwSettings",
+    ),
+    pytest.param(
+        SnippetsSettings,
+        "SEP__SNIPPETS__PREVIEW_MAX_CHARS",
+        "123",
+        123,
+        lambda s: s.PREVIEW_MAX_CHARS,
+        id="SnippetsSettings",
+    ),
+    pytest.param(
+        TasksSettings,
+        "TASKS__DATABASE__PASSWORD",
+        "matrix-tasks-pw",
+        "matrix-tasks-pw",
+        lambda s: s.DATABASE.PASSWORD.get_secret_value(),
+        id="TasksSettings",
+    ),
+    pytest.param(
+        AnonymizerSettings,
+        "TASKS__ANONYMIZER__NLP_MODELS",
+        '{"en": "matrix_model"}',
+        "matrix_model",
+        lambda s: s.NLP_MODELS["en"],
+        id="AnonymizerSettings",
+    ),
+]
+
+
+@pytest.fixture
+def aliased_settings_class():
+    """Build a prefixed settings class whose field carries a validation alias.
+
+    ``SEPSettings.APPS`` declares ``AliasChoices("APPS", "PLUGINS")``. An aliased
+    field is looked up without ``env_prefix`` unless ``env_prefix_target`` opts in,
+    so the source's native ``secrets_prefix`` would silently drop its secret file;
+    the key-rewriting loop this class exercises is what makes it resolve.
+    """
+
+    class AliasedSettings(BaseYamlAppSettings):
+        SETTINGS_PREFIXES = ["SEP"]
+        APPS: list[str] = Field(
+            default_factory=list,
+            validation_alias=AliasChoices("APPS", "PLUGINS"),
+        )
+
+    return AliasedSettings
+
+
+def test_unprefixed_class_reads_secret_file(tmp_path):
+    """Resolve an unprefixed setting from a file named after its canonical variable."""
+    (tmp_path / "SECRET_KEY").write_text("from-file\n", encoding="utf-8")
+
+    instance = Settings(_secrets_dir=tmp_path)
+
+    assert instance.SECRET_KEY.get_secret_value() == "from-file"
+
+
+def test_prefixed_class_reads_nested_secret_file(tmp_path):
+    """Resolve a nested setting on a prefixed class from its canonical file name."""
+    (tmp_path / "INVENTORY__DATABASE__PASSWORD").write_text(
+        "inventory-pw", encoding="utf-8"
+    )
+
+    instance = InventorySettings(_secrets_dir=tmp_path)
+
+    assert instance.DATABASE.PASSWORD.get_secret_value() == "inventory-pw"
+
+
+def test_aliased_field_resolves_from_secret_file(tmp_path, aliased_settings_class):
+    """Resolve a prefixed secret file for a field declaring a validation alias."""
+    (tmp_path / "SEP__APPS").write_text('["alerts"]', encoding="utf-8")
+
+    instance = aliased_settings_class(_secrets_dir=tmp_path)
+
+    assert instance.APPS == ["alerts"]
+
+
+def test_sep_settings_reads_aliased_secret_file(tmp_path):
+    """Resolve ``SEP__APPS`` from a file through the production override of the hook."""
+    (tmp_path / "SEP__APPS").write_text(
+        '[{"module_name": "tasks", "uri_path": "/tasks"}]', encoding="utf-8"
+    )
+
+    instance = SEPSettings(_secrets_dir=tmp_path)
+
+    assert [app.module_name for app in instance.APPS] == ["app.sep.apps.tasks"]
+
+
+def test_file_backed_legacy_plugins_key_does_not_warn(tmp_path):
+    """Populate the app list from a ``SEP__PLUGINS`` file without deprecating it.
+
+    ``SEPSettings.settings_customise_sources`` inspects only the environment and
+    dotenv sources, so the file-backed spelling is outside the deprecation
+    contract even though the alias still resolves it.
+    """
+    (tmp_path / "SEP__PLUGINS").write_text(
+        '[{"module_name": "tasks", "uri_path": "/tasks"}]', encoding="utf-8"
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        instance = SEPSettings(_secrets_dir=tmp_path)
+
+    assert [app.module_name for app in instance.APPS] == ["app.sep.apps.tasks"]
+    assert not [w for w in caught if "PLUGINS" in str(w.message)]
+
+
+def test_env_var_beats_secret_file(tmp_path, monkeypatch):
+    """Prefer an environment variable over a same-named secret file."""
+    (tmp_path / "INVENTORY__DATABASE__PASSWORD").write_text(
+        "from-file", encoding="utf-8"
+    )
+    monkeypatch.setenv("INVENTORY__DATABASE__PASSWORD", "from-env")
+
+    instance = InventorySettings(_secrets_dir=tmp_path)
+
+    assert instance.DATABASE.PASSWORD.get_secret_value() == "from-env"
+
+
+def test_dotenv_entry_beats_secret_file(tmp_path):
+    """Prefer a dotenv entry over a same-named secret file."""
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "INVENTORY__DATABASE__PASSWORD").write_text(
+        "from-file", encoding="utf-8"
+    )
+    env_file = tmp_path / "dotenv"
+    env_file.write_text("INVENTORY__DATABASE__PASSWORD=from-dotenv\n", encoding="utf-8")
+
+    instance = InventorySettings(_secrets_dir=secrets_dir, _env_file=env_file)
+
+    assert instance.DATABASE.PASSWORD.get_secret_value() == "from-dotenv"
+
+
+def test_secret_file_beats_yaml_profile(tmp_path):
+    """Prefer a secret file over the value the baked YAML profile supplies."""
+    baseline = Settings()
+    (tmp_path / "SECRET_KEY").write_text("from-file", encoding="utf-8")
+
+    instance = Settings(_secrets_dir=tmp_path)
+
+    assert baseline.SECRET_KEY.get_secret_value() != "from-file"
+    assert instance.SECRET_KEY.get_secret_value() == "from-file"
+
+
+def test_full_precedence_chain(tmp_path, monkeypatch):
+    """Resolve one key at every level of the chain, each beating the ones after it."""
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "INVENTORY__DATABASE__PASSWORD").write_text(
+        "from-file", encoding="utf-8"
+    )
+    env_file = tmp_path / "dotenv"
+    env_file.write_text("INVENTORY__DATABASE__PASSWORD=from-dotenv\n", encoding="utf-8")
+
+    def build(**kwargs):
+        return InventorySettings(
+            _secrets_dir=secrets_dir, _env_file=env_file, **kwargs
+        ).DATABASE.PASSWORD.get_secret_value()
+
+    monkeypatch.setenv("INVENTORY__DATABASE__PASSWORD", "from-env")
+    assert build(DATABASE={"PASSWORD": "from-init"}) == "from-init"
+    assert build() == "from-env"
+
+    monkeypatch.delenv("INVENTORY__DATABASE__PASSWORD")
+    assert build() == "from-dotenv"
+
+    env_file.write_text("", encoding="utf-8")
+    assert build() == "from-file"
+
+
+def test_unset_secrets_dir_resolves_as_before():
+    """Resolve every setting unchanged, and warn about nothing, with the knob unset."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        instance = Settings()
+
+    assert (
+        instance.SECRET_KEY.get_secret_value()
+        == Settings().SECRET_KEY.get_secret_value()
+    )
+    assert not caught
+
+
+def test_empty_secrets_dir_env_value_coerces_to_none(monkeypatch):
+    """Coerce an empty ``SECRETS_DIR`` to ``None`` so the source never walks the CWD."""
+    monkeypatch.setenv("SECRETS_DIR", "")
+
+    assert PreEnvSettings().SECRETS_DIR is None
+
+
+def test_missing_secrets_dir_warns_and_degrades(tmp_path):
+    """Degrade to the profile value with one warning when the directory is absent."""
+    absent = tmp_path / "absent"
+
+    with pytest.warns(UserWarning, match="does not exist"):
+        instance = Settings(_secrets_dir=absent)
+
+    assert (
+        instance.SECRET_KEY.get_secret_value()
+        == Settings().SECRET_KEY.get_secret_value()
+    )
+
+
+def test_secrets_dir_without_matching_file_resolves_defaults(tmp_path):
+    """Fall through to the profile when the directory holds no matching file."""
+    (tmp_path / "UNRELATED_KEY").write_text("ignored", encoding="utf-8")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        instance = Settings(_secrets_dir=tmp_path)
+
+    assert (
+        instance.SECRET_KEY.get_secret_value()
+        == Settings().SECRET_KEY.get_secret_value()
+    )
+    assert not caught
+
+
+def test_empty_secret_file_overrides_profile_value(tmp_path):
+    """Resolve an empty secret file to ``""`` rather than falling back to the profile."""
+    (tmp_path / "INVENTORY__UVICORN_HOST").write_text("", encoding="utf-8")
+
+    instance = InventorySettings(_secrets_dir=tmp_path)
+
+    assert instance.UVICORN_HOST == ""
+
+
+def test_secret_file_content_is_stripped(tmp_path):
+    """Strip surrounding whitespace so ``openssl rand -hex 32 > FILE`` works as written."""
+    (tmp_path / "INVENTORY__UVICORN_HOST").write_text("  padded  \n", encoding="utf-8")
+
+    instance = InventorySettings(_secrets_dir=tmp_path)
+
+    assert instance.UVICORN_HOST == "padded"
+
+
+def test_secrets_dir_pointing_at_a_file_fails_fast(tmp_path):
+    """Reject a ``SECRETS_DIR`` that names a file instead of a directory."""
+    not_a_dir = tmp_path / "afile"
+    not_a_dir.write_text("content", encoding="utf-8")
+
+    with pytest.raises(SettingsError, match="must reference a directory"):
+        Settings(_secrets_dir=not_a_dir)
+
+
+def test_oversized_secrets_dir_fails_fast(tmp_path):
+    """Reject a secrets directory whose contents exceed the size ceiling."""
+    (tmp_path / "OVERSIZED").write_bytes(b"x" * (16 * 2**20 + 1))
+
+    with pytest.raises(SettingsError, match="size is above"):
+        Settings(_secrets_dir=tmp_path)
+
+
+def test_secret_in_subdirectory_is_ignored(tmp_path):
+    """Ignore a secret nested in a subdirectory, whose key can match no field."""
+    nested = tmp_path / "sub"
+    nested.mkdir()
+    (nested / "SECRET_KEY").write_text("nested-value", encoding="utf-8")
+
+    instance = Settings(_secrets_dir=tmp_path)
+
+    assert instance.SECRET_KEY.get_secret_value() != "nested-value"
+
+
+def test_symlink_escaping_secrets_dir_is_ignored(tmp_path):
+    """Ignore a symlink whose target resolves outside the secrets directory."""
+    outside = tmp_path / "outside"
+    outside.write_text("escaped-value", encoding="utf-8")
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "SECRET_KEY").symlink_to(outside)
+
+    instance = Settings(_secrets_dir=secrets_dir)
+
+    assert instance.SECRET_KEY.get_secret_value() != "escaped-value"
+
+
+def test_kubernetes_projected_secret_resolves(tmp_path):
+    """Resolve a secret through the ``..data`` symlink layout Kubernetes projects."""
+    data_dir = tmp_path / "..data"
+    data_dir.mkdir()
+    (data_dir / "SECRET_KEY").write_text("projected-value", encoding="utf-8")
+    (tmp_path / "SECRET_KEY").symlink_to(data_dir / "SECRET_KEY")
+
+    instance = Settings(_secrets_dir=tmp_path)
+
+    assert instance.SECRET_KEY.get_secret_value() == "projected-value"
+
+
+def test_unprefixed_file_resolves_for_prefixed_class(tmp_path):
+    """Resolve an unprefixed secret file for a prefixed class, as its env twin does."""
+    (tmp_path / "DATABASE__PASSWORD").write_text("bare-pw", encoding="utf-8")
+
+    instance = InventorySettings(_secrets_dir=tmp_path)
+
+    assert instance.DATABASE.PASSWORD.get_secret_value() == "bare-pw"
+
+
+def test_foreign_prefix_file_does_not_resolve(tmp_path):
+    """Leave a class untouched by a secret file spelled with another class's prefix."""
+    (tmp_path / "SEP__DATABASE__PASSWORD").write_text("sep-pw", encoding="utf-8")
+
+    instance = InventorySettings(_secrets_dir=tmp_path)
+
+    assert instance.DATABASE.PASSWORD is None
+
+
+@pytest.mark.parametrize(
+    ("settings_cls", "filename", "content", "expected", "read"), SECRET_FILE_MATRIX
+)
+def test_every_settings_class_reads_its_own_secret_file(
+    tmp_path, monkeypatch, settings_cls, filename, content, expected, read
+):
+    """Resolve one secret file per concrete settings class, spelled with its own prefix."""
+    monkeypatch.delenv(filename, raising=False)
+    (tmp_path / filename).write_text(f"{content}\n", encoding="utf-8")
+
+    assert read(settings_cls(_secrets_dir=tmp_path)) == expected
+
+
+def test_grafana_token_file_maps_to_its_nested_field_path(tmp_path):
+    """Rewrite the Grafana service-account-token file onto its nested field path.
+
+    ``AuthSettings`` accepts exactly one provider and the shipped profile supplies
+    Casdoor, so a Grafana-only instance cannot be built here — that invariant is
+    identical for the variable's environment twin. What this ticket owns is the
+    key the source hands the model, which is what this pins.
+    """
+    filename = "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"
+    (tmp_path / filename).write_text("glsa_from_file\n", encoding="utf-8")
+
+    sources = AuthSettings.settings_customise_sources(
+        AuthSettings,
+        InitSettingsSource(AuthSettings, init_kwargs={}),
+        EnvSettingsSource(AuthSettings),
+        DotEnvSettingsSource(AuthSettings, env_file=None),
+        SecretsSettingsSource(AuthSettings, secrets_dir=tmp_path),
+    )
+    secret_source = next(
+        source for source in sources if isinstance(source, NestedSecretsSettingsSource)
+    )
+
+    assert secret_source.env_vars == {
+        "provider__grafana__service_account_token": "glsa_from_file"
+    }
+
+
+def _yaml_source_for(settings_cls, secrets_dir):
+    """Return the YAML source ``settings_customise_sources`` builds for a secrets dir."""
+    sources = settings_cls.settings_customise_sources(
+        settings_cls,
+        InitSettingsSource(settings_cls, init_kwargs={}),
+        EnvSettingsSource(settings_cls),
+        DotEnvSettingsSource(settings_cls, env_file=None),
+        SecretsSettingsSource(settings_cls, secrets_dir=secrets_dir),
+    )
+    return next(
+        source
+        for source in sources
+        if isinstance(source, YamlPrefixConfigSettingsSource)
+    )
+
+
+def test_secret_file_selects_the_yaml_profile(tmp_path, monkeypatch):
+    """Select the YAML profile block a file-supplied ``FASTAPI_ENV`` names.
+
+    ``FASTAPI_ENV`` both populates a field and picks the profile block. Reading it
+    from only the environment and dotenv would let the two disagree — the settings
+    reporting one environment while the values came from another's block.
+    """
+    (tmp_path / "FASTAPI_ENV").write_text("production_docker\n", encoding="utf-8")
+
+    from_file = _yaml_source_for(Settings, tmp_path)
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("FASTAPI_ENV", "production_docker")
+    from_env = _yaml_source_for(Settings, empty)
+
+    assert from_file.yaml_data == from_env.yaml_data
+
+
+def test_env_var_beats_secret_file_for_the_yaml_profile(tmp_path, monkeypatch):
+    """Prefer the environment over a secret file when selecting the profile block."""
+    (tmp_path / "FASTAPI_ENV").write_text("production_docker\n", encoding="utf-8")
+    monkeypatch.setenv("FASTAPI_ENV", "development")
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    from_env = _yaml_source_for(Settings, tmp_path)
+    baseline = _yaml_source_for(Settings, empty)
+
+    assert from_env.yaml_data == baseline.yaml_data
+
+
+CELERY_PROFILE_BLOCK = "  CELERY:\n    BROKER_URL: redis://127.0.0.1:6379/0\n"
+"""A minimal ``CELERY`` block, since ``Settings.CELERY`` carries no default."""
+
+SEP_POSTGRES_PROFILE_BLOCK = """\
+  SEP:
+    DATABASE:
+      ENGINE: postgresql
+      HOST: pmm-server
+      NAME: sep
+      PORT: 5432
+      USER: sep
+"""
+"""The embedded profile's SEP database block, which the beat store derives from."""
+
+SEP_SQLITE_PROFILE_BLOCK = "  SEP:\n    DATABASE:\n      NAME: sep.db\n"
+"""A SQLite SEP database block, whose derived store nulls ``beat_schema``."""
+
+DERIVED_BEAT_DBURI = "postgresql+psycopg2://sep@pmm-server:5432/sep"
+"""The store :data:`SEP_POSTGRES_PROFILE_BLOCK` derives with no password supplied."""
+
+
+def _use_profile(tmp_path, monkeypatch, body):
+    """Write a settings profile into ``tmp_path`` and make it the process's profile.
+
+    ``PreEnvSettings.SETTINGS_FILE`` is the relative ``settings.yaml``, reopened per
+    instantiation, so the copy in the working directory is what a freshly
+    constructed class reads.
+
+    :param tmp_path: The directory to write the profile into.
+    :param monkeypatch: The working-directory patcher.
+    :param body: The ``default:`` block's body, already indented.
+    """
+    (tmp_path / "settings.yaml").write_text(f"default:\n{body}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+
+def _mounted_secrets(tmp_path, **files):
+    """Write the named secret files into a subdirectory and return it.
+
+    The subdirectory keeps the profile out of the mounted set, since both live in
+    the same temporary directory.
+
+    :param tmp_path: The per-test temporary directory.
+    :param files: Each canonical name a file supplies, mapped to its contents.
+    :return: The directory to pass as ``_secrets_dir``.
+    """
+    directory = tmp_path / "secrets"
+    directory.mkdir(exist_ok=True)
+    for name, content in files.items():
+        (directory / name).write_text(content, encoding="utf-8")
+    return directory
+
+
+class TestDerivedBeatStoreDefault:
+    """Cover the beat-store URI ``Settings`` derives from the SEP database."""
+
+    @pytest.fixture
+    def _postgres_profile(self, tmp_path, monkeypatch):
+        """Install the PostgreSQL SEP profile the derivation cases start from.
+
+        The cases that vary the profile call ``_use_profile`` themselves, which
+        overwrites this one, so requesting the fixture is what marks a case as
+        using the default arrangement.
+        """
+        _use_profile(
+            tmp_path, monkeypatch, CELERY_PROFILE_BLOCK + SEP_POSTGRES_PROFILE_BLOCK
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_derives_the_store_from_the_sep_database(self):
+        """Resolve the beat store from the SEP database when nothing configures it."""
+        assert Settings().CELERY.beat_dburi == DERIVED_BEAT_DBURI
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_environment_variable_outranks_the_derived_store(self, monkeypatch):
+        """Prefer an explicit ``CELERY__BEAT_DBURI`` set in the environment."""
+        monkeypatch.setenv("CELERY__BEAT_DBURI", "postgresql://envwins@host:5432/beat")
+
+        assert (
+            Settings().CELERY.beat_dburi
+            == "postgresql+psycopg2://envwins@host:5432/beat"
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_an_init_keyword_outranks_the_environment(self, monkeypatch):
+        """Prefer a ``CELERY`` init keyword, the highest-priority settings source.
+
+        The keyword and the environment name the store in different key cases, so
+        a derived value contributed unconditionally would seed the keyword's case
+        ahead of the environment's and hand the fold to the lower-ranked source.
+        """
+        monkeypatch.setenv("CELERY__BEAT_DBURI", "postgresql://envloses@host:5432/beat")
+
+        resolved = Settings(
+            CELERY={
+                "BROKER_URL": "redis://127.0.0.1:6379/0",
+                "BEAT_DBURI": "postgresql://initwins@host:5432/beat",
+            }
+        )
+
+        assert (
+            resolved.CELERY.beat_dburi
+            == "postgresql+psycopg2://initwins@host:5432/beat"
+        )
+
+    def test_yaml_profile_outranks_the_derived_store(self, tmp_path, monkeypatch):
+        """Prefer a profile's own ``BEAT_DBURI``, which is a configured value."""
+        _use_profile(
+            tmp_path,
+            monkeypatch,
+            CELERY_PROFILE_BLOCK
+            + "    BEAT_DBURI: postgresql://profile@elsewhere:5432/beat\n"
+            + SEP_POSTGRES_PROFILE_BLOCK,
+        )
+
+        assert (
+            Settings().CELERY.beat_dburi
+            == "postgresql+psycopg2://profile@elsewhere:5432/beat"
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_secret_file_outranks_the_derived_store(self, tmp_path):
+        """Prefer a mounted ``CELERY__BEAT_DBURI``, which targets a separate store."""
+        secrets_dir = _mounted_secrets(
+            tmp_path, CELERY__BEAT_DBURI="postgresql://mounted:y@beatstore:5432/beat"
+        )
+
+        assert (
+            Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi
+            == "postgresql+psycopg2://mounted:y@beatstore:5432/beat"
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_mounted_password_reaches_the_derived_store(self, tmp_path):
+        """Carry a mounted password into the store without exporting it anywhere."""
+        secrets_dir = _mounted_secrets(tmp_path, SEP__DATABASE__PASSWORD="pw")
+
+        assert (
+            Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi
+            == "postgresql+psycopg2://sep:pw@pmm-server:5432/sep"
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_reserved_password_characters_are_percent_encoded(self, tmp_path):
+        """Encode a password carrying URI syntax, which would corrupt the authority."""
+        secrets_dir = _mounted_secrets(tmp_path, SEP__DATABASE__PASSWORD="p@ss:w/rd")
+
+        assert (
+            Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi
+            == "postgresql+psycopg2://sep:p%40ss%3Aw%2Frd@pmm-server:5432/sep"
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_an_empty_password_file_yields_a_passwordless_store(self, tmp_path):
+        """Omit the password entirely for a blank mount, as an empty secret is falsy."""
+        secrets_dir = _mounted_secrets(tmp_path, SEP__DATABASE__PASSWORD="")
+
+        assert Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi == (
+            DERIVED_BEAT_DBURI
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_dotenv_password_reaches_the_derived_store(self, tmp_path):
+        """Read the password from the caller's ``_env_file``, which the probe inherits."""
+        env_file = tmp_path / "dotenv"
+        env_file.write_text("SEP__DATABASE__PASSWORD=from-dotenv\n", encoding="utf-8")
+
+        assert (
+            Settings(_env_file=env_file).CELERY.beat_dburi
+            == "postgresql+psycopg2://sep:from-dotenv@pmm-server:5432/sep"
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_a_suppressed_dotenv_still_resolves_the_derived_store(self):
+        """Propagate ``_env_file=None`` to the probe, which then reads no dotenv."""
+        assert Settings(_env_file=None).CELERY.beat_dburi == DERIVED_BEAT_DBURI
+
+    def test_an_unconfigured_sep_database_falls_back_to_the_field_default(
+        self, tmp_path, monkeypatch
+    ):
+        """Resolve the probe's own default when the profile configures no SEP database."""
+        _use_profile(tmp_path, monkeypatch, CELERY_PROFILE_BLOCK)
+
+        assert Settings().CELERY.beat_dburi == "sqlite:///sep.db"
+
+    def test_a_sqlite_store_still_nulls_the_beat_schema(self, tmp_path, monkeypatch):
+        """Clear ``beat_schema`` for a SQLite-derived store, as the validator does.
+
+        The derived value enters as source data rather than as a post-construction
+        assignment, so ``CeleryOptions``' own validators still see it.
+        """
+        _use_profile(
+            tmp_path,
+            monkeypatch,
+            CELERY_PROFILE_BLOCK + "    BEAT_SCHEMA: sep\n" + SEP_SQLITE_PROFILE_BLOCK,
+        )
+
+        resolved = Settings().CELERY
+
+        assert resolved.beat_dburi == "sqlite:///sep.db"
+        assert resolved.beat_schema is None
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_an_invalid_sep_database_fails_settings_construction(self, monkeypatch):
+        """Reject an unusable SEP database rather than derive a malformed store URI."""
+        monkeypatch.setenv("SEP__DATABASE__PORT", "notanumber")
+
+        with pytest.raises(ValidationError, match="DATABASE.PORT"):
+            Settings()
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_a_configured_store_is_not_held_to_the_sep_database(self, monkeypatch):
+        """Accept an unusable SEP database when the store is configured outright.
+
+        ``InventorySettings`` and ``TasksSettings`` both resolve the global proxy
+        through their ``BACKEND_CORS_ORIGINS`` default, so probing unconditionally
+        would fail an Inventory-only or Tasks-only start-up over a SEP-namespaced
+        value nothing in that process reads.
+        """
+        monkeypatch.setenv("SEP__DATABASE__PORT", "notanumber")
+        monkeypatch.setenv(
+            "CELERY__BEAT_DBURI", "postgresql://elsewhere@host:5432/beat"
+        )
+
+        assert (
+            Settings().CELERY.beat_dburi
+            == "postgresql+psycopg2://elsewhere@host:5432/beat"
+        )
+
+    def test_the_probe_default_matches_the_sep_settings_field(self):
+        """Pin the probe's database default to ``SEPSettings``', which it cannot import.
+
+        ``app/sep/config.py`` imports ``app/core/config.py``, so the probe duplicates
+        the default rather than reading it; this fails if the two drift apart.
+        """
+        assert (
+            _SEPDatabaseSettings.model_fields["DATABASE"].default
+            == SEPSettings.model_fields["DATABASE"].default
+        )
+
+
+class TestRemovedSettingsOverrideKeysDetector:
+    """Cover the startup detector for the removed flat settings-override keys."""
+
+    def test_unset_is_noop(self, monkeypatch, tmp_path):
+        """Verify a profile naming none of the removed keys raises nothing."""
+        _use_profile(tmp_path, monkeypatch, "  LOGGING: WARNING\n")
+        detect_removed_settings_override_keys()
+
+    @pytest.mark.parametrize(
+        ("legacy_var", "value"),
+        [
+            ("SETTINGS_OVERRIDE_REFRESH_INTERVAL", "PT60S"),
+            ("SETTINGS_OVERRIDE_REFRESHER_ENABLED", "false"),
+            ("SETTINGS_OVERRIDE_ALLOWED_KEYS", '["Settings.LOGGING"]'),
+        ],
+    )
+    def test_flat_env_var_fails_fast(self, monkeypatch, tmp_path, legacy_var, value):
+        """Verify each removed key still set in the environment stops start-up."""
+        _use_profile(tmp_path, monkeypatch, "  LOGGING: WARNING\n")
+        monkeypatch.setenv(legacy_var, value)
+        with pytest.raises(ValueError, match=legacy_var):
+            detect_removed_settings_override_keys()
+
+    @pytest.mark.parametrize(
+        ("nested_var", "value"),
+        [
+            ("SETTINGS_OVERRIDE__REFRESH_INTERVAL", "PT60S"),
+            ("SETTINGS_OVERRIDE__REFRESHER_ENABLED", "false"),
+            ("SETTINGS_OVERRIDE__ALLOWED_KEYS", '["Settings.LOGGING"]'),
+        ],
+    )
+    def test_nested_env_var_is_accepted(self, monkeypatch, tmp_path, nested_var, value):
+        """Verify the nested spelling is not mistaken for the removed flat one."""
+        _use_profile(tmp_path, monkeypatch, "  LOGGING: WARNING\n")
+        monkeypatch.setenv(nested_var, value)
+        detect_removed_settings_override_keys()
+
+    def test_flat_yaml_key_fails_fast(self, monkeypatch, tmp_path):
+        """Verify a profile still nesting nothing stops start-up.
+
+        This is the deployment shape that matters most: a mounted profile
+        written against the old spelling reads as an absent allowlist, which
+        leaves the override API unrestricted.
+        """
+        _use_profile(
+            tmp_path,
+            monkeypatch,
+            "  SETTINGS_OVERRIDE_ALLOWED_KEYS:\n    - Settings.LOGGING\n",
+        )
+        with pytest.raises(ValueError, match="SETTINGS_OVERRIDE_ALLOWED_KEYS"):
+            detect_removed_settings_override_keys()
+
+    def test_nested_yaml_block_is_accepted(self, monkeypatch, tmp_path):
+        """Verify a migrated profile passes the detector."""
+        _use_profile(
+            tmp_path,
+            monkeypatch,
+            "  SETTINGS_OVERRIDE:\n    ALLOWED_KEYS:\n      - Settings.LOGGING\n",
+        )
+        detect_removed_settings_override_keys()

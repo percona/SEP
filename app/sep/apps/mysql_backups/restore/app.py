@@ -18,9 +18,8 @@
 The registry discovers this app through ``mysql_backups``'s ``child_apps`` rather
 than a ``settings.yaml`` entry, so it is mounted and toggled exactly with its
 parent under the explicit scoped key ``mysql_backups/restore``, serving its
-derived JSON router at ``/api/apps/mysql_backups/restore/`` while the existing
-Jinja UI keeps serving at ``/mysql_backups/restores/`` via the threaded
-``jinja_router``. Because a restore legitimately has no destination service for
+derived JSON router at ``/api/apps/mysql_backups/restore/``. Because a restore
+legitimately has no destination service for
 XtraBackup / Binlog and tolerates a 404 fallback, the create payload is built by
 the ``payload_builder`` escape hatch
 (:func:`~app.sep.apps.mysql_backups.restore.deps.build_restore_payload`)
@@ -47,7 +46,6 @@ from app.sep.apps.mysql_backups.restore.models import (
     RestoreCreate,
     RestoresResponse,
 )
-from app.sep.apps.mysql_backups.restore.routes import router as jinja_router
 from app.sep.apps.mysql_backups.restore.views import restore_views
 
 app = TaskExecutionApp(
@@ -70,5 +68,4 @@ app = TaskExecutionApp(
     pagination=make_pagination_dep(max_limit=DEFAULT_PAGINATION_LIMIT),
     capabilities=AppCapabilities(update=True, delete=True),
     list_filter=ListFilterConfig(status=True),
-    jinja_router=jinja_router,
 )

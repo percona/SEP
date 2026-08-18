@@ -21,7 +21,7 @@ from app.sep.apps.framework.apps import (
     TaskExecutionApp,
     Views,
 )
-from app.sep.apps.framework.base import BaseApp, StaticMount
+from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 from app.sep.apps.framework.cascade import (
     build_derived_payload,
     build_predecessor_chain_execute_body,
@@ -69,6 +69,7 @@ from app.sep.apps.framework.responses import (
     build_task_list_responses,
     derive_create_response_model,
     dump_with_excluded_fields,
+    serialized_field_names,
     TaskExecuteWrite,
     TaskExecutionResponse,
 )
@@ -120,6 +121,7 @@ from app.sep.apps.framework.task_status import (
 __all__ = [
     "AppCapabilities",
     "AppFormModel",
+    "AppPeriodicTask",
     "BaseApp",
     "BaseTaskResponse",
     "CardinalityRule",
@@ -151,7 +153,6 @@ __all__ = [
     "SectionLayout",
     "SectionRules",
     "ServiceRef",
-    "StaticMount",
     "TableRef",
     "TaskExecuteWrite",
     "TaskExecutionApp",
@@ -203,6 +204,7 @@ __all__ = [
     "present",
     "record_connectivity_warning",
     "resolve_refs",
+    "serialized_field_names",
     "truthy",
     "xor_",
 ]

@@ -18,7 +18,7 @@
 import base64
 import gzip
 import json as json_lib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,7 +29,11 @@ from fastapi import status
 from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.deps import get_current_user, SERVICE_PRINCIPAL_ID
+from app.api.deps import (
+    get_current_user,
+    require_admin_for_unsafe_methods,
+    SERVICE_PRINCIPAL_ID,
+)
 from app.core.celery.deps import get_session as get_celery_beat_session
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
@@ -43,12 +47,14 @@ from app.tasks.connectivity.service import _cached_check_connectivity
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
 from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
+from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.main import tasks_app
 from app.tasks.models import (
     DispatchLock,
     ExecutionEvent,
+    LogCaptureStatusEnum,
     RUN_SCRIPT_OUTPUT_FILES_PATH,
     SYSTEM_USER,
     Task,
@@ -64,6 +70,7 @@ from tests.app.factories import build_task_history, TaskFactory
 MOCK_FILE_SIZE = 1024
 PAGINATION_TASK_COUNT = 3
 PARENT_FILTER_TASK_COUNT = 3
+SEARCH_MATCH_TOTAL = 2
 
 
 @pytest_asyncio.fixture
@@ -542,9 +549,18 @@ async def test_list_task_history_excludes_internal_rows_before_pagination(
         TaskWrite.model_validate(TaskFactory.build(name="inventory-sync")),
     )
 
-    await TaskHistoryManager.save(session, build_task_history(user_task_a))
-    await TaskHistoryManager.save(session, build_task_history(user_task_b))
-    await TaskHistoryManager.save(session, build_task_history(internal_task))
+    # Distinct created_at values: utc_now() zeroes microseconds, so same-second
+    # inserts tie and the id ASC tie-breaker would keep the newest internal row
+    # off the first page under -created_at.
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    for task, created_at in (
+        (user_task_a, base),
+        (user_task_b, base + timedelta(minutes=1)),
+        (internal_task, base + timedelta(minutes=2)),
+    ):
+        history = build_task_history(task)
+        history.created_at = created_at
+        await TaskHistoryManager.save(session, history)
 
     unfiltered_response = test_client.get("/history/", params={"limit": 2})
     assert unfiltered_response.status_code == status.HTTP_200_OK
@@ -1143,7 +1159,7 @@ async def test_sync_task_history_populates_has_logs(
     Covers both the already-finished early-return branch and the RUNNING
     full-sync path. Regression: the sync endpoint short-circuits when the task
     has already finished. Before the fix, the early return skipped
-    ``_populate_has_logs`` so the response always had ``has_logs=False`` even
+    ``_populate_log_metadata`` so the response always had ``has_logs=False`` even
     when chunks existed, which broke the API contract relative to
     ``GET /history/{id}``.
     """
@@ -1930,6 +1946,198 @@ async def test_get_task_history_status_filter_with_pagination(
     data = response.json()
     assert data["total"] == 1
     assert len(data["items"]) == 1
+
+
+def _openapi_param_names(path: str) -> set[str]:
+    """Return query/path parameter names for a tasks OpenAPI GET path.
+
+    :param path: OpenAPI path template (for example ``/history/``).
+    :return: The set of parameter names declared on the GET operation.
+    """
+    params = tasks_app.openapi()["paths"][path]["get"].get("parameters", [])
+    return {param["name"] for param in params}
+
+
+def _openapi_param(path: str, name: str) -> dict[str, object]:
+    """Return one named OpenAPI parameter object for a tasks GET path.
+
+    :param path: OpenAPI path template (for example ``/{task}/history/``).
+    :param name: Parameter name to look up (for example ``sort``).
+    :return: The matching OpenAPI parameter object.
+    :raises StopIteration: If no parameter with ``name`` exists on the path.
+    """
+    params = tasks_app.openapi()["paths"][path]["get"].get("parameters", [])
+    return next(param for param in params if param["name"] == name)
+
+
+class TestListQueryRouteParams:
+    """Cover list-query sort/search on the three tasks-service list endpoints."""
+
+    def test_sort_and_search_params_exposed_on_list_endpoints(self) -> None:
+        """Expose ``sort`` and ``search`` on each of the three tasks-service list endpoints."""
+        for path in ("/", "/history/", "/{task}/history/"):
+            names = _openapi_param_names(path)
+            assert "sort" in names
+            assert "search" in names
+
+    def test_task_history_endpoints_share_one_sort_search_surface(self) -> None:
+        """Drive both TaskHistory list routes from the same sort/search OpenAPI surface."""
+        all_history = {
+            "sort": _openapi_param("/history/", "sort"),
+            "search": _openapi_param("/history/", "search"),
+        }
+        by_task = {
+            "sort": _openapi_param("/{task}/history/", "sort"),
+            "search": _openapi_param("/{task}/history/", "search"),
+        }
+        assert all_history["sort"]["schema"] == by_task["sort"]["schema"]
+        assert all_history["sort"].get("default") == by_task["sort"].get("default")
+        assert all_history["search"]["schema"] == by_task["search"]["schema"]
+
+    @pytest.mark.asyncio
+    async def test_out_of_allowlist_sort_returns_422_on_list_tasks(
+        self, test_client
+    ) -> None:
+        """Reject an out-of-allowlist sort key on GET / with HTTP 422."""
+        response = test_client.get("/", params={"sort": "evil"})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.asyncio
+    async def test_out_of_allowlist_sort_returns_422_on_both_history_endpoints(
+        self, test_client, created_task_with_history
+    ) -> None:
+        """Reject an out-of-allowlist sort key on both TaskHistory list endpoints."""
+        task_name = created_task_with_history.task.name
+        all_history = test_client.get("/history/", params={"sort": "evil"})
+        by_task = test_client.get(f"/{task_name}/history/", params={"sort": "evil"})
+        assert all_history.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert by_task.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_search_filters_and_reports_filtered_total(
+        self, test_client, session
+    ) -> None:
+        """Filter GET / by search and report the filtered total, not the page size."""
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="match-alpha")),
+        )
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="match-beta")),
+        )
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="other-gamma")),
+        )
+
+        response = test_client.get(
+            "/", params={"search": "match", "offset": 0, "limit": 1}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == SEARCH_MATCH_TOTAL
+        assert len(data["items"]) == 1
+        assert "match" in data["items"][0]["name"]
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_sort_by_name_ascending(
+        self, test_client, session
+    ) -> None:
+        """Apply the mapped ``name`` sort key on GET /."""
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="zeta-route")),
+        )
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="alpha-route")),
+        )
+
+        response = test_client.get("/", params={"sort": "name"})
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["name"] for item in response.json()["items"]] == [
+            "alpha-route",
+            "zeta-route",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_search_composes_with_owner_filter(
+        self, test_client, session
+    ) -> None:
+        """Keep the owner base restriction working alongside search on GET /."""
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(name="keep-match", owner="BACKUPS")
+            ),
+        )
+        await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(name="drop-match", owner="ALTERS")
+            ),
+        )
+
+        response = test_client.get("/", params={"owner": "BACKUPS", "search": "match"})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == 1
+        assert data["items"][0]["name"] == "keep-match"
+
+    @pytest.mark.asyncio
+    async def test_history_search_filters_and_reports_filtered_total(
+        self, test_client, session
+    ) -> None:
+        """Filter both history list endpoints by executed_by search with filtered total."""
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="history-search-task")),
+        )
+        for executed_by in ("alice", "alice-ops", "bob"):
+            history = build_task_history(task)
+            history.executed_by = executed_by
+            await TaskHistoryManager.save(session, history)
+
+        all_history = test_client.get(
+            "/history/", params={"search": "alice", "limit": 1}
+        )
+        by_task = test_client.get(
+            f"/{task.name}/history/", params={"search": "alice", "limit": 1}
+        )
+        assert all_history.status_code == status.HTTP_200_OK
+        assert by_task.status_code == status.HTTP_200_OK
+        assert all_history.json()["total"] == SEARCH_MATCH_TOTAL
+        assert by_task.json()["total"] == SEARCH_MATCH_TOTAL
+        assert len(all_history.json()["items"]) == 1
+        assert len(by_task.json()["items"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_history_tie_broken_ordering_is_deterministic(
+        self, test_client, session
+    ) -> None:
+        """Keep TaskHistory list order deterministic across equal created_at values."""
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="history-tie-task")),
+        )
+        tied_at = datetime(2026, 1, 1, tzinfo=UTC)
+        ids = []
+        for status_value in (
+            TaskHistoryStatusEnum.SUCCESS,
+            TaskHistoryStatusEnum.FAILED,
+            TaskHistoryStatusEnum.RUNNING,
+        ):
+            history = build_task_history(task, status=status_value)
+            history.created_at = tied_at
+            saved = await TaskHistoryManager.save(session, history)
+            ids.append(saved.id)
+
+        response = test_client.get(
+            f"/{task.name}/history/", params={"sort": "-created_at"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["id"] for item in response.json()["items"]] == ids
 
 
 @pytest.mark.asyncio
@@ -2757,6 +2965,7 @@ class TestSyncTaskHistoryRealSession:
 
         mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
 
+        tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
@@ -2780,7 +2989,9 @@ class TestSyncTaskHistoryRealSession:
         call_kwargs = mock_executor.sync_task_history.await_args.kwargs
         assert "writer_session" in call_kwargs
         assert call_kwargs["writer_session"] is not None
-        assert await TaskHistoryLogManager.exists_for_task(session, saved_history.id)
+        assert await TaskHistoryLogManager.exists(
+            session, task_history_id=saved_history.id
+        )
 
     async def test_sync_hands_the_run_result_to_the_recorder(
         self,
@@ -2836,6 +3047,7 @@ class TestSyncTaskHistoryRealSession:
         mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
         mock_executor.stream_file = MagicMock(side_effect=fake_stream_file)
 
+        tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
@@ -2862,3 +3074,218 @@ class TestSyncTaskHistoryRealSession:
         assert response.status_code == status.HTTP_200_OK
         assert recorded == [result]
         assert mock_executor.stream_file.call_args.kwargs["anonymize"] is False
+
+
+async def _record_capture(
+    session: AsyncSession,
+    history_id: int,
+    *,
+    source: str,
+    capture_status: LogCaptureStatusEnum,
+) -> None:
+    """Record one stream's capture verdict for a history."""
+    await TaskHistoryLogWriter.record_capture_status(
+        session,
+        history_id,
+        source=source,
+        stream=TaskLogType.STDOUT,
+        capture_status=capture_status,
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_log_capture_unknown_before_migration(
+    test_client, created_task_with_history
+):
+    """Assert a history with no state rows reports ``unknown`` over HTTP.
+
+    This is the pre-migration population: the bytes are gone and the stored
+    offsets cannot say whether the step was silent or lost.
+    """
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["log_capture"] == LogCaptureStatusEnum.UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_log_capture_complete_for_a_silent_step(
+    test_client, session, created_task_with_history
+):
+    """Assert a step that printed nothing reports ``complete``, not ``unknown``.
+
+    The reader contract the ticket exists for: silent and lost must be
+    distinguishable through the response, not merely in the database.
+    """
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["log_capture"] == LogCaptureStatusEnum.COMPLETE
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_log_capture_incomplete_dominates(
+    test_client, session, created_task_with_history
+):
+    """Assert one lost stream reports ``incomplete`` even beside a clean one."""
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="clean-up",
+        capture_status=LogCaptureStatusEnum.INCOMPLETE,
+    )
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["log_capture"] == LogCaptureStatusEnum.INCOMPLETE
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_log_capture_ignores_the_hold_step(
+    test_client, session, created_task_with_history
+):
+    """Assert the hold's own row cannot drag a clean task to incomplete."""
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source=NomadStep.LOG_CAPTURE_HOLD,
+        capture_status=LogCaptureStatusEnum.INCOMPLETE,
+    )
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["log_capture"] == LogCaptureStatusEnum.COMPLETE
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_log_capture_counts_a_celery_source(
+    test_client, session, created_task_with_history
+):
+    """Assert a Celery-written ``execution`` source reaches the aggregate.
+
+    The Celery executor's source is not a Nomad step name at all, so an
+    aggregate filtered by Nomad step names would report ``unknown`` for every
+    Celery-backed task while passing every Nomad test.
+    """
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="execution",
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["log_capture"] == LogCaptureStatusEnum.COMPLETE
+
+
+@pytest.mark.asyncio
+async def test_retrieve_task_history_reports_log_capture(
+    test_client, session, created_task_with_history
+):
+    """Assert the single-history route carries the verdict too.
+
+    Route wiring is per-endpoint: a list route populating the field proves
+    nothing about the retrieve route, which used to compute ``has_logs`` by
+    hand.
+    """
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        capture_status=LogCaptureStatusEnum.INCOMPLETE,
+    )
+
+    response = test_client.get(f"/history/{created_task_with_history.id}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["log_capture"] == LogCaptureStatusEnum.INCOMPLETE
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_by_task_name_reports_log_capture(
+    test_client, session, created_task_with_history
+):
+    """Assert the per-task history list carries the verdict."""
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+
+    response = test_client.get(f"/{created_task_with_history.task.name}/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["items"][0]["log_capture"] == LogCaptureStatusEnum.COMPLETE
+
+
+@pytest.mark.asyncio
+async def test_stop_route_reports_log_capture(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert the stop route carries the capture verdict on its response.
+
+    Route wiring is per-endpoint, and this one computed ``has_logs`` by hand
+    before it was folded into the shared helper.
+    """
+    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+    await TaskHistoryManager.save(session, created_task_with_history)
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        capture_status=LogCaptureStatusEnum.INCOMPLETE,
+    )
+    mock_executor.stop_task.return_value = created_task_with_history
+
+    response = test_client.post(f"/history/{created_task_with_history.id}/stop/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["log_capture"] == LogCaptureStatusEnum.INCOMPLETE
+
+
+@pytest.mark.asyncio
+async def test_sync_route_reports_log_capture(
+    test_client, session, mock_executor, created_task_with_history
+):
+    """Assert the sync route carries the capture verdict on its response."""
+    await _record_capture(
+        session,
+        created_task_with_history.id,
+        source="run-script",
+        capture_status=LogCaptureStatusEnum.COMPLETE,
+    )
+
+    response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["log_capture"] == LogCaptureStatusEnum.COMPLETE

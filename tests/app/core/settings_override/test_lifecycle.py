@@ -26,11 +26,13 @@ from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
+from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.lifecycle import (
     ProxyEntry,
     refresh_all,
+    resolve_refresher_options,
     start_refresh_task,
 )
 from app.core.settings_override.manager import SettingsOverrideManager
@@ -42,6 +44,7 @@ from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.execution.nomad_lifecycle import NomadLifecycle
 from app.tasks.main import _reconcile_nomad, tasks_app
+from tests.app.core.settings_override.conftest import hanging_session_maker_factory
 
 
 @pytest_asyncio.fixture(name="session_maker")
@@ -187,6 +190,66 @@ async def test_start_refresh_task_runs_initial_load(
     session_maker: async_sessionmaker,
 ) -> None:
     """``start_refresh_task`` awaits an initial refresh before returning the task."""
+    proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    async with session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.SEP_SETTINGS,
+                key="CONNECTIVITY_CHECK_DEFAULT",
+                value=override_value,
+            ),
+        )
+
+    task = await start_refresh_task(
+        lambda: session_maker, registry, interval=timedelta(seconds=3600)
+    )
+    try:
+        assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_start_refresh_task_seed_timeout_returns_within_budget(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Bound a hanging seed, keep the periodic task, and log expiry at ERROR."""
+    _proxy, registry = _make_proxies()
+    seed_timeout = 0.05
+
+    with caplog.at_level("ERROR", logger="app.core.settings_override.lifecycle"):
+        task = await asyncio.wait_for(
+            start_refresh_task(
+                hanging_session_maker_factory,
+                registry,
+                interval=timedelta(seconds=3600),
+                seed_timeout=seed_timeout,
+            ),
+            timeout=1.0,
+        )
+    try:
+        assert not task.done()
+        assert any(
+            record.levelname == "ERROR"
+            and f"{seed_timeout:.2f}s" in record.message
+            and "unseeded" in record.message
+            for record in caplog.records
+        )
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_start_refresh_task_without_seed_timeout_awaits_the_seed(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Keep today's unbounded seed when no budget is supplied."""
     proxy, registry = _make_proxies()
     override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
     async with session_maker() as session:
@@ -487,3 +550,46 @@ async def test_refresh_picks_up_changes_on_next_cycle(
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
+
+
+class TestResolveRefresherOptions:
+    """Cover the fallback that fills unset refresher options from settings."""
+
+    def test_explicit_values_pass_through(self) -> None:
+        """Assert a caller supplying both options gets them back untouched."""
+        assert resolve_refresher_options(timedelta(seconds=7), enabled=False) == (
+            timedelta(seconds=7),
+            False,
+        )
+
+    def test_unset_values_read_the_configured_options(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert both options fall back to the live settings when unset."""
+        monkeypatch.setattr(
+            settings.SETTINGS_OVERRIDE, "REFRESH_INTERVAL", timedelta(seconds=11)
+        )
+        monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", True)
+
+        assert resolve_refresher_options(None, enabled=None) == (
+            timedelta(seconds=11),
+            True,
+        )
+
+    def test_each_option_falls_back_independently(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert one supplied option does not suppress the other's fallback."""
+        monkeypatch.setattr(
+            settings.SETTINGS_OVERRIDE, "REFRESH_INTERVAL", timedelta(seconds=13)
+        )
+        monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", False)
+
+        assert resolve_refresher_options(timedelta(seconds=3), enabled=None) == (
+            timedelta(seconds=3),
+            False,
+        )
+        assert resolve_refresher_options(None, enabled=True) == (
+            timedelta(seconds=13),
+            True,
+        )

@@ -25,25 +25,31 @@ from itsdangerous import BadSignature, SignatureExpired
 from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
 from app.core.security import crypto_timestamp_serializer
 from app.sep.apps.framework.registry import get_app_registry
-from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
+from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT, STATIC_ARTIFACT_BASE_DIRS
 from app.sep.config import sep_settings
 
 router = APIRouter(include_in_schema=False)
 
 
 def collect_base_dirs() -> dict[str, Callable[[], Path]]:
-    """Collect every app's ``artifact_base_dirs`` into a single lookup map.
+    """Collect the static and per-app ``artifact_base_dirs`` into one lookup map.
+
+    Seeded from :data:`~app.sep.artifact_constants.STATIC_ARTIFACT_BASE_DIRS`
+    so a type whose producer is library-owned rather than app-owned resolves
+    regardless of which apps an image activates, then overlaid with every
+    registered app's own declaration.
 
     :return: A mapping from artifact-type discriminator to its base-dir thunk.
-    :raises ValueError: If two apps declare the same artifact type, which
-        would ambiguously route one app's downloads into another's directory.
+    :raises ValueError: If an artifact type is declared more than once — by two
+        apps, or by an app that re-declares a static type — which would
+        ambiguously route one producer's downloads into another's directory.
     """
-    base_dirs = {}
+    base_dirs = dict(STATIC_ARTIFACT_BASE_DIRS)
     for app in get_app_registry():
         for artifact_type, thunk in app.artifact_base_dirs.items():
             if artifact_type in base_dirs:
                 raise ValueError(
-                    f"Artifact type {artifact_type!r} declared by more than one app"
+                    f"Artifact type {artifact_type!r} declared more than once"
                 )
             base_dirs[artifact_type] = thunk
     return base_dirs

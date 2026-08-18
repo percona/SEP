@@ -21,22 +21,26 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import APIRouter, status
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 from pytest_mock import MockerFixture
 from starlette.routing import Match
 
+from app.api.deps import require_admin_for_unsafe_methods
+from app.core.config import settings
 from app.sep.api.router import api_router, apps_router, build_apps_router
 from app.sep.apps.framework.registry import build_app_registry
 from app.sep.config import App, sep_settings
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
-    get_api_authenticated_user,
     get_current_user,
+    get_session,
     IsApiAuthenticated,
     require_bearer_for_unsafe_methods,
-    validate_csrf,
 )
 from app.sep.main import sep_app
+from tests.app.sep.conftest import REDUCED_ACTIVATION
+
+BEARER_HEADERS = {"Authorization": "Bearer valid_token"}
 
 
 class TestApiRouterComposition:
@@ -60,6 +64,25 @@ class TestApiRouterComposition:
             route.path for route in apps_router.routes if hasattr(route, "path")
         }
         assert "/apps/atw/schema" in plugin_paths
+
+    def test_atw_snippet_search_resolves_without_snippets_app(self) -> None:
+        """Resolve ATW's snippet search on the PMM-embedded activation list.
+
+        The second assertion is the load-bearing half: search works because ATW
+        owns the route, not because the snippets app happened to mount.
+        """
+        router = build_apps_router(build_app_registry(REDUCED_ACTIVATION))
+        paths = {route.path for route in router.routes if hasattr(route, "path")}
+
+        assert "/apps/atw/snippets/" in paths
+        assert not any(path.startswith("/apps/snippets") for path in paths)
+
+    def test_snippets_own_list_route_still_mounted_when_activated(self) -> None:
+        """Keep the Snippet Manager's own list route under the full activation list."""
+        plugin_paths = {
+            route.path for route in apps_router.routes if hasattr(route, "path")
+        }
+        assert "/apps/snippets/" in plugin_paths
 
     def test_checksums_router_registered_under_plugins(self) -> None:
         """Assert the checksums schema route is resolvable under ``/apps/checksums``."""
@@ -158,16 +181,13 @@ class TestApiRouterUnauthenticated:
 
 @pytest.fixture
 def cookie_only_client(regular_user):
-    """Return a TestClient that has cookie auth but no Bearer override.
+    """Return an authenticated TestClient with the Bearer gate left intact.
 
-    Overrides ``get_current_user``, ``get_api_authenticated_user`` and
-    ``validate_csrf`` so the request passes the existing auth/CSRF stack,
-    but deliberately leaves ``require_bearer_for_unsafe_methods`` unmocked
-    so the framework Bearer gate fires for mutating methods.
+    Overrides ``get_current_user`` so the request passes authentication, but
+    deliberately leaves ``require_bearer_for_unsafe_methods`` unmocked so the
+    Bearer gate fires for mutating methods.
     """
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 
@@ -249,17 +269,21 @@ class TestPluginBearerGate:
         response = cookie_only_client.options("/api/apps/checksums/schema")
         assert response.status_code != status.HTTP_401_UNAUTHORIZED
 
-    def test_bearer_gate_is_on_apps_router_only(self) -> None:
-        """Check the Bearer gate is wired into apps_router, not the broader api_router.
+    def test_bearer_gate_is_hoisted_to_the_api_router(self) -> None:
+        """Check the Bearer gate covers the whole ``/api`` tree, not just ``/apps``.
 
-        Regression guard against accidentally Bearer-gating /api/sep/*
-        (dashboard, hosts, task-stats) which serve cookie-authenticated
-        React reads.
+        With cookie authentication gone, every ``/api`` caller presents a Bearer
+        token, so the gate is hoisted to ``api_router`` and every mutating route
+        inherits it uniformly rather than per-router. The gate is method-scoped,
+        so reads are unaffected; ``test_api_sep_get_routes_are_not_bearer_gated``
+        pins that half.
         """
         plugin_deps = [dep.dependency for dep in apps_router.dependencies]
         api_deps = [dep.dependency for dep in api_router.dependencies]
+        assert require_bearer_for_unsafe_methods in api_deps
+        # Kept on apps_router too: FastAPI caches identical ``Depends`` objects
+        # per request, so the duplicate registration executes once.
         assert require_bearer_for_unsafe_methods in plugin_deps
-        assert require_bearer_for_unsafe_methods not in api_deps
 
     def test_api_sep_get_routes_are_not_bearer_gated(
         self,
@@ -268,11 +292,11 @@ class TestPluginBearerGate:
         mock_inventory_api_dep,
         mocker,
     ) -> None:
-        """Cookie-only GET on /api/sep/* is not blocked by the Bearer gate.
+        """Serve a GET on /api/sep/* without tripping the Bearer gate.
 
-        Regression guard: dashboard/hosts/task-stats serve cookie-auth
-        React reads; the response must succeed (200) under cookie-only
-        credentials. Upstream Tasks/Inventory and the SEP snippets count
+        Regression guard for the hoist: the gate is method-scoped, so reads
+        must still succeed (200) even without a Bearer header on the request
+        itself. Upstream Tasks/Inventory and the SEP snippets count
         are stubbed so the dashboard returns a deterministic payload
         independent of any persisted snippet rows in the local SEP DB.
         """
@@ -683,8 +707,6 @@ class TestApiRouterConfigDrivenLoopIntegration:
                 "/api/apps/mysql_backups/restore/some-task",
                 "/api/apps/mysql_backups/restore",
             ),
-            ("GET", "/mysql_backups/restores/", "/mysql_backups/restores"),
-            ("GET", "/mysql_backups/restores/some-task", "/mysql_backups/restores"),
             (
                 "GET",
                 "/api/apps/backup_mongo/restore/",
@@ -705,8 +727,6 @@ class TestApiRouterConfigDrivenLoopIntegration:
                 "/api/apps/backup_mongo/restore/some-task",
                 "/api/apps/backup_mongo/restore",
             ),
-            ("GET", "/backup_mongo/restores/", "/backup_mongo/restores"),
-            ("GET", "/backup_mongo/restores/some-task", "/backup_mongo/restores"),
         ],
     )
     def test_scoped_restore_routes_not_shadowed_by_parent(
@@ -730,3 +750,119 @@ class TestApiRouterConfigDrivenLoopIntegration:
         )
         assert matched is not None
         assert matched.startswith(expected_prefix), f"{path} resolved to {matched}"
+
+
+@pytest.fixture
+def bearer_client(session, casdoor_mock):
+    """Return a TestClient that authenticates every request by Bearer token.
+
+    No authentication dependency is overridden: the admin gate resolves the user
+    imperatively, so an override could not reach it anyway, and leaving the whole
+    chain real is what makes the gate the thing under test. ``get_session`` is
+    still pointed at the in-memory session so ``require_app_enabled`` reads an
+    isolated, empty ``appstate`` table.
+    """
+    sep_app.dependency_overrides[get_session] = lambda: session
+    yield TestClient(sep_app, raise_server_exceptions=False)
+    sep_app.dependency_overrides = {}
+
+
+class TestApiAdminGate:
+    """Exercise the router-level admin gate over the ``/api`` tree."""
+
+    def test_non_admin_mutation_is_refused_with_json_403(
+        self, bearer_client: TestClient
+    ) -> None:
+        """Refuse a signed-in non-admin's mutation with a JSON 403."""
+        response = bearer_client.post(
+            "/api/apps/checksums/", json={}, headers=BEARER_HEADERS
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.headers["content-type"].startswith("application/json")
+        assert "detail" in response.json()
+
+    def test_admin_mutation_reaches_the_route_body_model(
+        self, bearer_client: TestClient, casdoor_user_data, mocker: MockerFixture
+    ) -> None:
+        """Admit an admin's mutation, which then fails its own body validation.
+
+        422 rather than 403 is the discriminator: the gate passed and the request
+        got as far as the route's own request model.
+        """
+        mocker.patch(
+            "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
+            new=mocker.AsyncMock(return_value={**casdoor_user_data, "is_admin": True}),
+        )
+        response = bearer_client.post(
+            "/api/apps/checksums/", json={}, headers=BEARER_HEADERS
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_reads_are_unaffected_for_a_non_admin(
+        self, bearer_client: TestClient
+    ) -> None:
+        """Serve a non-admin's GET unchanged — the gate is method-scoped."""
+        response = bearer_client.get(
+            "/api/apps/checksums/schema", headers=BEARER_HEADERS
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_service_principal_mutation_is_accepted(
+        self, bearer_client: TestClient, mocker: MockerFixture
+    ) -> None:
+        """Schedule an inventory sync as the ``SEP_INTERNAL_TOKEN`` principal.
+
+        The scheduled sync authenticates with this token, so the concrete 202 is
+        the assertion — "not 403" would also pass on a 401 or a 500.
+        """
+        secret = "supersecret"
+        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(secret))
+        mocker.patch(
+            "app.sep.apps.inventory.api_routes.run_inventory_sync",
+            new=mocker.AsyncMock(),
+        )
+
+        response = bearer_client.post(
+            "/api/apps/inventory/sync/",
+            json={},
+            headers={"Authorization": f"Bearer {secret}"},
+        )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+
+    def test_service_principal_gains_nothing_beyond_this_gate(
+        self, bearer_client: TestClient, mocker: MockerFixture
+    ) -> None:
+        """Refuse the principal on a route carrying its own ``IsApiAdmin``."""
+        secret = "supersecret"
+        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(secret))
+
+        response = bearer_client.put(
+            "/api/admin/apps/checksums/state",
+            json={"state": "DISABLING"},
+            headers={"Authorization": f"Bearer {secret}"},
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_credential_less_mutation_still_answers_the_bearer_gate(
+        self, cookie_only_client: TestClient
+    ) -> None:
+        """Keep the Bearer gate ahead of the admin gate in declaration order.
+
+        Router-level dependencies run in declared order, so a credential-less
+        mutation must still carry ``BEARER_REQUIRED_DETAIL``; declaring the admin
+        gate first would answer a bare 401 with a different detail.
+        """
+        response = cookie_only_client.post("/api/sep/task-history/1/stop/", json={})
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+
+    def test_the_admin_gate_is_declared_after_the_bearer_gate(self) -> None:
+        """Pin the declaration order the detail string above depends on."""
+        api_deps = [dep.dependency for dep in api_router.dependencies]
+
+        assert api_deps.index(require_admin_for_unsafe_methods) > api_deps.index(
+            require_bearer_for_unsafe_methods
+        )
