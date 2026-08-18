@@ -144,12 +144,6 @@ class TestCredentialHttpUrl:
         model = _Model.model_validate({"endpoint": _CREDENTIAL_URL})
         assert "nomad-secret" in str(model.endpoint)
 
-    def test_accepts_real_password(
-        self, adapter: TypeAdapter[CredentialHttpUrl]
-    ) -> None:
-        """Accept a URL carrying a real embedded password."""
-        assert "nomad-secret" in str(adapter.validate_python(_CREDENTIAL_URL))
-
     def test_accepts_passwordless_url(
         self, adapter: TypeAdapter[CredentialHttpUrl]
     ) -> None:
@@ -180,15 +174,6 @@ class TestStrCredentialHttpUrl:
         assert model.model_dump(mode="json") == {
             "endpoint": "http://user:****@host:4646"
         }
-        assert model.endpoint == "http://user:secret@host:4646"
-
-    def test_accepts_real_password(self) -> None:
-        """Accept a string HTTP URL carrying a real embedded password."""
-
-        class _Model(BaseModel):
-            endpoint: StrCredentialHttpUrl
-
-        model = _Model(endpoint="http://user:secret@host:4646/")
         assert model.endpoint == "http://user:secret@host:4646"
 
     def test_accepts_passwordless_url(self) -> None:
@@ -227,15 +212,6 @@ class TestStrCredentialAnyUrl:
     def test_mask_constant_matches_ticket_example(self) -> None:
         """Match the SEP-1381 default redaction mask format."""
         assert CREDENTIAL_URL_MASK == "****"
-
-    def test_accepts_real_password(self) -> None:
-        """Accept an any-scheme URL carrying a real embedded password."""
-
-        class _Model(BaseModel):
-            broker_url: StrCredentialAnyUrl
-
-        model = _Model(broker_url=_BROKER_URL)
-        assert model.broker_url == _BROKER_URL
 
     def test_accepts_passwordless_url(self) -> None:
         """Accept an any-scheme URL with no embedded password."""
