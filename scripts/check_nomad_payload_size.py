@@ -25,11 +25,7 @@ import sys
 try:
     from python_minifier import minify
 except ModuleNotFoundError:
-    sys.exit(
-        "python_minifier is not installed for this Python interpreter.\n"
-        "Use the project venv: venv/bin/python scripts/check_nomad_payload_size.py ...\n"
-        "Or: make check-nomad-payload-size ARGS='--report <path>...'"
-    )
+    minify = None
 
 NOMAD_PAYLOAD_SIZE_LIMIT = 16384
 
@@ -40,6 +36,13 @@ def payload_size(path: str) -> int:
     The source is minified with ``python_minifier`` (falling back to the
     original text on ``SyntaxError``) then gzip-compressed.
     """
+    if minify is None:
+        raise SystemExit(
+            "python_minifier is not installed for this Python interpreter.\n"
+            "Use the project venv: venv/bin/python scripts/check_nomad_payload_size.py ...\n"
+            "Or: make check-nomad-payload-size ARGS='--report <path>...'"
+        )
+
     with open(path, encoding="utf-8") as f:  # noqa: PTH123
         src = f.read()
     with contextlib.suppress(SyntaxError):
