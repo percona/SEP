@@ -39,11 +39,13 @@ from app.core.settings_override.registry import (
     ReloadClassification,
     resolve_nested_field_metadata,
 )
+from app.sep.apps.alerts.config import AlertsSettings
 from app.sep.config import SEPSettings
 from app.tasks.config import TasksSettings
 
 ANNOTATIONS_KEY = "Settings.PMM__annotations_enabled"
 _SYNC_REFRESH_OVERRIDE = 11
+_BACKUP_RETENTION_OVERRIDE = 7
 
 
 async def _insert(session: AsyncSession, **kwargs: object) -> None:
@@ -290,6 +292,30 @@ class TestSnapshotFiltering:
         )
         snapshot = await build_snapshot(session, SEPSettings)
         assert snapshot["SYNC_REFRESH_TIME"] == _SYNC_REFRESH_OVERRIDE
+
+    @pytest.mark.asyncio
+    async def test_app_owned_class_honours_allowlist_like_core(
+        self, session: AsyncSession, restrict: Callable[..., None]
+    ) -> None:
+        """Apply an allowed ``AlertsSettings`` row and skip a sibling the same way as core."""
+        restrict("AlertsSettings.BACKUP_RETENTION")
+        await _insert(
+            session,
+            setting_class="ALERTS_SETTINGS",
+            key="BACKUP_RETENTION",
+            value=_BACKUP_RETENTION_OVERRIDE,
+            is_active=True,
+        )
+        await _insert(
+            session,
+            setting_class="ALERTS_SETTINGS",
+            key="ALERT_FOLDER_NAME",
+            value="Locked Folder",
+            is_active=True,
+        )
+        snapshot = await build_snapshot(session, AlertsSettings)
+        assert snapshot["BACKUP_RETENTION"] == _BACKUP_RETENTION_OVERRIDE
+        assert "ALERT_FOLDER_NAME" not in snapshot
 
     @pytest.mark.asyncio
     async def test_locked_nested_row_is_skipped(

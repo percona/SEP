@@ -27,11 +27,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
-from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.celery.config import STATIC_CELERY_INCLUDE
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.api.routes import AppOwnedClassEntry
-from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.apps.atw.schema import atw_schema
@@ -698,9 +696,9 @@ class TestCollectAppOwnedSettingsClasses:
     def test_rejects_unknown_app_key(self, mocker: MockerFixture) -> None:
         """Fail when an entry references an app key absent from the registry."""
         fake_entry = AppOwnedClassEntry(
-            setting_class=SettingClassEnum.ALERT_SETTINGS,
-            settings_cls=AlertSettings,
-            proxy=alert_settings,
+            setting_class=AlertsSettings.__name__,
+            settings_cls=AlertsSettings,
+            proxy=alerts_settings,
             app_key="ghost",
         )
         fake_module = mocker.MagicMock()

@@ -21,7 +21,6 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from pydantic import BaseModel
 
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 
 
@@ -37,9 +36,7 @@ def _factory() -> _Sample:
 @pytest.fixture
 def proxy() -> OverridableSettingsProxy[_Sample]:
     """Return a fresh proxy wrapping ``_Sample``."""
-    return OverridableSettingsProxy(
-        _factory, setting_class=SettingClassEnum.SEP_SETTINGS
-    )
+    return OverridableSettingsProxy(_factory, setting_class="SEPSettings")
 
 
 def test_empty_snapshot_delegates_to_factory(
@@ -93,8 +90,8 @@ def test_class_property_reflects_wrapped_class(
 
 
 def test_setting_class_stored(proxy: OverridableSettingsProxy[_Sample]) -> None:
-    """The proxy stores the ``setting_class`` identifier passed at construction."""
-    assert proxy._setting_class is SettingClassEnum.SEP_SETTINGS
+    """The proxy stores the class ``__name__`` identifier passed at construction."""
+    assert proxy._setting_class == "SEPSettings"
 
 
 def test_concurrent_swap_is_atomic(
@@ -172,9 +169,7 @@ def test_per_class_isolation_with_unknown_field() -> None:
     This test exercises that guarantee with a snapshot that contains an
     unrelated rogue key and an access for a distinct never-defined key.
     """
-    proxy = OverridableSettingsProxy(
-        _factory, setting_class=SettingClassEnum.SEP_SETTINGS
-    )
+    proxy = OverridableSettingsProxy(_factory, setting_class="SEPSettings")
     proxy._set_snapshot({"unknown_field": "should-not-leak"})
     with pytest.raises(AttributeError):
         _ = proxy.also_absent

@@ -97,6 +97,50 @@ async def test_refresh_all_swaps_snapshot(
 
 
 @pytest.mark.asyncio
+async def test_refresh_all_skips_unregistered_class_row(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Leave an override row for an unwired class in the table.
+
+    Startup still publishes the wired class's snapshot; the unregistered row
+    is neither applied nor deleted.
+    """
+    proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    async with session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.SEP_SETTINGS,
+                key="CONNECTIVITY_CHECK_DEFAULT",
+                value=override_value,
+            ),
+        )
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class="UNREGISTERED_SETTINGS",
+                key="WHATEVER",
+                value=True,
+            ),
+        )
+
+    await refresh_all(lambda: session_maker, registry)
+    assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+    async with session_maker() as session:
+        leftover = await SettingsOverrideManager.list(
+            session, setting_class="UNREGISTERED_SETTINGS"
+        )
+        wired = await SettingsOverrideManager.list(
+            session, setting_class=SettingClassEnum.SEP_SETTINGS
+        )
+    assert len(leftover) == 1
+    assert leftover[0].key == "WHATEVER"
+    assert len(wired) == 1
+
+
+@pytest.mark.asyncio
 async def test_refresh_all_retains_previous_snapshot_on_error(
     session_maker: async_sessionmaker,
     monkeypatch: pytest.MonkeyPatch,

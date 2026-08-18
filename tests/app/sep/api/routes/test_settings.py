@@ -41,6 +41,7 @@ from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification, SECRET_STR_MASK
 from app.core.utils import json_serializer
 from app.sep.api.routes.settings import SEP_ADMIN_SETTINGS_CLASSES
+from app.sep.apps.alerts.config import alerts_settings
 from app.sep.apps.framework.registry import (
     collect_app_owned_settings_classes,
     resolve_app_settings_metadata,
@@ -582,6 +583,15 @@ class TestSepSettingsGet:
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    async def test_storage_token_as_path_param_returns_404(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Reject the storage token ``SEP_SETTINGS``; the path speaks the class ``__name__``."""
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEP_SETTINGS/SYNC_REFRESH_TIME"
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
     async def test_unknown_key_returns_404(self, api_admin_client: TestClient) -> None:
         """Return 404 for an unknown key on a wired class."""
         response = api_admin_client.get(
@@ -619,6 +629,16 @@ class TestSepSettingsPatch:
         assert len(rows) == 1
         assert rows[0].key == "SYNC_REFRESH_TIME"
         assert rows[0].value == new_value
+
+    async def test_storage_token_as_path_param_returns_404(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Reject PATCH against the storage token; the path speaks the class ``__name__``."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEP_SETTINGS",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_materializer_field_footer_template_is_patchable(
         self,
@@ -1324,6 +1344,81 @@ class TestSepSettingsDelete:
             "/api/sep/admin/settings/SEPSettings/DOES_NOT_EXIST"
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_storage_token_as_path_param_returns_404(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Reject DELETE against the storage token; the path speaks the class ``__name__``."""
+        response = api_admin_client.delete(
+            "/api/sep/admin/settings/SEP_SETTINGS/SYNC_REFRESH_TIME"
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+class TestSepSettingsAppOwnedAlerts:
+    """Round-trip the app-owned ``AlertsSettings`` class by its ``__name__``."""
+
+    async def test_get_alerts_setting(self, api_admin_client: TestClient) -> None:
+        """Return one field from ``GET /settings/AlertsSettings/{key}``."""
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/AlertsSettings/ALERT_FOLDER_NAME"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["setting_class"] == "AlertsSettings"
+        assert body["key"] == "ALERT_FOLDER_NAME"
+
+    async def test_storage_token_as_path_param_returns_404(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Reject the storage token ``ALERTS_SETTINGS`` the same way as ``SEP_SETTINGS``."""
+        get_response = api_admin_client.get(
+            "/api/sep/admin/settings/ALERTS_SETTINGS/ALERT_FOLDER_NAME"
+        )
+        assert get_response.status_code == status.HTTP_404_NOT_FOUND
+
+        patch_response = api_admin_client.patch(
+            "/api/sep/admin/settings/ALERTS_SETTINGS",
+            json={"ALERT_FOLDER_NAME": "Should Not Persist"},
+        )
+        assert patch_response.status_code == status.HTTP_404_NOT_FOUND
+
+        delete_response = api_admin_client.delete(
+            "/api/sep/admin/settings/ALERTS_SETTINGS/ALERT_FOLDER_NAME"
+        )
+        assert delete_response.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_patch_and_delete_alerts_setting(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Persist and clear an ``AlertsSettings`` override through value-form paths."""
+        try:
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/AlertsSettings",
+                json={"ALERT_FOLDER_NAME": "Patched Alerts"},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            assert alerts_settings.ALERT_FOLDER_NAME == "Patched Alerts"
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class="ALERTS_SETTINGS"
+            )
+            assert len(rows) == 1
+            assert rows[0].key == "ALERT_FOLDER_NAME"
+            assert rows[0].value == "Patched Alerts"
+
+            deleted = api_admin_client.delete(
+                "/api/sep/admin/settings/AlertsSettings/ALERT_FOLDER_NAME"
+            )
+            assert deleted.status_code == status.HTTP_204_NO_CONTENT
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class="ALERTS_SETTINGS"
+            )
+            assert rows == []
+        finally:
+            alerts_settings._set_snapshot({})
 
 
 @pytest.mark.asyncio

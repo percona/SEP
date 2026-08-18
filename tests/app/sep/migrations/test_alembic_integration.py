@@ -397,27 +397,27 @@ def test_alembic_downgrade_alerts_to_base_drops_table(sep_alembic_config):
     assert sep_main_heads & stamped
 
 
-def test_setting_class_enum_accepts_new_members_after_upgrade(sep_alembic_config):
-    """After ``upgrade heads``, SETTINGS and ALERT_SETTINGS rows are accepted."""
+def test_setting_class_accepts_unregistered_token_after_upgrade(sep_alembic_config):
+    """After ``upgrade heads``, a token that was never in the CHECK is accepted."""
     cfg, sync_url = sep_alembic_config
     command.upgrade(cfg, "heads")
 
-    new_members = ("SETTINGS", "ALERT_SETTINGS")
+    unregistered = ("HEALTH_REPORT_SETTINGS", "APP_OWNED_SETTINGS")
     engine = create_engine(sync_url)
     try:
         with engine.begin() as conn:
-            for member in new_members:
+            for member in unregistered:
                 _insert_override(conn, member)
             count = conn.exec_driver_sql(
                 "SELECT COUNT(*) FROM settingoverride"
             ).scalar()
-        assert count == len(new_members)
+        assert count == len(unregistered)
     finally:
         engine.dispose()
 
 
-def test_setting_class_enum_rejects_new_members_before_upgrade(sep_alembic_config):
-    """At the pre-enum revision, a SETTINGS row violates the CHECK constraint."""
+def test_setting_class_check_rejects_unlisted_token_before_drop(sep_alembic_config):
+    """At the pre-enum revision, a SETTINGS row still violates the CHECK constraint."""
     cfg, sync_url = sep_alembic_config
     command.upgrade(cfg, _SEP_PRE_ENUM_REVISION)
 

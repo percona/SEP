@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the Tasks-track setting_class enum-extension migration."""
+"""Tests for the Tasks-track ``setting_class`` CHECK-drop migration."""
 
 import logging
 from pathlib import Path
@@ -58,27 +58,27 @@ def _insert_override(conn, setting_class: str) -> None:
     )
 
 
-def test_setting_class_enum_accepts_new_members_after_upgrade(tasks_alembic_config):
-    """After ``upgrade heads``, SETTINGS and ALERT_SETTINGS rows are accepted."""
+def test_setting_class_accepts_unregistered_token_after_upgrade(tasks_alembic_config):
+    """After ``upgrade heads``, a token that was never in the CHECK is accepted."""
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, "heads")
 
-    new_members = ("SETTINGS", "ALERT_SETTINGS")
+    unregistered = ("HEALTH_REPORT_SETTINGS", "APP_OWNED_SETTINGS")
     engine = create_engine(sync_url)
     try:
         with engine.begin() as conn:
-            for member in new_members:
+            for member in unregistered:
                 _insert_override(conn, member)
             count = conn.exec_driver_sql(
                 "SELECT COUNT(*) FROM settingoverride"
             ).scalar()
-        assert count == len(new_members)
+        assert count == len(unregistered)
     finally:
         engine.dispose()
 
 
-def test_setting_class_enum_rejects_new_members_before_upgrade(tasks_alembic_config):
-    """At the pre-enum revision, a SETTINGS row violates the CHECK constraint."""
+def test_setting_class_check_rejects_unlisted_token_before_drop(tasks_alembic_config):
+    """At the pre-enum revision, a SETTINGS row still violates the CHECK constraint."""
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, _TASKS_PRE_ENUM_REVISION)
 
