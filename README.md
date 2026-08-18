@@ -620,6 +620,16 @@ SEP will be available in http://localhost:8000.
 
 ![image](https://github.com/user-attachments/assets/cec67a8e-341a-45d5-9144-e6c24f5128eb)
 
+### API documentation
+
+SEP exposes interactive Swagger UI pages for each of its services:
+
+| Path | Scope |
+|---|---|
+| `/api/docs` | Merged core + SEP-web-app schema |
+| `/api/inventory/docs` | Inventory service |
+| `/api/tasks/docs` | Tasks service |
+
 
 ### Starting Celery with SEP for development
 

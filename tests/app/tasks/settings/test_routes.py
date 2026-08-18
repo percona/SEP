@@ -23,7 +23,7 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.testclient import TestClient
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_admin_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
@@ -47,6 +47,7 @@ def admin_test_client_fixture(
     mock_executor: AsyncMock,
 ) -> Iterator[TestClient]:
     """Yield an admin-authenticated Tasks TestClient bound to the test session."""
+    tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
     tasks_app.dependency_overrides[get_current_user] = lambda: admin_user
     tasks_app.dependency_overrides[get_session] = lambda: session
     tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
@@ -60,7 +61,12 @@ def non_admin_client_fixture(
     session: AsyncSession,
     mock_executor: AsyncMock,
 ) -> Iterator[TestClient]:
-    """Yield a non-admin Tasks TestClient bound to the test session."""
+    """Yield a non-admin Tasks TestClient bound to the test session.
+
+    The router-level gate is overridden so the refusal under test comes from the
+    route's own ``IsAdminDep``, not from the gate that precedes it.
+    """
+    tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
     tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
     tasks_app.dependency_overrides[get_session] = lambda: session
     tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
@@ -191,6 +197,25 @@ class TestTasksSettingsApi:
         )
         expected_rows = 2
         assert len(rows) == expected_rows
+
+    async def test_pre_execution_options_are_str_enum_members(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """Expose PreExecutionCheckMode members with string values."""
+        response = admin_test_client.get("/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        row = next(
+            s
+            for g in response.json()["groups"]
+            if g["setting_class"] == SettingClassEnum.TASKS_SETTINGS.value
+            for s in g["settings"]
+            if s["key"] == "PRE_EXECUTION_CONNECTIVITY_CHECK"
+        )
+        assert row["options"] == [
+            {"label": "DISABLED", "value": "disabled"},
+            {"label": "WARN", "value": "warn"},
+            {"label": "BLOCK", "value": "block"},
+        ]
 
     async def test_patch_inline_refresh(self, admin_test_client: TestClient) -> None:
         """Assert the proxy returns the new value after PATCH without the background refresher."""

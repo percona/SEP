@@ -38,7 +38,8 @@ export type EditValue = boolean | string;
  * Parse the options out of a `Literal[...]` annotation string, e.g.
  * `Literal['warn', 'fail']` → `['warn', 'fail']`. Returns `null` for anything
  * that is not a recognisable string-literal union (named enums render as their
- * class name and carry no inline options, so they fall back to a text input).
+ * class name and carry no inline options, so they fall back to a text input
+ * unless the API supplies {@link SettingResponse.options}).
  *
  * Limitation: splitting on `,` means a literal member that itself contains a
  * comma (e.g. `Literal["a,b"]`) won't parse and also falls back to text. No
@@ -58,6 +59,26 @@ export function parseLiteralOptions(type: string): string[] | null {
   return options.length > 0 ? options : null;
 }
 
+/** A selectable member for a choice control (label shown, value PATCHed). */
+export type SettingChoiceOption = { label: string; value: unknown };
+
+/**
+ * Resolve the options for a choice control. Prefer non-empty API `options`
+ * (enum members with typed values); otherwise map parsed `Literal[...]`
+ * members to `{label, value}` string pairs.
+ */
+export function getSettingOptions(setting: SettingResponse): SettingChoiceOption[] {
+  const fromApi = setting.options;
+  if (Array.isArray(fromApi) && fromApi.length > 0) {
+    return fromApi.map((o) => ({ label: o.label, value: o.value }));
+  }
+  const literals = parseLiteralOptions(setting.type);
+  if (literals === null) {
+    return [];
+  }
+  return literals.map((opt) => ({ label: opt, value: opt }));
+}
+
 /** Classify a setting into the control kind that should render it. */
 export function getFieldKind(setting: SettingResponse): FieldKind {
   if (setting.is_complex) {
@@ -73,7 +94,7 @@ export function getFieldKind(setting: SettingResponse): FieldKind {
   if (type === 'int' || type === 'float') {
     return 'number';
   }
-  if (parseLiteralOptions(type) !== null) {
+  if (getSettingOptions(setting).length > 0) {
     return 'choice';
   }
   return 'text';
@@ -232,10 +253,30 @@ export function formatSettingValue(value: unknown): string {
 }
 
 /**
+ * Format a value for the read-only Current column. When `options` includes a
+ * matching member, show its label (e.g. `WARNING`) instead of the dumped
+ * wire value (e.g. `30`).
+ */
+export function formatSettingDisplayValue(
+  value: unknown,
+  options?: SettingChoiceOption[] | null,
+): string {
+  return matchOptionLabel(value, options) ?? formatSettingValue(value);
+}
+
+/**
  * Format a value for the "view more" modal, pretty-printing objects/arrays
  * onto multiple indented lines so a `<pre>` block renders readable JSON.
+ * Prefer option labels when provided (same as the Current column).
  */
-export function formatSettingValuePretty(value: unknown): string {
+export function formatSettingValuePretty(
+  value: unknown,
+  options?: SettingChoiceOption[] | null,
+): string {
+  const label = matchOptionLabel(value, options);
+  if (label !== null) {
+    return label;
+  }
   if (value === null || value === undefined) {
     return '—';
   }
@@ -243,6 +284,18 @@ export function formatSettingValuePretty(value: unknown): string {
     return JSON.stringify(value, null, 2);
   }
   return formatSettingValue(value);
+}
+
+/** Return the matching option label, or `null` when none matches. */
+export function matchOptionLabel(
+  value: unknown,
+  options?: SettingChoiceOption[] | null,
+): string | null {
+  if (!options || options.length === 0 || value === null || value === undefined) {
+    return null;
+  }
+  const match = options.find((opt) => String(opt.value) === String(value));
+  return match ? match.label : null;
 }
 
 /**
@@ -272,6 +325,10 @@ export function toPatchValue(setting: SettingResponse, edit: EditValue): unknown
   }
   if (kind === 'number') {
     return Number(edit);
+  }
+  if (kind === 'choice') {
+    const match = getSettingOptions(setting).find((opt) => String(opt.value) === String(edit));
+    return match ? match.value : edit;
   }
   return edit;
 }

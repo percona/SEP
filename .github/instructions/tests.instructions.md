@@ -36,9 +36,28 @@ Every test has a **subject** (SUT + its session, model instances, loop state) an
 
 **Hermetic handler tests: mock every fan-out point.** If any sibling test for a handler mocks dependency X (`SnippetManager.count`, an API client), every new test asserting on that handler's response body must also mock X — partial mocking diverges between CI (empty DB) and local (populated). Integration tests that explicitly wire a live DB are exempt.
 
+**A negative assertion observes at the boundary the claim names.** "What does the new code call?" and "what does the criterion assert?" give the same answer for a positive assertion and different answers for a negative one — a positive assertion fails loudly when its observation point stops being reached, while a negative one starts **passing vacuously**, since observing nothing is exactly what it was written to see. So for any "X did not happen" assertion (`assert_not_called()`, "no additional query", "no second write"), put the observation point where the effect *would land*, not on the caller that would produce it:
+
+```python
+# Bad — spies a name in the module under test. A behaviour-preserving refactor
+# (moving the import into the function, calling through another alias)
+# silently detaches the spy and the assertion still passes.
+spy = mocker.patch("app.sep.apps.atw.send.republish_sep_settings_snapshot")
+spy.assert_not_called()
+
+# Good — spies the boundary the criterion names; survives any refactor of how
+# that boundary is reached.
+overrides_read = mocker.spy(SettingsOverrideManager, "list")
+overrides_read.assert_not_called()
+```
+
+This is the *reason* behind the "don't patch a sibling in the SUT module" rule above — the rule's letter is about module topology, its purpose is assertion durability, so a collaborator that merely happens to live in another module is no exemption. **Prove it is non-vacuous:** a negative assertion is worth its line only if some sibling test drives the same observation point positively — otherwise "never called" and "never wired up" are indistinguishable. Name that sibling when the pairing isn't obvious.
+
+**Assert the log line, not just the skip.** A test that only checks a drop happened passes equally against a version that drops silently. When a refusal path is supposed to log, assert the log.
+
 ## Body-dep override masks form/JSON parsing — critical
 
-When a route's body is `Annotated[<Model>, Form()]` / `Annotated[<Model>, Body()]`, the test MUST NOT override the dep that materialises that body model (`dependency_overrides[build_<app>_task_payload]`, `dependency_overrides[parse_<resource>_form]`, …). Such overrides remove the Pydantic model from FastAPI's body-field resolution, so body-parsing regressions (422 in production) pass green. At least one test per POST/PUT/PATCH route MUST issue a real `test_client.post(...)` with realistic data and no body-dep override. Overriding `validate_csrf`, `get_current_user`, `get_session`, `get_inventory_api`, `get_tasks_api` is fine.
+When a route's body is `Annotated[<Model>, Form()]` / `Annotated[<Model>, Body()]`, the test MUST NOT override the dep that materialises that body model (`dependency_overrides[build_<app>_task_payload]`, `dependency_overrides[parse_<resource>_form]`, …). Such overrides remove the Pydantic model from FastAPI's body-field resolution, so body-parsing regressions (422 in production) pass green. At least one test per POST/PUT/PATCH route MUST issue a real `test_client.post(...)` with realistic data and no body-dep override. Overriding `get_current_user`, `get_session`, `get_inventory_api`, `get_tasks_api` is fine.
 
 ## Compile-only SQL ≠ engine coverage
 
@@ -46,7 +65,7 @@ When a route's body is `Annotated[<Model>, Form()]` / `Annotated[<Model>, Body()
 
 ## Don't ratify the implementation
 
-`assert "<token>" in compiled_sql` with `<token>` copied verbatim from the SUT is a tautology. Same for HTML — substring matches against template output (`'selected>hosts</option>' in response.text`) ratify the template, not the route's contract. Drive the SUT with inputs and assert observable outputs (status, row count, parsed DOM nodes).
+`assert "<token>" in compiled_sql` with `<token>` copied verbatim from the SUT is a tautology. The same holds for any rendered output — a substring match against the report PDF template's HTML ratifies the template, not the code's contract. Drive the SUT with inputs and assert observable outputs (status, row count, parsed JSON fields).
 
 ## Loops, enums, settings, private state
 
@@ -56,7 +75,18 @@ When a route's body is `Annotated[<Model>, Form()]` / `Annotated[<Model>, Body()
 - **Enums:** derive from `TaskHistoryStatusEnum.SUCCESS.value`, not `"success"`. When the test's point is that a value *validated into* the enum member (not merely matches the string), assert `field is Enum.MEMBER` (identity) alongside `field.value == "…"` — `StrEnum` equals its raw string, so `==` passes even for a string that bypassed validation.
 - **Settings:** capture from the live settings object; don't hardcode the YAML default. The override value MUST differ from the resolved default (`override = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT`) — otherwise the test passes whether the override fired or not.
 - **Private state:** `_LATEST_RESULTS`, `_CACHE`, any `_<priv>` module global — expose a public getter.
-- **Test imports don't widen visibility:** don't drop a leading underscore or add to `__all__` just so a test can import a helper. Tests may import module-private names directly (`from app.<mod> import _resolve_field`; `SLF001` is relaxed in `tests/`) — keep intra-module helpers private.
+- **Test imports don't widen visibility:** don't drop a leading underscore or add to `__all__` just so a test can import a helper. Tests may import module-private names directly (`from app.<mod> import _resolve_field`; `SLF001` is relaxed in `tests/`) — keep intra-module helpers private. This carve-out is narrow: it covers a `test_*.py` importing a private name **from the very module it is the test for** (the `tests/<pkg>/…/test_<mod>.py` ↔ `<pkg>/…/<mod>.py` correspondence), where the symbol *is* the subject under test. A test importing a private name from an *unrelated* module is an ordinary cross-module-private violation and still blocks.
+- **Vacuous assertions:** a set-membership or `any(...)` assertion that passes when the SUT never ran (`observed.issubset({a, b, c})` is trivially true when `observed == set()`) needs a precondition that fails fast — `assert observed, "<what should have happened>"`. The set-algebra forms (`<=`, `issubset`, `isdisjoint`) are mechanically gated by a blocking pre-push check, and a genuinely-safe instance carries a trailing `# vacuous-ok: <why>` — don't flag those. `not in` and `all(...)` absence assertions are too idiomatic to gate and stay a reviewer item.
+- **Annotations:** `pyproject.toml` disables `ANN` for `test_*.py`, but that is a **lint-noise concession, not a relaxed convention** — the file's own prevailing style is the tiebreak, so an unannotated `monkeypatch` among siblings that all write `monkeypatch: pytest.MonkeyPatch` reads as an oversight and should be annotated. The exemption is also narrower than it looks: `conftest.py` carries `["S", "ARG001", "ARG002"]` and **not** `ANN`, so annotations there are mechanically required. A **shared-ancestor `conftest.py`** is where a loose annotation does most damage — promoting a fixture up from a leaf conftest makes it the copied exemplar for every test below it, so tighten its annotations *at the move*.
+- **Match the dominant form in the file you're editing, not just in sibling files.** The file under edit is the strongest evidence of the local idiom, and a divergence inside it is the one the next reader hits first; a split inside one file is internal inconsistency, not two valid styles. Recurring shapes: a side-effect-only fixture requested as a parameter where siblings in the same module use `@pytest.mark.usefixtures`; two tests differing in one input where the module already parametrizes that exact shape with `ids=[...]`; an unguarded `re.search(...).group(1)` beside siblings that bind the match and assert it is not `None` first.
+
+## Retiring a test is retiring a guard — name what it proved
+
+A diff that drops, rewrites, or narrows an existing test is removing a guard, and the reviewable question is never "does this test still fit the new code" — it is **what invariant did this test prove, and what still proves it afterwards**. Answer it per test. A test-revision table prescribing an action per row (`drop`, `rewrite`, `re-anchor`) without that column is a list of edits, not an analysis.
+
+The failure is invisible to every gate: deleting a test and deleting the behaviour it guarded leaves the suite **green**, with no red and no coverage drop naming the lost case, and the diff reads as consistent cleanup. Green after a deletion is evidence of nothing. Two shapes need different answers — **the behaviour moved** (name the test that now proves the invariant, by file and test name; if you can't, the invariant is unguarded and the edit is incomplete), or **the behaviour went away** (then the deletion is correct *and* the behaviour's removal is a change in its own right, belonging in the PR description and, if user-visible, a changelog fragment — a test deletion is not a silent carrier for a behaviour deletion).
+
+**Read the assertion, not the test name.** A row's prescribed action is usually justified from what the test is *called* or appears to cover; the invariant lives in the assertion body, and the two diverge exactly where this matters.
 
 ## Cleanup & duplicates
 

@@ -25,6 +25,7 @@ from aiohttp import ClientTimeout
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import StreamingResponse
 
+from app.core.security import require_internal_token
 from app.sep.deps import (
     ApiCurrentUser,
     get_task_history,
@@ -159,14 +160,18 @@ async def task_history_logs_event_stream(
     Streams log lines for a given task history ID from the Tasks API and yields them
     formatted as server-sent events.
 
+    The log read carries ``access_token`` so it is attributed to the viewing user.
+    The reconciliation that follows it is a mutating Tasks API call, which the
+    unsafe-method admin gate admits only for an admin or the service principal —
+    and this stream is open to any authenticated user, so that call carries the
+    internal token instead.
+
     :param tasks_client: The TaskAPI client for interacting with the Tasks service.
-    :type tasks_client: RemoteAPI
     :param task_history_id: The ID of the task history whose logs to stream.
-    :type task_history_id: int
     :param request: The FastAPI request object, used to access query parameters.
-    :type request: Request
-    :yield: Log entries formatted as server-sent events.
-    :rtype: str
+    :param access_token: Bearer token authenticating the log read as the viewing
+        user.
+    :return: Log entries formatted as server-sent events.
     """
     try:
         with tasks_client.auth(access_token) as tasks_api:
@@ -179,7 +184,8 @@ async def task_history_logs_event_stream(
             ):
                 if log_entry:
                     yield f"data: {log_entry.decode()}\n\n"
-            task_history = await tasks_api.post(f"/history/{task_history_id}/sync/")
+        with tasks_client.auth(require_internal_token()) as sync_api:
+            task_history = await sync_api.post(f"/history/{task_history_id}/sync/")
         yield f"event: finish\ndata: {json.dumps({'status': task_history['status']})}\n\n"
     except TimeoutError as exc:
         logger.warning(
