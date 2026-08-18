@@ -106,7 +106,7 @@ async def test_endpoint_rebinder_invalidates_when_no_app_state_client(
 async def test_endpoint_rebinder_created_evicts_base_and_new(
     mocker: MockerFixture,
 ) -> None:
-    """An endpoint override create evicts the YAML/env base and the new endpoint."""
+    """Evict the YAML/env base and the new endpoint when an endpoint override is created."""
     app = FastAPI()
     new_endpoint = "https://new-inv.example.org"
     base_endpoint = "https://base-inv.example.org"
@@ -128,7 +128,7 @@ async def test_endpoint_rebinder_created_evicts_base_and_new(
 async def test_endpoint_rebinder_changed_evicts_previous_and_new(
     mocker: MockerFixture,
 ) -> None:
-    """An endpoint override change evicts both the previous and the new endpoint."""
+    """Evict both the previous and the new endpoint when an endpoint override changes."""
     app = FastAPI()
     previous_endpoint = "https://old-inv.example.org"
     new_endpoint = "https://new-inv.example.org"
@@ -154,7 +154,7 @@ async def test_endpoint_rebinder_changed_evicts_previous_and_new(
 async def test_endpoint_rebinder_deleted_evicts_previous_and_base(
     mocker: MockerFixture,
 ) -> None:
-    """Deleting an endpoint override evicts the previous override and the YAML/env base."""
+    """Evict the previous override and the YAML/env base when an endpoint override is deleted."""
     app = FastAPI()
     previous_endpoint = "https://old-inv.example.org"
     base_endpoint = "https://base-inv.example.org"
@@ -206,7 +206,7 @@ async def test_invalidate_pmm_clients_noop_without_endpoint(
 async def test_invalidate_pmm_clients_created_evicts_base_and_new(
     mocker: MockerFixture,
 ) -> None:
-    """A PMM override create evicts the YAML/env base endpoint and the new one."""
+    """Evict the YAML/env base endpoint and the new one when a PMM override is created."""
     new_pmm = PMMSettings(endpoint="https://new-pmm.example.org")
     mocker.patch.object(
         settings._resolve(),
@@ -230,7 +230,7 @@ async def test_invalidate_pmm_clients_created_evicts_base_and_new(
 async def test_invalidate_pmm_clients_changed_evicts_previous_and_new(
     mocker: MockerFixture,
 ) -> None:
-    """A PMM endpoint override change evicts both the previous and the new endpoint."""
+    """Evict both the previous and the new endpoint when a PMM endpoint override changes."""
     previous_pmm = PMMSettings(endpoint="https://old-pmm.example.org")
     new_pmm = PMMSettings(endpoint="https://new-pmm.example.org")
     settings._set_snapshot({"PMM": new_pmm})
@@ -252,7 +252,7 @@ async def test_invalidate_pmm_clients_changed_evicts_previous_and_new(
 async def test_invalidate_pmm_clients_deleted_evicts_previous_and_base(
     mocker: MockerFixture,
 ) -> None:
-    """Deleting a PMM override evicts the previous override and the YAML/env base."""
+    """Evict the previous override and the YAML/env base when a PMM override is deleted."""
     previous_pmm = PMMSettings(endpoint="https://old-pmm.example.org")
     mocker.patch.object(
         settings._resolve(),
@@ -273,7 +273,7 @@ async def test_invalidate_pmm_clients_deleted_evicts_previous_and_base(
 async def test_invalidate_pmm_clients_same_endpoint_credential_change_evicts_once(
     mocker: MockerFixture,
 ) -> None:
-    """A same-endpoint credential change collapses to a single eviction."""
+    """Collapse a same-endpoint credential change to a single eviction."""
     previous_pmm = PMMSettings(
         endpoint="https://same-pmm.example.org", api_key=SecretStr("old-key")
     )

@@ -64,8 +64,8 @@ async def _reconcile_nomad(_: SnapshotChange) -> None:
     shutdown can find ``tasks_app.state.nomad_lifecycle`` already gone; the
     rebind is skipped in that window rather than raising a noisy callback error.
 
-    :param _: The override snapshots on either side of the republish. Unused --
-        the holder reads the live ``NOMAD`` config itself when reconciling.
+    :param _: The override snapshots on either side of the republish. Unused; the
+        holder reads the live ``NOMAD`` config itself when reconciling.
     """
     holder = getattr(tasks_app.state, "nomad_lifecycle", None)
     if holder is not None:

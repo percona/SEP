@@ -124,24 +124,20 @@ def _make_remote_api_rebinder(
     the new endpoint and the old one closed. Under the combined ``app.main:app``
     no ``app.state`` client exists -- ``get_*_client`` falls back to the
     registry-cached ``get_remote_api`` per request, which already key-misses to
-    the new HOT endpoint -- so the callback evicts the ordered de-duplicated set
+    the new HOT endpoint, so the callback evicts the ordered de-duplicated set
     of previous-and-current endpoints (covering endpoint moves as well as
     same-endpoint credential/SSL changes). When ``key`` is absent from
     ``change.previous`` (override created), :func:`previous_or_base` supplies
     the YAML/env value from the proxy's wrapped instance.
 
     :param app: The FastAPI application whose ``state`` holds the client.
-    :type app: FastAPI
     :param name: The ``app.state`` attribute name (``inventory_api`` /
         ``tasks_api``).
-    :type name: str
     :param proxy: The overridable settings proxy that owns the endpoint field.
     :param key: The top-level snapshot key for the endpoint field.
     :param ssl: SSL keyword arguments forwarded to :class:`RemoteAPI` (not HOT,
         captured once at wiring time).
-    :type ssl: Any
     :return: The rebind callback.
-    :rtype: RefreshCallback
     """
 
     async def _rebind(change: SnapshotChange) -> None:
@@ -177,8 +173,8 @@ async def _apply_logging_dictconfig(_: SnapshotChange) -> None:
     process without a restart. Failures are logged and swallowed: a malformed
     config must not take the process down mid-request.
 
-    :param _: The override snapshots on either side of the republish (unused --
-        the level is re-read from the proxy).
+    :param _: The override snapshots on either side of the republish (unused; the
+        level is re-read from the proxy).
     """
     try:
         config = deepcopy(settings.LOGGING_CONFIG)
@@ -205,7 +201,7 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     Updating the ``IntervalSchedule`` bumps ``PeriodicTaskChanged.last_update``, so
     Celery beat reloads the schedule on its next scheduler tick without a restart.
 
-    :param _: The override snapshots on either side of the republish (unused -- the
+    :param _: The override snapshots on either side of the republish (unused; the
         interval is re-read from the proxy by the task-set builder).
     """
     await init_periodic_tasks_db(get_system_periodic_tasks(), "sep__")
