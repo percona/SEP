@@ -1302,7 +1302,9 @@ class TestDefinitionValidation:
             list_view=ListView(
                 columns=[
                     Column(key="name", label="Name"),
-                    Column(key="_actions", label="", format=ColumnFormat.ACTIONS),
+                    Column(
+                        key="_actions", label="Actions", format=ColumnFormat.ACTIONS
+                    ),
                 ]
             ),
         )
@@ -1345,7 +1347,7 @@ class TestDefinitionValidation:
             layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
             list_view=ListView(columns=[Column(key="ghost.service", label="Ghost")]),
         )
-        with pytest.raises(ValueError, match="ghost"):
+        with pytest.raises(ValueError, match=r"root: 'ghost'"):
             _synth_app(views=bad_views)
 
     def test_list_view_indexed_key_resolves_root(self) -> None:
@@ -1354,8 +1356,22 @@ class TestDefinitionValidation:
             layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
             list_view=ListView(columns=[Column(key="items[0].name", label="Item")]),
         )
-        with pytest.raises(ValueError, match="items"):
+        with pytest.raises(ValueError, match=r"root: 'items'"):
             _synth_app(views=bad_views)
+
+    def test_list_view_indexed_key_with_valid_root_constructs(self) -> None:
+        """Construct cleanly when an indexed column key's root is a serialized field."""
+        views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(
+                columns=[
+                    Column(key="name", label="Name"),
+                    Column(key="name[0].label", label="First Name Label"),
+                ]
+            ),
+        )
+        app_def = _synth_app(views=views)
+        assert app_def.api_router is not None
 
 
 class _AltListResponse(BaseModel):
