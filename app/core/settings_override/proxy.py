@@ -20,7 +20,6 @@ __all__ = ["OverridableSettingsProxy"]
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, TypeVar
 
-from app.core.settings_override.models import SettingClassEnum
 from app.core.utils.lazy import LazyProxy
 
 if TYPE_CHECKING:
@@ -45,7 +44,7 @@ class OverridableSettingsProxy(LazyProxy[T]):
     :type factory: Callable[[], T]
     :param setting_class: The class identifier used to load this proxy's
         snapshot from the override table.
-    :type setting_class: SettingClassEnum
+    :type setting_class: str
     """
 
     __slots__ = ("_setting_class", "_snapshot")
@@ -53,7 +52,7 @@ class OverridableSettingsProxy(LazyProxy[T]):
     def __init__(
         self,
         factory: "Callable[[], T]",
-        setting_class: SettingClassEnum,
+        setting_class: str,
     ) -> None:
         super().__init__(factory)
         object.__setattr__(self, "_snapshot", _EMPTY_SNAPSHOT)

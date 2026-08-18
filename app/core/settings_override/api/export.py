@@ -23,14 +23,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import BaseYamlSettings
 from app.core.settings_override.api.routes import collect_class_setting_responses
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 
 
 async def build_settings_class_values(
     *,
     session: AsyncSession,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     settings_cls: type[BaseYamlSettings],
     proxy: OverridableSettingsProxy,
 ) -> dict[str, Any]:
@@ -42,8 +41,8 @@ async def build_settings_class_values(
 
     :param session: The sub-app's database session.
     :type session: AsyncSession
-    :param setting_class: The settings class identifier (enum member).
-    :type setting_class: SettingClassEnum
+    :param setting_class: The settings class identifier (Pydantic class ``__name__``).
+    :type setting_class: str
     :param settings_cls: The Pydantic settings class to introspect.
     :type settings_cls: type[BaseYamlSettings]
     :param proxy: The proxy whose attribute access yields current values.

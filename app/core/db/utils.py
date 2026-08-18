@@ -29,6 +29,7 @@ from sqlalchemy import (
     inspect,
     JSON,
     literal,
+    String,
     Text,
     text,
     TypeDecorator,
@@ -323,6 +324,12 @@ def compare_type(
         return False
     if isinstance(metadata_type, AutoJSON) and isinstance(inspected_type, JSONB | JSON):
         return False
+    if (
+        isinstance(metadata_type, TypeDecorator)
+        and isinstance(inspected_type, String)
+        and isinstance(metadata_type.impl, String)
+    ):
+        return False if inspected_type.length == metadata_type.impl.length else None
     return None
 
 
@@ -361,6 +368,53 @@ def table_exists(bind: Connection, table_name: str) -> bool:
     return inspect(bind).has_table(table_name)
 
 
+def _check_constraints_for_column(
+    bind: Connection,
+    table_name: str,
+    column_name: str,
+) -> list[dict[str, Any]]:
+    """Return CHECK constraints whose SQL text mentions ``column_name``.
+
+    :param bind: The migration's bound connection (``op.get_bind()``).
+    :param table_name: The table whose CHECK constraints are inspected.
+    :param column_name: The constrained column, used to select the relevant
+        constraint and avoid matching unrelated CHECKs.
+    :return: Matching inspector constraint dicts, or an empty list when the
+        table does not exist.
+    """
+    inspector = inspect(bind)
+    if not inspector.has_table(table_name):
+        return []
+    return [
+        constraint
+        for constraint in inspector.get_check_constraints(table_name)
+        if column_name in (constraint["sqltext"] or "")
+    ]
+
+
+def check_constraint_name(
+    bind: Connection,
+    table_name: str,
+    column_name: str,
+) -> str | None:
+    """Return the name of the CHECK constraint on ``column_name``, if any.
+
+    Used by the SEP-1825 constraint-drop migrations so a second track on a
+    shared PostgreSQL database can no-op once the first track has already
+    dropped ``settingoverride.setting_class``'s CHECK.
+
+    :param bind: The migration's bound connection (``op.get_bind()``).
+    :param table_name: The table whose CHECK constraints are inspected.
+    :param column_name: The constrained column.
+    :return: The constraint name, or ``None`` when the table or constraint is
+        absent.
+    """
+    constraints = _check_constraints_for_column(bind, table_name, column_name)
+    if not constraints:
+        return None
+    return constraints[0].get("name")
+
+
 def check_constraint_lists_members(
     bind: Connection,
     table_name: str,
@@ -369,11 +423,13 @@ def check_constraint_lists_members(
 ) -> bool:
     """Return ``True`` when the CHECK constraint on ``column_name`` lists every member.
 
-    The ``setting_class`` column uses ``native_enum=False``, so its allowed
-    values live in a ``CHECK`` constraint rather than a PostgreSQL ``TYPE``. This
-    reflects the constraint text cross-dialect via ``sqlalchemy.inspect`` and
-    tests membership by matching each value as a single-quoted SQL string
-    literal, so ``"SETTINGS"`` does not spuriously match ``"SEP_SETTINGS"``.
+    Until SEP-1825 dropped it, the ``setting_class`` column used
+    ``native_enum=False``, so its allowed values lived in a ``CHECK`` constraint
+    rather than a PostgreSQL ``TYPE``. This reflects the constraint text
+    cross-dialect via ``sqlalchemy.inspect`` and tests membership by matching
+    each value as a single-quoted SQL string literal, so ``"SETTINGS"`` does not
+    spuriously match ``"SEP_SETTINGS"``. Historical enum-extension migrations
+    and the SEP-1825 downgrade still consult this helper.
 
     Returns ``False`` when the table does not exist. ``get_check_constraints``
     raises ``NoSuchTableError`` for a missing table, and a missing table means
@@ -395,12 +451,10 @@ def check_constraint_lists_members(
     :return: ``True`` only if the table exists and every member appears as a
         quoted literal in a CHECK constraint referencing ``column_name``.
     """
-    inspector = inspect(bind)
-    if not inspector.has_table(table_name):
-        return False
     haystack = " ".join(
         constraint["sqltext"] or ""
-        for constraint in inspector.get_check_constraints(table_name)
-        if column_name in (constraint["sqltext"] or "")
+        for constraint in _check_constraints_for_column(bind, table_name, column_name)
     )
-    return all(re.search(rf"'{re.escape(member)}'", haystack) for member in members)
+    return bool(haystack) and all(
+        re.search(rf"'{re.escape(member)}'", haystack) for member in members
+    )

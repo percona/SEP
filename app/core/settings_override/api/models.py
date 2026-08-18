@@ -28,7 +28,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, RootModel
 
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
 
 
@@ -47,7 +46,7 @@ class SettingOption(BaseModel):
 class SettingResponse(BaseModel):
     """Represent a single setting's metadata and current value.
 
-    :param setting_class: The settings class the field belongs to.
+    :param setting_class: The Pydantic class ``__name__`` the field belongs to.
     :param key: The field name on the settings class.
     :param key_path: Carry the canonical key segments for ``key`` such that
         ``"__".join(key_path) == key``.
@@ -80,7 +79,7 @@ class SettingResponse(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    setting_class: SettingClassEnum
+    setting_class: str
     key: str
     key_path: list[str] = Field(default_factory=list)
     value: Any
@@ -130,8 +129,8 @@ class SettingClassAppMetadata(BaseModel):
 class SettingClassGroup(BaseModel):
     """One settings-class group in the LIST response.
 
-    :param setting_class: The settings class this group represents.
-    :type setting_class: SettingClassEnum
+    :param setting_class: The Pydantic class ``__name__`` this group represents.
+    :type setting_class: str
     :param settings: The fields declared on the settings class, with their
         current values and metadata.
     :type settings: list[SettingResponse]
@@ -151,7 +150,7 @@ class SettingClassGroup(BaseModel):
     :type app_enabled: bool | None
     """
 
-    setting_class: SettingClassEnum
+    setting_class: str
     settings: list[SettingResponse]
     is_app_owned: bool = False
     app_id: str | None = None

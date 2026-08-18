@@ -4081,44 +4081,11 @@ export interface components {
       | 'external'
       | 'valkey';
     /**
-     * SettingClassEnum
-     * @description Enumerate settings classes that may have HOT override rows.
-     *
-     *     The wired classes are ``SEPSettings``, ``TasksSettings``,
-     *     ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
-     *     ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings`` and
-     *     ``InventorySettings``.
-     *
-     *     To wire a new settings class:
-     *
-     *     1. Add a member here whose value matches the Pydantic class ``__name__``.
-     *     2. Generate an Alembic migration on every consumer track that extends the
-     *        ``CHECK`` constraint on ``settingoverride.setting_class``. The column
-     *        uses ``native_enum=False`` so the value list lives in a constraint,
-     *        not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.
-     *        Note that the column and ``CHECK`` constraint persist the enum member
-     *        *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member
-     *        *value* (the Pydantic class name, e.g. ``SEPSettings``).
-     *     3. Wire a ``ProxyEntry`` for the new class in the relevant service's
-     *        lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).
-     * @enum {string}
-     */
-    SettingClassEnum:
-      | 'SEPSettings'
-      | 'TasksSettings'
-      | 'SnippetsSettings'
-      | 'Settings'
-      | 'AlertSettings'
-      | 'AnonymizerSettings'
-      | 'AlertsSettings'
-      | 'HealthReportSettings'
-      | 'InventorySettings';
-    /**
      * SettingClassGroup
      * @description One settings-class group in the LIST response.
      *
-     *     :param setting_class: The settings class this group represents.
-     *     :type setting_class: SettingClassEnum
+     *     :param setting_class: The Pydantic class ``__name__`` this group represents.
+     *     :type setting_class: str
      *     :param settings: The fields declared on the settings class, with their
      *         current values and metadata.
      *     :type settings: list[SettingResponse]
@@ -4149,7 +4116,8 @@ export interface components {
        * @default false
        */
       is_app_owned: boolean;
-      setting_class: components['schemas']['SettingClassEnum'];
+      /** Setting Class */
+      setting_class: string;
       /** Settings */
       settings: components['schemas']['SettingResponse'][];
     };
@@ -4170,7 +4138,7 @@ export interface components {
      * SettingResponse
      * @description Represent a single setting's metadata and current value.
      *
-     *     :param setting_class: The settings class the field belongs to.
+     *     :param setting_class: The Pydantic class ``__name__`` the field belongs to.
      *     :param key: The field name on the settings class.
      *     :param key_path: Carry the canonical key segments for ``key`` such that
      *         ``"__".join(key_path) == key``.
@@ -4228,7 +4196,8 @@ export interface components {
       /** Options */
       options?: components['schemas']['SettingOption'][] | null;
       reload: components['schemas']['ReloadClassification'];
-      setting_class: components['schemas']['SettingClassEnum'];
+      /** Setting Class */
+      setting_class: string;
       /** Type */
       type: string;
       /** Value */
@@ -14560,7 +14529,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        setting_class: components['schemas']['SettingClassEnum'];
+        setting_class: string;
       };
       cookie?: never;
     };
@@ -14595,7 +14564,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        setting_class: components['schemas']['SettingClassEnum'];
+        setting_class: string;
         key: string;
       };
       cookie?: never;
@@ -14627,7 +14596,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        setting_class: components['schemas']['SettingClassEnum'];
+        setting_class: string;
         key: string;
       };
       cookie?: never;

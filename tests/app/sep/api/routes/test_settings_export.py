@@ -241,8 +241,8 @@ class TestSepConfigExportYaml:
         for setting_class in (
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
-            SettingClassEnum.ALERTS_SETTINGS.value,
-            SettingClassEnum.HEALTH_REPORT_SETTINGS.value,
+            "AlertsSettings",
+            "HealthReportSettings",
         ):
             assert set(export[setting_class]) == list_keys[setting_class]
 
@@ -252,10 +252,10 @@ class TestSepConfigExportYaml:
         """Export the new ``AlertsSettings`` section with its three fields."""
         export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
         list_keys = _list_keys_by_class(api_admin_client)
-        block = export[SettingClassEnum.ALERTS_SETTINGS.value]
+        block = export["AlertsSettings"]
         # Exported keys mirror the LIST projection exactly (including the
         # ``BACKUP_INTERVAL__*`` flattening and inherited ``FASTAPI_ENV``).
-        assert set(block) == list_keys[SettingClassEnum.ALERTS_SETTINGS.value]
+        assert set(block) == list_keys["AlertsSettings"]
         assert block["BACKUP_RETENTION"] == DEFAULT_ALERT_BACKUP_RETENTION
         assert block["ALERT_FOLDER_NAME"] == "SEP Alerts"
 
@@ -265,8 +265,8 @@ class TestSepConfigExportYaml:
         """Export the ``HealthReportSettings`` section with its fields."""
         export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
         list_keys = _list_keys_by_class(api_admin_client)
-        block = export[SettingClassEnum.HEALTH_REPORT_SETTINGS.value]
-        assert set(block) == list_keys[SettingClassEnum.HEALTH_REPORT_SETTINGS.value]
+        block = export["HealthReportSettings"]
+        assert set(block) == list_keys["HealthReportSettings"]
         assert block["upload"] is False
 
     async def test_secret_fields_match_list_projection(
@@ -286,7 +286,7 @@ class TestSepConfigExportYaml:
         _configure_health_report_upload(mocker)
         yaml_text = api_admin_client.get(EXPORT_URL).text
         export = yaml.safe_load(yaml_text)
-        health_block = export[SettingClassEnum.HEALTH_REPORT_SETTINGS.value]
+        health_block = export["HealthReportSettings"]
         assert health_block["api_key"] == REDACTED_SECRET
         assert (
             export[SettingClassEnum.TASKS_SETTINGS.value]["API_SECRET"]
@@ -576,8 +576,8 @@ class TestSepConfigExportTasksFanOut:
 
 SEP_CLASS = SettingClassEnum.SEP_SETTINGS.value
 SNIPPETS_CLASS = SettingClassEnum.SNIPPETS_SETTINGS.value
-ALERTS_CLASS = SettingClassEnum.ALERTS_SETTINGS.value
-HEALTH_REPORT_CLASS = SettingClassEnum.HEALTH_REPORT_SETTINGS.value
+ALERTS_CLASS = "AlertsSettings"
+HEALTH_REPORT_CLASS = "HealthReportSettings"
 SETTINGS_CLASS = SettingClassEnum.SETTINGS.value
 ALERT_CLASS = SettingClassEnum.ALERT_SETTINGS.value
 TASKS_CLASS = SettingClassEnum.TASKS_SETTINGS.value

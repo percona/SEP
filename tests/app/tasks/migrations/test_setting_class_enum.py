@@ -13,8 +13,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the Tasks-track setting_class enum-extension migration."""
+"""Tests for the Tasks-track ``setting_class`` CHECK-drop migration."""
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 
+from app.core.db.utils import check_constraint_name
 from app.tasks.config import tasks_settings
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -56,27 +58,27 @@ def _insert_override(conn, setting_class: str) -> None:
     )
 
 
-def test_setting_class_enum_accepts_new_members_after_upgrade(tasks_alembic_config):
-    """After ``upgrade heads``, SETTINGS and ALERT_SETTINGS rows are accepted."""
+def test_setting_class_accepts_unregistered_token_after_upgrade(tasks_alembic_config):
+    """After ``upgrade heads``, a token that was never in the CHECK is accepted."""
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, "heads")
 
-    new_members = ("SETTINGS", "ALERT_SETTINGS")
+    unregistered = ("HEALTH_REPORT_SETTINGS", "APP_OWNED_SETTINGS")
     engine = create_engine(sync_url)
     try:
         with engine.begin() as conn:
-            for member in new_members:
+            for member in unregistered:
                 _insert_override(conn, member)
             count = conn.exec_driver_sql(
                 "SELECT COUNT(*) FROM settingoverride"
             ).scalar()
-        assert count == len(new_members)
+        assert count == len(unregistered)
     finally:
         engine.dispose()
 
 
-def test_setting_class_enum_rejects_new_members_before_upgrade(tasks_alembic_config):
-    """At the pre-enum revision, a SETTINGS row violates the CHECK constraint."""
+def test_setting_class_check_rejects_unlisted_token_before_drop(tasks_alembic_config):
+    """At the pre-enum revision, a SETTINGS row still violates the CHECK constraint."""
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, _TASKS_PRE_ENUM_REVISION)
 
@@ -84,5 +86,64 @@ def test_setting_class_enum_rejects_new_members_before_upgrade(tasks_alembic_con
     try:
         with engine.begin() as conn, pytest.raises(IntegrityError):
             _insert_override(conn, "SETTINGS")
+    finally:
+        engine.dispose()
+
+
+def test_setting_class_check_is_dropped_after_upgrade(tasks_alembic_config):
+    """After ``upgrade heads``, ``setting_class`` is an unconstrained string."""
+    cfg, sync_url = tasks_alembic_config
+    command.upgrade(cfg, "heads")
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            unconstrained = ("UNREGISTERED_SETTINGS", "X" * 50)
+            assert (
+                check_constraint_name(conn, "settingoverride", "setting_class") is None
+            )
+            for token in unconstrained:
+                _insert_override(conn, token)
+            count = conn.exec_driver_sql(
+                "SELECT COUNT(*) FROM settingoverride"
+            ).scalar()
+        assert count == len(unconstrained)
+    finally:
+        engine.dispose()
+
+
+def test_setting_class_check_downgrade_deletes_unknown_rows(
+    tasks_alembic_config, caplog
+):
+    """Downgrade deletes out-of-list rows, logs the count, and restores the CHECK."""
+    cfg, sync_url = tasks_alembic_config
+    command.upgrade(cfg, "heads")
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            _insert_override(conn, "UNREGISTERED_SETTINGS")
+            _insert_override(conn, "SEP_SETTINGS")
+    finally:
+        engine.dispose()
+
+    with caplog.at_level(logging.INFO, logger="app.core.settings_override.alembic_ops"):
+        command.downgrade(cfg, "-1")
+
+    assert "Deleted 1 settingoverride row(s)" in caplog.text
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            assert (
+                check_constraint_name(conn, "settingoverride", "setting_class")
+                == "settingclassenum"
+            )
+            remaining = conn.exec_driver_sql(
+                "SELECT setting_class FROM settingoverride"
+            ).fetchall()
+            assert remaining == [("SEP_SETTINGS",)]
+            with pytest.raises(IntegrityError):
+                _insert_override(conn, "UNREGISTERED_SETTINGS")
     finally:
         engine.dispose()

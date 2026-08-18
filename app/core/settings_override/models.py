@@ -15,38 +15,67 @@
 
 """Define the persistent ``SettingOverride`` model and class identifier enum."""
 
-__all__ = ["SettingClassEnum", "SettingOverride"]
+__all__ = ["SettingClassEnum", "SettingOverride", "setting_class_token"]
 
+import re
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
-from pydantic import JsonValue
-from sqlalchemy import Column, Index
-from sqlalchemy import Enum as EnumField
+from pydantic import field_validator, JsonValue
+from sqlalchemy import Column, Index, String
+from sqlalchemy.engine.interfaces import Dialect
+from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field as SQLField
 
 from app.core.db.models import BaseSQLModel
 from app.core.db.sql_types import AutoJSON
 
+if TYPE_CHECKING:
+    from app.core.config import BaseYamlSettings
+
+#: Acronym-aware CamelCase split: ``SEPSettings`` -> ``SEP_Settings``,
+#: ``HealthReportSettings`` -> ``Health_Report_Settings``.
+_CAMEL_SPLIT = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+
+def setting_class_token(settings_cls: type["BaseYamlSettings"]) -> str:
+    """Return the storage token written to ``settingoverride.setting_class``.
+
+    The token is the SCREAMING_SNAKE form of the class ``__name__``, derived by
+    an acronym-aware CamelCase split so ``SEPSettings`` stores as
+    ``SEP_SETTINGS`` -- the spelling every existing override row already uses.
+    A class may pin a different token by declaring ``__setting_class_token__``,
+    the same escape hatch shape as SQLAlchemy's ``__tablename__``.
+
+    :param settings_cls: The settings class whose override rows are stored.
+    :type settings_cls: type[BaseYamlSettings]
+    :return: The token written to ``settingoverride.setting_class``.
+    :rtype: str
+    """
+    override = getattr(settings_cls, "__setting_class_token__", None)
+    if isinstance(override, str) and override:
+        return override
+    return _CAMEL_SPLIT.sub("_", settings_cls.__name__).upper()
+
 
 class SettingClassEnum(StrEnum):
     """Enumerate settings classes that may have HOT override rows.
 
-    The wired classes are ``SEPSettings``, ``TasksSettings``,
+    The wired core classes are ``SEPSettings``, ``TasksSettings``,
     ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
-    ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings`` and
-    ``InventorySettings``.
+    ``AnonymizerSettings``, and ``InventorySettings``. App-owned classes
+    (``AlertsSettings``, ``HealthReportSettings``) declare themselves under
+    ``app/sep/apps/<app>/`` and do not need a member here.
 
-    To wire a new settings class:
+    Members are in-process constants. The ``settingoverride.setting_class``
+    column is a plain string whose stored token is derived by
+    :func:`setting_class_token`; adding a member no longer requires a
+    migration.
+
+    To wire a new core settings class:
 
     1. Add a member here whose value matches the Pydantic class ``__name__``.
-    2. Generate an Alembic migration on every consumer track that extends the
-       ``CHECK`` constraint on ``settingoverride.setting_class``. The column
-       uses ``native_enum=False`` so the value list lives in a constraint,
-       not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.
-       Note that the column and ``CHECK`` constraint persist the enum member
-       *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member
-       *value* (the Pydantic class name, e.g. ``SEPSettings``).
-    3. Wire a ``ProxyEntry`` for the new class in the relevant service's
+    2. Wire a ``ProxyEntry`` for the new class in the relevant service's
        lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).
     """
 
@@ -56,9 +85,43 @@ class SettingClassEnum(StrEnum):
     SETTINGS = "Settings"
     ALERT_SETTINGS = "AlertSettings"
     ANONYMIZER_SETTINGS = "AnonymizerSettings"
-    ALERTS_SETTINGS = "AlertsSettings"
-    HEALTH_REPORT_SETTINGS = "HealthReportSettings"
     INVENTORY_SETTINGS = "InventorySettings"
+
+
+class _SettingClassString(TypeDecorator):
+    """VARCHAR storage that binds ``SettingClassEnum`` members as their names.
+
+    SQLAlchemy's ``Enum`` type persisted members by *name* (``SEP_SETTINGS``).
+    A bare ``String`` would bind the *value* (``SEPSettings``) and orphan
+    every existing row. This decorator keeps the historical spelling for any
+    leftover enum argument while the column itself remains an unconstrained
+    string.
+
+    :cvar impl: The underlying SQLAlchemy column type.
+    :vartype impl: type[String]
+    :cvar cache_ok: Allow SQLAlchemy to cache compiled statements using this type.
+    :vartype cache_ok: bool
+    """
+
+    impl = String(255)
+    cache_ok = True
+
+    def process_bind_param(
+        self,
+        value: object,
+        dialect: Dialect,  # noqa: ARG002
+    ) -> str | None:
+        """Persist enum members by name and every other value as a string.
+
+        :param value: The Python value being bound.
+        :param dialect: The active SQLAlchemy dialect (unused).
+        :return: The storage token, or ``None``.
+        """
+        if value is None:
+            return None
+        if isinstance(value, SettingClassEnum):
+            return value.name
+        return str(value)
 
 
 class SettingOverride(BaseSQLModel, table=True):
@@ -72,9 +135,9 @@ class SettingOverride(BaseSQLModel, table=True):
     accessed cross-service -- each service queries its own engine for its own
     snapshot.
 
-    :param setting_class: The class identifier of the wrapped settings class
-        whose field is being overridden.
-    :type setting_class: SettingClassEnum
+    :param setting_class: The storage token of the wrapped settings class
+        (the SCREAMING_SNAKE form derived by :func:`setting_class_token`).
+    :type setting_class: str
     :param key: The field name on the target settings class to override.
     :type key: str
     :param value: The JSON-encoded raw value to apply at runtime.
@@ -93,14 +156,31 @@ class SettingOverride(BaseSQLModel, table=True):
         ),
     )
 
-    setting_class: SettingClassEnum = SQLField(
-        sa_column=Column(
-            EnumField(SettingClassEnum, native_enum=False, create_constraint=True),
-            nullable=False,
-        ),
+    setting_class: str = SQLField(
+        sa_column=Column(_SettingClassString(), nullable=False),
+        max_length=255,
     )
     key: str = SQLField(index=True, nullable=False, max_length=255)
     value: JsonValue = SQLField(
         sa_column=Column(AutoJSON, nullable=False),
     )
     is_active: bool = SQLField(default=True, nullable=False, index=True)
+
+    @field_validator("setting_class", mode="before")
+    @classmethod
+    def _enum_member_to_token(cls, value: object) -> object:
+        """Persist ``SettingClassEnum`` members by name, not value.
+
+        A ``StrEnum`` is a ``str`` whose content is the member *value*
+        (``SEPSettings``). Without this coercion, constructing
+        ``SettingOverride(setting_class=SettingClassEnum.SEP_SETTINGS)``
+        would store that value and orphan every existing row, which stores
+        the member *name* (``SEP_SETTINGS``).
+
+        :param value: The raw ``setting_class`` being assigned.
+        :return: The storage token when ``value`` is an enum member, otherwise
+            ``value`` unchanged.
+        """
+        if isinstance(value, SettingClassEnum):
+            return value.name
+        return value

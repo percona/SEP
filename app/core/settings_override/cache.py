@@ -27,7 +27,7 @@ from typing import Any, TYPE_CHECKING
 from pydantic import BaseModel, ValidationError
 
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import setting_class_token, SettingOverride
 from app.core.settings_override.registry import (
     _clear_cached_properties,
     _resolve_field_in_model,
@@ -76,9 +76,10 @@ async def build_snapshot(
     fields, or hit a non-Pydantic intermediate are logged and skipped without
     affecting their siblings.
 
-    The :class:`SettingClassEnum` member used to filter override rows is
-    derived from ``settings_cls`` -- each member's value equals the Pydantic
-    class ``__name__``, so the pair is recoverable from the class alone.
+    The storage token used to filter override rows is derived from
+    ``settings_cls`` via :func:`setting_class_token` -- the SCREAMING_SNAKE
+    form of the Pydantic class ``__name__``, matching the spelling already
+    stored in ``settingoverride.setting_class``.
 
     :param session: The async SQLModel session used to query overrides. Must
         be bound to the engine of the service that owns ``settings_cls``.
@@ -99,9 +100,8 @@ async def build_snapshot(
         or swallow at a higher level (e.g. the background refresher's
         per-cycle ``except``).
     """
-    setting_class = SettingClassEnum(settings_cls.__name__)
     rows = await SettingsOverrideManager.list(
-        session, setting_class=setting_class, is_active=True
+        session, setting_class=setting_class_token(settings_cls), is_active=True
     )
     snapshot = {}
     nested_groups = defaultdict(list)
@@ -111,10 +111,15 @@ async def build_snapshot(
             # into a single group instead of clobbering each other.
             nested_groups[row.key.split("__", 1)[0].lower()].append(row)
             continue
-        _apply_top_level_row(snapshot, settings_cls, setting_class, row)
+        _apply_top_level_row(snapshot, settings_cls, settings_cls.__name__, row)
     for prefix, group in nested_groups.items():
         _apply_nested_group(
-            snapshot, settings_cls, setting_class, prefix, group, base_settings
+            snapshot,
+            settings_cls,
+            settings_cls.__name__,
+            prefix,
+            group,
+            base_settings,
         )
     return MappingProxyType(snapshot)
 
@@ -122,7 +127,7 @@ async def build_snapshot(
 def _apply_top_level_row(
     snapshot: dict[str, Any],
     settings_cls: type[BaseYamlSettings],
-    setting_class: SettingClassEnum,
+    setting_class: str,
     row: SettingOverride,
 ) -> None:
     """Coerce and store one whole-field override row into ``snapshot``.
@@ -132,7 +137,7 @@ def _apply_top_level_row(
     :param settings_cls: The Pydantic settings class being snapshotted.
     :type settings_cls: type[BaseYamlSettings]
     :param setting_class: The class identifier, for log messages.
-    :type setting_class: SettingClassEnum
+    :type setting_class: str
     :param row: The override row to apply.
     :type row: SettingOverride
     """
@@ -140,14 +145,14 @@ def _apply_top_level_row(
     if field_info is None:
         logger.warning(
             "Override for unknown field ignored: %s.%s",
-            setting_class.name,
+            setting_class,
             row.key,
         )
         return
     if not is_hot_reloadable(settings_cls, row.key):
         logger.warning(
             "Override for non-HOT field ignored: %s.%s",
-            setting_class.name,
+            setting_class,
             row.key,
         )
         return
@@ -162,7 +167,7 @@ def _apply_top_level_row(
     except ValueError as exc:
         logger.warning(
             "Override for %s.%s failed type coercion: %s",
-            setting_class.name,
+            setting_class,
             row.key,
             exc,
         )
@@ -171,7 +176,7 @@ def _apply_top_level_row(
 def _apply_nested_group(
     snapshot: dict[str, Any],
     settings_cls: type[BaseYamlSettings],
-    setting_class: SettingClassEnum,
+    setting_class: str,
     prefix: str,
     group: list[SettingOverride],
     base_settings: BaseModel | None,
@@ -183,7 +188,7 @@ def _apply_nested_group(
     :param settings_cls: The Pydantic settings class being snapshotted.
     :type settings_cls: type[BaseYamlSettings]
     :param setting_class: The class identifier, for log messages.
-    :type setting_class: SettingClassEnum
+    :type setting_class: str
     :param prefix: The shared top-level field name for this group.
     :type prefix: str
     :param group: The nested rows whose key starts with ``prefix__``.
@@ -196,7 +201,7 @@ def _apply_nested_group(
     if resolved_parent is None:
         logger.warning(
             "Nested override for unknown parent ignored: %s.%s",
-            setting_class.name,
+            setting_class,
             prefix,
         )
         return
@@ -206,7 +211,7 @@ def _apply_nested_group(
     if not is_nested_overridable_parent(settings_cls, canonical_prefix):
         logger.warning(
             "Nested override for non-overridable parent ignored: %s.%s",
-            setting_class.name,
+            setting_class,
             canonical_prefix,
         )
         return
@@ -214,7 +219,7 @@ def _apply_nested_group(
     if parent_cls is None:
         logger.warning(
             "Nested override for non-model parent ignored: %s.%s",
-            setting_class.name,
+            setting_class,
             canonical_prefix,
         )
         return
@@ -225,14 +230,14 @@ def _apply_nested_group(
         except KeyError:
             logger.warning(
                 "Nested override for unknown or not-overridable field ignored: %s.%s",
-                setting_class.name,
+                setting_class,
                 row.key,
             )
             continue
         except ValidationError as exc:
             logger.warning(
                 "Nested override for %s.%s failed type coercion: %s",
-                setting_class.name,
+                setting_class,
                 row.key,
                 exc,
             )
@@ -252,7 +257,7 @@ def _apply_nested_group(
     except ValidationError as exc:
         logger.warning(
             "Nested override group for %s.%s failed to build a merged model: %s",
-            setting_class.name,
+            setting_class,
             canonical_prefix,
             exc,
         )
