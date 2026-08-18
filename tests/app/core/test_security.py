@@ -110,12 +110,12 @@ class TestBearerHeaderEdgeCases:
         assert is_bearer_authenticated(request) is False
 
     def test_mixed_case_scheme_matches(self) -> None:
-        """The scheme match is case-insensitive (``BeArEr token`` is valid)."""
+        """Match the scheme case-insensitively (``BeArEr token`` is valid)."""
         request = make_request(authorization="BeArEr token")
         assert is_bearer_authenticated(request) is True
 
     def test_very_long_header_does_not_crash(self) -> None:
-        """A 64 KiB Authorization header is parsed without raising or hanging.
+        """Parse a 64 KiB Authorization header without raising or hanging.
 
         DoS sanity check: the predicate is a single ``str.startswith`` — adding
         token length validation later would need a different shape, so a

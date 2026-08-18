@@ -640,10 +640,10 @@ def make_request(
         request looks like.
     :return: A ``Request`` over the assembled scope.
     """
-    headers = []
+    headers: list[tuple[bytes, bytes]] = []
     if authorization is not None:
         headers.append((b"authorization", authorization.encode()))
-    scope: dict[str, Any] = {
+    scope = {
         "type": "http",
         "headers": headers,
         "method": method,

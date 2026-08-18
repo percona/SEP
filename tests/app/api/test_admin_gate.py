@@ -22,11 +22,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 
-from app.api.deps import _NON_ADMIN_MUTATIONS, require_admin_for_unsafe_methods
+from app.api.deps import require_admin_for_unsafe_methods
+from app.core.auth.exceptions import HTTPUnauthorizedException
 from app.inventory.main import inventory_app
 from app.sep.main import sep_app
 from app.tasks.main import tasks_app
 from app.tasks.routes import latest_task_history
+from tests.app.conftest import make_request
 
 UNGATED_SEP_API_PREFIXES = ("/api/oauth/", "/api/users/", "/api/config/")
 
@@ -70,8 +72,8 @@ def test_sep_api_routes_inherit_the_gate_and_the_identity_tree_does_not() -> Non
     decision — ``api_router`` carries the dependency and the identity routers are
     included beside it rather than through it.
     """
-    gated = set()
-    ungated = set()
+    gated: set[str] = set()
+    ungated: set[str] = set()
     for route in _api_routes(sep_app):
         if not route.path.startswith("/api/"):
             continue
@@ -88,10 +90,24 @@ def test_sep_api_routes_inherit_the_gate_and_the_identity_tree_does_not() -> Non
     assert not any(path.startswith(UNGATED_SEP_API_PREFIXES) for path in gated), gated
 
 
-def test_the_exemption_allowlist_names_exactly_one_route() -> None:
-    """Assert the gate exempts only the batch-read route.
+@pytest.mark.asyncio
+async def test_exactly_one_route_is_exempt_from_the_gate() -> None:
+    """Assert the gate exempts one route across the three services, and names it.
 
     Each exemption is a hole in the gate, so adding one has to mean editing a
-    test that names the route it opens.
+    test that names the route it opens. The gate itself is the oracle rather than
+    its registry: a credential-less mutation returns for an exempt endpoint and
+    raises for every other, which also pins that ``allow_non_admin_mutation``
+    registered the object FastAPI stores as ``APIRoute.endpoint``.
     """
-    assert {latest_task_history} == _NON_ADMIN_MUTATIONS
+    exempt = set()
+    for app in (sep_app, inventory_app, tasks_app):
+        for route in _api_routes(app):
+            request = make_request("POST", endpoint=route.endpoint)
+            try:
+                await require_admin_for_unsafe_methods(request)
+            except HTTPUnauthorizedException:
+                continue
+            exempt.add(route.endpoint)
+
+    assert exempt == {latest_task_history}
