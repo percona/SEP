@@ -420,11 +420,14 @@ class TestAppScheduleContribution:
     def test_report_kwargs_assemble_from_non_default_entry(self, mocker) -> None:
         """Carry kwargs only for non-default report schedule-entry fields."""
         from app.core.celery.models import IntervalSchedule as CoreIntervalSchedule
-        from app.sep.config import ReportScheduleEntry
+        from app.sep.apps.report.config import (
+            health_report_settings,
+            ReportScheduleEntry,
+        )
 
         mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("report")])
         mocker.patch.object(
-            seed_module.sep_settings.HEALTH_REPORT,
+            health_report_settings,
             "schedules",
             [
                 ReportScheduleEntry(

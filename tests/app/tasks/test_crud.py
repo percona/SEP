@@ -38,12 +38,15 @@ from app.core.utils.date_time import utc_now
 from app.tasks.crud import (
     DispatchLockManager,
     TaskHistoryLogManager,
+    TaskHistoryLogStateManager,
     TaskHistoryManager,
     TaskManager,
 )
+from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
+    LogCaptureStatusEnum,
     SYSTEM_USER,
     Task,
     TaskBackendEnum,
@@ -1622,6 +1625,227 @@ class TestTaskHistoryLogManagerIdsWithChunks:
         result = await TaskHistoryLogManager.ids_with_chunks(session, [history.id])
 
         assert result == {history.id}
+
+
+async def _seed_state_row(
+    session: AsyncSession,
+    task_history_id: int,
+    *,
+    source: str,
+    capture_status: LogCaptureStatusEnum,
+    stream: TaskLogType = TaskLogType.STDOUT,
+) -> None:
+    """Persist one state row carrying an explicit capture verdict."""
+    state = TaskHistoryLogStateManager.build_default(task_history_id, source, stream)
+    state.capture_status = capture_status
+    session.add(state)
+    await session.commit()
+
+
+class TestTaskHistoryLogStateManagerCaptureStatusByTask:
+    """Cover ``TaskHistoryLogStateManager.capture_status_by_task``."""
+
+    @pytest.mark.asyncio
+    async def test_empty_input_returns_empty_mapping(
+        self, session: AsyncSession, mocker
+    ) -> None:
+        """Assert an empty input returns ``{}`` without emitting any SQL.
+
+        An empty ``IN ()`` predicate triggers a SQLAlchemy warning and matches
+        nothing anyway, so the early return is what keeps a page of zero rows
+        from touching the database.
+        """
+        spy = mocker.spy(TaskHistoryLogStateManager, "_exec")
+
+        result = await TaskHistoryLogStateManager.capture_status_by_task(session, [])
+
+        assert result == {}
+        spy.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_history_without_state_rows_is_absent(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a history with no state rows yields no entry.
+
+        The caller reads a missing key as ``unknown``; materialising a verdict
+        here would assert evidence that does not exist.
+        """
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+
+        result = await TaskHistoryLogStateManager.capture_status_by_task(
+            session, [history.id]
+        )
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_all_complete_streams_aggregate_to_complete(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a history whose every stream completed reports ``complete``."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await _seed_state_row(
+            session,
+            history.id,
+            source="run-script",
+            capture_status=LogCaptureStatusEnum.COMPLETE,
+        )
+        await _seed_state_row(
+            session,
+            history.id,
+            source="clean-up",
+            capture_status=LogCaptureStatusEnum.COMPLETE,
+        )
+
+        result = await TaskHistoryLogStateManager.capture_status_by_task(
+            session, [history.id]
+        )
+
+        assert result == {history.id: LogCaptureStatusEnum.COMPLETE}
+
+    @pytest.mark.asyncio
+    async def test_any_incomplete_stream_dominates(self, session: AsyncSession) -> None:
+        """Assert one incomplete stream outranks complete and unknown siblings."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await _seed_state_row(
+            session,
+            history.id,
+            source="run-script",
+            capture_status=LogCaptureStatusEnum.COMPLETE,
+        )
+        await _seed_state_row(
+            session,
+            history.id,
+            source="prepare-env",
+            capture_status=LogCaptureStatusEnum.UNKNOWN,
+        )
+        await _seed_state_row(
+            session,
+            history.id,
+            source="clean-up",
+            capture_status=LogCaptureStatusEnum.INCOMPLETE,
+        )
+
+        result = await TaskHistoryLogStateManager.capture_status_by_task(
+            session, [history.id]
+        )
+
+        assert result == {history.id: LogCaptureStatusEnum.INCOMPLETE}
+
+    @pytest.mark.asyncio
+    async def test_unknown_outranks_complete(self, session: AsyncSession) -> None:
+        """Assert an unknown stream beats a complete one absent any incomplete."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await _seed_state_row(
+            session,
+            history.id,
+            source="run-script",
+            capture_status=LogCaptureStatusEnum.COMPLETE,
+        )
+        await _seed_state_row(
+            session,
+            history.id,
+            source="clean-up",
+            capture_status=LogCaptureStatusEnum.UNKNOWN,
+        )
+
+        result = await TaskHistoryLogStateManager.capture_status_by_task(
+            session, [history.id]
+        )
+
+        assert result == {history.id: LogCaptureStatusEnum.UNKNOWN}
+
+    @pytest.mark.asyncio
+    async def test_hold_step_rows_are_excluded_from_the_aggregate(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert the hold step's own row cannot drag the verdict down.
+
+        The hold produces no task output and is never drained, so its row stays
+        ``INCOMPLETE`` for the whole allocation; counting it would report every
+        held task incomplete.
+        """
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await _seed_state_row(
+            session,
+            history.id,
+            source="run-script",
+            capture_status=LogCaptureStatusEnum.COMPLETE,
+        )
+        await _seed_state_row(
+            session,
+            history.id,
+            source=NomadStep.LOG_CAPTURE_HOLD,
+            capture_status=LogCaptureStatusEnum.INCOMPLETE,
+        )
+
+        result = await TaskHistoryLogStateManager.capture_status_by_task(
+            session, [history.id]
+        )
+
+        assert result == {history.id: LogCaptureStatusEnum.COMPLETE}
+
+    @pytest.mark.asyncio
+    async def test_celery_execution_source_is_counted(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a non-Nomad ``source`` still contributes to the aggregate.
+
+        The Celery executor writes ``source="execution"``, which is not a
+        ``NomadStep`` at all — filtering by the Nomad step names rather than by
+        excluding the hold would drop every Celery-backed task to ``unknown``.
+        """
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await _seed_state_row(
+            session,
+            history.id,
+            source="execution",
+            capture_status=LogCaptureStatusEnum.COMPLETE,
+        )
+
+        result = await TaskHistoryLogStateManager.capture_status_by_task(
+            session, [history.id]
+        )
+
+        assert result == {history.id: LogCaptureStatusEnum.COMPLETE}
+
+    @pytest.mark.asyncio
+    async def test_aggregates_each_history_independently(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a batched call keeps per-history verdicts separate."""
+        task = await _create_task(session)
+        complete = await _seed_task_history(session, task, "node-a")
+        incomplete = await _seed_task_history(session, task, "node-b")
+        bare = await _seed_task_history(session, task, "node-c")
+        await _seed_state_row(
+            session,
+            complete.id,
+            source="run-script",
+            capture_status=LogCaptureStatusEnum.COMPLETE,
+        )
+        await _seed_state_row(
+            session,
+            incomplete.id,
+            source="run-script",
+            capture_status=LogCaptureStatusEnum.INCOMPLETE,
+        )
+
+        result = await TaskHistoryLogStateManager.capture_status_by_task(
+            session, [complete.id, incomplete.id, bare.id]
+        )
+
+        assert result == {
+            complete.id: LogCaptureStatusEnum.COMPLETE,
+            incomplete.id: LogCaptureStatusEnum.INCOMPLETE,
+        }
 
 
 # ---------------------------------------------------------------------------
