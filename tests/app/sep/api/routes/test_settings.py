@@ -1013,6 +1013,51 @@ class TestSepSettingsPatch:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     @pytest.mark.usefixtures("delivery_skeleton")
+    async def test_delivery_inputs_masked_endpoint_preserves_stored_password(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Restore the stored endpoint password on a masked whole-object resubmit.
+
+        A materializer-backed field takes the model-payload branch of
+        ``preserve_patch_credential_url_value``, a third call shape beside the
+        top-level and nested-leaf legs. Now that the shared type rejects the
+        mask, preserve running before validation is what keeps this round-trip
+        a 200 rather than a 422.
+        """
+        endpoint = "https://sn-user:sn-secret@snow.example.com/"
+        stored = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={
+                _DELIVERY_INPUTS_KEY: {
+                    "endpoint": endpoint,
+                    "secrets": _DELIVERY_INPUTS_SECRETS,
+                }
+            },
+        )
+        assert stored.status_code == status.HTTP_200_OK
+
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={
+                _DELIVERY_INPUTS_KEY: {
+                    "endpoint": "https://sn-user:****@snow.example.com/",
+                    "secrets": dict.fromkeys(_DELIVERY_INPUTS_SECRETS, SECRET_STR_MASK),
+                }
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=_DELIVERY_INPUTS_KEY,
+        )
+        assert "sn-secret" in rows[0].value["endpoint"]
+        assert "****" not in rows[0].value["endpoint"]
+
+    @pytest.mark.usefixtures("delivery_skeleton")
     async def test_delivery_inputs_row_that_stops_matching_the_plan_survives(
         self,
         api_admin_client: TestClient,
