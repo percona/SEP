@@ -27,6 +27,7 @@ from sqlalchemy_celery_beat import IntervalSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
 from sqlmodel import SQLModel
 
+from app.api.deps import require_admin_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.celery.deps import get_session as get_celery_beat_session
@@ -103,6 +104,7 @@ def api_admin_client_fixture(
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[get_celery_beat_session] = lambda: celery_beat_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 
@@ -115,6 +117,7 @@ def api_non_admin_client_fixture(
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 

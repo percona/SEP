@@ -67,8 +67,6 @@ class TaskManager(BaseSQLModelManager):
     such as listing active tasks, retrieving tasks by name, and deleting tasks.
 
     :ivar Model: The SQLModel class this manager is responsible for (``Task``).
-    :cvar ordering: Legacy default ordering (``created_at`` desc, ``id`` desc);
-        superseded by :attr:`list_query_spec` when set.
     :cvar list_query_spec: Sort allowlist, searchable columns, default sort, and
         unique ``id`` tie-breaker for Task list endpoints.
     """
@@ -747,7 +745,6 @@ class TaskHistoryLogManager(BaseSQLModelManager):
     """
 
     Model = TaskHistoryLog
-    ordering = None
 
     @classmethod
     async def delete_aged_batch(

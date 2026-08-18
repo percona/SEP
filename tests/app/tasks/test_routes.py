@@ -29,7 +29,11 @@ from fastapi import status
 from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.deps import get_current_user, SERVICE_PRINCIPAL_ID
+from app.api.deps import (
+    get_current_user,
+    require_admin_for_unsafe_methods,
+    SERVICE_PRINCIPAL_ID,
+)
 from app.core.celery.deps import get_session as get_celery_beat_session
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
@@ -2961,6 +2965,7 @@ class TestSyncTaskHistoryRealSession:
 
         mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
 
+        tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
@@ -3042,6 +3047,7 @@ class TestSyncTaskHistoryRealSession:
         mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
         mock_executor.stream_file = MagicMock(side_effect=fake_stream_file)
 
+        tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
