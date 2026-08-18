@@ -123,6 +123,8 @@ def build_config(entries: list[MappedService]) -> str:
             "probe_database": pom_discovery_settings.PROBE_DATABASE,
             "credentials_path": pom_discovery_settings.CREDENTIALS_PATH,
             "connect_timeout_ms": pom_discovery_settings.CONNECT_TIMEOUT * 1000,
+            "repo_url": pom_discovery_settings.REPO_URL,
+            "repo_timeout": pom_discovery_settings.REPO_TIMEOUT,
         },
         separators=(",", ":"),
         sort_keys=True,

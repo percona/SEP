@@ -40,6 +40,8 @@ import platform
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from urllib.parse import quote_plus
 
 DEFAULT_AUTH_SOURCE = "admin"
@@ -518,6 +520,91 @@ def credentials_path(config):
     return os.path.join(home, DEFAULT_CREDENTIALS_BASENAME) if home else None
 
 
+#: The file every Percona repository client needs before it can install anything.
+#: Small (about 3 KB), stable, and *load-bearing* -- an unreachable packaging key is a
+#: real install blocker rather than a synthetic reachability check, which is what makes
+#: it worth fetching rather than pinging the host.
+DEFAULT_REPO_URL = "https://repo.percona.com/percona/yum/PERCONA-PACKAGING-KEY"
+
+#: What the packaging key's body starts with. Checked so that a proxy or captive
+#: portal answering 200 with its own page is reported as unreachable rather than as a
+#: healthy repository -- which is the failure a status-code-only check gets wrong, and
+#: the one most likely in the networks this exists to describe.
+PACKAGING_KEY_MARKER = b"-----BEGIN PGP PUBLIC KEY BLOCK-----"
+
+#: Short on purpose. This runs once per dispatch on the request path of a sweep, and
+#: "the repository is slow" is itself the finding -- a package manager with a 30-second
+#: stall is not usable in practice, so waiting 30 seconds to discover that adds nothing.
+DEFAULT_REPO_TIMEOUT = 8
+
+
+def collect_repo_facts(config):
+    """Return whether this host can actually reach Percona's repository.
+
+    An HTTPS GET rather than a ping or a TCP connect, because the failures worth
+    catching all live above that layer: DNS that resolves nowhere useful, a TLS
+    interception appliance with a certificate the host does not trust, a proxy that
+    allows CONNECT but blocks this origin, a transparent cache serving 403. Every one
+    of those passes a ping and fails ``yum install``.
+
+    The proxy in effect is reported alongside the result, because without it the
+    result cannot be explained: "connection refused" from a host with no proxy and
+    from a host behind a broken one are the same string and completely different
+    problems. Only the variable *name* and its value are read from the environment --
+    a proxy URL can carry credentials, so the value is reported as configured and
+    nothing tries to be clever about redacting it.
+
+    Never raises: a repository check failing must not cost the caller the OS, process
+    and version facts collected beside it.
+
+    :param config: The task config, which may carry ``repo_url`` and
+        ``repo_timeout``.
+    :return: A mapping describing the attempt.
+    """
+    url = config.get("repo_url") or DEFAULT_REPO_URL
+    timeout = config.get("repo_timeout") or DEFAULT_REPO_TIMEOUT
+    proxy = (
+        os.environ.get("https_proxy")
+        or os.environ.get("HTTPS_PROXY")
+        or os.environ.get("http_proxy")
+        or os.environ.get("HTTP_PROXY")
+    )
+    facts = {
+        "url": url,
+        "reachable": False,
+        "status_code": None,
+        "latency_ms": None,
+        "proxy": proxy,
+        "error": None,
+    }
+
+    started = time.time()
+    try:
+        # urllib honours the proxy environment variables by default, which is the
+        # behaviour wanted here: the check should go the same way a package manager
+        # would rather than a way only this payload knows about.
+        request = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            # Read the body rather than trusting the status line. A proxy or captive
+            # portal answering 200 with its own HTML is a failure that a status-only
+            # check reports as success, and reading is what a package manager does.
+            body = response.read(len(PACKAGING_KEY_MARKER) + 64)
+            facts["status_code"] = response.status
+            facts["reachable"] = PACKAGING_KEY_MARKER in body
+            if not facts["reachable"]:
+                facts["error"] = (
+                    "the response did not look like the packaging key -- something "
+                    "answered, but not the repository"
+                )
+    except urllib.error.HTTPError as err:
+        facts["status_code"] = err.code
+        facts["error"] = f"HTTP {err.code}: {err.reason}"
+    except Exception as err:  # noqa: BLE001 - a repo check must not fail the sweep
+        facts["error"] = f"{type(err).__name__}: {err}"
+    facts["latency_ms"] = int((time.time() - started) * 1000)
+    return facts
+
+
 def main():
     """Print one JSON object for the host, then one per configured target.
 
@@ -544,6 +631,9 @@ def main():
         # Ask the program this host actually runs, so a router reports the mongos
         # version rather than whatever mongod binary happens to be installed.
         "binary_version": collect_binary_version(process_facts.get("program")),
+        # Once per dispatch, like the OS facts: it is a property of the host, and
+        # asking once per service would multiply the wait by the services on it.
+        "repo": collect_repo_facts(config),
     }
 
     # ``service: null`` is what marks this the host's own record. The consumer keys

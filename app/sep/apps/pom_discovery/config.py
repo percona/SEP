@@ -62,6 +62,12 @@ class PomDiscoverySettings(BaseYamlSettings):
     :param CREDENTIALS_PATH: Node-side file holding the MongoDB URI to take credentials
         from. ``None`` falls back to ``~/.mongodb_uri``, the same file the PBM payloads
         read.
+    :param REPO_URL: The file each host fetches to prove it can reach Percona's
+        repository. Configurable because an air-gapped estate mirrors it somewhere
+        else, and checking the public one there would report every host as broken.
+    :param REPO_TIMEOUT: How long that fetch may take, seconds. Short on purpose: a
+        repository slow enough to exceed it is not usable by a package manager
+        either, so waiting longer only delays the same answer.
     :param CONNECT_TIMEOUT: Per-target connect and server-selection timeout, seconds.
     :param TASK_TIMEOUT: How long to wait for one dispatched probe task to reach a
         terminal status before giving up on it, seconds.
@@ -83,6 +89,10 @@ class PomDiscoverySettings(BaseYamlSettings):
         IntervalSchedule(every=10, period=Period.MINUTES)
     )
     PROBE_DATABASE: bool = hot_field(default=True)
+    REPO_URL: str = hot_field(
+        "https://repo.percona.com/percona/yum/PERCONA-PACKAGING-KEY", advanced=True
+    )
+    REPO_TIMEOUT: PositiveInt = hot_field(8, advanced=True)
     CREDENTIALS_PATH: str | None = None
     CONNECT_TIMEOUT: PositiveInt = hot_field(5, advanced=True)
     TASK_TIMEOUT: PositiveInt = hot_field(180, advanced=True)

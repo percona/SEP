@@ -201,6 +201,11 @@ HOST_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # data, therefore no user documents, therefore SCRAM cannot authenticate and
     # `pmm-admin add mongodb` fails for it.
     ("unregistered_mongods", ("unregistered_mongods",)),
+    # Whether this host can reach Percona's repository. Kept whole rather than
+    # flattened to a boolean: "unreachable" is not actionable on its own, and the
+    # status code, the latency and the proxy in effect are what tell an operator
+    # whether to fix DNS, a certificate, or a proxy allow-list.
+    ("repo", ("repo",)),
 )
 
 #: Probe-record fields that belong to one **service**.
