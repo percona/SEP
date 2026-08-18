@@ -145,7 +145,7 @@ def _call_names_skipping_function_bodies(node: ast.AST) -> set[str]:
     if isinstance(node, ast.Call) and (name := _simple_call_name(node)):
         names.add(name)
     for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
             for decorator in child.decorator_list:
                 names |= _call_names_in_expr(decorator)
             for default in child.args.defaults:
