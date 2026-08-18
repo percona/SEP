@@ -167,15 +167,11 @@ async def task_history_logs_event_stream(
     internal token instead.
 
     :param tasks_client: The TaskAPI client for interacting with the Tasks service.
-    :type tasks_client: RemoteAPI
     :param task_history_id: The ID of the task history whose logs to stream.
-    :type task_history_id: int
     :param request: The FastAPI request object, used to access query parameters.
-    :type request: Request
     :param access_token: Bearer token authenticating the log read as the viewing
         user.
-    :yield: Log entries formatted as server-sent events.
-    :rtype: str
+    :return: Log entries formatted as server-sent events.
     """
     try:
         with tasks_client.auth(access_token) as tasks_api:
