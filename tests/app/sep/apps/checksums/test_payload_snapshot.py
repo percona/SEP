@@ -101,6 +101,15 @@ _CASES = [
         "alert_on_fail": False,
     },
     {
+        "slug": "defaults_file_custom",
+        "service": _DEFAULT_SERVICE,
+        "form": {
+            "recursion_method": "processlist",
+            "defaults_file": "/etc/checksum.cnf",
+        },
+        "alert_on_fail": False,
+    },
+    {
         "slug": "legacy_extra_remaining_args",
         "service": _DEFAULT_SERVICE,
         "form": {"recursion_method": "processlist", "databases": "main"},

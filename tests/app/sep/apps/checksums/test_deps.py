@@ -51,6 +51,7 @@ class TestParseChecksumsTaskArgs:
             "max_load": "Threads_running=50",
             "chunk_time": "0.5",
             "max_lag": "100",
+            "defaults_file": "",
             "extra_args": "",
         }
 
