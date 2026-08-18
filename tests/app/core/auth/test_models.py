@@ -109,10 +109,13 @@ class TestUserRoleOrdering:
             UserRole.ADMIN,
         ]
 
-    def test_comparison_with_a_foreign_type_is_unsupported(self):
-        """Verify comparing against a non-member does not silently rank it."""
+    @pytest.mark.parametrize(
+        "compare", [operator.lt, operator.le, operator.gt, operator.ge]
+    )
+    def test_comparison_with_a_foreign_type_is_unsupported(self, compare):
+        """Verify no operator silently ranks a non-member."""
         with pytest.raises(TypeError):
-            operator.lt(UserRole.ADMIN, "editor")
+            compare(UserRole.ADMIN, "editor")
 
     def test_members_keep_string_identity(self):
         """Verify a member still equals its wire value."""
@@ -199,8 +202,8 @@ class TestRoleFromAdminFlag:
             (b"false", UserRole.VIEWER),
         ],
     )
-    def test_reproduces_the_removed_field_coercion(self, flag, expected):
-        """Verify a flag keeps the meaning the removed ``bool`` field gave it.
+    def test_validates_the_flag_instead_of_testing_truthiness(self, flag, expected):
+        """Verify a spelled-out boolean resolves to the role it names.
 
         Truthiness would read every string here as admin, escalating a payload
         that spells the boolean out.
@@ -208,7 +211,7 @@ class TestRoleFromAdminFlag:
         assert BaseUser._role_from_admin_flag(flag) is expected
 
     @pytest.mark.parametrize("flag", ["maybe", None, [], object()])
-    def test_rejects_what_the_removed_field_rejected(self, flag):
+    def test_rejects_a_non_boolean_flag(self, flag):
         """Verify a non-boolean flag raises instead of resolving to a role."""
         with pytest.raises(ValueError, match="invalid admin flag"):
             BaseUser._role_from_admin_flag(flag)

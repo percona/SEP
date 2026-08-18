@@ -544,12 +544,8 @@ export interface components {
      *     provider-neutral name for the rank PMM calls ``grafanaAdmin``.
      *
      *     Members compare by rank rather than by name: ``EDITOR < ADMIN`` even
-     *     though ``"editor" > "admin"`` lexicographically. All four comparisons are
-     *     spelled out, and each refuses a non-member, because ``str`` supplies its own
-     *     alphabetical implementations. Whatever this class leaves to ``str`` — an
-     *     operator it does not override, or an operand it declines — silently ranks
-     *     ``EDITOR`` above ``ADMIN``. Equality is untouched, so ``ADMIN == "admin"``
-     *     still holds.
+     *     though ``"editor" > "admin"`` lexicographically. Equality is untouched, so
+     *     ``ADMIN == "admin"`` still holds.
      * @enum {string}
      */
     UserRole: 'none' | 'viewer' | 'editor' | 'admin' | 'super_admin';

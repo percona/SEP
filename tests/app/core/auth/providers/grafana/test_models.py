@@ -252,7 +252,7 @@ class TestGrafanaAssertionRoleRoundTrip:
         assert GrafanaUser.model_validate(payload).role is expected_role
 
     def test_a_non_boolean_claim_is_refused(self, grafana_mock):
-        """Verify a claim the removed field rejected does not become admin."""
+        """Verify a non-boolean claim is rejected rather than read as admin."""
         payload = _TOKEN_SERIALIZER.dumps(
             {
                 "id": str(uuid4()),
@@ -306,8 +306,8 @@ class TestGrafanaUserFromJwt:
 class TestGrafanaRoleDerivation:
     """Verify how the ordered role is derived from Grafana records and orgs.
 
-    Every case pins ``is_admin`` alongside the role, so the value the removed
-    boolean field carried is asserted to be unchanged rather than implied.
+    Every case pins ``is_admin`` alongside the role, so the boundary the admin
+    gates read is asserted rather than implied.
     """
 
     @pytest.mark.parametrize(

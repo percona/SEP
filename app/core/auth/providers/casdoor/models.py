@@ -142,11 +142,12 @@ class CasdoorUser(BaseUser):
         Casdoor exposes no role concept, so the payload's admin boolean is the
         only signal. An unset flag resolves to ``VIEWER`` rather than the lowest
         role, keeping the read access a non-admin Casdoor user has today; a flag
-        that is present keeps the boolean semantics it had as a model field,
-        including its rejection of a non-boolean.
+        that is present is validated as a boolean rather than tested for
+        truthiness, so a spelled-out ``"false"`` still resolves to ``VIEWER``.
 
-        Both wire spellings are read because ``model_config`` accepts either:
-        Casdoor's API sends ``isAdmin``, SEP's own fixtures ``is_admin``.
+        Both wire spellings are read because ``model_config`` accepts either for
+        every field on this model: Casdoor's API sends ``isAdmin``, and
+        ``populate_by_name`` admits the snake-case form.
 
         :param data: The raw model input.
         :return: The input with a ``role`` filled in, or ``data`` unchanged.

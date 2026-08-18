@@ -157,8 +157,8 @@ class GrafanaUser(BaseUser):
         against a longer one's expiry.
 
         The assertion carries the legacy admin flag rather than a role, so the
-        role is rebuilt from it here: a present claim keeps the exact boolean
-        semantics it had as a model field, while an absent one reads as
+        role is rebuilt from it here: a present claim is validated as a boolean
+        rather than tested for truthiness, while an absent one reads as
         ``VIEWER`` rather than failing the now-required field.
 
         :param data: The raw model input.

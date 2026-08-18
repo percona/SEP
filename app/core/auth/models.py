@@ -141,12 +141,8 @@ class UserRole(EnumFieldMixin, StrEnum):
     provider-neutral name for the rank PMM calls ``grafanaAdmin``.
 
     Members compare by rank rather than by name: ``EDITOR < ADMIN`` even
-    though ``"editor" > "admin"`` lexicographically. All four comparisons are
-    spelled out, and each refuses a non-member, because ``str`` supplies its own
-    alphabetical implementations. Whatever this class leaves to ``str`` — an
-    operator it does not override, or an operand it declines — silently ranks
-    ``EDITOR`` above ``ADMIN``. Equality is untouched, so ``ADMIN == "admin"``
-    still holds.
+    though ``"editor" > "admin"`` lexicographically. Equality is untouched, so
+    ``ADMIN == "admin"`` still holds.
     """
 
     NONE = "none"
@@ -173,6 +169,11 @@ _USER_ROLE_ORDER: Final = tuple(UserRole)
 
 def _rank(role: object) -> int:
     """Return a role's position in the declared order, lowest first.
+
+    Every ordering operator on :class:`UserRole` routes through here, and all
+    four are spelled out on the class because ``str`` supplies its own
+    alphabetical implementations: an operator left to ``str`` ranks ``EDITOR``
+    above ``ADMIN``.
 
     :param role: The value to rank.
     :return: The role's rank.
@@ -243,29 +244,6 @@ class BaseUser(BaseModel, ABC):
         """
         return self.role >= UserRole.ADMIN
 
-    @staticmethod
-    def _role_from_admin_flag(flag: Any) -> UserRole:
-        """Map a legacy admin flag onto the ordered role.
-
-        The flag carries one bit, so it resolves only to the two roles the
-        admin gates already distinguish: ``ADMIN`` preserves the access the flag
-        granted, ``VIEWER`` the reads a non-admin has today.
-
-        The flag is validated rather than tested for truthiness, so a payload
-        spelling the boolean as ``"false"`` or ``"0"`` keeps the meaning the
-        removed ``is_admin`` field gave it instead of resolving to ``ADMIN``.
-
-        :param flag: The raw admin flag carried by a provider payload.
-        :return: The role the flag maps to.
-        :raises ValueError: If the flag is not a value Pydantic accepts as a
-            boolean, matching the error the removed field raised.
-        """
-        try:
-            is_admin = _ADMIN_FLAG_ADAPTER.validate_python(flag)
-        except ValidationError as exc:
-            raise ValueError(f"invalid admin flag: {flag!r}") from exc
-        return UserRole.ADMIN if is_admin else UserRole.VIEWER
-
     @property
     def access_token(self) -> str:
         """Get the user's access token.
@@ -283,6 +261,30 @@ class BaseUser(BaseModel, ABC):
         :type v: str
         """
         self._access_token = v
+
+    @staticmethod
+    def _role_from_admin_flag(flag: Any) -> UserRole:
+        """Map a legacy admin flag onto the ordered role.
+
+        The flag carries one bit, so it resolves only to the two roles the
+        admin gates already distinguish: ``ADMIN`` preserves the access the flag
+        granted, ``VIEWER`` the reads a non-admin has today.
+
+        The flag is validated as a boolean rather than tested for truthiness, so
+        a payload spelling it out as ``"false"``, ``"0"`` or ``b"false"``
+        resolves to ``VIEWER`` instead of reading as truthy and escalating to
+        ``ADMIN``.
+
+        :param flag: The raw admin flag carried by a provider payload.
+        :return: The role the flag maps to.
+        :raises ValueError: If the flag is not a value Pydantic accepts as a
+            boolean.
+        """
+        try:
+            is_admin = _ADMIN_FLAG_ADAPTER.validate_python(flag)
+        except ValidationError as exc:
+            raise ValueError(f"invalid admin flag: {flag!r}") from exc
+        return UserRole.ADMIN if is_admin else UserRole.VIEWER
 
     @classmethod
     def build_service_principal(

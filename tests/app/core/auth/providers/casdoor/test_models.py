@@ -307,8 +307,8 @@ class TestCasdoorRoleDerivation:
 
     Casdoor exposes no role concept, so the payload's admin boolean is the only
     signal and resolves onto the two roles it can distinguish. Every case pins
-    ``is_admin`` alongside the role so the value the removed field carried is
-    asserted unchanged.
+    ``is_admin`` alongside the role so the flag's own meaning is asserted rather
+    than implied.
     """
 
     @pytest.mark.parametrize("key", ["isAdmin", "is_admin"])
@@ -328,8 +328,8 @@ class TestCasdoorRoleDerivation:
     ):
         """Verify both wire spellings of the flag map onto the role.
 
-        Casdoor's API sends ``isAdmin``; the fixtures send ``is_admin``. A
-        spelled-out boolean must keep the meaning the removed field gave it
+        Casdoor's API sends ``isAdmin``; ``populate_by_name`` admits the
+        snake-case form. A spelled-out boolean must resolve to the role it names
         rather than reading as truthy.
         """
         payload = {k: v for k, v in casdoor_user_data.items() if k != "is_admin"}
@@ -358,6 +358,6 @@ class TestCasdoorRoleDerivation:
         assert user.is_admin is False
 
     def test_a_non_boolean_flag_is_refused(self, casdoor_user_data, casdoor_mock):
-        """Verify a flag the removed field rejected does not become admin."""
+        """Verify a non-boolean flag is rejected rather than read as admin."""
         with pytest.raises(ValidationError):
             CasdoorUser.model_validate({**casdoor_user_data, "is_admin": "maybe"})
