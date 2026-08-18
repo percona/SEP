@@ -1002,14 +1002,14 @@ class TaskExecutionApp(BaseApp):
             and root_segment(column.key) not in response_fields
         ]
         if unknown:
-            roots = [
+            roots = ", ".join(
                 f"{k!r} (root: {root_segment(k)!r})"
                 if "." in k or "[" in k
                 else repr(k)
                 for k in unknown
-            ]
+            )
             raise ValueError(
-                f"TaskExecutionApp: list_view column keys {roots} are not present "
+                f"TaskExecutionApp: list_view column keys [{roots}] are not present "
                 f"in the serialized {self.response_model.__name__} row"
             )
 
