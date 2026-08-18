@@ -109,7 +109,8 @@ async def test_endpoint_rebinder_created_evicts_base_and_new(
     """An endpoint override create evicts the YAML/env base and the new endpoint."""
     app = FastAPI()
     new_endpoint = "https://new-inv.example.org"
-    base_endpoint = str(sep_settings._resolve().INVENTORY_ENDPOINT)
+    base_endpoint = "https://base-inv.example.org"
+    mocker.patch.object(sep_settings._resolve(), "INVENTORY_ENDPOINT", base_endpoint)
     sep_settings._set_snapshot({"INVENTORY_ENDPOINT": new_endpoint})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
@@ -118,9 +119,7 @@ async def test_endpoint_rebinder_created_evicts_base_and_new(
     )
     try:
         await rebind(SnapshotChange({}, {"INVENTORY_ENDPOINT": new_endpoint}))
-        assert _awaited_endpoints(invalidate) == list(
-            dict.fromkeys([base_endpoint, new_endpoint])
-        )
+        assert _awaited_endpoints(invalidate) == [base_endpoint, new_endpoint]
     finally:
         sep_settings._set_snapshot({})
 
@@ -158,7 +157,8 @@ async def test_endpoint_rebinder_deleted_evicts_previous_and_base(
     """Deleting an endpoint override evicts the previous override and the YAML/env base."""
     app = FastAPI()
     previous_endpoint = "https://old-inv.example.org"
-    base_endpoint = str(sep_settings._resolve().INVENTORY_ENDPOINT)
+    base_endpoint = "https://base-inv.example.org"
+    mocker.patch.object(sep_settings._resolve(), "INVENTORY_ENDPOINT", base_endpoint)
     sep_settings._set_snapshot({})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
@@ -166,9 +166,7 @@ async def test_endpoint_rebinder_deleted_evicts_previous_and_base(
         app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
     )
     await rebind(SnapshotChange({"INVENTORY_ENDPOINT": previous_endpoint}, {}))
-    assert _awaited_endpoints(invalidate) == list(
-        dict.fromkeys([previous_endpoint, base_endpoint])
-    )
+    assert _awaited_endpoints(invalidate) == [previous_endpoint, base_endpoint]
 
 
 @pytest.mark.asyncio
@@ -210,17 +208,20 @@ async def test_invalidate_pmm_clients_created_evicts_base_and_new(
 ) -> None:
     """A PMM override create evicts the YAML/env base endpoint and the new one."""
     new_pmm = PMMSettings(endpoint="https://new-pmm.example.org")
-    base_endpoint = settings._resolve().PMM.endpoint
+    mocker.patch.object(
+        settings._resolve(),
+        "PMM",
+        PMMSettings(endpoint="https://base-pmm.example.org"),
+    )
     settings._set_snapshot({"PMM": new_pmm})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     try:
         await invalidate_pmm_clients(SnapshotChange({}, {"PMM": new_pmm}))
-        expected = []
-        if base_endpoint is not None:
-            expected.append(str(base_endpoint))
-        expected.append("https://new-pmm.example.org")
-        assert _awaited_endpoints(invalidate) == list(dict.fromkeys(expected))
+        assert _awaited_endpoints(invalidate) == [
+            "https://base-pmm.example.org",
+            "https://new-pmm.example.org",
+        ]
     finally:
         settings._set_snapshot({})
 
@@ -253,15 +254,19 @@ async def test_invalidate_pmm_clients_deleted_evicts_previous_and_base(
 ) -> None:
     """Deleting a PMM override evicts the previous override and the YAML/env base."""
     previous_pmm = PMMSettings(endpoint="https://old-pmm.example.org")
-    base_endpoint = settings._resolve().PMM.endpoint
+    mocker.patch.object(
+        settings._resolve(),
+        "PMM",
+        PMMSettings(endpoint="https://base-pmm.example.org"),
+    )
     settings._set_snapshot({})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     await invalidate_pmm_clients(SnapshotChange({"PMM": previous_pmm}, {}))
-    expected = ["https://old-pmm.example.org"]
-    if base_endpoint is not None:
-        expected.append(str(base_endpoint))
-    assert _awaited_endpoints(invalidate) == list(dict.fromkeys(expected))
+    assert _awaited_endpoints(invalidate) == [
+        "https://old-pmm.example.org",
+        "https://base-pmm.example.org",
+    ]
 
 
 @pytest.mark.asyncio

@@ -35,6 +35,7 @@ from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.config import PMMSettings, Settings, settings
 from app.core.settings_override.lifecycle import (
     CallbackRegistry,
+    previous_or_base,
     ProxyEntry,
     ProxyRegistry,
     publish_snapshot,
@@ -123,14 +124,11 @@ async def invalidate_pmm_clients(change: SnapshotChange) -> None:
     an endpoint change also drops the client keyed by the endpoint no longer in
     use. The next :class:`PMMSyncer` key-misses to a fresh client via its
     ``default_factory`` PMM read. When ``PMM`` is absent from ``change.previous``
-    (override created), the prior effective value is the YAML/env one from the
-    proxy's wrapped instance.
+    (override created), :func:`previous_or_base` supplies the YAML/env value.
 
     :param change: The override snapshots on either side of the republish.
     """
-    previous_pmm = cast(PMMSettings | None, change.previous.get("PMM"))
-    if previous_pmm is None:
-        previous_pmm = settings._resolve().PMM  # noqa: SLF001
+    previous_pmm = cast(PMMSettings | None, previous_or_base(change, settings, "PMM"))
     for endpoint in dict.fromkeys(
         str(pmm.endpoint)
         for pmm in (previous_pmm, settings.PMM)

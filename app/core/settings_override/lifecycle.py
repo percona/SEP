@@ -24,6 +24,7 @@ __all__ = [
     "RefreshCallback",
     "SnapshotChange",
     "fire_change_callbacks",
+    "previous_or_base",
     "publish_snapshot",
     "refresh_all",
     "settings_override_refresher",
@@ -77,6 +78,25 @@ class SnapshotChange(NamedTuple):
 
     previous: Mapping[str, object]
     current: Mapping[str, object]
+
+
+def previous_or_base(
+    change: SnapshotChange, proxy: OverridableSettingsProxy, key: str
+) -> object:
+    """Return the previous effective value for ``key``, falling back to YAML/env.
+
+    A snapshot holds active overrides only, so ``key`` may be absent from
+    ``change.previous``. The YAML/env value on the proxy's wrapped instance is
+    then the prior effective value.
+
+    :param change: The override snapshots on either side of the republish.
+    :param proxy: The overridable settings proxy that owns ``key``.
+    :param key: The top-level snapshot key to read.
+    """
+    previous = change.previous.get(key)
+    if previous is not None:
+        return previous
+    return getattr(proxy._resolve(), key)  # noqa: SLF001
 
 
 #: A rebind callback fired when a watched ``(setting_class, key)`` override

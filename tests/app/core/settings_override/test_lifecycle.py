@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the background snapshot-refresher."""
+"""Cover the override-snapshot lifecycle helpers and the background refresher."""
 
 import asyncio
 from datetime import timedelta
@@ -31,10 +31,11 @@ from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.lifecycle import (
     fire_change_callbacks,
+    previous_or_base,
     ProxyEntry,
     refresh_all,
-    SnapshotChange,
     resolve_refresher_options,
+    SnapshotChange,
     start_refresh_task,
 )
 from app.core.settings_override.manager import SettingsOverrideManager
@@ -75,6 +76,26 @@ def _make_proxies() -> tuple[OverridableSettingsProxy, dict]:
         SettingClassEnum.SEP_SETTINGS: ProxyEntry(proxy, SEPSettings),
     }
     return proxy, registry
+
+
+def test_previous_or_base_returns_snapshot_value() -> None:
+    """Return the previous snapshot value when the key is present."""
+    proxy, _ = _make_proxies()
+    change = SnapshotChange({"INVENTORY_ENDPOINT": "https://prev.example.org"}, {})
+    assert (
+        previous_or_base(change, proxy, "INVENTORY_ENDPOINT")
+        == "https://prev.example.org"
+    )
+
+
+def test_previous_or_base_falls_back_to_wrapped_instance() -> None:
+    """Return the YAML/env value when the key is absent from previous."""
+    proxy, _ = _make_proxies()
+    expected = proxy._resolve().INVENTORY_ENDPOINT
+    assert (
+        previous_or_base(SnapshotChange({}, {}), proxy, "INVENTORY_ENDPOINT")
+        == expected
+    )
 
 
 @pytest.mark.asyncio

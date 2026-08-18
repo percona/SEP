@@ -19,7 +19,7 @@ import logging.config
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from copy import deepcopy
-from typing import Any
+from typing import Any, cast, Literal
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -37,12 +37,14 @@ from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableE
 from app.core.health import build_health_router
 from app.core.requests import RemoteAPI
 from app.core.settings_override.lifecycle import (
+    previous_or_base,
     RefreshCallback,
     settings_override_refresher,
     SnapshotChange,
 )
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.utils.fields import CredentialHttpUrl
 from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
 from app.sep.apps.framework.registry import (
@@ -111,7 +113,7 @@ def _make_remote_api_rebinder(
     app: FastAPI,
     name: str,
     proxy: OverridableSettingsProxy,
-    key: str,
+    key: Literal["INVENTORY_ENDPOINT", "TASKS_ENDPOINT"],
     **ssl: Any,
 ) -> RefreshCallback:
     """Build a rebind callback for an ``app.state`` RemoteAPI endpoint override.
@@ -124,8 +126,8 @@ def _make_remote_api_rebinder(
     the new HOT endpoint -- so the callback evicts the ordered de-duplicated set
     of previous-and-current endpoints (covering endpoint moves as well as
     same-endpoint credential/SSL changes). When ``key`` is absent from
-    ``change.previous`` (override created), the prior effective value is the
-    YAML/env one from the proxy's wrapped instance.
+    ``change.previous`` (override created), :func:`previous_or_base` supplies
+    the YAML/env value from the proxy's wrapped instance.
 
     :param app: The FastAPI application whose ``state`` holds the client.
     :type app: FastAPI
@@ -142,12 +144,10 @@ def _make_remote_api_rebinder(
     """
 
     async def _rebind(change: SnapshotChange) -> None:
-        new_endpoint = getattr(proxy, key)
+        new_endpoint = cast(CredentialHttpUrl, getattr(proxy, key))
         old = getattr(app.state, name, None)
         if old is None:
-            previous_endpoint = change.previous.get(key)
-            if previous_endpoint is None:
-                previous_endpoint = getattr(proxy._resolve(), key)  # noqa: SLF001
+            previous_endpoint = previous_or_base(change, proxy, key)
             for endpoint in dict.fromkeys(
                 str(ep) for ep in (previous_endpoint, new_endpoint) if ep is not None
             ):
