@@ -321,7 +321,7 @@ class TaskHistoryLogWriter:
         )
 
     @classmethod
-    async def drain_and_reset_allocation_frontier(
+    async def drain_and_reset_producer_frontier(
         cls,
         session: AsyncSession,
         task_history_id: int,
@@ -389,16 +389,16 @@ class TaskHistoryLogWriter:
                         f"stream={row.stream}"
                     )
                 logger.info(
-                    "taskhistory_log allocation switch drained",
+                    "taskhistory_log producer switch drained",
                     extra={
-                        "event": "taskhistory_log_allocation_switch_drained",
+                        "event": "taskhistory_log_producer_switch_drained",
                         "task_history_id": task_history_id,
                         "source": row.source,
                         "stream": row.stream.value,
                         "drained_bytes": drained_bytes,
                     },
                 )
-        await TaskHistoryLogStateManager.reset_allocation_frontier(
+        await TaskHistoryLogStateManager.reset_producer_frontier(
             session, task_history_id, new_producer_epoch=new_producer_epoch
         )
         # Stamp the task-level high-water mark in the same transaction as the

@@ -1445,7 +1445,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             await backfill_legacy_logs(writer_session, queue_item.id, legacy_logs)
 
         if previous_allocation_id is not None and previous_allocation_id != alloc_id:
-            await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
+            await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
                 writer_session, queue_item.id, new_producer_epoch=alloc_epoch
             )
 

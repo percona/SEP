@@ -1270,7 +1270,7 @@ class TaskHistoryLogStateManager(BaseManager):
         return list(result.all())
 
     @classmethod
-    async def reset_allocation_frontier(
+    async def reset_producer_frontier(
         cls,
         session: AsyncSession,
         task_history_id: int,

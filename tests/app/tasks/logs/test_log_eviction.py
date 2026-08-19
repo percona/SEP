@@ -307,7 +307,7 @@ async def test_evicted_chunk_not_resurrected_by_stale_retry(
 async def test_drain_preserves_persisted_offset_for_eviction(
     session: AsyncSession, created_task_with_history: TaskHistory
 ):
-    """Assert ``drain_and_reset_allocation_frontier`` leaves ``persisted_offset`` intact."""
+    """Assert ``drain_and_reset_producer_frontier`` leaves ``persisted_offset`` intact."""
     history = created_task_with_history
     _set_cap(250)
     await _seed_chunks(session, history.id, count=10)
@@ -316,7 +316,7 @@ async def test_drain_preserves_persisted_offset_for_eviction(
     )
     persisted_before = state.persisted_offset
 
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
         session, history.id, new_producer_epoch=REALLOCATION_EPOCH
     )
 

@@ -535,7 +535,7 @@ async def test_reset_producer_offsets_clears_db_and_allows_realloc_writes(
         producer_epoch=ALLOCATION_EPOCH_OLD,
     )
 
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
         session, history.id, new_producer_epoch=ALLOCATION_EPOCH_NEW
     )
 
@@ -594,7 +594,7 @@ async def test_append_discards_write_from_older_producer_epoch(
         producer_fetch_offset_after=len(b"epoch-100"),
         producer_epoch=ALLOCATION_EPOCH_OLD,
     )
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
         session, history.id, new_producer_epoch=ALLOCATION_EPOCH_NEW
     )
 
@@ -675,7 +675,7 @@ async def test_append_discard_guard_survives_version_retry(
     async def racing_persist_state(**kwargs):
         persist_calls["count"] += 1
         if persist_calls["count"] == 1:
-            await TaskHistoryLogStateManager.reset_allocation_frontier(
+            await TaskHistoryLogStateManager.reset_producer_frontier(
                 session, history.id, new_producer_epoch=ALLOCATION_EPOCH_NEW
             )
             await session.commit()
@@ -721,7 +721,7 @@ async def test_append_discards_stale_first_insert_during_switch(
     """
     # The discard rolls back to release its lock, which expires the fixture row.
     history_id = created_task_with_history.id
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
         session, history_id, new_producer_epoch=ALLOCATION_EPOCH_NEW
     )
 
@@ -778,7 +778,7 @@ async def test_append_first_insert_accepts_epoch_at_or_above_hwm(
     is accepted and stamps the row.
     """
     history = created_task_with_history
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
         session, history.id, new_producer_epoch=ALLOCATION_EPOCH_NEW
     )
 
@@ -858,7 +858,7 @@ async def test_append_first_insert_discards_when_reset_commits_mid_append(
     async def racing_persist_state(**kwargs):
         persist_calls["count"] += 1
         if persist_calls["count"] == 1:
-            await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
+            await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
                 session, history_id, new_producer_epoch=ALLOCATION_EPOCH_NEW
             )
             return False
@@ -901,7 +901,7 @@ async def test_drain_does_not_regress_high_water_mark_on_out_of_order_reset(
     clobbered downward.
     """
     history_id = created_task_with_history.id
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
         session, history_id, new_producer_epoch=ALLOCATION_EPOCH_NEW
     )
     assert (
@@ -910,7 +910,7 @@ async def test_drain_does_not_regress_high_water_mark_on_out_of_order_reset(
     )
 
     # A late drain from the superseded allocation carries the smaller epoch.
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
         session, history_id, new_producer_epoch=ALLOCATION_EPOCH_OLD
     )
     assert (
@@ -954,7 +954,7 @@ async def test_append_discards_stale_first_insert_across_both_streams(
     current-allocation writes.
     """
     history_id = created_task_with_history.id
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
         session, history_id, new_producer_epoch=ALLOCATION_EPOCH_NEW
     )
 
@@ -1183,7 +1183,7 @@ async def test_drain_and_reset_flushes_staging_before_zeroing_producer_offset(
     ``staging`` intact, so the next allocation's bytes were concatenated
     inline with the previous allocation's leftover remainder — producing a
     chunk that mixed content from both allocations. The writer method
-    ``drain_and_reset_allocation_frontier`` must emit the remainder as its own
+    ``drain_and_reset_producer_frontier`` must emit the remainder as its own
     chunk first, then zero ``producer_offset``.
     """
     history = created_task_with_history
@@ -1205,7 +1205,7 @@ async def test_drain_and_reset_flushes_staging_before_zeroing_producer_offset(
     chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert chunks == []
 
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
         session, history.id, new_producer_epoch=ALLOCATION_EPOCH_NEW
     )
 
