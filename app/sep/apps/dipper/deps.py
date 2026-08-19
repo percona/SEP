@@ -297,10 +297,36 @@ def build_dipper_meta_from_args(
     *,
     sudo_default: bool = False,
 ) -> SnippetExecutionMeta:
-    """Build shared execution metadata for legacy and JSON Dipper flows."""
+    """Build shared execution metadata for a Dipper collector dispatch.
+
+    The guard against invalid frontmatter parameters sits here, at the
+    meta-assembly seam between argument validation and dispatch. A parameter the
+    frontmatter declared but the parser rejected (a reserved execution field
+    name, for instance) is dropped from the form, so executing anyway would
+    silently run the script without an argument its author asked for.
+
+    The refusal enumerates the parser's own messages because this app does not
+    surface them on the form: without them the operator would see a rejection
+    naming no cause anywhere in the UI.
+
+    :param service: The inventory service the collector runs against.
+    :param script: The collector script being dispatched.
+    :param script_source: The signed URL the executor downloads the script from.
+    :param execution_args: The validated arguments for this execution.
+    :param sudo_default: Whether to run with ``sudo`` when the args request nothing.
+    :return: The execution metadata the framework posts to the Tasks API.
+    :raises HTTPBadRequestException: When the script declares no runnable
+        interpreter, or carries invalid frontmatter parameters.
+    """
     interpreter = script.execution_interpreter
     if interpreter is None:
         raise HTTPBadRequestException(detail="No interpreter configured for script")
+    if not script.can_execute:
+        reasons = "; ".join(script.validated_parameters.errors)
+        raise HTTPBadRequestException(
+            detail=f"Script {script.filename!r} has invalid frontmatter parameters: "
+            f"{reasons}"
+        )
     return build_execution_meta(
         script,
         execution_args,

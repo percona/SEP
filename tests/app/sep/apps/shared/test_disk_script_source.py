@@ -35,6 +35,11 @@ from app.core.exceptions import (
     HTTPUnprocessableEntityException,
 )
 from app.core.pagination import Pagination
+from app.sep.apps.field_names import (
+    EXECUTOR_HOST_FIELD_NAME,
+    RESERVED_EXECUTION_FIELD_NAMES,
+    SUDO_FIELD_NAME,
+)
 from app.sep.apps.framework.list_query import InMemoryListQuery
 from app.sep.apps.framework.schema import (
     BoolField,
@@ -50,8 +55,20 @@ from app.sep.apps.shared.disk_script_source import (
 )
 from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.models.snippet import BaseSnippet, SnippetExecutionMeta
+from tests.app.sep.form_schema_utils import (
+    assert_only_synthesized_fields,
+    form_field_names,
+    form_field_types,
+    form_fields_by_name,
+)
 
 pytestmark = pytest.mark.asyncio
+
+#: The fields this app synthesizes for a sudo-optional script, and their widgets.
+_SYNTHESIZED_FIELD_TYPES = {
+    EXECUTOR_HOST_FIELD_NAME: HostField,
+    SUDO_FIELD_NAME: BoolField,
+}
 
 
 _SHELL_NO_PARAMS = """#!/usr/bin/env bash
@@ -163,9 +180,23 @@ def _framework_processed_body(
     return body.model_copy(update={"args": validated.model_dump()})
 
 
-def _fields(schema: object) -> dict[str, object]:
-    """Return every form field across a schema's sections, keyed by field name."""
-    return {field.name: field for section in schema.forms for field in section.fields}
+def _shell_with_parameter(name: str) -> str:
+    """Return an optional-sudo shell script declaring exactly one parameter.
+
+    :param name: The frontmatter parameter name the script declares.
+    :return: The script body, frontmatter included.
+    """
+    return (
+        "#!/usr/bin/env bash\n"
+        "# ---\n"
+        "# title: Reserved\n"
+        "# sudo: optional\n"
+        "# parameters:\n"
+        f"#   - name: {name}\n"
+        "#     label: Reserved\n"
+        "# ---\n"
+        'echo "run"\n'
+    )
 
 
 @pytest.fixture
@@ -383,7 +414,7 @@ class TestFormSchema:
         """Map choice/int/bool parameters onto their framework field counterparts."""
         _write_script(script_dir, "typed.sh", _SHELL_TYPED_PARAMS)
         script = await source.load_script("typed.sh")
-        fields = _fields(source.build_form_schema(script))
+        fields = form_fields_by_name(source.build_form_schema(script))
         assert isinstance(fields["mode"], ChoiceField)
         assert isinstance(fields["retries"], IntegerField)
         assert isinstance(fields["verbose"], BoolField)
@@ -394,7 +425,7 @@ class TestFormSchema:
         """Render the executor-host field plus a sudo toggle for an optional-sudo script."""
         _write_script(script_dir, "sudo.sh", _SHELL_OPTIONAL_SUDO)
         script = await source.load_script("sudo.sh")
-        fields = _fields(source.build_form_schema(script))
+        fields = form_fields_by_name(source.build_form_schema(script))
         assert isinstance(fields["executor_host"], HostField)
         assert isinstance(fields["sudo"], BoolField)
 
@@ -404,7 +435,7 @@ class TestFormSchema:
         """Render only the Execution section when the script declares no parameters."""
         _write_script(script_dir, "bare.sh", _SHELL_NO_PARAMS)
         script = await source.load_script("bare.sh")
-        fields = _fields(source.build_form_schema(script))
+        fields = form_fields_by_name(source.build_form_schema(script))
         assert set(fields) == {"executor_host"}
         assert isinstance(fields["executor_host"], HostField)
 
@@ -414,8 +445,38 @@ class TestFormSchema:
         """Map a plain string parameter onto a ``StringField``."""
         _write_script(script_dir, "msg.sh", _SHELL_MESSAGE_PARAM)
         script = await source.load_script("msg.sh")
-        fields = _fields(source.build_form_schema(script))
+        fields = form_fields_by_name(source.build_form_schema(script))
         assert isinstance(fields["message"], StringField)
+
+    @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
+    async def test_reserved_named_parameter_is_dropped_not_raised(
+        self, source: ScriptSource, script_dir: Path, reserved_name: str
+    ) -> None:
+        """Drop a reserved-name parameter instead of failing the schema build.
+
+        Reservation is unconditional, so this holds for the two names this app
+        never synthesizes (``script_preview``, ``extra_args``) as well as for
+        the two it does: an author cannot tell from their frontmatter which app
+        will render it.
+        """
+        _write_script(script_dir, "reserved.sh", _shell_with_parameter(reserved_name))
+        script = await source.load_script("reserved.sh")
+
+        schema = source.build_form_schema(script)
+
+        assert_only_synthesized_fields(schema, _SYNTHESIZED_FIELD_TYPES)
+
+    async def test_every_synthesized_field_name_is_reserved(
+        self, source: ScriptSource, script_dir: Path
+    ) -> None:
+        """Keep every field this builder synthesizes covered by the reserved set."""
+        _write_script(script_dir, "sudo.sh", _SHELL_OPTIONAL_SUDO)
+        script = await source.load_script("sudo.sh")
+
+        schema = source.build_form_schema(script)
+
+        assert form_field_types(schema) == _SYNTHESIZED_FIELD_TYPES
+        assert set(form_field_names(schema)) <= RESERVED_EXECUTION_FIELD_NAMES
 
 
 class TestExecuteMeta:
