@@ -215,7 +215,7 @@ describe('summarizeBatchOutcome', () => {
     };
     const summary = summarizeBatchOutcome(response);
     expect(summary.message).toContain('a.sh: not approved');
-    expect(summary.message).toContain('Dispatched 0 of 1');
+    expect(summary.message).toContain('Dispatched 0 of 1 snippet.');
     expect(summary.severity).toBe('error');
   });
 
@@ -275,9 +275,9 @@ describe('summarizeBatchOutcome', () => {
       ],
     };
     const summary = summarizeBatchOutcome(response);
-    expect(summary.message).toContain('Dispatched 1 of 1');
+    expect(summary.message).toContain('Dispatched 1 of 1 snippet.');
     expect(summary.message).toContain('Tasks API returned no task id');
-    expect(summary.severity).not.toBe('error');
+    expect(summary.severity).toBe('warning');
   });
 });
 

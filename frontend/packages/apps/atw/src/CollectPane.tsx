@@ -20,7 +20,7 @@ import { Alert, Autocomplete, Box, CircularProgress, TextField, Typography } fro
 import {
   SchemaFormRenderer,
   SNIPPET_FORM_RESERVED_FIELD_NAMES,
-  flattenSectionFields,
+  buildFieldLabelMap,
 } from '@sep/framework';
 import { parseFieldErrors, type FormSection, type SectionField } from '@sep/api';
 import { CategoryBrowser } from './CategoryBrowser';
@@ -135,19 +135,16 @@ export interface BatchOutcomeSummary {
 }
 
 /** True when the item dispatched (task_name set), even if recording failed. */
-export function itemDispatched(item: AtwBatchExecuteItemResponse): boolean {
+function itemDispatched(item: AtwBatchExecuteItemResponse): boolean {
   return (item.task_name ?? '') !== '';
 }
 
-export function formatItemError(
+/** Format one batch item's failure as a prefixed, field-labelled line. */
+function formatItemError(
   item: AtwBatchExecuteItemResponse,
   itemIndex: number,
   labelByPath: ReadonlyMap<string, string>,
 ): string {
-  if (item.error === null || item.error === undefined) {
-    return '';
-  }
-
   const prefix = `${item.snippet_filename}: `;
 
   if (typeof item.error === 'string') {
@@ -168,6 +165,7 @@ export function formatItemError(
     .join('\n');
 }
 
+/** Summarise a batch response as a dispatch-count header plus per-item failure lines. */
 export function summarizeBatchOutcome(
   response: AtwBatchExecuteResponse,
   labelByPath: ReadonlyMap<string, string> = new Map(),
@@ -179,11 +177,10 @@ export function summarizeBatchOutcome(
     if (item.error === null || item.error === undefined) {
       return [];
     }
-    const line = formatItemError(item, index, labelByPath);
-    return line ? [line] : [];
+    return [formatItemError(item, index, labelByPath)];
   });
 
-  const header = `Dispatched ${dispatchedCount} of ${total} snippets.`;
+  const header = `Dispatched ${dispatchedCount} of ${total} ${total === 1 ? 'snippet' : 'snippets'}.`;
   const message = errorLines.length > 0 ? [header, ...errorLines].join('\n') : header;
 
   let severity: BatchOutcomeSeverity;
@@ -384,13 +381,7 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
       .map((snippet) => snippet.title);
   }, [schemaQuery.data, selected]);
 
-  const labelByPath = useMemo(() => {
-    const labels = new Map<string, string>();
-    for (const field of flattenSectionFields(sections)) {
-      labels.set(field.name, field.label || field.name);
-    }
-    return labels;
-  }, [sections]);
+  const labelByPath = useMemo(() => buildFieldLabelMap(sections), [sections]);
 
   const handleSubmit = (values: Record<string, unknown>) => {
     setBatchOutcome(null);
