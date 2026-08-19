@@ -77,9 +77,9 @@ def _patch_deterministic_schema_names() -> None:
     fastapi.openapi.utils.get_model_name_map = _ordered_model_name_map
 
 
-# The same Casdoor provider values ``pyproject.toml`` pins for every pytest
-# process (lines 330-332).  Set them here so ``dump_openapi.py`` produces the
-# same spec regardless of the developer's local auth configuration.
+# The same Casdoor provider values pinned under `[tool.pytest.ini_options].env`
+# in ``pyproject.toml``. Set them here so ``dump_openapi.py`` produces the same
+# spec regardless of the developer's local auth configuration.
 _CANONICAL_AUTH_ENV = {
     "AUTH__PROVIDER__CASDOOR__CLIENT_ID": "test-client-id",
     "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET": "test-client-secret",
