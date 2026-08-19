@@ -219,9 +219,10 @@ class TestGrafanaAssertionRoleRoundTrip:
         """Verify the helper the API-boundary tests use is signed the real way.
 
         Those tests assert only that a legacy assertion yields a 401, which a
-        signature mismatch would also produce. Loading the helper's output with
-        the module's own serializer pins it to the real key and salt, so a drift
-        fails here instead of quietly hollowing out those tests.
+        signature mismatch would also produce. The key and the salt are single
+        sourced, so neither can drift; what is left to check is that the helper
+        builds an *equivalent* serializer. Loading its output with the module's
+        own serializer pins that, and pins the absent claim those tests rest on.
         """
         payload = _TOKEN_SERIALIZER.loads(make_roleless_grafana_assertion("access"))
 
