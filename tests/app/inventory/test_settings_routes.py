@@ -24,7 +24,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.testclient import TestClient
 
 from app import main as main_module
-from app.api.deps import get_current_user, require_admin_for_unsafe_methods
+from app.api.deps import get_current_user, require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
@@ -40,7 +40,9 @@ def admin_client_fixture(
     admin_user: CasdoorUser, session: AsyncSession
 ) -> Iterator[TestClient]:
     """Yield an admin-authenticated Inventory TestClient bound to the test session."""
-    inventory_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    inventory_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
+        lambda: None
+    )
     inventory_app.dependency_overrides[get_current_user] = lambda: admin_user
     inventory_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(inventory_app, raise_server_exceptions=False)
@@ -56,7 +58,9 @@ def non_admin_client_fixture(
     The router-level gate is overridden so the refusal under test comes from the
     route's own ``IsAdminDep``, not from the gate that precedes it.
     """
-    inventory_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    inventory_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
+        lambda: None
+    )
     inventory_app.dependency_overrides[get_current_user] = lambda: regular_user
     inventory_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(inventory_app, raise_server_exceptions=False)

@@ -23,7 +23,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.testclient import TestClient
 
-from app.api.deps import get_current_user, require_admin_for_unsafe_methods
+from app.api.deps import get_current_user, require_minimum_role_for_unsafe_methods
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.tasks.connectivity.models import (
     ConnectivityCheckResponse,
@@ -86,7 +86,9 @@ def mock_executor() -> MagicMock:
 def test_client(regular_user, mock_executor) -> TestClient:
     """Create an authenticated test client for the Tasks API."""
     session = AsyncMock()
-    tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    tasks_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
+        lambda: None
+    )
     tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
     tasks_app.dependency_overrides[get_session] = lambda: session
     tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
@@ -270,7 +272,9 @@ class TestConnectivityCheckEndpointRealSession:
         )
         await TaskManager.create(session, task_write)
 
-        tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+        tasks_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
+            lambda: None
+        )
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
@@ -390,7 +394,9 @@ class TestConnectivityCheckEndpointRealSession:
         )
         await TaskManager.create(session, task_write)
 
-        tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+        tasks_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
+            lambda: None
+        )
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
@@ -516,7 +522,9 @@ class TestConnectivityCheckEndpointRealSession:
         )
         await TaskManager.create(session, task_write)
 
-        tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+        tasks_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
+            lambda: None
+        )
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor

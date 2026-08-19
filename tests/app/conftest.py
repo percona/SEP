@@ -42,7 +42,7 @@ from sqlalchemy_celery_beat.models import PeriodicTask
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.deps import require_admin_for_unsafe_methods
+from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.alerts.config import alert_settings
 from app.core.auth.base import BaseAuthProvider
 from app.core.auth.config import get_active_auth_provider
@@ -337,6 +337,31 @@ def casdoor_mock(
         new=mocker.AsyncMock(return_value=True),
     )
     return get_active_auth_provider()
+
+
+@pytest.fixture
+def resolve_casdoor_as_role(
+    casdoor_mock: BaseAuthProvider,
+    casdoor_user_data: dict[str, Any],
+    mocker: MockerFixture,
+) -> Callable[[UserRole], None]:
+    """Return a callable resolving the Bearer credential to a given rank.
+
+    A Casdoor payload carrying a ``role`` of its own bypasses the admin-flag
+    derivation, so the caller resolves at exactly the requested rank rather than
+    one inferred from ``is_admin`` — which is what makes a rank below
+    administrator constructible at all.
+    """
+
+    def resolve_as(role: UserRole) -> None:
+        mocker.patch(
+            "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
+            new=mocker.AsyncMock(
+                return_value={**casdoor_user_data, "role": role.value}
+            ),
+        )
+
+    return resolve_as
 
 
 @pytest.fixture
@@ -662,7 +687,7 @@ def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
 
     Overrides ``require_bearer_for_unsafe_methods`` so cookie-only JSON
     mutations under ``/api/apps/*`` are not blocked by the framework
-    Bearer gate, and ``require_admin_for_unsafe_methods`` so the fixture user
+    Bearer gate, and ``require_minimum_role_for_unsafe_methods`` so the fixture user
     need not be an admin to exercise a mutating route. App-local
     ``test_client`` overrides MUST mirror both; see
     :func:`api_admin_client_no_bearer` for the negative-path fixture that
@@ -675,7 +700,7 @@ def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
     with a session that carries an ``enabled=False`` row.
     """
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
@@ -714,7 +739,7 @@ async def async_test_client(regular_user: CasdoorUser) -> AsyncClient:
     See :func:`test_client` for the gate-override rationale.
     """
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
 
     transport = ASGITransport(app=sep_app)
