@@ -54,6 +54,9 @@ The pmm-server pin is subject to its own constraint — see
 ## Bring-up
 
 ```bash
+git clone -b pmm git@github.com:percona/SEP.git  # already cloned: git checkout pmm && git pull
+cd SEP/sidecar/pmm-fb
+
 ./bootstrap.sh                                # generate .env
 docker compose --profile mysql up -d --build  # or: podman compose ...
 ```
