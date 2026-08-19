@@ -49,11 +49,12 @@ _HISTORY_RENAMES: tuple[tuple[str, str], ...] = (
 def _apply_renames(table: str, pairs: tuple[tuple[str, str], ...]) -> None:
     inspector = sa.inspect(op.get_bind())
     columns = {column["name"] for column in inspector.get_columns(table)}
-    for old, new in pairs:
-        if old in columns and new not in columns:
-            op.alter_column(table, old, new_column_name=new)
-        elif old in columns and new in columns:
-            op.drop_column(table, old)
+    pending = [(old, new) for old, new in pairs if old in columns and new not in columns]
+    if not pending:
+        return
+    with op.batch_alter_table(table, schema=None) as batch_op:
+        for old, new in pending:
+            batch_op.alter_column(old, new_column_name=new)
 
 
 def upgrade() -> None:
