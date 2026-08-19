@@ -58,7 +58,7 @@ from app.sep.connectivity import (
     CONNECTIVITY_META_PORT_KEY,
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
 )
-from app.tasks.execution.executors.nomad.constants import RUN_SCRIPT_OUTPUT_FILES_PATH
+from app.tasks.execution.executors.nomad.steps import RUN_SCRIPT_OUTPUT_FILES_PATH
 from app.tasks.models import (
     TaskBackendEnum,
     TaskWrite,

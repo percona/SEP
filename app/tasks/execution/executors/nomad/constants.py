@@ -13,21 +13,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define Nomad-owned constants for allocation layout and Nomad-only system tasks.
+"""Define the Nomad-only system task names the tasks service seeds.
 
-Imports nothing from the rest of the tasks or sep packages so seed and framework
-specs can use these values without the Nomad executor import graph.
+Imports nothing from the rest of the tasks or sep packages so seed can use these
+values without the Nomad executor import graph. Constants that name a Nomad
+job-spec step, or derive from one, belong in :mod:`.steps` instead.
 """
-
-#: Allocation-relative output-files directory of every job spec that pins its
-#: ``run-script`` task's ``work_dir`` to ``${NOMAD_TASK_DIR}/output_files``
-#: (``run-python``, ``exec-artifact``, ``exec-python-artifact``). It is the
-#: :attr:`~app.tasks.models.TaskBase.output_files_path` those specs run under,
-#: so a payload's working directory and the path SEP reads its files back from
-#: are the same place. ``run-command`` pins no ``work_dir`` and so has no
-#: output-files path. The ``run-script/local/`` prefix is the Nomad allocation
-#: layout (``run-script`` task name + ``${NOMAD_TASK_DIR}``).
-RUN_SCRIPT_OUTPUT_FILES_PATH = "run-script/local/output_files"
 
 #: Seeded name of the Nomad-only periodic task that checks TLS cert expiry.
 CHECK_NOMAD_CERT_EXPIRY_TASK_NAME = "tasks__check_nomad_cert_expiry"

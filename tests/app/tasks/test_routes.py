@@ -46,9 +46,11 @@ from app.tasks.connectivity.models import ConnectivityServiceType
 from app.tasks.connectivity.service import _cached_check_connectivity
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
 from app.tasks.deps import get_request_executor, get_session
-from app.tasks.execution.executors.nomad.constants import RUN_SCRIPT_OUTPUT_FILES_PATH
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
-from app.tasks.execution.executors.nomad.steps import NomadStep
+from app.tasks.execution.executors.nomad.steps import (
+    NomadStep,
+    RUN_SCRIPT_OUTPUT_FILES_PATH,
+)
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.main import tasks_app
