@@ -13810,7 +13810,7 @@
   "info": {
     "description": "Percona Services Enablement Platform\n\nBrowser-oriented SEP routes (proxies, streams, downloads). JSON REST APIs for inventory and tasks live on the mounted sub-apps.",
     "title": "SEP Web Application API",
-    "version": "v1.0.0.dev0"
+    "version": "v3.10.0.dev0"
   },
   "openapi": "3.1.0",
   "paths": {
