@@ -15,11 +15,21 @@
 
 """Tests for the snippets plugin schema synthesiser."""
 
+from collections.abc import Awaitable, Callable
+from functools import cached_property
+from typing import Any
 from urllib.parse import urlencode
 
 import pytest
 
 from app.sep.apps.dipper.models import DipperScript
+from app.sep.apps.field_names import (
+    EXECUTOR_HOST_FIELD_NAME,
+    EXTRA_ARGS_FIELD_NAME,
+    RESERVED_EXECUTION_FIELD_NAMES,
+    SCRIPT_PREVIEW_FIELD_NAME,
+    SUDO_FIELD_NAME,
+)
 from app.sep.apps.framework.schema import (
     BoolField,
     ChoiceField,
@@ -29,6 +39,7 @@ from app.sep.apps.framework.schema import (
     ScriptPreviewField,
     StringField,
 )
+from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.models.meta import (
     SnippetMetaParameter,
     SnippetMetaParameterType,
@@ -42,6 +53,11 @@ from app.sep.snippets.schema import (
     evaluate_snippet_gates,
     field_for,
     SNIPPETS_PLUGIN_SCHEMA,
+)
+from tests.app.sep.form_schema_utils import (
+    assert_only_synthesized_fields,
+    form_field_names,
+    form_field_types,
 )
 
 
@@ -190,37 +206,116 @@ async def test_per_snippet_schema_omits_extra_args_field_by_default(create_snipp
     assert not any(field.name == "extra_args" for field in all_fields)
 
 
-@pytest.mark.asyncio
-async def test_per_snippet_schema_drops_extra_args_named_parameter(create_snippet):
-    """Drop a frontmatter parameter reserved for the synthesized Extra Args field.
+#: Every execution field this builder can synthesize, and the widget rendering it.
+#: Snippets is the maximal builder, so these are the whole reserved set.
+_SYNTHESIZED_FIELD_TYPES = {
+    EXECUTOR_HOST_FIELD_NAME: HostField,
+    SUDO_FIELD_NAME: BoolField,
+    SCRIPT_PREVIEW_FIELD_NAME: ScriptPreviewField,
+    EXTRA_ARGS_FIELD_NAME: StringField,
+}
 
-    Regression test: previously this reached ``build_snippet_schema`` and
-    raised an opaque ``duplicate field name(s)`` error when
-    ``allow_extra_args`` was set, or silently double-bound submitted values
-    in the execution model when it was not. The reserved-name parameter is
-    now caught earlier, at parameter parse time (see ``validated_parameters``
-    on the snippet), so it never reaches either path -- ``build_snippet_schema``
-    just omits it like any other invalid parameter.
+
+def _reset_cached_meta(snippet: Snippet, **meta: Any) -> None:
+    """Re-apply snippet meta and drop every cached property derived from it.
+
+    Every ``cached_property`` on the class is dropped rather than a named few,
+    so a property added later cannot leave a test asserting against a stale
+    value computed from the pre-mutation meta.
+
+    :param snippet: The already-created snippet whose meta is being replaced.
+    :param meta: Frontmatter keys merged over the snippet's existing meta.
     """
-    snippet = await create_snippet("hello.sh", approved=True)
-    snippet.__dict__.pop("validated_parameters", None)
-    snippet.meta = {
-        **snippet.meta,
-        "allow_extra_args": True,
-        "parameters": [{"name": "extra_args", "type": "str"}],
-    }
-    snippet.__dict__.pop("validated_parameters", None)
-    snippet.__dict__.pop("allow_extra_args", None)
+    snippet.meta = {**snippet.meta, **meta}
+    for klass in type(snippet).__mro__:
+        for name, attribute in vars(klass).items():
+            if isinstance(attribute, cached_property):
+                snippet.__dict__.pop(name, None)
 
-    assert any("reserved" in error for error in snippet.validated_parameters.errors)
 
-    schema = build_snippet_schema(snippet)
+class TestReservedParameterNames:
+    """Cover frontmatter parameters colliding with synthesized execution fields."""
 
-    assert not any(s.title == "Parameters" for s in schema.forms)
-    section = _execution_section(schema)
-    extra_args_fields = [f for f in section.fields if f.name == "extra_args"]
-    assert len(extra_args_fields) == 1
-    assert isinstance(extra_args_fields[0], StringField)
+    @pytest.mark.parametrize("reserved_name", sorted(RESERVED_EXECUTION_FIELD_NAMES))
+    @pytest.mark.asyncio
+    async def test_per_snippet_schema_drops_reserved_named_parameter(
+        self,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        reserved_name: str,
+    ) -> None:
+        """Drop a frontmatter parameter reserved for a synthesized execution field.
+
+        Regression test: previously this reached ``build_snippet_schema`` and
+        raised an opaque ``duplicate field name(s)`` error whenever the snippet
+        configuration made the builder synthesize the colliding field, or silently
+        double-bound submitted values in the execution model when it did not. The
+        reserved-name parameter is now caught earlier, at parameter parse time (see
+        ``validated_parameters`` on the snippet), so it never reaches either path --
+        ``build_snippet_schema`` just omits it like any other invalid parameter.
+
+        Both ``allow_extra_args`` and ``sudo`` are enabled so that every one of the
+        four reserved names is actually synthesized, making the collision reachable.
+        """
+        snippet = await create_snippet("hello.sh", approved=True)
+        _reset_cached_meta(
+            snippet,
+            allow_extra_args=True,
+            sudo=SnippetSudoOption.OPTIONAL.value,
+            parameters=[{"name": reserved_name, "type": "str"}],
+        )
+
+        assert any("reserved" in error for error in snippet.validated_parameters.errors)
+
+        schema = build_snippet_schema(snippet)
+
+        assert_only_synthesized_fields(schema, _SYNTHESIZED_FIELD_TYPES)
+
+    @pytest.mark.asyncio
+    async def test_per_snippet_schema_builds_when_invalid_parameters_are_ignored(
+        self,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Build a collision-free form even when invalid parameters are ignored.
+
+        ``IGNORE_INVALID_PARAMETERS`` relaxes ``can_execute`` only; the reserved
+        parameter is still dropped at parse time, so the form the operator opted
+        into still carries exactly one ``executor_host`` field, still the
+        synthesized host widget and not the author's string, rather than the
+        duplicate-field error this setting would otherwise expose them to.
+        """
+        monkeypatch.setattr(snippets_settings.META, "IGNORE_INVALID_PARAMETERS", True)
+        snippet = await create_snippet("hello.sh", approved=True)
+        _reset_cached_meta(
+            snippet, parameters=[{"name": "executor_host", "type": "str"}]
+        )
+
+        assert snippet.can_execute is True
+
+        schema = build_snippet_schema(snippet)
+
+        assert form_field_names(schema).count(EXECUTOR_HOST_FIELD_NAME) == 1
+        assert form_field_types(schema)[EXECUTOR_HOST_FIELD_NAME] is HostField
+
+    @pytest.mark.asyncio
+    async def test_every_synthesized_field_name_is_reserved(
+        self, create_snippet: Callable[..., Awaitable[Snippet]]
+    ) -> None:
+        """Keep every field this builder synthesizes covered by the reserved set.
+
+        A parameterless snippet yields a schema whose fields are all synthesized,
+        so a synthesized field added later without being reserved fails here rather
+        than only when an author happens to pick its name.
+        """
+        snippet = await create_snippet("hello.sh", approved=True)
+        _reset_cached_meta(
+            snippet, allow_extra_args=True, sudo=SnippetSudoOption.OPTIONAL.value
+        )
+
+        schema = build_snippet_schema(snippet)
+
+        assert set(form_field_names(schema)) == RESERVED_EXECUTION_FIELD_NAMES
+        assert form_field_types(schema) == _SYNTHESIZED_FIELD_TYPES
 
 
 @pytest.mark.asyncio

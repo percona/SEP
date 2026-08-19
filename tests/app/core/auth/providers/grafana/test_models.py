@@ -36,6 +36,7 @@ from app.core.auth.providers.grafana.models import (
 )
 from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.config import settings
+from tests.app.conftest import make_roleless_grafana_assertion
 from tests.app.factories import GrafanaUserFactory
 
 
@@ -157,114 +158,109 @@ class TestGrafanaUserSerialization:
 
 
 class TestGrafanaAssertionRoleRoundTrip:
-    """Verify the role a minted assertion reconstructs to when it comes back.
+    """Verify the role a minted assertion decodes to when it comes back.
 
-    The assertion carries only the legacy admin claim, so a role above or below
-    the admin boundary collapses onto the two roles that boundary distinguishes.
-    ``is_admin`` is what must survive unchanged.
+    The assertion carries the role as its own claim, so every role survives the
+    round trip rather than collapsing onto the admin boundary. An assertion
+    carrying no such claim predates the claim and is refused.
     """
 
     @pytest.mark.parametrize(
-        ("minted_role", "expected_role", "expected_admin"),
+        ("role", "expected_admin"),
         [
-            (UserRole.SUPER_ADMIN, UserRole.ADMIN, True),
-            (UserRole.ADMIN, UserRole.ADMIN, True),
-            (UserRole.EDITOR, UserRole.VIEWER, False),
-            (UserRole.VIEWER, UserRole.VIEWER, False),
-            (UserRole.NONE, UserRole.VIEWER, False),
+            (UserRole.SUPER_ADMIN, True),
+            (UserRole.ADMIN, True),
+            (UserRole.EDITOR, False),
+            (UserRole.VIEWER, False),
+            (UserRole.NONE, False),
         ],
     )
     @pytest.mark.parametrize(
         "token_type", [_TokenType.ACCESS, _TokenType.REFRESH, _TokenType.EXCHANGE]
     )
-    def test_role_is_rebuilt_from_the_admin_claim(
-        self, grafana_mock, token_type, minted_role, expected_role, expected_admin
+    def test_every_role_round_trips_to_itself(
+        self, grafana_mock, token_type, role, expected_admin
     ):
-        """Verify every assertion type rebuilds the role its claim can carry."""
-        minted = GrafanaUser._mint(
-            GrafanaUserFactory.build(role=minted_role), token_type
-        )
+        """Verify every assertion type carries its role back unchanged."""
+        minted = GrafanaUser._mint(GrafanaUserFactory.build(role=role), token_type)
 
         decoded = GrafanaUser.model_validate(minted, context={"token_type": token_type})
 
-        assert decoded.role is expected_role
+        assert decoded.role is role
         assert decoded.is_admin is expected_admin
 
     @pytest.mark.parametrize(
-        ("is_admin_claim", "expected_role"),
-        [(True, UserRole.ADMIN), (False, UserRole.VIEWER)],
+        "token_type", [_TokenType.ACCESS, _TokenType.REFRESH, _TokenType.EXCHANGE]
     )
-    def test_an_assertion_minted_before_this_change_still_decodes(
-        self, grafana_mock, is_admin_claim, expected_role
+    def test_an_assertion_minted_before_the_claim_is_refused(
+        self, grafana_mock, token_type
     ):
-        """Verify a payload carrying only the legacy claim set rebuilds a role.
+        """Verify a payload carrying only the legacy claim set is refused.
 
         This is the shape every assertion in flight during the rollout has: no
-        ``role`` key at all. Without the inbound reconstruction it would fail
-        validation on the now-required field.
+        ``role`` key at all. Refusing it rather than rebuilding a role from
+        ``is_admin`` is what keeps a degraded role out of every assertion
+        re-minted from it.
         """
         legacy = _TOKEN_SERIALIZER.dumps(
             {
                 "id": str(uuid4()),
                 "username": "alice",
                 "email": "",
-                "is_admin": is_admin_claim,
-                "typ": _TokenType.ACCESS,
+                "is_admin": True,
+                "typ": token_type,
             }
         )
 
-        user = GrafanaUser.model_validate(legacy)
+        with pytest.raises(ValidationError):
+            GrafanaUser.model_validate(legacy, context={"token_type": token_type})
 
-        assert user.role is expected_role
-        assert user.is_admin is is_admin_claim
+    def test_the_shared_roleless_helper_signs_a_verifiable_assertion(self):
+        """Verify the helper the API-boundary tests use is signed the real way.
 
-    def test_an_assertion_without_the_admin_claim_reads_as_a_viewer(self, grafana_mock):
-        """Verify an absent claim resolves to the reads a non-admin has today."""
+        Those tests assert only that a legacy assertion yields a 401, which a
+        signature mismatch would also produce. The key and the salt are single
+        sourced, so neither can drift; what is left to check is that the helper
+        builds an *equivalent* serializer. Loading its output with the module's
+        own serializer pins that, and pins the absent claim those tests rest on.
+        """
+        payload = _TOKEN_SERIALIZER.loads(make_roleless_grafana_assertion("access"))
+
+        assert "role" not in payload
+        assert payload["typ"] == _TokenType.ACCESS
+
+    def test_a_claim_naming_no_known_role_is_refused(self, grafana_mock):
+        """Verify a claim outside the enum fails closed rather than defaulting."""
         payload = _TOKEN_SERIALIZER.dumps(
             {
                 "id": str(uuid4()),
                 "username": "alice",
                 "email": "",
-                "typ": _TokenType.ACCESS,
-            }
-        )
-
-        assert GrafanaUser.model_validate(payload).role is UserRole.VIEWER
-
-    @pytest.mark.parametrize(
-        ("admin_claim", "expected_role"),
-        [("false", UserRole.VIEWER), ("0", UserRole.VIEWER), ("true", UserRole.ADMIN)],
-    )
-    def test_a_stringly_spelled_claim_keeps_the_field_coercion(
-        self, grafana_mock, admin_claim, expected_role
-    ):
-        """Verify a spelled-out boolean is not read as truthy."""
-        payload = _TOKEN_SERIALIZER.dumps(
-            {
-                "id": str(uuid4()),
-                "username": "alice",
-                "email": "",
-                "is_admin": admin_claim,
-                "typ": _TokenType.ACCESS,
-            }
-        )
-
-        assert GrafanaUser.model_validate(payload).role is expected_role
-
-    def test_a_non_boolean_claim_is_refused(self, grafana_mock):
-        """Verify a non-boolean claim is rejected rather than read as admin."""
-        payload = _TOKEN_SERIALIZER.dumps(
-            {
-                "id": str(uuid4()),
-                "username": "alice",
-                "email": "",
-                "is_admin": "maybe",
+                "role": "wizard",
                 "typ": _TokenType.ACCESS,
             }
         )
 
         with pytest.raises(ValidationError):
             GrafanaUser.model_validate(payload)
+
+    def test_a_claim_spelled_as_the_member_name_is_accepted(self, grafana_mock):
+        """Verify the field coercion reads a member name as well as its value.
+
+        Only SEP's own signing key can produce a payload at all, so the wider
+        acceptance is documented here rather than narrowed.
+        """
+        payload = _TOKEN_SERIALIZER.dumps(
+            {
+                "id": str(uuid4()),
+                "username": "alice",
+                "email": "",
+                "role": "SUPER_ADMIN",
+                "typ": _TokenType.ACCESS,
+            }
+        )
+
+        assert GrafanaUser.model_validate(payload).role is UserRole.SUPER_ADMIN
 
 
 class TestGrafanaUserFromJwt:
@@ -494,9 +490,16 @@ class TestGrafanaRefreshGrant:
 
     @pytest.mark.asyncio
     async def test_refresh_remints_a_rotated_pair(
-        self, grafana_mock, grafana_user_record
+        self, grafana_mock, grafana_user_record, grafana_user_orgs
     ):
-        """Verify the refresh grant re-mints a usable pair without calling Grafana."""
+        """Verify the refresh grant re-mints a usable pair without calling Grafana.
+
+        The re-mint reads the role off the presented assertion rather than
+        Grafana, so an Editor must stay an Editor across the rotation.
+        """
+        grafana_mock.get_current_user_orgs.return_value = [
+            {**grafana_user_orgs[0], "role": "Editor"}
+        ]
         login = await GrafanaUser.get_oauth_token(username="alice", password="secret")
 
         refreshed = await GrafanaUser.get_oauth_token(refresh_token=login.refresh_token)
@@ -505,7 +508,10 @@ class TestGrafanaRefreshGrant:
         assert refreshed.refresh_token
         user = await GrafanaUser.from_jwt(refreshed.access_token)
         assert user.username == grafana_user_record["login"]
+        assert user.role is UserRole.EDITOR
         grafana_mock.login.assert_awaited_once()
+        grafana_mock.get_current_user.assert_awaited_once()
+        grafana_mock.get_current_user_orgs.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_refresh_rejects_an_access_token(self, grafana_mock):
@@ -568,8 +574,9 @@ class TestGrafanaSessionExchange:
 
         payload = _TOKEN_SERIALIZER.loads(exchange.access_token)
 
-        assert set(payload) == {"id", "username", "email", "is_admin", "typ"}
+        assert set(payload) == {"id", "username", "email", "role", "is_admin", "typ"}
         assert payload["typ"] == "exchange"
+        assert payload["role"] == "viewer"
 
     @pytest.mark.asyncio
     async def test_rejected_session_returns_none(self, grafana_mock):

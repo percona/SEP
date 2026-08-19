@@ -37,6 +37,8 @@ import logging
 from fastapi import APIRouter
 from fastapi.exceptions import HTTPException
 
+from app.api.deps import require_minimum_role
+from app.core.auth.models import UserRole
 from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPNotFoundException,
@@ -216,6 +218,7 @@ async def alerts_api_get_backup(session: SessionDep, backup_id: int) -> BackupDe
 
 
 @router.post("/restore")
+@require_minimum_role(UserRole.EDITOR)
 async def alerts_api_restore(
     payload: RestoreRequest,
     pmm_api: RequiredPMMAPIDep,
@@ -337,6 +340,7 @@ async def alerts_api_pagerduty_delete(
 
 
 @router.post("/push")
+@require_minimum_role(UserRole.EDITOR)
 async def alerts_api_push(
     payload: PushRequest,
     pmm_api: RequiredPMMAPIDep,

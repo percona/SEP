@@ -844,10 +844,10 @@ class TestAssembleEnvelopeAlertDetailBuilder:
             ResolvedEntities(service=service, entities={}),
             name="task-1",
             owner="ARCHIVER",
-            alert_detail_builder="pkg.mod:builder",
+            alert_detail_builder="app.sep.apps.pkg.mod:builder",
         )
 
-        assert write.alert_detail_builder == "pkg.mod:builder"
+        assert write.alert_detail_builder == "app.sep.apps.pkg.mod:builder"
 
     def test_alert_detail_builder_none_by_default(self) -> None:
         """Assert ``alert_detail_builder`` defaults to ``None`` when not supplied."""
@@ -887,10 +887,10 @@ class TestAssembleEnvelopeRunResultRecorder:
             ResolvedEntities(service=service, entities={}),
             name="task-1",
             owner="BACKUPS",
-            run_result_recorder="pkg.mod:recorder",
+            run_result_recorder="app.sep.apps.pkg.mod:recorder",
         )
 
-        assert write.run_result_recorder == "pkg.mod:recorder"
+        assert write.run_result_recorder == "app.sep.apps.pkg.mod:recorder"
 
     def test_run_result_recorder_none_by_default(self) -> None:
         """Assert ``run_result_recorder`` defaults to ``None`` when not supplied."""

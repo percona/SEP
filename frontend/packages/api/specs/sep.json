@@ -5809,6 +5809,11 @@
             "title": "Databases",
             "type": "array"
           },
+          "defaults_file": {
+            "default": "",
+            "title": "Defaults File",
+            "type": "string"
+          },
           "dsn_table": {
             "default": "",
             "title": "Dsn Table",
