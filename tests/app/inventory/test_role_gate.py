@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the unsafe-method admin gate on the Inventory sub-app."""
+"""Define tests for the unsafe-method role gate on the Inventory sub-app."""
 
 import pytest
 from fastapi import status

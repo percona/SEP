@@ -16,6 +16,8 @@
 """Define tests for the app.api.deps module."""
 
 from datetime import timedelta
+from types import SimpleNamespace
+from typing import Final
 
 import pytest
 from pydantic import SecretStr
@@ -23,7 +25,7 @@ from pydantic import SecretStr
 from app.api.deps import (
     get_current_admin,
     get_current_user,
-    require_admin_for_unsafe_methods,
+    require_minimum_role_for_unsafe_methods,
     SERVICE_PRINCIPAL_ID,
 )
 from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
@@ -31,8 +33,15 @@ from app.core.auth.models import UserRole
 from app.core.auth.providers.grafana.models import GrafanaUser
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
-from app.tasks.routes import latest_task_history
+from app.sep.apps.alerts.api_routes import (
+    alerts_api_pagerduty_delete,
+    alerts_api_pagerduty_save,
+    alerts_api_restore,
+)
+from app.tasks.routes import execute_task_name, latest_task_history
 from tests.app.conftest import make_request, make_roleless_grafana_assertion
+
+SERVICE_TOKEN: Final = "supersecret"
 
 User = get_user_model()
 
@@ -147,8 +156,8 @@ async def test_get_current_admin_non_admin_user(casdoor_mock, valid_username):
 class TestGetCurrentUserBearerTypes:
     """Verify which assertion types authenticate on the API Bearer surface.
 
-    ``app.api.deps.User`` is bound at import time, so ``grafana_mock`` -- which
-    patches the active-provider lookup -- does not rebind it; each test patches
+    ``app.api.deps.User`` is bound at import time, so ``grafana_mock`` — which
+    patches the active-provider lookup — does not rebind it; each test patches
     the module attribute so the real ``GrafanaUser`` runs.
     """
 
@@ -277,9 +286,31 @@ class TestGetCurrentUserBearerTypes:
         assert user.id == SERVICE_PRINCIPAL_ID
         from_bearer.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_an_editor_clears_a_route_classified_at_editor(
+        self, grafana_mock, grafana_user_orgs
+    ):
+        """Verify a PMM Editor reaches a route SEP opened to that rank.
 
-class TestRequireAdminForUnsafeMethods:
-    """Cover the router-level admin gate on mutating HTTP methods."""
+        The realistic PMM path end to end: the role survives the mint and the
+        unmint, so the rank the gate compares is the one Grafana reported rather
+        than one inferred from an admin flag.
+        """
+        grafana_mock.get_current_user_orgs.return_value = [
+            {**grafana_user_orgs[0], "role": "Editor"}
+        ]
+        exchange = await GrafanaUser.exchange_token_from_session("ambient")
+        request = make_request(
+            "POST",
+            authorization=f"Bearer {exchange.access_token}",
+            endpoint=alerts_api_restore,
+        )
+
+        assert await require_minimum_role_for_unsafe_methods(request) is None
+
+
+class TestRequireMinimumRoleForUnsafeMethods:
+    """Cover the router-level minimum-role gate on mutating HTTP methods."""
 
     @pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS"])
     @pytest.mark.asyncio
@@ -289,28 +320,207 @@ class TestRequireAdminForUnsafeMethods:
         ``GET /health`` is unauthenticated on all three services, so the gate
         must not resolve a user before deciding a read is allowed.
         """
-        assert await require_admin_for_unsafe_methods(make_request(method)) is None
+        request = make_request(method)
+
+        assert await require_minimum_role_for_unsafe_methods(request) is None
 
     @pytest.mark.asyncio
-    async def test_admin_passes_on_a_mutating_method(
-        self, casdoor_mock, casdoor_user_data, mocker
-    ):
-        """Verify an admin's POST is admitted."""
-        mocker.patch(
-            "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
-            new=mocker.AsyncMock(return_value={**casdoor_user_data, "is_admin": True}),
+    async def test_a_safe_method_on_a_lowered_route_resolves_nothing_either(self):
+        """Verify the method check runs ahead of the registry lookup.
+
+        A registration lowers the bar for unsafe methods only, so a read on the
+        same route keeps whatever authentication the route itself declares.
+        """
+        request = make_request("GET", endpoint=alerts_api_restore)
+
+        assert await require_minimum_role_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_an_unregistered_route_refuses_a_non_admin(self, casdoor_mock):
+        """Verify a route nobody classified still requires an administrator.
+
+        This is the fail-closed default: a route added without a thought about
+        authorization is admin-only rather than open.
+        """
+        request = make_request(
+            "POST", authorization="Bearer valid_token", endpoint=execute_task_name
         )
-        request = make_request("POST", authorization="Bearer valid_token")
 
-        assert await require_admin_for_unsafe_methods(request) is None
+        with pytest.raises(HTTPForbiddenException):
+            await require_minimum_role_for_unsafe_methods(request)
 
     @pytest.mark.asyncio
-    async def test_non_admin_is_forbidden_on_a_mutating_method(self, casdoor_mock):
-        """Verify a signed-in non-admin is refused with 403, not 401."""
+    async def test_an_unmatched_request_refuses_a_non_admin(self, casdoor_mock):
+        """Verify a request no route matched takes the default rather than passing.
+
+        Nothing declares a method on a path that matched no route, so the scope
+        carries no ``route`` at all and the lookup has no endpoint to key on.
+        """
         request = make_request("POST", authorization="Bearer valid_token")
 
         with pytest.raises(HTTPForbiddenException):
-            await require_admin_for_unsafe_methods(request)
+            await require_minimum_role_for_unsafe_methods(request)
+
+    @pytest.mark.asyncio
+    async def test_a_route_without_an_endpoint_refuses_a_non_admin(self, casdoor_mock):
+        """Verify a matched route carrying no endpoint takes the default.
+
+        The lookup reads the attribute defensively, so a match that is not an
+        ``APIRoute`` refuses rather than raising ``AttributeError`` into a 500.
+        """
+        request = make_request("POST", authorization="Bearer valid_token")
+        request.scope["route"] = SimpleNamespace()
+
+        with pytest.raises(HTTPForbiddenException):
+            await require_minimum_role_for_unsafe_methods(request)
+
+    @pytest.mark.asyncio
+    async def test_an_admin_passes_an_unregistered_route(self, resolve_casdoor_as_role):
+        """Verify an administrator's mutation is admitted on the default."""
+        resolve_casdoor_as_role(UserRole.ADMIN)
+        request = make_request(
+            "POST", authorization="Bearer valid_token", endpoint=execute_task_name
+        )
+
+        assert await require_minimum_role_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_an_editor_is_refused_an_unregistered_route(
+        self, resolve_casdoor_as_role
+    ):
+        """Verify the rank below the default gains nothing from the new tier."""
+        resolve_casdoor_as_role(UserRole.EDITOR)
+        request = make_request(
+            "POST", authorization="Bearer valid_token", endpoint=execute_task_name
+        )
+
+        with pytest.raises(HTTPForbiddenException):
+            await require_minimum_role_for_unsafe_methods(request)
+
+    @pytest.mark.asyncio
+    async def test_an_editor_is_admitted_a_route_registered_at_editor(
+        self, resolve_casdoor_as_role
+    ):
+        """Verify the rank a route names reaches it."""
+        resolve_casdoor_as_role(UserRole.EDITOR)
+        request = make_request(
+            "POST", authorization="Bearer valid_token", endpoint=alerts_api_restore
+        )
+
+        assert await require_minimum_role_for_unsafe_methods(request) is None
+
+    @pytest.mark.parametrize(
+        "role", [UserRole.ADMIN, UserRole.SUPER_ADMIN], ids=["admin", "super_admin"]
+    )
+    @pytest.mark.asyncio
+    async def test_a_rank_above_the_minimum_is_admitted(
+        self, resolve_casdoor_as_role, role
+    ):
+        """Verify the comparison is ordered rather than an equality on the rank.
+
+        A route lowered to ``EDITOR`` widens who reaches it; it must not stop
+        admitting the ranks that already did.
+        """
+        resolve_casdoor_as_role(role)
+        request = make_request(
+            "POST", authorization="Bearer valid_token", endpoint=alerts_api_restore
+        )
+
+        assert await require_minimum_role_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_a_viewer_is_refused_a_route_registered_at_editor(
+        self, resolve_casdoor_as_role
+    ):
+        """Verify a rank below the route's own minimum is still refused."""
+        resolve_casdoor_as_role(UserRole.VIEWER)
+        request = make_request(
+            "POST", authorization="Bearer valid_token", endpoint=alerts_api_restore
+        )
+
+        with pytest.raises(HTTPForbiddenException):
+            await require_minimum_role_for_unsafe_methods(request)
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [alerts_api_pagerduty_save, alerts_api_pagerduty_delete],
+        ids=["save", "delete"],
+    )
+    @pytest.mark.asyncio
+    async def test_an_editor_is_refused_the_pagerduty_routes(
+        self, resolve_casdoor_as_role, endpoint
+    ):
+        """Verify the PagerDuty pair stays administrator-only.
+
+        They sit beside the two template routes an Editor reaches on the same
+        router, and carry third-party routing and an integration key rather
+        than alert-template content.
+        """
+        resolve_casdoor_as_role(UserRole.EDITOR)
+        request = make_request(
+            "POST", authorization="Bearer valid_token", endpoint=endpoint
+        )
+
+        with pytest.raises(HTTPForbiddenException):
+            await require_minimum_role_for_unsafe_methods(request)
+
+    @pytest.mark.parametrize(
+        "authorization",
+        [None, "Bearer invalid_token", f"Bearer {SERVICE_TOKEN}"],
+        ids=["absent", "invalid", "service_principal"],
+    )
+    @pytest.mark.asyncio
+    async def test_a_waived_route_admits_every_credential_shape(
+        self, casdoor_mock, mocker, authorization
+    ):
+        """Verify a ``UserRole.NONE`` minimum is answered ahead of every credential path.
+
+        The branch sits above the Bearer check, so neither an absent credential,
+        one the provider would reject, nor the service principal's own token
+        changes the answer — the route's own ``dependencies`` stay the only
+        thing authenticating it.
+        """
+        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+        request = make_request(
+            "POST", authorization=authorization, endpoint=latest_task_history
+        )
+
+        assert await require_minimum_role_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_a_waived_route_never_consults_the_auth_provider(
+        self, casdoor_mock, mocker
+    ):
+        """Verify the credential a waived route carries is never validated.
+
+        Introspection is where a Bearer credential is checked, so "decided
+        before any credential handling" is only meaningful observed there: a
+        credential the provider would reject arrives and the provider is never
+        asked about it.
+        """
+        introspect = mocker.patch(
+            "app.core.auth.providers.casdoor.sdk.CasdoorSDK.introspect_token",
+            new=mocker.AsyncMock(return_value={}),
+        )
+        request = make_request(
+            "POST", authorization="Bearer invalid_token", endpoint=latest_task_history
+        )
+
+        assert await require_minimum_role_for_unsafe_methods(request) is None
+        introspect.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_lowered_route_still_demands_a_credential(self):
+        """Verify lowering a route's rank does not waive authentication on it.
+
+        Only ``UserRole.NONE`` reaches the branch that skips the Bearer check,
+        so a credential-less caller gets a 401 on an ``EDITOR`` route, not the
+        403 the rank comparison would give.
+        """
+        request = make_request("POST", endpoint=alerts_api_restore)
+
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_minimum_role_for_unsafe_methods(request)
 
     @pytest.mark.asyncio
     async def test_missing_authorization_header_is_unauthorized(self):
@@ -320,7 +530,7 @@ class TestRequireAdminForUnsafeMethods:
         ``auto_error=True`` and would raise a bare Starlette ``HTTPException``.
         """
         with pytest.raises(HTTPUnauthorizedException):
-            await require_admin_for_unsafe_methods(make_request("POST"))
+            await require_minimum_role_for_unsafe_methods(make_request("POST"))
 
     @pytest.mark.asyncio
     async def test_non_bearer_authorization_header_is_unauthorized(self):
@@ -328,7 +538,7 @@ class TestRequireAdminForUnsafeMethods:
         request = make_request("POST", authorization="Basic dXNlcjpwYXNz")
 
         with pytest.raises(HTTPUnauthorizedException):
-            await require_admin_for_unsafe_methods(request)
+            await require_minimum_role_for_unsafe_methods(request)
 
     @pytest.mark.asyncio
     async def test_invalid_token_is_never_admitted(self, casdoor_mock, mocker):
@@ -340,20 +550,20 @@ class TestRequireAdminForUnsafeMethods:
         request = make_request("POST", authorization="Bearer invalid_token")
 
         with pytest.raises(HTTPUnauthorizedException):
-            await require_admin_for_unsafe_methods(request)
+            await require_minimum_role_for_unsafe_methods(request)
 
     @pytest.mark.asyncio
     async def test_service_principal_is_admitted_by_identity(self, mocker):
         """Verify ``SEP_INTERNAL_TOKEN``'s principal passes the gate.
 
         Scheduled inventory sync and scheduled execution authenticate with this
-        token and write through the gated services.
+        token and write through the gated services. The principal holds
+        ``VIEWER``, so only the identity check keeps them working.
         """
-        secret = "supersecret"
-        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(secret))
-        request = make_request("POST", authorization=f"Bearer {secret}")
+        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+        request = make_request("POST", authorization=f"Bearer {SERVICE_TOKEN}")
 
-        assert await require_admin_for_unsafe_methods(request) is None
+        assert await require_minimum_role_for_unsafe_methods(request) is None
 
     @pytest.mark.asyncio
     async def test_service_principal_gains_nothing_beyond_this_gate(self, mocker):
@@ -363,36 +573,10 @@ class TestRequireAdminForUnsafeMethods:
         the principal holds ``VIEWER``, so ``get_current_admin`` rejects it as
         before.
         """
-        secret = "supersecret"
-        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(secret))
-        principal = await get_current_user(secret)
+        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+        principal = await get_current_user(SERVICE_TOKEN)
 
         assert principal.role is UserRole.VIEWER
         assert principal.is_admin is False
         with pytest.raises(HTTPForbiddenException):
             await get_current_admin(principal)
-
-    @pytest.mark.asyncio
-    async def test_exempt_endpoint_admits_a_non_admin(self, casdoor_mock):
-        """Verify a registered read-shaped route is admitted for a non-admin.
-
-        Also pins that ``allow_non_admin_mutation`` sits below ``@router.post``
-        on ``latest_task_history``: applied above it, the registered object
-        would not be the one FastAPI stores as ``APIRoute.endpoint`` and this
-        request would 403 instead.
-        """
-        request = make_request(
-            "POST", authorization="Bearer valid_token", endpoint=latest_task_history
-        )
-
-        assert await require_admin_for_unsafe_methods(request) is None
-
-    @pytest.mark.asyncio
-    async def test_exempt_endpoint_is_decided_before_any_credential_handling(self):
-        """Verify an exempt route keeps whatever auth its own ``dependencies`` declare.
-
-        The gate must not impose a credential of its own on a route it exempts.
-        """
-        request = make_request("POST", endpoint=latest_task_history)
-
-        assert await require_admin_for_unsafe_methods(request) is None

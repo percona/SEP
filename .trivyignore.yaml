@@ -1,0 +1,143 @@
+# Trivy exception file for the SEP side-car image.
+#
+# Trivy does NOT auto-discover this file: DefaultIgnoreFile is ".trivyignore",
+# so the YAML form must be passed explicitly:
+#
+#     trivy image --ignorefile .trivyignore.yaml --severity HIGH,CRITICAL <image>
+#
+# Every entry carries a reachability argument, not merely "no upstream fix" —
+# an unfixed CVE alone is not grounds for an exception. expired_at forces a
+# revisit; re-scan and take whatever Debian has since fixed.
+#
+# Every entry is scoped by `purls` to exactly the packages its statement
+# assessed. This is load-bearing, not decoration: matchPURL() returns true
+# when the list is empty, so an unscoped entry suppresses its CVE for EVERY
+# package — including one where the reachability argument does not hold. The
+# constraints carry no version, which matches any version of the named package.
+
+vulnerabilities:
+  # --- perl-base: nothing in this image executes perl. ------------------------
+  # Debian marks perl-base Essential: yes, so removal needs
+  # --force-remove-essential, which was measured, produced a working image, and
+  # was rejected on certainty grounds. Remove these entries the moment any
+  # perl-invoking path is added to the image — the justification dies with it.
+  - id: CVE-2026-13221
+    purls:
+      - pkg:deb/debian/perl-base
+    statement: >-
+      perl-base. Perl regex trie miscompilation producing silently wrong matches
+      above 65535 alternation branches. Reaching it requires executing a perl
+      program; the image invokes no perl interpreter. Fixed upstream in sid
+      5.42.3-1, not yet in trixie. Remove this entry when trixie carries the fix,
+      or if anything in the image starts executing perl.
+    expired_at: 2027-02-19
+  - id: CVE-2026-42496
+    purls:
+      - pkg:deb/debian/perl-base
+    statement: >-
+      perl-base. Archive::Tar symlink traversal on extraction; requires a perl
+      script extracting an untrusted archive, and none exists in the image.
+      Debian's own tracker rates this a minor issue and has postponed the fix,
+      disagreeing with the NVD CRITICAL score. Remove when trixie carries a fix.
+    expired_at: 2027-02-19
+  - id: CVE-2026-57433
+    purls:
+      - pkg:deb/debian/perl-base
+    statement: >-
+      perl-base. Storable signed integer overflow deserializing a crafted SX_HOOK
+      record; requires a perl program deserializing untrusted data, and none
+      exists in the image. Remove when trixie carries a fix.
+    expired_at: 2027-02-19
+  - id: CVE-2026-8376
+    purls:
+      - pkg:deb/debian/perl-base
+    statement: >-
+      perl-base. Perl interpreter issue in the same family as CVE-2026-13221;
+      unreachable for the same reason — no perl is executed. Remove when trixie
+      carries a fix.
+    expired_at: 2027-02-19
+  - id: CVE-2026-42497
+    purls:
+      - pkg:deb/debian/perl-base
+    statement: >-
+      perl-base. Perl interpreter/bundled-module issue; unreachable because the
+      image executes no perl. Remove when trixie carries a fix.
+    expired_at: 2027-02-19
+  - id: CVE-2026-48962
+    purls:
+      - pkg:deb/debian/perl-base
+    statement: >-
+      perl-base. Perl interpreter/bundled-module issue; unreachable because the
+      image executes no perl. Remove when trixie carries a fix.
+    expired_at: 2027-02-19
+  - id: CVE-2026-57432
+    purls:
+      - pkg:deb/debian/perl-base
+    statement: >-
+      perl-base. Perl interpreter/bundled-module issue; unreachable because the
+      image executes no perl. Remove when trixie carries a fix.
+    expired_at: 2027-02-19
+  - id: CVE-2026-9538
+    purls:
+      - pkg:deb/debian/perl-base
+    statement: >-
+      perl-base. Perl interpreter/bundled-module issue; unreachable because the
+      image executes no perl. Remove when trixie carries a fix.
+    expired_at: 2027-02-19
+
+  # --- openssl trio (libssl3t64, openssl, openssl-provider-legacy) ------------
+  - id: CVE-2026-14456
+    purls:
+      - pkg:deb/debian/libssl3t64
+      - pkg:deb/debian/openssl
+      - pkg:deb/debian/openssl-provider-legacy
+    statement: >-
+      libssl3t64, openssl, openssl-provider-legacy. QUIC server denial of
+      service, CVSS 7.5 AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H. SEP serves no QUIC:
+      the three API processes speak HTTP/1.1 over loopback behind PMM's nginx.
+      Debian has deferred the fix. Remove when Debian ships it.
+    expired_at: 2027-02-19
+
+  # --- ncurses family (libncursesw6, libtinfo6, ncurses-base, ncurses-bin) ----
+  - id: CVE-2025-69720
+    purls:
+      - pkg:deb/debian/libncursesw6
+      - pkg:deb/debian/libtinfo6
+      - pkg:deb/debian/ncurses-base
+      - pkg:deb/debian/ncurses-bin
+    statement: >-
+      ncurses buffer overflow, CVSS 7.8 AV:L/AC:L/PR:L/UI:R. Local vector
+      requiring user interaction with a crafted terminfo entry inside the
+      container. No upstream fix. ncurses-base and ncurses-bin are Debian
+      Essential; libtinfo6 is required by bash. libncursesw6 is removable but
+      carries the same CVE as three unremovable siblings, so removing it changes
+      nothing. Remove when Debian ships a fix.
+    expired_at: 2027-02-19
+
+  # --- gzip -------------------------------------------------------------------
+  - id: CVE-2026-41992
+    purls:
+      - pkg:deb/debian/gzip
+    statement: >-
+      gzip. Global buffer overflow in LZH decompression. The archive paths that
+      run inside this container use Python's gzip/tarfile stdlib
+      (app/tasks/execution/executors/nomad/models.py, app/tasks/logs/log_reader.py),
+      which link zlib rather than invoking the gzip binary. All four /usr/bin/tar
+      -czf call sites in the tree execute on a managed target host rather than in
+      this image: two are dipper payloads, and dipper is stripped from the
+      embedded app set, while two are in snippets/postgresql_config_files.sh,
+      which ships in the image but is dispatched to run on the target. gzip is
+      Debian Essential. Remove when Debian ships a fix, or if anything starts
+      shelling out to gzip inside this image.
+    expired_at: 2027-02-19
+
+  # --- libacl1 ----------------------------------------------------------------
+  - id: CVE-2026-54369
+    purls:
+      - pkg:deb/debian/libacl1
+    statement: >-
+      libacl1. Symlink traversal privilege escalation, CVSS 7.1 AV:L/AC:L/PR:L.
+      Local vector requiring pre-existing privileges in the container; the image
+      runs as the unprivileged sep user. No upstream fix; required by coreutils,
+      tar, sed and passwd, so not removable. Remove when Debian ships a fix.
+    expired_at: 2027-02-19
