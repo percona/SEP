@@ -135,9 +135,10 @@ def test_a_registration_reaches_the_endpoint_object_fastapi_matched() -> None:
     """Assert the registry resolves through the object stored on the live route.
 
     The route is walked out of the mounted table rather than constructed, so
-    this fails if ``require_minimum_role`` sat above ``@router.post`` and
-    registered something other than the endpoint the request path reaches — a
-    misplacement that otherwise just reverts the route to ``ADMIN`` silently.
+    this fails whenever the registered callable stops being the one FastAPI
+    matched — a decorator wrapping the endpoint between registration and
+    mounting, say, which otherwise just reverts the route to ``ADMIN``
+    silently.
     """
     route = next(
         route for route in _api_routes(tasks_app) if route.path == "/history/latest"

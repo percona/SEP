@@ -144,13 +144,16 @@ _ROUTE_MINIMUM_ROLES: dict[Callable[..., Any], UserRole] = {}
 def require_minimum_role(role: UserRole) -> Callable[[F], F]:
     """Return a decorator registering the minimum role one route requires.
 
-    Applied *below* the route decorator, so the registered object is the same
-    one FastAPI stores as ``APIRoute.endpoint``; applied above it, the route
-    keeps :data:`DEFAULT_MINIMUM_ROLE` and nothing raises to say so. Registering
-    a rank below ``ADMIN`` opens a surface the gate would otherwise close, so it
-    belongs on a route whose operation the named rank is trusted with — and
-    ``UserRole.NONE`` on one whose method is unsafe but whose operation is a
-    read.
+    The registration keys on the object FastAPI stores as
+    ``APIRoute.endpoint``, so this belongs below any decorator that returns a
+    *new* function: a wrapper between the two leaves the registry keyed on a
+    callable no request reaches, and the route falls back to
+    :data:`DEFAULT_MINIMUM_ROLE` with nothing raised to say so. Order against
+    the route decorator itself is immaterial — that one returns the endpoint
+    unchanged. Registering a rank below ``ADMIN`` opens a surface the gate would
+    otherwise close, so it belongs on a route whose operation the named rank is
+    trusted with — and ``UserRole.NONE`` on one whose method is unsafe but whose
+    operation is a read.
 
     :param role: The lowest rank the route admits.
     :return: A decorator registering the endpoint it receives, unchanged.
@@ -202,8 +205,8 @@ async def require_minimum_role_for_unsafe_methods(request: Request) -> None:
 
     ``SEP_INTERNAL_TOKEN``'s service principal is admitted by identity so
     scheduled inventory sync and scheduled execution keep working. It holds
-    ``UserRole.VIEWER`` and so would fail any rank comparison; the bypass stays
-    scoped to this gate, leaving every pre-existing ``IsApiAdmin`` /
+    ``UserRole.VIEWER`` and so would fail every minimum above it; the bypass
+    stays scoped to this gate, leaving every pre-existing ``IsApiAdmin`` /
     ``IsAdminDep`` check refusing it as before.
 
     :param request: The incoming HTTP request.
