@@ -27,6 +27,7 @@ depend on test-collection order.
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -76,6 +77,32 @@ def _patch_deterministic_schema_names() -> None:
     fastapi.openapi.utils.get_model_name_map = _ordered_model_name_map
 
 
+# The same Casdoor provider values ``pyproject.toml`` pins for every pytest
+# process (lines 330-332).  Set them here so ``dump_openapi.py`` produces the
+# same spec regardless of the developer's local auth configuration.
+_CANONICAL_AUTH_ENV = {
+    "AUTH__PROVIDER__CASDOOR__CLIENT_ID": "test-client-id",
+    "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET": "test-client-secret",
+    "AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS": '["https://allowed-issuer.com"]',
+}
+
+
+def _pin_canonical_auth_provider() -> None:
+    """Pin the Casdoor auth provider so the generated spec is environment-independent.
+
+    The spec is a build artifact whose shape must not vary with the developer's
+    local auth configuration.  The freshness guard
+    (``tests/app/test_openapi_specs_fresh.py``) already resolves Casdoor via the
+    ``pyproject.toml`` env pin; this function applies the same values when the
+    script runs outside pytest (``make regen-specs``, direct invocation).
+
+    Must be called before ``_load_apps()`` imports the application, since the
+    settings object is constructed at import time.
+    """
+    for key, value in _CANONICAL_AUTH_ENV.items():
+        os.environ.setdefault(key, value)
+
+
 def _load_apps() -> dict[str, Any]:
     """Import the whole-app objects from the worktree this script lives in.
 
@@ -108,6 +135,7 @@ def main() -> int:
         finds a missing or drifted fixture.
     """
     _patch_deterministic_schema_names()
+    _pin_canonical_auth_provider()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--check",
