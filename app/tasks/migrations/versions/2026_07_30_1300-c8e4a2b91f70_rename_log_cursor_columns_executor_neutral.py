@@ -47,6 +47,16 @@ _HISTORY_RENAMES: tuple[tuple[str, str], ...] = (
 
 
 def _apply_renames(table: str, pairs: tuple[tuple[str, str], ...]) -> None:
+    """Apply each pending ``(old, new)`` column rename on ``table``.
+
+    A pair is skipped when ``old`` is absent or ``new`` is already present, so a
+    retry converges instead of erroring on the column it already renamed. That
+    matters on a backend without transactional DDL, where a batch interrupted
+    part-way can leave one column of a pair-set renamed and the other not.
+
+    :param table: The table whose columns are renamed.
+    :param pairs: The ``(old_name, new_name)`` pairs to apply.
+    """
     inspector = sa.inspect(op.get_bind())
     columns = {column["name"] for column in inspector.get_columns(table)}
     pending = [(old, new) for old, new in pairs if old in columns and new not in columns]
