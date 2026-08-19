@@ -498,8 +498,9 @@ class TaskExecutionApp(BaseApp):
 
         :raises ValueError: When the schema source, the create-payload path, the
             connectivity references, the route knobs, the list-query wiring, the
-            response/filter knobs, the list-view columns, or the ``ArgFormat`` markers
-            are inconsistent (see the per-aspect helpers).
+            response/filter knobs, the ``response_model`` / ``response_builder``
+            agreement, the list-view columns, or the ``ArgFormat`` markers are
+            inconsistent (see the per-aspect helpers).
         """
         self._validate_schema_source()
         self._validate_create_path()
@@ -509,6 +510,7 @@ class TaskExecutionApp(BaseApp):
         self._validate_list_suppress()
         self._validate_list_query()
         self._validate_response_knobs()
+        self._validate_response_model_agreement()
         self._validate_view_columns()
         self._validate_arg_formats()
         self._validate_related_apps()
