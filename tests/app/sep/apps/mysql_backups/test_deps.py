@@ -605,7 +605,7 @@ class TestResolveOptionalCatalogServiceKey:
         ids=["omitted", "blank", "whitespace", "sentinel"],
     )
     async def test_unusable_parent_yields_none(self, submitted) -> None:
-        """Yield ``None`` for a parent the catalog cannot be keyed from.
+        """Return ``None`` for a parent the catalog cannot be keyed from.
 
         The route turns ``None`` into an empty option list rather than an error, so
         free-text entry is never blocked by a failed options fetch.
@@ -617,7 +617,7 @@ class TestResolveOptionalCatalogServiceKey:
 
     @pytest.mark.asyncio
     async def test_numeric_parent_yields_both_keys(self) -> None:
-        """Yield the resolved service's name and id for a numeric parent."""
+        """Return the resolved service's name and id for a numeric parent."""
         inventory = inventory_mock(
             service_payload("svc-a", service_id=_RESOLVED_SERVICE_ID)
         )

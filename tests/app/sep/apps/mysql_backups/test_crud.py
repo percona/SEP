@@ -149,7 +149,7 @@ class TestMysqlBackupRunManager:
 
     @pytest.mark.asyncio
     async def test_empty_service_returns_empty_list(self, session) -> None:
-        """Yield an empty list, not an error, for an unknown service."""
+        """Return an empty list, not an error, for an unknown service."""
         page = await MysqlBackupRunManager.list_for_service(
             session, _key("nope"), pagination=_PAGE
         )

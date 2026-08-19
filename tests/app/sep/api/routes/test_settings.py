@@ -234,7 +234,7 @@ def _find_setting(
 def reduced_activation_client_fixture(
     override_session: AsyncSession,
 ) -> Iterator[TestClient]:
-    """Yield a settings router built as if the alerts app were never activated.
+    """Return a settings router built as if the alerts app were never activated.
 
     Reloading ``app.sep.main`` cannot reach this surface: ``settings.py`` captures
     the app-owned classes and builds ``router`` at module import, and
