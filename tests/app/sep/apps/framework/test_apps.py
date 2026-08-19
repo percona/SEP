@@ -709,7 +709,7 @@ class TestCreateRoute:
         """Assert the app's ``alert_detail_builder`` is stamped onto the posted task."""
         tasks_api = _make_tasks_api(created_task=_task_dict("new-task"))
         client = _client(
-            _synth_app(alert_detail_builder="pkg.mod:builder"),
+            _synth_app(alert_detail_builder="app.sep.apps.pkg.mod:builder"),
             tasks_api,
             regular_user,
             inventory_api=_make_inventory_api(),
@@ -724,7 +724,10 @@ class TestCreateRoute:
         create_call = next(
             call for call in tasks_api.post.await_args_list if call.args[0] == "/"
         )
-        assert create_call.kwargs["json"]["alert_detail_builder"] == "pkg.mod:builder"
+        assert (
+            create_call.kwargs["json"]["alert_detail_builder"]
+            == "app.sep.apps.pkg.mod:builder"
+        )
 
     def test_create_threads_run_result_recorder(
         self, regular_user: CasdoorUser
@@ -732,7 +735,7 @@ class TestCreateRoute:
         """Assert the app's ``run_result_recorder`` is stamped onto the posted task."""
         tasks_api = _make_tasks_api(created_task=_task_dict("new-task"))
         client = _client(
-            _synth_app(run_result_recorder="pkg.mod:recorder"),
+            _synth_app(run_result_recorder="app.sep.apps.pkg.mod:recorder"),
             tasks_api,
             regular_user,
             inventory_api=_make_inventory_api(),
@@ -747,7 +750,10 @@ class TestCreateRoute:
         create_call = next(
             call for call in tasks_api.post.await_args_list if call.args[0] == "/"
         )
-        assert create_call.kwargs["json"]["run_result_recorder"] == "pkg.mod:recorder"
+        assert (
+            create_call.kwargs["json"]["run_result_recorder"]
+            == "app.sep.apps.pkg.mod:recorder"
+        )
 
     def test_create_response_model_with_context_provider_succeeds(
         self, regular_user: CasdoorUser

@@ -20,7 +20,7 @@ from enum import StrEnum
 from typing import Annotated, ClassVar
 
 from annotated_types import Gt, Le
-from pydantic import Field, PositiveInt
+from pydantic import AfterValidator, Field, PositiveInt
 from sqlalchemy_celery_beat.models import Period
 
 from app.core.celery.models import IntervalSchedule
@@ -32,10 +32,34 @@ from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
     hot_field,
     nested_overridable_field,
+    not_overridable_field,
 )
 from app.tasks.execution.executors.nomad import NomadExecutor
+from app.tasks.hook_resolver import is_dotted_module_path
 
 MAX_LOG_RETENTION_DAYS = 365
+
+
+def _validate_hook_module_root(root: str) -> str:
+    """Return ``root`` when it is a well-formed dotted module path, else raise.
+
+    :param root: A candidate ``HOOK_MODULE_ALLOWLIST`` entry.
+    :return: The validated root, unchanged.
+    :raises ValueError: When ``root`` is not a dotted module path, and so could
+        never admit a hook.
+    """
+    if not is_dotted_module_path(root):
+        raise ValueError(
+            f"{root!r} is not a dotted module path, so no hook path can match it"
+        )
+    return root
+
+
+#: An entry of :attr:`TasksSettings.HOOK_MODULE_ALLOWLIST`. It shares
+#: :func:`app.tasks.hook_resolver.is_dotted_module_path` with the resolver's own
+#: check, so a root that could never admit a hook is refused at load rather than
+#: accepted and silently matched by nothing.
+HookModuleRoot = Annotated[str, AfterValidator(_validate_hook_module_root)]
 
 
 class PreExecutionCheckMode(StrEnum):
@@ -59,29 +83,23 @@ class TasksSettings(BaseYamlAppSettings):
 
     :cvar SETTINGS_PREFIXES: The prefixes for task-related settings in the
         configuration file.
-    :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
     :param UVICORN_PORT: The port to be used by Uvicorn for running the server.
         Defaults to 8002.
-    :type UVICORN_PORT: int
     :param NOMAD: The Nomad executor used to integrate with Nomad. Per-leaf
         overrides are accepted via the settings API; the parent object itself
         is not patchable as a whole.
     :param DATABASE: The database configuration options. Defaults to an SQLite database
         with the name 'tasks.db'.
-    :type DATABASE: DatabaseOptions
     :param SECURITY_HEADERS: Specific options for the SecurityHeadersMiddleware.
         Use ``False`` to disable the middleware completely.
-    :type SECURITY_HEADERS: SecurityHeadersOptions | None
     :param SYNC_LOCK_TTL: The timeout for the TaskHistory sync lock. Must be a
         positive duration. Defaults to 5 minutes.
-    :type SYNC_LOCK_TTL: timedelta
     :param PRE_EXECUTION_CONNECTIVITY_CHECK: The mode for pre-execution connectivity
         checks. Defaults to ``PreExecutionCheckMode.DISABLED``.
     :type PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode
     :param STALENESS_THRESHOLD_SECONDS: The maximum seconds allowed between a
         dispatch's scheduled time and its Nomad-side execution start before
         the allocation self-aborts as stale. Must be positive. Defaults to 3600.
-    :type STALENESS_THRESHOLD_SECONDS: PositiveInt
     :param LOG_RETENTION_DAYS: The age in days beyond which finished task-execution
         logs (``taskhistory_log`` rows) are purged. Runtime-overridable; must be a
         positive integer no greater than 365. Defaults to 90.
@@ -99,6 +117,14 @@ class TasksSettings(BaseYamlAppSettings):
     :param LOG_STREAM_EVICTION_MAX_ROWS: The maximum number of chunk rows the
         writer evicts per flush, bounding the per-append eviction work. Must be
         positive. Defaults to 1000.
+    :param HOOK_MODULE_ALLOWLIST: The module roots a per-task hook path
+        (``alert_detail_builder``, ``run_result_recorder``) may name. A path is
+        admitted when its module equals a root or is a submodule of one, so each
+        entry must itself be a dotted module path. Environment- and YAML-only,
+        and deliberately not exposed as a runtime-overridable setting: widening
+        the namespace live would itself be a privilege-escalation path, since the
+        resolved callable is imported and invoked by the tasks service. Defaults
+        to the namespace holding the shipped task apps.
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
@@ -124,6 +150,9 @@ class TasksSettings(BaseYamlAppSettings):
     )
     LOG_STREAM_CAP_BYTES: PositiveInt = hot_field(104857600, advanced=True)
     LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt = hot_field(1000, advanced=True)
+    HOOK_MODULE_ALLOWLIST: tuple[HookModuleRoot, ...] = not_overridable_field(
+        ("app.sep.apps",)
+    )
 
 
 tasks_settings: TasksSettings = OverridableSettingsProxy(
