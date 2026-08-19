@@ -68,6 +68,18 @@ class NomadStep(StrEnum):
         return step not in NON_PERSISTABLE_STEPS
 
 
+#: Allocation-relative output-files directory of every job spec that pins its
+#: :attr:`NomadStep.RUN_SCRIPT` task's ``work_dir`` to
+#: ``${NOMAD_TASK_DIR}/output_files`` (``run-python``, ``exec-artifact``,
+#: ``exec-python-artifact``). It is the
+#: :attr:`~app.tasks.models.TaskBase.output_files_path` those specs run under,
+#: so a payload's working directory and the path SEP reads its files back from
+#: are the same place. ``run-command`` pins no ``work_dir`` and so has no
+#: output-files path. Derived from the step name rather than spelled out, so
+#: renaming the step cannot leave the path behind; ``local`` is
+#: ``${NOMAD_TASK_DIR}``.
+RUN_SCRIPT_OUTPUT_FILES_PATH = f"{NomadStep.RUN_SCRIPT}/local/output_files"
+
 #: Steps that emit no task output of their own. ``LOG_CAPTURE_HOLD`` exists only
 #: to keep the allocation readable, so draining it would gate release on a stream
 #: that only ends when the hold itself does. Read by both

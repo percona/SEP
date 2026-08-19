@@ -18,7 +18,7 @@
 import logging
 import secrets
 from collections.abc import Callable
-from typing import Annotated, Any, TypeVar
+from typing import Annotated, Any, Final, TypeVar
 from uuid import UUID
 
 from fastapi import Cookie, Depends, Request
@@ -86,7 +86,7 @@ async def get_current_user(token: AuthToken) -> User:
     short-lived personal access token.
 
     Otherwise the token is validated through ``User.from_bearer``, which accepts
-    the credential types the active provider honors on its Bearer surface -- for
+    the credential types the active provider honors on its Bearer surface — for
     Grafana, an access assertion or a short-lived session-exchange assertion. The
     session-cookie surface stays narrower and validates through ``from_jwt``.
 
@@ -134,66 +134,104 @@ IsAdminDep = Depends(get_current_admin)
 
 F = TypeVar("F", bound=Callable[..., Any])
 
-_NON_ADMIN_MUTATIONS: set[Callable[..., Any]] = set()
+#: The rank an unsafe route requires when nothing registers a lower one, so a
+#: route added without a thought about authorization ships admin-only.
+DEFAULT_MINIMUM_ROLE: Final = UserRole.ADMIN
+
+_ROUTE_MINIMUM_ROLES: dict[Callable[..., Any], UserRole] = {}
 
 
-def allow_non_admin_mutation(endpoint: F) -> F:
-    """Exempt one route's endpoint from the unsafe-method admin gate.
+def require_minimum_role(role: UserRole) -> Callable[[F], F]:
+    """Return a decorator registering the minimum role one route requires.
 
-    Applied *below* the route decorator so the registered object is the same one
-    FastAPI stores as ``APIRoute.endpoint``. Reserved for a route whose method is
-    unsafe but whose operation is a read — a batch lookup whose key set will not
-    fit in a URL. Registering a route that changes state opens a hole in the gate.
+    The registration keys on the object FastAPI stores as
+    ``APIRoute.endpoint``, so this belongs below any decorator that returns a
+    *new* function: a wrapper between the two leaves the registry keyed on a
+    callable no request reaches, and the route falls back to
+    :data:`DEFAULT_MINIMUM_ROLE` with nothing raised to say so. Order against
+    the route decorator itself is immaterial — that one returns the endpoint
+    unchanged. Registering a rank below ``ADMIN`` opens a surface the gate would
+    otherwise close, so it belongs on a route whose operation the named rank is
+    trusted with — and ``UserRole.NONE`` on one whose method is unsafe but whose
+    operation is a read.
 
-    :param endpoint: The route handler to exempt.
-    :return: The same handler, unchanged.
+    :param role: The lowest rank the route admits.
+    :return: A decorator registering the endpoint it receives, unchanged.
     """
-    _NON_ADMIN_MUTATIONS.add(endpoint)
-    return endpoint
+
+    def register(endpoint: F) -> F:
+        _ROUTE_MINIMUM_ROLES[endpoint] = role
+        return endpoint
+
+    return register
 
 
-async def require_admin_for_unsafe_methods(request: Request) -> None:
-    """Require an admin user on mutating HTTP methods.
+def minimum_role_for(route: object | None) -> UserRole:
+    """Return the minimum role a matched route requires.
+
+    The single home of the unregistered-route default, read by the gate and by
+    the test that classifies SEP's unsafe surface, so the two cannot disagree
+    about what an unregistered route resolves to. A request no route matched
+    carries no ``route`` in its scope and resolves the same way.
+
+    :param route: The matched route from the request scope, if any. Typed
+        ``object`` because the scope value is untyped and need not be an
+        ``APIRoute``; anything without an ``endpoint`` takes the default.
+    :return: The registered minimum, or :data:`DEFAULT_MINIMUM_ROLE`.
+    """
+    endpoint = getattr(route, "endpoint", None)
+    if endpoint is None:
+        return DEFAULT_MINIMUM_ROLE
+    return _ROUTE_MINIMUM_ROLES.get(endpoint, DEFAULT_MINIMUM_ROLE)
+
+
+async def require_minimum_role_for_unsafe_methods(request: Request) -> None:
+    """Require each mutating HTTP method's route-registered minimum role.
 
     The authorization sibling of ``require_bearer_for_unsafe_methods``. Safe
     methods pass untouched, keeping whatever authentication they already carry;
-    every other method requires ``is_admin`` — ``POST``, ``PUT``, ``PATCH`` and
-    ``DELETE``, and equally anything no route declares. Two carve-outs follow: a
-    route registered via :func:`allow_non_admin_mutation`, and the service
-    principal.
+    every other method — ``POST``, ``PUT``, ``PATCH`` and ``DELETE``, and
+    equally anything no route declares — resolves the caller and admits it only
+    from :func:`minimum_role_for` upwards, ranks comparing on ``UserRole``'s
+    declared order rather than on equality.
+
+    A ``UserRole.NONE`` minimum is answered before the credential is looked at,
+    so the gate imposes no authentication of its own on a route it waives and
+    that route's own ``dependencies`` stay the only thing authenticating it.
 
     The user is resolved in the body rather than through a sub-dependency: a
     sub-dependency resolves eagerly and would force authentication onto the
     unauthenticated ``GET /health`` that every service exposes.
 
     ``SEP_INTERNAL_TOKEN``'s service principal is admitted by identity so
-    scheduled inventory sync and scheduled execution keep working. The bypass is
-    scoped to this gate: the principal holds ``UserRole.VIEWER``, so it keeps
-    ``is_admin=False`` and every pre-existing ``IsApiAdmin`` / ``IsAdminDep``
-    check refuses it as before.
+    scheduled inventory sync and scheduled execution keep working. It holds
+    ``UserRole.VIEWER`` and so would fail every minimum above it; the bypass
+    stays scoped to this gate, leaving every pre-existing ``IsApiAdmin`` /
+    ``IsAdminDep`` check refusing it as before.
 
     :param request: The incoming HTTP request.
     :raises HTTPUnauthorizedException: When the method is unsafe and the request
         carries no Bearer credential, or the credential does not validate.
-    :raises HTTPForbiddenException: When the resolved user is not an admin, or is
-        inactive.
+    :raises HTTPForbiddenException: When the resolved user ranks below the
+        route's minimum, or is inactive.
     :raises BaseAuthProviderException: When the auth provider errors while
         validating the credential.
     """
     if request.method in SAFE_HTTP_METHODS:
         return
-    route = request.scope.get("route")
-    if route is not None and route.endpoint in _NON_ADMIN_MUTATIONS:
+    minimum = minimum_role_for(request.scope.get("route"))
+    if minimum is UserRole.NONE:
         return
     if not is_bearer_authenticated(request):
         raise HTTPUnauthorizedException
     user = await get_current_user(await oauth2_scheme(request))
     if user.id == SERVICE_PRINCIPAL_ID:
         return
-    await get_current_admin(user)
+    if user.role < minimum:
+        raise HTTPForbiddenException
 
 
-RequireAdminForUnsafeMethods = Depends(require_admin_for_unsafe_methods)
+RequireMinimumRoleForUnsafeMethods = Depends(require_minimum_role_for_unsafe_methods)
 
 
 def get_current_user_id(current_user: CurrentUser) -> str:
