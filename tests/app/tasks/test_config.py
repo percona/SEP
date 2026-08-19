@@ -121,3 +121,37 @@ class TestTasksSettings:
             is ReloadClassification.NOT_OVERRIDABLE
         )
         assert is_explicit_not_overridable(field_info)
+
+    @pytest.mark.parametrize(
+        "root",
+        [
+            "app/acme/apps",
+            "app.acme.apps.",
+            ".app.acme.apps",
+            "app..acme",
+            " app.acme.apps",
+            "",
+            "app.sep.apps:builder",
+        ],
+    )
+    def test_hook_module_allowlist_rejects_a_root_nothing_can_match(
+        self, root: str
+    ) -> None:
+        """Reject an allow-list entry that is not a dotted module path.
+
+        A root no hook path can ever match would otherwise load cleanly and then
+        be reported as allow-listed in every rejection message.
+        """
+        with pytest.raises(ValidationError, match="dotted module path"):
+            TasksSettings(HOOK_MODULE_ALLOWLIST=(root,))
+
+    def test_hook_module_allowlist_accepts_an_extra_root(self) -> None:
+        """Accept a well-formed dotted root added alongside the shipped default."""
+        settings = TasksSettings(
+            HOOK_MODULE_ALLOWLIST=("app.sep.apps", "acme_plugins.hooks")
+        )
+
+        assert settings.HOOK_MODULE_ALLOWLIST == (
+            "app.sep.apps",
+            "acme_plugins.hooks",
+        )

@@ -42,6 +42,9 @@ logger = logging.getLogger(__name__)
 _RESOLVED: dict[str, Callable[..., Any]] = {}
 
 
+# overstatement-ok: both hook call sites catch ValueError and return None
+# (app.tasks.alert_hooks.build_owner_alert_details,
+# app.tasks.run_result.maybe_record_run).
 class HookPathNotAllowedError(ValueError):
     """Define exception for a hook path that is malformed or not allow-listed.
 
@@ -51,10 +54,10 @@ class HookPathNotAllowedError(ValueError):
     """
 
 
-def _is_dotted_identifier(module_path: str) -> bool:
+def is_dotted_module_path(module_path: str) -> bool:
     """Return whether every dot-separated segment is a Python identifier.
 
-    :param module_path: The module part of a hook path.
+    :param module_path: A dotted module name, or the module part of a hook path.
     :return: ``True`` when the module part is a well-formed dotted name.
     """
     return bool(module_path) and all(
@@ -67,9 +70,9 @@ def validate_hook_path(path: str, field: str = "hook path") -> str:
 
     A hook path is admitted only when it is a well-formed ``"module:function"``
     pair naming a public function in a module under one of the configured
-    allow-listed roots. Everything else -- a malformed pair, a dunder or private
-    attribute, a module outside the namespace -- is rejected, because the
-    resolved callable is imported and invoked by the tasks service.
+    allow-listed roots. Everything else is rejected — a malformed pair, a dunder
+    or private attribute, a module outside the namespace — because the resolved
+    callable is imported and invoked by the tasks service.
 
     :param path: The candidate callable path in ``"module:function"`` form.
     :param field: The name of the field carrying the path, quoted in the
@@ -79,14 +82,14 @@ def validate_hook_path(path: str, field: str = "hook path") -> str:
         module outside the allow-listed namespace.
     """
     # Deferred: app.tasks.config imports the Nomad executor, which imports
-    # app.tasks.models, which imports this module -- so tasks_settings does not
+    # app.tasks.models, which imports this module, so tasks_settings does not
     # exist yet while that chain is still initialising.
     from app.tasks.config import tasks_settings
 
-    allowed = tuple(tasks_settings.HOOK_MODULE_ALLOWLIST)
+    allowed = tasks_settings.HOOK_MODULE_ALLOWLIST
     module_path, _, func_name = path.partition(":")
     if (
-        not _is_dotted_identifier(module_path)
+        not is_dotted_module_path(module_path)
         or not func_name.isidentifier()
         or func_name.startswith("_")
     ):
