@@ -25,6 +25,8 @@ from app.sep.apps.inventory.models import INVENTORY_SYNC_TASK_NAME
 from app.tasks.config import tasks_settings
 from app.tasks.db.seed import (
     _CHECK_STALENESS_TASK,
+    _LOG_CAPTURE_HOLD_TASK,
+    LOG_CAPTURE_HOLD_SHELL,
     NOMAD_EXEC_ARTIFACT,
     NOMAD_EXEC_PYTHON_ARTIFACT,
     NOMAD_RUN_COMMAND,
@@ -49,6 +51,9 @@ NOMAD_TEMPLATES_WITH_STALENESS = [
 ]
 PYTHON_TEMPLATES_WITH_PREPARE_ENV = [NOMAD_RUN_PYTHON, NOMAD_EXEC_PYTHON_ARTIFACT]
 STALE_EXIT_CODE = 75
+# Generous next to the sub-second release measured against live Nomad, but far
+# below the 30 s deadline these tests spawn the hold with.
+SIGNAL_RESPONSE_BUDGET_SECONDS = 5
 STALE_ELAPSED_SECONDS = 7200
 FRESH_ELAPSED_SECONDS = 1
 
@@ -148,6 +153,123 @@ class TestStalenessTemplateShape:
         )
         script = prepare_env["Config"]["args"][1]
         assert script.startswith(STALENESS_PREAMBLE_SHELL)
+
+
+class TestLogCaptureHoldTemplateShape:
+    """Cover the log-capture-hold task injection across all Nomad templates."""
+
+    @pytest.mark.parametrize("template", NOMAD_TEMPLATES_WITH_STALENESS)
+    def test_meta_optional_declares_the_hold_key(self, template) -> None:
+        """Assert ``MetaOptional`` declares the hold-duration meta key.
+
+        The dispatch-time injection is gated on the key being declared, so a
+        template missing it silently falls back to the shell default forever.
+        """
+        assert (
+            "log_capture_hold_seconds" in template["ParameterizedJob"]["MetaOptional"]
+        )
+
+    @pytest.mark.parametrize("template", NOMAD_TEMPLATES_WITH_STALENESS)
+    def test_hold_task_is_a_non_sidecar_poststop_task(self, template) -> None:
+        """Assert every template carries the hold as a non-sidecar poststop task."""
+        hold = next(
+            task
+            for task in template["TaskGroups"][0]["Tasks"]
+            if task["Name"] == NomadStep.LOG_CAPTURE_HOLD
+        )
+        assert hold["Lifecycle"] == {"hook": "poststop", "sidecar": False}
+        assert hold["Driver"] == "raw_exec"
+        assert hold["Config"]["command"] == "sh"
+        assert hold["RestartPolicy"] == {"Attempts": 0, "Mode": "fail"}
+
+    @pytest.mark.parametrize("template", NOMAD_TEMPLATES_WITH_STALENESS)
+    def test_hold_task_is_not_shared_between_templates(self, template) -> None:
+        """Assert each template holds its own copy rather than a shared dict.
+
+        The templates are module-level mutables Nomad job registration reads;
+        one shared dict would let a per-template edit leak across all four.
+        """
+        holds = [
+            task
+            for task in template["TaskGroups"][0]["Tasks"]
+            if task["Name"] == NomadStep.LOG_CAPTURE_HOLD
+        ]
+        assert len(holds) == 1
+        assert holds[0] is not _LOG_CAPTURE_HOLD_TASK
+
+
+class TestLogCaptureHoldShell:
+    """Cover the hold shell string by executing it under ``/bin/sh``."""
+
+    def _spawn(self, env: dict[str, str]) -> subprocess.Popen:
+        full_env = {"PATH": "/usr/bin:/bin", **env}
+        return subprocess.Popen(
+            ["/bin/sh", "-c", LOG_CAPTURE_HOLD_SHELL],
+            env=full_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+    def test_no_unbraced_nomad_unknown_references(self) -> None:
+        """Assert the hold shell uses no ``${...}`` form.
+
+        Nomad interpolates ``${...}`` through its own variable table before the
+        shell sees it and fails job validation on names it does not know.
+        """
+        assert "${" not in LOG_CAPTURE_HOLD_SHELL
+
+    def test_self_exits_at_the_meta_supplied_deadline(self) -> None:
+        """Assert the hold terminates on its own once the deadline elapses."""
+        process = self._spawn({"NOMAD_META_log_capture_hold_seconds": "1"})
+        assert process.wait(timeout=10) == 0
+
+    def test_holds_until_signalled_rather_than_exiting_immediately(self) -> None:
+        """Assert a long deadline keeps the step alive until it is signalled."""
+        process = self._spawn({"NOMAD_META_log_capture_hold_seconds": "30"})
+        try:
+            with pytest.raises(subprocess.TimeoutExpired):
+                process.wait(timeout=1)
+        finally:
+            process.kill()
+            process.wait(timeout=10)
+
+    def test_sigterm_releases_the_hold_promptly(self) -> None:
+        """Assert SIGTERM exits ``0`` well before the deadline would elapse.
+
+        A POSIX shell runs traps only between foreground commands, so the
+        backgrounded ``sleep`` plus ``wait`` is what makes the signal land at
+        all rather than being deferred for the full hold.
+        """
+        process = self._spawn({"NOMAD_META_log_capture_hold_seconds": "30"})
+        time.sleep(0.3)
+        started = time.monotonic()
+        process.terminate()
+        assert process.wait(timeout=10) == 0
+        assert time.monotonic() - started < SIGNAL_RESPONSE_BUDGET_SECONDS
+
+    def test_falls_back_to_the_default_when_meta_is_absent(self) -> None:
+        """Assert an unset meta key still holds rather than exiting at once.
+
+        A job dispatched by hand carries no meta; without the fallback the
+        allocation would be collectable immediately and the defect returns.
+        """
+        process = self._spawn({})
+        try:
+            with pytest.raises(subprocess.TimeoutExpired):
+                process.wait(timeout=1)
+        finally:
+            process.terminate()
+            assert process.wait(timeout=10) == 0
+
+    def test_falls_back_to_the_default_when_meta_is_empty(self) -> None:
+        """Assert an empty meta value takes the default rather than ``sleep ""``."""
+        process = self._spawn({"NOMAD_META_log_capture_hold_seconds": ""})
+        try:
+            with pytest.raises(subprocess.TimeoutExpired):
+                process.wait(timeout=1)
+        finally:
+            process.terminate()
+            assert process.wait(timeout=10) == 0
 
 
 class TestStalenessPreambleShell:

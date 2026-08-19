@@ -91,3 +91,51 @@ class TestChecksumsFormTargets:
         assert data_fields["tables"].field_type == "multi_table"
         assert data_fields["tables"].allow_custom is True
         assert data_fields["tables"].depends_on == "databases"
+
+
+class TestChecksumsDefaultsFile:
+    """Cover ``defaults_file`` validation and schema placement."""
+
+    @pytest.mark.parametrize(
+        "defaults_file",
+        ["/etc/x.cnf", "", None],
+        ids=["absolute", "empty-string", "omitted"],
+    )
+    def test_accepts_absolute_or_empty(self, defaults_file: str | None) -> None:
+        """Accept an absolute path, empty string, or omitted field."""
+        body = _minimal_body()
+        if defaults_file is not None:
+            body["defaults_file"] = defaults_file
+        form = ChecksumsForm.model_validate(body)
+
+        assert form.defaults_file == (defaults_file or "")
+
+    @pytest.mark.parametrize(
+        "defaults_file",
+        ["rel.cnf", "~/.my.cnf"],
+        ids=["relative", "tilde"],
+    )
+    def test_rejects_non_absolute_paths(self, defaults_file: str) -> None:
+        """Reject relative paths and unexpanded ``~``."""
+        with pytest.raises(ValidationError, match="absolute path") as exc_info:
+            ChecksumsForm.model_validate(_minimal_body(defaults_file=defaults_file))
+
+        assert "unpredictable" in str(exc_info.value).lower()
+
+    def test_schema_includes_defaults_file_after_max_lag(self) -> None:
+        """Derive ``defaults_file`` in Advanced after ``max_lag`` on ``GET /schema``."""
+        schema = derive_app_schema(
+            ChecksumsForm,
+            checksums_views.layout,
+            name="checksums",
+            display_name="Checksums",
+            list_view=checksums_views.list_view,
+        )
+        advanced = next(
+            section for section in schema.forms if section.title == "Advanced"
+        )
+        field_names = [field.name for field in advanced.fields]
+        max_lag_index = field_names.index("max_lag")
+        defaults_file_index = field_names.index("defaults_file")
+
+        assert defaults_file_index == max_lag_index + 1

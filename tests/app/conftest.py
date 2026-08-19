@@ -19,10 +19,12 @@ import inspect
 import os
 import socket
 import threading
-from collections.abc import AsyncGenerator, Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from collections.abc import AsyncGenerator, Callable, Iterator
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
+from uuid import uuid4
 
 import aioresponses.core
 import pytest
@@ -32,6 +34,7 @@ from faker import Faker
 from fastapi import Request, status
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from itsdangerous import URLSafeTimedSerializer
 from pytest_mock import MockerFixture
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -39,11 +42,13 @@ from sqlalchemy_celery_beat.models import PeriodicTask
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api.deps import require_admin_for_unsafe_methods
 from app.core.alerts.config import alert_settings
 from app.core.auth.base import BaseAuthProvider
 from app.core.auth.config import get_active_auth_provider
-from app.core.auth.models import OAuthToken
+from app.core.auth.models import OAuthToken, UserRole
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.auth.providers.grafana.models import ASSERTION_SALT
 from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
 from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
@@ -418,7 +423,7 @@ def grafana_mock(
 @pytest.fixture
 def admin_user(valid_username: str, faker: Faker) -> CasdoorUser:
     """Create a mock admin user with active status."""
-    return CasdoorUserFactory.build(is_admin=True)
+    return CasdoorUserFactory.build(role=UserRole.ADMIN)
 
 
 @pytest.fixture
@@ -426,7 +431,7 @@ def regular_user(valid_username: str, faker: Faker) -> CasdoorUser:
     """Create a mock regular user with active status."""
     return CasdoorUserFactory.build(
         username=valid_username,
-        is_admin=False,
+        role=UserRole.VIEWER,
     )
 
 
@@ -657,9 +662,11 @@ def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
 
     Overrides ``require_bearer_for_unsafe_methods`` so cookie-only JSON
     mutations under ``/api/apps/*`` are not blocked by the framework
-    Bearer gate. App-local ``test_client`` overrides MUST
-    mirror this override; see :func:`api_admin_client_no_bearer` for the
-    negative-path fixture that leaves the gate intact.
+    Bearer gate, and ``require_admin_for_unsafe_methods`` so the fixture user
+    need not be an admin to exercise a mutating route. App-local
+    ``test_client`` overrides MUST mirror both; see
+    :func:`api_admin_client_no_bearer` for the negative-path fixture that
+    leaves the Bearer gate intact.
 
     ``get_session`` is overridden to the in-memory ``session`` so the
     ``require_app_enabled`` route guard reads an isolated, empty ``appstate``
@@ -668,6 +675,7 @@ def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
     with a session that carries an ``enabled=False`` row.
     """
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
@@ -703,9 +711,10 @@ def unauthenticated_client() -> Iterator[TestClient]:
 async def async_test_client(regular_user: CasdoorUser) -> AsyncClient:
     """Yield an authenticated async cookie-auth client for the SEP app.
 
-    See :func:`test_client` for the Bearer-gate override rationale.
+    See :func:`test_client` for the gate-override rationale.
     """
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
 
     transport = ASGITransport(app=sep_app)
@@ -713,6 +722,63 @@ async def async_test_client(regular_user: CasdoorUser) -> AsyncClient:
         yield client
 
     sep_app.dependency_overrides = {}
+
+
+def make_roleless_grafana_assertion(token_type: str) -> str:
+    """Return a signed Grafana identity assertion carrying no ``role`` claim.
+
+    Reproduces the assertion shape minted before the role became a claim of its
+    own, which the current minting path can no longer produce. The serializer is
+    rebuilt from the signing key and the shared salt constant rather than
+    imported (the module-level serializer is private), so the forged assertion
+    verifies against the real one.
+
+    :param token_type: The ``typ`` claim to embed (``"access"``, ``"refresh"``
+        or ``"exchange"``).
+    :return: The signed, URL-safe assertion.
+    """
+    return URLSafeTimedSerializer(
+        settings.SECRET_KEY.get_secret_value(), salt=ASSERTION_SALT
+    ).dumps(
+        {
+            "id": str(uuid4()),
+            "username": "alice",
+            "email": "",
+            "is_admin": True,
+            "typ": token_type,
+        }
+    )
+
+
+def make_request(
+    method: str = "GET",
+    authorization: str | None = None,
+    endpoint: Callable[..., Any] | None = None,
+) -> Request:
+    """Build a minimal Request for dependencies that take one.
+
+    :param method: HTTP method to set on the request scope.
+    :param authorization: Value for the ``Authorization`` header, if any.
+    :param endpoint: Handler to expose as the matched route's ``endpoint``. When
+        omitted the scope carries no ``route`` key, which is what an unmatched
+        request looks like.
+    :return: A ``Request`` over the assembled scope.
+    """
+    headers: list[tuple[bytes, bytes]] = []
+    if authorization is not None:
+        headers.append((b"authorization", authorization.encode()))
+    scope = {
+        "type": "http",
+        "headers": headers,
+        "method": method,
+        "client": ("127.0.0.1", "80"),
+        "path": "/",
+        "app": MagicMock(),
+        "router": MagicMock(),
+    }
+    if endpoint is not None:
+        scope["route"] = SimpleNamespace(endpoint=endpoint)
+    return Request(scope)
 
 
 @pytest.fixture

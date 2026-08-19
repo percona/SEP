@@ -87,6 +87,37 @@ describe('IncidentListPage', () => {
     });
   });
 
+  it('withholds the create button when the list request failed', async () => {
+    mockedApi.get.mockRejectedValue(new Error('Backend unavailable'));
+
+    renderPage(<IncidentListPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to load incidents/i)).toBeTruthy();
+    });
+    // Creating would hit the backend that just failed.
+    expect(screen.queryByRole('button', { name: /New incident/i })).toBeNull();
+  });
+
+  it('disables the create button while the list is loading', async () => {
+    let resolveList!: (value: ReturnType<typeof paginated<typeof incident>>) => void;
+    mockedApi.get.mockReturnValue(
+      new Promise((resolve) => {
+        resolveList = resolve;
+      }),
+    );
+
+    renderPage(<IncidentListPage />);
+
+    expect(screen.getByRole('button', { name: /New incident/i })).toBeDisabled();
+
+    resolveList(paginated([incident]));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /New incident/i })).not.toBeDisabled();
+    });
+  });
+
   it('creates an incident from the dialog, sending the trimmed name', async () => {
     mockedApi.get.mockResolvedValue(paginated([]));
     mockedApi.post.mockResolvedValue({ data: incident });
