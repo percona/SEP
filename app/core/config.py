@@ -305,14 +305,16 @@ class BaseYamlSettings(BaseSettings):
             or secret_settings.env_vars.get(env_key, pre_env_settings.FASTAPI_ENV)
         )
         if cls.SETTINGS_PREFIXES:
-            env_prefix = "__".join(cls.SETTINGS_PREFIXES).lower()
+            prefix_pattern = re.compile(
+                f"^{'__'.join(cls.SETTINGS_PREFIXES).lower()}__([a-zA-Z0-9_-]+)$"
+            )
             for env_source in [env_settings, dotenv_settings, secret_settings]:
-                env_vars = {}
+                unprefixed: dict[str, Any] = {}
+                prefixed: dict[str, Any] = {}
                 for key, value in env_source.env_vars.items():
-                    env_vars[
-                        re.sub(f"^{env_prefix}__([a-zA-Z0-9_-]+)$", r"\1", key)
-                    ] = value
-                env_source.env_vars = env_vars
+                    stripped = prefix_pattern.sub(r"\1", key)
+                    (unprefixed if stripped == key else prefixed)[stripped] = value
+                env_source.env_vars = {**unprefixed, **prefixed}
         return (
             init_settings,
             env_settings,
