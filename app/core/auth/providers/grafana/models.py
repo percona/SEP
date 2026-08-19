@@ -156,16 +156,16 @@ class GrafanaUser(BaseUser):
         pass with the longest lifetime would check a short-lived assertion
         against a longer one's expiry.
 
-        The assertion carries the legacy admin flag rather than a role, so the
-        role is rebuilt from it here: a present claim is validated as a boolean
-        rather than tested for truthiness, while an absent one reads as
-        ``VIEWER`` rather than failing the now-required field.
+        The assertion carries the identity's role as its own claim. A payload
+        without it predates that claim and is refused rather than downgraded to
+        a role derived from ``is_admin``, which would launder the degraded role
+        into every assertion re-minted from it.
 
         :param data: The raw model input.
         :param info: The validation context carrying the expected ``token_type``.
         :return: The decoded claims mapping, or ``data`` unchanged.
         :raises ValueError: If the assertion is tampered, expired, malformed, of
-            the wrong type, or carries an admin claim that is not a boolean.
+            the wrong type, or carries no role claim.
         """
         if not isinstance(data, str):
             return data
@@ -185,11 +185,8 @@ class GrafanaUser(BaseUser):
             raise ValueError("invalid or expired Grafana session token") from exc
         if payload.get("typ") != token_type:
             raise ValueError("unexpected Grafana token type")
-        payload["role"] = (
-            cls._role_from_admin_flag(payload["is_admin"])
-            if "is_admin" in payload
-            else UserRole.VIEWER
-        )
+        if "role" not in payload:
+            raise ValueError("Grafana session token carries no role claim")
         return payload
 
     @staticmethod
@@ -202,7 +199,7 @@ class GrafanaUser(BaseUser):
         :return: The signed, URL-safe identity assertion.
         """
         payload = user.model_dump(
-            mode="json", include={"id", "username", "email", "is_admin"}
+            mode="json", include={"id", "username", "email", "role", "is_admin"}
         )
         payload["typ"] = token_type
         return _TOKEN_SERIALIZER.dumps(payload)
