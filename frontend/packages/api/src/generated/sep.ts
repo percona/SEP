@@ -6573,6 +6573,11 @@ export interface components {
       /** Databases */
       databases?: (number | string)[];
       /**
+       * Defaults File
+       * @default
+       */
+      defaults_file: string;
+      /**
        * Dsn Table
        * @default
        */

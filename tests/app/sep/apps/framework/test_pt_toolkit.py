@@ -210,6 +210,7 @@ _EXPECTED_CHECKSUMS_ARG_MAPPINGS = {
     "--max-load=": "max_load",
     "--chunk-time=": "chunk_time",
     "--max-lag=": "max_lag",
+    "--defaults-file=": "defaults_file",
     "--progress=": "progress",
 }
 _EXPECTED_CHECKSUMS_FLAG_MAPPINGS = {
