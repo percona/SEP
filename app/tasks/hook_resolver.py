@@ -42,9 +42,6 @@ logger = logging.getLogger(__name__)
 _RESOLVED: dict[str, Callable[..., Any]] = {}
 
 
-# overstatement-ok: both hook call sites catch ValueError and return None
-# (app.tasks.alert_hooks.build_owner_alert_details,
-# app.tasks.run_result.maybe_record_run).
 class HookPathNotAllowedError(ValueError):
     """Define exception for a hook path that is malformed or not allow-listed.
 
