@@ -113,8 +113,8 @@ def test_sync_hop_is_authenticated_as_the_service_principal(
     stream in an error frame instead of the finish frame, so the hop is
     authenticated as the service principal the gate admits by identity.
 
-    Evidence stops at the credential the request carries; the gate's own
-    treatment of that identity is covered in ``tests/app/tasks/test_role_gate.py``.
+    Evidence stops at the credential the request carries; whether the gate then
+    admits that identity is asserted elsewhere, not here.
     """
     mocker.patch(
         "app.sep.routes.stream_logs.require_internal_token",

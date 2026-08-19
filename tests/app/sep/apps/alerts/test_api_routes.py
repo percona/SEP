@@ -1252,7 +1252,7 @@ class TestRoleGate:
         """Refuse an editor outside the alerts app, where nothing was lowered.
 
         The route is chosen for carrying no admin dependency of its own, so the
-        403 can only have come from the default this ticket left in place.
+        403 can only have come from the unregistered-route default.
         """
         client = gate_live_client(UserRole.EDITOR)
 

@@ -767,7 +767,7 @@ def bearer_client(session, casdoor_mock):
     sep_app.dependency_overrides = {}
 
 
-class TestApiAdminGate:
+class TestApiRoleGate:
     """Exercise the router-level role gate over the ``/api`` tree."""
 
     def test_non_admin_mutation_is_refused_with_json_403(
@@ -851,7 +851,7 @@ class TestApiAdminGate:
         """Keep the Bearer gate ahead of the role gate in declaration order.
 
         Router-level dependencies run in declared order, so a credential-less
-        mutation must still carry ``BEARER_REQUIRED_DETAIL``; declaring the admin
+        mutation must still carry ``BEARER_REQUIRED_DETAIL``; declaring the role
         gate first would answer a bare 401 with a different detail.
         """
         response = cookie_only_client.post("/api/sep/task-history/1/stop/", json={})
@@ -859,7 +859,7 @@ class TestApiAdminGate:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
 
-    def test_the_admin_gate_is_declared_after_the_bearer_gate(self) -> None:
+    def test_the_role_gate_is_declared_after_the_bearer_gate(self) -> None:
         """Pin the declaration order the detail string above depends on."""
         api_deps = [dep.dependency for dep in api_router.dependencies]
 
