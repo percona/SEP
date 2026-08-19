@@ -193,7 +193,7 @@ export interface SchemaFormRendererProps {
   submitLabel?: string;
   loading?: boolean;
   defaultValues?: Record<string, unknown>;
-  /** Server-side error to show above the form (e.g. API failure from the caller's mutation). */
+  /** Submit-time message to show above the submit button; severity comes from {@link submitAlertSeverity}. */
   submitError?: string | null;
   /** MUI Alert severity for {@link submitError}; defaults to `error`. */
   submitAlertSeverity?: 'error' | 'warning' | 'success' | 'info';
@@ -297,9 +297,8 @@ function SchemaFormBody({
     appliedServerErrorPaths.current = applied;
   }, [fieldErrors, setError, clearErrors]);
 
-  const isGuarded = useUnsavedChangesGuard(
-    submitAlertSeverity === 'error' ? submitError : undefined,
-  );
+  const submitAlertIsError = submitAlertSeverity === 'error';
+  const isGuarded = useUnsavedChangesGuard(submitAlertIsError ? submitError : null);
   const inDataRouter = Boolean(useContext(UNSAFE_DataRouterContext));
   const allFields = useMemo(() => flattenFields(sections), [sections]);
   const beforeSubmitSections = useMemo(
@@ -378,7 +377,7 @@ function SchemaFormBody({
     <FormFieldsProvider value={allFields}>
       {inDataRouter && <UnsavedChangesBlocker isGuarded={isGuarded} />}
       <Box component="form" onSubmit={handleSubmitEvent} noValidate sx={{ maxWidth: 640 }}>
-        {hasInlineErrors && formState.isSubmitted && !submitError && (
+        {hasInlineErrors && formState.isSubmitted && (!submitError || !submitAlertIsError) && (
           <Alert severity="error" sx={{ mb: 2 }}>
             Fix the highlighted fields before submitting.
           </Alert>

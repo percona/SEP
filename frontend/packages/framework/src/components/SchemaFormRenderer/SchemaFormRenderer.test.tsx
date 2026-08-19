@@ -1780,6 +1780,62 @@ describe('SchemaFormRenderer — unsaved changes guard', () => {
     });
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
+
+  it('does not re-arm guard when submitError is a success-severity outcome alert', async () => {
+    const user = userEvent.setup();
+
+    function FormWithSuccessOutcome() {
+      const [submitError, setSubmitError] = useState<string | null>(null);
+      return (
+        <SchemaFormRenderer
+          sections={GUARD_SECTIONS}
+          onSubmit={() => {
+            setSubmitError('Dispatched 2 of 2 snippets.');
+          }}
+          submitError={submitError}
+          submitAlertSeverity="success"
+          submitLabel="Save"
+        />
+      );
+    }
+
+    const { router } = renderWithRouter(<FormWithSuccessOutcome />);
+
+    await user.type(screen.getByLabelText('Title'), 'hello');
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() =>
+      expect(screen.getByText('Dispatched 2 of 2 snippets.')).toBeInTheDocument(),
+    );
+    await act(async () => {});
+
+    act(() => {
+      router.navigate('/other');
+    });
+    expect(await screen.findByText('Other page')).toBeInTheDocument();
+  });
+
+  it('shows inline validation summary when submitError is a success-severity alert', async () => {
+    const user = userEvent.setup();
+    const sections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [{ type: 'string', name: 'title', label: 'Title', required: true }],
+      },
+    ];
+
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={vi.fn()}
+        submitError="Dispatched 1 of 1 snippet."
+        submitAlertSeverity="success"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    expect(await screen.findByText(/Fix the highlighted fields/)).toBeInTheDocument();
+    expect(screen.getByText('Dispatched 1 of 1 snippet.')).toBeInTheDocument();
+  });
 });
 
 // ── Section-level visibility gates (SEP-1276) ────────────────────────────
