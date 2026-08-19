@@ -279,7 +279,10 @@ class TaskExecutionApp(BaseApp):
     :param create_model: The model-first ``AppFormModel`` subclass whose fields
         drive the derived schema and create form. Mutually exclusive with the
         transitional ``schema=`` passthrough; one of the two is required.
-    :param response_model: The list/detail response model. Defaults to
+    :param response_model: The list/detail response model. When an explicit
+        ``response_builder`` is set, must equal its return type — the derived list
+        route serializes the builder's model, and every ``response_model`` reader
+        (including the ``list_view`` column gate) measures this field. Defaults to
         :class:`~app.sep.apps.framework.responses.BaseTaskResponse`.
     :param views: The presentation bundle (layout, list/detail views, UI
         capabilities). Its ``layout`` is required when ``create_model`` is set.

@@ -1594,7 +1594,9 @@ class TestResponseAndFilterKnobs:
 
     def test_response_builder_override_drives_list_model(self) -> None:
         """Assert a ``response_builder`` override supplies the list response model."""
-        app_def = _synth_app(response_builder=_alt_list_builder)
+        app_def = _synth_app(
+            response_builder=_alt_list_builder, response_model=_AltListResponse
+        )
         list_route = next(
             route
             for route in app_def.api_router.routes
