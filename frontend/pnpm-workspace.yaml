@@ -28,4 +28,4 @@ overrides:
   react: 19.2.7
   react-dom: 19.2.7
   postcss@<8.5.23: 8.5.23
-  nanoid@<3.3.17: 3.3.17
+  nanoid@<3.3.18: 3.3.18

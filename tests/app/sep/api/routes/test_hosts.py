@@ -129,7 +129,7 @@ class TestSepHostsEndpoint:
         mock_task_api_dep,
         mock_inventory_api_dep,
     ) -> None:
-        """Degrade gracefully when the Inventory API rejects the request."""
+        """Return 200 with the executor addresses when the Inventory API rejects the request."""
         mock_task_api_dep.get.return_value = {"nomad-1": "10.0.0.1"}
         mock_inventory_api_dep.get.side_effect = HTTPBadGatewayException(
             "inventory unreachable"

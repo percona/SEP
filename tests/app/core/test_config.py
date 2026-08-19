@@ -97,7 +97,11 @@ class DummySettings(BaseSettings):
 def mock_yaml_data():
     """Provide mock YAML data for testing."""
     return {
-        "default": {"key1": "default_value1", "key2": "default_value2"},
+        "default": {
+            "key1": "default_value1",
+            "key2": "default_value2",
+            "items": ["a", "b"],
+        },
         "env1": {"key1": "env1_value1", "nested": {"key2": "env1_nested_value2"}},
         "env2": {
             "key3": "env2_value3",
@@ -137,6 +141,24 @@ def test_yaml_prefix_config_settings_source_multiple_prefixes(mock_yaml_file):
     assert settings_source.yaml_data == expected_data, (
         f"Expected {expected_data} but got {settings_source.yaml_data}"
     )
+
+
+def test_yaml_prefix_config_settings_source_base_profile(
+    mock_yaml_file, mock_yaml_data
+):
+    """Select the base profile and return its data without doubling any list."""
+    prefixes = ("default",)
+    base_prefix = "default"
+
+    settings_source = YamlPrefixConfigSettingsSource(
+        DummySettings,
+        yaml_file=mock_yaml_file,
+        prefixes=prefixes,
+        base_prefix=base_prefix,
+    )
+
+    assert settings_source.yaml_data == mock_yaml_data["default"]
+    assert settings_source.yaml_data["items"] == ["a", "b"]
 
 
 class MockSettings(BaseSettings):
@@ -371,6 +393,21 @@ class TestPMMSettings:
         """Assert the global ``Settings`` class has a ``PMM`` field."""
         assert "PMM" in Settings.model_fields
         assert Settings.model_fields["PMM"].default == PMMSettings()
+
+    def test_endpoint_rejects_redacted_mask_on_yaml_path(self) -> None:
+        """Fail when a masked export is re-fed as the PMM endpoint."""
+        with pytest.raises(ValidationError, match="endpoint"):
+            PMMSettings(endpoint="https://pmm-user:****@pmm.example.com:8443")
+
+    def test_endpoint_rejects_redacted_mask_on_env_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fail Settings load when a masked PMM endpoint arrives via the environment."""
+        monkeypatch.setenv(
+            "PMM__ENDPOINT", "https://pmm-user:****@pmm.example.com:8443"
+        )
+        with pytest.raises(ValidationError, match="endpoint"):
+            Settings(_env_file=None)
 
 
 def test_settings_secret_key_is_secretstr():
