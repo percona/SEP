@@ -15,14 +15,17 @@
 
 """Test the connectivity check service function."""
 
+import ast
 import json
 from itertools import product
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+import app.tasks.connectivity.service as connectivity_service
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.tasks import hook_resolver
 from app.tasks.connectivity.constants import (
@@ -40,6 +43,7 @@ from app.tasks.connectivity.service import (
     POLL_INTERVAL,
 )
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
+from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
@@ -63,6 +67,25 @@ CONNECT_START_CALL = 3
 # 2 post-terminal-sync (SUCCESS, no logs), 3-4 ``_fetch_fresh_task_history``
 # retries (empty, then populated).
 FRESH_FETCH_POPULATE_CALL = 4
+
+
+def test_connectivity_module_has_no_bare_nomad_step_literals() -> None:
+    """Assert service.py spells Nomad step names through NomadStep, not literals.
+
+    Asserts the absence of every step wire value rather than the presence of one
+    enum reference: a presence check stays green when either call site reverts to
+    a literal, which is the only regression this guard exists to catch.
+    """
+    source = Path(connectivity_service.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    literals = sorted(
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value in set(NomadStep)
+    )
+    assert not literals, f"bare Nomad step literals in service.py: {literals}"
 
 
 @pytest.fixture(autouse=True)
@@ -216,7 +239,7 @@ class TestCheckConnectivityRealSession:
                 is_template=False,
                 protected=False,
                 alert_on_fail=False,
-                run_result_recorder="pkg:rec",
+                run_result_recorder="app.sep.apps.pkg:rec",
             )
         )
         return await TaskManager.create(session, task_write)
@@ -323,8 +346,8 @@ class TestCheckConnectivityRealSession:
 
         assert result.success is True
         assert result.error is None
-        assert await TaskHistoryLogManager.exists_for_task(
-            session, result.task_history_id
+        assert await TaskHistoryLogManager.exists(
+            session, task_history_id=result.task_history_id
         )
 
     async def test_terminal_run_records_nothing(
@@ -364,7 +387,9 @@ class TestCheckConnectivityRealSession:
         mock_executor = MagicMock(spec=BaseExecutor)
         mock_executor.sync_task_history = sync_task_history
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder}, clear=True)
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder}, clear=True
+        )
         with (
             patch(
                 "app.tasks.connectivity.service.dispatch_queue_item",
@@ -615,8 +640,6 @@ class TestCheckConnectivityRealSession:
         mock_executor = MagicMock(spec=BaseExecutor)
         mock_executor.sync_task_history = sync_task_history
 
-        from app.tasks.connectivity import service as connectivity_service
-
         original_expire_and_fetch = connectivity_service._expire_and_fetch
         logs_written = {"done": False}
 
@@ -679,8 +702,6 @@ class TestCheckConnectivityRealSession:
         mock_executor = MagicMock(spec=BaseExecutor)
         mock_executor.sync_task_history = sync_task_history
 
-        from app.tasks.connectivity import service as connectivity_service
-
         original_expire_and_fetch = connectivity_service._expire_and_fetch
         logs_written = {"done": False}
 
@@ -741,8 +762,6 @@ class TestCheckConnectivityRealSession:
 
         mock_executor = MagicMock(spec=BaseExecutor)
         mock_executor.sync_task_history = sync_task_history
-
-        from app.tasks.connectivity import service as connectivity_service
 
         original_expire_and_fetch = connectivity_service._expire_and_fetch
         expire_calls = {"n": 0}
@@ -840,7 +859,7 @@ class TestCheckConnectivityRealSession:
     ) -> None:
         """Verify the polling loop survives the deferred-column lazy-load race.
 
-        Reproduces the runtime bug surfaced by SEP-935 e2e QA: after the
+        Reproduces the runtime bug surfaced by e2e QA: after the
         production ``dispatch_queue_item`` commits and refreshes the fresh
         ``TaskHistory``, the ``execution_request`` attribute is **unloaded**
         because of the deferred ``column_property``. The very first polling
@@ -903,7 +922,7 @@ class TestCheckConnectivityRealSession:
         run_python_task: Task,
         async_session_maker,
     ) -> None:
-        """Regression for SEP-1034: supply a writer session to log persistence.
+        """Assert log persistence receives a writer session during polling.
 
         ``check_connectivity`` calls ``executor.sync_task_history`` inside its
         polling loop; the Nomad executor persists ``run-script`` stdout into
@@ -976,8 +995,8 @@ class TestCheckConnectivityRealSession:
         )
         assert result.success is True
         assert result.error is None
-        assert await TaskHistoryLogManager.exists_for_task(
-            session, result.task_history_id
+        assert await TaskHistoryLogManager.exists(
+            session, task_history_id=result.task_history_id
         )
 
     async def test_provisioning_phase_does_not_consume_connect_budget(

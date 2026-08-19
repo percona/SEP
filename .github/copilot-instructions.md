@@ -8,11 +8,11 @@ SEP is a FastAPI application with three mounted sub-applications, each with its 
 
 - `app/inventory/` — nodes, services, schemas, tables; mounted at `/api/inventory`.
 - `app/tasks/` — task execution, Nomad/local executors, periodic tasks; mounted at `/api/tasks`.
-- `app/sep/` — web UI, Jinja templates, OAuth, apps; mounted at `/`.
+- `app/sep/` — the SEP API gateway, OAuth, apps; mounted at `/`. It serves the React SPA's static assets, not server-rendered pages.
 
 SEP apps are FastAPI routers under `app/sep/apps/<name>/` with `routes.py`, `deps.py`, and optional `models.py`. `Annotated[..., Depends(...)]` aliases live in `deps.py`.
 
-The codebase is undergoing an **API-First + React migration** — see `api-first.instructions.md` for rules that apply when a PR touches the API gateway, app schemas, or `frontend/packages/`.
+The UI is **API-first + React** — see `api-first.instructions.md` for rules that apply when a PR touches the API gateway, app schemas, or `frontend/packages/`. The server-rendered Jinja2 layer has been removed; the only Jinja left renders the report PDF.
 
 ## Repo-wide rules (apply to every PR)
 

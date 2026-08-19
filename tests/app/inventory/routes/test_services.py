@@ -127,12 +127,11 @@ class TestListServices:
         """Return only services whose name matches the search case-insensitively."""
         match = ServiceWriteFactory.build(name="AlphaSearchService", port=4401)
         other = ServiceWriteFactory.build(name="OtherService", port=4402)
-        test_client.post(
-            f"/nodes/{node.id}/services/", json=match.model_dump(mode="json")
-        )
-        test_client.post(
-            f"/nodes/{node.id}/services/", json=other.model_dump(mode="json")
-        )
+        for payload in (match, other):
+            create_response = test_client.post(
+                f"/nodes/{node.id}/services/", json=payload.model_dump(mode="json")
+            )
+            assert create_response.status_code == status.HTTP_201_CREATED
 
         response = test_client.get("/services/", params={"search": "alphasearch"})
         assert response.status_code == status.HTTP_200_OK
@@ -149,13 +148,15 @@ class TestListServices:
                 name=f"FilterMatchService_{suffix}",
                 port=4500 + index,
             )
-            test_client.post(
+            create_response = test_client.post(
                 f"/nodes/{node.id}/services/", json=payload.model_dump(mode="json")
             )
+            assert create_response.status_code == status.HTTP_201_CREATED
         other = ServiceWriteFactory.build(name="UnrelatedService", port=4599)
-        test_client.post(
+        create_response = test_client.post(
             f"/nodes/{node.id}/services/", json=other.model_dump(mode="json")
         )
+        assert create_response.status_code == status.HTTP_201_CREATED
 
         response = test_client.get(
             "/services/", params={"search": "filtermatchservice", "limit": 1}

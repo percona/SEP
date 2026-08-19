@@ -28,7 +28,7 @@ import {
   type EditValue,
   formatSettingValue,
   getFieldKind,
-  parseLiteralOptions,
+  getSettingOptions,
 } from './settingField';
 
 export interface SettingEditFieldProps {
@@ -81,13 +81,13 @@ export default function SettingEditField({
       );
 
     case 'choice': {
-      const options = parseLiteralOptions(setting.type) ?? [];
+      const options = getSettingOptions(setting);
       return (
         <TextField
           select
           size="small"
           fullWidth
-          value={typeof value === 'string' ? value : ''}
+          value={value === null || value === undefined ? '' : String(value)}
           disabled={disabled}
           error={Boolean(error)}
           helperText={helperText}
@@ -95,8 +95,8 @@ export default function SettingEditField({
           slotProps={{ htmlInput: { 'aria-label': setting.key } }}
         >
           {options.map((opt) => (
-            <MenuItem key={opt} value={opt}>
-              {opt}
+            <MenuItem key={`${opt.label}:${String(opt.value)}`} value={String(opt.value)}>
+              {opt.label}
             </MenuItem>
           ))}
         </TextField>

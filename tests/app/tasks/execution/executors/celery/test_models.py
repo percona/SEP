@@ -34,6 +34,7 @@ from app.tasks.execution.executors.celery.models import (
     CeleryExecutor,
 )
 from app.tasks.models import (
+    LogCaptureStatusEnum,
     Task,
     TaskBackendEnum,
     TaskExecutionRequest,
@@ -175,6 +176,58 @@ class TestCeleryExecutorDispatchTask:
         assert result.status == TaskHistoryStatusEnum.SUCCESS
         assert result.started_at is not None
         assert result.finished_at is not None
+
+    @pytest.mark.asyncio
+    async def test_dispatch_records_both_streams_complete(
+        self, executor, session, celery_queue_item
+    ) -> None:
+        """Assert both streams are recorded ``complete`` rather than defaulted.
+
+        The Celery executor captures each buffer in full and synchronously, so
+        its capture is complete by construction and must not inherit the
+        pessimistic model default the Nomad path starts from.
+        """
+        with patch.object(
+            executor,
+            "_run_callable",
+            new_callable=AsyncMock,
+            return_value="done",
+        ):
+            result = await executor.dispatch_task(session, celery_queue_item)
+
+        states = await TaskHistoryLogStateManager.list_for_task(session, result.id)
+        assert {state.stream for state in states} == {
+            TaskLogType.STDOUT,
+            TaskLogType.STDERR,
+        }
+        assert {state.capture_status for state in states} == {
+            LogCaptureStatusEnum.COMPLETE
+        }
+
+    @pytest.mark.asyncio
+    async def test_dispatch_records_complete_for_a_silent_task(
+        self, executor, session, celery_queue_item
+    ) -> None:
+        """Assert a task that printed nothing still yields two complete rows.
+
+        Without an unconditional write a zero-output Celery task creates no
+        state rows at all and aggregates to ``unknown`` — reintroducing, on
+        the Celery side, the empty-versus-lost ambiguity this work removes.
+        """
+        with patch.object(
+            executor,
+            "_run_callable",
+            new_callable=AsyncMock,
+            return_value="",
+        ):
+            result = await executor.dispatch_task(session, celery_queue_item)
+
+        states = await TaskHistoryLogStateManager.list_for_task(session, result.id)
+        stderr_state = next(
+            state for state in states if state.stream == TaskLogType.STDERR
+        )
+        assert stderr_state.capture_status == LogCaptureStatusEnum.COMPLETE
+        assert stderr_state.producer_offset == 0
 
     @pytest.mark.asyncio
     async def test_failed_dispatch(self, executor, session, celery_queue_item) -> None:

@@ -39,7 +39,12 @@ from app.sep.apps.inventory.deps import (
     INVENTORY_PLUGIN_ENTITY_NAMES,
 )
 from app.sep.crud import SyncItemManager
-from app.sep.deps import BEARER_REQUIRED_DETAIL, get_created_service, get_tasks_api
+from app.sep.deps import (
+    BEARER_REQUIRED_DETAIL,
+    get_created_service,
+    get_current_user,
+    get_tasks_api,
+)
 from app.sep.main import sep_app
 from app.sep.models import SyncInventoryEntityTypeEnum
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
@@ -858,6 +863,18 @@ class TestInventorySystemObservation:
 class TestInventoryServiceCheckConnectivity:
     """Cover POST /api/apps/inventory/services/{service_id}/check-connectivity/."""
 
+    @pytest.fixture(autouse=True)
+    def _admin_identity(self, test_client, admin_user):
+        """Resolve the API identity to an admin for the probe's own ``IsApiAdmin``.
+
+        Declared after ``test_client`` so it replaces the non-admin identity that
+        fixture installs; :meth:`test_non_admin_is_refused` opts out by
+        re-installing the non-admin.
+        """
+        sep_app.dependency_overrides[get_current_user] = lambda: admin_user
+        yield
+        sep_app.dependency_overrides.pop(get_current_user, None)
+
     @pytest.fixture
     def created_node(self):
         """Return a fake inventory node."""
@@ -890,6 +907,23 @@ class TestInventoryServiceCheckConnectivity:
 
     def _url(self, service) -> str:
         return f"/api/apps/inventory/services/{service.id}/check-connectivity/"
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_non_admin_is_refused(
+        self, test_client, mysql_service, mock_tasks_api_dep, regular_user
+    ):
+        """Refuse a non-admin: the probe opens a connection with stored credentials.
+
+        Its already-admin sibling is ``POST /api/sep/admin/connectivity-check/``,
+        and the declaration is on the route rather than left to the router-level
+        gate so the posture is readable where the route is defined.
+        """
+        sep_app.dependency_overrides[get_current_user] = lambda: regular_user
+
+        response = test_client.post(self._url(mysql_service))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        mock_tasks_api_dep.post.assert_not_awaited()
 
     @pytest.mark.usefixtures("_mock_mysql_service_dep")
     def test_successful_probe_returns_200(

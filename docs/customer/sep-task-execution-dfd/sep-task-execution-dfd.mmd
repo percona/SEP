@@ -1,6 +1,6 @@
 %% SEP Task Execution — Level-1 Data Flow Diagram
 %% Path A: Snippets (one-shot). Path B: Proxy apps e.g. checksums (create then execute).
-%% Auth: Casdoor OAuth/JWT; mTLS on inter-service links only.
+%% Auth: Grafana session exchange (PMM-embedded); mTLS on inter-service links only.
 
 flowchart LR
     classDef entity fill:#e8f4fc,stroke:#1565c0,stroke-width:2px
@@ -9,7 +9,7 @@ flowchart LR
     classDef audit fill:#fce4ec,stroke:#c62828,stroke-width:2px
 
     Engineer(["Engineer / DBA"])
-    Casdoor(["Casdoor IdP"])
+    Grafana(["Grafana IdP<br/>(PMM-embedded)"])
     Inventory(["Inventory API"])
     NomadCluster(["Nomad cluster"])
     RemoteNode(["Nomad client node<br/>(remote DB host)"])
@@ -17,8 +17,8 @@ flowchart LR
     InfraLogs(["Infrastructure<br/>log stack"])
 
     subgraph authZone ["Authentication (no client-cert user login)"]
-        P_Login["P1: OAuth login"]
-        P_Validate["P2: JWT introspection"]
+        P_Exchange["P1: Session exchange"]
+        P_Validate["P2: SEP bearer validation"]
     end
 
     P_UI["P3: SEP UI"]
@@ -51,13 +51,12 @@ flowchart LR
     NomadRuntime[("D3: Nomad allocation")]
 
     %% Auth
-    Engineer -->|"POST /api/oauth/login<br/>JSON: username + password"| P_Login
-    P_Login -->|"Casdoor password grant,<br/>server-to-server"| Casdoor
-    Casdoor -->|"access_token + refresh_token"| P_Login
-    P_Login -->|"access_token in JSON body,<br/>refresh_token as HttpOnly cookie,<br/>Path=/api/oauth"| Engineer
-    Engineer -->|"Bearer JWT"| P_UI
+    Engineer -->|"POST /api/oauth/session/exchange<br/>PMM session cookie rides same-origin request"| P_Exchange
+    P_Exchange -->|"Validate PMM session<br/>against Grafana"| Grafana
+    Grafana -->|"User identity and org role"| P_Exchange
+    P_Exchange -->|"Short-lived SEP bearer<br/>in response body,<br/>no cookie set, no refresh token"| Engineer
+    Engineer -->|"Authorization: Bearer<br/>short-lived SEP token"| P_UI
     P_UI --> P_Validate
-    P_Validate --> Casdoor
 
     P_Validate --> P_UI
 
@@ -106,14 +105,13 @@ flowchart LR
 
     subgraph transportNote ["Transport security (not user identity)"]
         direction LR
-        T_HTTPS["Browser ↔ Nginx: HTTPS<br/>fronts SEP UI, /api, /legacy, Casdoor /oauth"]
-        T_Internal["Nginx ↔ SEP FastAPI: HTTP loopback"]
+        T_HTTPS["Browser ↔ PMM Nginx: HTTPS<br/>PMM owns the ingress, fronts SEP on sub-path"]
+        T_Internal["PMM Nginx ↔ SEP FastAPI: HTTP loopback"]
         T_mTLS["SEP ↔ Tasks / Inventory: mTLS"]
         T_NomadTLS["Tasks ↔ Nomad: mTLS<br/>Nomad PKI customer-supplied for external Nomad"]
-        T_Casdoor["Nginx ↔ Casdoor container: HTTP loopback"]
     end
 
-    class Engineer,Casdoor,Inventory,NomadCluster,RemoteNode,PMM,InfraLogs entity
-    class P_Login,P_Validate,P_UI,P_SEPApi,P_SnippetAPI,P_ProxyCreate,P_ProxyExecute,P_TasksAPI,P_Celery,P_NomadExec process
+    class Engineer,Grafana,Inventory,NomadCluster,RemoteNode,PMM,InfraLogs entity
+    class P_Exchange,P_Validate,P_UI,P_SEPApi,P_SnippetAPI,P_ProxyCreate,P_ProxyExecute,P_TasksAPI,P_Celery,P_NomadExec process
     class P_Record,P_LogPersist,P_PMMAnnotate,P_AppLog audit
     class SnippetStore,TasksDB,TaskDefs,NomadRuntime store

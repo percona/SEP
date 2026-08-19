@@ -51,6 +51,30 @@ describe('SettingEditField dispatch', () => {
     expect(onChange).toHaveBeenCalledWith('fail');
   });
 
+  it('renders API option labels for enum settings', async () => {
+    const onChange = vi.fn();
+    render(
+      <SettingEditField
+        setting={makeSetting({
+          key: 'LOGGING',
+          type: 'LogLevel',
+          value: 30,
+          options: [
+            { label: 'WARNING', value: 30 },
+            { label: 'DEBUG', value: 10 },
+          ],
+        })}
+        value="30"
+        onChange={onChange}
+      />,
+    );
+    await userEvent.click(screen.getByLabelText('LOGGING'));
+    expect(await screen.findByRole('option', { name: 'WARNING' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'DEBUG' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('option', { name: 'DEBUG' }));
+    expect(onChange).toHaveBeenCalledWith('10');
+  });
+
   it('renders a number input for integers', () => {
     render(
       <SettingEditField

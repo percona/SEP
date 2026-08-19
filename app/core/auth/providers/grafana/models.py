@@ -15,9 +15,9 @@
 
 """Define the Grafana user and token-payload models."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
-from typing import Any, cast, NoReturn, NotRequired, Self
+from typing import Any, cast, Final, NoReturn, NotRequired, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from fastapi import HTTPException, status
@@ -31,13 +31,16 @@ from app.core.auth.models import (
     BaseUser,
     OAuthToken,
     SessionExchangeTokenResponse,
+    UserRole,
 )
 from app.core.auth.providers.grafana.sdk import GrafanaException, GrafanaSDK
 from app.core.config import settings
 from app.core.utils.fields import NonEmptyStr
 
+ASSERTION_SALT: Final = "sep.auth.grafana.v1"
+
 _TOKEN_SERIALIZER = URLSafeTimedSerializer(
-    settings.SECRET_KEY.get_secret_value(), salt="sep.auth.grafana.v1"
+    settings.SECRET_KEY.get_secret_value(), salt=ASSERTION_SALT
 )
 
 
@@ -59,7 +62,12 @@ class _TokenType(StrEnum):
 # check.
 _BEARER_TOKEN_TYPES = (_TokenType.ACCESS, _TokenType.EXCHANGE)
 
-_ADMIN_ROLE = "Admin"
+_GRAFANA_ORG_ROLE_TO_USER_ROLE: Final[Mapping[str, UserRole]] = {
+    "None": UserRole.NONE,
+    "Viewer": UserRole.VIEWER,
+    "Editor": UserRole.EDITOR,
+    "Admin": UserRole.ADMIN,
+}
 
 
 class _GrafanaUserRecord(TypedDict):
@@ -150,11 +158,16 @@ class GrafanaUser(BaseUser):
         pass with the longest lifetime would check a short-lived assertion
         against a longer one's expiry.
 
+        The assertion carries the identity's role as its own claim. A payload
+        without it predates that claim and is refused rather than downgraded to
+        a role derived from ``is_admin``, which would launder the degraded role
+        into every assertion re-minted from it.
+
         :param data: The raw model input.
         :param info: The validation context carrying the expected ``token_type``.
         :return: The decoded claims mapping, or ``data`` unchanged.
-        :raises ValueError: If the assertion is tampered, expired, malformed, or of
-            the wrong type.
+        :raises ValueError: If the assertion is tampered, expired, malformed, of
+            the wrong type, or carries no role claim.
         """
         if not isinstance(data, str):
             return data
@@ -174,6 +187,8 @@ class GrafanaUser(BaseUser):
             raise ValueError("invalid or expired Grafana session token") from exc
         if payload.get("typ") != token_type:
             raise ValueError("unexpected Grafana token type")
+        if "role" not in payload:
+            raise ValueError("Grafana session token carries no role claim")
         return payload
 
     @staticmethod
@@ -186,7 +201,7 @@ class GrafanaUser(BaseUser):
         :return: The signed, URL-safe identity assertion.
         """
         payload = user.model_dump(
-            mode="json", include={"id", "username", "email", "is_admin"}
+            mode="json", include={"id", "username", "email", "role", "is_admin"}
         )
         payload["typ"] = token_type
         return _TOKEN_SERIALIZER.dumps(payload)
@@ -220,20 +235,32 @@ class GrafanaUser(BaseUser):
         Grafana's numeric ``id`` is the stable subject: the SEP UUID is derived
         from it so a username change does not change the identity.
 
+        The server-admin flag outranks every org membership; without it the
+        user holds the highest role any of their orgs grants. A membership
+        naming a role Grafana does not define, or carrying none at all, ranks
+        lowest, so an unreadable membership grants no more than it proves.
+
         :param record: A Grafana record carrying ``id``, ``login``, ``email``,
             and ``isGrafanaAdmin``.
-        :param orgs: The user's org memberships; an ``Admin`` role in any org
-            grants admin, as does the server-admin flag.
+        :param orgs: The user's org memberships, flattened to their highest
+            role.
         :return: The mapped ``GrafanaUser``.
         """
-        is_admin = bool(record.get("isGrafanaAdmin")) or any(
-            org.get("role") == _ADMIN_ROLE for org in orgs
-        )
+        if record.get("isGrafanaAdmin"):
+            role = UserRole.SUPER_ADMIN
+        else:
+            role = max(
+                (
+                    _GRAFANA_ORG_ROLE_TO_USER_ROLE.get(org.get("role"), UserRole.NONE)
+                    for org in orgs
+                ),
+                default=UserRole.NONE,
+            )
         return cls(
             id=uuid5(NAMESPACE_URL, f"grafana:{record['id']}"),
             username=record["login"],
             email=record.get("email") or "",
-            is_admin=is_admin,
+            role=role,
         )
 
     @classmethod
@@ -242,6 +269,8 @@ class GrafanaUser(BaseUser):
 
         The org-users listing carries ``userId`` and a single ``role`` per row,
         unlike the ``/api/user`` shape handled by :meth:`_from_grafana_record`.
+        A row naming a role Grafana does not define, or carrying none, ranks
+        lowest rather than defaulting upwards.
 
         :param record: A Grafana org-user record carrying ``userId``, ``login``,
             ``email``, and ``role``.
@@ -251,7 +280,7 @@ class GrafanaUser(BaseUser):
             id=uuid5(NAMESPACE_URL, f"grafana:{record['userId']}"),
             username=record["login"],
             email=record.get("email") or "",
-            is_admin=record.get("role") == _ADMIN_ROLE,
+            role=_GRAFANA_ORG_ROLE_TO_USER_ROLE.get(record.get("role"), UserRole.NONE),
         )
 
     @staticmethod
@@ -393,9 +422,8 @@ class GrafanaUser(BaseUser):
         """Fetch a single user by login or email.
 
         The user-lookup endpoint carries the server-admin flag but no org
-        memberships, so ``is_admin`` here reflects only the Grafana server-admin
-        role -- unlike the login flow, which also grants admin for an org-admin
-        role.
+        memberships, so the role here is either ``SUPER_ADMIN`` or the lowest
+        role, unlike the login flow, which also ranks org memberships.
 
         :param username: The login or email to look up.
         :return: The mapped ``GrafanaUser``.
@@ -410,7 +438,8 @@ class GrafanaUser(BaseUser):
         """List the org users.
 
         Org-user records carry a single org role and no server-admin flag, so
-        ``is_admin`` reflects the org-admin role only.
+        the role reflects that org membership only and never reaches
+        ``SUPER_ADMIN``.
 
         :return: The mapped ``GrafanaUser`` instances.
         """
