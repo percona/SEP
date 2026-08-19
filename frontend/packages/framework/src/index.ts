@@ -156,6 +156,8 @@ export {
   useTaskHistoryFiles,
   useTaskFileDownload,
   useSnippetDownload,
+  useDebouncedValue,
+  SEARCH_DEBOUNCE_MS,
 } from './hooks';
 export type {
   TaskLogsState,
