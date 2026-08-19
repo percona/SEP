@@ -37,10 +37,10 @@ from app.core.auth.providers.grafana.sdk import GrafanaException, GrafanaSDK
 from app.core.config import settings
 from app.core.utils.fields import NonEmptyStr
 
-TOKEN_SALT: Final = "sep.auth.grafana.v1"  # noqa: S105 # nosec B105
+ASSERTION_SALT: Final = "sep.auth.grafana.v1"
 
 _TOKEN_SERIALIZER = URLSafeTimedSerializer(
-    settings.SECRET_KEY.get_secret_value(), salt=TOKEN_SALT
+    settings.SECRET_KEY.get_secret_value(), salt=ASSERTION_SALT
 )
 
 

@@ -45,7 +45,7 @@ from app.core.auth.base import BaseAuthProvider
 from app.core.auth.config import get_active_auth_provider
 from app.core.auth.models import OAuthToken, UserRole
 from app.core.auth.providers.casdoor.models import CasdoorUser
-from app.core.auth.providers.grafana.models import TOKEN_SALT
+from app.core.auth.providers.grafana.models import ASSERTION_SALT
 from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
 from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
@@ -643,7 +643,7 @@ def make_roleless_grafana_assertion(token_type: str) -> str:
     :return: The signed, URL-safe assertion.
     """
     return URLSafeTimedSerializer(
-        settings.SECRET_KEY.get_secret_value(), salt=TOKEN_SALT
+        settings.SECRET_KEY.get_secret_value(), salt=ASSERTION_SALT
     ).dumps(
         {
             "id": str(uuid4()),
