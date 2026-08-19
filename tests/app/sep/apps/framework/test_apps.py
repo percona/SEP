@@ -65,6 +65,7 @@ from app.sep.apps.framework.schema import (
     AppSchema,
     BoolField,
     Column,
+    ColumnFormat,
     FormSection,
     ListView,
     RelatedApp,
@@ -1292,6 +1293,84 @@ class TestDefinitionValidation:
             payload_builder=_passthrough_payload_builder,
             views=bad_views,
         )
+        assert app_def.api_router is not None
+
+    def test_list_view_column_with_actions_format_constructs(self) -> None:
+        """Construct cleanly when a column uses ACTIONS format with a synthetic key."""
+        views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(
+                columns=[
+                    Column(key="name", label="Name"),
+                    Column(
+                        key="_actions", label="Actions", format=ColumnFormat.ACTIONS
+                    ),
+                ]
+            ),
+        )
+        app_def = _synth_app(views=views)
+        assert app_def.api_router is not None
+
+    def test_list_view_column_with_schedule_format_constructs(self) -> None:
+        """Construct cleanly when a column uses SCHEDULE format with a synthetic key."""
+        views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(
+                columns=[
+                    Column(key="name", label="Name"),
+                    Column(
+                        key="_schedule", label="Schedule", format=ColumnFormat.SCHEDULE
+                    ),
+                ]
+            ),
+        )
+        app_def = _synth_app(views=views)
+        assert app_def.api_router is not None
+
+    def test_list_view_dotted_key_with_valid_root_constructs(self) -> None:
+        """Construct cleanly when a dotted column key's root is a serialized field."""
+        views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(
+                columns=[
+                    Column(key="name", label="Name"),
+                    Column(key="status.label", label="Status Label"),
+                ]
+            ),
+        )
+        app_def = _synth_app(views=views)
+        assert app_def.api_router is not None
+
+    def test_list_view_dotted_key_with_invalid_root_raises(self) -> None:
+        """Reject a dotted column key whose root segment is absent from the row."""
+        bad_views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(columns=[Column(key="ghost.service", label="Ghost")]),
+        )
+        with pytest.raises(ValueError, match=r"root: 'ghost'"):
+            _synth_app(views=bad_views)
+
+    def test_list_view_indexed_key_resolves_root(self) -> None:
+        """Reject an indexed dotted key whose root segment is absent from the row."""
+        bad_views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(columns=[Column(key="items[0].name", label="Item")]),
+        )
+        with pytest.raises(ValueError, match=r"root: 'items'"):
+            _synth_app(views=bad_views)
+
+    def test_list_view_indexed_key_with_valid_root_constructs(self) -> None:
+        """Construct cleanly when an indexed column key's root is a serialized field."""
+        views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(
+                columns=[
+                    Column(key="name", label="Name"),
+                    Column(key="name[0].label", label="First Name Label"),
+                ]
+            ),
+        )
+        app_def = _synth_app(views=views)
         assert app_def.api_router is not None
 
 

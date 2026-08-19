@@ -1164,14 +1164,14 @@ class TestTaskHistoryResponseDisplayName:
         )
 
     def test_empty_meta_does_not_crash(self, run_python_task: Task) -> None:
-        """Assert an empty meta dict falls back gracefully without raising."""
+        """Assert an empty meta dict still yields a non-empty display name."""
         req = TaskExecutionRequest(task="run-python", target="node-1", meta={})
         result = self._history(run_python_task, req).display_name
         assert isinstance(result, str)
         assert len(result) > 0
 
     def test_none_meta_does_not_crash(self, run_python_task: Task) -> None:
-        """Assert a None meta falls back gracefully without raising."""
+        """Assert a None meta still yields a string display name."""
         req = TaskExecutionRequest(task="run-python", target="node-1", meta=None)
         result = self._history(run_python_task, req).display_name
         assert isinstance(result, str)
