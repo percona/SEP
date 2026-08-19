@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.sep.apps.snippets.extra_routes as snippets_extra_routes
 import app.sep.snippets.models.responses as snippets_models
-from app.api.deps import require_admin_for_unsafe_methods
+from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
     get_current_user,
@@ -1379,7 +1379,7 @@ class TestSnippetsApiCapabilities:
         SnippetsCapabilitiesResponse.model_validate(response.json())
 
     async def test_non_admin_can_read(self, api_non_admin_client, enable_manual_sync):
-        """Any authenticated user reads capabilities; no admin gate."""
+        """Serve capabilities to any authenticated user, with no role gate."""
         enable_manual_sync(value=True)
 
         response = api_non_admin_client.get(self.URL)
@@ -1722,7 +1722,7 @@ class TestSnippetsApiNestedFilenameContract:
 def test_client(regular_user, session, snippets_dir):
     """Return a TestClient sharing the in-memory session and snippets dir."""
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
