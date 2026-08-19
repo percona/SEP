@@ -28,7 +28,7 @@ import time
 import uuid
 from pathlib import Path
 
-from app.sep.config import sep_settings
+from app.sep.apps.report.config import health_report_settings
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ def artifact_dir() -> Path:
     :return: Absolute path to the staging directory.
     :rtype: Path
     """
-    return Path(sep_settings.HEALTH_REPORT.artifact_dir)
+    return Path(health_report_settings.artifact_dir)
 
 
 def _validate_job_id(job_id: str) -> str:

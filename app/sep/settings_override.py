@@ -25,20 +25,24 @@ receivers register at worker startup even in an image that ships no app with a
 ``celery.tasks``.
 """
 
+import logging.config
 from collections.abc import Mapping
-from typing import Any
+from copy import deepcopy
+from typing import Any, cast
 
 from celery.signals import worker_process_init, worker_process_shutdown
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.celery import celery
 from app.core.alerts.config import alert_settings, AlertSettings
-from app.core.config import Settings, settings
+from app.core.config import PMMSettings, Settings, settings
 from app.core.settings_override.lifecycle import (
     CallbackRegistry,
+    previous_or_base,
     ProxyEntry,
     ProxyRegistry,
     publish_snapshot,
+    SnapshotChange,
 )
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.worker import WorkerRefresher
@@ -46,6 +50,8 @@ from app.sep.apps.framework.registry import collect_app_owned_settings_classes
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.db import get_async_session_maker
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
+
+logger = logging.getLogger(__name__)
 
 
 def build_sep_override_proxies() -> ProxyRegistry:
@@ -115,21 +121,53 @@ async def republish_sep_settings_snapshot(session: AsyncSession) -> None:
     await publish_snapshot(sep_settings, session, SEPSettings)
 
 
-async def invalidate_pmm_clients(_: Mapping[str, object]) -> None:
-    """Evict the cached PMM client on the current endpoint after a ``PMM`` override.
+async def invalidate_pmm_clients(change: SnapshotChange) -> None:
+    """Evict cached PMM clients on the previous and current endpoints after a ``PMM`` override.
 
-    A same-endpoint change (credentials, SSL) evicts the now-stale client so the
-    next :class:`PMMSyncer` key-misses to a fresh one via its ``default_factory``
-    PMM read. Known limitation: an endpoint change leaves the client keyed by the
-    old endpoint cached until ``close_all`` closes it at shutdown; syncers key on
-    the new endpoint, so nothing reads it in the meantime.
+    Evicts the ordered de-duplicated set of previous-and-current endpoints so a
+    same-endpoint change (credentials, SSL) collapses to a single eviction, while
+    an endpoint change also drops the client keyed by the endpoint no longer in
+    use. The next :class:`PMMSyncer` key-misses to a fresh client via its
+    ``default_factory`` PMM read. When ``PMM`` is absent from ``change.previous``
+    (override created), :func:`previous_or_base` supplies the YAML/env value.
 
-    :param _: The new effective ``Settings`` snapshot mapping (unused -- the
-        current PMM endpoint is re-read from the proxy).
+    :param change: The override snapshots on either side of the republish.
     """
-    endpoint = settings.PMM.endpoint
-    if endpoint is not None:
-        await settings.invalidate_client(str(endpoint))
+    previous_pmm = cast(PMMSettings, previous_or_base(change, settings, "PMM"))
+    for endpoint in dict.fromkeys(
+        str(pmm.endpoint)
+        for pmm in (previous_pmm, settings.PMM)
+        if pmm.endpoint is not None
+    ):
+        await settings.invalidate_client(endpoint)
+
+
+async def apply_logging_dictconfig(_: Mapping[str, object]) -> None:
+    """Re-apply ``logging.config.dictConfig`` after a global ``LOGGING`` override.
+
+    ``LOGGING`` is a HOT field, but ``LOGGING_CONFIG`` (the dict handed to
+    ``dictConfig``) is not: the override snapshot replaces only the ``LOGGING``
+    key, so ``settings.LOGGING_CONFIG`` still carries the level baked in by the
+    ``set_log_level`` model validator at construction time. This callback mirrors
+    that validator -- inject the now-live ``settings.LOGGING`` into a copy of the
+    config and re-apply it -- so a log-level change takes effect in the SEP web
+    process and Celery worker children without a restart. Failures are logged and
+    swallowed: a malformed config must not take the process down mid-request or
+    mid-task. ``LOGGING_CONFIG`` sets ``disable_existing_loggers: False``, so
+    re-entering ``dictConfig`` from a worker refresh cycle leaves the loggers
+    Celery created at runtime enabled, and re-creates the ones the config names
+    -- ``celery`` among them -- with their handlers.
+
+    :param _: The new effective ``Settings`` snapshot mapping (unused -- the level
+        is re-read from the proxy).
+    """
+    try:
+        config = deepcopy(settings.LOGGING_CONFIG)
+        config["loggers"][""]["level"] = settings.LOGGING
+        config["loggers"]["app"]["level"] = settings.LOGGING
+        logging.config.dictConfig(config)
+    except Exception:
+        logger.exception("Failed to re-apply logging config after LOGGING override")
 
 
 #: The callbacks the worker refresher registers -- deliberately a strict subset
@@ -138,8 +176,11 @@ async def invalidate_pmm_clients(_: Mapping[str, object]) -> None:
 #: ``invalidate_pmm_clients`` is kept because ``ClientRegistry.IMMUTABLE_KEYS``
 #: excludes ``api_key``: a same-endpoint credential override would otherwise
 #: refresh the snapshot while worker tasks keep the client with the old key.
+#: ``apply_logging_dictconfig`` is kept so a HOT ``LOGGING`` override re-enters
+#: ``dictConfig`` after Celery's ``setup_logging`` installed boot-time levels.
 WORKER_OVERRIDE_CALLBACKS: CallbackRegistry = {
     (SettingClassEnum.SETTINGS, "PMM"): invalidate_pmm_clients,
+    (SettingClassEnum.SETTINGS, "LOGGING"): apply_logging_dictconfig,
 }
 
 

@@ -31,6 +31,7 @@ nothing more specific claims either prefix. A future
 
 from fastapi import APIRouter, Depends
 
+from app.api.deps import RequireAdminForUnsafeMethods
 from app.sep.api.routes.app_info import router as app_info_router
 from app.sep.api.routes.app_state import router as app_state_router
 from app.sep.api.routes.apps import router as apps_catalog_router
@@ -89,7 +90,12 @@ def build_apps_router(registry: AppRegistry) -> APIRouter:
 apps_router = build_apps_router(get_app_registry())
 
 api_router = APIRouter(
-    prefix="/api", dependencies=[IsApiAuthenticated, RequireBearerForUnsafeMethods]
+    prefix="/api",
+    dependencies=[
+        IsApiAuthenticated,
+        RequireBearerForUnsafeMethods,
+        RequireAdminForUnsafeMethods,
+    ],
 )
 api_router.include_router(apps_router)
 api_router.include_router(app_info_router, prefix="/sep/app-info", tags=["sep"])

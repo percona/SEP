@@ -48,11 +48,11 @@ from app.sep.apps.report.celery import (
     render_report_pdf_job,
     upload_report_snapshot_job,
 )
+from app.sep.apps.report.config import health_report_settings
 from app.sep.apps.report.deps import RequiredPMMAPIDep
 from app.sep.apps.report.job_service import filter_report_sections
 from app.sep.apps.report.models import ReportJobResponse, ReportSnapshotWrite
 from app.sep.apps.report.service import generate_report
-from app.sep.config import sep_settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -99,7 +99,7 @@ async def report_config() -> JSONResponse:
     """
     return JSONResponse(
         content={
-            "upload_disabled_reasons": sep_settings.HEALTH_REPORT.upload_disabled_reasons
+            "upload_disabled_reasons": health_report_settings.upload_disabled_reasons
         }
     )
 
@@ -213,7 +213,7 @@ async def report_start_upload_job_api(
     :rtype: ReportJobResponse
     :raises HTTPServiceUnavailableException: If ServiceNow upload is not configured.
     """
-    if not sep_settings.HEALTH_REPORT.is_upload_configured:
+    if not health_report_settings.is_upload_configured:
         raise HTTPServiceUnavailableException(detail="Report upload is not configured")
     result = upload_report_snapshot_job.delay(body.report.model_dump(mode="json"))
     return _job_response(result.id)

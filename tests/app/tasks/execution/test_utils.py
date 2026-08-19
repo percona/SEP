@@ -46,7 +46,7 @@ def test_minify_unrelated_file_extension():
 
 
 def test_minify_with_syntax_error():
-    """Test that syntax errors are handled gracefully."""
+    """Return the content unchanged when the source has a syntax error."""
     broken_python_code = "def baz()\n    print('missing colon')"
     result = minify_file_content(broken_python_code, file_ext="py")
     assert result == broken_python_code

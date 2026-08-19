@@ -30,7 +30,7 @@ _TTL = 3600
 def _stage_dir(mocker, tmp_path: Path):
     """Point the artifact store at an isolated temp directory."""
     mocker.patch.object(
-        artifact_store.sep_settings.HEALTH_REPORT, "artifact_dir", str(tmp_path)
+        artifact_store.health_report_settings, "artifact_dir", str(tmp_path)
     )
     return tmp_path
 
@@ -81,7 +81,7 @@ class TestPurgeExpired:
     def test_purge_missing_dir_is_noop(self, mocker, tmp_path: Path) -> None:
         """Purging when the staging dir does not exist returns zero."""
         mocker.patch.object(
-            artifact_store.sep_settings.HEALTH_REPORT,
+            artifact_store.health_report_settings,
             "artifact_dir",
             str(tmp_path / "absent"),
         )

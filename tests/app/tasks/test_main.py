@@ -21,6 +21,7 @@ import pytest
 from fastapi import FastAPI, HTTPException, status
 from sqlalchemy.dialects.postgresql import JSON, JSONB
 
+from app.core.settings_override.lifecycle import SnapshotChange
 from app.core.settings_override.models import SettingClassEnum
 from app.tasks.db.seed import verify_taskhistory_execution_request_is_jsonb
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
@@ -109,7 +110,7 @@ async def test_reconcile_nomad_rebinds_when_holder_present():
     app_mock = MagicMock()
     app_mock.state.nomad_lifecycle = holder
     with patch("app.tasks.main.tasks_app", app_mock):
-        await _reconcile_nomad({})
+        await _reconcile_nomad(SnapshotChange({}, {}))
     holder.reconcile.assert_awaited_once()
 
 
@@ -125,7 +126,7 @@ async def test_reconcile_nomad_skips_when_holder_absent():
     app_mock = MagicMock()
     app_mock.state.nomad_lifecycle = None
     with patch("app.tasks.main.tasks_app", app_mock):
-        await _reconcile_nomad({})
+        await _reconcile_nomad(SnapshotChange({}, {}))
 
 
 def test_task_data_not_found_detail_base_exception_without_structured_fields():

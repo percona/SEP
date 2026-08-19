@@ -73,10 +73,8 @@ class CascadeFailure:
 class CascadeResult:
     """Represent the outcome of a best-effort PUT or DELETE cascade.
 
-    :param successes: Names of tasks whose operation completed cleanly.
-    :type successes: list[str]
+    :param successes: Names of tasks whose operation succeeded.
     :param failures: Per-leg failures collected without raising.
-    :type failures: list[CascadeFailure]
     """
 
     successes: list[str] = field(default_factory=list)
