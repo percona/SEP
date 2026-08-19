@@ -96,11 +96,18 @@ def _pin_canonical_auth_provider() -> None:
     ``pyproject.toml`` env pin; this function applies the same values when the
     script runs outside pytest (``make regen-specs``, direct invocation).
 
+    Clears any pre-existing ``AUTH__PROVIDER__*`` env vars so that only the
+    canonical Casdoor provider is active during ``_load_apps()``.  Without this,
+    a developer configured for a different provider (e.g. Grafana) would end up
+    with two providers and ``AuthSettings`` would reject the configuration.
+
     Must be called before ``_load_apps()`` imports the application, since the
     settings object is constructed at import time.
     """
+    for key in [k for k in os.environ if k.startswith("AUTH__PROVIDER__")]:
+        del os.environ[key]
     for key, value in _CANONICAL_AUTH_ENV.items():
-        os.environ.setdefault(key, value)
+        os.environ[key] = value
 
 
 def _load_apps() -> dict[str, Any]:
