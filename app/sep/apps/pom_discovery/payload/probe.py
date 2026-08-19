@@ -385,9 +385,22 @@ def build_uri(target, userinfo, auth_source, connect_timeout_ms):
     ]
     if userinfo:
         options.append(f"authSource={auth_source}")
-    return (
-        f"mongodb://{userinfo}{target['host']}:{target['port']}/?{'&'.join(options)}"
-    )
+    # Every value is bound to a name before the f-string rather than subscripted or
+    # joined inside it. That is not style: the Tasks layer runs this file through
+    # ``python-minifier`` before dispatch, and the minifier normalises inner string
+    # quotes to double -- turning ``{target['host']}`` into ``{target["host"]}``,
+    # which is a quote nested inside a double-quoted f-string. That is PEP 701 syntax
+    # and parses only on Python 3.12 and later.
+    #
+    # The payload runs on whatever Python a monitored host happens to have, which is
+    # not ours to choose: this workspace's own pmm-server carries 3.9, where the
+    # minified line was a SyntaxError and every probe of that host failed. Keeping
+    # expressions out of f-strings is what stops the minifier being able to produce
+    # the construct at all.
+    host = target["host"]
+    port = target["port"]
+    query = "&".join(options)
+    return f"mongodb://{userinfo}{host}:{port}/?{query}"
 
 
 def collect_database_facts(target, userinfo, auth_source, connect_timeout_ms):

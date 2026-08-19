@@ -26,14 +26,18 @@ happened to answer -- they belong to the host, they are collected once, and now 
 are reported once.
 """
 
+import re
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from python_minifier import minify
 
 from app.sep.apps.pom_discovery.dispatch import parse_ndjson, probe_all
 from app.sep.apps.pom_discovery.inventory import InventoryService
 from app.sep.apps.pom_discovery.mapping import MappedService
 from app.sep.apps.pom_discovery.models import NodeResolution
+from app.sep.apps.pom_discovery.payload import probe
 
 HOST_LINE = (
     '{"service": null, "collected_at": 1, "status": "ok", '
@@ -158,3 +162,34 @@ class TestProbeAllTargets:
             await probe_all(AsyncMock(), [mapped("db01", None)])
 
         assert seen == {}
+
+
+class TestThePayloadRunsOnOldPython:
+    """Assert the payload survives minification into something an old Python parses.
+
+    The Tasks layer runs every payload through ``python-minifier`` before dispatch,
+    and the minifier normalises inner string quotes to double. So
+    ``f"...{target['host']}..."`` - legal on every Python there has ever been - is
+    rewritten to ``f"...{target["host"]}..."``, which is PEP 701 and parses only on
+    3.12 and later.
+
+    The payload runs on whatever Python a monitored host happens to have, and that is
+    not ours to choose. This workspace's own ``pmm-server`` carries 3.9: every probe
+    of it failed with ``SyntaxError: f-string: expecting '}'`` while the database
+    hosts, on 3.12, were fine. A syntax error that appears only after minification and
+    only on some hosts is invisible in review and in local runs, which is why it is
+    asserted rather than remembered.
+    """
+
+    def test_minification_produces_no_nested_quote_f_strings(self) -> None:
+        """No f-string may carry its own quote character inside an expression."""
+        source = Path(probe.__file__).read_text(encoding="utf-8")
+
+        minified = minify(source, rename_locals=True, rename_globals=True)
+
+        # An f-string opened with `"` that contains a `"` before its closing brace.
+        offenders = re.findall(r'f"(?:[^"\\]|\\.)*?\{[^{}]*"', minified)
+        assert offenders == [], (
+            "these would be SyntaxErrors on Python < 3.12: bind the value to a name "
+            f"before the f-string instead. {offenders}"
+        )
