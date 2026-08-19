@@ -21,11 +21,17 @@ import {
   SchemaFormRenderer,
   SNIPPET_FORM_RESERVED_FIELD_NAMES,
   useDebouncedValue,
+  buildFieldLabelMap,
 } from '@sep/framework';
-import type { FormSection, SectionField } from '@sep/api';
+import { parseFieldErrors, type FormSection, type SectionField } from '@sep/api';
 import { CategoryBrowser } from './CategoryBrowser';
 import { useAtwBatchExecute, useAtwMergedSchema, useAtwSnippetSearch } from './hooks';
-import type { AtwBatchExecuteResponse, AtwBatchExecuteWrite, AtwSnippetSummary } from './types';
+import type {
+  AtwBatchExecuteItemResponse,
+  AtwBatchExecuteResponse,
+  AtwBatchExecuteWrite,
+  AtwSnippetSummary,
+} from './types';
 
 export interface CollectPaneProps {
   incidentId: string;
@@ -118,14 +124,73 @@ export function buildBatchPayload(
   };
 }
 
-/** Summarise the batch response's per-item errors for a banner. */
-function batchItemErrors(response: AtwBatchExecuteResponse): string[] {
-  return response.items
-    .filter((item) => item.error !== null && item.error !== undefined)
-    .map((item) => {
-      const detail = typeof item.error === 'string' ? item.error : 'validation failed';
-      return `${item.snippet_filename}: ${detail}`;
-    });
+export type BatchOutcomeSeverity = 'success' | 'warning' | 'error';
+
+export interface BatchOutcomeSummary {
+  severity: BatchOutcomeSeverity;
+  /** Multi-line text suitable for `whiteSpace: 'pre-line'`. */
+  message: string;
+}
+
+/** True when the item dispatched (task_name set), even if recording failed. */
+function itemDispatched(item: AtwBatchExecuteItemResponse): boolean {
+  return (item.task_name ?? '') !== '';
+}
+
+/** Format one batch item's failure as a prefixed, field-labelled line. */
+function formatItemError(
+  item: AtwBatchExecuteItemResponse,
+  itemIndex: number,
+  labelByPath: ReadonlyMap<string, string>,
+): string {
+  const prefix = `${item.snippet_filename}: `;
+
+  if (typeof item.error === 'string') {
+    return `${prefix}${item.error}`;
+  }
+
+  const parsed = parseFieldErrors({ detail: item.error });
+  if (parsed.length === 0) {
+    return `${prefix}validation failed`;
+  }
+
+  return parsed
+    .map(({ path, message }) => {
+      const namespacedPath = `overrides.snip${itemIndex}.${path}`;
+      const label = labelByPath.get(namespacedPath) ?? labelByPath.get(path) ?? path;
+      return label ? `${prefix}${label}: ${message}` : `${prefix}${message}`;
+    })
+    .join('\n');
+}
+
+/** Summarise a batch response as a dispatch-count header plus per-item failure lines. */
+export function summarizeBatchOutcome(
+  response: AtwBatchExecuteResponse,
+  labelByPath: ReadonlyMap<string, string> = new Map(),
+): BatchOutcomeSummary {
+  const total = response.items.length;
+  const dispatchedCount = response.items.filter(itemDispatched).length;
+
+  const errorLines = response.items.flatMap((item, index) => {
+    if (item.error === null || item.error === undefined) {
+      return [];
+    }
+    return [formatItemError(item, index, labelByPath)];
+  });
+
+  const header = `Dispatched ${dispatchedCount} of ${total} ${total === 1 ? 'snippet' : 'snippets'}.`;
+  const message = errorLines.length > 0 ? [header, ...errorLines].join('\n') : header;
+
+  let severity: BatchOutcomeSeverity;
+  if (dispatchedCount === 0) {
+    severity = 'error';
+  } else if (dispatchedCount === total && errorLines.length === 0) {
+    severity = 'success';
+  } else {
+    severity = 'warning';
+  }
+
+  return { severity, message };
 }
 
 /**
@@ -193,7 +258,7 @@ export function filterSnippetOptions(
 export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) {
   const [available, setAvailable] = useState<AtwSnippetSummary[]>([]);
   const [selected, setSelected] = useState<AtwSnippetSummary[]>([]);
-  const [itemErrors, setItemErrors] = useState<string[]>([]);
+  const [batchOutcome, setBatchOutcome] = useState<BatchOutcomeSummary | null>(null);
   const [searchInput, setSearchInput] = useState('');
   // Shares the Snippet Manager list's search-debounce window.
   const debouncedSearch = useDebouncedValue(searchInput.trim());
@@ -208,7 +273,7 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
     }
     setSelected([]);
     setAvailable([]);
-    setItemErrors([]);
+    setBatchOutcome(null);
   }, [isClosed]);
 
   const selectedNames = useMemo(() => selected.map((snippet) => snippet.name), [selected]);
@@ -306,18 +371,21 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
       .map((snippet) => snippet.title);
   }, [schemaQuery.data, selected]);
 
+  const labelByPath = useMemo(() => buildFieldLabelMap(sections), [sections]);
+
   const handleSubmit = (values: Record<string, unknown>) => {
-    setItemErrors([]);
+    setBatchOutcome(null);
     batchMutation.mutate(buildBatchPayload(values, selected), {
       onSuccess: (response) => {
-        setItemErrors(batchItemErrors(response));
+        setBatchOutcome(summarizeBatchOutcome(response, labelByPath));
       },
     });
   };
 
   const submitError = batchMutation.isError
     ? (batchMutation.error?.message ?? 'Batch execution failed')
-    : null;
+    : (batchOutcome?.message ?? null);
+  const submitAlertSeverity = batchMutation.isError ? 'error' : (batchOutcome?.severity ?? 'error');
 
   // Remount the form when the selection changes so react-hook-form rebuilds its
   // registered fields and defaults for the new merged schema.
@@ -367,7 +435,7 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
         onChange={(_event, value) => {
           setSelected(value);
           // The stale batch-result banner belongs to the previous selection.
-          setItemErrors([]);
+          setBatchOutcome(null);
         }}
         inputValue={searchInput}
         onInputChange={(_event, value) => setSearchInput(value)}
@@ -432,17 +500,6 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
         </Alert>
       )}
 
-      {itemErrors.length > 0 && (
-        <Alert severity="warning" sx={{ mt: 3 }}>
-          Some snippets did not dispatch:
-          <Box component="ul" sx={{ m: 0, pl: 2 }}>
-            {itemErrors.map((message) => (
-              <li key={message}>{message}</li>
-            ))}
-          </Box>
-        </Alert>
-      )}
-
       {selected.length > 0 && schemaQuery.data && !isClosed && (
         <Box sx={{ mt: 3 }}>
           <SchemaFormRenderer
@@ -452,6 +509,7 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
             submitLabel="Execute batch"
             loading={batchMutation.isPending}
             submitError={submitError}
+            submitAlertSeverity={submitAlertSeverity}
           />
         </Box>
       )}
