@@ -236,16 +236,14 @@ async def inventory_node_system_observation(
     Forwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``
     endpoint via ``InventoryAPI``. This three-segment literal path cannot
     collide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An
-    upstream HTTP 404 — the "not collected yet" signal — propagates unchanged
-    for the React panel to render as an empty state.
+    upstream HTTP 404 propagates unchanged, along with the ``detail`` that tells
+    a node whose observation has not been collected yet — which the React panel
+    renders as an empty state — apart from a node that does not exist.
 
     :param node_id: Primary key of the node.
     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
     :return: The host-level system observation payload.
     """
-    # Upstream splits that 404 in two by detail -- no facts collected yet, versus no
-    # such node at all -- and RemoteAPI forwards the detail verbatim, so both reach
-    # the caller without handling here.
     return await inventory_api.get(inventory_system_observation_path("nodes", node_id))
 
 
@@ -258,15 +256,15 @@ async def inventory_service_system_observation(
 
     Forwards to the inventory sub-app's
     ``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.
-    An upstream HTTP 404 propagates unchanged so the React panel renders its
-    "not collected yet" empty state.
+    An upstream HTTP 404 propagates unchanged, along with the ``detail`` that
+    tells a service whose observation has not been collected yet — which the
+    React panel renders as an empty state — apart from a service that does not
+    exist.
 
     :param service_id: Primary key of the service.
     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
     :return: The service-level system observation payload.
     """
-    # See the node proxy above: upstream splits that 404 in two by detail, forwarded
-    # verbatim by RemoteAPI.
     return await inventory_api.get(
         inventory_system_observation_path("services", service_id)
     )

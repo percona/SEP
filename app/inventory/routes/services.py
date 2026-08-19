@@ -20,10 +20,8 @@ import logging
 from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
-from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
-from app.inventory.constants import UNCOLLECTED_SERVICE_OBSERVATION_DETAIL
 from app.inventory.crud import (
     SchemaManager,
     ServiceManager,
@@ -33,6 +31,7 @@ from app.inventory.deps import (
     SchemaListQueryDep,
     ServiceDep,
     ServiceListQueryDep,
+    ServiceSystemObservationDep,
     SessionDep,
 )
 from app.inventory.models import (
@@ -110,19 +109,9 @@ async def delete_service(session: SessionDep, service: ServiceDep) -> None:
 
 @router.get("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])
 async def retrieve_service_system_observation(
-    session: SessionDep,
-    service: ServiceDep,
+    observation: ServiceSystemObservationDep,
 ) -> ServiceSystemObservationResponse:
     """Retrieve service system observation for a service."""
-    # A service that exists but was never visited by the system-facts syncer is a
-    # normal state, so raise with a distinct detail rather than through get_or_404(),
-    # whose default detail is indistinguishable from the missing-service 404 that
-    # ServiceDep raises.
-    observation = await ServiceSystemObservationManager.first(
-        session, service_id=service.id
-    )
-    if observation is None:
-        raise HTTPNotFoundException(detail=UNCOLLECTED_SERVICE_OBSERVATION_DETAIL)
     return observation
 
 
