@@ -41,7 +41,7 @@ from app.api.deps import require_admin_for_unsafe_methods
 from app.core.alerts.config import alert_settings
 from app.core.auth.base import BaseAuthProvider
 from app.core.auth.config import get_active_auth_provider
-from app.core.auth.models import OAuthToken
+from app.core.auth.models import OAuthToken, UserRole
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
 from app.core.config import settings
@@ -325,7 +325,7 @@ def grafana_mock(
 @pytest.fixture
 def admin_user(valid_username: str, faker: Faker) -> CasdoorUser:
     """Create a mock admin user with active status."""
-    return CasdoorUserFactory.build(is_admin=True)
+    return CasdoorUserFactory.build(role=UserRole.ADMIN)
 
 
 @pytest.fixture
@@ -333,7 +333,7 @@ def regular_user(valid_username: str, faker: Faker) -> CasdoorUser:
     """Create a mock regular user with active status."""
     return CasdoorUserFactory.build(
         username=valid_username,
-        is_admin=False,
+        role=UserRole.VIEWER,
     )
 
 
