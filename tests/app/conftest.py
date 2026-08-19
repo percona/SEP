@@ -19,8 +19,8 @@ import inspect
 import os
 import socket
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from collections.abc import AsyncGenerator, Callable, Iterator
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock
