@@ -27,6 +27,7 @@ from app.api.deps import (
     SERVICE_PRINCIPAL_ID,
 )
 from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
+from app.core.auth.models import UserRole
 from app.core.auth.providers.grafana.models import GrafanaUser
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
@@ -127,7 +128,7 @@ async def test_get_current_admin_valid_admin(casdoor_mock, valid_username):
     """Test get_current_admin returns the user if they are admin."""
     token = "valid_admin_token"
     user = await get_current_user(token)
-    user.is_admin = True
+    user.role = UserRole.ADMIN
     admin_user = await get_current_admin(user)
     assert admin_user == user
     assert admin_user.is_admin
@@ -138,7 +139,7 @@ async def test_get_current_admin_non_admin_user(casdoor_mock, valid_username):
     """Test get_current_admin raises HTTPForbiddenException if user is not an admin."""
     token = "valid_non_admin_token"
     user = await get_current_user(token)
-    user.is_admin = False
+    user.role = UserRole.VIEWER
     with pytest.raises(HTTPForbiddenException):
         await get_current_admin(user)
 
@@ -329,13 +330,16 @@ class TestRequireAdminForUnsafeMethods:
     async def test_service_principal_gains_nothing_beyond_this_gate(self, mocker):
         """Verify the principal is still refused by every ``is_admin`` check.
 
-        The bypass is scoped to this gate: the principal keeps
-        ``is_admin=False``, so ``get_current_admin`` rejects it as before.
+        The bypass is scoped to this gate and keyed on identity, not on rank:
+        the principal holds ``VIEWER``, so ``get_current_admin`` rejects it as
+        before.
         """
         secret = "supersecret"
         mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(secret))
         principal = await get_current_user(secret)
 
+        assert principal.role is UserRole.VIEWER
+        assert principal.is_admin is False
         with pytest.raises(HTTPForbiddenException):
             await get_current_admin(principal)
 

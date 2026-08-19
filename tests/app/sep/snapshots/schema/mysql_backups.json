@@ -678,34 +678,39 @@
               "value": "daily"
             },
             {
-              "label": "Weekly",
+              "label": "Weekly (Monday)",
               "value": "weekly"
             },
             {
-              "label": "2 days",
+              "label": "Monday",
+              "value": "1"
+            },
+            {
+              "label": "Tuesday",
               "value": "2"
             },
             {
-              "label": "3 days",
+              "label": "Wednesday",
               "value": "3"
             },
             {
-              "label": "4 days",
+              "label": "Thursday",
               "value": "4"
             },
             {
-              "label": "5 days",
+              "label": "Friday",
               "value": "5"
             },
             {
-              "label": "6 days",
+              "label": "Saturday",
               "value": "6"
             },
             {
-              "label": "7 days",
+              "label": "Sunday",
               "value": "7"
             }
           ],
+          "description": "``daily``, ``weekly``, or an ISO weekday number (1-7, Monday-Sunday) controlling when the FULL backup runs. Applies to the ``less_space`` incremental method only.",
           "forbidden": [
             {
               "when": {

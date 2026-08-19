@@ -2276,7 +2276,7 @@ class TestGetLogsForAllocation:
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_get_logs_for_allocation_exception_handling(self, mock_nomad_cls):
-        """Assert get_logs_for_allocation handles stream_logs exceptions gracefully."""
+        """Assert get_logs_for_allocation returns empty streams when stream_logs raises."""
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
         mock_backend.client.stream_logs.stream.side_effect = BaseNomadException(
@@ -4266,7 +4266,7 @@ class TestReadFileBytes:
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_read_file_bytes_size_mismatch_logs_warning(self, mock_nomad_cls):
-        """Assert _read_file_bytes handles size mismatch gracefully."""
+        """Assert _read_file_bytes returns the short body when the size disagrees."""
         mock_nomad_cls.return_value = MagicMock()
         executor = _build_executor()
         queue_item = _build_queue_item()
