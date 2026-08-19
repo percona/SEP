@@ -842,7 +842,7 @@ class TestCheckConnectivityRealSession:
     ) -> None:
         """Verify the polling loop survives the deferred-column lazy-load race.
 
-        Reproduces the runtime bug surfaced by SEP-935 e2e QA: after the
+        Reproduces the runtime bug e2e QA surfaced: after the
         production ``dispatch_queue_item`` commits and refreshes the fresh
         ``TaskHistory``, the ``execution_request`` attribute is **unloaded**
         because of the deferred ``column_property``. The very first polling
@@ -905,7 +905,7 @@ class TestCheckConnectivityRealSession:
         run_python_task: Task,
         async_session_maker,
     ) -> None:
-        """Regression for SEP-1034: supply a writer session to log persistence.
+        """Supply a writer session to log persistence, as a regression guard.
 
         ``check_connectivity`` calls ``executor.sync_task_history`` inside its
         polling loop; the Nomad executor persists ``run-script`` stdout into
