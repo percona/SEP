@@ -51,6 +51,7 @@ from app.sep.apps.framework.api import (
     derive_crud_routes,
     derive_execute_route,
     derive_script_routes,
+    resolve_response_model,
 )
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.connectivity import CONNECTIVITY_WARNING_FIELD
@@ -822,6 +823,34 @@ class TaskExecutionApp(BaseApp):
             raise ValueError(
                 "TaskExecutionApp: list_filter.service_type needs a service_type to "
                 "filter against; set service_type or drop the filter"
+            )
+
+    def _validate_response_model_agreement(self) -> None:
+        """Reject a ``response_builder`` whose return type is not ``response_model``.
+
+        The derived list route serializes the builder's return annotation, while
+        ``response_model`` is what every other reader — including the ``list_view``
+        column gate — measures. When an app supplies an explicit builder, the two
+        must agree.
+
+        :raises ValueError: When the explicit builder's return annotation is not
+            ``response_model``.
+        """
+        if self.response_builder is None or self.script_source is not None:
+            return
+        builder_model = resolve_response_model(
+            self.response_builder,
+            helper="TaskExecutionApp",
+            param="response_builder",
+        )
+        if builder_model is not self.response_model:
+            raise ValueError(
+                "TaskExecutionApp: response_builder returns "
+                f"{builder_model.__name__} but response_model declares "
+                f"{self.response_model.__name__}; the derived list route serializes "
+                "the builder's model, so every response_model reader (the list_view "
+                "column gate among them) measures the wrong object — set "
+                "response_model to the builder's return type"
             )
 
     def _extra_routes_have_detail(self) -> bool:
