@@ -314,7 +314,7 @@ class SnippetMetaParameter(BaseModel):
 
         Reservation is unconditional and case-sensitive. A name in
         :data:`~app.sep.apps.field_names.RESERVED_EXECUTION_FIELD_NAMES` is
-        rejected even when the app rendering this script never synthesises that
+        rejected even when the app rendering this script never synthesizes that
         particular field, so an author can apply the rule to the frontmatter in
         front of them without knowing which app will render it.
 

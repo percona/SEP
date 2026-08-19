@@ -19,6 +19,7 @@ import ast
 from pathlib import Path
 
 from app.sep.apps import field_names
+from app.sep.apps.atw.batch import _SYNTHETIC_FIELD_NAMES, NON_SHAREABLE_FIELD_NAMES
 from app.sep.apps.field_names import (
     EXECUTOR_HOST_FIELD_NAME,
     EXTRA_ARGS_FIELD_NAME,
@@ -47,7 +48,7 @@ class TestReservedExecutionFieldNames:
 
         The expectation is read off the module's own constants rather than
         retyped, so a fifth constant added without being added to the frozenset
-        fails here -- which is the whole point of a single definition site. A
+        fails here, which is the whole point of a single definition site. A
         retyped expectation would stay green in exactly that case; the wire
         spellings are pinned once, in :class:`TestWireNames`.
         """
@@ -58,6 +59,21 @@ class TestReservedExecutionFieldNames:
         }
 
         assert declared == RESERVED_EXECUTION_FIELD_NAMES
+
+    def test_reserves_exactly_what_the_batch_merge_splits(self) -> None:
+        """Pin ATW's hand-maintained split of these names against the set itself.
+
+        ``atw.batch`` keeps its own two frozensets, one for the fields it strips
+        because the caller re-synthesizes them and one for the fields it refuses to
+        promote to a batch's shared section, and merges a batch form off those
+        rather than off this module. A fifth name added here would be reserved
+        against frontmatter for free while ATW's merge still treated it as an
+        ordinary shareable parameter, so their union is pinned rather than assumed.
+        """
+        assert (
+            _SYNTHETIC_FIELD_NAMES | NON_SHAREABLE_FIELD_NAMES
+            == RESERVED_EXECUTION_FIELD_NAMES
+        )
 
     def test_is_immutable(self) -> None:
         """Keep the reserved set immutable so no consumer can widen it in place."""

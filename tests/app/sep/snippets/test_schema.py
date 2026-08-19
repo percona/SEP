@@ -280,8 +280,8 @@ class TestReservedParameterNames:
 
         ``IGNORE_INVALID_PARAMETERS`` relaxes ``can_execute`` only; the reserved
         parameter is still dropped at parse time, so the form the operator opted
-        into still carries exactly one ``executor_host`` field -- still the
-        synthesized host widget, not the author's string -- rather than the
+        into still carries exactly one ``executor_host`` field, still the
+        synthesized host widget and not the author's string, rather than the
         duplicate-field error this setting would otherwise expose them to.
         """
         monkeypatch.setattr(snippets_settings.META, "IGNORE_INVALID_PARAMETERS", True)

@@ -259,8 +259,10 @@ def _build_execution_meta(
             detail=f"Script {snippet.filename!r} declares no runnable interpreter."
         )
     if not snippet.can_execute:
+        reasons = "; ".join(snippet.validated_parameters.errors)
         raise HTTPBadRequestException(
-            detail=f"Script {snippet.filename!r} has invalid frontmatter parameters."
+            detail=f"Script {snippet.filename!r} has invalid frontmatter parameters: "
+            f"{reasons}"
         )
     construct_args = dict(body.args)
     if snippet.sudo.is_optional:

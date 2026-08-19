@@ -170,9 +170,9 @@ class TestInvalidFrontmatterBlocksExecution:
         """Refuse to build execution meta for a script with a reserved parameter name.
 
         Dropping the parameter keeps the form renderable, but the script is still
-        misconfigured -- the operator would silently run it without the argument
-        its author declared. Both Dipper execution flows assemble their meta here,
-        so guarding this one seam blocks both.
+        misconfigured (the operator would silently run it without the argument its
+        author declared), so the guard sits at the meta-assembly seam every
+        dispatch passes through.
 
         The parser's own messages have to reach the refusal: this app does not
         surface them on the form, so a detail naming only the filename would leave

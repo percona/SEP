@@ -591,7 +591,7 @@ class TestValidatedParameters:
 
         Visibility references are checked against the names the frontmatter
         *declared*, not the ones that survived validation, so a rejected
-        parameter is reported once as reserved rather than twice -- once as
+        parameter is reported once as reserved rather than twice, once as
         reserved and again as an unknown reference.
         """
         snippet = BaseSnippet(

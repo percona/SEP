@@ -297,13 +297,13 @@ def build_dipper_meta_from_args(
     *,
     sudo_default: bool = False,
 ) -> SnippetExecutionMeta:
-    """Build shared execution metadata for legacy and JSON Dipper flows.
+    """Build shared execution metadata for a Dipper collector dispatch.
 
-    Both flows assemble their meta here, so the guard against invalid frontmatter
-    parameters lives here rather than at either entry point. A parameter the
-    frontmatter declared but the parser rejected -- a reserved execution field
-    name, say -- is dropped from the form, so executing anyway would silently run
-    the script without an argument its author asked for.
+    The guard against invalid frontmatter parameters sits here, at the
+    meta-assembly seam between argument validation and dispatch. A parameter the
+    frontmatter declared but the parser rejected (a reserved execution field
+    name, for instance) is dropped from the form, so executing anyway would
+    silently run the script without an argument its author asked for.
 
     The refusal enumerates the parser's own messages because this app does not
     surface them on the form: without them the operator would see a rejection

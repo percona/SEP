@@ -139,8 +139,8 @@ class TestReservedParameterName:
         """Accept a re-cased reserved name, which cannot collide.
 
         Duplicate form field names are detected by exact comparison, and every
-        downstream binding -- HTML input names, generated model field keys,
-        validation aliases -- is case-sensitive too, so ``Sudo`` is provably
+        downstream binding (HTML input names, generated model field keys,
+        validation aliases) is case-sensitive too, so ``Sudo`` is provably
         distinct from the synthesized ``sudo`` field.
         """
         param = SnippetMetaParameter(name=name, type=SnippetMetaParameterType.STR)
