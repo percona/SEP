@@ -41,6 +41,7 @@ from app.tasks.connectivity.models import (
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import get_executable_task_by_name
+from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.logs.log_reader import iter_task_history_logs
 from app.tasks.models import (
     SYSTEM_USER,
@@ -305,7 +306,7 @@ def _connect_phase_started(task_history: TaskHistory) -> bool:
     """
     tracking = task_history.execution_request.tracking or {}
     task_states = tracking.get("task_states") or {}
-    started_at = (task_states.get("run-script") or {}).get("StartedAt")
+    started_at = (task_states.get(NomadStep.RUN_SCRIPT) or {}).get("StartedAt")
     if not started_at:
         return False
     return not started_at.startswith(_NOMAD_ZERO_TIME)
@@ -413,7 +414,7 @@ async def _iter_run_script_logs(
     :param task_history: The task history row being inspected.
     :return: An async generator yielding log chunks for the ``run-script`` source.
     """
-    async for log in _iter_logs(session, task_history, "run-script"):
+    async for log in _iter_logs(session, task_history, NomadStep.RUN_SCRIPT):
         yield log
 
 

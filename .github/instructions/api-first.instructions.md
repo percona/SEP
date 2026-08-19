@@ -2,9 +2,9 @@
 applyTo: "app/sep/api/**/*.py,app/sep/apps/framework/**/*.py,app/sep/apps/**/api_routes.py,app/sep/apps/**/schema.py,frontend/packages/framework/**,frontend/packages/api/**,frontend/packages/apps/**,frontend/packages/shell/**"
 ---
 
-# API-First + React Migration
+# API-First + React
 
-Mid-migration from server-rendered Jinja2 to a schema-driven React SPA backed by a SEP API gateway. PRs on these paths must follow the rules below.
+The UI is a schema-driven React SPA backed by a SEP API gateway. The server-rendered Jinja2 layer it replaced has been removed, so there is no longer a legacy path to fall back to or keep at parity — every UI surface is React over the API. PRs on these paths must follow the rules below.
 
 ## Rule 1 — Gateway pattern (most-violated)
 
@@ -41,11 +41,11 @@ Source of truth: `frontend/packages/framework/src/index.ts` — check it for the
 - **Model naming**: `{Resource}Base` → `{Resource}Write` (input) → `{Resource}Response` (output) → `{Resource}` (DB table). Reject `*Request` / `*Input` / `*Output` / `*Payload` suffixes.
 - **Exceptions & status codes**: use SEP project exceptions (`HTTPNotFoundException`, `HTTPConflictException`, `HTTPBadRequestException`, `HTTPUnauthorizedException`), never `fastapi.HTTPException` directly; status codes via `status.HTTP_*` constants, never bare integers.
 
-## Rule 5 — Dual auth
+## Rule 5 — Auth
 
-Cookie auth (Jinja2) and Bearer auth (React SPA) coexist in `app/sep/deps.py::get_current_user()`. **Both** work for every `/api/*` route. Don't introduce a new flow.
+**Bearer is the credential for `/api/*`.** The cookie-session path that coexisted with it belonged to the Jinja SSR layer and went with it. The one cookie that still matters is the **ambient provider session** (PMM / Grafana): when `AMBIENT_SESSION_SSO_ENABLED` is on and the active provider supports it, `resolve_ambient_session_token()` / `resolve_ambient_exchange_token()` (`app/sep/deps.py`) exchange that provider cookie for a SEP token pair or a short-lived bearer. It is an auto-login source, not a parallel session for route auth — an absent session, a rejected session, and a provider outage are deliberately indistinguishable and all deny. Don't introduce a new flow.
 
-**CSRF skips Bearer-authenticated requests** — the middleware checks for a Bearer header and skips when present. New API routes don't need `@csrf_exempt`. **Never store access tokens in localStorage** — in-memory + HttpOnly refresh cookie + silent refresh (XSS is the threat).
+**Cross-site protection is the Bearer requirement itself**, not a CSRF token: `require_bearer_for_unsafe_methods` forces `Authorization: Bearer` on mutating methods, which browsers never attach cross-site. There is no `validate_csrf` / `@csrf_exempt` to add or skip. **Never store access tokens in localStorage** — in-memory + HttpOnly refresh cookie + silent refresh (XSS is the threat).
 
 ## Mock / placeholder data propagation
 

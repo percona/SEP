@@ -39,7 +39,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource
 
 from app import BASE_DIR
-from app.core.celery.models import CrontabSchedule, IntervalSchedule, Period
+from app.core.celery.models import IntervalSchedule, Period
 from app.core.config import (
     BaseYamlAppSettings,
 )
@@ -65,10 +65,11 @@ from app.core.utils.fields import (
     CredentialHttpUrl,
     RelativeDirectoryPathField,
     StrImportableAttribute,
-    StrRelativePath,
     TimedeltaSeconds,
     UniqueList,
     URIPath,
+    URIPathPrefix,
+    URL,
 )
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.bundle_upload.plan import DeliveryPlan
@@ -314,9 +315,11 @@ class CookieOptions(BaseModel):
     :param SAMESITE: SameSite policy for the cookie. Defaults to 'lax'.
     :param SECURE: Whether the cookie should be accessible only via HTTPS.
         Defaults to True.
-    :param PATH: Cookie ``Path`` attribute. When ``None`` (the default), the
-        cookie is not scoped to a specific path and the browser applies its
-        default. When set, the value must start with ``/``.
+    :param PATH: Cookie ``Path`` attribute, stated relative to the application
+        root and anchored under ``ROOT_PATH`` when the cookie is emitted. When
+        ``None`` (the default), the cookie is not scoped to a specific path and
+        the browser applies its default. When set, the value must start with
+        ``/``.
     """
 
     model_config = ConfigDict(
@@ -422,136 +425,6 @@ class SyncOptions(BaseLowercaseModel):
         if not v.startswith(root):
             v = root + v
         return v
-
-
-class ReportScheduleEntry(BaseLowercaseModel):
-    """A single scheduled report generation with its own cadence and parameters.
-
-    :param schedule: When to run (interval or crontab).
-    :type schedule: IntervalSchedule | CrontabSchedule
-    :param since: Prometheus-style start offset for the report window.
-    :type since: str
-    :param until: Prometheus-style end offset for the report window.
-    :type until: str
-    :param full: Whether to generate a full report.
-    :type full: bool
-    :param refresh: Re-run advisor checks before collecting results.
-    :type refresh: bool
-    :param sections: Optional list of report sections to include.
-    :type sections: list[str] | None
-    :param upload: Upload the generated report to ServiceNow after generation.
-        Requires global upload credentials to be configured.
-    :type upload: bool
-    """
-
-    schedule: IntervalSchedule | CrontabSchedule
-    since: str = "now-7d"
-    until: str = "now"
-    full: bool = True
-    refresh: bool = False
-    sections: list[str] | None = None
-    upload: bool = False
-
-
-class HealthReportSettings(BaseLowercaseModel):
-    """Configuration for the Health & Security Report plugin.
-
-    :param schedules: List of report generation schedules, each with its own
-        cadence and parameters.  Empty by default (no periodic generation).
-    :type schedules: list[ReportScheduleEntry]
-    :param upload: Master toggle for ServiceNow upload.  When ``False``
-        (the default) uploading is disabled regardless of other fields.
-    :type upload: bool
-    :param endpoint: The ServiceNow upload API URL.
-    :type endpoint: str | None
-    :param api_key: API key for authenticating with the upload endpoint.
-    :type api_key: SecretStr | None
-    :param client_id: Customer identifier sent with each upload.
-    :type client_id: str | None
-    :param artifact_dir: Directory where rendered PDF artifacts are staged for
-        download. Shared between the Celery worker (writer) and web (reader), so
-        only lightweight job metadata transits the Celery result backend.
-    :type artifact_dir: StrRelativePath
-    :param artifact_ttl: Maximum age (seconds) of a staged PDF artifact before the
-        cleanup task removes it. Should mirror ``CELERY.RESULT_EXPIRES`` so a
-        job's metadata and its artifact expire together.
-    :type artifact_ttl: PositiveInt
-    :param cleanup_interval: Cadence of the ``purge_report_artifacts`` sweep that
-        deletes staged PDFs older than ``artifact_ttl``.
-    :type cleanup_interval: IntervalSchedule
-    """
-
-    schedules: list[ReportScheduleEntry] = []
-    upload: bool = False
-    endpoint: str | None = None
-    api_key: SecretStr | None = None
-    client_id: str | None = None
-    artifact_dir: StrRelativePath = "data/health-reports"
-    artifact_ttl: PositiveInt = 3600
-    cleanup_interval: IntervalSchedule = IntervalSchedule(
-        every=15, period=Period.MINUTES
-    )
-
-    @field_validator("endpoint", "client_id", mode="before")
-    @classmethod
-    def _empty_str_to_none(cls, v: Any) -> Any:
-        if isinstance(v, str) and not v.strip():
-            return None
-        return v
-
-    @field_validator("endpoint", mode="after")
-    @classmethod
-    def _normalize_endpoint(cls, v: str | None) -> str | None:
-        """Trim a bare origin's trailing slash while preserving a path's.
-
-        An intake may route ``/v1/upload/`` and ``/v1/upload`` differently,
-        answering the slashless spelling with a redirect that replays the
-        request body -- credentials included -- to the redirect target. The
-        configured path is therefore sent exactly as written.
-
-        :param v: The configured endpoint, or ``None`` when unset.
-        :return: The endpoint with only a bare origin's trailing slash removed.
-        """
-        if v is None:
-            return None
-        return v if urlparse(v).path.strip("/") else v.rstrip("/")
-
-    @field_validator("api_key", mode="before")
-    @classmethod
-    def _empty_secret_to_none(cls, v: Any) -> Any:
-        if v is None:
-            return None
-        raw = v.get_secret_value() if isinstance(v, SecretStr) else v
-        if isinstance(raw, str) and not raw.strip():
-            return None
-        return v
-
-    @property
-    def upload_disabled_reasons(self) -> list[str]:
-        """Return a list of reasons why uploading is not possible.
-
-        An empty list means upload is fully configured and ready.
-        """
-        if not self.upload:
-            return ["Upload is disabled"]
-
-        reasons = []
-        if self.endpoint is None:
-            reasons.append("Endpoint is not configured")
-        else:
-            parsed = urlparse(self.endpoint)
-            if parsed.scheme not in ("http", "https") or not parsed.netloc:
-                reasons.append("Endpoint is not a valid HTTP/HTTPS address")
-        if self.api_key is None:
-            reasons.append("API key is not configured")
-        if self.client_id is None:
-            reasons.append("Client ID is not configured")
-        return reasons
-
-    @property
-    def is_upload_configured(self) -> bool:
-        """Return ``True`` when upload is enabled and all credentials are set."""
-        return not self.upload_disabled_reasons
 
 
 class AppDrainSettings(BaseLowercaseModel):
@@ -684,6 +557,11 @@ class SEPSettings(BaseYamlAppSettings):
     :cvar SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
         file. Set to ["SEP"].
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
+    :param ROOT_PATH: The URL prefix an intermediary proxy serves SEP under, such as
+        ``/sep``. Defaults to ``""``, the origin root. Read once when the application
+        is constructed, so it is set through env or YAML only. A configured cookie
+        ``Path`` is anchored under it, so ``SESSION_REFRESH.PATH`` is stated
+        prefix-free and reaches the browser prefixed.
     :param SESSION_REFRESH: Cookie configuration options for the SPA
         ``refreshToken`` cookie. The cookie is ``HttpOnly`` and scoped to
         ``/api/oauth`` by default. When overriding ``PATH`` via YAML or env
@@ -705,8 +583,6 @@ class SEPSettings(BaseYamlAppSettings):
         to an empty mapping.
     :param SYNC_REFRESH_TIME: The time interval (in seconds) for browser refresh during
         synchronization. Defaults to 5 seconds.
-    :param HEALTH_REPORT: Configuration for the Health & Security Report plugin.
-        Upload is disabled by default.
     :param DIAGNOSTICS_DELIVERY: The delivery plan used to send diagnostic
         bundles to a receiver: named secrets, an ordered list of HTTP resolution
         steps, and one terminal multipart upload step. ``None`` (the default)
@@ -742,6 +618,7 @@ class SEPSettings(BaseYamlAppSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
+    ROOT_PATH: URIPathPrefix = ""
     SESSION_REFRESH: CookieOptions = nested_overridable_field(
         CookieOptions(
             COOKIE_NAME="refreshToken",
@@ -761,7 +638,6 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
     SYNCER_EXTRA_KWARGS: SyncerExtraKwargs = SyncerExtraKwargs()
     SYNC_REFRESH_TIME: int = hot_field(5)
-    HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
     DIAGNOSTICS_DELIVERY: DeliveryPlan | None = not_overridable_field(
         None, advanced=True
     )
@@ -921,3 +797,48 @@ class SEPSettings(BaseYamlAppSettings):
 sep_settings: SEPSettings = OverridableSettingsProxy(
     SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
 )
+
+
+def prefixed_cookie_path(path: str | None) -> str | None:
+    """Return a cookie ``Path`` anchored under the configured URL prefix.
+
+    A browser matches ``Path`` against the URL it requests, which carries the
+    prefix, so a root-anchored value would be withheld from every prefixed
+    endpoint, and a cookie the browser never sends is indistinguishable from one
+    that was never set. ``None`` is returned unchanged: with no ``Path``
+    attribute the browser derives one from the request URI, which already
+    carries the prefix.
+
+    :param path: The configured cookie path, or ``None`` to leave the attribute
+        unset.
+    :return: The path to emit, prefixed when both a prefix and a path are
+        configured.
+    """
+    if path is None:
+        return None
+    return f"{sep_settings.ROOT_PATH}{path}"
+
+
+def warn_if_base_url_lacks_root_path(base_url: URL | None, setting_name: str) -> None:
+    """Warn when an externally configured base URL omits the configured prefix.
+
+    URLs are composed by joining onto the base's path, so a base that resolves
+    outside ``ROOT_PATH`` still yields a well-formed string and the mismatch
+    surfaces only as a download that no longer routes through the prefix.
+    Advisory only: the caller still emits the URL.
+
+    :param base_url: The configured external base URL, or ``None`` when unset.
+    :param setting_name: The setting the base was read from, named in the warning
+        so an operator knows which value to correct.
+    """
+    prefix = sep_settings.ROOT_PATH
+    if not prefix or base_url is None:
+        return
+    if not urlparse(str(base_url)).path.rstrip("/").endswith(prefix):
+        logger.warning(
+            "%s is set to %s, which omits the configured ROOT_PATH %s; URLs built "
+            "on it will not reach SEP through the prefix it is served under.",
+            setting_name,
+            base_url,
+            prefix,
+        )

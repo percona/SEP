@@ -31,7 +31,7 @@ from sqlalchemy_celery_beat import PeriodicTask
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.deps import CurrentUserID, IsAuthenticatedDep
+from app.api.deps import allow_non_admin_mutation, CurrentUserID, IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
 from app.core.exceptions import (
@@ -58,7 +58,12 @@ from app.tasks.connectivity.constants import (
 )
 from app.tasks.connectivity.models import ConnectivityServiceType
 from app.tasks.connectivity.service import check_connectivity_with_cache
-from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
+from app.tasks.crud import (
+    TaskHistoryLogManager,
+    TaskHistoryLogStateManager,
+    TaskHistoryManager,
+    TaskManager,
+)
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import (
     ExecutableTaskDep,
@@ -78,6 +83,7 @@ from app.tasks.logs.log_reader import has_legacy_logs, iter_task_history_logs
 from app.tasks.models import (
     ExecutionEvent,
     FileMetadata,
+    LogCaptureStatusEnum,
     Task,
     TaskBackendEnum,
     TaskHistory,
@@ -335,8 +341,13 @@ async def execute_task_name(
     return history_recorded
 
 
-def _set_has_logs(history: TaskHistory, *, value: bool) -> None:
-    """Stash ``has_logs`` on ``history`` for later ``model_validate`` pickup.
+def _set_log_metadata(
+    history: TaskHistory,
+    *,
+    has_logs: bool,
+    log_capture: LogCaptureStatusEnum,
+) -> None:
+    """Attach the log metadata to ``history`` for later ``model_validate`` pickup.
 
     ``TaskHistory`` is a strict Pydantic model (SQLModel default), so a
     plain ``history.has_logs = value`` raises ``ValueError`` for fields
@@ -346,40 +357,50 @@ def _set_has_logs(history: TaskHistory, *, value: bool) -> None:
     enables ``from_attributes=True`` through SQLModel.
 
     :param history: The ORM instance to mutate.
-    :type history: TaskHistory
-    :param value: The boolean to store under ``has_logs``.
-    :type value: bool
+    :param has_logs: Whether any readable log content exists for this history.
+    :param log_capture: The aggregate capture verdict for this history.
     """
-    object.__setattr__(history, "has_logs", value)
+    object.__setattr__(history, "has_logs", has_logs)
+    object.__setattr__(history, "log_capture", log_capture)
 
 
-async def _populate_has_logs(
+async def _populate_log_metadata(
     session: AsyncSession,
     histories: Sequence[TaskHistory],
 ) -> None:
-    """Set ``has_logs`` on each history using chunk-store + legacy fallback.
+    """Set ``has_logs`` and ``log_capture`` on each history.
 
-    Read the chunk store in one batched query so list endpoints avoid an
-    N+1 :meth:`TaskHistoryLogManager.exists_for_task` call per row, then
-    OR the result with :func:`has_legacy_logs` so legacy rows keep
+    Reads the chunk store and the per-stream capture verdicts in one batched
+    query each, so list endpoints avoid an N+1 lookup per row. ``has_logs`` ORs
+    the chunk-store result with :func:`has_legacy_logs` so legacy rows keep
     rendering the **View Logs** button until the backfill lands.
 
+    A history carrying no state rows has no evidence either way and reports
+    ``UNKNOWN`` rather than being rounded up to complete.
+
+    Every route that reports on an *existing* history goes through here,
+    including the single-row ones: the two flags must move together, and a route
+    that populated only one would report a default verdict as though it were
+    measured. The routes that create or dispatch a history skip it, because a
+    row that has not run yet has no evidence to report.
+
     :param session: The SQLAlchemy asynchronous session.
-    :type session: AsyncSession
-    :param histories: ``TaskHistory`` instances whose ``has_logs`` attribute
-        should be populated. Each instance must have ``execution_request``
-        already loaded (all callers undefer it).
-    :type histories: Sequence[TaskHistory]
+    :param histories: ``TaskHistory`` instances whose log metadata should be
+        populated. Each instance must have ``execution_request`` already loaded
+        (all callers undefer it).
     """
     if not histories:
         return
-    chunk_ids = await TaskHistoryLogManager.ids_with_chunks(
-        session, [history.id for history in histories]
+    history_ids = [history.id for history in histories]
+    chunk_ids = await TaskHistoryLogManager.ids_with_chunks(session, history_ids)
+    capture_statuses = await TaskHistoryLogStateManager.capture_status_by_task(
+        session, history_ids
     )
     for history in histories:
-        _set_has_logs(
+        _set_log_metadata(
             history,
-            value=history.id in chunk_ids or has_legacy_logs(history),
+            has_logs=history.id in chunk_ids or has_legacy_logs(history),
+            log_capture=capture_statuses.get(history.id, LogCaptureStatusEnum.UNKNOWN),
         )
 
 
@@ -406,7 +427,7 @@ async def list_task_history(
         status=task_status,
         exclude_internal=exclude_internal,
     )
-    await _populate_has_logs(session, response.items)
+    await _populate_log_metadata(session, response.items)
     return response
 
 
@@ -414,6 +435,7 @@ async def list_task_history(
     "/history/latest",
     dependencies=[IsAuthenticatedDep],
 )
+@allow_non_admin_mutation
 async def latest_task_history(
     session: SessionDep,
     body: TaskHistoryLatestStatusRequest,
@@ -448,7 +470,7 @@ async def get_task_history(
         list_query=list_query,
         query_options=[undefer(TaskHistory.execution_request)],
     )
-    await _populate_has_logs(session, response.items)
+    await _populate_log_metadata(session, response.items)
     return response
 
 
@@ -463,11 +485,7 @@ async def retrieve_task_history(
 ) -> TaskHistory:
     """Retrieve a task history by id."""
     logger.debug("Requesting task history %s", task_history.id)
-    _set_has_logs(
-        task_history,
-        value=await TaskHistoryLogManager.exists_for_task(session, task_history.id)
-        or has_legacy_logs(task_history),
-    )
+    await _populate_log_metadata(session, [task_history])
     return task_history
 
 
@@ -603,11 +621,7 @@ async def stop_task_history(
             f"task is not running (current status: {task_history.status})."
         )
     stopped = await executor.stop_task(session, task_history)
-    _set_has_logs(
-        stopped,
-        value=await TaskHistoryLogManager.exists_for_task(session, stopped.id)
-        or has_legacy_logs(stopped),
-    )
+    await _populate_log_metadata(session, [stopped])
     return stopped
 
 
@@ -631,7 +645,7 @@ async def sync_task_history(
     """
     logger.debug("Syncing task history %s", task_history.id)
     if task_history.status != TaskHistoryStatusEnum.RUNNING:
-        await _populate_has_logs(session, [task_history])
+        await _populate_log_metadata(session, [task_history])
         return task_history
 
     claim_result = await TaskHistoryManager.update_where(
@@ -653,7 +667,7 @@ async def sync_task_history(
             query_options=[undefer(TaskHistory.execution_request)],
             id=task_history.id,
         )
-        await _populate_has_logs(session, [task_history])
+        await _populate_log_metadata(session, [task_history])
         return task_history
 
     async_session = get_async_session_maker()
@@ -690,11 +704,7 @@ async def sync_task_history(
     await maybe_dispatch_chain(synced, was_running=True)
     if synced.status.is_terminal():
         await maybe_record_run(synced.id, executor)
-    _set_has_logs(
-        synced,
-        value=await TaskHistoryLogManager.exists_for_task(session, synced.id)
-        or has_legacy_logs(synced),
-    )
+    await _populate_log_metadata(session, [synced])
     return synced
 
 
@@ -707,9 +717,13 @@ async def sync_task_history(
 async def create_task_history(session: SessionDep, task: TaskHistory) -> TaskHistory:
     """Create a new task history.
 
-    ``has_logs`` is not populated on this response -- a row that was just
-    created has no chunk-store entry or legacy tracking blob yet, so the
-    field defaults to ``False`` on serialization.
+    Neither ``has_logs`` nor ``log_capture`` is populated on this response — a
+    row that was just created has no chunk-store entry, legacy tracking blob or
+    capture verdict yet, so both fall back to their serialization defaults.
+
+    :param session: The SQLAlchemy asynchronous session.
+    :param task: The task history to persist.
+    :return: The saved task history record.
     """
     logger.debug("Creating task history %s", task.name)
     return await TaskHistoryManager.save(session, task)

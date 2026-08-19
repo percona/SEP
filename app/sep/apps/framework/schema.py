@@ -191,6 +191,17 @@ class ColumnFormat(EnumFieldMixin, StrEnum):
     SCHEDULE = auto()
 
 
+NON_ROW_BOUND_FORMATS: frozenset[ColumnFormat] = frozenset(
+    {ColumnFormat.ACTIONS, ColumnFormat.SCHEDULE}
+)
+"""Column formats whose cells are not derived from the column's own row value.
+
+Their keys are therefore exempt from the list-view column validation gate in
+:meth:`~app.sep.apps.framework.apps.TaskExecutionApp._validate_view_columns`, so such
+a column may use a synthetic key absent from the serialized row.
+"""
+
+
 class DetailHighlightLanguage(EnumFieldMixin, StrEnum):
     """Enumerate supported syntax highlighters for detail fields."""
 

@@ -21,15 +21,22 @@ decision ``skip_unresolvable_heads`` makes, whose combination is covered by
 the integration tests in ``test_alembic_integration.py``.
 """
 
+import logging
 from types import SimpleNamespace
 
 import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-from app.sep.migrations._orphan_heads import missing_version_locations, partition_heads
+from app.sep.migrations._orphan_heads import (
+    missing_version_locations,
+    partition_heads,
+    skip_unresolvable_heads,
+)
 
 from .conftest import ALEMBIC_INI, ALERTS_HEAD, UNKNOWN_REVISION
+
+_ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
 
 # The create_atw_incident_tables revision, on the atw branch.
 _ATW_REVISION = "b82887dfe93d"
@@ -118,3 +125,56 @@ def test_missing_version_locations_tolerates_unset_locations():
     stub_script = SimpleNamespace(version_locations=None)
 
     assert missing_version_locations(stub_script) == ()
+
+
+class TestFailClosedDiagnostic:
+    """Cover the ERROR logged when no configured location is missing."""
+
+    @staticmethod
+    def _read_fail_closed_error(sep_script, caplog) -> str:
+        """Run the filter over an unresolvable head and return the ERROR text.
+
+        :param sep_script: Script directory whose locations are all present.
+        :param caplog: Pytest log-capture fixture.
+        :return: The single ERROR message the filter emitted.
+        """
+        migration_context = SimpleNamespace(
+            get_current_heads=lambda: (UNKNOWN_REVISION,),
+            version_table="alembic_version_sep",
+        )
+        env_context = SimpleNamespace(
+            get_context=lambda: migration_context, script=sep_script
+        )
+        skip_unresolvable_heads(env_context)
+
+        with caplog.at_level(logging.ERROR, logger=_ORPHAN_HEADS_LOGGER):
+            assert migration_context.get_current_heads() == (UNKNOWN_REVISION,)
+
+        records = [
+            record
+            for record in caplog.records
+            if record.name == _ORPHAN_HEADS_LOGGER and record.levelno == logging.ERROR
+        ]
+        assert len(records) == 1
+        return records[0].getMessage()
+
+    @pytest.mark.parametrize(
+        "cause", ["version skew", "squashed revision", "version_locations"]
+    )
+    def test_offers_each_candidate_cause(self, sep_script, caplog, cause):
+        """Name every explanation an operator has to rule out by hand."""
+        assert cause in self._read_fail_closed_error(sep_script, caplog)
+
+    def test_does_not_rule_out_a_stripped_app(self, sep_script, caplog):
+        """Leave a stripped app in play: a pruned entry hides the evidence."""
+        message = self._read_fail_closed_error(sep_script, caplog)
+
+        assert message
+        assert "not a stripped app" not in message
+
+    def test_names_what_the_operator_has_to_look_at(self, sep_script, caplog):
+        """Point at the offending revision and the table recording it."""
+        message = self._read_fail_closed_error(sep_script, caplog)
+
+        assert UNKNOWN_REVISION in message
+        assert "alembic_version_sep" in message

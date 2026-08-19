@@ -39,8 +39,8 @@ from app.sep.config import (
     AppDrainSettings,
     CookieOptions,
     DeliveryPlanInputs,
-    HealthReportSettings,
     materialize_delivery_plan_inputs,
+    prefixed_cookie_path,
     sep_settings,
     SEPSettings,
     SyncerExtraKwargs,
@@ -86,6 +86,41 @@ class TestAmbientSessionSSO:
     def test_is_hot_reloadable(self):
         """Verify the toggle is a hot field, so a DB override can enable it live."""
         assert is_hot_reloadable(SEPSettings, "AMBIENT_SESSION_SSO_ENABLED")
+
+
+class TestRootPath:
+    """Cover the URL mount prefix SEP serves under."""
+
+    def test_defaults_to_unprefixed(self):
+        """Verify SEP serves from the origin root unless a deployment opts in."""
+        assert SEPSettings().ROOT_PATH == ""
+
+    def test_is_not_hot_reloadable(self):
+        """Verify a DB override cannot claim to move a prefix read at construction."""
+        assert not is_hot_reloadable(SEPSettings, "ROOT_PATH")
+
+
+class TestPrefixedCookiePath:
+    """Cover anchoring a configured cookie ``Path`` under the URL prefix."""
+
+    def test_leaves_a_path_alone_without_a_prefix(self, mocker):
+        """Emit today's ``Path`` unchanged, which is the regression contract."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="")
+
+        assert prefixed_cookie_path("/api/oauth") == "/api/oauth"
+
+    def test_anchors_a_path_under_the_prefix(self, mocker):
+        """Anchor the path so the browser sends the cookie to prefixed endpoints."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+
+        assert prefixed_cookie_path("/api/oauth") == "/sep/api/oauth"
+
+    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    def test_leaves_an_unset_path_unset(self, mocker, root_path):
+        """Leave ``None`` alone: the browser derives a path that already carries the prefix."""
+        mocker.patch.object(sep_settings, "ROOT_PATH", new=root_path)
+
+        assert prefixed_cookie_path(None) is None
 
 
 class TestDiagnosticsDelivery:
@@ -295,33 +330,6 @@ class TestDiagnosticsDeliveryInputs:
             )
 
 
-class TestHealthReportEndpoint:
-    """Cover endpoint normalization on the ``HEALTH_REPORT`` block."""
-
-    @pytest.mark.parametrize(
-        ("configured", "expected"),
-        [
-            (
-                "https://intake.example.com/v1/upload/",
-                "https://intake.example.com/v1/upload/",
-            ),
-            (
-                "https://intake.example.com/v1/upload",
-                "https://intake.example.com/v1/upload",
-            ),
-            ("https://intake.example.com/", "https://intake.example.com"),
-            ("https://intake.example.com", "https://intake.example.com"),
-        ],
-    )
-    def test_preserves_a_path_trailing_slash(self, configured, expected):
-        """Keep a path's trailing slash, trimming only a bare origin's."""
-        assert HealthReportSettings(endpoint=configured).endpoint == expected
-
-    def test_empty_endpoint_becomes_none(self):
-        """Leave a blank endpoint unset rather than normalizing it."""
-        assert HealthReportSettings(endpoint="   ").endpoint is None
-
-
 class TestFooterTemplate:
     """Define tests for the FOOTER_TEMPLATE setting."""
 
@@ -346,6 +354,14 @@ class TestFooterTemplate:
         tmpl = Template("custom $summary")
         settings = SEPSettings(FOOTER_TEMPLATE=tmpl)
         assert settings.FOOTER_TEMPLATE is tmpl
+
+
+class TestHealthReportFieldRemoved:
+    """``SEPSettings`` no longer mounts the ``HEALTH_REPORT`` section."""
+
+    def test_sep_settings_has_no_health_report_field(self):
+        """Assert ``SEPSettings`` no longer declares a ``HEALTH_REPORT`` field."""
+        assert "HEALTH_REPORT" not in SEPSettings.model_fields
 
 
 class TestDeprecatedPMMRemoved:
@@ -601,3 +617,30 @@ class TestAppsKeyBackCompat:
             settings = SEPSettings()
         assert any(app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS)
         assert not _logged_legacy_apps_warning(mock_logger)
+
+
+class TestCredentialUrlMaskRejection:
+    """Reject a redacted credential URL copied into SEP endpoint configuration."""
+
+    _MASKED_ENDPOINT = "http://inv-user:****@inventory.internal:8080"
+
+    @pytest.mark.parametrize("field", ["INVENTORY_ENDPOINT", "TASKS_ENDPOINT"])
+    def test_mask_is_rejected_on_the_yaml_path(self, field: str) -> None:
+        """Fail settings construction when a masked export is re-fed as configuration."""
+        with pytest.raises(ValidationError, match=field):
+            SEPSettings(**{field: self._MASKED_ENDPOINT}, _env_file=None)
+
+    @pytest.mark.parametrize(
+        ("field", "env_name"),
+        [
+            ("INVENTORY_ENDPOINT", "SEP__INVENTORY_ENDPOINT"),
+            ("TASKS_ENDPOINT", "SEP__TASKS_ENDPOINT"),
+        ],
+    )
+    def test_mask_is_rejected_on_the_env_path(
+        self, field: str, env_name: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fail settings construction when a masked endpoint arrives via the environment."""
+        monkeypatch.setenv(env_name, self._MASKED_ENDPOINT)
+        with pytest.raises(ValidationError, match=field):
+            SEPSettings(_env_file=None)

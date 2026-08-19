@@ -17,7 +17,7 @@
 
 import json
 import logging.config
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -26,6 +26,7 @@ from fastapi import FastAPI, Request, status
 from nomad.api.exceptions import BaseNomadException
 
 from app import __summary__, __version__
+from app.api.deps import RequireAdminForUnsafeMethods
 from app.core.config import create_app, default_lifespan, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPGoneException
 from app.core.health import build_health_router
@@ -33,6 +34,7 @@ from app.core.settings_override.lifecycle import (
     CallbackRegistry,
     ProxyEntry,
     settings_override_refresher,
+    SnapshotChange,
 )
 from app.core.settings_override.models import SettingClassEnum
 from app.tasks.anonymizer.config import anonymizer_settings, AnonymizerSettings
@@ -53,7 +55,7 @@ logger = logging.getLogger(__name__)
 celery_logger = get_task_logger(__name__)
 
 
-async def _reconcile_nomad(_: Mapping[str, object]) -> None:
+async def _reconcile_nomad(_: SnapshotChange) -> None:
     """Rebind the live Nomad executor when its override changed.
 
     Registered as the ``(TASKS_SETTINGS, NOMAD)`` rebind callback by
@@ -62,9 +64,8 @@ async def _reconcile_nomad(_: Mapping[str, object]) -> None:
     shutdown can find ``tasks_app.state.nomad_lifecycle`` already gone; the
     rebind is skipped in that window rather than raising a noisy callback error.
 
-    :param _: The new effective ``TasksSettings`` snapshot mapping. Unused -- the
+    :param _: The override snapshots on either side of the republish. Unused; the
         holder reads the live ``NOMAD`` config itself when reconciling.
-    :type _: Mapping[str, object]
     """
     holder = getattr(tasks_app.state, "nomad_lifecycle", None)
     if holder is not None:
@@ -135,6 +136,7 @@ tasks_app = create_app(
     periodic_router,
     connectivity_router,
     settings_router,
+    dependencies=[RequireAdminForUnsafeMethods],
     lifespan=lifespan,
     backend_cors_origins=tasks_settings.BACKEND_CORS_ORIGINS,
     allowed_hosts=tasks_settings.ALLOWED_HOSTS,

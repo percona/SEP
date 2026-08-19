@@ -41,6 +41,7 @@ from app.core.exceptions import (
 )
 from app.core.pagination import fetch_all_dict_items
 from app.core.requests import RemoteAPI
+from app.core.security import is_bearer_authenticated, SAFE_HTTP_METHODS
 from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
 from app.sep.clients.pmm import PMMRemoteAPI
@@ -70,33 +71,17 @@ User = get_user_model()
 def get_base_url(request: Request) -> URL:
     """Return the application's base URL.
 
-    If the `BASE_URL` setting is defined, returns it. Otherwise, the function extracts
-    the base URL from an incoming request by removing the path.
+    If the ``BASE_URL`` setting is defined, returns it. Otherwise the base is
+    derived from the incoming request, and carries the URL prefix the application
+    is served under, so a URL composed on it stays inside that prefix. It always
+    ends in a trailing slash, which callers joining a path onto it must absorb.
 
     :param request: The HTTP request object from which the base URL is derived.
-    :type request: Request
-    :return: The base URL with the path removed.
-    :rtype: Any
+    :return: The application's base URL.
     """
     if settings.BASE_URL is not None:
         return settings.BASE_URL
-    return request.url.replace(path="", query="", fragment="")
-
-
-BaseURL = Annotated[URL, Depends(get_base_url)]
-
-
-def is_bearer_authenticated(request: Request) -> bool:
-    """Return whether the request carries an ``Authorization: Bearer`` header.
-
-    Inspects only the ``Authorization`` header prefix — the token itself is not
-    validated. Used to reject a credential-less request before ``oauth2_scheme``
-    can raise a bare Starlette error, and to gate mutating methods.
-
-    :param request: The incoming HTTP request.
-    :return: ``True`` when the header starts with ``Bearer ``, ``False`` otherwise.
-    """
-    return request.headers.get("authorization", "").lower().startswith("bearer ")
+    return URL(str(request.base_url))
 
 
 async def get_current_user(
@@ -148,7 +133,7 @@ async def require_bearer_for_unsafe_methods(request: Request) -> None:
     :raises HTTPUnauthorizedException: When the method is unsafe and the
         request lacks an ``Authorization: Bearer`` header.
     """
-    if request.method in {"GET", "HEAD", "OPTIONS"}:
+    if request.method in SAFE_HTTP_METHODS:
         return
     if not is_bearer_authenticated(request):
         raise HTTPUnauthorizedException(detail=BEARER_REQUIRED_DETAIL)
@@ -568,9 +553,6 @@ async def get_created_node(inventory_api: InventoryAPI, node_id: int) -> Created
     )
 
 
-CreatedNodeDep = Annotated[CreatedNode, Depends(get_created_node)]
-
-
 async def get_created_service(
     inventory_api: InventoryAPI,
     service_id: int,
@@ -623,9 +605,6 @@ async def get_created_schema(
     return schema
 
 
-CreatedSchemaDep = Annotated[CreatedSchema, Depends(get_created_schema)]
-
-
 async def get_created_table(inventory_api: InventoryAPI, table_id: int) -> CreatedTable:
     """Retrieve a CreatedTable instance based on the given table ID.
 
@@ -642,9 +621,6 @@ async def get_created_table(inventory_api: InventoryAPI, table_id: int) -> Creat
     return await get_created_entity(
         inventory_api, SyncInventoryEntityTypeEnum.TABLE, table_id
     )
-
-
-CreatedTableDep = Annotated[CreatedTable, Depends(get_created_table)]
 
 
 class ExecutorHostsContext:

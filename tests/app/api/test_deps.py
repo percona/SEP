@@ -20,11 +20,19 @@ from datetime import timedelta
 import pytest
 from pydantic import SecretStr
 
-from app.api.deps import get_current_admin, get_current_user, SERVICE_PRINCIPAL_ID
+from app.api.deps import (
+    get_current_admin,
+    get_current_user,
+    require_admin_for_unsafe_methods,
+    SERVICE_PRINCIPAL_ID,
+)
 from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
+from app.core.auth.models import UserRole
 from app.core.auth.providers.grafana.models import GrafanaUser
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
+from app.tasks.routes import latest_task_history
+from tests.app.conftest import make_request, make_roleless_grafana_assertion
 
 User = get_user_model()
 
@@ -120,7 +128,7 @@ async def test_get_current_admin_valid_admin(casdoor_mock, valid_username):
     """Test get_current_admin returns the user if they are admin."""
     token = "valid_admin_token"
     user = await get_current_user(token)
-    user.is_admin = True
+    user.role = UserRole.ADMIN
     admin_user = await get_current_admin(user)
     assert admin_user == user
     assert admin_user.is_admin
@@ -131,7 +139,7 @@ async def test_get_current_admin_non_admin_user(casdoor_mock, valid_username):
     """Test get_current_admin raises HTTPForbiddenException if user is not an admin."""
     token = "valid_non_admin_token"
     user = await get_current_user(token)
-    user.is_admin = False
+    user.role = UserRole.VIEWER
     with pytest.raises(HTTPForbiddenException):
         await get_current_admin(user)
 
@@ -187,6 +195,35 @@ class TestGetCurrentUserBearerTypes:
             await get_current_user(exchange.access_token)
 
     @pytest.mark.asyncio
+    async def test_rejects_an_assertion_minted_before_the_role_claim(self):
+        """Verify a legacy assertion is refused as a 401, not raised as a 500."""
+        legacy = make_roleless_grafana_assertion("access")
+
+        with pytest.raises(HTTPUnauthorizedException):
+            await get_current_user(legacy)
+
+    @pytest.mark.asyncio
+    async def test_an_editor_resolves_to_the_editor_identity(
+        self, grafana_mock, grafana_user_orgs
+    ):
+        """Verify the identity ``GET /api/users/me`` serves reports the real role.
+
+        ``retrieve_current_user`` returns ``current_user`` untouched, so what
+        ``get_current_user`` yields, and how it serializes, is exactly what that
+        route would answer with.
+        """
+        grafana_mock.get_current_user_orgs.return_value = [
+            {**grafana_user_orgs[0], "role": "Editor"}
+        ]
+        exchange = await GrafanaUser.exchange_token_from_session("ambient")
+
+        user = await get_current_user(exchange.access_token)
+
+        assert user.role is UserRole.EDITOR
+        assert user.is_admin is False
+        assert user.model_dump(mode="json", by_alias=True)["role"] == "editor"
+
+    @pytest.mark.asyncio
     async def test_grafana_admin_reaches_an_admin_gated_surface(
         self, grafana_mock, grafana_user_orgs
     ):
@@ -239,3 +276,123 @@ class TestGetCurrentUserBearerTypes:
         assert user.is_admin is False
         assert user.id == SERVICE_PRINCIPAL_ID
         from_bearer.assert_not_called()
+
+
+class TestRequireAdminForUnsafeMethods:
+    """Cover the router-level admin gate on mutating HTTP methods."""
+
+    @pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS"])
+    @pytest.mark.asyncio
+    async def test_safe_methods_pass_without_any_credential(self, method):
+        """Verify a safe method returns without touching authentication.
+
+        ``GET /health`` is unauthenticated on all three services, so the gate
+        must not resolve a user before deciding a read is allowed.
+        """
+        assert await require_admin_for_unsafe_methods(make_request(method)) is None
+
+    @pytest.mark.asyncio
+    async def test_admin_passes_on_a_mutating_method(
+        self, casdoor_mock, casdoor_user_data, mocker
+    ):
+        """Verify an admin's POST is admitted."""
+        mocker.patch(
+            "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
+            new=mocker.AsyncMock(return_value={**casdoor_user_data, "is_admin": True}),
+        )
+        request = make_request("POST", authorization="Bearer valid_token")
+
+        assert await require_admin_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_non_admin_is_forbidden_on_a_mutating_method(self, casdoor_mock):
+        """Verify a signed-in non-admin is refused with 403, not 401."""
+        request = make_request("POST", authorization="Bearer valid_token")
+
+        with pytest.raises(HTTPForbiddenException):
+            await require_admin_for_unsafe_methods(request)
+
+    @pytest.mark.asyncio
+    async def test_missing_authorization_header_is_unauthorized(self):
+        """Verify a credential-less mutation raises the project 401.
+
+        The header is checked before ``oauth2_scheme``, which carries
+        ``auto_error=True`` and would raise a bare Starlette ``HTTPException``.
+        """
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_admin_for_unsafe_methods(make_request("POST"))
+
+    @pytest.mark.asyncio
+    async def test_non_bearer_authorization_header_is_unauthorized(self):
+        """Verify a non-Bearer credential is refused before token validation."""
+        request = make_request("POST", authorization="Basic dXNlcjpwYXNz")
+
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_admin_for_unsafe_methods(request)
+
+    @pytest.mark.asyncio
+    async def test_invalid_token_is_never_admitted(self, casdoor_mock, mocker):
+        """Verify a Bearer credential that fails validation is refused."""
+        mocker.patch(
+            "app.core.auth.providers.casdoor.sdk.CasdoorSDK.introspect_token",
+            new=mocker.AsyncMock(return_value={}),
+        )
+        request = make_request("POST", authorization="Bearer invalid_token")
+
+        with pytest.raises(HTTPUnauthorizedException):
+            await require_admin_for_unsafe_methods(request)
+
+    @pytest.mark.asyncio
+    async def test_service_principal_is_admitted_by_identity(self, mocker):
+        """Verify ``SEP_INTERNAL_TOKEN``'s principal passes the gate.
+
+        Scheduled inventory sync and scheduled execution authenticate with this
+        token and write through the gated services.
+        """
+        secret = "supersecret"
+        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(secret))
+        request = make_request("POST", authorization=f"Bearer {secret}")
+
+        assert await require_admin_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_service_principal_gains_nothing_beyond_this_gate(self, mocker):
+        """Verify the principal is still refused by every ``is_admin`` check.
+
+        The bypass is scoped to this gate and keyed on identity, not on rank:
+        the principal holds ``VIEWER``, so ``get_current_admin`` rejects it as
+        before.
+        """
+        secret = "supersecret"
+        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(secret))
+        principal = await get_current_user(secret)
+
+        assert principal.role is UserRole.VIEWER
+        assert principal.is_admin is False
+        with pytest.raises(HTTPForbiddenException):
+            await get_current_admin(principal)
+
+    @pytest.mark.asyncio
+    async def test_exempt_endpoint_admits_a_non_admin(self, casdoor_mock):
+        """Verify a registered read-shaped route is admitted for a non-admin.
+
+        Also pins that ``allow_non_admin_mutation`` sits below ``@router.post``
+        on ``latest_task_history``: applied above it, the registered object
+        would not be the one FastAPI stores as ``APIRoute.endpoint`` and this
+        request would 403 instead.
+        """
+        request = make_request(
+            "POST", authorization="Bearer valid_token", endpoint=latest_task_history
+        )
+
+        assert await require_admin_for_unsafe_methods(request) is None
+
+    @pytest.mark.asyncio
+    async def test_exempt_endpoint_is_decided_before_any_credential_handling(self):
+        """Verify an exempt route keeps whatever auth its own ``dependencies`` declare.
+
+        The gate must not impose a credential of its own on a route it exempts.
+        """
+        request = make_request("POST", endpoint=latest_task_history)
+
+        assert await require_admin_for_unsafe_methods(request) is None

@@ -33,6 +33,7 @@ from app.core.exceptions import (
     HTTPServiceUnavailableException,
 )
 from app.core.requests import RemoteAPI
+from app.sep.apps.report.config import HealthReportSettings
 from app.sep.apps.report.models import (
     BackupStatus,
     InventorySection,
@@ -61,7 +62,6 @@ from app.sep.apps.report.service import (
 )
 from app.sep.bundle_upload.plan import DeliveryPlanError
 from app.sep.clients.pmm import PMMRemoteAPI
-from app.sep.config import HealthReportSettings
 
 
 @pytest.fixture
@@ -1538,11 +1538,13 @@ class TestUploadPdfReport:
         api = RemoteAPI(endpoint="https://intake.example.com")
         get_remote_api = AsyncMock(return_value=api)
         with (
-            patch("app.sep.apps.report.service.sep_settings") as mock_settings,
+            patch(
+                "app.sep.apps.report.service.health_report_settings",
+                upload_settings,
+            ),
             patch.object(RemoteAPI, "upload", new=upload_mock),
             patch.object(Settings, "get_remote_api", new=get_remote_api),
         ):
-            mock_settings.HEALTH_REPORT = upload_settings
             yield get_remote_api
 
     async def test_raises_when_not_configured(self):
@@ -1650,14 +1652,16 @@ class TestUploadPdfReport:
         transport_logger.addHandler(caplog.handler)
         try:
             with (
-                patch("app.sep.apps.report.service.sep_settings") as mock_settings,
+                patch(
+                    "app.sep.apps.report.service.health_report_settings",
+                    settings,
+                ),
                 patch.object(
                     Settings, "get_remote_api", new=AsyncMock(return_value=api)
                 ),
                 aioresponses() as mock_http,
                 caplog.at_level(logging.DEBUG, logger=api.logger.name),
             ):
-                mock_settings.HEALTH_REPORT = settings
                 mock_http.post(
                     "https://intake.example.com/v1/upload/",
                     status=status.HTTP_200_OK,

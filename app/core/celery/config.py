@@ -88,8 +88,9 @@ class CeleryOptions(BaseLowercaseModel):
     :param beat_engine_options: SQLAlchemy pool options (``pool_size``,
         ``max_overflow``, ``pool_timeout``) for both celery-beat-database engines
         -- the async worker engine and the sync beat scheduler engine. Empty by
-        default so standalone deployments keep SQLAlchemy's own defaults; the
-        installer sets it only for the forked side-car beat.
+        default: the non-forked path runs on ``NullPool``, which rejects
+        ``max_overflow`` outright and silently drops the other two, so only a
+        deployment running a forked beat should set it.
     """
 
     model_config = ConfigDict(extra="allow")

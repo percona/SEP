@@ -69,6 +69,16 @@ def serialized_field_names(model: type[BaseModel]) -> frozenset[str]:
     return frozenset(names)
 
 
+def root_segment(path: str) -> str:
+    """Return the leading field name of a dotted/indexed view path.
+
+    :param path: A list-view column key or detail-view field path (for example
+        ``"target.service"`` or ``"data.meta[0]"``).
+    :return: The path's first segment, stripped of any ``[N]`` index.
+    """
+    return path.split(".", 1)[0].split("[", 1)[0]
+
+
 def dump_with_excluded_fields(
     model: BaseModel, *, exclude: set[str] | None = None
 ) -> dict[str, Any]:

@@ -79,8 +79,8 @@ class TestGenerateHealthReportCooperativeCancel:
             "app.sep.apps.report.deps.get_pmm_api",
             new=AsyncMock(return_value=MagicMock()),
         )
-        mock_settings = mocker.patch(f"{MODULE}.sep_settings")
-        mock_settings.HEALTH_REPORT.is_upload_configured = True
+        mock_settings = mocker.patch(f"{MODULE}.health_report_settings")
+        mock_settings.is_upload_configured = True
         generate = mocker.patch(
             "app.sep.apps.report.service.generate_report",
             new=AsyncMock(return_value=report),
@@ -117,8 +117,8 @@ class TestGenerateHealthReportCooperativeCancel:
             "app.sep.apps.report.deps.get_pmm_api",
             new=AsyncMock(return_value=MagicMock()),
         )
-        mock_settings = mocker.patch(f"{MODULE}.sep_settings")
-        mock_settings.HEALTH_REPORT.is_upload_configured = True
+        mock_settings = mocker.patch(f"{MODULE}.health_report_settings")
+        mock_settings.is_upload_configured = True
         mocker.patch(
             "app.sep.apps.report.service.generate_report",
             new=AsyncMock(return_value=self._mock_report()),

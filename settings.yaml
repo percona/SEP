@@ -52,6 +52,10 @@ default:
     SSL_KEYFILE: null
     SSL_CERTFILE: null
     PROXY_HEADERS: False
+    # The URL prefix a reverse proxy serves SEP under, passed through unstripped.
+    # "" is the origin root. Read once at startup, so env and this file are the
+    # only ways to set it. BASE_URL must include the prefix when one is set.
+    ROOT_PATH: ""
     ARTIFACT_DOWNLOAD_TTL: 600
     CONNECTIVITY_CHECK_DEFAULT: False
     ALERT_DEFINITIONS_DIR: null
@@ -251,6 +255,8 @@ default:
       NAME: tasks.db
     SYNC_LOCK_TTL: 300  # TaskHistory sync lock timeout (seconds)
     PRE_EXECUTION_CONNECTIVITY_CHECK: warn  # disabled | warn | block
+    HOOK_MODULE_ALLOWLIST:  # Module roots a task hook path may import from; extend for out-of-tree apps
+      - app.sep.apps
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
       SECURE: False

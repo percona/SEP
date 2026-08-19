@@ -26,7 +26,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 from starlette.testclient import TestClient
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_admin_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
@@ -87,7 +87,12 @@ async def session_fixture() -> AsyncSession:
 
 @pytest.fixture
 def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
-    """Create an authenticated test client for the inventory app."""
+    """Create an authenticated test client for the inventory app.
+
+    Mirrors the SEP ``test_client``'s ``require_admin_for_unsafe_methods``
+    override so the non-admin fixture user can exercise a mutating route.
+    """
+    inventory_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
     inventory_app.dependency_overrides[get_current_user] = lambda: regular_user
     inventory_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(inventory_app)

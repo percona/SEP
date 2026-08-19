@@ -23,7 +23,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.testclient import TestClient
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_admin_for_unsafe_methods
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.tasks.connectivity.models import (
     ConnectivityCheckResponse,
@@ -86,6 +86,7 @@ def mock_executor() -> MagicMock:
 def test_client(regular_user, mock_executor) -> TestClient:
     """Create an authenticated test client for the Tasks API."""
     session = AsyncMock()
+    tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
     tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
     tasks_app.dependency_overrides[get_session] = lambda: session
     tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
@@ -269,6 +270,7 @@ class TestConnectivityCheckEndpointRealSession:
         )
         await TaskManager.create(session, task_write)
 
+        tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
@@ -354,8 +356,8 @@ class TestConnectivityCheckEndpointRealSession:
         assert data["success"] is True
         assert data["error"] is None
         assert call_count["n"] >= MIN_POLL_ITERATIONS
-        assert await TaskHistoryLogManager.exists_for_task(
-            session, data["task_history_id"]
+        assert await TaskHistoryLogManager.exists(
+            session, task_history_id=data["task_history_id"]
         )
 
     async def test_provisioning_latency_does_not_false_negative_over_http(
@@ -388,6 +390,7 @@ class TestConnectivityCheckEndpointRealSession:
         )
         await TaskManager.create(session, task_write)
 
+        tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
@@ -481,8 +484,8 @@ class TestConnectivityCheckEndpointRealSession:
         # Provisioning spanned more polls than the connect budget alone permits,
         # yet the check still succeeded — the budgets are independent.
         assert call_count["n"] > connect_budget // POLL_INTERVAL
-        assert await TaskHistoryLogManager.exists_for_task(
-            session, data["task_history_id"]
+        assert await TaskHistoryLogManager.exists(
+            session, task_history_id=data["task_history_id"]
         )
 
     async def test_timeout_surfaces_partial_logs_and_id_over_http(
@@ -513,6 +516,7 @@ class TestConnectivityCheckEndpointRealSession:
         )
         await TaskManager.create(session, task_write)
 
+        tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
@@ -599,6 +603,6 @@ class TestConnectivityCheckEndpointRealSession:
         assert "timed out" in data["error"]
         assert "installing deps..." in data["error"]
         assert data["task_history_id"] is not None
-        assert await TaskHistoryLogManager.exists_for_task(
-            session, data["task_history_id"]
+        assert await TaskHistoryLogManager.exists(
+            session, task_history_id=data["task_history_id"]
         )
