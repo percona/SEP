@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define wire-name constants shared across snippet and framework schema modules."""
+"""Define constants shared across snippet meta models."""
 
 from enum import StrEnum
 
@@ -25,14 +25,3 @@ class TextInputHTMLElement(EnumFieldMixin, StrEnum):
 
     INPUT = "input"
     TEXTAREA = "textarea"
-
-
-EXTRA_ARGS_FIELD_NAME = "extra_args"
-"""Name the synthesized Extra Args execution field on the wire.
-
-Shared, cycle-free home for this spelling: ``app.sep.apps.framework.schema``
-and ``app.sep.snippets.models.snippet`` both need it, but ``framework``
-imports ``snippet`` (via ``script_helpers.py``), so ``snippet`` can't import
-back from ``framework``. This leaf module has no imports of its own, so both
-sides can depend on it without cycling.
-"""
