@@ -284,7 +284,7 @@
         "type": "object"
       },
       "UserRole": {
-        "description": "Enumerate an identity's access level, lowest to highest.\n\nMembers and ordering mirror PMM's own authorization vocabulary so the two\nproducts stay semantically aligned; ``SUPER_ADMIN`` is SEP's\nprovider-neutral name for the rank PMM calls ``grafanaAdmin``.\n\nMembers compare by rank rather than by name: ``EDITOR < ADMIN`` even\nthough ``\"editor\" > \"admin\"`` lexicographically. Equality is untouched, so\n``ADMIN == \"admin\"`` still holds.",
+        "description": "Enumerate an identity's access level, lowest to highest.\n\nMembers and ordering mirror PMM's own authorization vocabulary so the two\nproducts stay semantically aligned; ``SUPER_ADMIN`` is SEP's\nprovider-neutral name for the rank PMM calls ``grafanaAdmin``.\n\nMembers compare by declared rank rather than by name: ``EDITOR < ADMIN``\neven though ``\"editor\" > \"admin\"`` lexicographically. Members are not\n``str``, so ``ADMIN == \"admin\"`` is False; the serialized value is\nunchanged at ``\"admin\"``.",
         "enum": [
           "none",
           "viewer",
