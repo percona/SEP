@@ -8957,7 +8957,7 @@ export interface components {
       xtrabackup_extra_args?: string | null;
       /** Xtrabackup Incremental Cycle */
       xtrabackup_incremental_cycle?:
-        | ('daily' | 'weekly' | '2' | '3' | '4' | '5' | '6' | '7')
+        | ('daily' | 'weekly' | '1' | '2' | '3' | '4' | '5' | '6' | '7')
         | null;
       /** Xtrabackup Incremental Method */
       xtrabackup_incremental_method?: ('less_space' | 'fast_restore') | null;
