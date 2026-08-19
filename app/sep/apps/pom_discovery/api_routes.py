@@ -149,37 +149,54 @@ class ProbeRunResponse(BaseModel):
     error: str | None = None
 
 
-class ProbeNode(BaseModel):
-    """One mapped service, as this sweep saw it.
+class ProbeNodeService(BaseModel):
+    """One service on a host, as this sweep saw it.
 
-    The counters on the run are this list's summary; these are the rows behind them.
-    "5 of 14 answered" cannot say which five, on which hosts, or which host took a
-    minute, and every one of those is the first question asked of a slow or partial
-    sweep.
-
-    :param service_id: **PMM's** service UUID, or ``None`` where inventory holds
-        none — which is also why such a service contributes no facts.
-    :param service_name: The service's name, carried so a reader is not left joining
-        UUIDs by hand.
-    :param executor_host: The host its probe ran on; ``None`` when orphaned.
-    :param resolution: ``name`` / ``address`` / ``orphaned`` — how that host was
-        matched, or that it was not.
-    :param answered: Whether the host returned a usable record for this service.
-    :param duration_seconds: The host's wall-clock, dispatch to collected output.
-        Repeated across the services one host serves: a single dispatch covers all of
-        them, so there is no per-service time to report.
-    :param facts_collected: How many facts this service contributed.
-    :param error: The host-level failure, when its probe failed.
+    :param service_id: **PMM's** service UUID, or ``None`` where inventory holds none.
+    :param service_name: Its name, so a reader is not left joining UUIDs by hand.
+    :param answered: Whether the host returned a usable record for it.
+    :param error: Why it did not, when it did not.
     """
 
     service_id: str | None = None
-    service_name: str
+    service_name: str | None = None
+    answered: bool = False
+    error: str | None = None
+
+
+class ProbeNode(BaseModel):
+    """One **host** this sweep attempted, and what came of it.
+
+    Host-oriented, because a sweep attempts hosts. A flat list of services -- which
+    this was -- cannot show a machine carrying a PMM client and no database, however
+    many times it is probed, and that machine is the case POM most exists to describe.
+
+    One dispatch covers every service on a host, so the host owns the timing and the
+    failure and its services carry only what is theirs. Previously the duration was
+    repeated identically across a host's services, which read as several measurements
+    when it was one.
+
+    :param node_id: **PMM's** node id, the key POM holds this host under.
+    :param host_name: The node's registered name.
+    :param executor_host: The client its probe ran on; ``None`` when none matched.
+    :param resolution: ``name`` / ``address`` / ``orphaned`` -- how that client was
+        matched, or that it was not. Orphaned is why nothing ran, not an error.
+    :param answered: Whether the *host* returned a record. A different question from
+        whether its services did: a host with no database answers perfectly well and
+        has no services at all.
+    :param duration_seconds: The host's wall-clock, dispatch to collected output.
+    :param error: The host-level failure, when its probe failed.
+    :param services: The services on it, empty when there are none.
+    """
+
+    node_id: str
+    host_name: str | None = None
     executor_host: str | None = None
     resolution: str
-    answered: bool
+    answered: bool = False
     duration_seconds: float | None = None
-    facts_collected: int = 0
     error: str | None = None
+    services: list[ProbeNodeService] = Field(default_factory=list)
 
 
 class ProbeRunDetail(ProbeRunResponse):

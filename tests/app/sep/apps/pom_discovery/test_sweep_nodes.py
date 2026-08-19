@@ -28,8 +28,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.sep.apps.pom_discovery.dispatch import HostProbeResult
+from app.sep.apps.pom_discovery.enumeration import InventoryHost
 from app.sep.apps.pom_discovery.inventory import InventoryService
-from app.sep.apps.pom_discovery.mapping import MappedService
+from app.sep.apps.pom_discovery.mapping import ExecutorState, MappedService
 from app.sep.apps.pom_discovery.models import NodeResolution
 from app.sep.apps.pom_discovery.service import _sweep
 
@@ -37,6 +38,9 @@ OBSERVED_AT = "2026-08-12T12:00:00+00:00"
 
 #: A host's wall-clock, as the dispatcher would have measured it.
 HOST_SECONDS = 12.5
+#: Two services on one host, the smallest case that can show a duration being
+#: repeated per service rather than reported once for the dispatch.
+TWO_SERVICES = 2
 #: A failing host's, which is the case where the number matters most.
 FAILED_HOST_SECONDS = 61.0
 #: One dispatch's, shared by every service that host served.
@@ -94,10 +98,35 @@ def mapped(
     )
 
 
+def host(name: str, *, orphaned: bool = False) -> InventoryHost:
+    """Build one enumerated host.
+
+    The receipt is host-oriented, so these tests have to supply hosts: a sweep that
+    enumerated nothing attempted nothing, and its receipt is empty however many
+    services were mapped.
+
+    :param name: The host's name, which is also its node id here.
+    :param orphaned: Whether no executor matched it, so nothing could run there.
+    :return: The host.
+    """
+    return InventoryHost(
+        node_id=name,
+        name=name,
+        address=None,
+        executor_host=None if orphaned else name,
+        resolution=NodeResolution.ORPHANED if orphaned else NodeResolution.NAME,
+        executor_state=None
+        if orphaned
+        else ExecutorState(name, "10.0.0.1", reachable=True, driver_healthy=True),
+    )
+
+
 async def run_sweep(
-    mapped_services: list[MappedService], host_results: dict[str, HostProbeResult]
+    mapped_services: list[MappedService],
+    host_results: dict[str, HostProbeResult],
+    hosts: list[InventoryHost] | None = None,
 ):
-    """Run a sweep with the mapping and probe results stubbed.
+    """Run a sweep with the mapping, hosts and probe results stubbed.
 
     Everything above the mapping is I/O -- two authenticated clients, the inventory
     and Nomad -- so it is replaced wholesale; what is under test is what the sweep
@@ -105,8 +134,12 @@ async def run_sweep(
 
     :param mapped_services: The mapping the sweep should see.
     :param host_results: The probe results, keyed by executor host.
+    :param hosts: The enumerated hosts. Defaults to one per executor the results
+        mention, which is what the real enumeration would have produced for them.
     :return: The sweep's outcome.
     """
+    if hosts is None:
+        hosts = [host(name) for name in host_results]
     # `auth` is a sync context manager setting a header for its block, so the stub
     # clients have to be usable in a `with`, not merely present.
     clients = (MagicMock(), MagicMock())
@@ -122,7 +155,7 @@ async def run_sweep(
         # service half: these tests are about what a sweep concludes from a mapping,
         # and the hosts it would write have their own tests in test_enumeration.py.
         patch(f"{base}.list_inventory_nodes", AsyncMock(return_value=[])),
-        patch(f"{base}.build_hosts", return_value=[]),
+        patch(f"{base}.build_hosts", return_value=hosts),
         patch(f"{base}.get_executor_states", AsyncMock(return_value={})),
         patch(f"{base}.map_services", return_value=mapped_services),
         patch(f"{base}.probe_all", AsyncMock(return_value=host_results)),
@@ -131,13 +164,14 @@ async def run_sweep(
 
 
 @pytest.mark.asyncio
-async def test_records_where_each_service_was_probed() -> None:
-    """Name the host, how it was matched, and how long it took."""
+async def test_records_the_host_it_probed_and_the_services_on_it() -> None:
+    """Name the host, how it was matched, how long it took, and what was on it."""
     outcome = await run_sweep(
         [mapped("svc-a", "node00", NodeResolution.NAME)],
         {
             "node00": HostProbeResult(
                 executor_host="node00",
+                host_record={"os": "Ubuntu 24.04"},
                 records={"svc-a": RECORD},
                 duration_seconds=HOST_SECONDS,
             )
@@ -147,13 +181,41 @@ async def test_records_where_each_service_was_probed() -> None:
     assert outcome.answered == 1
     assert len(outcome.nodes) == 1
     node = outcome.nodes[0]
-    assert node["service_name"] == "svc-a"
+    assert node["host_name"] == "node00"
     assert node["executor_host"] == "node00"
     assert node["resolution"] == NodeResolution.NAME
     assert node["answered"] is True
     assert node["duration_seconds"] == HOST_SECONDS
-    assert node["facts_collected"] == len(outcome.facts)
     assert node["error"] is None
+    assert [s["service_name"] for s in node["services"]] == ["svc-a"]
+    assert node["services"][0]["answered"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_host_with_no_database_is_in_the_receipt() -> None:
+    """The case the flat service list could not show at all.
+
+    A machine carrying a PMM client and no database is what POM most exists to
+    describe, and a service-oriented receipt omitted it however many times it was
+    probed - a reader saw the counters include it and could not find it.
+    """
+    outcome = await run_sweep(
+        [],
+        {
+            "pmm-client-node00": HostProbeResult(
+                executor_host="pmm-client-node00",
+                host_record={"os": "Ubuntu 24.04"},
+                duration_seconds=HOST_SECONDS,
+            )
+        },
+    )
+
+    assert len(outcome.nodes) == 1
+    node = outcome.nodes[0]
+    assert node["host_name"] == "pmm-client-node00"
+    assert node["answered"] is True
+    # Empty is the answer, not a gap: there is no database here.
+    assert node["services"] == []
 
 
 @pytest.mark.asyncio
@@ -172,16 +234,20 @@ async def test_every_field_the_probe_read_is_kept() -> None:
 
 
 @pytest.mark.asyncio
-async def test_an_orphan_is_recorded_with_no_host() -> None:
-    """Keep a row for a service with no executor, and count it as orphaned."""
-    outcome = await run_sweep([mapped("svc-b", None, NodeResolution.ORPHANED)], {})
+async def test_an_orphan_host_is_recorded_with_no_executor() -> None:
+    """Keep an entry for a host nothing could run on, and say why."""
+    outcome = await run_sweep(
+        [mapped("svc-b", None, NodeResolution.ORPHANED)],
+        {},
+        hosts=[host("node00", orphaned=True)],
+    )
 
     assert (outcome.resolved, outcome.orphaned, outcome.answered) == (0, 1, 0)
     node = outcome.nodes[0]
     assert node["executor_host"] is None
     assert node["resolution"] == NodeResolution.ORPHANED
     assert node["answered"] is False
-    assert node["facts_collected"] == 0
+    assert node["duration_seconds"] is None
 
 
 @pytest.mark.asyncio
@@ -206,26 +272,35 @@ async def test_a_failed_host_carries_its_error_and_its_time() -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_service_pmm_does_not_know_is_still_a_row() -> None:
+async def test_a_service_pmm_does_not_know_is_still_listed() -> None:
     """Record a service with no PMM id, which can contribute no joinable facts."""
     outcome = await run_sweep(
         [mapped("svc-d", "node00", NodeResolution.NAME, external_id=None)],
-        {"node00": HostProbeResult(executor_host="node00", records={"svc-d": RECORD})},
+        {
+            "node00": HostProbeResult(
+                executor_host="node00",
+                host_record={"os": "Ubuntu 24.04"},
+                records={"svc-d": RECORD},
+            )
+        },
     )
 
     assert outcome.facts == []
-    node = outcome.nodes[0]
-    assert node["service_id"] is None
-    assert node["service_name"] == "svc-d"
+    service = outcome.nodes[0]["services"][0]
+    assert service["service_id"] is None
+    assert service["service_name"] == "svc-d"
     # It answered -- the host ran the payload. What is missing is a key to join on,
-    # which is a different failure from the node not answering.
-    assert node["answered"] is True
-    assert node["facts_collected"] == 0
+    # which is a different failure from the host not answering.
+    assert service["answered"] is True
 
 
 @pytest.mark.asyncio
-async def test_one_dispatch_times_every_service_it_served() -> None:
-    """Repeat a host's duration across the services that host served."""
+async def test_one_dispatch_is_timed_once_not_per_service() -> None:
+    """A host's duration belongs to the host, and is reported there once.
+
+    It used to be copied onto every service the host served, which read as several
+    measurements of several things when it was one measurement of one dispatch.
+    """
     outcome = await run_sweep(
         [
             mapped("svc-a", "node00", NodeResolution.NAME),
@@ -234,13 +309,13 @@ async def test_one_dispatch_times_every_service_it_served() -> None:
         {
             "node00": HostProbeResult(
                 executor_host="node00",
+                host_record={"os": "Ubuntu 24.04"},
                 records={"svc-a": RECORD, "svc-b": RECORD},
-                duration_seconds=SHARED_HOST_SECONDS,
+                duration_seconds=HOST_SECONDS,
             )
         },
     )
 
-    assert [node["duration_seconds"] for node in outcome.nodes] == [
-        SHARED_HOST_SECONDS,
-        SHARED_HOST_SECONDS,
-    ]
+    assert len(outcome.nodes) == 1
+    assert outcome.nodes[0]["duration_seconds"] == HOST_SECONDS
+    assert len(outcome.nodes[0]["services"]) == TWO_SERVICES

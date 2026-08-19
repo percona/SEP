@@ -380,32 +380,76 @@ async def _sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOu
                 outcome.answered += 1
                 outcome.facts.extend(service_facts)
 
-        outcome.nodes.append(
+        _record_entity(outcome, entry, record, host_result, node_ids, observed_at)
+
+    outcome.nodes = _build_receipt(outcome, mapped, host_results, node_ids)
+    return outcome
+
+
+def _build_receipt(
+    outcome: SweepOutcome,
+    mapped: list[Any],
+    host_results: dict[str, Any],
+    node_ids: dict[str | None, str],
+) -> list[dict[str, Any]]:
+    """Record what the sweep attempted, one entry per **host**.
+
+    Host-oriented rather than service-oriented, because a sweep attempts hosts. The
+    receipt used to be a flat list of services, which meant a machine carrying a PMM
+    client and no database - the case POM most exists to describe - appeared nowhere
+    in it at all, however many times it was probed. A reader looking for
+    ``pmm-client-node00`` found the sweep counted it and could not see it.
+
+    One dispatch covers every service on a host, so the host owns the timing and the
+    failure; its services carry only what is theirs. That is also why the duration
+    used to be repeated identically across a host's services, which read as several
+    measurements when it was one.
+
+    :param outcome: The sweep in progress.
+    :param mapped: The services, each with the executor host it resolved to.
+    :param host_results: What each dispatch returned, keyed by executor host.
+    :param node_ids: Node ids keyed by the names and addresses a service knows.
+    :return: One entry per host, each carrying its services.
+    """
+    by_node: dict[str, list[dict[str, Any]]] = {}
+    for entry in mapped:
+        node_id = node_ids.get(entry.service.node_name) or node_ids.get(
+            entry.service.node_address
+        )
+        record = _record_for(entry, host_results)
+        by_node.setdefault(node_id or "", []).append(
             {
                 # PMM's service UUID, as everywhere else in this app. Null where
-                # inventory holds none, which is also why such a service can
-                # contribute no facts.
+                # inventory holds none.
                 "service_id": entry.service.external_id,
-                # Carried so a reader is not left joining UUIDs by hand. It is what
-                # the payload echoes back per record, so it is the app's own key too.
                 "service_name": entry.service.name,
-                "executor_host": entry.executor_host,
-                "resolution": str(entry.resolution),
                 "answered": bool(record),
-                # The host's number, repeated on each service it served: one dispatch
-                # covers every target on a host, so there is no per-service time to
-                # report and inventing one would be a lie about what was measured.
-                "duration_seconds": host_result.duration_seconds
-                if host_result
-                else None,
-                "facts_collected": len(service_facts),
-                "error": host_result.error if host_result else None,
+                "error": outcome.service_errors.get(entry.service.external_id or ""),
             }
         )
 
-        _record_entity(outcome, entry, record, host_result, node_ids, observed_at)
-
-    return outcome
+    receipt = []
+    for host in outcome.hosts:
+        result = host_results.get(host.executor_host or "")
+        receipt.append(
+            {
+                "node_id": host.node_id,
+                "host_name": host.name,
+                "executor_host": host.executor_host,
+                # How the executor was matched, or that it was not. `orphaned` is why
+                # nothing ran, and it is not an error.
+                "resolution": str(host.resolution),
+                # Whether the *host* answered, which is a different question from
+                # whether its services did: a host with no database can answer
+                # perfectly well and have no services at all.
+                "answered": bool(result and result.host_record is not None),
+                "duration_seconds": result.duration_seconds if result else None,
+                "error": (result.error if result else None)
+                or outcome.host_errors.get(host.node_id),
+                "services": by_node.get(host.node_id, []),
+            }
+        )
+    return receipt
 
 
 def _narrow_to_scope(
