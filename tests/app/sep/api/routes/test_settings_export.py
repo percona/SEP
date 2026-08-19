@@ -611,7 +611,7 @@ class TestSepConfigExportFilter:
     async def test_omitted_keys_returns_full_export(
         self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
     ) -> None:
-        """Yield the full export and fan out once when ``keys`` is omitted."""
+        """Return the full export and fan out once when ``keys`` is omitted."""
         response = api_admin_client.get(EXPORT_URL)
         assert response.status_code == status.HTTP_200_OK
         payload = yaml.safe_load(response.text)
@@ -663,7 +663,7 @@ class TestSepConfigExportFilter:
     async def test_mixed_class_and_key_selectors(
         self, api_admin_client: TestClient
     ) -> None:
-        """Yield exactly two blocks for ``SEPSettings.<key>`` plus whole ``AlertsSettings``."""
+        """Return exactly two blocks for ``SEPSettings.<key>`` plus whole ``AlertsSettings``."""
         key = _one_sep_key(api_admin_client)
         list_keys = _list_keys_by_class(api_admin_client)
         response = api_admin_client.get(
