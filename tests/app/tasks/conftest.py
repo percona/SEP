@@ -26,7 +26,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 from starlette.testclient import TestClient
 
-from app.api.deps import get_current_user, require_admin_for_unsafe_methods
+from app.api.deps import get_current_user, require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
@@ -86,10 +86,12 @@ def test_client(
 ) -> TestClient:
     """Create an authenticated test client for the app.
 
-    Mirrors the SEP ``test_client``'s ``require_admin_for_unsafe_methods``
+    Mirrors the SEP ``test_client``'s ``require_minimum_role_for_unsafe_methods``
     override so the non-admin fixture user can exercise a mutating route.
     """
-    tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    tasks_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
+        lambda: None
+    )
     tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
     tasks_app.dependency_overrides[get_session] = lambda: session
     tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor

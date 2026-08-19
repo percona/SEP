@@ -37,7 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
-from app.api.deps import require_admin_for_unsafe_methods
+from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
@@ -120,7 +120,7 @@ def admin_client_fixture(
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 
@@ -129,11 +129,11 @@ def admin_client_fixture(
 def non_admin_client_fixture(
     regular_user: CasdoorUser, override_session: AsyncSession, mock_tasks: AsyncMock
 ) -> Iterator[TestClient]:
-    """Yield a non-admin client (admin gate should reject) with the Tasks API mocked."""
+    """Yield a non-admin client (role gate should reject) with the Tasks API mocked."""
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 

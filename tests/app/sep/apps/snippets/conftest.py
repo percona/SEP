@@ -24,7 +24,7 @@ from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.datastructures import URL
 
-from app.api.deps import require_admin_for_unsafe_methods
+from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
@@ -82,7 +82,7 @@ def snippets_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
 def admin_client(admin_user: CasdoorUser, session: AsyncSession) -> TestClient:
     """Return a TestClient authenticated as an admin with the real session."""
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
@@ -93,7 +93,7 @@ def admin_client(admin_user: CasdoorUser, session: AsyncSession) -> TestClient:
 def non_admin_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
     """Return a TestClient authenticated as a non-admin user."""
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
@@ -104,7 +104,7 @@ def non_admin_client(regular_user: CasdoorUser, session: AsyncSession) -> TestCl
 def api_admin_client(admin_user: CasdoorUser, session: AsyncSession) -> TestClient:
     """Return a TestClient authenticated as an admin via the JSON API auth path."""
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
@@ -117,7 +117,7 @@ def api_non_admin_client(
 ) -> TestClient:
     """Return a TestClient authenticated as a non-admin via the JSON API auth path."""
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)
