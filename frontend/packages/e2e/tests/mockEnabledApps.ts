@@ -64,7 +64,7 @@ const NAV_APP_METADATA = {
     nav_icon: 'code',
   },
   atw: {
-    display_name: 'Collect Diagnostic Data',
+    display_name: 'Support diagnostics',
     uri_path: '/atw',
     group: 'diagnostics',
     nav_order: 3,
@@ -185,6 +185,45 @@ export function fulfillEnabledApps(route: Route): Promise<void> {
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify(MOCK_ENABLED_APPS),
+  });
+}
+
+/** True when the request targets the runtime settings LIST the ATW gate reads. */
+export function isSettingsListPath(pathname: string): boolean {
+  return pathname === '/api/sep/admin/settings/';
+}
+
+/**
+ * Fulfill the settings LIST with a deployment whose diagnostics delivery is
+ * configured, so ``DeliverySetupGate`` mounts the ATW app instead of its setup
+ * screen. Every spec that mounts ``/atw`` behind an ``**\/api/**`` catch-all
+ * must answer this request: the catch-all's empty-array fallback reads as "no
+ * override stored", which the gate correctly treats as unconfigured.
+ */
+export function fulfillConfiguredDelivery(route: Route): Promise<void> {
+  return route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      groups: [
+        {
+          setting_class: 'SEPSettings',
+          is_app_owned: false,
+          settings: [
+            {
+              key: 'DIAGNOSTICS_DELIVERY',
+              value: { secrets: { sn_api_key: '**********' } },
+              has_override: false,
+            },
+            {
+              key: 'DIAGNOSTICS_DELIVERY_INPUTS',
+              value: { endpoint: '', secrets: { sn_api_key: '**********' } },
+              has_override: true,
+            },
+          ],
+        },
+      ],
+    }),
   });
 }
 
