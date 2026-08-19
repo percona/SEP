@@ -1296,6 +1296,61 @@ class TestStopTask:
         assert refetched.status == TaskHistoryStatusEnum.STOPPED
         assert refetched.finished_at is not None
 
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    @patch("app.tasks.execution.models.schedule_annotation")
+    async def test_stop_task_keeps_a_payload_failure(
+        self,
+        mock_annotation: MagicMock,
+        mock_nomad_cls: MagicMock,
+        session: AsyncSession,
+        created_task_with_history: TaskHistory,
+    ):
+        """Assert a stop landing on an already-failed run records the failure.
+
+        A stop request can reach a row whose payload has already exited
+        non-zero, because the row stays RUNNING until the next sync.
+        """
+        exited_at_ns = 1_700_000_000_000_000_000
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "ClientStatus": NomadAllocStatusEnum.FAILED,
+            "ModifyTime": exited_at_ns,
+            "TaskStates": {NomadStep.RUN_SCRIPT: {"State": "dead", "Events": []}},
+        }
+        mock_backend.job.get_job.return_value = {
+            "ID": "job-1",
+            "Status": "dead",
+            "Stop": True,
+        }
+
+        queue_item = created_task_with_history
+        queue_item.task.alert_on_fail = False
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        queue_item.execution_request.tracking = {
+            "allocation_id": "alloc-1",
+            "evaluation_id": "eval-1",
+            "job_id": "job-1",
+        }
+
+        result = await _build_executor().stop_task(session, queue_item)
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
+        exited_at = datetime.fromtimestamp(exited_at_ns / 10**9, UTC)
+        # SQLite returns the value tz-naive, so compare without tzinfo.
+        assert result.finished_at.replace(tzinfo=None) == exited_at.replace(tzinfo=None)
+        mock_backend.job.deregister_job.assert_called_once_with("job-1")
+        mock_annotation.assert_called_once_with(result, "FAILED")
+
+        result_id = result.id
+        await session.rollback()
+        refetched = await TaskHistoryManager.get_or_404(session, id=result_id)
+        assert refetched.status == TaskHistoryStatusEnum.FAILED
+
 
 class TestSyncTaskHistory:
     """Test NomadExecutor._sync_task_history."""

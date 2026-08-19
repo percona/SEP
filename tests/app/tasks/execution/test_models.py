@@ -16,16 +16,19 @@
 """Define tests for the app.tasks.execution.models module."""
 
 from collections.abc import AsyncGenerator
+from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import PrivateAttr
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import undefer
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.utils import utc_now
 from app.tasks.crud import TaskHistoryManager, TaskManager
-from app.tasks.execution.models import BaseExecutor
+from app.tasks.execution.models import _TERMINAL_STATUS_EVENT_MAP, BaseExecutor
 from app.tasks.models import (
     FileMetadata,
     TaskBackendEnum,
@@ -187,12 +190,69 @@ class TestParsePayload:
             await executor.parse_payload("{}", "xml")
 
 
+class StopStubExecutor(ConcreteExecutor):
+    """Provide an executor whose backend answers from a configured state.
+
+    Lets ``stop_task`` run against real persistence with PMM as the only
+    patched boundary: the backend stop and the executor-specific sync report
+    what the executor was built with instead of reaching Nomad or Celery.
+    """
+
+    _stop_error: BaseException | None = PrivateAttr(default=None)
+    _synced_status: TaskHistoryStatusEnum | None = PrivateAttr(default=None)
+    _synced_finished_at: datetime | None = PrivateAttr(default=None)
+    _stop_calls: list[TaskHistory] = PrivateAttr(default_factory=list)
+    _sync_calls: list[tuple[TaskHistory, AsyncSession | None]] = PrivateAttr(
+        default_factory=list
+    )
+
+    @classmethod
+    def resolving_to(
+        cls,
+        status: TaskHistoryStatusEnum | None = None,
+        finished_at: datetime | None = None,
+        stop_error: BaseException | None = None,
+    ) -> "StopStubExecutor":
+        """Build an executor whose backend reports the given state.
+
+        :param status: The status the sync resolves the record to, or None to
+            leave the record as it stands.
+        :param finished_at: The finish time the sync establishes, or None to
+            leave it untouched.
+        :param stop_error: The error the backend raises instead of stopping.
+        :return: The configured executor.
+        """
+        executor = cls()
+        executor._stop_error = stop_error
+        executor._synced_status = status
+        executor._synced_finished_at = finished_at
+        return executor
+
+    async def _stop_task(self, queue_item: TaskHistory) -> None:
+        """Record the stop request, or fail the way an unreachable backend does."""
+        if self._stop_error is not None:
+            raise self._stop_error
+        self._stop_calls.append(queue_item)
+
+    async def _sync_task_history(
+        self,
+        queue_item: TaskHistory,
+        writer_session: AsyncSession | None = None,
+    ) -> TaskHistory:
+        """Return the record as the configured backend state resolves it."""
+        self._sync_calls.append((queue_item, writer_session))
+        if self._synced_status is not None:
+            queue_item.status = self._synced_status
+        if self._synced_finished_at is not None:
+            queue_item.finished_at = self._synced_finished_at
+        return queue_item
+
+
 class TestStopTask:
     """Test BaseExecutor.stop_task against the real async session.
 
     Exercises the real ``TaskHistoryManager.save`` / ``session.refresh``
-    lifecycle (the ``MissingGreenlet`` regression class). Patches only
-    boundaries: ``_stop_task``, ``_sync_task_history``, ``schedule_annotation``.
+    lifecycle (the ``MissingGreenlet`` regression class).
     """
 
     @staticmethod
@@ -245,27 +305,17 @@ class TestStopTask:
         )
 
     @pytest.mark.asyncio
-    async def test_sets_stopped_status_and_finished_at(
-        self, executor: ConcreteExecutor, session: AsyncSession
-    ):
+    async def test_sets_stopped_status_and_finished_at(self, session: AsyncSession):
         """Assert stop_task sets status to STOPPED, sets finished_at, and persists."""
         saved_history = await self._persist_history(
             session, TaskHistoryStatusEnum.RUNNING, "stop-task-1"
         )
+        executor = StopStubExecutor()
 
-        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
-            return item
-
-        with (
-            patch.object(ConcreteExecutor, "_stop_task", AsyncMock()) as mock_stop,
-            patch.object(
-                ConcreteExecutor, "_sync_task_history", AsyncMock(side_effect=fake_sync)
-            ),
-            patch("app.tasks.execution.models.schedule_annotation"),
-        ):
+        with patch("app.tasks.execution.models.schedule_annotation"):
             result = await executor.stop_task(session, saved_history)
 
-        mock_stop.assert_awaited_once_with(saved_history)
+        assert executor._stop_calls == [saved_history]
         assert result.status == TaskHistoryStatusEnum.STOPPED
         assert result.finished_at is not None
         result_id = result.id
@@ -281,138 +331,222 @@ class TestStopTask:
         assert refetched.finished_at is not None
 
     @pytest.mark.asyncio
-    async def test_calls_sync_task_history(
-        self, executor: ConcreteExecutor, session: AsyncSession
-    ):
+    async def test_calls_sync_task_history(self, session: AsyncSession):
         """Assert stop_task drives sync_task_history (via its _sync boundary)."""
         saved_history = await self._persist_history(
             session, TaskHistoryStatusEnum.RUNNING, "stop-task-2"
         )
+        executor = StopStubExecutor()
 
-        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
-            return item
-
-        mock_sync = AsyncMock(side_effect=fake_sync)
-
-        with (
-            patch.object(ConcreteExecutor, "_stop_task", AsyncMock()),
-            patch.object(ConcreteExecutor, "_sync_task_history", mock_sync),
-            patch("app.tasks.execution.models.schedule_annotation"),
-        ):
+        with patch("app.tasks.execution.models.schedule_annotation"):
             await executor.stop_task(session, saved_history)
 
-        mock_sync.assert_awaited_once_with(saved_history, writer_session=None)
+        assert executor._sync_calls == [(saved_history, None)]
 
     @pytest.mark.asyncio
     async def test_emits_stopped_annotation_when_sync_still_running(
-        self, executor: ConcreteExecutor, session: AsyncSession
+        self, session: AsyncSession
     ):
         """Assert STOPPED annotation is emitted when sync returns still-RUNNING."""
         saved_history = await self._persist_history(
             session, TaskHistoryStatusEnum.RUNNING, "stop-task-3"
         )
 
-        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
-            return item
-
-        with (
-            patch.object(ConcreteExecutor, "_stop_task", AsyncMock()),
-            patch.object(
-                ConcreteExecutor, "_sync_task_history", AsyncMock(side_effect=fake_sync)
-            ),
-            patch(
-                "app.tasks.execution.models.schedule_annotation",
-            ) as mock_schedule,
-        ):
-            result = await executor.stop_task(session, saved_history)
+        with patch("app.tasks.execution.models.schedule_annotation") as mock_schedule:
+            result = await StopStubExecutor().stop_task(session, saved_history)
 
         mock_schedule.assert_called_once_with(result, "STOPPED")
 
     @pytest.mark.asyncio
     async def test_does_not_double_emit_when_sync_already_stopped(
-        self, executor: ConcreteExecutor, session: AsyncSession
+        self, session: AsyncSession
     ):
         """Assert STOPPED annotation is emitted exactly once, not re-emitted.
 
-        ``_sync_task_history`` transitions RUNNING -> STOPPED, so the real
+        The sync transitions RUNNING -> STOPPED, so the real
         ``sync_task_history`` emits once; ``stop_task`` must detect that and
         skip its own emit.
         """
         saved_history = await self._persist_history(
             session, TaskHistoryStatusEnum.RUNNING, "stop-task-4"
         )
+        executor = StopStubExecutor.resolving_to(TaskHistoryStatusEnum.STOPPED)
 
-        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
-            item.status = TaskHistoryStatusEnum.STOPPED
-            return item
-
-        with (
-            patch.object(ConcreteExecutor, "_stop_task", AsyncMock()),
-            patch.object(
-                ConcreteExecutor, "_sync_task_history", AsyncMock(side_effect=fake_sync)
-            ),
-            patch(
-                "app.tasks.execution.models.schedule_annotation",
-            ) as mock_schedule,
-        ):
+        with patch("app.tasks.execution.models.schedule_annotation") as mock_schedule:
             await executor.stop_task(session, saved_history)
 
         mock_schedule.assert_called_once_with(saved_history, "STOPPED")
 
     @pytest.mark.asyncio
     async def test_emits_stopped_annotation_when_not_running_initially(
-        self, executor: ConcreteExecutor, session: AsyncSession
+        self, session: AsyncSession
     ):
         """Assert STOPPED annotation is emitted when task was not RUNNING before sync."""
         saved_history = await self._persist_history(
             session, TaskHistoryStatusEnum.PENDING, "stop-task-5"
         )
 
-        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
-            return item
-
-        with (
-            patch.object(ConcreteExecutor, "_stop_task", AsyncMock()),
-            patch.object(
-                ConcreteExecutor, "_sync_task_history", AsyncMock(side_effect=fake_sync)
-            ),
-            patch(
-                "app.tasks.execution.models.schedule_annotation",
-            ) as mock_schedule,
-        ):
-            result = await executor.stop_task(session, saved_history)
+        with patch("app.tasks.execution.models.schedule_annotation") as mock_schedule:
+            result = await StopStubExecutor().stop_task(session, saved_history)
 
         mock_schedule.assert_called_once_with(result, "STOPPED")
 
     @pytest.mark.asyncio
     async def test_emits_once_when_not_running_but_sync_returns_terminal(
-        self, executor: ConcreteExecutor, session: AsyncSession
+        self, session: AsyncSession
     ):
         """Assert a single STOPPED emit when not RUNNING but sync returns terminal.
 
-        ``was_running`` is False, so the real ``sync_task_history`` does not
+        The record was not running, so the real ``sync_task_history`` does not
         emit even though it returns STOPPED; ``stop_task`` owns the single emit.
         """
         saved_history = await self._persist_history(
             session, TaskHistoryStatusEnum.PENDING, "stop-task-6"
         )
+        executor = StopStubExecutor.resolving_to(TaskHistoryStatusEnum.STOPPED)
 
-        async def fake_sync(item: TaskHistory, *, writer_session=None) -> TaskHistory:
-            item.status = TaskHistoryStatusEnum.STOPPED
-            return item
-
-        with (
-            patch.object(ConcreteExecutor, "_stop_task", AsyncMock()),
-            patch.object(
-                ConcreteExecutor, "_sync_task_history", AsyncMock(side_effect=fake_sync)
-            ),
-            patch(
-                "app.tasks.execution.models.schedule_annotation",
-            ) as mock_schedule,
-        ):
+        with patch("app.tasks.execution.models.schedule_annotation") as mock_schedule:
             result = await executor.stop_task(session, saved_history)
 
         mock_schedule.assert_called_once_with(result, "STOPPED")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("synced_status", "expected_event"),
+        [
+            (TaskHistoryStatusEnum.FAILED, "FAILED"),
+            (TaskHistoryStatusEnum.SUCCESS, "COMPLETED"),
+            (TaskHistoryStatusEnum.LOST, "LOST"),
+            (TaskHistoryStatusEnum.STALE, "STALE"),
+        ],
+    )
+    async def test_keeps_terminal_status_derived_by_sync(
+        self,
+        session: AsyncSession,
+        synced_status: TaskHistoryStatusEnum,
+        expected_event: str,
+    ):
+        """Assert a terminal status the sync derived survives the stop path.
+
+        Whether the stop or the run's own outcome wins is the executor's call,
+        so the stop path persists the outcome it was handed and the run keeps a
+        single annotation naming it.
+        """
+        saved_history = await self._persist_history(
+            session,
+            TaskHistoryStatusEnum.RUNNING,
+            f"stop-task-keeps-{synced_status.value}",
+        )
+        executor = StopStubExecutor.resolving_to(synced_status, finished_at=utc_now())
+
+        with patch("app.tasks.execution.models.schedule_annotation") as mock_schedule:
+            result = await executor.stop_task(session, saved_history)
+
+        assert result.status == synced_status
+        mock_schedule.assert_called_once_with(result, expected_event)
+        result_id = result.id
+
+        await session.rollback()
+        refetched = await TaskHistoryManager.get_or_404(session, id=result_id)
+        assert refetched.status == synced_status
+
+    @pytest.mark.asyncio
+    async def test_keeps_finished_at_established_by_sync(self, session: AsyncSession):
+        """Assert the stop path keeps the finish time the sync established."""
+        saved_history = await self._persist_history(
+            session, TaskHistoryStatusEnum.RUNNING, "stop-task-keeps-finished-at"
+        )
+        exited_at = utc_now() - timedelta(minutes=5)
+        executor = StopStubExecutor.resolving_to(
+            TaskHistoryStatusEnum.FAILED, finished_at=exited_at
+        )
+
+        with patch("app.tasks.execution.models.schedule_annotation"):
+            result = await executor.stop_task(session, saved_history)
+
+        # SQLite returns the value tz-naive, so compare without tzinfo.
+        assert result.finished_at.replace(tzinfo=None) == exited_at.replace(tzinfo=None)
+        result_id = result.id
+
+        await session.rollback()
+        refetched = await TaskHistoryManager.get_or_404(session, id=result_id)
+        assert refetched.finished_at.replace(tzinfo=None) == exited_at.replace(
+            tzinfo=None
+        )
+
+    @pytest.mark.asyncio
+    async def test_stamps_finished_at_when_sync_left_it_unset(
+        self, session: AsyncSession
+    ):
+        """Assert a terminal status without a finish time still gets one.
+
+        A Nomad job that disappeared resolves LOST without a finish time, and a
+        terminal record without one reports no duration.
+        """
+        saved_history = await self._persist_history(
+            session, TaskHistoryStatusEnum.RUNNING, "stop-task-stamps-finished-at"
+        )
+        executor = StopStubExecutor.resolving_to(TaskHistoryStatusEnum.LOST)
+
+        with patch("app.tasks.execution.models.schedule_annotation") as mock_schedule:
+            result = await executor.stop_task(session, saved_history)
+
+        assert result.status == TaskHistoryStatusEnum.LOST
+        assert result.finished_at is not None
+        mock_schedule.assert_called_once_with(result, "LOST")
+
+    @pytest.mark.asyncio
+    async def test_emits_derived_event_when_not_running_and_sync_terminal(
+        self, session: AsyncSession
+    ):
+        """Assert the single emit names the outcome persisted, not the stop asked for."""
+        saved_history = await self._persist_history(
+            session, TaskHistoryStatusEnum.PENDING, "stop-task-derived-event"
+        )
+        executor = StopStubExecutor.resolving_to(TaskHistoryStatusEnum.FAILED)
+
+        with patch("app.tasks.execution.models.schedule_annotation") as mock_schedule:
+            result = await executor.stop_task(session, saved_history)
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
+        mock_schedule.assert_called_once_with(result, "FAILED")
+
+    @pytest.mark.asyncio
+    async def test_propagates_backend_stop_failure_before_writing(
+        self, session: AsyncSession
+    ):
+        """Assert a backend that fails to stop leaves the record untouched."""
+        saved_history = await self._persist_history(
+            session, TaskHistoryStatusEnum.RUNNING, "stop-task-backend-failure"
+        )
+        executor = StopStubExecutor.resolving_to(
+            stop_error=RuntimeError("backend unreachable")
+        )
+
+        with (
+            patch("app.tasks.execution.models.schedule_annotation") as mock_schedule,
+            pytest.raises(RuntimeError, match="backend unreachable"),
+        ):
+            await executor.stop_task(session, saved_history)
+
+        assert executor._sync_calls == []
+        mock_schedule.assert_not_called()
+        refetched = await TaskHistoryManager.get_or_404(session, id=saved_history.id)
+        assert refetched.status == TaskHistoryStatusEnum.RUNNING
+
+
+class TestTerminalStatusEventMap:
+    """Test the terminal status to annotation event mapping."""
+
+    def test_covers_every_terminal_status(self):
+        """Assert the map enumerates exactly the terminal statuses.
+
+        Every status the stop path may persist needs an annotation event, so a
+        terminal status missing from the map raises instead of reaching PMM.
+        """
+        assert set(_TERMINAL_STATUS_EVENT_MAP) == {
+            status for status in TaskHistoryStatusEnum if status.is_terminal()
+        }
 
 
 class TestSyncTaskHistory:
