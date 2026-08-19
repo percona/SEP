@@ -12,7 +12,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-"""Shared fixtures for the side-car image's baked configuration."""
+"""Provide shared fixtures for the side-car image's baked configuration."""
 
 from pathlib import Path
 from typing import Any
@@ -23,7 +23,7 @@ import yaml
 from app import BASE_DIR
 
 SIDECAR_DIR = BASE_DIR / "sidecar"
-EMBEDDED_PROFILE = SIDECAR_DIR / "settings.embedded.yaml"
+EMBEDDED_PROFILE = SIDECAR_DIR / "settings.yaml"
 SETTINGS_ENV_HELPER = SIDECAR_DIR / "settings-env.sh"
 
 ALLOWLIST_KEY = ("SETTINGS_OVERRIDE", "ALLOWED_KEYS")
@@ -37,7 +37,7 @@ suite's shipped-value guard, which must agree on where the list lives.
 def read_allowlist(profile_data: dict) -> Any:
     """Walk ``ALLOWLIST_KEY`` in a parsed profile and return what sits there.
 
-    :param profile_data: The parsed ``settings.embedded.yaml`` mapping.
+    :param profile_data: The parsed ``settings.yaml`` mapping.
     :return: The value at the nested path, or ``None`` when any segment is
         missing or the path runs into a non-mapping.
     """

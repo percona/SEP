@@ -365,7 +365,9 @@ class SnippetsSettings(BaseYamlSettings):
     :param SNIPPETS_DIR: The directory containing support snippets. Defaults to
         `Path("snippets")`.
     :param SNIPPETS_BASE_URL: The base URL for accessing snippets. If `None`, the URL
-        is dynamically built on execution. Defaults to `None`.
+        is dynamically built on execution. Defaults to `None`. Its path is preserved,
+        with download URLs appended to it rather than replacing it, so it must
+        already include ``SEP.ROOT_PATH`` when a URL prefix is configured.
     :param META: Metadata options for snippets. See `SnippetsMetaOptions`.
     :param SYNC_FILTER: A set of filters to apply when loading snippets from
         `SNIPPETS_DIR`. Each filter can specify a file extension or MIME type. If

@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from starlette.status import HTTP_200_OK, HTTP_503_SERVICE_UNAVAILABLE
 
 from app.core.requests import RemoteAPI
@@ -99,6 +100,49 @@ def test_archives_logs_event_stream(
     mock_tasks_client.post.assert_called_once_with(
         f"/history/{task_history_response.id}/sync/"
     )
+
+
+def test_sync_hop_is_authenticated_as_the_service_principal(
+    test_client, mock_tasks_client, task_history_response, mocker
+):
+    """Send the end-of-stream reconciliation under the internal token.
+
+    The log stream is reachable by any authenticated user, and the ``sync`` hop
+    it issues at stream end is a mutating request on the Tasks API — which is
+    admin-gated. Carrying the viewing user's own bearer there ends a non-admin's
+    stream in an error frame instead of the finish frame, so the hop is
+    authenticated as the service principal the gate admits by identity.
+
+    Evidence stops at the credential the request carries; the gate's own
+    treatment of that identity is covered in ``tests/app/tasks/test_admin_gate.py``.
+    """
+    mocker.patch(
+        "app.sep.routes.stream_logs.require_internal_token",
+        return_value="internal-token",
+    )
+    active_tokens: list[str] = []
+    sync_token: dict[str, str] = {}
+
+    @contextmanager
+    def recording_auth(token: str):
+        active_tokens.append(token)
+        try:
+            yield mock_tasks_client
+        finally:
+            active_tokens.pop()
+
+    async def recording_post(_path, **_kwargs):
+        sync_token["value"] = active_tokens[-1]
+        return task_history_response.model_dump()
+
+    mock_tasks_client.auth = recording_auth
+    mock_tasks_client.post.side_effect = recording_post
+
+    response = test_client.get(f"/stream-logs/{task_history_response.id}")
+
+    assert response.status_code == HTTP_200_OK
+    assert "event: finish" in response.text
+    assert sync_token["value"] == "internal-token"
 
 
 def test_logs_event_stream_emits_sep_error_on_upstream_error(
@@ -198,6 +242,43 @@ def test_stream_execution_events_event_stream(
     assert "Started" in streamed_content
     assert "event: finish" in streamed_content
     assert f'"status": "{TaskHistoryStatusEnum.FAILED.value}"' in streamed_content
+
+
+@pytest.mark.parametrize("root_path", ["", "/sep"])
+@pytest.mark.usefixtures("test_client", "mock_tasks_client")
+def test_logs_stream_tells_a_proxy_not_to_buffer(task_history_response, root_path):
+    """Assert the log stream reaches the browser incrementally through a proxy."""
+    client = TestClient(sep_app, root_path=root_path, raise_server_exceptions=False)
+
+    response = client.get(f"{root_path}/stream-logs/{task_history_response.id}")
+
+    assert response.status_code == HTTP_200_OK
+    assert response.headers["x-accel-buffering"] == "no"
+    assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+
+@pytest.mark.parametrize("root_path", ["", "/sep"])
+@pytest.mark.usefixtures("test_client")
+def test_execution_events_stream_tells_a_proxy_not_to_buffer(
+    mock_tasks_client, task_history_response, root_path
+):
+    """Assert the execution-events stream reaches the browser incrementally too."""
+
+    async def mock_get(path, **_kwargs):
+        if path == f"/history/{task_history_response.id}/events":
+            return []
+        return {"status": TaskHistoryStatusEnum.SUCCESS}
+
+    mock_tasks_client.get.side_effect = mock_get
+    client = TestClient(sep_app, root_path=root_path, raise_server_exceptions=False)
+
+    response = client.get(
+        f"{root_path}/stream-logs/{task_history_response.id}/execution-events"
+    )
+
+    assert response.status_code == HTTP_200_OK
+    assert response.headers["x-accel-buffering"] == "no"
+    assert "event: finish" in response.content.decode("utf-8")
 
 
 def test_execution_events_stream_emits_sep_error_on_upstream_error(

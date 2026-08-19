@@ -1,31 +1,28 @@
 # SEP consolidated side-car image
 
-A frontend-less variant of the SEP image, built for embedding SEP inside a PMM
+The SEP image is frontend-less, built for embedding SEP inside a PMM
 deployment. One `supervisord` runs the five SEP programs plus a bundled Valkey
 broker under a single PID 1, so the whole product ships as one container with
 one log stream.
 
-Build it with `make image-sidecar` (tag `sep:${RELEASE_VER}-sidecar`). Jenkins
-builds and publishes the same tag with a `-sidecar` suffix on both the internal
-and Docker Hub registries.
+Build it with `make image` (tag `sep:${RELEASE_VER}`, no suffix). This is the
+only image SEP ships; Jenkins builds and publishes that one tag to the internal
+registry, and to Docker Hub when the build's `pushImageDocker` parameter is set.
 
-An **app-restricted** variant of the same image is built by
-`make image-sidecar-embedded` (tag `sep:${RELEASE_VER}-embedded`). It is the
-side-car recipe with the app strip switched on, so it ships only the app
-packages the embedded settings profile activates — see [App set](#app-set).
-Jenkins builds and publishes it alongside the other two.
+The image is **app-restricted**: the app strip is switched on, so it ships only
+the app packages the settings profile activates — see [App set](#app-set).
 
 ## What it contains
 
 | Input | Role |
 |---|---|
-| `Containerfile.sidecar` | Final stage; mirrors the standalone `Dockerfile` minus the frontend-builder stage, and reuses the shared `sep:builder` wheel image. |
+| `Containerfile.sidecar` | Final stage; ships the backend only, with no frontend-builder stage, and reuses the shared `sep:builder` wheel image. |
 | `entrypoint.sh` | PID 1. Mints the broker credential for the container run, then hands off to `supervisord`. |
 | `supervisord.conf` | Runs `valkey`, three `migrate-*` one-shots, the `sep`/`inventory`/`tasks` APIs, and the Celery worker and beat. |
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables, leaving unexported any name a file under `SECRETS_DIR` already supplies. |
-| `settings.embedded.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
-| `restrict_apps.py` | Build-step strip for the app-restricted variant; removes every app package the baked profile does not activate. Removed during the build, so it is not present in the final image. |
+| `settings.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
+| `restrict_apps.py` | Build-step strip: removes every app package the baked profile does not activate. Deleted in the same `RUN`, so `make image`'s squashed build ships no copy of it. |
 | `verify_image_apps.py` | Post-build assertion that an image's app set matches its own baked profile. Piped into the image, never copied into it. |
 | `verify_image_apps.sh` | Runs `verify_image_apps.py` inside an already-built image; used by both CI and the Jenkins build. |
 
@@ -34,7 +31,7 @@ silently discards the `HEALTHCHECK` instruction.
 
 ## Runtime configuration
 
-`sidecar/settings.embedded.yaml` is baked into the image at
+`sidecar/settings.yaml` is baked into the image at
 `/home/sep/app/settings.yaml`, so the container comes up on a working
 PMM-embedded profile with no mount. It carries no secrets: the values that vary
 per deployment arrive as environment variables, which outrank the file.
@@ -57,7 +54,7 @@ name. What a file supplies is a *canonical destination*:
 |---|---|
 | `SECRET_KEY` | **Yes.** The gate accepts a file and the script never exports the key, so each process reads it from the file. |
 | `{SEP,INVENTORY,TASKS}__DATABASE__HOST` / `__PORT` / `__PASSWORD`, `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY`, `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT`, `TASKS__NOMAD__ENDPOINT` | **Yes.** A file suppresses the derived export. An explicitly-set variable of the same name still wins over both. |
-| `SEP_INTERNAL_TOKEN`, `BASE_URL` | **Yes.** Already canonical and never touched by the script. |
+| `SEP_INTERNAL_TOKEN`, `BASE_URL` | **Yes.** Already canonical; the script clears only a blank inherited value and otherwise leaves either alone. |
 | `CELERY__BEAT_DBURI` | **Yes.** The script only clears a blank inherited value, which would otherwise outrank the file; the setting itself carries a default derived from `SEP__DATABASE__*`, which a file outranks. |
 | `CELERY__BROKER_URL`, `CELERY__RESULT_BACKEND` | **No.** `entrypoint.sh` mints the bundled Valkey credential per container run and exports both unconditionally, so a file has nothing to supply. |
 | The `SEP_*` deployment inputs | **No.** Shell inputs, not settings fields. |
@@ -66,23 +63,27 @@ The resolution order is: an explicitly-set canonical environment variable, then 
 file of that name, then the value derived from the raw `SEP_*` input.
 
 **To keep the database password out of the environment, mount all three
-`{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` files.** A file supplies exactly the
-one canonical name it is named for: the fan-out of a single password to all three
-services happens only through the `SEP_DB_PASSWORD` input, which is an
-environment variable and so the very thing this mount avoids. Mounting
+`{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` files.** A password file supplies
+exactly the one canonical name it is named for: the fan-out of a single password
+to all three services happens only through the `SEP_DB_PASSWORD` input, which is
+an environment variable and so the very thing this mount avoids. Mounting
 `SEP__DATABASE__PASSWORD` alone leaves `InventorySettings` and `TasksSettings`
 with no password at all.
+
+**`SEP__DATABASE__HOST` and `SEP__DATABASE__PORT` are the exception — they move
+every service, not just SEP.** Unlike a password file, these two seed the
+`SEP_DB_HOST` / `SEP_DB_PORT` shell inputs, which the migrate wait loops read and
+which all three services derive their host and port from. Mounting
+`SEP__DATABASE__HOST` therefore also sets `INVENTORY__DATABASE__HOST` and
+`TASKS__DATABASE__HOST`; likewise `SEP__DATABASE__PORT` fans out to
+`INVENTORY__DATABASE__PORT` and `TASKS__DATABASE__PORT`. There is no way to point
+one service at a different host or port with a file alone — to do that, set the
+per-service canonical variables explicitly rather than mounting the SEP file.
 
 The celery-beat store needs no file of its own: it follows `SEP__DATABASE__*`, so
 the mounted `SEP__DATABASE__PASSWORD` reaches it through the same settings
 resolution the services use. Mount `CELERY__BEAT_DBURI` only to point beat at a
 *different* store.
-
-`SEP__DATABASE__HOST` and `SEP__DATABASE__PORT` are the exception to that
-one-name rule. Each seeds the `SEP_DB_HOST` / `SEP_DB_PORT` shell input the wait
-loops and all three services derive from, so mounting either moves every service
-rather than only SEP — there is no way to point one service at a different host
-with a file alone.
 
 Constraints on the directory: entries must be regular files directly inside it (a
 name in a subdirectory matches no setting). File names are matched
@@ -93,26 +94,26 @@ ignored by both; the Kubernetes `..data` projected layout resolves normally.
 `SECRETS_DIR` has no baked default, so a side-car that mounts nothing is
 unaffected.
 
-When you mount a file for a name, leave that variable **unset** rather than
-empty. A canonical variable set to the empty string outranks a file of the same
-name, because a blank environment variable still counts as supplied. The script
-clears the blank for `SECRET_KEY` and for every name it derives, but a name
-whose `SEP_*` guard is inactive — `PMM__API_KEY` with no `SEP_GRAFANA_TOKEN`
-set, say — is left as it found it, and the mount goes unused.
+Leaving a mounted name **unset** and leaving it **empty** both work: a
+canonical variable inherited as the empty string would otherwise outrank the
+file, since a blank environment variable still counts as supplied, so the
+script clears the blank for every canonical name it manages — `SECRET_KEY`,
+every name it derives, and every name a `SEP_*` guard would otherwise leave
+untouched when that guard is inactive (`PMM__API_KEY` with no
+`SEP_GRAFANA_TOKEN` set, say). Unset is still the clearer choice for a
+deployment that writes its own compose file or job template.
 
 ### App set
 
-The app-restricted image ships exactly the apps `settings.embedded.yaml`'s
+The app-restricted image ships exactly the apps `settings.yaml`'s
 `SEP.APPS` activates, plus `framework` and `shared`, which shipped modules reach
 and which the activation list never names. Nothing else declares the set: changing
 which apps the image ships is an edit to `SEP.APPS` and nothing else, and the
 build fails if an activated app has no package to keep.
 
-The strip is driven by the `SEP_RESTRICT_APPS` build argument, which
-`image-sidecar-embedded` passes as `1`. Only the exact value `1` strips
-anything; the argument defaults to `0`, and any other value leaves the image
-unrestricted — which is why the general side-car build, which never passes it,
-keeps every app package.
+The strip is driven by the `SEP_RESTRICT_APPS` build argument, which `image`
+passes as `1`. Only the exact value `1` strips anything; the argument defaults
+to `0`, and any other value leaves the image unrestricted.
 
 The set is asserted on the **published artifact**, not on a rebuild of it:
 `verify_image_apps.sh` pipes `verify_image_apps.py` into an already-built
@@ -120,9 +121,7 @@ image's own interpreter, and both CI and the Jenkins build call it before
 anything is pushed. The check re-derives the expected set from the profile the
 image itself bakes rather than importing `restrict_apps.py` — which the build
 deletes from the image anyway, and which could only ever agree with the tree it
-produced. The general side-car image is checked in the opposite direction, so a
-`SEP_RESTRICT_APPS` value leaking into that build is caught rather than
-published. A run prints the set it verified, because a checker that silently
+produced. A run prints the set it verified, because a checker that silently
 never ran would otherwise be indistinguishable from a passing one.
 
 The strip removes an app's directory and leaves its `version_locations` entry in
@@ -142,16 +141,13 @@ owning none needs no entry, and must not carry one.
 
 On this image an `SEP.APPS` override can therefore only **narrow** the baked
 set, never widen it. Registry construction imports each activated module, so
-activating a package the image does not ship raises `ModuleNotFoundError` and
-the container fails to start. The two surfaces that reach `SEP.APPS` are a bind
+activating a package the image does not ship raises a pydantic `ValidationError`
+(wrapping `No module named app.sep.apps.<name>`) and the container fails to
+start. The two surfaces that reach `SEP.APPS` are a bind
 mount at `/home/sep/app/settings.yaml` (which, per above, replaces the profile
 wholesale — so its `SEP.APPS` must be a subset of the baked one) and the
 `SEP__APPS` environment variable; the runtime settings-override API cannot,
 because `SEP.APPS` is absent from `SETTINGS_OVERRIDE.ALLOWED_KEYS`.
-
-The two unrestricted images (`sep:${RELEASE_VER}` and
-`sep:${RELEASE_VER}-sidecar`) ship every app package, so neither constraint
-applies to them.
 
 ### Deployment inputs
 
@@ -197,7 +193,7 @@ Already canonical, so they are passed straight through with no expansion:
 | Input | Required | Notes |
 |---|---|---|
 | `SEP_INTERNAL_TOKEN` | no | Derived from `SECRET_KEY` by HMAC when unset. Set it explicitly when PMM's nginx overlay pins a specific value. |
-| `BASE_URL` | no* | The side-car's address as reachable from Nomad task executors. *Required when tasks download scripts or artifacts. |
+| `BASE_URL` | no* | The side-car's address as reachable from Nomad task executors, including SEP's URL prefix — `https://pmm-server:8443/sep`, not `https://pmm-server:8443`. Download URLs are joined onto its path rather than replacing it, so a value omitting the prefix yields a well-formed URL that no longer routes to SEP; startup warns when it does. *Required when tasks download scripts or artifacts. |
 
 Any canonical variable can also be set directly — an explicit
 `TASKS__DATABASE__HOST` outranks the one derived from `SEP_DB_HOST`. It overrides
@@ -281,7 +277,7 @@ special case: any deployment can set it (bare env var
 default everywhere else — keeps every overridable setting overridable. It can
 never be changed through the API, only through the deployment's own
 configuration. This image carries it under `SETTINGS_OVERRIDE:` in
-`settings.embedded.yaml`, so the bind mount that replaces that file is what
+`settings.yaml`, so the bind mount that replaces that file is what
 changes the list. A replacement that omits the key does not preserve the
 shipped list — it lifts the restriction entirely, since an absent key reads the
 same as a deployment that never set one. An environment variable of the same

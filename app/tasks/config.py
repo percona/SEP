@@ -95,7 +95,8 @@ class TasksSettings(BaseYamlAppSettings):
     :param SYNC_LOCK_TTL: The timeout for the TaskHistory sync lock. Must be a
         positive duration. Defaults to 5 minutes.
     :param PRE_EXECUTION_CONNECTIVITY_CHECK: The mode for pre-execution connectivity
-        checks. Defaults to ``PreExecutionCheckMode.WARN``.
+        checks. Defaults to ``PreExecutionCheckMode.DISABLED``.
+    :type PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode
     :param STALENESS_THRESHOLD_SECONDS: The maximum seconds allowed between a
         dispatch's scheduled time and its Nomad-side execution start before
         the allocation self-aborts as stale. Must be positive. Defaults to 3600.
@@ -137,7 +138,7 @@ class TasksSettings(BaseYamlAppSettings):
         timedelta(minutes=5), advanced=True
     )
     PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = hot_field(
-        PreExecutionCheckMode.WARN
+        PreExecutionCheckMode.DISABLED
     )
     STALENESS_THRESHOLD_SECONDS: PositiveInt = hot_field(3600, advanced=True)
     LOG_RETENTION_DAYS: Annotated[int, Gt(0), Le(MAX_LOG_RETENTION_DAYS)] = hot_field(

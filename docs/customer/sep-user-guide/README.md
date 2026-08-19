@@ -10,7 +10,7 @@ description of every app: what it is for and what it runs on your database hosts
 - [Apps](#apps)
   - [Inventory](#inventory)
   - [Snippet Manager](#snippet-manager)
-  - [Collect Diagnostic Data (ATW)](#collect-diagnostic-data-atw)
+  - [Support diagnostics (ATW)](#support-diagnostics-atw)
   - [Schema Change](#schema-change)
   - [Archive](#archive)
   - [MySQL Backups](#mysql-backups)
@@ -53,7 +53,6 @@ talk to the PMM HTTP API instead.
 For deeper technical detail on the deployment topology and per-task data flow, see the
 companion customer docs:
 
-- [SEP Architecture — Deployment Topology](../sep-architecture/README.md)
 - [SEP Task Execution — Data Flow](../sep-task-execution-dfd/README.md)
 
 ## Apps
@@ -89,7 +88,7 @@ task (bash, via `bash`) or `exec-python-artifact` task (Python, via `python3`).
 
 **Root requirements:** per snippet
 
-### Collect Diagnostic Data (ATW)
+### Support diagnostics (ATW)
 
 **Purpose:** Organize approved snippets into a guided taxonomy of troubleshooting scenarios
 (for example crashes, performance, replication / HA) grouped by database type.

@@ -25,10 +25,12 @@ __all__ = [
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from enum import Enum
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, params, Request, status
 from pydantic import ValidationError
+from pydantic.fields import FieldInfo
 from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -43,6 +45,7 @@ from app.core.requests.remote_api import RemoteAPI
 from app.core.settings_override.api.models import (
     SettingClassAppMetadata,
     SettingClassGroup,
+    SettingOption,
     SettingResponse,
     SettingsListResponse,
     SettingsPatch,
@@ -329,6 +332,25 @@ async def collect_class_setting_responses(
     ]
 
 
+def _enum_options(field_info: FieldInfo) -> list[SettingOption] | None:
+    """Return dropdown options for enum annotations; otherwise ``None``.
+
+    :param field_info: The Pydantic field metadata for the target attribute.
+    :return: One option per canonical enum member, or ``None`` when the
+        annotation is not an ``Enum`` subclass.
+    """
+    annotation = field_info.annotation
+    if not (isinstance(annotation, type) and issubclass(annotation, Enum)):
+        return None
+    return [
+        SettingOption(
+            label=member.name,
+            value=dump_field_value(field_info, member),
+        )
+        for member in annotation  # iterating the enum skips aliases
+    ]
+
+
 def _settings_response_from_field(
     *,
     setting_class: SettingClassEnum,
@@ -384,6 +406,7 @@ def _settings_response_from_field(
             if applicability is not None
             else True
         ),
+        options=_enum_options(field_info),
     )
 
 
@@ -1088,11 +1111,8 @@ def build_settings_router(
         settings_cls, proxy = _resolve(setting_class)
         key = canonical_override_key(settings_cls, key)
         field_meta = _field_meta_or_404(settings_cls, key)
-        has_override_row = (
-            await SettingsOverrideManager.count(
-                session, setting_class=setting_class, key=key
-            )
-            > 0
+        has_override_row = await SettingsOverrideManager.exists(
+            session, setting_class=setting_class, key=key
         )
         _assert_key_deletable(
             settings_cls, field_meta, has_override_row=has_override_row

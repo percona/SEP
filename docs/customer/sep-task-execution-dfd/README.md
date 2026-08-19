@@ -20,7 +20,7 @@ Customer-facing documentation of how data moves through the **Services Enablemen
 
 | Symbol | Meaning |
 |--------|---------|
-| Rounded rectangle `([...])` | External entity (engineer, Casdoor, Nomad, PMM, log stack) |
+| Rounded rectangle `([...])` | External entity (engineer, Grafana/PMM, Nomad, log stack) |
 | Rectangle `[...]` | Process (SEP/Tasks/Celery components) |
 | Cylinder `[(...)]` | Data store (PostgreSQL, snippet files, Nomad runtime) |
 | Solid arrow | Primary data flow |
@@ -28,9 +28,11 @@ Customer-facing documentation of how data moves through the **Services Enablemen
 
 ### Authentication (engineers)
 
-Human operators authenticate with **Casdoor OAuth** (password or refresh grant). SEP validates each request via **JWT introspection** against Casdoor. Access tokens are sent as `Authorization: Bearer`; the SPA stores refresh tokens in an `HttpOnly` cookie scoped to `/api/oauth`.
+In the shipped PMM-embedded deployment, identity comes from **PMM's Grafana**. The browser's existing PMM session cookie rides a same-origin request to `POST /api/oauth/session/exchange`; SEP validates that session against Grafana, maps the org role, and returns a **short-lived SEP-signed bearer token** in the response body. No SEP cookie is set and no refresh token is issued — when the bearer expires the SPA repeats the exchange. Subsequent API calls carry the SEP bearer as `Authorization: Bearer <token>`.
 
-**X.509 certificates are not used for engineer identity** in default SEP. Certificates secure **transport** (HTTPS and inter-service mTLS).
+Casdoor OAuth remains a configurable alternative (`AuthProviderEnum.CASDOOR`) but is not selected by the embedded profile.
+
+**X.509 certificates are not used for engineer identity.** Certificates secure **transport** (HTTPS and inter-service mTLS).
 
 ### Predefined commands only
 
@@ -68,7 +70,7 @@ The Nomad `run-command` template runs `${NOMAD_META_command}` with args from met
 
 | Data | Storage | When |
 |------|---------|------|
-| User identity | `taskhistory.executed_by` (Casdoor user id; `"SYSTEM"` for periodic runs) | Task dispatch |
+| User identity | `taskhistory.executed_by` (authenticated user id; `"SYSTEM"` for periodic runs) | Task dispatch |
 | Timestamps | `created_at`, `started_at`, `finished_at` | Create + executor sync |
 | Command context | `execution_request` JSON (`task`, `target`, `meta`, `payload`) | Create |
 | Output | `taskhistory_log` (stdout/stderr chunks) | During/after run |
@@ -101,6 +103,12 @@ Alternative: import `.mmd` into [diagrams.net](https://app.diagrams.net/) for GU
 
 ## Export PDF
 
+`mermaid-cli` drives a headless Chrome to render the diagram, so it needs a browser
+on the machine. Point it at a system Chromium with
+`PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium`, or install one for Puppeteer once with
+`npx puppeteer browsers install chrome-headless-shell`. Without either, the commands
+below fail with a misleading *"Could not find Chrome"*.
+
 From the repository root:
 
 ```bash
@@ -122,8 +130,8 @@ Commit the updated `.mmd` sources with any README/checklist changes. The PDF und
 
 | DFD node | Source (representative) |
 |----------|-------------------------|
-| P1 OAuth login | `app/api/routes/oauth.py` (`spa_login`) |
-| P2 JWT introspection | `app/core/auth/providers/casdoor.py`, `app/models.py` (`from_jwt`) |
+| P1 Session exchange | `app/api/routes/oauth.py` (`spa_session_exchange`) |
+| P2 SEP bearer validation | `app/sep/deps.py` (`get_current_user`), `app/core/auth/providers/grafana/models.py` (`GrafanaUser.from_bearer`) |
 | P3 SEP UI | `frontend/packages/shell/` (React 18 SPA — entry `src/main.tsx`, auth context `src/contexts/auth.tsx`). App UIs live under `frontend/packages/apps/{name}/` and `frontend/packages/framework/` (shared schema-driven UI). |
 | P4a Snippets app API | `app/sep/apps/snippets/app.py` (declarative `TaskExecutionApp`), `script_source.py` (`snippet_source` — derives list/schema/history/execute); auxiliary verbs (approval, refresh, preview) in `extra_routes.py` |
 | P4b Proxy app create (checksums) | `app/sep/apps/checksums/app.py` (declarative `TaskExecutionApp`), `spec.py` (`build_checksums_spec`), `models.py` (`ChecksumsForm`); create route derived by `app/sep/apps/framework/api.py` (`derive_crud_routes`) |
@@ -141,7 +149,7 @@ Commit the updated `.mmd` sources with any README/checklist changes. The PDF und
 | D1 Snippet store | `app/sep/snippets/`, snippet approval in DB |
 | D2 Tasks PostgreSQL | `app/tasks/models.py`, `app/tasks/db/` |
 | D3 Nomad runtime | Nomad allocation logs/files (fetched via Nomad API) |
-| mTLS / TLS transport | Nginx ingress: TLS cert at `/data/certs/sep/localhost-cert.pem`. SEP-internal mTLS: `app/core/requests/remote_api.py` (SSL context builder); inter-service certs at `/data/certs/sep/*` rendered by `generate_certs.sh` during `sep_installer.sh` setup. Nomad mTLS: client cert and CA at `/data/certs/nomad/`. For external-Nomad deployments these are customer-supplied (the Nomad portion of `generate_certs.sh` is only used for bundled-Nomad sandbox deployments). |
+| mTLS / TLS transport | PMM's Nginx fronts SEP (HTTPS termination is PMM-owned). SEP-internal mTLS: `app/core/requests/remote_api.py` (SSL context builder); inter-service certs at `/data/certs/sep/*`. Nomad mTLS: client cert and CA at `/data/certs/nomad/`. For external-Nomad deployments these are customer-supplied. |
 
 ## Security review
 
