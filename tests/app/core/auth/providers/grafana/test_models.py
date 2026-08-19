@@ -509,6 +509,8 @@ class TestGrafanaRefreshGrant:
         assert user.username == grafana_user_record["login"]
         assert user.role is UserRole.EDITOR
         grafana_mock.login.assert_awaited_once()
+        grafana_mock.get_current_user.assert_awaited_once()
+        grafana_mock.get_current_user_orgs.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_refresh_rejects_an_access_token(self, grafana_mock):
