@@ -83,6 +83,7 @@ _CHECKSUMS_DEFAULTS = {
     "max_load": "",
     "chunk_time": "",
     "max_lag": "",
+    "defaults_file": "",
     "extra_args": "",
 }
 
