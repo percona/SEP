@@ -46,6 +46,8 @@ from app.core.utils.date_time import utc_now
 from app.inventory.config import inventory_settings
 from app.sep.apps.pom_discovery.config import pom_discovery_settings
 from app.sep.apps.pom_discovery.crud import (
+    conflict_detail,
+    conflicting_run,
     ProbeRunManager,
     prune_runs,
     upsert_host,
@@ -692,6 +694,32 @@ async def run_probe(
         else:
             run = await ProbeRunManager.get(session, id=execution_id)
         run_id = run.id
+
+        # The same single-flight check the trigger endpoint makes, repeated here
+        # because **the schedule does not go through the endpoint**. Beat calls this
+        # task directly, so with the check only in the handler a scheduled sweep would
+        # start on top of one already dispatching. Both then enqueue the same job for
+        # the same host, the Tasks layer refuses the duplicate, and the loser records
+        # a 409 against a host that is perfectly healthy -- moving its failure
+        # timestamps for a race rather than a fault. Measured happening on this
+        # workspace's sandbox: two full sweeps 31 seconds apart, four healthy hosts
+        # marked unanswered.
+        #
+        # Excluding this run's own row matters: the trigger endpoint creates it before
+        # dispatching, so without that the task would refuse itself every time.
+        blocking = await conflicting_run(
+            session,
+            node_ids,
+            exclude=run_id,
+            stale_after=pom_discovery_settings.STALE_RUN_AFTER,
+        )
+        if blocking is not None:
+            run.status = ProbeRunStatus.SKIPPED
+            run.finished_at = utc_now()
+            run.error = conflict_detail(blocking, node_ids)
+            await ProbeRunManager.save(session, run)
+            logger.info("POM discovery: sweep %s skipped -- %s", run_id, run.error)
+            return run_id
 
     observed_at = utc_now().isoformat()
     try:

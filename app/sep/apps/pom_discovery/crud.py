@@ -22,6 +22,7 @@ suppression flag -- a blanket "update every column" upsert wipes it on the next
 sweep, and the test that catches that has to exist before the field does, not after.
 """
 
+from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
@@ -29,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, delete, select
 
 from app.core.db.crud import BaseSQLModelManager
-from app.core.utils.date_time import utc_now
+from app.core.utils.date_time import make_datetime_utc, utc_now
 from app.sep.apps.pom_discovery.models import (
     ObservedEntity,
     PomHost,
@@ -366,3 +367,69 @@ async def prune_runs(session: AsyncSession, keep: int) -> int:
     )
     await session.commit()
     return int(result.rowcount or 0)
+
+
+async def conflicting_run(
+    session: AsyncSession,
+    node_ids: list[str] | None,
+    *,
+    exclude: UUID | None = None,
+    stale_after: timedelta,
+) -> ProbeRun | None:
+    """Return the in-flight run that already holds these hosts, if any.
+
+    Single-flight is judged **per host**, not globally: with a ten-minute schedule a
+    global refusal would reject a one-host refresh exactly when someone wants one. A
+    run with no scope covers everything, so it overlaps whatever is asked -- including
+    another full refresh.
+
+    Lives here rather than in the API handler because **both** paths need it. The
+    handler is the obvious caller, but the scheduled sweep enters through Celery and
+    never touches it: with the check in the handler alone, beat would start a sweep on
+    top of one already dispatching, both would enqueue the same job for the same host,
+    and the Tasks layer would refuse the duplicate with a 409 recorded against a host
+    that is perfectly healthy.
+
+    A run older than ``stale_after`` is reaped rather than honoured, because a crashed
+    worker leaves a row nothing else advances and it would otherwise wedge the app
+    permanently.
+
+    :param session: The database session.
+    :param node_ids: The hosts being asked for, or ``None`` / empty for the estate.
+    :param exclude: A run to ignore -- the caller's own, when it has already been
+        created. Without it a task would find its own row and refuse itself.
+    :param stale_after: How old an in-flight run may be before it is presumed dead.
+    :return: The blocking run, or ``None``.
+    """
+    wanted = set(node_ids or [])
+    for in_flight in await running_runs(session):
+        if exclude is not None and in_flight.id == exclude:
+            continue
+        age = utc_now() - make_datetime_utc(in_flight.started_at)
+        if age >= stale_after:
+            in_flight.status = ProbeRunStatus.FAILED
+            in_flight.finished_at = utc_now()
+            in_flight.error = "abandoned: no worker recorded a terminal status"
+            await ProbeRunManager.save(session, in_flight)
+            continue
+        if not in_flight.scope or not wanted or (set(in_flight.scope) & wanted):
+            return in_flight
+    return None
+
+
+def conflict_detail(blocking: ProbeRun, node_ids: list[str] | None) -> str:
+    """Say which hosts are held, and by which run.
+
+    Names them rather than saying "a sweep is already running", which was true of
+    anything and useful for nothing once conflict became per-host.
+
+    :param blocking: The run already holding them.
+    :param node_ids: The hosts that were asked for.
+    :return: The message.
+    """
+    if not blocking.scope:
+        held = "the whole estate"
+    else:
+        overlap = sorted(set(blocking.scope) & set(node_ids or []))
+        held = ", ".join(overlap) or "these hosts"
+    return f"Probe run {blocking.id} is already refreshing {held}"

@@ -44,7 +44,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.utils.date_time import utc_now
 from app.sep.apps.pom_discovery.config import pom_discovery_settings
-from app.sep.apps.pom_discovery.crud import ProbeRunManager, upsert_host
+from app.sep.apps.pom_discovery.crud import (
+    conflict_detail,
+    conflicting_run,
+    ProbeRunManager,
+    upsert_host,
+)
 from app.sep.apps.pom_discovery.enumeration import InventoryHost
 from app.sep.apps.pom_discovery.inventory import InventoryService
 from app.sep.apps.pom_discovery.mapping import ExecutorState, MappedService
@@ -493,3 +498,110 @@ class TestHostCounters:
         assert stored.hosts_total == TWO_HOSTS
         assert stored.hosts_probeable == 1
         assert stored.hosts_answered == 1
+
+
+class TestTheScheduleRespectsSingleFlight:
+    """Assert a scheduled sweep cannot start on top of one already running.
+
+    The guard used to live only in the trigger endpoint, and **the schedule does not
+    go through it** - Celery beat calls the task directly. So a scheduled sweep would
+    start while another was still dispatching, both would enqueue the same job for the
+    same host, and the Tasks layer would refuse the duplicate with
+    ``409 Identical queue item already running``. The loser recorded that against a
+    host that was perfectly healthy.
+
+    Measured on this workspace's sandbox: two full sweeps 31 seconds apart, four
+    healthy replicaset hosts marked unanswered with a 409 as their reason. It did no
+    lasting damage only because the good sweep happened to finish last and overwrite
+    the failure - reverse the order and four fine hosts read as failing.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_second_full_sweep_is_skipped_not_run(
+        self, session: AsyncSession
+    ) -> None:
+        """The whole estate overlaps the whole estate.
+
+        :param session: The database session.
+        """
+        in_flight = await ProbeRunManager.save(session, ProbeRun(scope=None))
+
+        blocking = await conflicting_run(
+            session, None, stale_after=timedelta(minutes=30)
+        )
+
+        assert blocking is not None
+        assert blocking.id == in_flight.id
+
+    @pytest.mark.asyncio
+    async def test_a_run_does_not_refuse_itself(self, session: AsyncSession) -> None:
+        """The trigger endpoint creates the row before dispatching.
+
+        Without excluding its own id the task would find that row, conclude a sweep
+        was already in flight, and skip every run started through the API - which is
+        every manual refresh.
+
+        :param session: The database session.
+        """
+        mine = await ProbeRunManager.save(session, ProbeRun(scope=None))
+
+        blocking = await conflicting_run(
+            session, None, exclude=mine.id, stale_after=timedelta(minutes=30)
+        )
+
+        assert blocking is None
+
+    @pytest.mark.asyncio
+    async def test_disjoint_scopes_do_not_block_each_other(
+        self, session: AsyncSession
+    ) -> None:
+        """Two one-host refreshes of different hosts are not a conflict.
+
+        Single-flight is per host precisely so a ten-minute schedule does not refuse
+        the refresh someone wants.
+
+        :param session: The database session.
+        """
+        await ProbeRunManager.save(session, ProbeRun(scope=[NODE_A]))
+
+        blocking = await conflicting_run(
+            session, [NODE_B], stale_after=timedelta(minutes=30)
+        )
+
+        assert blocking is None
+
+    @pytest.mark.asyncio
+    async def test_an_abandoned_run_is_reaped_rather_than_honoured(
+        self, session: AsyncSession
+    ) -> None:
+        """A crashed worker must not wedge the app permanently.
+
+        :param session: The database session.
+        """
+        stale = await ProbeRunManager.save(session, ProbeRun(scope=None))
+        stale.started_at = utc_now() - timedelta(hours=2)
+        await ProbeRunManager.save(session, stale)
+
+        blocking = await conflicting_run(
+            session, None, stale_after=timedelta(minutes=30)
+        )
+
+        assert blocking is None
+        reaped = await ProbeRunManager.get(session, id=stale.id)
+        assert reaped.status is ProbeRunStatus.FAILED
+        assert reaped.error is not None
+
+    @pytest.mark.asyncio
+    async def test_the_message_names_the_hosts_that_are_held(
+        self, session: AsyncSession
+    ) -> None:
+        """Naming the held hosts beats "a sweep is already running".
+
+        :param session: The database session.
+        """
+        blocking = await ProbeRunManager.save(session, ProbeRun(scope=[NODE_A]))
+
+        detail = conflict_detail(blocking, [NODE_A, NODE_B])
+
+        assert NODE_A in detail
+        assert str(blocking.id) in detail

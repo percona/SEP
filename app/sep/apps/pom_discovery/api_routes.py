@@ -49,13 +49,14 @@ from app.core.settings_override.api import (
     SettingsPatch,
 )
 from app.core.settings_override.models import SettingClassEnum
-from app.core.utils.date_time import make_datetime_utc, utc_now
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.pom_discovery.config import (
     pom_discovery_settings,
     PomDiscoverySettings,
 )
 from app.sep.apps.pom_discovery.crud import (
+    conflict_detail,
+    conflicting_run,
     delete_host,
     delete_service,
     get_host,
@@ -65,13 +66,11 @@ from app.sep.apps.pom_discovery.crud import (
     list_services,
     ProbeRunManager,
     recent_runs,
-    running_runs,
 )
 from app.sep.apps.pom_discovery.models import (
     PomHost,
     PomService,
     ProbeRun,
-    ProbeRunStatus,
 )
 from app.sep.apps.pom_discovery.schema import pom_discovery_schema
 from app.sep.deps import SessionDep
@@ -569,29 +568,6 @@ async def get_probe_run(run_id: UUID, session: SessionDep) -> ProbeRunDetail:
     )
 
 
-async def _reap_if_abandoned(session: SessionDep, run: ProbeRun) -> bool:
-    """Fail a run whose worker is gone, so one lost worker cannot wedge the app.
-
-    ``started_at`` is normalised before the subtraction, which is not defensive
-    padding: SQLite stores no timezone, so a run read back from it is naive while
-    ``utc_now()`` is aware, and subtracting them raises ``TypeError``. Since SQLite is
-    the shipped default, the guard would have failed with a 500 on exactly the request
-    meant to recover from a crashed worker.
-
-    :param session: The database session.
-    :param run: The run in flight.
-    :return: Whether it was reaped.
-    """
-    age = utc_now() - make_datetime_utc(run.started_at)
-    if age < pom_discovery_settings.STALE_RUN_AFTER:
-        return False
-    run.status = ProbeRunStatus.FAILED
-    run.finished_at = utc_now()
-    run.error = "abandoned: no worker recorded a terminal status"
-    await ProbeRunManager.save(session, run)
-    return True
-
-
 @router.post(
     "/runs",
     response_model=ProbeRunAccepted,
@@ -632,27 +608,13 @@ async def trigger_probe(
         if await get_host(session, node_id) is None:
             raise HTTPNotFoundException(detail=f"Host {node_id} not found")
 
-    for in_flight in await running_runs(session):
-        if await _reap_if_abandoned(session, in_flight):
-            continue
-        # A run with no scope is over everything, so it overlaps whatever is asked.
-        overlap = (
-            not in_flight.scope
-            or not node_ids
-            or bool(set(in_flight.scope) & set(node_ids))
-        )
-        if overlap:
-            raise HTTPConflictException(
-                detail=(
-                    f"Probe run {in_flight.id} is already refreshing "
-                    + (
-                        "the whole estate"
-                        if not in_flight.scope
-                        else ", ".join(sorted(set(in_flight.scope) & set(node_ids)))
-                        or "these hosts"
-                    )
-                )
-            )
+    # The same check the sweep itself makes, so a caller and the schedule cannot
+    # disagree about what counts as a conflict.
+    blocking = await conflicting_run(
+        session, node_ids, stale_after=pom_discovery_settings.STALE_RUN_AFTER
+    )
+    if blocking is not None:
+        raise HTTPConflictException(detail=conflict_detail(blocking, node_ids))
 
     run = await ProbeRunManager.save(session, ProbeRun(scope=node_ids or None))
 
