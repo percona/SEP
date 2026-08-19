@@ -13,12 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Nomad task executor package.
-
-``NomadExecutor`` is resolved lazily via ``__getattr__`` so submodule imports
-do not deadlock against ``app.tasks.config`` (which imports ``NomadExecutor``
-back from this package).
-"""
+"""Nomad task executor package."""
 
 __all__ = ["NomadExecutor"]
 
@@ -31,6 +26,9 @@ def __getattr__(name: str) -> object:
     :raises AttributeError: If ``name`` is not exported by this package.
     """
     if name == "NomadExecutor":
+        # circular import: app.tasks.config imports NomadExecutor from this
+        # package, which resolves it back out of nomad.models (this package's
+        # submodule); deferring to first access keeps the chain open.
         from app.tasks.execution.executors.nomad.models import NomadExecutor
 
         globals()[name] = NomadExecutor

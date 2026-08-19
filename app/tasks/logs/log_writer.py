@@ -715,8 +715,9 @@ class TaskHistoryLogWriter:
         """
         if persisted_offset <= previous_persisted_offset:
             return
-        # Lazy import keeps app.tasks.config out of the log_writer import chain
-        # (log_writer sits on the NomadExecutor ↔ config cycle).
+        # circular import: app.tasks.config imports NomadExecutor from the nomad
+        # executor package, whose models module imports log_writer (this module)
+        # at module scope; log_writer needs config back for LOG_STREAM_CAP_BYTES.
         from app.tasks import config as tasks_config
 
         cap = tasks_config.tasks_settings.LOG_STREAM_CAP_BYTES
