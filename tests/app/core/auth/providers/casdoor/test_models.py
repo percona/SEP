@@ -20,7 +20,7 @@ from datetime import datetime
 import pytest
 from pydantic import ValidationError
 
-from app.core.auth.models import OAuthToken
+from app.core.auth.models import OAuthToken, UserRole
 from app.core.auth.providers.casdoor.models import CasdoorTokenPayload, CasdoorUser
 
 
@@ -300,3 +300,64 @@ class TestCasdoorUser:
         )
         casdoor_mock.introspect_token.assert_awaited_once_with(oauth_token.access_token)
         casdoor_mock.get_user.assert_awaited_once_with(valid_username)
+
+
+class TestCasdoorRoleDerivation:
+    """Verify the role derived from Casdoor's admin flag.
+
+    Casdoor exposes no role concept, so the payload's admin boolean is the only
+    signal and resolves onto the two roles it can distinguish. Every case pins
+    ``is_admin`` alongside the role so the flag's own meaning is asserted rather
+    than implied.
+    """
+
+    @pytest.mark.parametrize("key", ["isAdmin", "is_admin"])
+    @pytest.mark.parametrize(
+        ("flag", "expected_role", "expected_admin"),
+        [
+            (True, UserRole.ADMIN, True),
+            (False, UserRole.VIEWER, False),
+            ("true", UserRole.ADMIN, True),
+            ("1", UserRole.ADMIN, True),
+            ("false", UserRole.VIEWER, False),
+            ("0", UserRole.VIEWER, False),
+        ],
+    )
+    def test_admin_flag_maps_to_a_role(
+        self, casdoor_user_data, casdoor_mock, key, flag, expected_role, expected_admin
+    ):
+        """Verify both wire spellings of the flag map onto the role.
+
+        Casdoor's API sends ``isAdmin``; ``populate_by_name`` admits the
+        snake-case form. A spelled-out boolean must resolve to the role it names
+        rather than reading as truthy.
+        """
+        payload = {k: v for k, v in casdoor_user_data.items() if k != "is_admin"}
+
+        user = CasdoorUser.model_validate({**payload, key: flag})
+
+        assert user.role is expected_role
+        assert user.is_admin is expected_admin
+
+    def test_an_absent_flag_reads_as_a_viewer(self, casdoor_user_data, casdoor_mock):
+        """Verify an unset flag keeps the reads a non-admin has today."""
+        payload = {k: v for k, v in casdoor_user_data.items() if k != "is_admin"}
+
+        user = CasdoorUser.model_validate(payload)
+
+        assert user.role is UserRole.VIEWER
+        assert user.is_admin is False
+
+    def test_an_explicit_role_wins_over_the_flag(self, casdoor_user_data, casdoor_mock):
+        """Verify a payload already carrying a role is not overwritten."""
+        user = CasdoorUser.model_validate(
+            {**casdoor_user_data, "is_admin": False, "role": "editor"}
+        )
+
+        assert user.role is UserRole.EDITOR
+        assert user.is_admin is False
+
+    def test_a_non_boolean_flag_is_refused(self, casdoor_user_data, casdoor_mock):
+        """Verify a non-boolean flag is rejected rather than read as admin."""
+        with pytest.raises(ValidationError):
+            CasdoorUser.model_validate({**casdoor_user_data, "is_admin": "maybe"})

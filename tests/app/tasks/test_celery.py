@@ -2973,7 +2973,7 @@ class _SharedSessionContextManager:
         self._session = session
 
     async def __aenter__(self) -> AsyncSession:
-        """Yield the shared session without opening a new one.
+        """Return the shared session without opening a new one.
 
         :return: The shared session.
         :rtype: AsyncSession

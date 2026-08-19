@@ -17,10 +17,12 @@
 
 from collections import defaultdict
 from datetime import datetime, UTC
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 import yaml
+from polyfactory.factories.pydantic_factory import ModelFactory
 from pydantic import ValidationError
 
 from app.core.alerts.models import AlertService, AlertSeverity
@@ -29,6 +31,7 @@ from app.sep.apps.archives.alerts import (
     ALERT_DETAIL_BUILDER,
     ARCHIVER_TRACE_PLACEHOLDER,
 )
+from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.crud import TaskManager
 from app.tasks.models import (
@@ -52,7 +55,8 @@ from app.tasks.models import (
     TaskWrite,
     TransformPayloadRequest,
 )
-from tests.app.factories import TaskFactory
+from tests.app.factories import TaskFactory, TaskResponseFactory
+from tests.app.tasks.conftest import HOOK_PATH_FIELDS, REJECTED_HOOK_PATHS
 
 ENCODE_MASK_INT_INPUT = 42
 FILE_METADATA_TEST_SIZE = 100
@@ -315,6 +319,58 @@ class TestTaskBaseValidation:
             )
 
 
+class TestTaskWriteHookPathValidation:
+    """Cover the hook-path allow-list enforced on ``TaskWrite``."""
+
+    @staticmethod
+    def _write(**overrides: object) -> TaskWrite:
+        """Build a minimal valid ``TaskWrite``, overriding the given fields.
+
+        :param overrides: Field values to set on the model.
+        :return: The constructed model.
+        """
+        return TaskWrite(name="hook-task", data={"task": "run-python"}, **overrides)
+
+    @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
+    @pytest.mark.parametrize("path", REJECTED_HOOK_PATHS)
+    def test_rejects_path_outside_allow_list(self, field: str, path: str) -> None:
+        """Assert a hook path the allow-list denies is rejected at the write boundary."""
+        with pytest.raises(ValidationError, match="app.sep.apps"):
+            self._write(**{field: path})
+
+    @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
+    def test_rejection_names_the_field(self, field: str) -> None:
+        """Assert the rejection message names the offending field."""
+        with pytest.raises(ValidationError, match=field):
+            self._write(**{field: "os:system"})
+
+    @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
+    def test_accepts_allow_listed_path(self, field: str) -> None:
+        """Assert an allow-listed hook path is accepted unchanged."""
+        write = self._write(**{field: ALERT_DETAIL_BUILDER})
+
+        assert getattr(write, field) == ALERT_DETAIL_BUILDER
+
+    @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
+    def test_accepts_none(self, field: str) -> None:
+        """Assert an unset hook field stays None."""
+        assert getattr(self._write(**{field: None}), field) is None
+
+    @pytest.mark.parametrize("factory", [TaskFactory, TaskResponseFactory])
+    def test_reading_back_a_stored_non_conforming_path_succeeds(
+        self, factory: type[ModelFactory[Any]]
+    ) -> None:
+        """Assert the allow-list constrains writes only, never read-back.
+
+        A row whose hook path predates the allow-list must still serialise.
+        """
+        legacy_path = "app.sep.plugins.archives.alerts:build"
+
+        instance = factory.build(alert_detail_builder=legacy_path)
+
+        assert instance.alert_detail_builder == legacy_path
+
+
 class TestTask:
     """Test Task model construction and properties."""
 
@@ -346,7 +402,7 @@ class TestTask:
     @pytest.mark.asyncio
     async def test_run_result_recorder_propagates_to_task_row(self, session) -> None:
         """Persist ``run_result_recorder`` from a ``TaskWrite`` onto the ``Task`` row."""
-        recorder = "app.sep.apps.mysql_backups.recorder:record_backup_run"
+        recorder = RUN_RESULT_RECORDER
         write = TaskWrite.model_validate(
             TaskFactory.build(name="recorder-task", run_result_recorder=recorder)
         )
@@ -689,7 +745,10 @@ class TestTaskHistory:
             assert alert_data["severity"] == AlertSeverity.WARNING
             assert alert_data["class"] == "task_stale"
             assert alert_data["dedup_key"] == "task:test-task:node-1:stale"
-            assert "stale" in alert_data["summary"].lower()
+            assert (
+                "skipped as stale (executor placement delayed past threshold)"
+                in alert_data["summary"]
+            )
 
     @pytest.mark.asyncio
     async def test_alert_for_status_stopped_no_action(

@@ -60,7 +60,6 @@ from app.core.utils import (
     utc_now,
 )
 from app.core.utils.pydantic import field_with_metadata
-from app.tasks import config as tasks_config
 from app.tasks.anonymizer import anonymize_text
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.crud import TaskHistoryLogStateManager, TaskHistoryManager
@@ -730,6 +729,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             parameterized_job.get("MetaRequired") or []
         )
         if "staleness_threshold_seconds" in declared_meta:
+            # Lazy import keeps app.tasks.config out of the nomad.models import
+            # chain (config imports NomadExecutor back from this package).
+            from app.tasks import config as tasks_config
+
             filtered_meta["staleness_threshold_seconds"] = str(
                 tasks_config.tasks_settings.STALENESS_THRESHOLD_SECONDS
             )
@@ -1416,7 +1419,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     ) -> None:
         """Persist this sync cycle's delta logs into the chunk store.
 
-        Resets the fetch frontier (both cursors zeroed, ``allocation_epoch``
+        Resets the fetch frontier (both cursors zeroed, ``producer_epoch``
         stamped to the new allocation's ``CreateIndex``) for every stream when
         Nomad reschedules to a new allocation so the fetcher reads the new
         allocation from the start; the epoch is threaded into every write so a
@@ -1442,8 +1445,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             await backfill_legacy_logs(writer_session, queue_item.id, legacy_logs)
 
         if previous_allocation_id is not None and previous_allocation_id != alloc_id:
-            await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-                writer_session, queue_item.id, new_allocation_epoch=alloc_epoch
+            await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
+                writer_session, queue_item.id, new_producer_epoch=alloc_epoch
             )
 
         initial_offsets = await self._build_initial_log_offsets(
@@ -1547,7 +1550,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     source=step,
                     stream=stream,
                     capture_status=capture_status,
-                    allocation_epoch=alloc_epoch,
+                    producer_epoch=alloc_epoch,
                 )
 
     async def _release_capture_hold(
@@ -1758,31 +1761,28 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         Seeds each stream's next-fetch cursor from its durable
         ``TaskHistoryLogState`` row, but only when the row belongs to the
-        current allocation — its ``allocation_epoch`` matches ``current_epoch``
+        current allocation — its ``producer_epoch`` matches ``current_epoch``
         or is the ``0`` legacy/unknown sentinel that trusts the migration
         backfill. A row stamped to a known *different* allocation holds a cursor
         in that allocation's byte space, so it is skipped and the stream
         restarts from ``0`` rather than reusing a superseded cursor.
 
         :param writer_session: The dedicated log writer session.
-        :type writer_session: AsyncSession
         :param task_history_id: The task history identifier.
-        :type task_history_id: int
         :param current_epoch: The running allocation's ``CreateIndex``.
         :return: A dict shaped
             ``{source: {f"{stream.value}_last_offset": int,
             f"{stream.value}_producer_offset": int}}``.
-        :rtype: dict[str, dict[str, Any]]
         """
         state_rows = await TaskHistoryLogStateManager.list_for_task(
             writer_session, task_history_id
         )
         initial_offsets = defaultdict(dict)
         for row in state_rows:
-            if row.allocation_epoch not in (0, current_epoch):
+            if row.producer_epoch not in (0, current_epoch):
                 continue
             initial_offsets[row.source][f"{row.stream.value}_last_offset"] = (
-                row.nomad_offset
+                row.producer_fetch_offset
             )
             initial_offsets[row.source][f"{row.stream.value}_producer_offset"] = (
                 row.producer_offset
@@ -1819,7 +1819,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 delta_text = payload.get(log_type) or ""
                 if not delta_text and not force_flush:
                     continue
-                nomad_offset = payload.get(f"{log_type.value}_last_offset", 0)
+                producer_fetch_offset = payload.get(f"{log_type.value}_last_offset", 0)
                 producer_offset = payload.get(f"{log_type.value}_producer_offset", 0)
                 await TaskHistoryLogWriter.append(
                     writer_session,
@@ -1828,8 +1828,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     stream=log_type,
                     new_bytes=delta_text.encode("utf-8"),
                     producer_offset_after=producer_offset,
-                    nomad_offset_after=nomad_offset,
-                    allocation_epoch=alloc_epoch,
+                    producer_fetch_offset_after=producer_fetch_offset,
+                    producer_epoch=alloc_epoch,
                     force_flush=force_flush,
                 )
 

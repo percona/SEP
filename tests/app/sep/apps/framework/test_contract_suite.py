@@ -444,7 +444,10 @@ def test_build_valid_create_body_wraps_multi_value_refs() -> None:
         MOCK_CREATED_TABLE_ID,
     )
 
-    body = build_valid_create_body(checksums_app)
+    body = build_valid_create_body(
+        checksums_app,
+        create_body_overrides={"defaults_file": ""},
+    )
 
     assert body is not None
     assert body["service_id"] == MOCK_CREATED_SERVICE_ID

@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
-from app.api.deps import require_admin_for_unsafe_methods
+from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.alerts.config import alert_settings
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.config import PMMSettings, settings
@@ -149,7 +149,7 @@ def api_admin_client_fixture(
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_tasks_api] = lambda: _mock_tasks_api()
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
@@ -163,7 +163,7 @@ def api_non_admin_client_fixture(
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_tasks_api] = lambda: _mock_tasks_api()
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
@@ -234,7 +234,7 @@ def _find_setting(
 def reduced_activation_client_fixture(
     override_session: AsyncSession,
 ) -> Iterator[TestClient]:
-    """Yield a settings router built as if the alerts app were never activated.
+    """Return a settings router built as if the alerts app were never activated.
 
     Reloading ``app.sep.main`` cannot reach this surface: ``settings.py`` captures
     the app-owned classes and builds ``router`` at module import, and

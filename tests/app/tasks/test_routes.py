@@ -28,10 +28,11 @@ import requests.exceptions
 from fastapi import status
 from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
+from starlette.testclient import TestClient
 
 from app.api.deps import (
     get_current_user,
-    require_admin_for_unsafe_methods,
+    require_minimum_role_for_unsafe_methods,
     SERVICE_PRINCIPAL_ID,
 )
 from app.core.celery.deps import get_session as get_celery_beat_session
@@ -40,6 +41,8 @@ from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.core.pmm import _background_tasks
 from app.core.utils import utc_now
 from app.core.utils.date_time import make_datetime_utc
+from app.sep.apps.archives.alerts import ALERT_DETAIL_BUILDER
+from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.tasks import hook_resolver
 from app.tasks.config import PreExecutionCheckMode, tasks_settings
 from app.tasks.connectivity.models import ConnectivityServiceType
@@ -47,7 +50,10 @@ from app.tasks.connectivity.service import _cached_check_connectivity
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
 from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
-from app.tasks.execution.executors.nomad.steps import NomadStep
+from app.tasks.execution.executors.nomad.steps import (
+    NomadStep,
+    RUN_SCRIPT_OUTPUT_FILES_PATH,
+)
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.main import tasks_app
@@ -55,7 +61,6 @@ from app.tasks.models import (
     DispatchLock,
     ExecutionEvent,
     LogCaptureStatusEnum,
-    RUN_SCRIPT_OUTPUT_FILES_PATH,
     SYSTEM_USER,
     Task,
     TaskBackendEnum,
@@ -66,6 +71,7 @@ from app.tasks.models import (
     TaskWrite,
 )
 from tests.app.factories import build_task_history, TaskFactory
+from tests.app.tasks.conftest import HOOK_PATH_FIELDS, REJECTED_HOOK_PATHS
 
 MOCK_FILE_SIZE = 1024
 PAGINATION_TASK_COUNT = 3
@@ -205,12 +211,12 @@ async def test_create_task_success(test_client):
 async def test_create_task_persists_run_result_recorder(test_client):
     """Assert a created task's run_result_recorder round-trips through the POST body."""
     task_data = TaskFactory.build(
-        name="recorder-task", run_result_recorder="pkg.mod:recorder"
+        name="recorder-task", run_result_recorder="app.sep.apps.pkg.mod:recorder"
     )
     payload = TaskWrite.model_validate(task_data).model_dump(mode="json")
     response = test_client.post("/", json=payload)
     assert response.status_code == status.HTTP_201_CREATED
-    assert response.json()["run_result_recorder"] == "pkg.mod:recorder"
+    assert response.json()["run_result_recorder"] == "app.sep.apps.pkg.mod:recorder"
 
 
 @pytest.mark.asyncio
@@ -243,6 +249,70 @@ async def test_update_task_not_found(test_client):
     ).model_dump(mode="json")
     response = test_client.put("/nonexistent", json=payload)
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestTaskHookPathAllowList:
+    """Cover the hook-path allow-list as enforced across the task write endpoints."""
+
+    @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
+    @pytest.mark.parametrize("hook_path", REJECTED_HOOK_PATHS)
+    @pytest.mark.asyncio
+    async def test_create_rejects_hook_path_outside_allow_list(
+        self, test_client: TestClient, field: str, hook_path: str
+    ) -> None:
+        """Assert POST rejects a hook path the allow-list denies."""
+        payload = TaskWrite.model_validate(
+            TaskFactory.build(name="evil-task")
+        ).model_dump(mode="json")
+        payload[field] = hook_path
+
+        response = test_client.post("/", json=payload)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert "app.sep.apps" in response.text
+
+    @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
+    @pytest.mark.parametrize("hook_path", REJECTED_HOOK_PATHS)
+    @pytest.mark.asyncio
+    async def test_update_rejects_hook_path_outside_allow_list(
+        self,
+        test_client: TestClient,
+        created_task: Task,
+        field: str,
+        hook_path: str,
+    ) -> None:
+        """Assert PUT rejects a hook path the allow-list denies."""
+        payload = TaskWrite.model_validate(
+            TaskFactory.build(name=created_task.name)
+        ).model_dump(mode="json")
+        payload[field] = hook_path
+
+        response = test_client.put(f"/{created_task.name}", json=payload)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert field in response.text
+
+    @pytest.mark.parametrize(
+        ("field", "hook_path"),
+        [
+            ("alert_detail_builder", ALERT_DETAIL_BUILDER),
+            ("run_result_recorder", RUN_RESULT_RECORDER),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_create_accepts_in_tree_hook_path(
+        self, test_client: TestClient, field: str, hook_path: str
+    ) -> None:
+        """Assert a non-admin caller can still create a task stamping a shipped hook."""
+        payload = TaskWrite.model_validate(
+            TaskFactory.build(name="app-task")
+        ).model_dump(mode="json")
+        payload[field] = hook_path
+
+        response = test_client.post("/", json=payload)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()[field] == hook_path
 
 
 async def _seed_running_over_success(session, name: str, finished):
@@ -2965,7 +3035,9 @@ class TestSyncTaskHistoryRealSession:
 
         mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
 
-        tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+        tasks_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
+            lambda: None
+        )
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
@@ -3012,7 +3084,9 @@ class TestSyncTaskHistoryRealSession:
         async def _recorder(recorder_session, history, run_result):
             recorded.append(run_result)
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"pkg:rec": _recorder}, clear=True)
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder}, clear=True
+        )
 
         task = await TaskManager.create(
             session,
@@ -3023,7 +3097,7 @@ class TestSyncTaskHistoryRealSession:
                     is_template=False,
                     protected=False,
                     alert_on_fail=False,
-                    run_result_recorder="pkg:rec",
+                    run_result_recorder="app.sep.apps.pkg:rec",
                     output_files_path=RUN_SCRIPT_OUTPUT_FILES_PATH,
                 )
             ),
@@ -3047,7 +3121,9 @@ class TestSyncTaskHistoryRealSession:
         mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
         mock_executor.stream_file = MagicMock(side_effect=fake_stream_file)
 
-        tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+        tasks_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
+            lambda: None
+        )
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
