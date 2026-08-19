@@ -17,10 +17,11 @@
 
 import logging
 import secrets
-from typing import Annotated
+from collections.abc import Callable
+from typing import Annotated, Any, TypeVar
 from uuid import UUID
 
-from fastapi import Cookie, Depends
+from fastapi import Cookie, Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import ValidationError
 
@@ -29,9 +30,11 @@ from app.core.auth.exceptions import (
     HTTPUnauthorizedException,
     InactiveUserException,
 )
+from app.core.auth.models import UserRole
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.log import set_log_context
+from app.core.security import is_bearer_authenticated, SAFE_HTTP_METHODS
 from app.sep.config import sep_settings
 
 logger = logging.getLogger(__name__)
@@ -51,6 +54,7 @@ _SERVICE_PRINCIPAL = User.build_service_principal(
     username="sep-service",
     first_name="SEP",
     last_name="Service",
+    role=UserRole.VIEWER,
 )
 
 
@@ -127,6 +131,69 @@ async def get_current_admin(current_user: CurrentUser) -> User:
 
 
 IsAdminDep = Depends(get_current_admin)
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+_NON_ADMIN_MUTATIONS: set[Callable[..., Any]] = set()
+
+
+def allow_non_admin_mutation(endpoint: F) -> F:
+    """Exempt one route's endpoint from the unsafe-method admin gate.
+
+    Applied *below* the route decorator so the registered object is the same one
+    FastAPI stores as ``APIRoute.endpoint``. Reserved for a route whose method is
+    unsafe but whose operation is a read — a batch lookup whose key set will not
+    fit in a URL. Registering a route that changes state opens a hole in the gate.
+
+    :param endpoint: The route handler to exempt.
+    :return: The same handler, unchanged.
+    """
+    _NON_ADMIN_MUTATIONS.add(endpoint)
+    return endpoint
+
+
+async def require_admin_for_unsafe_methods(request: Request) -> None:
+    """Require an admin user on mutating HTTP methods.
+
+    The authorization sibling of ``require_bearer_for_unsafe_methods``. Safe
+    methods pass untouched, keeping whatever authentication they already carry;
+    every other method requires ``is_admin`` — ``POST``, ``PUT``, ``PATCH`` and
+    ``DELETE``, and equally anything no route declares. Two carve-outs follow: a
+    route registered via :func:`allow_non_admin_mutation`, and the service
+    principal.
+
+    The user is resolved in the body rather than through a sub-dependency: a
+    sub-dependency resolves eagerly and would force authentication onto the
+    unauthenticated ``GET /health`` that every service exposes.
+
+    ``SEP_INTERNAL_TOKEN``'s service principal is admitted by identity so
+    scheduled inventory sync and scheduled execution keep working. The bypass is
+    scoped to this gate: the principal holds ``UserRole.VIEWER``, so it keeps
+    ``is_admin=False`` and every pre-existing ``IsApiAdmin`` / ``IsAdminDep``
+    check refuses it as before.
+
+    :param request: The incoming HTTP request.
+    :raises HTTPUnauthorizedException: When the method is unsafe and the request
+        carries no Bearer credential, or the credential does not validate.
+    :raises HTTPForbiddenException: When the resolved user is not an admin, or is
+        inactive.
+    :raises BaseAuthProviderException: When the auth provider errors while
+        validating the credential.
+    """
+    if request.method in SAFE_HTTP_METHODS:
+        return
+    route = request.scope.get("route")
+    if route is not None and route.endpoint in _NON_ADMIN_MUTATIONS:
+        return
+    if not is_bearer_authenticated(request):
+        raise HTTPUnauthorizedException
+    user = await get_current_user(await oauth2_scheme(request))
+    if user.id == SERVICE_PRINCIPAL_ID:
+        return
+    await get_current_admin(user)
+
+
+RequireAdminForUnsafeMethods = Depends(require_admin_for_unsafe_methods)
 
 
 def get_current_user_id(current_user: CurrentUser) -> str:

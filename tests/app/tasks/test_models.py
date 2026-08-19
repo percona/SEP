@@ -17,10 +17,12 @@
 
 from collections import defaultdict
 from datetime import datetime, UTC
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 import yaml
+from polyfactory.factories.pydantic_factory import ModelFactory
 from pydantic import ValidationError
 
 from app.core.alerts.models import AlertService, AlertSeverity
@@ -29,12 +31,14 @@ from app.sep.apps.archives.alerts import (
     ALERT_DETAIL_BUILDER,
     ARCHIVER_TRACE_PLACEHOLDER,
 )
+from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.crud import TaskManager
 from app.tasks.models import (
     _encode_anonymize_mask,
     DispatchLock,
     FileMetadata,
+    LogCaptureStatusEnum,
     Task,
     TaskBackendEnum,
     TaskBase,
@@ -42,6 +46,7 @@ from app.tasks.models import (
     TaskExecutionRequest,
     TaskHistory,
     TaskHistoryBase,
+    TaskHistoryLogState,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
     TaskLogType,
@@ -50,7 +55,8 @@ from app.tasks.models import (
     TaskWrite,
     TransformPayloadRequest,
 )
-from tests.app.factories import TaskFactory
+from tests.app.factories import TaskFactory, TaskResponseFactory
+from tests.app.tasks.conftest import HOOK_PATH_FIELDS, REJECTED_HOOK_PATHS
 
 ENCODE_MASK_INT_INPUT = 42
 FILE_METADATA_TEST_SIZE = 100
@@ -160,6 +166,70 @@ class TestTaskLogType:
         assert TaskLogType.STDERR == "stderr"
 
 
+class TestLogCaptureStatusEnum:
+    """Cover LogCaptureStatusEnum values."""
+
+    def test_values_are_spelled_explicitly(self) -> None:
+        """Assert each member carries its literal wire value."""
+        assert LogCaptureStatusEnum.COMPLETE == "complete"
+        assert LogCaptureStatusEnum.INCOMPLETE == "incomplete"
+        assert LogCaptureStatusEnum.UNKNOWN == "unknown"
+
+    def test_membership_is_exact(self) -> None:
+        """Assert the enum admits exactly the three capture verdicts."""
+        assert {member.value for member in LogCaptureStatusEnum} == {
+            "complete",
+            "incomplete",
+            "unknown",
+        }
+
+
+class TestTaskHistoryLogStateCaptureStatus:
+    """Cover the capture_status column's two distinct defaults."""
+
+    def test_new_rows_default_to_incomplete(self) -> None:
+        """Assert a freshly constructed row starts pessimistic.
+
+        A row exists before its stream is known to be drained, so the honest
+        starting verdict is ``INCOMPLETE`` — it is upgraded once the drain
+        converges.
+        """
+        state = TaskHistoryLogState(
+            task_history_id=1,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+        )
+
+        assert state.capture_status == LogCaptureStatusEnum.INCOMPLETE
+
+    def test_server_default_back_classifies_pre_existing_rows_as_unknown(self) -> None:
+        """Assert the column's server default differs from the model default.
+
+        SQLAlchemy always sends the column on INSERT, so the server default
+        governs only the migration's backfill of rows written before the column
+        existed. Those rows cannot distinguish "emitted nothing" from "emitted
+        bytes that were never captured", so they are ``UNKNOWN`` — setting both
+        defaults alike would silently misreport one of the two populations.
+        """
+        column = TaskHistoryLogState.__table__.columns["capture_status"]
+
+        assert column.server_default.arg == LogCaptureStatusEnum.UNKNOWN.name
+        assert column.nullable is False
+        assert column.server_default.arg != LogCaptureStatusEnum.INCOMPLETE.name
+
+    def test_server_default_is_readable_back_through_the_mapped_type(self) -> None:
+        """Assert the server default is a string the column can actually read.
+
+        ``EnumField`` persists member names, so a default spelled as a member
+        *value* is written to every backfilled row and then raises
+        ``LookupError`` on the first read — breaking the log writer and every
+        history endpoint on a deployment that had rows before the upgrade.
+        """
+        column = TaskHistoryLogState.__table__.columns["capture_status"]
+
+        assert column.server_default.arg in column.type.enums
+
+
 class TestEncodeAnonymizeMask:
     """Test the _encode_anonymize_mask function."""
 
@@ -249,6 +319,58 @@ class TestTaskBaseValidation:
             )
 
 
+class TestTaskWriteHookPathValidation:
+    """Cover the hook-path allow-list enforced on ``TaskWrite``."""
+
+    @staticmethod
+    def _write(**overrides: object) -> TaskWrite:
+        """Build a minimal valid ``TaskWrite``, overriding the given fields.
+
+        :param overrides: Field values to set on the model.
+        :return: The constructed model.
+        """
+        return TaskWrite(name="hook-task", data={"task": "run-python"}, **overrides)
+
+    @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
+    @pytest.mark.parametrize("path", REJECTED_HOOK_PATHS)
+    def test_rejects_path_outside_allow_list(self, field: str, path: str) -> None:
+        """Assert a hook path the allow-list denies is rejected at the write boundary."""
+        with pytest.raises(ValidationError, match="app.sep.apps"):
+            self._write(**{field: path})
+
+    @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
+    def test_rejection_names_the_field(self, field: str) -> None:
+        """Assert the rejection message names the offending field."""
+        with pytest.raises(ValidationError, match=field):
+            self._write(**{field: "os:system"})
+
+    @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
+    def test_accepts_allow_listed_path(self, field: str) -> None:
+        """Assert an allow-listed hook path is accepted unchanged."""
+        write = self._write(**{field: ALERT_DETAIL_BUILDER})
+
+        assert getattr(write, field) == ALERT_DETAIL_BUILDER
+
+    @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
+    def test_accepts_none(self, field: str) -> None:
+        """Assert an unset hook field stays None."""
+        assert getattr(self._write(**{field: None}), field) is None
+
+    @pytest.mark.parametrize("factory", [TaskFactory, TaskResponseFactory])
+    def test_reading_back_a_stored_non_conforming_path_succeeds(
+        self, factory: type[ModelFactory[Any]]
+    ) -> None:
+        """Assert the allow-list constrains writes only, never read-back.
+
+        A row whose hook path predates the allow-list must still serialise.
+        """
+        legacy_path = "app.sep.plugins.archives.alerts:build"
+
+        instance = factory.build(alert_detail_builder=legacy_path)
+
+        assert instance.alert_detail_builder == legacy_path
+
+
 class TestTask:
     """Test Task model construction and properties."""
 
@@ -280,7 +402,7 @@ class TestTask:
     @pytest.mark.asyncio
     async def test_run_result_recorder_propagates_to_task_row(self, session) -> None:
         """Persist ``run_result_recorder`` from a ``TaskWrite`` onto the ``Task`` row."""
-        recorder = "app.sep.apps.mysql_backups.recorder:record_backup_run"
+        recorder = RUN_RESULT_RECORDER
         write = TaskWrite.model_validate(
             TaskFactory.build(name="recorder-task", run_result_recorder=recorder)
         )
@@ -930,6 +1052,26 @@ class TestTaskHistoryResponse:
 
         assert response.has_logs is False
 
+    def test_log_capture_defaults_to_unknown(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert ``log_capture`` defaults to ``unknown`` when never populated.
+
+        A history with no state rows has no evidence either way, so the reader
+        is told the capture outcome is unknown rather than complete.
+        """
+        history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.SUCCESS,
+        )
+
+        response = TaskHistoryResponse.model_validate(history)
+
+        assert response.log_capture == LogCaptureStatusEnum.UNKNOWN
+
     def test_has_logs_true_propagates_via_object_setattr(
         self, task_instance: Task, execution_request: TaskExecutionRequest
     ) -> None:
@@ -1078,14 +1220,14 @@ class TestTaskHistoryResponseDisplayName:
         )
 
     def test_empty_meta_does_not_crash(self, run_python_task: Task) -> None:
-        """Assert an empty meta dict falls back gracefully without raising."""
+        """Assert an empty meta dict still yields a non-empty display name."""
         req = TaskExecutionRequest(task="run-python", target="node-1", meta={})
         result = self._history(run_python_task, req).display_name
         assert isinstance(result, str)
         assert len(result) > 0
 
     def test_none_meta_does_not_crash(self, run_python_task: Task) -> None:
-        """Assert a None meta falls back gracefully without raising."""
+        """Assert a None meta still yields a string display name."""
         req = TaskExecutionRequest(task="run-python", target="node-1", meta=None)
         result = self._history(run_python_task, req).display_name
         assert isinstance(result, str)

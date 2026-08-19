@@ -37,6 +37,7 @@ from pytest_mock import MockerFixture
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import URL
 
+from app.api.deps import require_admin_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import RemoteAPI
@@ -1504,6 +1505,7 @@ class TestAtwBatchExecuteOnRealPostgres:
         mocker.patch.object(AtwIncidentExecutionManager, "save", new=_flaky_save)
 
         sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+        sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
         sep_app.dependency_overrides[get_current_user] = lambda: regular_user
         sep_app.dependency_overrides[get_session] = lambda: postgres_session
         client = AsyncClient(

@@ -12,7 +12,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-"""Tests for the baked PMM-embedded settings profile."""
+"""Verify the baked PMM-embedded settings profile."""
 
 import re
 from typing import Any
@@ -30,8 +30,11 @@ from app.sep.apps.framework.registry import (
     collect_app_owned_settings_classes,
 )
 from app.sep.config import SEPSettings
+from app.sep.routes.artifacts import collect_base_dirs
+from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.tasks.config import TasksSettings
 from app.tasks.settings.routes import TASKS_ADMIN_SETTINGS_CLASSES
+from tests.app.sep.conftest import REDUCED_ACTIVATION
 from tests.sidecar.conftest import (
     EMBEDDED_PROFILE,
     read_allowlist,
@@ -45,6 +48,13 @@ PASSWORD_BEARING_USERINFO = re.compile(r"://[^/@\s]+:[^/@\s]+@")
 Only an embedded credential is a finding, and a bare user in an authority is
 legitimate, so an ``@``-rejecting pattern would be broader than the invariant
 this file enforces.
+"""
+
+PMM_URL_PREFIX = "/sep"
+"""The mount prefix PMM hardcodes in the ``location`` block it ships for SEP.
+
+Fixed topology rather than a per-deployment input, so the profile and the
+healthcheck are both held against this one literal.
 """
 
 PLACEHOLDER_MARKER = re.compile(r"glsa_|__[A-Z_]+__")
@@ -261,6 +271,35 @@ def test_activation_list_builds_an_app_registry():
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
+def test_activation_list_resolves_the_snippet_artifact_type(mocker):
+    """Resolve the snippet artifact type from the baked profile's activation list.
+
+    The profile activates atw and no artifact-declaring app, so the type has to
+    come from the static map rather than the registry; without it the signed URL
+    ATW emits is rejected as an invalid artifact type.
+    """
+    registry = build_app_registry(SEPSettings().APPS)
+    mocker.patch("app.sep.routes.artifacts.get_app_registry", return_value=registry)
+
+    assert ARTIFACT_TYPE_SNIPPET in collect_base_dirs()
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_reduced_activation_mirrors_the_baked_profile():
+    """Pin the shared activation constant to the profile it claims to mirror.
+
+    ``REDUCED_ACTIVATION`` stands in for this profile everywhere in the SEP
+    subtree, so a divergence makes those tests assert against a deployment that
+    does not exist — which is how an activation-gated artifact-download failure
+    stayed invisible to the whole suite while carrying a ``snippets`` entry the
+    profile never had.
+    """
+    assert [app.module_name for app in REDUCED_ACTIVATION] == [
+        app.module_name for app in SEPSettings().APPS
+    ]
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
 def test_uvicorn_ports_match_the_healthcheck_probe():
     """Assert the profile follows the probe's hardcoded ports, which are contract."""
     healthcheck = (SIDECAR_DIR / "healthcheck.sh").read_text(encoding="utf-8")
@@ -272,6 +311,28 @@ def test_uvicorn_ports_match_the_healthcheck_probe():
         InventorySettings().UVICORN_PORT,
         TasksSettings().UVICORN_PORT,
     ]
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_profile_serves_under_the_prefix_pmm_proxies():
+    """Assert the profile mounts SEP where PMM's nginx drop-in forwards to it."""
+    assert SEPSettings().ROOT_PATH == PMM_URL_PREFIX
+
+
+def test_healthcheck_probes_the_prefix_free_path():
+    """Assert the loopback probe stays unprefixed even though the profile sets a prefix.
+
+    Routing tolerates a request that arrives without the prefix, which is what
+    lets the probe keep its short path; the HTTP-level proof lives beside the
+    other prefixed-routing tests.
+    """
+    healthcheck = (SIDECAR_DIR / "healthcheck.sh").read_text(encoding="utf-8")
+    probed = re.search(
+        r"urlopen\(f\"http://127\.0\.0\.1:\{port\}([^\"]*)\"", healthcheck
+    )
+
+    assert probed is not None
+    assert probed.group(1) == "/health"
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")

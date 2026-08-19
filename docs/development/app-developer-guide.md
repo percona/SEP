@@ -1198,7 +1198,7 @@ rules and you need to pin which one tripped.
 ### Factory conventions
 
 Test data comes from `polyfactory` factories — build with `.build()` and customise
-inline (`CasdoorUserFactory.build(is_admin=True)`). Never hand-roll a `dict` for a
+inline (`CasdoorUserFactory.build(role=UserRole.ADMIN)`). Never hand-roll a `dict` for a
 model a factory already covers. The contract suite's own task/inventory seeding goes
 through the `MockTaskAPI` / `MockInventoryAPI` helpers in
 `tests/app/sep/apps/framework/kit.py`, not raw dicts.
