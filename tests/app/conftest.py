@@ -21,6 +21,7 @@ from collections.abc import AsyncGenerator, Callable, Iterator
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock
+from uuid import uuid4
 
 import aioresponses.core
 import pytest
@@ -30,6 +31,7 @@ from faker import Faker
 from fastapi import Request
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from itsdangerous import URLSafeTimedSerializer
 from pytest_mock import MockerFixture
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -41,8 +43,9 @@ from app.api.deps import require_admin_for_unsafe_methods
 from app.core.alerts.config import alert_settings
 from app.core.auth.base import BaseAuthProvider
 from app.core.auth.config import get_active_auth_provider
-from app.core.auth.models import OAuthToken
+from app.core.auth.models import OAuthToken, UserRole
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.auth.providers.grafana.models import ASSERTION_SALT
 from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
 from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
@@ -325,7 +328,7 @@ def grafana_mock(
 @pytest.fixture
 def admin_user(valid_username: str, faker: Faker) -> CasdoorUser:
     """Create a mock admin user with active status."""
-    return CasdoorUserFactory.build(is_admin=True)
+    return CasdoorUserFactory.build(role=UserRole.ADMIN)
 
 
 @pytest.fixture
@@ -333,7 +336,7 @@ def regular_user(valid_username: str, faker: Faker) -> CasdoorUser:
     """Create a mock regular user with active status."""
     return CasdoorUserFactory.build(
         username=valid_username,
-        is_admin=False,
+        role=UserRole.VIEWER,
     )
 
 
@@ -624,6 +627,32 @@ async def async_test_client(regular_user: CasdoorUser) -> AsyncClient:
         yield client
 
     sep_app.dependency_overrides = {}
+
+
+def make_roleless_grafana_assertion(token_type: str) -> str:
+    """Return a signed Grafana identity assertion carrying no ``role`` claim.
+
+    Reproduces the assertion shape minted before the role became a claim of its
+    own, which the current minting path can no longer produce. The serializer is
+    rebuilt from the signing key and the shared salt constant rather than
+    imported (the module-level serializer is private), so the forged assertion
+    verifies against the real one.
+
+    :param token_type: The ``typ`` claim to embed (``"access"``, ``"refresh"``
+        or ``"exchange"``).
+    :return: The signed, URL-safe assertion.
+    """
+    return URLSafeTimedSerializer(
+        settings.SECRET_KEY.get_secret_value(), salt=ASSERTION_SALT
+    ).dumps(
+        {
+            "id": str(uuid4()),
+            "username": "alice",
+            "email": "",
+            "is_admin": True,
+            "typ": token_type,
+        }
+    )
 
 
 def make_request(

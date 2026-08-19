@@ -10703,6 +10703,7 @@
                 "enum": [
                   "daily",
                   "weekly",
+                  "1",
                   "2",
                   "3",
                   "4",
@@ -14065,7 +14066,7 @@
     },
     "/api/apps/alerts/": {
       "get": {
-        "description": "Return everything the React list page needs in a single call.\n\nMirror the data assembled for the deprecated Jinja index view\n(:func:`app.sep.apps.alerts.deps.get_alerts_index_context`) as JSON:\nalert templates grouped by service type, PMM connectivity, the PagerDuty\ncontact-point status, and the most recent backups.\n\n``present_names`` is ``None`` when PMM is unconfigured or unreachable, which\nis the same signal used to drive ``pmm_connected`` and per-template\n``in_pmm`` flags so the UI degrades gracefully.\n\n:param alert_templates: Local alert templates grouped by service type.\n:type alert_templates: AlertTemplatesDep\n:param present_names: Template names already present in PMM, or ``None`` when\n    PMM is unreachable.\n:type present_names: set[str] | None\n:param recent_backups: The most recent alert backups, newest first.\n:type recent_backups: list[AlertBackup]\n:param pagerduty_status: PagerDuty contact-point status, or ``None`` when PMM\n    is unreachable.\n:type pagerduty_status: dict[str, Any] | None\n:return: The aggregated index payload.\n:rtype: IndexResponse",
+        "description": "Return everything the React list page needs in a single call.\n\nMirror the data assembled for the deprecated Jinja index view\n(:func:`app.sep.apps.alerts.deps.get_alerts_index_context`) as JSON:\nalert templates grouped by service type, PMM connectivity, the PagerDuty\ncontact-point status, and the most recent backups.\n\n``present_names`` is ``None`` when PMM is unconfigured or unreachable, which\nis the same signal used to drive ``pmm_connected`` and per-template\n``in_pmm`` flags, so the response carries no PMM data rather than failing.\n\n:param alert_templates: Local alert templates grouped by service type.\n:param present_names: Template names already present in PMM, or ``None`` when\n    PMM is unreachable.\n:param recent_backups: The most recent alert backups, newest first.\n:param pagerduty_status: PagerDuty contact-point status, or ``None`` when PMM\n    is unreachable.\n:return: The aggregated index payload.",
         "operationId": "alerts_alerts_api_index_api_apps_alerts__get",
         "responses": {
           "200": {
