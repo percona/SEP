@@ -20,9 +20,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from app.tasks.execution.executors import nomad
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
+_CHILD_TIMEOUT_SEC = 300
 
 # Derived from the package rather than enumerated, so a submodule added later
 # cannot join the package without also joining this regression test.
@@ -31,19 +34,25 @@ _SUBMODULES = tuple(
 )
 
 
-def test_nomad_package_submodules_import_without_config_first() -> None:
-    """Assert any Nomad executor submodule imports cleanly before tasks config.
+def test_submodule_probe_list_is_not_vacuous() -> None:
+    """Assert the derived submodule list is non-empty."""
+    assert _SUBMODULES, "discovered no submodules -- the probes below would be vacuous"
+
+
+@pytest.mark.parametrize("submodule", _SUBMODULES)
+def test_nomad_submodule_imports_without_config_first(submodule: str) -> None:
+    """Assert ``submodule`` imports cleanly when nothing has imported config yet.
 
     Live entrypoints usually import ``app.tasks.config`` first, which hid a real
-    cycle: package ``__init__`` → ``models`` → ``config`` → package
-    ``NomadExecutor``. A fresh interpreter that touches a submodule first must
-    still succeed.
+    cycle: package ``__init__`` -> ``models`` -> ``config`` -> package
+    ``NomadExecutor``. Each submodule gets its own interpreter so a sibling
+    already sitting in ``sys.modules`` cannot resolve the cycle on its behalf.
+
+    :param submodule: The dotted path of the submodule imported first.
     """
-    assert _SUBMODULES, "discovered no submodules -- the probe below would be vacuous"
     probe = (
         "import importlib\n"
-        f"for name in {_SUBMODULES!r}:\n"
-        "    importlib.import_module(name)\n"
+        f"importlib.import_module({submodule!r})\n"
         "from app.tasks.execution.executors.nomad import NomadExecutor\n"
         "assert NomadExecutor.__name__ == 'NomadExecutor'\n"
     )
@@ -52,9 +61,10 @@ def test_nomad_package_submodules_import_without_config_first() -> None:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        timeout=_CHILD_TIMEOUT_SEC,
         check=False,
     )
     assert result.returncode == 0, (
-        f"Nomad package submodule import failed in a clean interpreter:\n"
+        f"{submodule} failed to import first in a clean interpreter:\n"
         f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
     )
