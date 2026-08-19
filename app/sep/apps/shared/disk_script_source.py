@@ -46,17 +46,16 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.sep.apps.field_names import EXECUTOR_HOST_FIELD_NAME, SUDO_FIELD_NAME
 from app.sep.apps.framework.list_query import in_memory_list_scripts
 from app.sep.apps.framework.schema import (
     AppSchema,
     BoolField,
     Column,
     EXECUTION_HOST_LABEL,
-    EXECUTOR_HOST_FIELD_NAME,
     FormSection,
     HostField,
     ListView,
-    SUDO_FIELD_NAME,
 )
 from app.sep.apps.framework.script_helpers import (
     build_artifact_download_url,
@@ -260,8 +259,10 @@ def _build_execution_meta(
             detail=f"Script {snippet.filename!r} declares no runnable interpreter."
         )
     if not snippet.can_execute:
+        reasons = "; ".join(snippet.validated_parameters.errors)
         raise HTTPBadRequestException(
-            detail=f"Script {snippet.filename!r} has invalid frontmatter parameters."
+            detail=f"Script {snippet.filename!r} has invalid frontmatter parameters: "
+            f"{reasons}"
         )
     construct_args = dict(body.args)
     if snippet.sudo.is_optional:

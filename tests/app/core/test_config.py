@@ -394,6 +394,21 @@ class TestPMMSettings:
         assert "PMM" in Settings.model_fields
         assert Settings.model_fields["PMM"].default == PMMSettings()
 
+    def test_endpoint_rejects_redacted_mask_on_yaml_path(self) -> None:
+        """Fail when a masked export is re-fed as the PMM endpoint."""
+        with pytest.raises(ValidationError, match="endpoint"):
+            PMMSettings(endpoint="https://pmm-user:****@pmm.example.com:8443")
+
+    def test_endpoint_rejects_redacted_mask_on_env_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fail Settings load when a masked PMM endpoint arrives via the environment."""
+        monkeypatch.setenv(
+            "PMM__ENDPOINT", "https://pmm-user:****@pmm.example.com:8443"
+        )
+        with pytest.raises(ValidationError, match="endpoint"):
+            Settings(_env_file=None)
+
 
 def test_settings_secret_key_is_secretstr():
     """Test that SECRET_KEY is a SecretStr instance and masked in repr."""

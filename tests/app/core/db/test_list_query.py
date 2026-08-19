@@ -15,11 +15,13 @@
 
 """Define tests for the core list-query framework (spec, dependency, predicate)."""
 
+import inspect
+from collections.abc import Callable
 from typing import Annotated
 
 import pytest
 import pytest_asyncio
-from fastapi import Depends, FastAPI, status
+from fastapi import Depends, FastAPI, params, status
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.dialects import mysql
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -34,11 +36,13 @@ from app.core.db.list_query import (
     ListQuery,
     ListQuerySpec,
     make_list_query_dep,
+    make_query_param_dep,
     SEARCH_PARAM_DESCRIPTION,
     SORT_PARAM_DESCRIPTION,
     UnknownSortKeyError,
 )
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.pagination.deps import pagination_dep
 from app.core.utils import json_serializer
@@ -240,6 +244,137 @@ class TestMakeListQueryDep:
             make_list_query_dep(SpecLessManager)
 
 
+def _record_build(
+    calls: list[tuple[ListQuerySpec, str, str | None]],
+) -> Callable[[ListQuerySpec, str, str | None], None]:
+    """Return a builder recording the arguments the dependency shape hands it.
+
+    :param calls: The list each invocation appends its ``(spec, sort, search)`` to.
+    :return: A builder usable as the dependency's value-object factory.
+    """
+
+    def build(spec: ListQuerySpec, sort: str, search: str | None) -> None:
+        calls.append((spec, sort, search))
+
+    return build
+
+
+class TestMakeQueryParamDep:
+    """Cover the dependency shape both list-query factories are built from."""
+
+    def test_builder_receives_the_spec_and_both_request_values(self) -> None:
+        """Hand the bound spec and the request's sort and search to the builder."""
+        spec = _spec(searchable=[col(LQItem.name)])
+        calls: list[tuple[ListQuerySpec, str, str | None]] = []
+
+        make_query_param_dep(spec, _record_build(calls))(sort="name", search="needle")
+
+        assert calls == [(spec, "name", "needle")]
+
+    def test_search_disabled_builder_receives_no_term(self) -> None:
+        """Pass ``None`` as the term when the spec declares nothing searchable."""
+        spec = _spec()
+        calls: list[tuple[ListQuerySpec, str, str | None]] = []
+
+        make_query_param_dep(spec, _record_build(calls))(sort="name")
+
+        assert calls == [(spec, "name", None)]
+
+    def test_unknown_sort_key_maps_to_422(self) -> None:
+        """Translate the builder's ``UnknownSortKeyError`` into a flat 422 detail."""
+
+        def build(spec: ListQuerySpec, sort: str, search: str | None) -> None:
+            raise UnknownSortKeyError(sort)
+
+        dep = make_query_param_dep(_spec(), build)
+
+        with pytest.raises(HTTPUnprocessableEntityException) as exc_info:
+            dep(sort="evil")
+
+        assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert exc_info.value.detail == "Invalid sort key: 'evil'"
+
+    def test_builder_value_object_is_returned_unchanged(self) -> None:
+        """Yield exactly what the builder produced, so each path keeps its own type."""
+        sentinel = object()
+
+        def build(spec: ListQuerySpec, sort: str, search: str | None) -> object:
+            return sentinel
+
+        dep = make_query_param_dep(_spec(), build)
+
+        assert dep(sort="name") is sentinel
+
+    def test_detail_reports_the_rejected_key_not_the_raw_request_value(self) -> None:
+        """Report the key the error carries, which is the request value minus any ``-``."""
+
+        def build(spec: ListQuerySpec, sort: str, search: str | None) -> None:
+            raise UnknownSortKeyError(sort.removeprefix("-"))
+
+        dep = make_query_param_dep(_spec(), build)
+
+        with pytest.raises(HTTPUnprocessableEntityException) as exc_info:
+            dep(sort="-evil")
+
+        assert exc_info.value.detail == "Invalid sort key: 'evil'"
+
+    def test_rejection_chains_the_original_error(self) -> None:
+        """Keep the ``UnknownSortKeyError`` as the 422's cause for the traceback."""
+
+        def build(spec: ListQuerySpec, sort: str, search: str | None) -> None:
+            raise UnknownSortKeyError(sort)
+
+        dep = make_query_param_dep(_spec(), build)
+
+        with pytest.raises(HTTPUnprocessableEntityException) as exc_info:
+            dep(sort="evil")
+
+        assert isinstance(exc_info.value.__cause__, UnknownSortKeyError)
+
+    def test_unrelated_builder_failure_propagates(self) -> None:
+        """Leave a non-sort failure alone rather than reporting it as a bad sort key."""
+
+        def build(spec: ListQuerySpec, sort: str, search: str | None) -> None:
+            raise ValueError("row mismatch")
+
+        dep = make_query_param_dep(_spec(), build)
+
+        with pytest.raises(ValueError, match="row mismatch"):
+            dep(sort="name")
+
+    @pytest.mark.parametrize(
+        ("searchable", "expected"),
+        [([col(LQItem.name)], {"sort", "search"}), ([], {"sort"})],
+        ids=["search-enabled", "search-disabled"],
+    )
+    def test_declares_only_the_enabled_params(self, searchable, expected) -> None:
+        """Declare ``search`` only for a spec whose searchable set is non-empty."""
+        dep = make_query_param_dep(_spec(searchable=searchable), _record_build([]))
+
+        assert set(inspect.signature(dep).parameters) == expected
+
+    def test_each_dep_gets_its_own_param_declarations(self) -> None:
+        """Build a fresh declaration per dependency, as FastAPI binds one per param."""
+        spec = _spec(searchable=[col(LQItem.name)])
+        deps = [make_query_param_dep(spec, _record_build([])) for _ in range(2)]
+
+        defaults = [inspect.signature(dep).parameters["sort"].default for dep in deps]
+
+        assert all(isinstance(default, params.Query) for default in defaults)
+        assert defaults[0] is not defaults[1]
+
+    def test_signature_is_the_functions_own(self) -> None:
+        """Reflect a statically-defined signature, never a synthesized one.
+
+        A dynamically built signature has silently broken OpenAPI reflection in this
+        repo before, which is why the shape is two hand-written inner functions.
+        """
+        dep = make_query_param_dep(_spec(), _record_build([]))
+
+        assert "__signature__" not in vars(dep)
+        assert not hasattr(dep, "__wrapped__")
+
+
 _SESSION_SENTINEL_APP = FastAPI()
 
 _search_dep = make_list_query_dep(LQItemManager)
@@ -384,6 +519,84 @@ class TestListQueryDependencyRequests:
         """Reject an out-of-allowlist sort key with HTTP 422."""
         response = await lq_client.get("/lq", params={"sort": "evil"})
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.asyncio
+    async def test_rejected_sort_names_the_key_in_a_flat_detail(
+        self, lq_client: AsyncClient
+    ) -> None:
+        """Report the rejected key in a flat ``detail`` body, not a validation list."""
+        response = await lq_client.get("/lq", params={"sort": "evil"})
+
+        assert response.json() == {"detail": "Invalid sort key: 'evil'"}
+
+    @pytest.mark.asyncio
+    async def test_rejected_descending_key_is_reported_without_its_prefix(
+        self, lq_client: AsyncClient
+    ) -> None:
+        """Strip the direction marker from the reported key, as the allowlist holds it."""
+        response = await lq_client.get("/lq", params={"sort": "-evil"})
+
+        assert response.json() == {"detail": "Invalid sort key: 'evil'"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "sort",
+        ["", "-", "name ", " name", "NAME", "-evil"],
+        ids=[
+            "empty",
+            "bare-dash",
+            "trailing-space",
+            "leading-space",
+            "case",
+            "unknown",
+        ],
+    )
+    async def test_sort_keys_are_matched_exactly(
+        self, lq_client: AsyncClient, sort: str
+    ) -> None:
+        """Match allowlist keys byte-for-byte: nothing is trimmed, folded, or defaulted."""
+        response = await lq_client.get("/lq", params={"sort": sort})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.asyncio
+    async def test_sort_injection_attempt_never_reaches_the_query(
+        self, lq_client: AsyncClient
+    ) -> None:
+        """Reject a SQL-shaped sort value and leave the table listable afterwards."""
+        rejected = await lq_client.get(
+            "/lq", params={"sort": f"name); DROP TABLE {LQItem.__tablename__}; --"}
+        )
+        assert rejected.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+        surviving = await lq_client.get("/lq")
+        assert surviving.json()["total"] == len(SEED_NAMES)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "term", ["%", "_", "\\", "a%a"], ids=["pct", "us", "esc", "mixed"]
+    )
+    async def test_search_wildcards_match_literally(
+        self, lq_client: AsyncClient, term: str
+    ) -> None:
+        """Escape LIKE metacharacters, so a wildcard cannot widen the filtered total."""
+        response = await lq_client.get("/lq", params={"search": term})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["total"] == 0
+
+    @pytest.mark.asyncio
+    async def test_repeated_sort_param_takes_the_last_value(
+        self, lq_client: AsyncClient
+    ) -> None:
+        """Resolve a repeated ``sort`` to its last value rather than erroring."""
+        response = await lq_client.get(
+            "/lq", params=[("sort", "name"), ("sort", "-name")]
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        names = [item["name"] for item in response.json()["items"]]
+        assert names == list(reversed(SEED_NAMES))
 
     @pytest.mark.asyncio
     async def test_search_filters_and_reports_filtered_total(

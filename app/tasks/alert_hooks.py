@@ -74,11 +74,11 @@ async def build_owner_alert_details(
 
     Resolve the ``"module:function"`` builder the task declares in
     ``alert_detail_builder`` and delegate to it. Return ``None`` for any task
-    without a builder, leaving the generic alert path unchanged. A builder that
-    cannot be imported -- or that raises while running -- is swallowed (logged)
-    so a missing, misconfigured, or buggy plugin can never prevent the failure
-    alert itself from firing. This hook is best-effort enrichment; the base
-    alert always takes priority.
+    without a builder, leaving the generic alert path unchanged. A builder whose
+    path the allow-list refuses, that cannot be imported, or that raises while
+    running is swallowed (logged) so a denied, missing, misconfigured, or buggy
+    plugin can never prevent the failure alert itself from firing. This hook is
+    best-effort enrichment; the base alert always takes priority.
 
     :param history: The failed task execution history.
     :return: The plugin-specific alert additions, or ``None``.

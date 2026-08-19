@@ -72,7 +72,7 @@ describe('AppDisabledGuard + useEnabledApps (network contract)', () => {
     serveApps([
       app({
         app_key: 'atw',
-        display_name: 'Collect Diagnostic Data',
+        display_name: 'Support diagnostics',
         enabled: false,
         blocking_dependencies: ['snippets'],
       }),
@@ -81,7 +81,7 @@ describe('AppDisabledGuard + useEnabledApps (network contract)', () => {
     renderGuard('atw');
 
     await waitFor(() =>
-      expect(screen.getByText('Collect Diagnostic Data is unavailable')).toBeInTheDocument(),
+      expect(screen.getByText('Support diagnostics is unavailable')).toBeInTheDocument(),
     );
     expect(
       screen.getByText(
@@ -92,7 +92,7 @@ describe('AppDisabledGuard + useEnabledApps (network contract)', () => {
   });
 
   it('renders the wrapped route when the live response reports the app enabled', async () => {
-    serveApps([app({ app_key: 'atw', display_name: 'Collect Diagnostic Data', enabled: true })]);
+    serveApps([app({ app_key: 'atw', display_name: 'Support diagnostics', enabled: true })]);
     renderGuard('atw');
 
     await waitFor(() => expect(screen.getByTestId('child')).toBeInTheDocument());

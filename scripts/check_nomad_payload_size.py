@@ -16,24 +16,37 @@
 
 """Ensure Nomad dispatch payloads stay under the 16 KiB limit after minify+gzip."""
 
+import argparse
 import contextlib
 import gzip
 import io
 import sys
 
-from python_minifier import minify
+try:
+    from python_minifier import minify
+except ModuleNotFoundError:
+    minify = None
 
 NOMAD_PAYLOAD_SIZE_LIMIT = 16384
 
 
-def check_payload(path: str) -> tuple[str, int] | None:
-    """Minify and gzip a Python file, returning ``(path, size)`` if it exceeds the Nomad limit.
+def payload_size(path: str) -> int:
+    """Return the minify+gzip size in bytes of the Python file at ``path``.
 
     The source is minified with ``python_minifier`` (falling back to the
-    original text on ``SyntaxError``) then gzip-compressed.  If the
-    compressed size is within :data:`NOMAD_PAYLOAD_SIZE_LIMIT`, returns
-    ``None``; otherwise returns the path and offending size in bytes.
+    original text on ``SyntaxError``) then gzip-compressed.
+
+    :param path: Payload file path.
+    :return: Minify+gzip size in bytes.
+    :raises SystemExit: When ``python_minifier`` is not importable.
     """
+    if minify is None:
+        raise SystemExit(
+            "python_minifier is not installed for this Python interpreter.\n"
+            "Use the project venv interpreter, or let make resolve it:\n"
+            "  make check-nomad-payload-size ARGS='--report <path>...'"
+        )
+
     with open(path, encoding="utf-8") as f:  # noqa: PTH123
         src = f.read()
     with contextlib.suppress(SyntaxError):
@@ -55,21 +68,70 @@ def check_payload(path: str) -> tuple[str, int] | None:
     buf = io.BytesIO()
     with gzip.GzipFile(fileobj=buf, mode="wb") as gz:
         gz.write(src.encode("utf-8"))
-    sz = len(buf.getvalue())
+    return len(buf.getvalue())
+
+
+def check_payload(path: str) -> tuple[str, int] | None:
+    """Minify and gzip a Python file, returning ``(path, size)`` if it exceeds the Nomad limit.
+
+    :param path: Payload file path.
+    :return: ``(path, size)`` when the size exceeds the limit, otherwise ``None``.
+    """
+    sz = payload_size(path)
     if sz > NOMAD_PAYLOAD_SIZE_LIMIT:
         return (path, sz)
     return None
+
+
+def format_report_line(path: str, size: int) -> str:
+    """Format one ``--report`` output line for ``path`` at minify+gzip ``size``.
+
+    :param path: Payload file path.
+    :param size: Minify+gzip size in bytes.
+    :return: Human-readable report line.
+    """
+    limit = NOMAD_PAYLOAD_SIZE_LIMIT
+    if size <= limit:
+        margin = limit - size
+        return f"{path}: {size:,} / {limit:,} bytes ({margin:,} bytes headroom)"
+    over = size - limit
+    return f"{path}: {size:,} / {limit:,} bytes ({over:,} bytes OVER LIMIT)"
 
 
 def main(argv: list[str] | None = None) -> int:
     """Check every file path passed as a CLI argument against the Nomad payload limit.
 
     Returns 0 when all payloads are within the limit, or 1 after printing
-    a summary of the offending files.
+    a summary of the offending files.  With ``--report``, print one line per
+    path giving its size against the limit and its remaining headroom (or the
+    number of bytes over), and return 0.
+
+    :param argv: CLI arguments (defaults to ``sys.argv[1:]``).
+    :return: Process exit code.
     """
-    argv = sys.argv[1:] if argv is None else argv
+    parser = argparse.ArgumentParser(
+        description="Check Nomad dispatch payload sizes after minify+gzip.",
+    )
+    parser.add_argument(
+        "--report",
+        action="store_true",
+        help="Print size and headroom for each path (always exits 0).",
+    )
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        metavar="path",
+        help="Payload file path(s) to check.",
+    )
+    args = parser.parse_args(argv)
+
+    if args.report:
+        for path in args.paths:
+            print(format_report_line(path, payload_size(path)))
+        return 0
+
     failed = []
-    for path in argv:
+    for path in args.paths:
         result = check_payload(path)
         if result is not None:
             failed.append(result)
