@@ -128,7 +128,7 @@
 | app/sep/apps/alerts/restore.py                                                                                               |       95 |        0 |       26 |        0 |    100% |           |
 | app/sep/apps/alters/api\_routes.py                                                                                           |       38 |        3 |        0 |        0 |     92% |82, 140-145 |
 | app/sep/apps/alters/app.py                                                                                                   |       11 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/alters/deps.py                                                                                                  |      209 |       12 |       62 |       12 |     91% |98, 128-\>140, 134-\>133, 138-\>133, 141, 217-\>219, 344, 411-412, 470, 553, 576-577, 697, 708, 710, 749-\>753 |
+| app/sep/apps/alters/deps.py                                                                                                  |      209 |       12 |       62 |       11 |     92% |98, 128-\>140, 134-\>133, 138-\>133, 141, 344, 411-412, 470, 553, 576-577, 697, 708, 710, 749-\>753 |
 | app/sep/apps/alters/form\_backfill.py                                                                                        |       32 |        1 |       10 |        1 |     95% |       100 |
 | app/sep/apps/alters/models.py                                                                                                |       49 |        1 |        6 |        1 |     96% |       121 |
 | app/sep/apps/alters/schema.py                                                                                                |        7 |        0 |        0 |        0 |    100% |           |
@@ -282,7 +282,7 @@
 | app/sep/db/engine.py                                                                                                         |        7 |        0 |        0 |        0 |    100% |           |
 | app/sep/db/seed.py                                                                                                           |       39 |        0 |       12 |        0 |    100% |           |
 | app/sep/deps.py                                                                                                              |      243 |        6 |       48 |        1 |     97% |239, 600-\>605, 621, 810-813 |
-| app/sep/inventory.py                                                                                                         |       99 |        7 |       12 |        2 |     92% |86, 97, 233, 289, 309-\>311, 329, 366, 424 |
+| app/sep/inventory.py                                                                                                         |       99 |        7 |       12 |        1 |     93% |86, 97, 233, 289, 329, 366, 390 |
 | app/sep/main.py                                                                                                              |      120 |       15 |       12 |        2 |     87% |155-157, 282-301, 321-\>330, 455-459 |
 | app/sep/migrations/\_discovery.py                                                                                            |       41 |        2 |       20 |        3 |     92% |65, 97, 133-\>130 |
 | app/sep/migrations/\_orphan\_heads.py                                                                                        |       33 |        0 |        6 |        0 |    100% |           |
@@ -419,7 +419,7 @@
 | app/tasks/routes.py                                                                                                          |      237 |       20 |       46 |        4 |     91% |153-157, 240-246, 279, 329-335, 342, 432, 475, 490, 650, 664, 672, 698, 706-\>708, 729-730 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **26159** | **1661** | **6562** |  **623** | **92%** |           |
+| **TOTAL**                                                                                                                    | **26159** | **1661** | **6562** |  **621** | **92%** |           |
 
 
 ## Setup coverage badge
