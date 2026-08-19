@@ -13,12 +13,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define regression tests for SEP-1009 and SEP-1017.
+"""Define regression tests for PMM annotation across session boundaries.
 
 PMM annotation must not touch ORM attributes after the originating
-session has closed (SEP-1009), and ``schedule_annotation`` must
-reject callers that pass an instance whose deferred
-``execution_request`` column is still unloaded (SEP-1017).
+session has closed, and ``schedule_annotation`` must reject callers
+that pass an instance whose deferred ``execution_request`` column is
+still unloaded.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -44,7 +44,7 @@ from tests.app.tasks.execution.test_models import ConcreteExecutor
 
 
 class TestScheduleAnnotationDetachedInstance:
-    """Regression suite for SEP-1009."""
+    """Cover ORM access after the originating session has closed."""
 
     @pytest.mark.asyncio
     async def test_safe_after_session_close(self, session: AsyncSession):
@@ -62,7 +62,7 @@ class TestScheduleAnnotationDetachedInstance:
         session has closed and expired the attribute, raising
         ``DetachedInstanceError`` (sync driver) or
         ``sqlalchemy.exc.MissingGreenlet`` (asyncpg) — the production
-        failure mode captured in the SEP-1009 sep.log traceback.
+        failure mode captured in the production sep.log traceback.
         """
         task = await TaskManager.create(
             session,
@@ -114,7 +114,7 @@ class TestScheduleAnnotationDetachedInstance:
         :func:`create_pmm_annotation` is best-effort: it catches every
         exception raised by the PMM client and logs it, never re-raising. So a
         real upstream failure — here the annotation ``POST`` raising — must
-        leave the scheduled background task completing cleanly, with the error
+        leave the scheduled background task returning normally, with the error
         confined to the log. Patch the real boundary (the PMM client returned by
         ``settings.get_remote_api``) rather than ``create_pmm_annotation``
         itself, so the genuine swallow-and-log branch is exercised instead of a
@@ -171,13 +171,13 @@ class TestScheduleAnnotationDetachedInstance:
 
 
 class TestScheduleAnnotationPrecondition:
-    """Regression suite for SEP-1017 — guard against unloaded ``execution_request``."""
+    """Guard against an unloaded ``execution_request`` at schedule time."""
 
     @pytest.mark.asyncio
     async def test_raises_when_execution_request_unloaded(self, session: AsyncSession):
         """Assert ``schedule_annotation`` rejects a deferred instance.
 
-        Reproduce the SEP-1017 caller pattern: save a ``TaskHistory``
+        Reproduce the caller pattern: save a ``TaskHistory``
         via ``TaskHistoryManager.save`` (which re-defers
         ``execution_request`` via its internal plain ``session.refresh``),
         then call ``schedule_annotation`` without first refreshing the
@@ -280,12 +280,12 @@ class TestSyncTaskHistoryPmmRegressionSep1021:
     ) -> None:
         """Assert the terminal PMM annotation survives the load→writer session boundary.
 
-        Reproduce the SEP-1021 production flow: ``sync_queue_item`` loads the
+        Reproduce the production flow: ``sync_queue_item`` loads the
         ``TaskHistory`` with ``undefer(TaskHistory.execution_request)`` in a
         reader session, closes that session, then calls
         ``executor.sync_task_history(queue_item, writer_session=...)`` inside
-        a fresh writer session. The terminal annotation site (post-SEP-1204
-        ``await await_annotation(...)``; pre-SEP-1204 ``schedule_annotation``)
+        a fresh writer session. The terminal annotation site (now
+        ``await await_annotation(...)``, formerly ``schedule_annotation``)
         must snapshot the request primitives via ``execution_request_for_pmm_snapshot``
         rather than touching the deferred column getter across the closed
         reader session — that would raise ``MissingGreenlet`` on async
@@ -435,7 +435,7 @@ class TestSyncTaskHistoryPmmRegressionSep1021:
 
 
 class TestAwaitAnnotation:
-    """Regression suite for SEP-1204 — ``await_annotation`` precondition + snapshot.
+    """Cover the ``await_annotation`` precondition and primitive snapshot.
 
     Mirrors :class:`TestScheduleAnnotationPrecondition` and
     :class:`TestScheduleAnnotationDetachedInstance` for the awaited helper used
@@ -508,7 +508,7 @@ class TestAwaitAnnotation:
     ):
         """Assert ``await_annotation`` snapshots primitives from a detached instance.
 
-        Reproduce the SEP-1021 load→writer-session pattern: fetch the
+        Reproduce the load→writer-session pattern: fetch the
         ``TaskHistory`` (with ``undefer(TaskHistory.execution_request)``) in
         a reader session, close the reader, then await the helper from a
         fresh writer session. The snapshot must come from the loaded

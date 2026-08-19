@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the DB-model factories for the Collect Diagnostic Data app's tests."""
+"""Define the DB-model factories for the Support diagnostics app's tests."""
 
 from polyfactory import Use
 from polyfactory.factories.sqlalchemy_factory import SQLAlchemyFactory

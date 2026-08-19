@@ -23,6 +23,13 @@ from app.api.deps import get_current_user
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def _clear_dependency_overrides():
+    """Clear the overrides a test installed, whether or not it passed."""
+    yield
+    app.dependency_overrides = {}
+
+
 @pytest.fixture
 def test_client():
     """Create a test client for the app."""
@@ -39,7 +46,6 @@ def test_get_alert_config_available(test_client, mocker, regular_user):
     response = test_client.get("/api/config/alerts")
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"available": True}
-    app.dependency_overrides = {}
 
 
 def test_get_alert_config_unavailable(test_client, mocker, regular_user):
@@ -49,7 +55,6 @@ def test_get_alert_config_unavailable(test_client, mocker, regular_user):
     response = test_client.get("/api/config/alerts")
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"available": False}
-    app.dependency_overrides = {}
 
 
 def test_get_alert_config_requires_auth(test_client):

@@ -21,6 +21,7 @@ import pytest
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
+from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import (
     HTTPBadGatewayException,
@@ -60,6 +61,7 @@ def admin_client(admin_user: CasdoorUser) -> TestClient:
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_api_authenticated_admin] = lambda: admin_user
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 

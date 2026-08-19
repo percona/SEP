@@ -178,20 +178,19 @@ class TestSnippetListQuerySpec:
             "service_type",
         }
 
-    def test_default_sort_reproduces_the_approved_first_ordering(self):
-        """Default to approved-first, matching the legacy ``ordering`` attribute."""
+    def test_default_sort_is_approved_first(self):
+        """Default to approved-first ordering via the spec."""
         assert _SPEC.default_sort == "-approved_at"
 
     def test_tie_breaker_is_the_primary_key(self):
         """Break ties on the unique ``id`` so pagination cannot repeat or drop rows."""
         assert _SPEC.tie_breaker is col(Snippet.id)
 
-    def test_get_ordering_prefers_the_spec_over_the_legacy_ordering(self):
-        """Derive the manager default ordering from the spec, not from ``ordering``.
+    def test_get_ordering_derives_from_spec(self):
+        """Derive the manager default ordering from the spec.
 
-        Every non-HTTP ``SnippetManager.list()`` caller relies on this preference to
-        reach the spec's ordering without naming it, so the legacy attribute stays
-        unreferenced and its removal stays a pure deletion.
+        Every non-HTTP ``SnippetManager.list()`` caller relies on this to reach the
+        spec's ordering without naming it explicitly.
         """
         assert [str(clause) for clause in SnippetManager._get_ordering()] == [
             "snippet.approved_at DESC NULLS LAST",
@@ -489,7 +488,7 @@ class TestSnippetManagerListQueryPaginated:
         assert page.total == len(page.items) == seeded
 
     async def test_empty_table_returns_zero_total(self, session):
-        """Yield an empty page with a zero total for an empty table."""
+        """Return an empty page with a zero total for an empty table."""
         page = await _page(session)
 
         assert page.total == 0

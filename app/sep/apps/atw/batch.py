@@ -37,13 +37,16 @@ from app.core.utils.fields import (
     NonEmptyStr,
     UTCDatetime,
 )
+from app.sep.apps.field_names import (
+    EXECUTOR_HOST_FIELD_NAME,
+    EXTRA_ARGS_FIELD_NAME,
+    SCRIPT_PREVIEW_FIELD_NAME,
+    SUDO_FIELD_NAME,
+)
 from app.sep.apps.framework.schema import (
     AnyField,
     BoolField,
-    EXECUTOR_HOST_FIELD_NAME,
     HostField,
-    SCRIPT_PREVIEW_FIELD_NAME,
-    SUDO_FIELD_NAME,
 )
 from app.sep.apps.framework.script_helpers import execute_script
 from app.sep.apps.framework.script_source import (
@@ -52,7 +55,6 @@ from app.sep.apps.framework.script_source import (
     ScriptExecutionResponse,
 )
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
-from app.sep.snippets.models.constants import EXTRA_ARGS_FIELD_NAME
 from app.sep.snippets.script_source import snippet_source, SnippetScript
 from app.tasks.models import TaskHistoryStatusEnum
 

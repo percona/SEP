@@ -13,6 +13,7 @@
     "@mui/material": "^7.3.7",
     "@sep/api": "workspace:*",
     "@sep/framework": "workspace:*",
+    "@sep/shared": "workspace:*",
     "@tanstack/react-query": "^5.100.7"
   },
   "devDependencies": {

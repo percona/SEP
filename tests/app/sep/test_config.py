@@ -617,3 +617,30 @@ class TestAppsKeyBackCompat:
             settings = SEPSettings()
         assert any(app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS)
         assert not _logged_legacy_apps_warning(mock_logger)
+
+
+class TestCredentialUrlMaskRejection:
+    """Reject a redacted credential URL copied into SEP endpoint configuration."""
+
+    _MASKED_ENDPOINT = "http://inv-user:****@inventory.internal:8080"
+
+    @pytest.mark.parametrize("field", ["INVENTORY_ENDPOINT", "TASKS_ENDPOINT"])
+    def test_mask_is_rejected_on_the_yaml_path(self, field: str) -> None:
+        """Fail settings construction when a masked export is re-fed as configuration."""
+        with pytest.raises(ValidationError, match=field):
+            SEPSettings(**{field: self._MASKED_ENDPOINT}, _env_file=None)
+
+    @pytest.mark.parametrize(
+        ("field", "env_name"),
+        [
+            ("INVENTORY_ENDPOINT", "SEP__INVENTORY_ENDPOINT"),
+            ("TASKS_ENDPOINT", "SEP__TASKS_ENDPOINT"),
+        ],
+    )
+    def test_mask_is_rejected_on_the_env_path(
+        self, field: str, env_name: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fail settings construction when a masked endpoint arrives via the environment."""
+        monkeypatch.setenv(env_name, self._MASKED_ENDPOINT)
+        with pytest.raises(ValidationError, match=field):
+            SEPSettings(_env_file=None)

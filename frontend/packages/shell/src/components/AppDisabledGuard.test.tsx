@@ -116,7 +116,7 @@ describe('AppDisabledGuard', () => {
       data: [
         app({
           app_key: 'atw',
-          display_name: 'Collect Diagnostic Data',
+          display_name: 'Support diagnostics',
           enabled: false,
           blocking_dependencies: ['snippets'],
         }),
@@ -124,7 +124,7 @@ describe('AppDisabledGuard', () => {
       ],
     });
     renderGuard('atw');
-    expect(screen.getByText('Collect Diagnostic Data is unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Support diagnostics is unavailable')).toBeInTheDocument();
     expect(
       screen.getByText(
         'The Snippet Manager app must be enabled first. Contact an administrator to enable it.',
@@ -148,7 +148,7 @@ describe('AppDisabledGuard', () => {
       data: [
         app({
           app_key: 'atw',
-          display_name: 'Collect Diagnostic Data',
+          display_name: 'Support diagnostics',
           enabled: false,
           blocking_dependencies: ['snippets', 'tasks'],
         }),
@@ -157,7 +157,7 @@ describe('AppDisabledGuard', () => {
       ],
     });
     renderGuard('atw');
-    expect(screen.getByText('Collect Diagnostic Data is unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Support diagnostics is unavailable')).toBeInTheDocument();
     expect(
       screen.getByText(
         'These apps must be enabled first: Snippet Manager, Task Manager. Contact an administrator to enable them.',
@@ -173,7 +173,7 @@ describe('AppDisabledGuard', () => {
       data: [
         app({
           app_key: 'atw',
-          display_name: 'Collect Diagnostic Data',
+          display_name: 'Support diagnostics',
           enabled: false,
           blocking_dependencies: ['snippets', 'ghost'],
         }),
@@ -181,7 +181,7 @@ describe('AppDisabledGuard', () => {
       ],
     });
     renderGuard('atw');
-    expect(screen.getByText('Collect Diagnostic Data is unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Support diagnostics is unavailable')).toBeInTheDocument();
     expect(
       screen.getByText(
         'The Snippet Manager app must be enabled first. Contact an administrator to enable it.',
