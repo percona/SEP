@@ -18,7 +18,6 @@
 import logging.config
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from copy import deepcopy
 from typing import Any, cast, Literal
 
 from fastapi import FastAPI, HTTPException, Request, status
@@ -55,6 +54,7 @@ from app.sep.db import get_async_session_maker
 from app.sep.db.seed import get_system_periodic_tasks, init_sep_db
 from app.sep.routes.artifacts import router as artifacts_router
 from app.sep.settings_override import (
+    apply_logging_dictconfig,
     build_sep_override_proxies,
     invalidate_pmm_clients,
 )
@@ -161,30 +161,6 @@ def _make_remote_api_rebinder(
     return _rebind
 
 
-async def _apply_logging_dictconfig(_: SnapshotChange) -> None:
-    """Re-apply ``logging.config.dictConfig`` after a global ``LOGGING`` override.
-
-    ``LOGGING`` is a HOT field, but ``LOGGING_CONFIG`` (the dict handed to
-    ``dictConfig``) is not: the override snapshot replaces only the ``LOGGING``
-    key, so ``settings.LOGGING_CONFIG`` still carries the level baked in by the
-    ``set_log_level`` model validator at construction time. This callback mirrors
-    that validator -- inject the now-live ``settings.LOGGING`` into a copy of the
-    config and re-apply it -- so a log-level change takes effect in the SEP web
-    process without a restart. Failures are logged and swallowed: a malformed
-    config must not take the process down mid-request.
-
-    :param _: The override snapshots on either side of the republish (unused; the
-        level is re-read from the proxy).
-    """
-    try:
-        config = deepcopy(settings.LOGGING_CONFIG)
-        config["loggers"][""]["level"] = settings.LOGGING
-        config["loggers"]["app"]["level"] = settings.LOGGING
-        logging.config.dictConfig(config)
-    except Exception:
-        logger.exception("Failed to re-apply logging config after LOGGING override")
-
-
 async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     """Re-seed the SEP beat schedule after a hot interval override.
 
@@ -255,7 +231,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ssl_certfile=tasks_settings.SSL_CERTFILE,
         ),
         (SettingClassEnum.SETTINGS, "PMM"): invalidate_pmm_clients,
-        (SettingClassEnum.SETTINGS, "LOGGING"): _apply_logging_dictconfig,
+        (SettingClassEnum.SETTINGS, "LOGGING"): apply_logging_dictconfig,
         (
             SettingClassEnum.SNIPPETS_SETTINGS,
             "SYNC_INTERVAL",
