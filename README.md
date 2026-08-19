@@ -115,7 +115,7 @@
 | app/sep/apps/alert\_troubleshooting/deps.py                                                                                  |      108 |        4 |       44 |        3 |     95% |107, 109-\>111, 222, 235, 319 |
 | app/sep/apps/alert\_troubleshooting/models.py                                                                                |        7 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/alert\_troubleshooting/schema.py                                                                                |        2 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/alerts/api\_routes.py                                                                                           |      120 |       16 |       16 |        0 |     85% |181, 197-200, 244-254 |
+| app/sep/apps/alerts/api\_routes.py                                                                                           |      120 |       16 |       16 |        0 |     85% |176, 192-195, 239-249 |
 | app/sep/apps/alerts/app.py                                                                                                   |        5 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/alerts/app\_owned\_settings.py                                                                                  |        4 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/alerts/celery.py                                                                                                |       46 |        1 |       10 |        0 |     98% |        39 |
@@ -191,7 +191,7 @@
 | app/sep/apps/framework/api.py                                                                                                |      331 |       10 |      130 |        8 |     96% |140-\>138, 195-200, 722, 729, 857, 863, 868, 874, 889, 1296 |
 | app/sep/apps/framework/apps.py                                                                                               |      335 |        7 |      134 |        7 |     97% |533, 697, 713, 730, 790, 804, 811 |
 | app/sep/apps/framework/base.py                                                                                               |       44 |        2 |        6 |        2 |     92% |  153, 160 |
-| app/sep/apps/framework/cascade.py                                                                                            |      189 |        0 |       62 |        2 |     99% |133-\>135, 149-\>151 |
+| app/sep/apps/framework/cascade.py                                                                                            |      189 |        0 |       62 |        2 |     99% |131-\>133, 147-\>149 |
 | app/sep/apps/framework/conformance.py                                                                                        |      100 |        9 |       52 |        7 |     88% |69, 174, 200-204, 264, 277, 281, 329 |
 | app/sep/apps/framework/connectivity.py                                                                                       |       25 |        0 |        6 |        0 |    100% |           |
 | app/sep/apps/framework/deps.py                                                                                               |       15 |        0 |        2 |        0 |    100% |           |
