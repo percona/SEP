@@ -106,6 +106,8 @@ class TestAdvancedMarkers:
             "log_socket_read_timeout",
             "cert_expiry_warn_days",
             "check_cert_expiry_interval",
+            "log_anonymization_max_withheld_bytes",
+            "log_capture_hold_seconds",
         ],
     )
     def test_nomad_secondary_leaves_advanced(self, field: str) -> None:

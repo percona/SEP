@@ -758,3 +758,36 @@ def test_spa_session_login_contract_survives_the_extraction(
     assert len(refresh_headers) == 1
     assert "HttpOnly" in refresh_headers[0]
     assert "Path=/api/oauth" in refresh_headers[0]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/oauth/token",
+        "/api/oauth/login",
+        "/api/oauth/session",
+        "/api/oauth/session/exchange",
+        "/api/oauth/refresh",
+        "/api/oauth/logout",
+    ],
+)
+def test_oauth_routes_stay_outside_the_unsafe_method_admin_gate(
+    test_client, casdoor_mock, path
+):
+    """Assert the identity tree keeps its own authentication semantics.
+
+    These routes are included beside ``api_router`` rather than through it, so
+    the admin gate never reaches them — a caller with no prior SEP identity has
+    to be able to mint one, and ``logout`` stays bearer-authenticated by its own
+    ``CurrentUser``. Only the absence of a 403 is asserted; each route's own
+    status is pinned by the tests above.
+
+    The request carries a credential resolving to a non-admin, which is the only
+    input that makes the gate answer 403. A credential-less request answers 401
+    whether or not the gate is attached, so it could not falsify the claim.
+    """
+    response = test_client.post(
+        path, headers={"Authorization": "Bearer non-admin-token"}
+    )
+
+    assert response.status_code != status.HTTP_403_FORBIDDEN

@@ -16,7 +16,7 @@
 """Tests for credential-bearing URL field types and redaction helpers."""
 
 import pytest
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from app.core.utils.fields import (
     CREDENTIAL_URL_MASK,
@@ -144,6 +144,22 @@ class TestCredentialHttpUrl:
         model = _Model.model_validate({"endpoint": _CREDENTIAL_URL})
         assert "nomad-secret" in str(model.endpoint)
 
+    def test_accepts_passwordless_url(
+        self, adapter: TypeAdapter[CredentialHttpUrl]
+    ) -> None:
+        """Accept a URL with no embedded password."""
+        assert str(adapter.validate_python(_PLAIN_URL)).rstrip("/") == _PLAIN_URL
+
+    def test_rejects_redacted_mask_and_names_field(self) -> None:
+        """Reject the redaction mask and name the field in the error."""
+
+        class _Model(BaseModel):
+            endpoint: CredentialHttpUrl
+
+        with pytest.raises(ValidationError, match="endpoint") as exc_info:
+            _Model.model_validate({"endpoint": _REDACTED_URL})
+        assert "cannot be stored" in str(exc_info.value)
+
 
 class TestStrCredentialHttpUrl:
     """Serialization behaviour for :data:`StrCredentialHttpUrl`."""
@@ -160,6 +176,25 @@ class TestStrCredentialHttpUrl:
         }
         assert model.endpoint == "http://user:secret@host:4646"
 
+    def test_accepts_passwordless_url(self) -> None:
+        """Accept a string HTTP URL with no embedded password."""
+
+        class _Model(BaseModel):
+            endpoint: StrCredentialHttpUrl
+
+        model = _Model(endpoint=_PLAIN_URL)
+        assert model.endpoint == _PLAIN_URL
+
+    def test_rejects_redacted_mask_and_names_field(self) -> None:
+        """Reject the redaction mask and name the field in the error."""
+
+        class _Model(BaseModel):
+            endpoint: StrCredentialHttpUrl
+
+        with pytest.raises(ValidationError, match="endpoint") as exc_info:
+            _Model(endpoint="http://user:****@host:4646")
+        assert "cannot be stored" in str(exc_info.value)
+
 
 class TestStrCredentialAnyUrl:
     """Serialization behaviour for :data:`StrCredentialAnyUrl`."""
@@ -175,5 +210,25 @@ class TestStrCredentialAnyUrl:
         assert model.broker_url == _BROKER_URL
 
     def test_mask_constant_matches_ticket_example(self) -> None:
-        """Match the SEP-1381 default redaction mask format."""
+        """Match the default redaction mask format."""
         assert CREDENTIAL_URL_MASK == "****"
+
+    def test_accepts_passwordless_url(self) -> None:
+        """Accept an any-scheme URL with no embedded password."""
+
+        class _Model(BaseModel):
+            broker_url: StrCredentialAnyUrl
+
+        url = "amqp://rabbit:5672/vhost"
+        model = _Model(broker_url=url)
+        assert model.broker_url == url
+
+    def test_rejects_redacted_mask_and_names_field(self) -> None:
+        """Reject the redaction mask and name the field in the error."""
+
+        class _Model(BaseModel):
+            broker_url: StrCredentialAnyUrl
+
+        with pytest.raises(ValidationError, match="broker_url") as exc_info:
+            _Model(broker_url=_REDACTED_BROKER_URL)
+        assert "cannot be stored" in str(exc_info.value)

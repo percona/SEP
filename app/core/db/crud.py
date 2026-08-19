@@ -111,15 +111,12 @@ class BaseManager:
     """Manage database operations for a SQLAlchemy model.
 
     :cvar Model: The SQLAlchemy class for which this manager handles operations.
-    :cvar ordering: An iterable of column expressions or string labels to order the
-        results by. If None, no ordering is applied.
     :cvar list_query_spec: The list-query spec declaring this entity's sortable
-        allowlist, searchable columns, and default sort; ``None`` leaves the manager
-        on the legacy ordering path.
+        allowlist, searchable columns, and default sort; ``None`` uses the built-in
+        ``created_at``-descending fallback for ``BaseSQLModel`` managers.
     """
 
     Model: type[T]
-    ordering: Iterable[ColumnExpressionOrStrLabelArgument] | None = None
     list_query_spec: ListQuerySpec | None = None
 
     @classmethod
@@ -209,14 +206,12 @@ class BaseManager:
         """Return the ordering for SELECT queries.
 
         :return: The spec-derived default ordering (NULLS-LAST, tie-broken) when
-            ``list_query_spec`` is set; otherwise the explicit ``ordering``, or the
-            default ``created_at``-descending fallback (tie-broken by primary key)
-            for ``BaseSQLModel`` models, or ``None``.
+            ``list_query_spec`` is set; otherwise the default ``created_at``-descending
+            fallback (tie-broken by primary key) for ``BaseSQLModel`` models, or
+            ``None``.
         """
         if cls.list_query_spec is not None:
             return cls.list_query_spec.resolve_sort(None)
-        if cls.ordering is not None:
-            return cls.ordering
         if issubclass(cls.Model, BaseSQLModel):
             # Keep fallback ordering deterministic when created_at ties occur.
             return [cls._get_column("created_at").desc(), cls._get_column("id").desc()]
