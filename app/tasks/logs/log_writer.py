@@ -77,23 +77,16 @@ class TaskHistoryLogWriter:
 
         :param session: The SQLAlchemy asynchronous session. The writer commits
             on success so callers are responsible only for rollback on failure.
-        :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier.
-        :type task_history_id: int
         :param source: The execution step name (Nomad task name or
             ``"execution"`` for Celery callables).
-        :type source: str
         :param stream: The log stream (stdout or stderr) being written.
-        :type stream: TaskLogType
         :param new_bytes: The new bytes to append since the last successful call.
-        :type new_bytes: bytes
         :param force_flush: Force-flush the remainder buffer even when below
             ``MIN_FLUSH``. Terminal syncs pass ``True`` to drain staging.
-        :type force_flush: bool
         :param producer_offset_after: The producer-relative byte offset at the
             end of ``new_bytes``. When provided, the state row's
             ``producer_offset`` is advanced atomically with the flush.
-        :type producer_offset_after: int | None
         :param producer_fetch_offset_after: The raw producer-space fetch offset
             for the next read. When provided, the row's ``producer_fetch_offset``
             is advanced atomically with the flush; when ``None`` the existing
@@ -339,10 +332,8 @@ class TaskHistoryLogWriter:
         being concatenated with the new producer's bytes.
 
         :param session: The SQLAlchemy asynchronous session.
-        :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier whose state
             rows should be drained and reset.
-        :type task_history_id: int
         :param new_producer_epoch: The producer epoch the frontier is being
             reset onto (for example a Nomad allocation ``CreateIndex``).
         """

@@ -1288,10 +1288,8 @@ class TaskHistoryLogStateManager(BaseManager):
         Bumps ``version`` so concurrent writers re-read the row.
 
         :param session: The SQLAlchemy asynchronous session.
-        :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier whose state
             rows should be reset.
-        :type task_history_id: int
         :param new_producer_epoch: The producer epoch the frontier is being
             reset onto (for example a Nomad allocation ``CreateIndex``).
         """

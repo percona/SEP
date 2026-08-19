@@ -376,7 +376,7 @@
         "type": "object"
       },
       "ExecutionEvent": {
-        "description": "A single lifecycle event from a task executor (executor-agnostic shape).\n\n:param timestamp: When the event occurred (UTC).\n:type timestamp: UTCDatetime\n:param event_type: Executor-specific event category (for example a Nomad\n    task event type).\n:type event_type: str\n:param description: Human-readable message for the event (no step prefix).\n:type description: str\n:param step: Optional executor task/step name (for example a Nomad task\n    within the group).\n:type step: str | None",
+        "description": "Represent a single lifecycle event from a task executor (executor-agnostic shape).\n\n:param timestamp: When the event occurred (UTC).\n:param event_type: Executor-specific event category (for example a Nomad\n    task event type).\n:param description: Human-readable message for the event (no step prefix).\n:param step: Optional executor task/step name (for example a Nomad task\n    within the group).",
         "properties": {
           "description": {
             "title": "Description",

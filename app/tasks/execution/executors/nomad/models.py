@@ -1768,14 +1768,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         restarts from ``0`` rather than reusing a superseded cursor.
 
         :param writer_session: The dedicated log writer session.
-        :type writer_session: AsyncSession
         :param task_history_id: The task history identifier.
-        :type task_history_id: int
         :param current_epoch: The running allocation's ``CreateIndex``.
         :return: A dict shaped
             ``{source: {f"{stream.value}_last_offset": int,
             f"{stream.value}_producer_offset": int}}``.
-        :rtype: dict[str, dict[str, Any]]
         """
         state_rows = await TaskHistoryLogStateManager.list_for_task(
             writer_session, task_history_id
