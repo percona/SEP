@@ -17,7 +17,7 @@
 
 import json
 import logging.config
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -34,6 +34,7 @@ from app.core.settings_override.lifecycle import (
     CallbackRegistry,
     ProxyEntry,
     settings_override_refresher,
+    SnapshotChange,
 )
 from app.core.settings_override.models import SettingClassEnum
 from app.tasks.anonymizer.config import anonymizer_settings, AnonymizerSettings
@@ -54,7 +55,7 @@ logger = logging.getLogger(__name__)
 celery_logger = get_task_logger(__name__)
 
 
-async def _reconcile_nomad(_: Mapping[str, object]) -> None:
+async def _reconcile_nomad(_: SnapshotChange) -> None:
     """Rebind the live Nomad executor when its override changed.
 
     Registered as the ``(TASKS_SETTINGS, NOMAD)`` rebind callback by
@@ -63,9 +64,8 @@ async def _reconcile_nomad(_: Mapping[str, object]) -> None:
     shutdown can find ``tasks_app.state.nomad_lifecycle`` already gone; the
     rebind is skipped in that window rather than raising a noisy callback error.
 
-    :param _: The new effective ``TasksSettings`` snapshot mapping. Unused -- the
+    :param _: The override snapshots on either side of the republish. Unused; the
         holder reads the live ``NOMAD`` config itself when reconciling.
-    :type _: Mapping[str, object]
     """
     holder = getattr(tasks_app.state, "nomad_lifecycle", None)
     if holder is not None:
