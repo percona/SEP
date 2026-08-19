@@ -32,7 +32,7 @@ from app.core.auth.providers.grafana.models import GrafanaUser
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.tasks.routes import latest_task_history
-from tests.app.conftest import make_request
+from tests.app.conftest import make_request, make_roleless_grafana_assertion
 
 User = get_user_model()
 
@@ -193,6 +193,35 @@ class TestGetCurrentUserBearerTypes:
 
         with pytest.raises(HTTPUnauthorizedException):
             await get_current_user(exchange.access_token)
+
+    @pytest.mark.asyncio
+    async def test_rejects_an_assertion_minted_before_the_role_claim(self):
+        """Verify a legacy assertion is refused as a 401, not raised as a 500."""
+        legacy = make_roleless_grafana_assertion("access")
+
+        with pytest.raises(HTTPUnauthorizedException):
+            await get_current_user(legacy)
+
+    @pytest.mark.asyncio
+    async def test_an_editor_resolves_to_the_editor_identity(
+        self, grafana_mock, grafana_user_orgs
+    ):
+        """Verify the identity ``GET /api/users/me`` serves reports the real role.
+
+        ``retrieve_current_user`` returns ``current_user`` untouched, so what
+        ``get_current_user`` yields, and how it serializes, is exactly what that
+        route would answer with.
+        """
+        grafana_mock.get_current_user_orgs.return_value = [
+            {**grafana_user_orgs[0], "role": "Editor"}
+        ]
+        exchange = await GrafanaUser.exchange_token_from_session("ambient")
+
+        user = await get_current_user(exchange.access_token)
+
+        assert user.role is UserRole.EDITOR
+        assert user.is_admin is False
+        assert user.model_dump(mode="json", by_alias=True)["role"] == "editor"
 
     @pytest.mark.asyncio
     async def test_grafana_admin_reaches_an_admin_gated_surface(
