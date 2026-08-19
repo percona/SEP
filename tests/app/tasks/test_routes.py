@@ -244,7 +244,7 @@ async def test_update_task_not_found(test_client):
 
 
 class TestTaskHookPathAllowList:
-    """Test the hook-path allow-list as enforced across the task write endpoints."""
+    """Cover the hook-path allow-list as enforced across the task write endpoints."""
 
     @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
     @pytest.mark.parametrize("hook_path", REJECTED_HOOK_PATHS)

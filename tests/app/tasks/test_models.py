@@ -31,6 +31,7 @@ from app.sep.apps.archives.alerts import (
     ALERT_DETAIL_BUILDER,
     ARCHIVER_TRACE_PLACEHOLDER,
 )
+from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.crud import TaskManager
 from app.tasks.models import (
@@ -253,11 +254,11 @@ class TestTaskBaseValidation:
 
 
 class TestTaskWriteHookPathValidation:
-    """Test the hook-path allow-list enforced on TaskWrite."""
+    """Cover the hook-path allow-list enforced on ``TaskWrite``."""
 
     @staticmethod
     def _write(**overrides: object) -> TaskWrite:
-        """Build a minimal valid TaskWrite, overriding the given fields.
+        """Build a minimal valid ``TaskWrite``, overriding the given fields.
 
         :param overrides: Field values to set on the model.
         :return: The constructed model.
@@ -335,7 +336,7 @@ class TestTask:
     @pytest.mark.asyncio
     async def test_run_result_recorder_propagates_to_task_row(self, session) -> None:
         """Persist ``run_result_recorder`` from a ``TaskWrite`` onto the ``Task`` row."""
-        recorder = "app.sep.apps.mysql_backups.recorder:record_backup_run"
+        recorder = RUN_RESULT_RECORDER
         write = TaskWrite.model_validate(
             TaskFactory.build(name="recorder-task", run_result_recorder=recorder)
         )

@@ -22,6 +22,8 @@ import pytest
 from pytest_mock import MockerFixture
 
 from app.sep.apps.archives import alerts as archive_alerts
+from app.sep.apps.archives.alerts import ALERT_DETAIL_BUILDER
+from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.tasks import hook_resolver
 from app.tasks.hook_resolver import (
     HookPathNotAllowedError,
@@ -29,7 +31,7 @@ from app.tasks.hook_resolver import (
     validate_hook_path,
 )
 
-ALLOWED_PATH = "app.sep.apps.archives.alerts:build_owner_alert_details"
+ALLOWED_PATH = ALERT_DETAIL_BUILDER
 
 
 @pytest.fixture(autouse=True)
@@ -68,7 +70,7 @@ def test_raises_attribute_error_for_unknown_attribute():
 
 
 class TestAllowList:
-    """Test the allow-list enforced by ``validate_hook_path`` and ``resolve_hook``."""
+    """Cover the allow-list enforced by ``validate_hook_path`` and ``resolve_hook``."""
 
     @pytest.mark.parametrize(
         "path",
@@ -112,8 +114,8 @@ class TestAllowList:
     @pytest.mark.parametrize(
         "path",
         [
-            "app.sep.apps.archives.alerts:build_owner_alert_details",
-            "app.sep.apps.mysql_backups.recorder:record_backup_run",
+            ALERT_DETAIL_BUILDER,
+            RUN_RESULT_RECORDER,
         ],
     )
     def test_accepts_every_in_tree_hook(self, path: str) -> None:
@@ -131,15 +133,9 @@ class TestAllowList:
 
     def test_rejection_is_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         """Log the rejected path before raising."""
-        # ``caplog`` attaches its handler to the root logger, which makes it an
-        # unreliable place to capture an ``app.*`` record: ``LOGGING_CONFIG``
-        # declares the root logger, so applying it clears root's handlers and
-        # takes that capturing handler with them, and it also sets
-        # ``propagate=False`` on ``app``, so the record would stop short of root
-        # regardless. Whether the config has been applied yet depends on what
-        # else ran first, and dictConfig may also disable existing non-root
-        # loggers. Capture on the emitting logger and force-enable it for this
-        # assertion to keep the test order-independent.
+        # Capture on the emitting logger, not caplog's root handler: LOGGING_CONFIG
+        # sets propagate=False on ``app`` and may disable existing loggers, so
+        # whether root sees the record depends on what ran first.
         emitting_logger = logging.getLogger(hook_resolver.__name__)
         was_disabled = emitting_logger.disabled
         emitting_logger.disabled = False

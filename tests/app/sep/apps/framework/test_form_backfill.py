@@ -260,7 +260,7 @@ def test_backfill_single_task_skips_invalid_reconstructed_form():
 
 
 def test_backfill_single_task_stamps_a_row_whose_hook_path_predates_the_allow_list():
-    """A stored hook path the write model would reject still gets backfilled.
+    """Stamp a row whose stored hook path the write model would reject.
 
     ``TaskWrite`` constrains hook paths to an allow-listed namespace, but the
     envelope built here only carries ``data`` through stamping, so a row whose
