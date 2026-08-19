@@ -356,7 +356,7 @@ class TestEffectiveEntities:
         assert _effective_entities(history) == {PIIEntity.IP_ADDRESS}
 
     def test_both_none_yields_empty_set(self):
-        """Yield an empty set when no mask is configured anywhere (no PII scrubbing)."""
+        """Return an empty set when no mask is configured anywhere (no PII scrubbing)."""
         assert _effective_entities(self._history(None, None)) == set()
 
 

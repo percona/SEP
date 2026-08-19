@@ -57,7 +57,7 @@ def bearer_client(
 def admin_bearer_client(
     bearer_client: TestClient, casdoor_user_data, mocker: MockerFixture
 ) -> TestClient:
-    """Yield the Bearer client whose credential resolves to an admin."""
+    """Return the Bearer client whose credential resolves to an admin."""
     mocker.patch(
         "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
         new=mocker.AsyncMock(return_value={**casdoor_user_data, "is_admin": True}),
