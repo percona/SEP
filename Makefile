@@ -166,6 +166,7 @@ migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations
 	done
 
 checkmigrations: migrate
+	@"${VENV_BIN}"/python scripts/check_alembic_revision_tree.py
 	@ret=0; \
 	for app in $(APPS); do \
 	  echo "Checking migrations for $$app"; \

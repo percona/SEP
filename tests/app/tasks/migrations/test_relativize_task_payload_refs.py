@@ -92,7 +92,7 @@ def test_heals_all_three_mysql_backup_types(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -121,7 +121,7 @@ def test_heals_doubled_app_prefix(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -149,7 +149,7 @@ def test_heals_apps_backup_form(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -179,7 +179,7 @@ def test_heals_prefix_containing_app_sep_substring(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -207,7 +207,7 @@ def test_relativizes_non_backup_plugin_without_renaming(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -233,7 +233,7 @@ def test_leaves_unrelated_rows_untouched(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -257,7 +257,7 @@ def test_is_idempotent(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:

@@ -86,7 +86,7 @@ def test_pre_existing_rows_are_classified_unknown(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     # Read through the mapped type rather than the driver: the raw string
     # compares equal to the enum member either way, so only an ORM read proves
@@ -123,7 +123,7 @@ def test_upgrade_constrains_capture_status_to_the_enum_domain(tasks_alembic_conf
     which is exactly the mistake the name-persisting column invites.
     """
     cfg, sync_url = tasks_alembic_config
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -146,7 +146,7 @@ def test_upgrade_constrains_capture_status_to_the_enum_domain(tasks_alembic_conf
 def test_downgrade_drops_the_column(tasks_alembic_config):
     """Assert the downgrade removes the column and leaves the table usable."""
     cfg, sync_url = tasks_alembic_config
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
     command.downgrade(cfg, _PRE_CAPTURE_STATUS_REVISION)
 
     engine = create_engine(sync_url)
