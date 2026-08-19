@@ -73,7 +73,7 @@ class FormBackfillContext:
     schema_lookup: SchemaIdLookup | None = None
 
 
-FormReconstructor = Callable[["Task", "FormBackfillContext"], dict[str, Any] | None]
+FormReconstructor = Callable[["Task", FormBackfillContext], dict[str, Any] | None]
 """Reconstruct a legacy task's create-form body, or return ``None`` when impossible."""
 
 

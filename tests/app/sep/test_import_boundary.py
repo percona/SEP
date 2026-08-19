@@ -13,7 +13,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Guard the import boundary between every module and the activatable apps.
+"""Guard the import boundaries the ``app/`` tree depends on.
+
+Guards the boundary between every module and the activatable apps, and
+the form-backfill contract against its orchestrator.
 
 The PMM-embedded side-car image strips non-activated packages from
 ``app/sep/apps/``, so a module that ships in the image must hold no import-time
@@ -771,8 +774,9 @@ def test_no_apps_module_imports_the_form_backfill_orchestrator() -> None:
     """Reject any import of the orchestrator from under ``app/sep/apps/``.
 
     The orchestrator is a one-shot ``python -m`` entry point. Counting
-    ``TYPE_CHECKING`` imports is the point: the cycle this ticket removed was
-    annotation-only and invisible to :func:`_import_time_imports`.
+    ``TYPE_CHECKING`` imports is the point: an annotation-only edge is invisible
+    to :func:`_import_time_imports` yet still couples the contract to its
+    consumer.
     """
     orchestrator_path = APPS_ROOT / "framework" / "form_backfill.py"
     found: list[str] = []
@@ -796,10 +800,11 @@ def test_no_apps_module_imports_the_form_backfill_orchestrator() -> None:
 
 
 def test_form_backfill_inventory_does_not_import_the_registry() -> None:
-    """Reject any edge from inventory into the registry, including TYPE_CHECKING.
+    """Reject any edge from inventory into the registry, including ``TYPE_CHECKING``.
 
-    Moving FormBackfillContext into the registry would otherwise recreate the
-    TYPE_CHECKING cycle this ticket exists to close.
+    ``FormBackfillContext`` lives in ``form_backfill_registry``, so an inventory
+    edge into the registry would reintroduce the ``TYPE_CHECKING`` cycle this
+    guard exists to prevent.
     """
     path = APPS_ROOT / "framework" / "form_backfill_inventory.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
