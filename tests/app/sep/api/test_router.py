@@ -25,7 +25,7 @@ from pydantic import SecretStr, ValidationError
 from pytest_mock import MockerFixture
 from starlette.routing import Match
 
-from app.api.deps import require_admin_for_unsafe_methods
+from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.config import settings
 from app.sep.api.router import api_router, apps_router, build_apps_router
 from app.sep.apps.framework.registry import build_app_registry
@@ -756,7 +756,7 @@ class TestApiRouterConfigDrivenLoopIntegration:
 def bearer_client(session, casdoor_mock):
     """Return a TestClient that authenticates every request by Bearer token.
 
-    No authentication dependency is overridden: the admin gate resolves the user
+    No authentication dependency is overridden: the role gate resolves the user
     imperatively, so an override could not reach it anyway, and leaving the whole
     chain real is what makes the gate the thing under test. ``get_session`` is
     still pointed at the in-memory session so ``require_app_enabled`` reads an
@@ -768,7 +768,7 @@ def bearer_client(session, casdoor_mock):
 
 
 class TestApiAdminGate:
-    """Exercise the router-level admin gate over the ``/api`` tree."""
+    """Exercise the router-level role gate over the ``/api`` tree."""
 
     def test_non_admin_mutation_is_refused_with_json_403(
         self, bearer_client: TestClient
@@ -848,7 +848,7 @@ class TestApiAdminGate:
     def test_credential_less_mutation_still_answers_the_bearer_gate(
         self, cookie_only_client: TestClient
     ) -> None:
-        """Keep the Bearer gate ahead of the admin gate in declaration order.
+        """Keep the Bearer gate ahead of the role gate in declaration order.
 
         Router-level dependencies run in declared order, so a credential-less
         mutation must still carry ``BEARER_REQUIRED_DETAIL``; declaring the admin
@@ -863,6 +863,6 @@ class TestApiAdminGate:
         """Pin the declaration order the detail string above depends on."""
         api_deps = [dep.dependency for dep in api_router.dependencies]
 
-        assert api_deps.index(require_admin_for_unsafe_methods) > api_deps.index(
+        assert api_deps.index(require_minimum_role_for_unsafe_methods) > api_deps.index(
             require_bearer_for_unsafe_methods
         )

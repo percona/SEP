@@ -13,24 +13,34 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for which routes the unsafe-method admin gate reaches."""
+"""Define tests classifying the unsafe surface the minimum-role gate reaches."""
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Final
 
 import pytest
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 
-from app.api.deps import require_admin_for_unsafe_methods
-from app.core.auth.exceptions import HTTPUnauthorizedException
+from app.api.deps import minimum_role_for, require_minimum_role_for_unsafe_methods
+from app.core.auth.models import UserRole
+from app.core.security import SAFE_HTTP_METHODS
 from app.inventory.main import inventory_app
 from app.sep.main import sep_app
 from app.tasks.main import tasks_app
 from app.tasks.routes import latest_task_history
-from tests.app.conftest import make_request
 
 UNGATED_SEP_API_PREFIXES = ("/api/oauth/", "/api/users/", "/api/config/")
+
+GATED_APPS: Final = {"sep": sep_app, "inventory": inventory_app, "tasks": tasks_app}
+
+#: Every unsafe route SEP opens below the gate's ``ADMIN`` default, keyed by the
+#: service, method and path it answers on. Sub-app paths carry no mount prefix.
+NON_ADMIN_MINIMUMS: Final = {
+    ("sep", "POST", "/api/apps/alerts/restore"): UserRole.EDITOR,
+    ("sep", "POST", "/api/apps/alerts/push"): UserRole.EDITOR,
+    ("tasks", "POST", "/history/latest"): UserRole.NONE,
+}
 
 
 def _gate_callables(route: APIRoute) -> set[Callable[..., Any]]:
@@ -53,7 +63,7 @@ def _api_routes(app: FastAPI) -> list[APIRoute]:
 
 
 @pytest.mark.parametrize("app", [inventory_app, tasks_app], ids=["inventory", "tasks"])
-def test_every_service_route_inherits_the_admin_gate(app: FastAPI) -> None:
+def test_every_service_route_inherits_the_role_gate(app: FastAPI) -> None:
     """Assert the app-level gate reaches every route the service mounts.
 
     Membership follows from the app carrying the dependency, so a router added
@@ -62,7 +72,9 @@ def test_every_service_route_inherits_the_admin_gate(app: FastAPI) -> None:
     routes = _api_routes(app)
     assert routes
     for route in routes:
-        assert require_admin_for_unsafe_methods in _gate_callables(route), route.path
+        assert require_minimum_role_for_unsafe_methods in _gate_callables(route), (
+            route.path
+        )
 
 
 def test_sep_api_routes_inherit_the_gate_and_the_identity_tree_does_not() -> None:
@@ -79,7 +91,7 @@ def test_sep_api_routes_inherit_the_gate_and_the_identity_tree_does_not() -> Non
             continue
         bucket = (
             gated
-            if require_admin_for_unsafe_methods in _gate_callables(route)
+            if require_minimum_role_for_unsafe_methods in _gate_callables(route)
             else ungated
         )
         bucket.add(route.path)
@@ -90,24 +102,46 @@ def test_sep_api_routes_inherit_the_gate_and_the_identity_tree_does_not() -> Non
     assert not any(path.startswith(UNGATED_SEP_API_PREFIXES) for path in gated), gated
 
 
-@pytest.mark.asyncio
-async def test_exactly_one_route_is_exempt_from_the_gate() -> None:
-    """Assert the gate exempts one route across the three services, and names it.
+def test_every_unsafe_route_resolves_to_its_classified_minimum() -> None:
+    """Assert each gated unsafe route resolves to the minimum SEP classified it at.
 
-    Each exemption is a hole in the gate, so adding one has to mean editing a
-    test that names the route it opens. The gate itself is the oracle rather than
-    its registry: a credential-less mutation returns for an exempt endpoint and
-    raises for every other, which also pins that ``allow_non_admin_mutation``
-    registered the object FastAPI stores as ``APIRoute.endpoint``.
+    Every route below ``ADMIN`` is a surface opened past the default, so opening
+    or closing one has to mean editing a map that names it: the equality below
+    fails until ``NON_ADMIN_MINIMUMS`` matches the tree in both directions. The
+    two PagerDuty anchors are asserted by name because they take their ``ADMIN``
+    from the default rather than a registration, and because a walk that
+    resolved nothing at all would satisfy the equality on its own.
     """
-    exempt: set[Callable[..., Any]] = set()
-    for app in (sep_app, inventory_app, tasks_app):
-        for route in _api_routes(app):
-            request = make_request("POST", endpoint=route.endpoint)
-            try:
-                await require_admin_for_unsafe_methods(request)
-            except HTTPUnauthorizedException:
-                continue
-            exempt.add(route.endpoint)
+    resolved = {
+        (name, method, route.path): minimum_role_for(route)
+        for name, app in GATED_APPS.items()
+        for route in _api_routes(app)
+        if require_minimum_role_for_unsafe_methods in _gate_callables(route)
+        for method in sorted(route.methods - SAFE_HTTP_METHODS)
+    }
 
-    assert exempt == {latest_task_history}
+    assert resolved[("sep", "POST", "/api/apps/alerts/pagerduty")] is UserRole.ADMIN
+    assert (
+        resolved[("sep", "POST", "/api/apps/alerts/pagerduty/delete")] is UserRole.ADMIN
+    )
+    non_admin = {
+        key: role for key, role in resolved.items() if role is not UserRole.ADMIN
+    }
+
+    assert non_admin == NON_ADMIN_MINIMUMS
+
+
+def test_a_registration_reaches_the_endpoint_object_fastapi_matched() -> None:
+    """Assert the registry resolves through the object stored on the live route.
+
+    The route is walked out of the mounted table rather than constructed, so
+    this fails if ``require_minimum_role`` sat above ``@router.post`` and
+    registered something other than the endpoint the request path reaches — a
+    misplacement that otherwise just reverts the route to ``ADMIN`` silently.
+    """
+    route = next(
+        route for route in _api_routes(tasks_app) if route.path == "/history/latest"
+    )
+
+    assert route.endpoint is latest_task_history
+    assert minimum_role_for(route) is UserRole.NONE
