@@ -245,6 +245,31 @@ def casdoor_mock(
 
 
 @pytest.fixture
+def resolve_casdoor_as_role(
+    casdoor_mock: BaseAuthProvider,
+    casdoor_user_data: dict[str, Any],
+    mocker: MockerFixture,
+) -> Callable[[UserRole], None]:
+    """Return a callable resolving the Bearer credential to a given rank.
+
+    A Casdoor payload carrying a ``role`` of its own bypasses the admin-flag
+    derivation, so the caller resolves at exactly the requested rank rather than
+    one inferred from ``is_admin`` — which is what makes a rank below
+    administrator constructible at all.
+    """
+
+    def resolve_as(role: UserRole) -> None:
+        mocker.patch(
+            "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
+            new=mocker.AsyncMock(
+                return_value={**casdoor_user_data, "role": role.value}
+            ),
+        )
+
+    return resolve_as
+
+
+@pytest.fixture
 def grafana_service_account_token() -> str:
     """Provide a fake Grafana service-account token."""
     return "test-service-account-token"

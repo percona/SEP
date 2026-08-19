@@ -156,26 +156,19 @@ def _mock_pmm_unavailable(api_client: TestClient) -> None:
 
 @pytest.fixture
 def gate_live_client(
-    api_client: TestClient, casdoor_mock, casdoor_user_data, mocker
+    api_client: TestClient, resolve_casdoor_as_role: Callable[[UserRole], None]
 ) -> Callable[[UserRole], TestClient]:
     """Return a factory yielding the alerts client at a chosen rank, gate live.
 
     Pop the gate override so the real gate runs, and the user override with it:
     the gate resolves the caller imperatively, so the two must agree on who is
-    calling and only a real provider payload makes them. A Casdoor payload
-    carrying a ``role`` of its own bypasses the admin-flag derivation, which is
-    what makes a rank below administrator constructible at all.
+    calling and only a real provider payload makes them.
     """
 
     def at_role(role: UserRole) -> TestClient:
         sep_app.dependency_overrides.pop(require_minimum_role_for_unsafe_methods, None)
         sep_app.dependency_overrides.pop(get_current_user, None)
-        mocker.patch(
-            "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
-            new=mocker.AsyncMock(
-                return_value={**casdoor_user_data, "role": role.value}
-            ),
-        )
+        resolve_casdoor_as_role(role)
         return api_client
 
     return at_role

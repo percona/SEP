@@ -312,25 +312,6 @@ class TestGetCurrentUserBearerTypes:
 class TestRequireMinimumRoleForUnsafeMethods:
     """Cover the router-level minimum-role gate on mutating HTTP methods."""
 
-    @pytest.fixture
-    def as_role(self, casdoor_mock, casdoor_user_data, mocker):
-        """Return a callable resolving the Bearer credential to a given rank.
-
-        A Casdoor payload carrying a ``role`` of its own bypasses the
-        admin-flag derivation, so the gate resolves a genuine identity at
-        exactly the requested rank rather than one inferred from ``is_admin``.
-        """
-
-        def resolve_as(role: UserRole) -> None:
-            mocker.patch(
-                "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
-                new=mocker.AsyncMock(
-                    return_value={**casdoor_user_data, "role": role.value}
-                ),
-            )
-
-        return resolve_as
-
     @pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS"])
     @pytest.mark.asyncio
     async def test_safe_methods_pass_without_any_credential(self, method):
@@ -394,9 +375,9 @@ class TestRequireMinimumRoleForUnsafeMethods:
             await require_minimum_role_for_unsafe_methods(request)
 
     @pytest.mark.asyncio
-    async def test_an_admin_passes_an_unregistered_route(self, as_role):
+    async def test_an_admin_passes_an_unregistered_route(self, resolve_casdoor_as_role):
         """Verify an administrator's mutation is admitted on the default."""
-        as_role(UserRole.ADMIN)
+        resolve_casdoor_as_role(UserRole.ADMIN)
         request = make_request(
             "POST", authorization="Bearer valid_token", endpoint=execute_task_name
         )
@@ -404,9 +385,11 @@ class TestRequireMinimumRoleForUnsafeMethods:
         assert await require_minimum_role_for_unsafe_methods(request) is None
 
     @pytest.mark.asyncio
-    async def test_an_editor_is_refused_an_unregistered_route(self, as_role):
+    async def test_an_editor_is_refused_an_unregistered_route(
+        self, resolve_casdoor_as_role
+    ):
         """Verify the rank below the default gains nothing from the new tier."""
-        as_role(UserRole.EDITOR)
+        resolve_casdoor_as_role(UserRole.EDITOR)
         request = make_request(
             "POST", authorization="Bearer valid_token", endpoint=execute_task_name
         )
@@ -415,9 +398,11 @@ class TestRequireMinimumRoleForUnsafeMethods:
             await require_minimum_role_for_unsafe_methods(request)
 
     @pytest.mark.asyncio
-    async def test_an_editor_is_admitted_a_route_registered_at_editor(self, as_role):
+    async def test_an_editor_is_admitted_a_route_registered_at_editor(
+        self, resolve_casdoor_as_role
+    ):
         """Verify the rank a route names reaches it."""
-        as_role(UserRole.EDITOR)
+        resolve_casdoor_as_role(UserRole.EDITOR)
         request = make_request(
             "POST", authorization="Bearer valid_token", endpoint=alerts_api_restore
         )
@@ -428,13 +413,15 @@ class TestRequireMinimumRoleForUnsafeMethods:
         "role", [UserRole.ADMIN, UserRole.SUPER_ADMIN], ids=["admin", "super_admin"]
     )
     @pytest.mark.asyncio
-    async def test_a_rank_above_the_minimum_is_admitted(self, as_role, role):
+    async def test_a_rank_above_the_minimum_is_admitted(
+        self, resolve_casdoor_as_role, role
+    ):
         """Verify the comparison is ordered rather than an equality on the rank.
 
         A route lowered to ``EDITOR`` widens who reaches it; it must not stop
         admitting the ranks that already did.
         """
-        as_role(role)
+        resolve_casdoor_as_role(role)
         request = make_request(
             "POST", authorization="Bearer valid_token", endpoint=alerts_api_restore
         )
@@ -442,9 +429,11 @@ class TestRequireMinimumRoleForUnsafeMethods:
         assert await require_minimum_role_for_unsafe_methods(request) is None
 
     @pytest.mark.asyncio
-    async def test_a_viewer_is_refused_a_route_registered_at_editor(self, as_role):
+    async def test_a_viewer_is_refused_a_route_registered_at_editor(
+        self, resolve_casdoor_as_role
+    ):
         """Verify a rank below the route's own minimum is still refused."""
-        as_role(UserRole.VIEWER)
+        resolve_casdoor_as_role(UserRole.VIEWER)
         request = make_request(
             "POST", authorization="Bearer valid_token", endpoint=alerts_api_restore
         )
@@ -458,14 +447,16 @@ class TestRequireMinimumRoleForUnsafeMethods:
         ids=["save", "delete"],
     )
     @pytest.mark.asyncio
-    async def test_an_editor_is_refused_the_pagerduty_routes(self, as_role, endpoint):
+    async def test_an_editor_is_refused_the_pagerduty_routes(
+        self, resolve_casdoor_as_role, endpoint
+    ):
         """Verify the PagerDuty pair stays administrator-only.
 
         They sit beside the two template routes an Editor reaches on the same
         router, and carry third-party routing and an integration key rather
         than alert-template content.
         """
-        as_role(UserRole.EDITOR)
+        resolve_casdoor_as_role(UserRole.EDITOR)
         request = make_request(
             "POST", authorization="Bearer valid_token", endpoint=endpoint
         )
