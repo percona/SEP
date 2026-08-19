@@ -543,9 +543,10 @@ export interface components {
      *     products stay semantically aligned; ``SUPER_ADMIN`` is SEP's
      *     provider-neutral name for the rank PMM calls ``grafanaAdmin``.
      *
-     *     Members compare by rank rather than by name: ``EDITOR < ADMIN`` even
-     *     though ``"editor" > "admin"`` lexicographically. Equality is untouched, so
-     *     ``ADMIN == "admin"`` still holds.
+     *     Members compare by declared rank rather than by name: ``EDITOR < ADMIN``
+     *     even though ``"editor" > "admin"`` lexicographically. Members are not
+     *     ``str``, so ``ADMIN == "admin"`` is False; the serialized value is
+     *     unchanged at ``"admin"``.
      * @enum {string}
      */
     UserRole: 'none' | 'viewer' | 'editor' | 'admin' | 'super_admin';
