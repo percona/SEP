@@ -141,20 +141,14 @@ class TaskHistoryStatusEnum(StrEnum):
     """Define status codes for task executions.
 
     :cvar FAILED: Enum value for failed tasks.
-    :vartype FAILED: str
     :cvar PENDING: Enum value for pending tasks.
-    :vartype PENDING: str
     :cvar RUNNING: Enum value for running tasks.
-    :vartype RUNNING: str
     :cvar SUCCESS: Enum value for successfully completed tasks.
-    :vartype SUCCESS: str
     :cvar STOPPED: Enum value for stopped tasks.
-    :vartype STOPPED: str
     :cvar LOST: Enum value for tasks that are lost.
-    :vartype LOST: str
-    :cvar STALE: Enum value for tasks skipped because Nomad placement
-        exceeded the configured staleness threshold.
-    :vartype STALE: str
+    :cvar STALE: Enum value for tasks skipped because executor placement
+        exceeded the configured staleness threshold (for example a Nomad
+        allocation that never left the queue).
     """
 
     FAILED = auto()
@@ -795,7 +789,9 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
             alert_class = "task_lost"
         elif self.status == TaskHistoryStatusEnum.STALE:
             dedup_key = f"{base_dedup_key}:stale"
-            summary_action = "skipped as stale (Nomad placement delayed past threshold)"
+            summary_action = (
+                "skipped as stale (executor placement delayed past threshold)"
+            )
             severity = AlertSeverity.WARNING
             alert_class = "task_stale"
         else:
@@ -835,17 +831,12 @@ class TaskHistoryLog(BaseSQLModel, table=True):
     """Store an append-only log chunk for a task history.
 
     :param task_history_id: The ID of the ``TaskHistory`` this chunk belongs to.
-    :type task_history_id: int
-    :param source: The execution step (Nomad task name) that produced the chunk.
-    :type source: str
+    :param source: The execution step name that produced the chunk (for example
+        a Nomad task name).
     :param stream: The log stream (stdout or stderr) the chunk belongs to.
-    :type stream: TaskLogType
     :param start_offset: The user-facing byte offset at which this chunk starts.
-    :type start_offset: int
     :param end_offset: The user-facing byte offset at which this chunk ends.
-    :type end_offset: int
     :param content: The decoded chunk content.
-    :type content: str
     """
 
     __tablename__ = "taskhistory_log"

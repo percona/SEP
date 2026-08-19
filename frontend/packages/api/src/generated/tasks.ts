@@ -1507,20 +1507,14 @@ export interface components {
      * @description Define status codes for task executions.
      *
      *     :cvar FAILED: Enum value for failed tasks.
-     *     :vartype FAILED: str
      *     :cvar PENDING: Enum value for pending tasks.
-     *     :vartype PENDING: str
      *     :cvar RUNNING: Enum value for running tasks.
-     *     :vartype RUNNING: str
      *     :cvar SUCCESS: Enum value for successfully completed tasks.
-     *     :vartype SUCCESS: str
      *     :cvar STOPPED: Enum value for stopped tasks.
-     *     :vartype STOPPED: str
      *     :cvar LOST: Enum value for tasks that are lost.
-     *     :vartype LOST: str
-     *     :cvar STALE: Enum value for tasks skipped because Nomad placement
-     *         exceeded the configured staleness threshold.
-     *     :vartype STALE: str
+     *     :cvar STALE: Enum value for tasks skipped because executor placement
+     *         exceeded the configured staleness threshold (for example a Nomad
+     *         allocation that never left the queue).
      * @enum {string}
      */
     TaskHistoryStatusEnum:
