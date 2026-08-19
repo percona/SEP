@@ -77,36 +77,40 @@ def _patch_deterministic_schema_names() -> None:
     fastapi.openapi.utils.get_model_name_map = _ordered_model_name_map
 
 
-# The same Casdoor provider values pinned under `[tool.pytest.ini_options].env`
-# in ``pyproject.toml``. Set them here so ``dump_openapi.py`` produces the same
-# spec regardless of the developer's local auth configuration.
-_CANONICAL_AUTH_ENV = {
+# The same pins `[tool.pytest.ini_options].env` applies in ``pyproject.toml``,
+# so a dump and the freshness guard resolve identical settings. Keep both sites
+# in sync.
+_CANONICAL_ENV = {
+    "ENV_FILE": str(REPO_ROOT / "tests" / "pytest.env"),
     "AUTH__PROVIDER__CASDOOR__CLIENT_ID": "test-client-id",
     "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET": "test-client-secret",
     "AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS": '["https://allowed-issuer.com"]',
 }
 
 
-def _pin_canonical_auth_provider() -> None:
-    """Pin the Casdoor auth provider so the generated spec is environment-independent.
+def _pin_canonical_settings_env() -> None:
+    """Pin the settings environment so the generated spec is environment-independent.
 
     The spec is a build artifact whose shape must not vary with the developer's
-    local auth configuration.  The freshness guard
-    (``tests/app/test_openapi_specs_fresh.py``) already resolves Casdoor via the
-    ``pyproject.toml`` env pin; this function applies the same values when the
-    script runs outside pytest (``make regen-specs``, direct invocation).
+    local configuration, so both settings sources able to name an auth provider
+    are neutralized:
 
-    Clears any pre-existing ``AUTH__PROVIDER__*`` env vars so that only the
-    canonical Casdoor provider is active during ``_load_apps()``.  Without this,
-    a developer configured for a different provider (e.g. Grafana) would end up
-    with two providers and ``AuthSettings`` would reject the configuration.
+    - ``ENV_FILE`` is repointed at the committed assignment-free dotenv, since
+      it selects the file the dotenv source reads. Exporting variables cannot
+      dislodge a provider that a developer's ``ENV_FILE=.env.local`` supplies,
+      because the dotenv source reads that file from disk regardless.
+    - Pre-existing ``AUTH__PROVIDER*`` variables are cleared, so an exported
+      provider cannot survive alongside the canonical one.
+
+    Leaving either source in place resolves a second provider, which
+    ``AuthSettings`` rejects outright rather than merging.
 
     Must be called before ``_load_apps()`` imports the application, since the
     settings object is constructed at import time.
     """
-    for key in [k for k in os.environ if k.startswith("AUTH__PROVIDER__")]:
+    for key in [k for k in os.environ if k.startswith("AUTH__PROVIDER")]:
         del os.environ[key]
-    for key, value in _CANONICAL_AUTH_ENV.items():
+    for key, value in _CANONICAL_ENV.items():
         os.environ[key] = value
 
 
@@ -142,7 +146,7 @@ def main() -> int:
         finds a missing or drifted fixture.
     """
     _patch_deterministic_schema_names()
-    _pin_canonical_auth_provider()
+    _pin_canonical_settings_env()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--check",

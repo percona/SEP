@@ -15,6 +15,7 @@
 
 """Define models for the Checksums plugin."""
 
+from pathlib import PurePosixPath
 from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -280,6 +281,19 @@ class ChecksumsForm(TaskFormModel):
             description="Pause until replica lag falls below this value (seconds)",
         ),
     ] = ""
+    defaults_file: Annotated[
+        str,
+        ArgFormat(),
+        Ui(
+            section="Advanced",
+            order=6,
+            description=(
+                "Absolute path to a MySQL options file on the executor node. "
+                "pt-table-checksum reads MySQL options only from this file. "
+                "The path must already exist on the executor; SEP does not verify it."
+            ),
+        ),
+    ] = ""
     progress: Annotated[
         str,
         ArgFormat(),
@@ -312,3 +326,22 @@ class ChecksumsForm(TaskFormModel):
         :return: The value unchanged when no element carries a DSN delimiter.
         """
         return [dsn_safe(item) if isinstance(item, str) else item for item in value]
+
+    @field_validator("defaults_file")
+    @classmethod
+    def _defaults_file_absolute(cls, value: str) -> str:
+        """Require an absolute executor path when ``defaults_file`` is non-empty.
+
+        :param value: The submitted defaults-file path.
+        :return: The normalized path, or ``""`` when omitted or empty.
+        :raises ValueError: When ``value`` is non-empty but not an absolute path.
+        """
+        if not value:
+            return ""
+        if not PurePosixPath(value).is_absolute():
+            raise ValueError(
+                "defaults_file must be an absolute path on the executor node; "
+                "tilde (~) is not expanded and relative paths resolve against an "
+                "unpredictable working directory"
+            )
+        return value

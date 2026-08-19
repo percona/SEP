@@ -23,6 +23,11 @@ from sqlalchemy_celery_beat.models import Period
 
 from app.core.celery.models import IntervalSchedule
 from app.core.db.config import DatabaseOptions
+from app.core.settings_override.registry import (
+    field_reload_classification,
+    is_explicit_not_overridable,
+    ReloadClassification,
+)
 from app.tasks.config import PreExecutionCheckMode, tasks_settings, TasksSettings
 
 EXPECTED_UVICORN_PORT = 8002
@@ -97,4 +102,56 @@ class TestTasksSettings:
         assert (
             TasksSettings(LOG_RETENTION_DAYS=MAX_LOG_RETENTION_DAYS).LOG_RETENTION_DAYS
             == MAX_LOG_RETENTION_DAYS
+        )
+
+    def test_default_hook_module_allowlist(self) -> None:
+        """Assert the default allow-list admits the namespace holding the task apps."""
+        assert tasks_settings.HOOK_MODULE_ALLOWLIST == ("app.sep.apps",)
+
+    def test_hook_module_allowlist_is_not_runtime_overridable(self) -> None:
+        """Assert the allow-list cannot be widened through the settings API.
+
+        Widening the namespace at runtime would itself be a privilege-escalation
+        path, since the resolved callable is imported and invoked.
+        """
+        field_info = TasksSettings.model_fields["HOOK_MODULE_ALLOWLIST"]
+
+        assert (
+            field_reload_classification(field_info)
+            is ReloadClassification.NOT_OVERRIDABLE
+        )
+        assert is_explicit_not_overridable(field_info)
+
+    @pytest.mark.parametrize(
+        "root",
+        [
+            "app/acme/apps",
+            "app.acme.apps.",
+            ".app.acme.apps",
+            "app..acme",
+            " app.acme.apps",
+            "",
+            "app.sep.apps:builder",
+        ],
+    )
+    def test_hook_module_allowlist_rejects_a_root_nothing_can_match(
+        self, root: str
+    ) -> None:
+        """Reject an allow-list entry that is not a dotted module path.
+
+        A root no hook path can ever match would otherwise load cleanly and then
+        be reported as allow-listed in every rejection message.
+        """
+        with pytest.raises(ValidationError, match="dotted module path"):
+            TasksSettings(HOOK_MODULE_ALLOWLIST=(root,))
+
+    def test_hook_module_allowlist_accepts_an_extra_root(self) -> None:
+        """Accept a well-formed dotted root added alongside the shipped default."""
+        settings = TasksSettings(
+            HOOK_MODULE_ALLOWLIST=("app.sep.apps", "acme_plugins.hooks")
+        )
+
+        assert settings.HOOK_MODULE_ALLOWLIST == (
+            "app.sep.apps",
+            "acme_plugins.hooks",
         )

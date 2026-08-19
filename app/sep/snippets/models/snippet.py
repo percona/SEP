@@ -64,6 +64,7 @@ from app.core.utils.fields import (
     UTCDatetime,
 )
 from app.core.utils.pydantic import CustomFieldMetadata
+from app.sep.apps.field_names import EXTRA_ARGS_FIELD_NAME, SUDO_FIELD_NAME
 from app.sep.snippets.config import (
     DEFAULT_SNIPPETS_TASK,
     SnippetFilterType,
@@ -74,7 +75,6 @@ from app.sep.snippets.config import (
 
 if TYPE_CHECKING:
     from aiofiles.threadpool.text import AsyncTextIOWrapper
-from app.sep.snippets.models.constants import EXTRA_ARGS_FIELD_NAME
 from app.sep.snippets.models.meta import (
     META_KEY_DESCRIPTION,
     META_KEY_SERVICE_TYPE,
@@ -274,18 +274,17 @@ class FilePreview(NamedTuple):
 
 
 class BaseSnippetArgs(BaseModel):
-    """Base model for validating snippet execution arguments.
+    """Validate the arguments a snippet execution was submitted with.
 
     :cvar extra_args_field: The name of the field used to store extra arguments
-        ("extra_args").
-    :vartype extra_args_field: ClassVar[str]
+        (``extra_args``).
+    :cvar sudo_field: The name of the field used to store the sudo toggle (``sudo``).
     :param executor_host: The hostname of the target system where the snippet will be
         executed.
-    :type executor_host: NonEmptyStr
     """
 
     extra_args_field: ClassVar[str] = EXTRA_ARGS_FIELD_NAME
-    sudo_field: ClassVar[str] = "sudo"
+    sudo_field: ClassVar[str] = SUDO_FIELD_NAME
     executor_host: NonEmptyStr = Field(
         validation_alias=EXECUTOR_HOSTS_INPUT_NAME, exclude=True
     )

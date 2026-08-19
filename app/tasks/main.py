@@ -26,7 +26,7 @@ from fastapi import FastAPI, Request, status
 from nomad.api.exceptions import BaseNomadException
 
 from app import __summary__, __version__
-from app.api.deps import RequireAdminForUnsafeMethods
+from app.api.deps import RequireMinimumRoleForUnsafeMethods
 from app.core.config import create_app, default_lifespan, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPGoneException
 from app.core.health import build_health_router
@@ -136,7 +136,7 @@ tasks_app = create_app(
     periodic_router,
     connectivity_router,
     settings_router,
-    dependencies=[RequireAdminForUnsafeMethods],
+    dependencies=[RequireMinimumRoleForUnsafeMethods],
     lifespan=lifespan,
     backend_cors_origins=tasks_settings.BACKEND_CORS_ORIGINS,
     allowed_hosts=tasks_settings.ALLOWED_HOSTS,

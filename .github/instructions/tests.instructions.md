@@ -12,7 +12,7 @@ Tests mirror app structure exactly. `app/sep/snippets/config.py` → `tests/app/
 
 ## Factories — never manual dicts
 
-Test data MUST come from a factory, never a hand-rolled `dict`. Core, cross-app factories live in `tests/app/factories.py` (`SchemaWriteFactory`, `TableWriteFactory`, `TaskFactory` / `GeneratedTaskFactory`, `PeriodicTaskFactory`, …). Build with `.build()`, customise inline: `CasdoorUserFactory.build(is_admin=True)`. Use mock ID constants from `tests/app/factories.py`.
+Test data MUST come from a factory, never a hand-rolled `dict`. Core, cross-app factories live in `tests/app/factories.py` (`SchemaWriteFactory`, `TableWriteFactory`, `TaskFactory` / `GeneratedTaskFactory`, `PeriodicTaskFactory`, …). Build with `.build()`, customise inline: `CasdoorUserFactory.build(role=UserRole.ADMIN)`. Use mock ID constants from `tests/app/factories.py`.
 
 **A factory for an app's model belongs in `tests/app/sep/apps/<app>/factories.py`, not the shared file.** `tests/app/factories.py` sits at the root of the test tree, so every subtree imports it — an app-specific factory there couples the shared file to that app and has to be found and deleted by hand when the app goes. Adding an app means adding `tests/app/sep/apps/<app>/factories.py`, never editing the shared module; the app test packages already have `__init__.py`, so `tests.app.sep.apps.<app>.factories` resolves as-is. `tests/app/test_factories_boundary.py` enforces this: any module directly under `tests/app/` that imports `app.sep.apps.*` (or re-exports from `tests.app.sep.apps.*`) fails.
 

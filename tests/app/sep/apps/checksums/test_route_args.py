@@ -70,6 +70,35 @@ def test_derived_create_assembles_exact_args(regular_user: CasdoorUser) -> None:
     )
 
 
+def test_derived_create_emits_defaults_file(regular_user: CasdoorUser) -> None:
+    """Emit ``--defaults-file`` when ``defaults_file`` is a non-empty absolute path."""
+    tasks_api = MockTaskAPI()
+    client = build_contract_client(
+        checksums_app,
+        user=regular_user,
+        tasks_api=tasks_api,
+        inventory_api=MockInventoryAPI(),
+    )
+
+    response = client.post(
+        f"{app_base_url(checksums_app)}/",
+        json={
+            "task_name": "chk-defaults-file",
+            "hostname": SYNTH_EXECUTOR_HOST,
+            "service_id": MOCK_CREATED_SERVICE_ID,
+            "recursion_method": "processlist",
+            "defaults_file": "/etc/checksum.cnf",
+        },
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+    meta = tasks_api.last_create_payload["data"]["meta"]
+    assert meta["args"] == (
+        f"{_DSN_PREFIX} --recursion-method=processlist "
+        "--defaults-file=/etc/checksum.cnf"
+    )
+
+
 def test_derived_create_accepts_legacy_comma_separated_targets(
     regular_user: CasdoorUser,
 ) -> None:
@@ -153,4 +182,5 @@ def test_derived_schema_advanced_section_field_order(regular_user: CasdoorUser) 
         "max_load",
         "chunk_time",
         "max_lag",
+        "defaults_file",
     ]

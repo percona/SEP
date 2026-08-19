@@ -47,6 +47,7 @@ class TestChecksumsContract(DerivedRouterContractTests):
 
     app_def = checksums_app
     remapped_username = None
+    create_body_overrides = {"defaults_file": ""}
 
 
 def test_update_protected_task_returns_409(regular_user: CasdoorUser) -> None:
@@ -59,7 +60,11 @@ def test_update_protected_task_returns_409(regular_user: CasdoorUser) -> None:
         tasks_api=tasks_api,
         inventory_api=MockInventoryAPI(),
     )
-    body = build_valid_create_body(checksums_app, task_name="protected-checksum")
+    body = build_valid_create_body(
+        checksums_app,
+        task_name="protected-checksum",
+        create_body_overrides={"defaults_file": ""},
+    )
 
     response = client.put(
         f"{app_base_url(checksums_app)}/protected-checksum", json=body

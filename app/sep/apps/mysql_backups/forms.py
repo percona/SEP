@@ -191,8 +191,13 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     xtrabackup_incremental_method: (
         Literal["less_space", "fast_restore"] | EmptyStrToNone
     ) = None
+    # Spelled out on three surfaces: this union, BackupCreate's union, and its Choices
+    # labels (the standalone payload carries a fourth, since it runs on the DB host).
+    # A StrEnum would collapse the unions but republish the field as a named OpenAPI
+    # component rather than an inline enum, and the weekday labels would still need
+    # Choices; the vocabulary parity tests fail on a partial edit meanwhile.
     xtrabackup_incremental_cycle: (
-        Literal["daily", "weekly", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone
+        Literal["daily", "weekly", "1", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone
     ) = None
     xtrabackup_local_ssh_destination: NonEmptyStr | EmptyStrToNone = None
     xtrabackup_aes256_keyfile: NonEmptyStr | EmptyStrToNone = None
@@ -387,22 +392,32 @@ class BackupCreate(TaskFormModel):
         Choices((("less_space", "Less space"), ("fast_restore", "Fast restore"))),
         Ui(label="Incremental method", section="XtraBackup"),
     ] = None
+    # Vocabulary duplicated -- see the note on BackupConfigAll.xtrabackup_incremental_cycle.
     xtrabackup_incremental_cycle: Annotated[
-        Literal["daily", "weekly", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone,
+        Literal["daily", "weekly", "1", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone,
         _XTRABACKUP_ONLY,
         Choices(
             (
                 ("daily", "Daily"),
-                ("weekly", "Weekly"),
-                ("2", "2 days"),
-                ("3", "3 days"),
-                ("4", "4 days"),
-                ("5", "5 days"),
-                ("6", "6 days"),
-                ("7", "7 days"),
+                ("weekly", "Weekly (Monday)"),
+                ("1", "Monday"),
+                ("2", "Tuesday"),
+                ("3", "Wednesday"),
+                ("4", "Thursday"),
+                ("5", "Friday"),
+                ("6", "Saturday"),
+                ("7", "Sunday"),
             )
         ),
-        Ui(label="Incremental cycle", section="XtraBackup"),
+        Ui(
+            label="Incremental cycle",
+            section="XtraBackup",
+            description=(
+                "``daily``, ``weekly``, or an ISO weekday number (1-7, "
+                "Monday-Sunday) controlling when the FULL backup runs. Applies to "
+                "the ``less_space`` incremental method only."
+            ),
+        ),
     ] = None
     xtrabackup_local_ssh_destination: Annotated[
         NonEmptyStr | EmptyStrToNone,
