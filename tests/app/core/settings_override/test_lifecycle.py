@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the background snapshot-refresher."""
+"""Cover the override-snapshot lifecycle helpers and the background refresher."""
 
 import asyncio
 from datetime import timedelta
@@ -30,9 +30,12 @@ from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.lifecycle import (
+    fire_change_callbacks,
+    previous_or_base,
     ProxyEntry,
     refresh_all,
     resolve_refresher_options,
+    SnapshotChange,
     start_refresh_task,
 )
 from app.core.settings_override.manager import SettingsOverrideManager
@@ -73,6 +76,39 @@ def _make_proxies() -> tuple[OverridableSettingsProxy, dict]:
         SettingClassEnum.SEP_SETTINGS: ProxyEntry(proxy, SEPSettings),
     }
     return proxy, registry
+
+
+def test_previous_or_base_returns_snapshot_value() -> None:
+    """Return the previous snapshot value when the key is present."""
+    proxy, _ = _make_proxies()
+    change = SnapshotChange({"INVENTORY_ENDPOINT": "https://prev.example.org"}, {})
+    assert (
+        previous_or_base(change, proxy, "INVENTORY_ENDPOINT")
+        == "https://prev.example.org"
+    )
+
+
+def test_previous_or_base_falls_back_to_wrapped_instance() -> None:
+    """Return the YAML/env value when the key is absent from previous."""
+    proxy, _ = _make_proxies()
+    expected = proxy._resolve().INVENTORY_ENDPOINT
+    assert (
+        previous_or_base(SnapshotChange({}, {}), proxy, "INVENTORY_ENDPOINT")
+        == expected
+    )
+
+
+def test_previous_or_base_keeps_an_explicit_none_override() -> None:
+    """Return ``None`` when the key is present in previous holding ``None``.
+
+    Membership decides the fallback, not truthiness: a nullable field whose
+    override was explicitly ``None`` had ``None`` as its previous effective
+    value, so falling back to the YAML/env base here would report a value that
+    was never in effect.
+    """
+    proxy, _ = _make_proxies()
+    change = SnapshotChange({"INVENTORY_ENDPOINT": None}, {})
+    assert previous_or_base(change, proxy, "INVENTORY_ENDPOINT") is None
 
 
 @pytest.mark.asyncio
@@ -426,6 +462,66 @@ async def test_refresh_all_fires_callback_for_changed_key(
     await refresh_all(lambda: session_maker, registry, {_CALLBACK_KEY: _callback})
     assert fired == [True]
     assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+
+@pytest.mark.asyncio
+async def test_fire_change_callbacks_delivers_snapshot_change_on_delete() -> None:
+    """Deliver a SnapshotChange, with the changed key absent from current on delete."""
+    previous = {"CONNECTIVITY_CHECK_DEFAULT": True}
+    current: dict[str, object] = {}
+    received: list[object] = []
+
+    async def _callback(change: object) -> None:
+        received.append(change)
+
+    await fire_change_callbacks(
+        {_CALLBACK_KEY: _callback},
+        SettingClassEnum.SEP_SETTINGS,
+        previous,
+        current,
+    )
+
+    assert len(received) == 1
+    change = received[0]
+    assert isinstance(change, SnapshotChange)
+    assert change.previous == previous
+    assert change.current == current
+    assert "CONNECTIVITY_CHECK_DEFAULT" not in change.current
+    assert change.previous["CONNECTIVITY_CHECK_DEFAULT"] is True
+
+
+@pytest.mark.asyncio
+async def test_fire_change_callbacks_hands_every_callback_the_whole_change() -> None:
+    """Hand each changed key's callback both snapshots, not just its own key.
+
+    Two keys change in one republish, so the loop runs twice. The payload is
+    snapshot-wide rather than per-key, which only a multi-key cycle can pin: a
+    per-key rebuild would pass each callback a mapping holding its own key alone.
+    """
+    previous: dict[str, object] = {"CONNECTIVITY_CHECK_DEFAULT": True, "APP_DRAIN": 1}
+    current: dict[str, object] = {"CONNECTIVITY_CHECK_DEFAULT": False}
+    received: dict[str, SnapshotChange] = {}
+
+    def _recorder(name: str):
+        async def _callback(change: SnapshotChange) -> None:
+            received[name] = change
+
+        return _callback
+
+    await fire_change_callbacks(
+        {
+            _CALLBACK_KEY: _recorder("connectivity"),
+            (SettingClassEnum.SEP_SETTINGS, "APP_DRAIN"): _recorder("drain"),
+        },
+        SettingClassEnum.SEP_SETTINGS,
+        previous,
+        current,
+    )
+
+    assert sorted(received) == ["connectivity", "drain"]
+    for change in received.values():
+        assert change.previous == previous
+        assert change.current == current
 
 
 @pytest.mark.asyncio

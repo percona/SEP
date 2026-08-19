@@ -71,7 +71,7 @@ def _atw_category_browser_fail_rules() -> list[FailRule]:
 
 atw_schema = AppSchema(
     name="atw",
-    display_name="Collect Diagnostic Data",
+    display_name="Support diagnostics",
     description=(
         "Browse curated troubleshooting snippets by issue category and launch"
         " execution through the snippets API flow."

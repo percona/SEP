@@ -39,10 +39,10 @@ Two limitations are deliberate, so the guard is not mistaken for a total one:
   registry's activation-list-driven ``import_module(plugin.module_name)`` from
   tripping the guard -- that call is the blessed activation seam, not a
   violation.
-- A function that imports in its body and is then *called* at module scope does
-  execute the import at import time, but resolving that needs call-graph
-  tracing. Function bodies are skipped, so a deferred import satisfies the rule
-  only while no module-scope statement calls it.
+- A module-scope call to a function *imported from another module* whose body
+  imports an app package is out of scope. Resolving it needs a whole-tree
+  function index plus import-alias resolution, and carries false-positive risk
+  the intra-module form does not.
 """
 
 import ast
@@ -106,6 +106,100 @@ def _dynamic_import_target(node: ast.Call) -> str | None:
     return target.value.split(":", 1)[0]
 
 
+def _simple_call_name(node: ast.Call) -> str | None:
+    """Return the bare name a call invokes, when the callee is a simple reference.
+
+    :param node: The call node to inspect.
+    :return: The callee name, or ``None`` for attribute or computed callees.
+    """
+    if isinstance(node.func, ast.Name):
+        return node.func.id
+    return None
+
+
+def _call_names_in_expr(node: ast.AST) -> set[str]:
+    """Collect bare-name call targets inside ``node``, including nested calls.
+
+    :param node: The expression subtree to scan.
+    :return: Callee names resolved to simple references.
+    """
+    names: set[str] = set()
+    for child in ast.walk(node):
+        if isinstance(child, ast.Call) and (name := _simple_call_name(child)):
+            names.add(name)
+    return names
+
+
+def _call_names_skipping_function_bodies(node: ast.AST) -> set[str]:
+    """Collect bare-name call targets while skipping nested function bodies.
+
+    Descends module and class bodies -- both execute on import -- but never into
+    a ``FunctionDef`` / ``AsyncFunctionDef`` body. Decorator expressions and
+    signature defaults on skipped functions are still scanned, because both
+    evaluate at import time.
+
+    :param node: The module or nested node to descend.
+    :return: Callee names resolved to simple references.
+    """
+    names: set[str] = set()
+    if isinstance(node, ast.Call) and (name := _simple_call_name(node)):
+        names.add(name)
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+            for decorator in child.decorator_list:
+                names |= _call_names_in_expr(decorator)
+            for default in child.args.defaults:
+                names |= _call_names_in_expr(default)
+            for default in child.args.kw_defaults:
+                if default is not None:
+                    names |= _call_names_in_expr(default)
+            continue
+        names |= _call_names_skipping_function_bodies(child)
+    return names
+
+
+def _index_top_level_functions(
+    module: ast.Module,
+) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Index a module's top-level function definitions by name.
+
+    :param module: The parsed module to index.
+    :return: Top-level ``FunctionDef`` / ``AsyncFunctionDef`` nodes keyed by name.
+    """
+    functions: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
+    for node in module.body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            functions[node.name] = node
+    return functions
+
+
+def _reachable_local_functions(
+    module: ast.Module,
+    functions: dict[str, ast.FunctionDef | ast.AsyncFunctionDef],
+) -> set[str]:
+    """Return local functions whose bodies may execute when the module loads.
+
+    Seeds from module-scope statements, class bodies, decorator calls, and
+    signature defaults; expands transitively through calls made by already-
+    reached functions. Only bare-name calls to a top-level local definition
+    are traced.
+
+    :param module: The parsed module to analyse.
+    :param functions: Top-level function definitions keyed by name.
+    :return: Names of local functions reachable at import time.
+    """
+    pending = list(_call_names_skipping_function_bodies(module))
+    reachable: set[str] = set()
+    while pending:
+        name = pending.pop()
+        if name in reachable or name not in functions:
+            continue
+        reachable.add(name)
+        for statement in functions[name].body:
+            pending.extend(_call_names_skipping_function_bodies(statement))
+    return reachable
+
+
 def _direct_import_edges(node: ast.AST, package: str) -> Iterator[tuple[str, int]]:
     """Yield the import edges ``node`` itself declares, ignoring its children.
 
@@ -134,6 +228,25 @@ def _direct_import_edges(node: ast.AST, package: str) -> Iterator[tuple[str, int
             yield target, node.lineno
 
 
+def _descend_import_time_nodes(
+    node: ast.AST, package: str
+) -> Iterator[tuple[str, int]]:
+    """Descend ``node`` for import-time edges, skipping function bodies.
+
+    :param node: The module or nested node to descend.
+    :param package: The dotted package the importing module belongs to.
+    :return: An iterator of dotted module paths with their line numbers.
+    """
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        if _is_type_checking_guard(child):
+            for fallback in child.orelse:
+                yield from _import_time_imports(fallback, package)
+            continue
+        yield from _import_time_imports(child, package)
+
+
 def _import_time_imports(node: ast.AST, package: str) -> Iterator[tuple[str, int]]:
     """Yield ``(module, lineno)`` for each import executed when the module loads.
 
@@ -144,6 +257,10 @@ def _import_time_imports(node: ast.AST, package: str) -> Iterator[tuple[str, int
     surface. An ``if TYPE_CHECKING:`` guard is descended on its ``else`` branch
     only, since that is the branch a real interpreter runs.
 
+    For a module, also traces intra-module call chains: a top-level function
+    whose body imports and is reached from an import-time call site -- including
+    transitively through other local functions -- contributes its body imports.
+
     :param node: The module or nested node to descend.
     :param package: The dotted package the importing module belongs to.
     :return: An iterator of dotted module paths with their line numbers.
@@ -151,14 +268,13 @@ def _import_time_imports(node: ast.AST, package: str) -> Iterator[tuple[str, int
     yield from _direct_import_edges(node, package)
     if isinstance(node, ast.Import | ast.ImportFrom):
         return
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
-            continue
-        if _is_type_checking_guard(child):
-            for fallback in child.orelse:
-                yield from _import_time_imports(fallback, package)
-            continue
-        yield from _import_time_imports(child, package)
+    if isinstance(node, ast.Module):
+        functions = _index_top_level_functions(node)
+        yield from _descend_import_time_nodes(node, package)
+        for name in _reachable_local_functions(node, functions):
+            yield from _import_time_imports(functions[name], package)
+        return
+    yield from _descend_import_time_nodes(node, package)
 
 
 def _is_type_checking_guard(node: ast.AST) -> bool:
@@ -311,6 +427,14 @@ def test_guarded_module_paths_leaves_no_apps_tree_module_out(
             set(),
             id="own-package-subtree-exempt",
         ),
+        pytest.param(
+            "app/sep/apps/inventory/deps.py",
+            "def _lazy():\n"
+            "    from app.sep.apps.inventory.sync import run_inventory_sync\n"
+            "_lazy()",
+            set(),
+            id="own-package-through-local-call",
+        ),
     ],
 )
 def test_import_time_edges_ignore_a_modules_own_app_package(
@@ -436,6 +560,82 @@ def test_import_time_edges_ignore_a_modules_own_app_package(
             "from app.sep.apps.framework.registry import get_app_registry",
             set(),
             id="infrastructure-package",
+        ),
+        pytest.param(
+            "def _lazy():\n"
+            "    from app.sep.apps.alerts.config import alerts_settings\n"
+            "_lazy()",
+            {"alerts"},
+            id="module-scope-local-call",
+        ),
+        pytest.param(
+            "def _lazy():\n"
+            "    from app.sep.apps.alerts.config import alerts_settings\n"
+            "def _middle():\n"
+            "    _lazy()\n"
+            "_middle()",
+            {"alerts"},
+            id="transitive-local-call",
+        ),
+        pytest.param(
+            "def _a():\n    _b()\ndef _b():\n    _a()\n_a()",
+            set(),
+            id="mutually-recursive-local-call",
+        ),
+        pytest.param(
+            "def _lazy():\n"
+            "    from app.sep.apps.alerts.config import alerts_settings\n"
+            "class Holder:\n"
+            "    _lazy()",
+            {"alerts"},
+            id="class-body-local-call",
+        ),
+        pytest.param(
+            "def _lazy():\n"
+            "    from app.sep.apps.alerts.config import alerts_settings\n"
+            "@_lazy()\n"
+            "def _main():\n"
+            "    pass",
+            {"alerts"},
+            id="decorator-call",
+        ),
+        pytest.param(
+            "def _lazy():\n"
+            "    from app.sep.apps.alerts.config import alerts_settings\n"
+            "@_lazy\n"
+            "def _main():\n"
+            "    pass",
+            set(),
+            id="bare-decorator-reference",
+        ),
+        pytest.param(
+            "def _lazy():\n"
+            "    from app.sep.apps.alerts.config import alerts_settings\n"
+            "def _main(x=_lazy()):\n"
+            "    pass",
+            {"alerts"},
+            id="signature-default-call",
+        ),
+        pytest.param(
+            "def _lazy():\n"
+            "    from app.sep.apps.alerts.config import alerts_settings\n"
+            "def _main(*, x=_lazy()):\n"
+            "    pass",
+            {"alerts"},
+            id="signature-keyword-default-call",
+        ),
+        pytest.param(
+            "def _outer():\n"
+            "    def _lazy():\n"
+            "        from app.sep.apps.alerts.config import alerts_settings\n"
+            "    _lazy()",
+            set(),
+            id="nested-function-only-reachable",
+        ),
+        pytest.param(
+            "import os\nos.path.join('a', 'b')",
+            set(),
+            id="imported-symbol-call",
         ),
     ],
 )

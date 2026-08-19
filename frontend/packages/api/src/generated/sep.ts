@@ -250,20 +250,15 @@ export interface paths {
      *
      *     ``present_names`` is ``None`` when PMM is unconfigured or unreachable, which
      *     is the same signal used to drive ``pmm_connected`` and per-template
-     *     ``in_pmm`` flags so the UI degrades gracefully.
+     *     ``in_pmm`` flags, so the response carries no PMM data rather than failing.
      *
      *     :param alert_templates: Local alert templates grouped by service type.
-     *     :type alert_templates: AlertTemplatesDep
      *     :param present_names: Template names already present in PMM, or ``None`` when
      *         PMM is unreachable.
-     *     :type present_names: set[str] | None
      *     :param recent_backups: The most recent alert backups, newest first.
-     *     :type recent_backups: list[AlertBackup]
      *     :param pagerduty_status: PagerDuty contact-point status, or ``None`` when PMM
      *         is unreachable.
-     *     :type pagerduty_status: dict[str, Any] | None
      *     :return: The aggregated index payload.
-     *     :rtype: IndexResponse
      */
     get: operations['alerts_alerts_api_index_api_apps_alerts__get'];
     put?: never;
