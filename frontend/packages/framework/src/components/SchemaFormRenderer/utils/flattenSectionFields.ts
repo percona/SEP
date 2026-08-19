@@ -39,3 +39,12 @@ export function flattenSectionItem(field: SectionField): AppField[] {
 export function flattenSectionFields(sections: FormSection[]): AppField[] {
   return sections.flatMap((section) => section.fields.flatMap(flattenSectionItem));
 }
+
+/** Map each flattened field path to its display label (or name when label is empty). */
+export function buildFieldLabelMap(sections: FormSection[]): Map<string, string> {
+  const labels = new Map<string, string>();
+  for (const field of flattenSectionFields(sections)) {
+    labels.set(field.name, field.label || field.name);
+  }
+  return labels;
+}

@@ -117,7 +117,7 @@ def test_database_options_password_masked_in_repr():
 
 
 def test_pool_engine_kwargs_empty_when_unset():
-    """Yield no kwargs when pool fields are unset, so the engine keeps defaults."""
+    """Return no kwargs when pool fields are unset, so the engine keeps defaults."""
     db_options = DatabaseOptions(NAME="test.db")
 
     assert db_options.pool_engine_kwargs == {}
@@ -176,7 +176,7 @@ def test_connect_engine_kwargs_maps_per_dialect(engine, expected):
 
 
 def test_connect_engine_kwargs_empty_when_unset():
-    """Yield no connect_args when CONNECT_TIMEOUT is unset."""
+    """Return no connect_args when CONNECT_TIMEOUT is unset."""
     db_options = DatabaseOptions(
         ENGINE=AsyncDatabaseEngine.POSTGRESQL,
         NAME="testdb",

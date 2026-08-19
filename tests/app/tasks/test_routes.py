@@ -32,7 +32,7 @@ from starlette.testclient import TestClient
 
 from app.api.deps import (
     get_current_user,
-    require_admin_for_unsafe_methods,
+    require_minimum_role_for_unsafe_methods,
     SERVICE_PRINCIPAL_ID,
 )
 from app.core.celery.deps import get_session as get_celery_beat_session
@@ -50,7 +50,10 @@ from app.tasks.connectivity.service import _cached_check_connectivity
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
 from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.executors.nomad.exceptions import AllocationNotFoundError
-from app.tasks.execution.executors.nomad.steps import NomadStep
+from app.tasks.execution.executors.nomad.steps import (
+    NomadStep,
+    RUN_SCRIPT_OUTPUT_FILES_PATH,
+)
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.main import tasks_app
@@ -58,7 +61,6 @@ from app.tasks.models import (
     DispatchLock,
     ExecutionEvent,
     LogCaptureStatusEnum,
-    RUN_SCRIPT_OUTPUT_FILES_PATH,
     SYSTEM_USER,
     Task,
     TaskBackendEnum,
@@ -3033,7 +3035,9 @@ class TestSyncTaskHistoryRealSession:
 
         mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
 
-        tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+        tasks_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
+            lambda: None
+        )
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
@@ -3117,7 +3121,9 @@ class TestSyncTaskHistoryRealSession:
         mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
         mock_executor.stream_file = MagicMock(side_effect=fake_stream_file)
 
-        tasks_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+        tasks_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
+            lambda: None
+        )
         tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
