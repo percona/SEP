@@ -30,8 +30,8 @@ from pydantic import ValidationError
 
 from app.celery import celery
 from app.sep.app_drain import owned_by, should_cancel
+from app.sep.apps.report.config import health_report_settings
 from app.sep.bundle_upload.plan import DeliveryPlanError
-from app.sep.config import sep_settings
 
 logger = logging.getLogger(__name__)
 
@@ -232,8 +232,8 @@ async def _generate_health_report(
         logger.info("Report app disabling; skipping health report upload.")
         return
 
-    if not sep_settings.HEALTH_REPORT.is_upload_configured:
-        reasons = sep_settings.HEALTH_REPORT.upload_disabled_reasons
+    if not health_report_settings.is_upload_configured:
+        reasons = health_report_settings.upload_disabled_reasons
         logger.warning(
             "Scheduled upload requested but upload is not fully configured: %s",
             "; ".join(reasons),
@@ -262,6 +262,6 @@ def purge_report_artifacts() -> None:
     """
     from app.sep.apps.report.artifact_store import purge_expired
 
-    removed = purge_expired(sep_settings.HEALTH_REPORT.artifact_ttl)
+    removed = purge_expired(health_report_settings.artifact_ttl)
     if removed:
         logger.info("Purged %d expired report artifact(s)", removed)

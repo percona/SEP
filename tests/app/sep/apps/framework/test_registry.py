@@ -48,6 +48,7 @@ from app.sep.apps.framework.registry import (
     resolve_app_settings_metadata,
 )
 from app.sep.apps.inventory.schema import inventory_schema
+from app.sep.apps.report.config import health_report_settings, HealthReportSettings
 from app.sep.apps.tasks.schema import TASKS_PLUGIN_SCHEMA
 from app.sep.config import App, sep_settings
 from app.sep.models import AppLifecycleEnum, AppState
@@ -634,13 +635,27 @@ class TestCollectAppOwnedSettingsClasses:
         assert entry.settings_cls is AlertsSettings
         assert entry.proxy is alerts_settings
 
+    def test_collects_report_declaration(self) -> None:
+        """Return the report app's own ``HealthReportSettings`` entry."""
+        entries = collect_app_owned_settings_classes([App(module_name="report")])
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry.setting_class == SettingClassEnum.HEALTH_REPORT_SETTINGS
+        assert entry.app_key == "report"
+        assert entry.settings_cls is HealthReportSettings
+        assert entry.proxy is health_report_settings
+
     def test_reduced_activation_declares_no_alerts_entry(self) -> None:
         """Yield no alerts entry under the PMM-embedded activation list."""
         entries = collect_app_owned_settings_classes(REDUCED_ACTIVATION)
         assert SettingClassEnum.ALERTS_SETTINGS not in {
             entry.setting_class for entry in entries
         }
+        assert SettingClassEnum.HEALTH_REPORT_SETTINGS not in {
+            entry.setting_class for entry in entries
+        }
         assert "alerts" not in {entry.app_key for entry in entries}
+        assert "report" not in {entry.app_key for entry in entries}
 
     def test_skips_plugins_without_declaration(self) -> None:
         """Ignore activation entries that export no ``APP_OWNED_SETTINGS_CLASSES``."""

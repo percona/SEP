@@ -33,6 +33,9 @@ from tests.sidecar.conftest import SETTINGS_ENV_HELPER, SIDECAR_DIR
 
 SUPERVISORD_EXPANSION = re.compile(r"%\(ENV_([A-Za-z0-9_]+)\)s")
 UNCONDITIONAL_EXPORT = re.compile(r"^export ([A-Z_][A-Z0-9_]*)=", re.MULTILINE)
+BLANK_CLEARED_NAMES_ARRAY = re.compile(
+    r"blank_cleared_names=\(\s*(.*?)\s*\)", re.DOTALL
+)
 
 CALLER_SHELL_OPTIONS = "set -o errexit -o nounset -o pipefail"
 """The options ``entrypoint.sh`` has active when it sources the helper."""
@@ -87,6 +90,45 @@ def write_secrets(tmp_path: Path, **files: str) -> str:
     for name, content in files.items():
         (directory / name).write_text(content, encoding="utf-8")
     return str(directory)
+
+
+def managed_canonical_names() -> frozenset[str]:
+    """Return the canonical names the script's ``blank_cleared_names`` loop manages.
+
+    Parsed from the script rather than duplicated as a literal, so it can
+    never drift from the list :func:`apply_environment` relies on to isolate
+    a test from whatever one of these names the pytest process itself
+    happened to inherit.
+
+    :return: The managed canonical names.
+    """
+    match = BLANK_CLEARED_NAMES_ARRAY.search(
+        SETTINGS_ENV_HELPER.read_text(encoding="utf-8")
+    )
+    assert match, "blank_cleared_names array not found in settings-env.sh"
+    return frozenset(match.group(1).split())
+
+
+def apply_environment(
+    monkeypatch: pytest.MonkeyPatch, environment: dict[str, str]
+) -> None:
+    """Replay a subprocess's exported environment onto the pytest process.
+
+    A managed name the subprocess left unexported is meant to fall through to
+    a mounted file or the baked default -- but the pytest process is not
+    otherwise isolated from its own ambient environment, so a managed name
+    already set there (from the shell a developer or CI job runs pytest in)
+    would outrank both. Every managed name is cleared first so replaying the
+    export is the only source left.
+
+    :param monkeypatch: The environment patcher.
+    :param environment: The subprocess's exported environment, from :func:`exported`.
+    """
+    for name in managed_canonical_names():
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        if name not in SHELL_LOCAL_NAMES:
+            monkeypatch.setenv(name, value)
 
 
 @pytest.mark.parametrize("secret_key", [{}, {"SECRET_KEY": ""}], ids=["unset", "empty"])
@@ -606,3 +648,294 @@ def test_a_mounted_secret_resolves_through_the_shell_into_the_settings_classes(
         Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi
         == "postgresql+psycopg2://sep:p%40ss%3Aw%2Frd@pmm-server:5432/sep"
     )
+
+
+class TestBlankNamesWhoseGuardMightNeverFire:
+    """Clear a canonical name inherited blank while its ``SEP_*`` guard is inactive.
+
+    ``export_canonical`` only clears a blank when it actually runs, and four
+    guards skip calling it whenever their raw input is absent. Two more names
+    -- ``SEP_INTERNAL_TOKEN`` and ``BASE_URL`` -- have no guard at all and are
+    never touched by the script. All ten have to clear regardless.
+    """
+
+    ALL_BLANK_CLEARED_NAMES: tuple[str, ...] = (
+        "SEP__DATABASE__PASSWORD",
+        "INVENTORY__DATABASE__PASSWORD",
+        "TASKS__DATABASE__PASSWORD",
+        "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN",
+        "PMM__API_KEY",
+        "PMM__ENDPOINT",
+        "AUTH__PROVIDER__GRAFANA__ENDPOINT",
+        "TASKS__NOMAD__ENDPOINT",
+        "SEP_INTERNAL_TOKEN",
+        "BASE_URL",
+    )
+
+    @pytest.mark.parametrize("canonical_name", ALL_BLANK_CLEARED_NAMES)
+    def test_a_blank_name_is_cleared_with_a_file_mounted(
+        self, tmp_path: Path, canonical_name: str
+    ):
+        """Defer to the file even though no guard ever calls ``export_canonical``."""
+        secrets_dir = write_secrets(tmp_path, **{canonical_name: "from-file"})
+
+        environment = exported(
+            source_helper(
+                SECRET_KEY="k", SECRETS_DIR=secrets_dir, **{canonical_name: ""}
+            )
+        )
+
+        assert canonical_name not in environment
+
+    @pytest.mark.parametrize("canonical_name", ALL_BLANK_CLEARED_NAMES)
+    def test_a_blank_name_is_cleared_with_no_file_mounted(self, canonical_name: str):
+        """Fall through to the derived value or default, not an exported blank."""
+        environment = exported(source_helper(SECRET_KEY="k", **{canonical_name: ""}))
+
+        assert canonical_name not in environment
+
+    @pytest.mark.parametrize("canonical_name", ALL_BLANK_CLEARED_NAMES)
+    def test_an_explicit_value_is_untouched_by_the_clear(self, canonical_name: str):
+        """Leave a genuinely non-empty inherited value exactly as it arrived."""
+        environment = exported(
+            source_helper(SECRET_KEY="k", **{canonical_name: "explicit-value"})
+        )
+
+        assert environment[canonical_name] == "explicit-value"
+
+    def test_the_scripts_managed_name_list_matches_this_suites_own(self):
+        """Keep the two enumerated lists in lockstep.
+
+        Otherwise a name added to one and not the other goes untested or
+        unmanaged without either side failing.
+        """
+        assert managed_canonical_names() == set(self.ALL_BLANK_CLEARED_NAMES) | {
+            "CELERY__BEAT_DBURI"
+        }
+
+    @pytest.mark.usefixtures("embedded_profile_cwd")
+    def test_a_mounted_password_resolves_even_with_its_guard_inactive(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Assert the file resolves though nothing sets ``SEP_DB_PASSWORD``.
+
+        Before the fix this blank had nothing to clear it: the password guard
+        never fires without a raw input, so ``export_canonical`` never runs and
+        the file stays shadowed.
+        """
+        secrets_dir = write_secrets(tmp_path, SEP__DATABASE__PASSWORD="from-file")
+        environment = exported(
+            source_helper(
+                SECRET_KEY="k", SECRETS_DIR=secrets_dir, SEP__DATABASE__PASSWORD=""
+            )
+        )
+        apply_environment(monkeypatch, environment)
+
+        assert (
+            SEPSettings(_secrets_dir=secrets_dir).DATABASE.PASSWORD.get_secret_value()
+            == "from-file"
+        )
+
+    @pytest.mark.usefixtures("embedded_profile_cwd")
+    def test_a_mounted_internal_token_resolves_even_with_its_guard_inactive(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Assert the file resolves though nothing derives ``SEP_INTERNAL_TOKEN``.
+
+        Unlike the URL-typed names, an uncleared blank here would not crash:
+        ``derive_internal_token`` treats an empty ``SecretStr`` the same as an
+        unset one and silently overwrites it with a value derived from
+        ``SECRET_KEY``, discarding the mounted token instead. A shell-level
+        "absent from the environment" assertion can't tell that apart from
+        this -- the derived fallback also leaves the name unexported.
+        """
+        secrets_dir = write_secrets(tmp_path, SEP_INTERNAL_TOKEN="from-file")
+        environment = exported(
+            source_helper(
+                SECRET_KEY="k", SECRETS_DIR=secrets_dir, SEP_INTERNAL_TOKEN=""
+            )
+        )
+        apply_environment(monkeypatch, environment)
+
+        assert (
+            Settings(_secrets_dir=secrets_dir).SEP_INTERNAL_TOKEN.get_secret_value()
+            == "from-file"
+        )
+
+    @pytest.mark.usefixtures("embedded_profile_cwd")
+    def test_mounted_grafana_credentials_resolve_even_with_their_guard_inactive(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Assert both files resolve though nothing sets ``SEP_GRAFANA_TOKEN``.
+
+        The token guard never fires without a raw input, so without the
+        unconditional clear both files would stay shadowed the same way the
+        password file did before the fix.
+        """
+        secrets_dir = write_secrets(
+            tmp_path,
+            AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN="from-file",
+            PMM__API_KEY="from-file",
+        )
+        environment = exported(
+            source_helper(
+                SECRET_KEY="k",
+                SECRETS_DIR=secrets_dir,
+                AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN="",
+                PMM__API_KEY="",
+            )
+        )
+        apply_environment(monkeypatch, environment)
+
+        assert (
+            AuthSettings(_secrets_dir=secrets_dir)
+            .PROVIDER["grafana"]
+            .service_account_token.get_secret_value()
+            == "from-file"
+        )
+        assert (
+            Settings(_secrets_dir=secrets_dir).PMM.api_key.get_secret_value()
+            == "from-file"
+        )
+
+    @pytest.mark.usefixtures("embedded_profile_cwd")
+    @pytest.mark.parametrize(
+        "mount",
+        [{}, {"BASE_URL": "https://mounted:9443/sep"}],
+        ids=["falls-through-to-none", "resolves-through-the-file"],
+    )
+    def test_a_blank_base_url_resolves_through_the_file_or_to_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mount: dict[str, str]
+    ):
+        """Match a mounted file or the baked ``BASE_URL: null`` default, never an empty URL."""
+        secrets_dir = write_secrets(tmp_path, **mount)
+        environment = exported(
+            source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir, BASE_URL="")
+        )
+        apply_environment(monkeypatch, environment)
+        expected = mount.get("BASE_URL")
+
+        base_url = Settings(_secrets_dir=secrets_dir).BASE_URL
+        assert (str(base_url) if base_url is not None else base_url) == expected
+
+
+class TestApplyEnvironmentIsolatesFromTheAmbientProcess:
+    """Prove the pre-clear in ``apply_environment`` -- not just the subprocess run -- matters."""
+
+    @pytest.mark.usefixtures("embedded_profile_cwd")
+    def test_an_ambient_managed_name_does_not_survive_a_correctly_cleared_export(
+        self, monkeypatch: pytest.MonkeyPatch, embedded_profile_data: dict
+    ):
+        """Assert a name the subprocess correctly left unexported outranks an ambient leak.
+
+        The subprocess's own environment starts clean, so ``PMM__ENDPOINT``
+        never reaches it here -- this sets it directly on the pytest process
+        first, the way a developer's or CI job's shell might, to prove that
+        without ``apply_environment``'s own clear, replaying the export alone
+        would leave the leaked value in place.
+        """
+        monkeypatch.setenv("PMM__ENDPOINT", "https://leaked-from-the-pytest-process")
+        environment = exported(source_helper(SECRET_KEY="k", PMM__ENDPOINT=""))
+        apply_environment(monkeypatch, environment)
+
+        assert (
+            Settings().PMM.endpoint
+            == embedded_profile_data["default"]["PMM"]["ENDPOINT"]
+        )
+
+
+class TestGuardInactiveEndpointsResolveWithoutCrashing:
+    """Assert a blanked URL-typed name with its guard inactive never crashes.
+
+    ``StrCredentialHttpUrl``/``CredentialHttpUrl`` reject an empty string but
+    accept ``None``, so an uncleared blank fails settings validation outright
+    -- taking every supervisord child down -- even though the baked profile
+    carries a perfectly good default.
+    """
+
+    @pytest.mark.usefixtures("embedded_profile_cwd")
+    @pytest.mark.parametrize(
+        "mount",
+        [{}, {"PMM__ENDPOINT": "https://mounted:9443"}],
+        ids=["falls-through-to-the-baked-profile", "resolves-through-the-file"],
+    )
+    def test_pmm_endpoint(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        embedded_profile_data: dict,
+        mount: dict[str, str],
+    ):
+        """Assert a blank ``PMM__ENDPOINT`` never reaches ``PMMSettings`` empty."""
+        secrets_dir = write_secrets(tmp_path, **mount)
+        environment = exported(
+            source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir, PMM__ENDPOINT="")
+        )
+        apply_environment(monkeypatch, environment)
+        expected = mount.get(
+            "PMM__ENDPOINT", embedded_profile_data["default"]["PMM"]["ENDPOINT"]
+        )
+
+        assert Settings(_secrets_dir=secrets_dir).PMM.endpoint == expected
+
+    @pytest.mark.usefixtures("embedded_profile_cwd")
+    @pytest.mark.parametrize(
+        "mount",
+        [{}, {"TASKS__NOMAD__ENDPOINT": "https://mounted:9443/nomad"}],
+        ids=["falls-through-to-the-baked-profile", "resolves-through-the-file"],
+    )
+    def test_nomad_endpoint(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        embedded_profile_data: dict,
+        mount: dict[str, str],
+    ):
+        """Assert a blank ``TASKS__NOMAD__ENDPOINT`` never crashes ``TasksSettings``."""
+        secrets_dir = write_secrets(tmp_path, **mount)
+        environment = exported(
+            source_helper(
+                SECRET_KEY="k",
+                SEP_DB_PASSWORD="pw",
+                SECRETS_DIR=secrets_dir,
+                TASKS__NOMAD__ENDPOINT="",
+            )
+        )
+        apply_environment(monkeypatch, environment)
+        expected = mount.get(
+            "TASKS__NOMAD__ENDPOINT",
+            embedded_profile_data["default"]["TASKS"]["NOMAD"]["ENDPOINT"],
+        )
+
+        assert str(TasksSettings(_secrets_dir=secrets_dir).NOMAD.endpoint) == expected
+
+    @pytest.mark.usefixtures("embedded_profile_cwd")
+    @pytest.mark.parametrize(
+        "mount",
+        [{}, {"AUTH__PROVIDER__GRAFANA__ENDPOINT": "https://mounted:9443/graph"}],
+        ids=["falls-through-to-the-baked-profile", "resolves-through-the-file"],
+    )
+    def test_grafana_endpoint(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        embedded_profile_data: dict,
+        mount: dict[str, str],
+    ):
+        """Assert a blank Grafana endpoint never crashes ``AuthSettings`` either."""
+        secrets_dir = write_secrets(tmp_path, **mount)
+        environment = exported(
+            source_helper(
+                SECRET_KEY="k",
+                SECRETS_DIR=secrets_dir,
+                AUTH__PROVIDER__GRAFANA__ENDPOINT="",
+            )
+        )
+        apply_environment(monkeypatch, environment)
+        expected = mount.get(
+            "AUTH__PROVIDER__GRAFANA__ENDPOINT",
+            embedded_profile_data["default"]["AUTH"]["PROVIDER"]["grafana"]["endpoint"],
+        )
+
+        provider = AuthSettings(_secrets_dir=secrets_dir).PROVIDER["grafana"]
+        assert str(provider.endpoint) == expected

@@ -71,25 +71,12 @@ const MOCK_ATW_LIST = [
 
 /**
  * A snippet the ATW category listing never exposes (it carries no `atw` tag),
- * reachable only through the Collect pane's search of `GET /api/apps/snippets/`.
+ * reachable only through the Collect pane's search of `GET /api/apps/atw/snippets/`.
  */
 const MOCK_SEARCH_SNIPPET = {
-  filename: 'ops/pt-summary.sh',
+  name: 'ops/pt-summary.sh',
   title: 'PT Summary',
   description: 'Collects a percona-toolkit system summary.',
-  service_type: null,
-  size: 512,
-  md5_digest: 'e2e',
-  is_approved: true,
-  approved_at: '2026-07-20T10:00:00Z',
-  updated_by: null,
-  reason: '',
-  requires_sudo: false,
-  sudo_optional: false,
-  sudo_default: false,
-  interpreter: 'bash',
-  created_at: '2026-07-20T10:00:00Z',
-  updated_at: null,
 };
 
 /**
@@ -151,7 +138,7 @@ interface AtwApiMockOptions {
 
 /** What the mocked API recorded, for assertions on the requests themselves. */
 interface AtwApiMockCalls {
-  /** Every `GET /api/apps/snippets/` the Collect pane's search issued. */
+  /** Every `GET /api/apps/atw/snippets/` the Collect pane's search issued. */
   snippetSearchUrls: string[];
   /** Every merged-schema request, which carries the selection's filenames. */
   executionSchemaUrls: string[];
@@ -280,18 +267,16 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       });
     }
 
-    // Snippet search, served by the snippets app's own list endpoint. Reports a
-    // total far beyond the returned page so the truncation notice is exercised.
-    if (pathname === '/api/apps/snippets/' || pathname === '/api/apps/snippets') {
+    // Snippet search, served by ATW's own snippet route. Reports a total far
+    // beyond the returned page so the truncation notice is exercised.
+    if (pathname === '/api/apps/atw/snippets/' || pathname === '/api/apps/atw/snippets') {
       calls.snippetSearchUrls.push(req.url());
       const term = (searchParams.get('search') ?? '').toLowerCase();
       const matches =
         term !== '' &&
-        [
-          MOCK_SEARCH_SNIPPET.filename,
-          MOCK_SEARCH_SNIPPET.title,
-          MOCK_SEARCH_SNIPPET.description,
-        ].some((field) => field.toLowerCase().includes(term));
+        [MOCK_SEARCH_SNIPPET.name, MOCK_SEARCH_SNIPPET.title, MOCK_SEARCH_SNIPPET.description].some(
+          (field) => field.toLowerCase().includes(term),
+        );
       const items = matches ? [MOCK_SEARCH_SNIPPET] : [];
       return route.fulfill({
         status: 200,
@@ -421,14 +406,14 @@ test.describe('Support diagnostics (ATW)', () => {
     const lastSchemaUrl = calls.executionSchemaUrls.at(-1);
     expect(lastSchemaUrl, 'the selection should have requested a merged schema').toBeDefined();
     expect(new URL(lastSchemaUrl ?? '').searchParams.getAll('snippet_filename')).toEqual([
-      MOCK_SEARCH_SNIPPET.filename,
+      MOCK_SEARCH_SNIPPET.name,
     ]);
 
     const lastSearchUrl = calls.snippetSearchUrls.at(-1);
     expect(lastSearchUrl, 'typing should have issued a snippet search').toBeDefined();
     for (const url of calls.snippetSearchUrls) {
-      // Unapproved snippets are rejected at execute time, so they are never offered.
-      expect(new URL(url).searchParams.get('approval')).toBe('approved');
+      // Approval is pinned server-side; the client must not send it as a param.
+      expect(new URL(url).searchParams.has('approval')).toBe(false);
     }
     expect(new URL(lastSearchUrl ?? '').searchParams.get('search')).toBe('summary');
   });

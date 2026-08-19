@@ -39,6 +39,7 @@ from pydantic import (
     StringConstraints,
     TypeAdapter,
     UrlConstraints,
+    ValidationInfo,
     WrapSerializer,
 )
 from pydantic.json_schema import JsonSchemaValue
@@ -730,8 +731,38 @@ _CREDENTIAL_URL_JSON_SERIALIZER = WrapSerializer(
 )
 
 
+def _reject_credential_url_mask(value: Any, info: ValidationInfo) -> Any:
+    """Reject a URL whose embedded password is the redaction mask.
+
+    The mask is what every JSON read surface emits, so it round-trips back as a
+    plausible-looking value on the YAML and environment paths (and on any future
+    import that coerces through the annotated types). A PATCH that resubmits a
+    masked endpoint reaches this validator only when there is no stored password
+    to restore: whenever the current value carries one, the preserve step swaps
+    the mask back for it first.
+
+    :param value: The validated URL value (``HttpUrl`` or ``str``).
+    :param info: Pydantic validation info; ``field_name`` names the field when
+        validating inside a model.
+    :return: ``value`` unchanged when the password is not the mask.
+    :raises ValueError: When the parsed userinfo password equals
+        :data:`CREDENTIAL_URL_MASK`.
+    """
+    if urlparse(str(value)).password == CREDENTIAL_URL_MASK:
+        field = info.field_name or "value"
+        raise ValueError(
+            f"{field} carries the redacted display value in its password "
+            "segment and cannot be stored; supply the real credential."
+        )
+    return value
+
+
+_REJECT_CREDENTIAL_URL_MASK = AfterValidator(_reject_credential_url_mask)
+
+
 CredentialHttpUrl = Annotated[
     HttpUrl,
+    _REJECT_CREDENTIAL_URL_MASK,
     _CREDENTIAL_URL_JSON_SERIALIZER,
 ]
 """Define an HTTP URL that redacts embedded userinfo passwords on JSON serialization.
@@ -739,27 +770,41 @@ CredentialHttpUrl = Annotated[
 The in-memory / python-mode value retains the real credential for outbound
 requests. Pass :data:`PRESERVE_CREDENTIALS_CONTEXT` when dumping internal
 config fingerprints that must store the full URL.
+
+Validation rejects a URL whose userinfo password equals
+:data:`CREDENTIAL_URL_MASK`. A literal ``****`` password is therefore
+unusable on this type: it is indistinguishable from the mask by construction.
 """
 
 StrCredentialHttpUrl = Annotated[
     str,
     AsTypeValidator(HttpUrl, lambda v: str(v).rstrip("/")),
+    _REJECT_CREDENTIAL_URL_MASK,
     _CREDENTIAL_URL_JSON_SERIALIZER,
 ]
 """Define a string HTTP URL that redacts embedded passwords on JSON serialization.
 
 Validates as :class:`~pydantic.HttpUrl`, stores as a string with trailing
 slashes stripped, and masks any embedded password in JSON dumps.
+
+Validation rejects a URL whose userinfo password equals
+:data:`CREDENTIAL_URL_MASK`. A literal ``****`` password is therefore
+unusable on this type: it is indistinguishable from the mask by construction.
 """
 
 StrCredentialAnyUrl = Annotated[
     str,
     AsTypeValidator(AnyUrl, str),
+    _REJECT_CREDENTIAL_URL_MASK,
     _CREDENTIAL_URL_JSON_SERIALIZER,
 ]
 """Define a string URL (any scheme) that redacts embedded passwords on JSON serialization.
 
 Use for broker/backend URLs that may carry credentials in the userinfo segment.
+
+Validation rejects a URL whose userinfo password equals
+:data:`CREDENTIAL_URL_MASK`. A literal ``****`` password is therefore
+unusable on this type: it is indistinguishable from the mask by construction.
 """
 
 URIPath = Annotated[str, StringConstraints(pattern=r"^\/[^\s]*$")]

@@ -32,6 +32,7 @@ from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     FileMetadata,
+    LogCaptureStatusEnum,
     Task,
     TaskHistory,
     TaskHistoryStatusEnum,
@@ -121,25 +122,28 @@ class CeleryExecutor(BaseExecutor):
             queue_item.finished_at = utc_now()
 
         saved = await TaskHistoryManager.save(session, queue_item)
-        stdout_value = stdout_buffer.getvalue()
-        stderr_value = stderr_buffer.getvalue()
-        if stdout_value:
-            await TaskHistoryLogWriter.append(
+        for stream, value in (
+            (TaskLogType.STDOUT, stdout_buffer.getvalue()),
+            (TaskLogType.STDERR, stderr_buffer.getvalue()),
+        ):
+            if value:
+                await TaskHistoryLogWriter.append(
+                    session,
+                    saved.id,
+                    source="execution",
+                    stream=stream,
+                    new_bytes=value.encode("utf-8"),
+                    force_flush=True,
+                )
+            # Recorded for both streams whether or not either produced bytes:
+            # this executor captures each buffer in full and synchronously, so
+            # a silent stream is known-empty rather than possibly-lost.
+            await TaskHistoryLogWriter.record_capture_status(
                 session,
                 saved.id,
                 source="execution",
-                stream=TaskLogType.STDOUT,
-                new_bytes=stdout_value.encode("utf-8"),
-                force_flush=True,
-            )
-        if stderr_value:
-            await TaskHistoryLogWriter.append(
-                session,
-                saved.id,
-                source="execution",
-                stream=TaskLogType.STDERR,
-                new_bytes=stderr_value.encode("utf-8"),
-                force_flush=True,
+                stream=stream,
+                capture_status=LogCaptureStatusEnum.COMPLETE,
             )
         return saved
 
