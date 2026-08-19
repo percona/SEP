@@ -15,6 +15,7 @@
 
 """Define tests for base SEP dependencies."""
 
+import inspect
 from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -649,25 +650,43 @@ class TestGetTaskHistory:
         with pytest.raises(HTTPNotFoundException):
             await get_task_history(mock_api, 1)
 
+    def test_has_no_owner_parameter(self) -> None:
+        """Assert get_task_history no longer accepts an owner filter."""
+        assert "owner" not in inspect.signature(get_task_history).parameters
+
+    def test_docstring_states_team_wide_read_visibility(self) -> None:
+        """Assert the docstring records team-wide reads and executed_by attribution."""
+        doc = get_task_history.__doc__
+        assert doc is not None
+        assert "any authenticated user" in doc
+        assert "executed_by" in doc
+
     @pytest.mark.asyncio
-    async def test_owner_mismatch_raises_not_found(self) -> None:
-        """Assert wrong owner raises 404."""
+    async def test_returns_history_executed_by_someone_else(self) -> None:
+        """Assert a history is returned regardless of executed_by or task.owner."""
         task = TaskFactory.build(owner="BACKUPS")
         history_data = {
             "id": 1,
-            "execution_request": {"tracking": {}},
+            "execution_request": {
+                "task": "example-task",
+                "target": "example-target",
+                "tracking": {},
+            },
             "status": TaskHistoryStatusEnum.SUCCESS,
             "started_at": None,
             "finished_at": None,
             "anonymize_mask": None,
             "task": task.model_dump(mode="json"),
-            "executed_by": None,
+            "executed_by": "alice",
         }
         mock_api = AsyncMock()
         mock_api.get.return_value = history_data
 
-        with pytest.raises(HTTPNotFoundException):
-            await get_task_history(mock_api, 1, owner="ALTERS")
+        result = await get_task_history(mock_api, 1)
+
+        assert result.id == 1
+        assert result.executed_by == "alice"
+        assert result.task.owner == "BACKUPS"
 
 
 class TestCheckForConflictedRunningTasks:

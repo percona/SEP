@@ -15131,9 +15131,7 @@ export interface operations {
   };
   tasks_list_task_execution_events_execution_events__task_history_id__get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -15164,9 +15162,7 @@ export interface operations {
   };
   tasks_list_task_history_files_files__task_history_id__get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -15199,9 +15195,7 @@ export interface operations {
   };
   tasks_download_task_history_file_files__task_history_id__download_get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -15232,9 +15226,7 @@ export interface operations {
   };
   tasks_task_logs_event_stream_stream_logs__task_history_id__get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -15265,9 +15257,7 @@ export interface operations {
   };
   tasks_task_execution_events_stream_stream_logs__task_history_id__execution_events_get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
