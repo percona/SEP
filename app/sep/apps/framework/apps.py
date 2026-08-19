@@ -838,8 +838,10 @@ class TaskExecutionApp(BaseApp):
         column gate — measures. When an app supplies an explicit builder, the two
         must agree.
 
-        :raises ValueError: When the explicit builder's return annotation is not
-            ``response_model``.
+:raises TypeError: When the explicit builder lacks a valid ``BaseModel``
+    return annotation.
+:raises ValueError: When the explicit builder's return annotation is not
+    ``response_model``.
         """
         if self.response_builder is None or self.script_source is not None:
             return
