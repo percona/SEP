@@ -15,19 +15,19 @@
 
 """Regression tests for the Nomad executor package import cycle."""
 
+import pkgutil
 import subprocess
 import sys
 from pathlib import Path
 
+from app.tasks.execution.executors import nomad
+
 REPO_ROOT = Path(__file__).resolve().parents[6]
 
-# Submodules that must load in a clean interpreter without importing
-# ``app.tasks.config`` first. ``constants`` is the light dependency-free probe;
-# ``models`` is the heavy end of the former cycle.
-_SUBMODULES = (
-    "app.tasks.execution.executors.nomad.constants",
-    "app.tasks.execution.executors.nomad.exceptions",
-    "app.tasks.execution.executors.nomad.models",
+# Derived from the package rather than enumerated, so a submodule added later
+# cannot join the package without also joining this regression test.
+_SUBMODULES = tuple(
+    f"{nomad.__name__}.{module.name}" for module in pkgutil.iter_modules(nomad.__path__)
 )
 
 
@@ -39,6 +39,7 @@ def test_nomad_package_submodules_import_without_config_first() -> None:
     ``NomadExecutor``. A fresh interpreter that touches a submodule first must
     still succeed.
     """
+    assert _SUBMODULES, "discovered no submodules -- the probe below would be vacuous"
     probe = (
         "import importlib\n"
         f"for name in {_SUBMODULES!r}:\n"
