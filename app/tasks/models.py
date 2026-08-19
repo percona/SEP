@@ -61,6 +61,7 @@ from app.core.utils.fields import (
     UTCDatetime,
 )
 from app.core.utils.path import resolve_payload_reference
+from app.tasks.alert_hooks import build_owner_alert_details
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.anonymizer.entities import PIIEntity
 
@@ -762,10 +763,6 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         incident from a plain failure while still being scoped to the same
         task/target pair.
         """
-        # Lazy import keeps the hook resolver (and the plugin it lazily loads)
-        # out of the models import chain.
-        from app.tasks.alert_hooks import build_owner_alert_details
-
         base_dedup_key = (
             f"task:{self.execution_request.task}:{self.execution_request.target}"
         )
