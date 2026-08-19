@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_371d9cf23249de3a_models_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-08-19 14:30 +0000
+            created at 2026-08-19 14:39 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -106,7 +106,7 @@
     <p class="run"><span class="n"><a id="t22" href="#t22">22</a></span><span class="t"><span class="key">from</span> <span class="nam">fastapi</span> <span class="key">import</span> <span class="nam">APIRouter</span><span class="op">,</span> <span class="nam">FastAPI</span><span class="op">,</span> <span class="nam">Request</span><span class="op">,</span> <span class="nam">status</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t23" href="#t23">23</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span> <span class="key">import</span> <span class="nam">__summary__</span><span class="op">,</span> <span class="nam">__version__</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t25" href="#t25">25</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">api</span><span class="op">.</span><span class="nam">deps</span> <span class="key">import</span> <span class="nam">IsAuthenticatedDep</span><span class="op">,</span> <span class="nam">RequireAdminForUnsafeMethods</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t25" href="#t25">25</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">api</span><span class="op">.</span><span class="nam">deps</span> <span class="key">import</span> <span class="nam">IsAuthenticatedDep</span><span class="op">,</span> <span class="nam">RequireMinimumRoleForUnsafeMethods</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t26" href="#t26">26</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">config</span> <span class="key">import</span> <span class="nam">create_app</span><span class="op">,</span> <span class="nam">default_lifespan</span><span class="op">,</span> <span class="nam">settings</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t27" href="#t27">27</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">health</span> <span class="key">import</span> <span class="nam">build_health_router</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t28" href="#t28">28</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">settings_override</span><span class="op">.</span><span class="nam">lifecycle</span> <span class="key">import</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -191,7 +191,7 @@
     <p class="run run2"><span class="n"><a id="t107" href="#t107">107</a></span><span class="t">    <span class="nam">schemas</span><span class="op">.</span><span class="nam">router</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t108" href="#t108">108</a></span><span class="t">    <span class="nam">tables</span><span class="op">.</span><span class="nam">router</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t109" href="#t109">109</a></span><span class="t">    <span class="nam">settings_router</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t110" href="#t110">110</a></span><span class="t">    <span class="nam">dependencies</span><span class="op">=</span><span class="op">[</span><span class="nam">RequireAdminForUnsafeMethods</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t110" href="#t110">110</a></span><span class="t">    <span class="nam">dependencies</span><span class="op">=</span><span class="op">[</span><span class="nam">RequireMinimumRoleForUnsafeMethods</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t111" href="#t111">111</a></span><span class="t">    <span class="nam">lifespan</span><span class="op">=</span><span class="nam">lifespan</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t112" href="#t112">112</a></span><span class="t">    <span class="nam">backend_cors_origins</span><span class="op">=</span><span class="nam">inventory_settings</span><span class="op">.</span><span class="nam">BACKEND_CORS_ORIGINS</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t113" href="#t113">113</a></span><span class="t">    <span class="nam">allowed_hosts</span><span class="op">=</span><span class="nam">inventory_settings</span><span class="op">.</span><span class="nam">ALLOWED_HOSTS</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -251,7 +251,7 @@
             <a class="nav" href="z_371d9cf23249de3a_models_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-08-19 14:30 +0000
+            created at 2026-08-19 14:39 +0000
         </p>
     </div>
 </footer>
