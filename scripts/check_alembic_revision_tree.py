@@ -32,7 +32,12 @@ DEFAULT_INI = REPO_ROOT / "alembic.ini"
 
 @dataclass(frozen=True)
 class TrackTree:
-    """Root and head revision ids for one named Alembic config."""
+    """Hold root and head revision ids for one named Alembic config.
+
+    :param name: Alembic config section name (a value from ``databases``).
+    :param heads: Head revision ids from the loaded revision map.
+    :param roots: Base revision ids (``down_revision`` of ``None``).
+    """
 
     name: str
     heads: tuple[str, ...]
@@ -55,11 +60,12 @@ def list_track_names(ini_path: Path) -> tuple[str, ...]:
     :raises ValueError: If ``databases`` is missing or empty.
     """
     cfg = Config(str(ini_path))
-    databases = cfg.get_main_option("databases")
-    if not databases or not databases.strip():
+    databases = cfg.get_main_option("databases") or ""
+    names = tuple(part.strip() for part in databases.split(",") if part.strip())
+    if not names:
         msg = f"{ini_path}: [alembic] databases is missing or empty"
         raise ValueError(msg)
-    return tuple(part.strip() for part in databases.split(",") if part.strip())
+    return names
 
 
 def inspect_track(ini_path: Path, name: str) -> TrackTree:

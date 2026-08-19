@@ -22,6 +22,8 @@ import shutil
 import sys
 from pathlib import Path
 
+import pytest
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "check_alembic_revision_tree.py"
 
@@ -59,7 +61,8 @@ def _write_revision(
     """
     versions_dir.mkdir(parents=True, exist_ok=True)
     (versions_dir / f"{revision}.py").write_text(
-        _REVISION_TEMPLATE.format(revision=revision, down_revision=down_revision)
+        _REVISION_TEMPLATE.format(revision=revision, down_revision=down_revision),
+        encoding="utf-8",
     )
 
 
@@ -91,7 +94,7 @@ def _write_ini(
             lines.append(f"{key} = {value}")
         lines.append("")
     ini_path = tmp_path / "alembic.ini"
-    ini_path.write_text("\n".join(lines))
+    ini_path.write_text("\n".join(lines), encoding="utf-8")
     return ini_path
 
 
@@ -104,7 +107,7 @@ def _dummy_script_location(tmp_path: Path, name: str = "migrations") -> Path:
     """
     script_location = tmp_path / name
     script_location.mkdir(parents=True, exist_ok=True)
-    (script_location / "env.py").write_text("")
+    (script_location / "env.py").write_text("", encoding="utf-8")
     return script_location
 
 
@@ -189,7 +192,7 @@ def upgrade():
 def downgrade():
     pass
 """
-    (versions_dir / "m.py").write_text(merge_template)
+    (versions_dir / "m.py").write_text(merge_template, encoding="utf-8")
     ini_path = _write_ini(
         tmp_path,
         databases="widget",
@@ -225,6 +228,17 @@ def test_discovers_tracks_from_databases_key(tmp_path):
         "widget",
         "gadget",
     )
+
+
+def test_rejects_databases_with_no_track_names(tmp_path, capsys):
+    """Fail closed when ``databases`` parses to an empty track list."""
+    ini_path = _write_ini(tmp_path, databases=",", sections={})
+
+    with pytest.raises(ValueError, match="missing or empty"):
+        check_alembic_revision_tree.list_track_names(ini_path)
+
+    assert check_alembic_revision_tree.main(["--ini", str(ini_path)]) == 1
+    assert "databases" in capsys.readouterr().err
 
 
 def test_uses_version_locations_from_ini(tmp_path, capsys):
@@ -274,7 +288,7 @@ def test_reintroducing_sep_1824_fork_fails(tmp_path, capsys):
     fork_file = versions_copy / (
         "2026_08_13_2143-a19da5cf0bca_add_taskhistory_log_state_capture_status.py"
     )
-    text = fork_file.read_text()
+    text = fork_file.read_text(encoding="utf-8")
     text = text.replace(
         'down_revision: Union[str, None] = "e2f3a4b5c6d7"',
         'down_revision: Union[str, None] = "6a19d56d7985"',
@@ -283,7 +297,7 @@ def test_reintroducing_sep_1824_fork_fails(tmp_path, capsys):
         'down_revision = "e2f3a4b5c6d7"',
         'down_revision = "6a19d56d7985"',
     )
-    fork_file.write_text(text)
+    fork_file.write_text(text, encoding="utf-8")
 
     script_location = _PROJECT_ROOT / "app" / "tasks" / "migrations"
     ini_path = _write_ini(
