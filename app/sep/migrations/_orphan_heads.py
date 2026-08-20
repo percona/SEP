@@ -83,11 +83,14 @@ def empty_version_locations(script: "ScriptDirectory") -> tuple[str, ...]:
     locations = script.version_locations or ()
     if not locations:
         return ()
-    populated = {str(Path(rev.path).parent) for rev in script.walk_revisions()}
+    # Resolve both sides so configured locations match Alembic's rev.path parents.
+    populated = {
+        str(Path(rev.path).resolve().parent) for rev in script.walk_revisions()
+    }
     return tuple(
         str(location)
         for location in locations
-        if str(Path(location)) not in populated
+        if str(Path(location).resolve()) not in populated
     )
 
 
