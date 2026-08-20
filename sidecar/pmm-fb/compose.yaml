@@ -10,7 +10,7 @@
 # pmm-fb/README.md "Which image to pin".
 #
 # Run ./bootstrap.sh first: it generates the .env this file interpolates. PMM
-# owns every SEP deployment secret: it writes them into the pmm-sep-secrets
+# owns every SEP deployment secret: it writes them into the pmm-sep
 # volume, which the side-car reads through SECRETS_DIR, and it serves SEP under
 # its own /sep prefix. SEP's remaining settings come from the profile baked into
 # the image, with the per-deployment values below overriding it — environment
@@ -50,7 +50,7 @@ services:
     volumes:
       - pmm-data:/srv
       # The only volume crossing the boundary; pmm-data stays PMM's alone
-      - pmm-sep-secrets:/srv/sep-secrets
+      - pmm-sep:/srv/sep
     networks:
       - sep-pmm
 
@@ -83,7 +83,7 @@ services:
       - "127.0.0.1:9001:9001" # inventory API
       - "127.0.0.1:9002:9002" # tasks API
     volumes:
-      - pmm-sep-secrets:/run/secrets/sep:ro
+      - pmm-sep:/run/secrets/sep:ro
     networks:
       - sep-pmm
 
@@ -143,8 +143,8 @@ networks:
 volumes:
   pmm-data:
   # Project-scoped deliberately: an unqualified name: would collide with a real
-  # PMM install's pmm-sep-secrets volume on the same host
-  pmm-sep-secrets:
+  # PMM install's pmm-sep volume on the same host
+  pmm-sep:
   sep-mysql-data:
   sep-mysql-pmm-config:
   sep-mysql-nomad:

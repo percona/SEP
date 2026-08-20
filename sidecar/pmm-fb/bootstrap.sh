@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Generate this harness's per-deployment secrets (.env). Idempotent: an existing
 # .env is kept, and any slot it predates is appended. PMM owns every remaining
-# SEP secret — it writes them into the pmm-sep-secrets volume, which the side-car
+# SEP secret — it writes them into the pmm-sep volume, which the side-car
 # reads as files; nothing secret reaches the side-car as environment.
 
 set -o nounset
