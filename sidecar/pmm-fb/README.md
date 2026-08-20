@@ -109,11 +109,11 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
 
 ## How the pieces connect
 
-- `bootstrap.sh` generates the gitignored `.env`, which now holds only the
-  passwords PMM cannot generate for itself: `SEP_PG_PASSWORD` (the password PMM
-  provisions SEP's PostgreSQL role with) and the three `sep-mysql` passwords.
-  Nothing secret is committed; re-running keeps an existing `.env` and appends
-  any slot it predates.
+- `bootstrap.sh` generates the gitignored `.env`, which now holds only the three
+  `sep-mysql` passwords — test-fixture credentials for the `mysql` profile, not
+  anything the pair needs. PMM generates every SEP secret itself, including the
+  PostgreSQL role's password. Nothing secret is committed; re-running keeps an
+  existing `.env` and appends any slot it predates.
 - **PMM owns every SEP deployment secret.** With `PMM_ENABLE_SEP=1` it writes
   four files into the `pmm-sep` volume, which pmm-server mounts at
   `/srv/sep` and the side-car mounts read-only at `/run/secrets/sep`.
@@ -137,7 +137,7 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   writes the files mode 0640 owned by group `root` under a setgid `02770`
   directory. `group_add: ["0"]` is what makes them readable, and it keeps
   working if PMM's runtime uid changes.
-- `PMM_ENABLE_SEP=1` + `SEP_PG_PASSWORD` also make pmm-server's entrypoint
+- `PMM_ENABLE_SEP=1` alone also makes pmm-server's entrypoint
   expose its embedded PostgreSQL on the compose network and provision the
   low-privilege `sep` role owning the `sep` database (percona/pmm#5700).
   Nothing is published on the host. `PMM_ENABLE_NOMAD=1` + `PMM_PUBLIC_ADDRESS`
@@ -193,9 +193,11 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
 - Under **rootless podman**, `group_add: ["0"]` maps through the user namespace
   differently and may need `--group-add keep-groups`. If the side-car exits
   reporting it cannot read `/run/secrets/sep`, that is the first thing to check.
-- Rotating `SEP_PG_PASSWORD` takes two restarts, in order: pmm-server first, so
-  it moves the database password and rewrites the files, then the side-car,
-  which reads those files only at process start.
+- PMM generates the PostgreSQL password on first start and persists it at
+  `/srv/.sep_postgres_password`; set `PMM_SEP_POSTGRES_PASSWORD` on pmm-server to
+  supply your own instead. Rotating it takes two restarts, in order: pmm-server
+  first, so it moves the database password and rewrites the files, then the
+  side-car, which reads those files only at process start.
 - `sep-mysql` runs `privileged: true` with `cgroup: host` and a read-write
   `/sys/fs/cgroup` mount. A containerised Nomad client needs it — the
   fingerprinter reads cgroups and `raw_exec` places tasks into cgroups the
