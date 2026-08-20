@@ -18,8 +18,8 @@
 The payload cannot be imported directly (it pulls boto3 and other heavy
 runtime deps), so callers locate the relevant symbols in the source via AST
 and exec them in an isolated namespace. This module holds the shared pieces
-so every test module that reaches into the payload -- encryption, restore, the
-incremental base guards -- builds on one harness instead of re-exporting private
+so every test module that reaches into the payload — encryption, restore, the
+incremental base guards — builds on one harness instead of re-exporting private
 helpers from each other.
 """
 
