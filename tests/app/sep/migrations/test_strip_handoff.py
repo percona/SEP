@@ -66,7 +66,8 @@ def _write_revision(versions_dir: Path, revision: str, branch: str) -> None:
     """Write a no-op Alembic revision script under ``versions_dir``."""
     versions_dir.mkdir(parents=True, exist_ok=True)
     (versions_dir / f"{revision}_noop.py").write_text(
-        _MINIMAL_REVISION.format(revision=revision, branch=branch)
+        _MINIMAL_REVISION.format(revision=revision, branch=branch),
+        encoding="utf-8",
     )
 
 
@@ -87,7 +88,7 @@ def _build_handoff_tree(tmp_path: Path) -> tuple[Path, Path, Path]:
     (tmp_path / "app" / "sep" / "migrations").mkdir(parents=True)
     _write_revision(main_versions, "main00000001", "sep_main")
     alpha.mkdir(parents=True)
-    (alpha / "__init__.py").write_text("")
+    (alpha / "__init__.py").write_text("", encoding="utf-8")
     _write_revision(alpha_versions, "alpha0000001", "alpha")
 
     ini_path = tmp_path / "alembic.ini"
@@ -99,7 +100,8 @@ def _build_handoff_tree(tmp_path: Path) -> tuple[Path, Path, Path]:
         "script_location = %(here)s/app/sep/migrations\n"
         "version_path_separator = :\n"
         f"version_locations = {_MAIN_ENTRY}:"
-        f"{_ALPHA_ENTRY}\n"
+        f"{_ALPHA_ENTRY}\n",
+        encoding="utf-8",
     )
     return ini_path, apps_root, alpha_versions
 
@@ -153,14 +155,14 @@ def test_strip_shape_handoff_matches_shipped_claim(
 ):
     """Drive generator refusal and filter arming against one tree per strip shape."""
     ini_path, apps_root, alpha_versions = _build_handoff_tree(tmp_path)
-    before = ini_path.read_text()
+    before = ini_path.read_text(encoding="utf-8")
     _apply_strip(shape, apps_root, alpha_versions)
 
     refused = _generator_refused(ini_path, apps_root)
     assert refused is expect_refuse
     if refused:
-        assert ini_path.read_text() == before
+        assert ini_path.read_text(encoding="utf-8") == before
     else:
-        assert _ALPHA_ENTRY in ini_path.read_text()
+        assert _ALPHA_ENTRY in ini_path.read_text(encoding="utf-8")
 
     assert _filter_armed(ini_path) is expect_arm
