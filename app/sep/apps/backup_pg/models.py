@@ -75,8 +75,8 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     pgbackrest_datadir: NonEmptyStr | EmptyStrToNone = None
     pgbackrest_retention_full: int | EmptyStrToNone = None
     pgbackrest_retention_archive: int | EmptyStrToNone = None
-    # Spelled out on two surfaces: this union, BackupPgForm's union, and its Choices
-    # labels (the standalone payload carries a third, since it runs on the DB host).
+    # Spelled out on three surfaces: this union, BackupPgForm's union, and its Choices
+    # labels (the standalone payload carries a fourth, since it runs on the DB host).
     # A StrEnum would collapse the unions but republish the field as a named OpenAPI
     # component rather than an inline enum, and the weekday labels would still need
     # Choices; the vocabulary parity tests fail on a partial edit meanwhile.

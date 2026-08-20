@@ -269,10 +269,7 @@ def test_backfill_single_task_skips_invalid_incremental_cycle():
     config["ALL_SERVERS"]["PGBACKREST_INCREMENTAL_CYCLE"] = "monday"
     task.data["meta"]["config"] = yaml.dump(config)
     entry = FORM_BACKFILL_ENTRIES[0]
-    ctx = FormBackfillContext(
-        log=__import__("logging").getLogger("test"),
-        service_lookup=lookup,
-    )
+    ctx = _ctx(lookup)
 
     outcome = _backfill_single_task(task, entry, ctx)
 

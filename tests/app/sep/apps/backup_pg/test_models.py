@@ -30,10 +30,8 @@ from app.sep.apps.backup_pg.models import (
 from app.sep.apps.framework import BaseTaskResponse
 from app.sep.apps.framework.form_dsl import Choices
 from app.tasks.models import TaskBackendEnum
-from tests.app.sep.apps.backup_pg.conftest import (
-    literal_members,
-    PGBACKREST_INCREMENTAL_CYCLES,
-)
+from tests.app.sep.apps.backup_pg.conftest import PGBACKREST_INCREMENTAL_CYCLES
+from tests.app.sep.apps.conftest import literal_members
 
 DEFAULT_PG_PORT = 5432
 SAMPLE_BACKUP_DIR = "/var/lib/pgbackrest"
