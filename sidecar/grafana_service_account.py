@@ -171,9 +171,11 @@ def write_persisted_token(directory: Path, token: str) -> bool:
     """Persist ``token`` owner-only so the next start needs no admin credential.
 
     The value is written through a sibling temporary file so a start interrupted
-    mid-write cannot leave a truncated token in place of a working one, and the
-    mode is set by ``umask`` rather than a follow-up ``chmod`` so it is never
-    briefly group-readable.
+    mid-write cannot leave a truncated token in place of a working one, and
+    ``umask`` narrows the mode at creation so it is never briefly group-readable.
+    The explicit ``chmod`` covers the case ``umask`` cannot: a temporary file an
+    earlier start left behind is truncated rather than created, so it keeps
+    whatever mode it already carried.
 
     :param directory: The state directory to write into, created when absent.
     :param token: The token to persist.

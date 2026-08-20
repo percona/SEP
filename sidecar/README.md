@@ -380,9 +380,11 @@ writable volume — at minimum `SEP.artifact_dir`, which defaults to
 -v report-artifacts:/home/sep/app/data/health-reports
 ```
 
-`/home/sep/state` is the one path the image itself creates writable (`0700
-sep:sep`). It holds the minted Grafana token; mounting it is what makes that
-token survive a container recreate rather than only a restart:
+`/home/sep/state` is the one path the image creates for SEP to write its own
+files into (`0700 sep:sep`) — `$APP_HOME` above admits new entries beside the
+shipped tree, but nothing under it is SEP's to write. It holds the minted
+Grafana token; mounting it is what makes that token survive a container recreate
+rather than only a restart:
 
 ```
 -v sep-state:/home/sep/state
