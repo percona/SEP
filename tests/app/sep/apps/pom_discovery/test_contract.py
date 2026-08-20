@@ -26,7 +26,7 @@ from fastapi.testclient import TestClient
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.pom_discovery.app import app as pom_discovery_app
-from app.sep.deps import get_api_authenticated_user, IsApiAuthenticated
+from app.sep.deps import get_current_user, IsApiAuthenticated
 
 _BASE = "/api/apps/pom_discovery"
 
@@ -41,7 +41,7 @@ def _client(user: CasdoorUser) -> TestClient:
     api_router.include_router(apps_router)
     fastapi_app = FastAPI()
     fastapi_app.include_router(api_router)
-    fastapi_app.dependency_overrides[get_api_authenticated_user] = lambda: user
+    fastapi_app.dependency_overrides[get_current_user] = lambda: user
     return TestClient(fastapi_app, raise_server_exceptions=False)
 
 

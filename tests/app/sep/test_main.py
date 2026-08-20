@@ -264,6 +264,30 @@ class TestPrefixedRouting:
 
         assert response.status_code == status.HTTP_200_OK
 
+    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    @pytest.mark.usefixtures("guarded_client")
+    @pytest.mark.asyncio
+    async def test_pom_discovery_resolves_under_the_prefix(self, root_path):
+        """Resolve POM's estate route under the prefix PMM proxies it at.
+
+        Pinned separately from the inventory case because POM is the app the
+        PMM-embedded profile is deployed for: ``sidecar/settings.yaml`` activates
+        ``pom_discovery`` and sets ``ROOT_PATH: /sep`` together, and pmm-managed
+        pulls ``GET /services`` through that prefix. A regression here reads as an
+        authentication failure rather than a routing one, because the caller fails
+        closed on the session exchange it cannot reach.
+        """
+        client = TestClient(sep_app, root_path=root_path, raise_server_exceptions=False)
+
+        assert (
+            client.get(f"{root_path}/api/apps/pom_discovery/hosts").status_code
+            == status.HTTP_200_OK
+        )
+        assert (
+            client.get(f"{root_path}/api/apps/pom_discovery/services").status_code
+            == status.HTTP_200_OK
+        )
+
     @pytest.mark.asyncio
     async def test_async_client_resolves_under_the_prefix(self):
         """Cover the ``ASGITransport`` path the async fixtures reach the app through."""

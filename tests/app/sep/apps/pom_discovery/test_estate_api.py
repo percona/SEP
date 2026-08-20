@@ -38,11 +38,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.pom_discovery.crud import upsert_host, upsert_service
 from app.sep.deps import (
-    get_api_authenticated_user,
     get_current_user,
     get_session,
     require_bearer_for_unsafe_methods,
-    validate_csrf,
 )
 from app.sep.main import sep_app
 
@@ -64,10 +62,8 @@ async def api(regular_user: CasdoorUser, session: AsyncSession) -> AsyncClient:
     :param session: The database session the routes should use.
     :return: The client.
     """
-    sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session
     client = AsyncClient(
         transport=ASGITransport(app=sep_app),
