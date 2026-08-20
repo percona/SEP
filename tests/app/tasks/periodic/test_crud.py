@@ -116,6 +116,24 @@ async def _seed_numbered_periodic_tasks(session: AsyncSession, count: int) -> li
 class TestPeriodicTaskManagerOrdering:
     """Test the deterministic ordering that offset pagination depends on."""
 
+    def test_manager_ordering_is_wired_into_the_emitted_sql(self):
+        """Assert the paginated SELECT actually carries an ORDER BY clause.
+
+        The row-order assertions below cannot fail on the in-memory SQLite beat
+        store used by these tests: an unmodified-table scan happens to return
+        insertion order even with no ``ORDER BY`` at all, so they stay green
+        against an unordered query and only a real PostgreSQL run would expose
+        it. Asserting on the compiled SQL is backend-independent.
+        """
+        ordering = PeriodicTaskManager._get_ordering()
+        assert ordering, "manager must supply a default ordering"
+
+        query = PeriodicTaskManager._build_query().order_by(*ordering).limit(PAGE_SIZE)
+        sql = str(query.compile(compile_kwargs={"literal_binds": True}))
+
+        assert "ORDER BY" in sql.upper()
+        assert "celery_periodictask.id" in sql[sql.upper().index("ORDER BY") :]
+
     @pytest.mark.asyncio
     async def test_paging_returns_every_row_exactly_once(self, celery_beat_session):
         """Assert walking every window yields each row once, none repeated or skipped."""
