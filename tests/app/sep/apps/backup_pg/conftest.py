@@ -21,8 +21,11 @@ PostgreSQL-typed: backup_pg's create model resolves a single-type
 rejects against the kit's MySQL default.
 """
 
+from typing import get_args
+
 import pytest
 import yaml
+from pydantic import BaseModel
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_pg.models import BackupPgForm, BackupType
@@ -72,4 +75,40 @@ def created_task() -> Task:
                 ),
             }
         },
+    )
+
+
+# Spelled out on purpose: this is the cadence vocabulary the product promises, so a
+# test that read it back off a model or the payload would assert a surface against
+# itself. ``literal_members`` answers the separate question of whether two surfaces
+# agree with each other.
+PGBACKREST_INCREMENTAL_CYCLES = (
+    "daily",
+    "weekly",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+)
+
+
+def literal_members(model: type[BaseModel], field: str) -> tuple[str, ...]:
+    """Return the string ``Literal`` members a model field accepts.
+
+    Reaches through the optional wrapper (``Literal[...] | EmptyStrToNone``) so a
+    test can parametrize over the vocabulary a form declares instead of restating
+    it and drifting from the model.
+
+    :param model: The model owning the field.
+    :param field: The field name whose annotation carries the ``Literal``.
+    :return: The declared members, in declaration order.
+    """
+    return tuple(
+        arg
+        for member in get_args(model.model_fields[field].annotation)
+        for arg in get_args(member)
+        if isinstance(arg, str)
     )

@@ -15,17 +15,25 @@
 
 """Tests for the backup_pg create form and JSON API Pydantic models."""
 
+import re
+
 import pytest
 from pydantic import ValidationError
 
 from app.sep.apps.backup_pg.models import (
+    BackupConfigAll,
     BackupPgForm,
     BackupTaskDetailResponse,
     BackupTaskResponse,
     PgBackRestBackupType,
 )
 from app.sep.apps.framework import BaseTaskResponse
+from app.sep.apps.framework.form_dsl import Choices
 from app.tasks.models import TaskBackendEnum
+from tests.app.sep.apps.backup_pg.conftest import (
+    literal_members,
+    PGBACKREST_INCREMENTAL_CYCLES,
+)
 
 DEFAULT_PG_PORT = 5432
 SAMPLE_BACKUP_DIR = "/var/lib/pgbackrest"
@@ -240,3 +248,113 @@ def test_backup_task_detail_response_inherits_response_fields() -> None:
     assert detail.created_at is None
     assert detail.host is None
     assert detail.port is None
+
+
+class TestPgbackrestIncrementalCycleField:
+    """Cover for the ``pgbackrest_incremental_cycle`` field on both form models."""
+
+    _FIELD = "pgbackrest_incremental_cycle"
+
+    @staticmethod
+    def _create_body(**overrides: object) -> dict[str, object]:
+        """Return a valid PostgreSQL Backups create body."""
+        return {
+            "task_name": "cycle-form",
+            "hostname": "host-1",
+            "service_id": 1,
+            "stanza": "sep-test",
+            "backup_dir": SAMPLE_BACKUP_DIR,
+            **overrides,
+        }
+
+    @classmethod
+    def _choices(cls) -> dict[str, str]:
+        """Return the create form's cycle options as ``{value: label}``."""
+        marker = next(
+            entry
+            for entry in BackupPgForm.model_fields[cls._FIELD].metadata
+            if isinstance(entry, Choices)
+        )
+        return {str(option.value): option.label for option in marker.options}
+
+    @pytest.mark.parametrize("cycle", PGBACKREST_INCREMENTAL_CYCLES)
+    def test_config_model_accepts_every_cycle(self, cycle):
+        """Accept the whole vocabulary on the configuration-file model."""
+        config = BackupConfigAll.model_validate({"PGBACKREST_INCREMENTAL_CYCLE": cycle})
+        assert config.pgbackrest_incremental_cycle == cycle
+
+    @pytest.mark.parametrize("cycle", PGBACKREST_INCREMENTAL_CYCLES)
+    def test_create_model_accepts_every_cycle(self, cycle):
+        """Accept the whole vocabulary on the create form."""
+        form = BackupPgForm.model_validate(
+            self._create_body(pgbackrest_incremental_cycle=cycle)
+        )
+        assert form.pgbackrest_incremental_cycle == cycle
+
+    @pytest.mark.parametrize("cycle", ["0", "8", "monday", "01", " 1"])
+    def test_both_models_reject_values_outside_the_vocabulary(self, cycle):
+        """Reject anything the payload would reject, at the request boundary."""
+        with pytest.raises(ValidationError):
+            BackupConfigAll.model_validate({"PGBACKREST_INCREMENTAL_CYCLE": cycle})
+        with pytest.raises(ValidationError):
+            BackupPgForm.model_validate(
+                self._create_body(pgbackrest_incremental_cycle=cycle)
+            )
+
+    def test_empty_string_becomes_none(self):
+        """Read an empty submission as unset rather than as a cycle."""
+        config = BackupConfigAll.model_validate({"PGBACKREST_INCREMENTAL_CYCLE": ""})
+        assert config.pgbackrest_incremental_cycle is None
+        form = BackupPgForm.model_validate(
+            self._create_body(pgbackrest_incremental_cycle="")
+        )
+        assert form.pgbackrest_incremental_cycle is None
+
+    def test_stays_unset_by_default(self):
+        """Introduce no default: an unset field reaches the payload absent."""
+        assert BackupConfigAll.model_validate({}).pgbackrest_incremental_cycle is None
+        assert (
+            BackupPgForm.model_validate(
+                self._create_body()
+            ).pgbackrest_incremental_cycle
+            is None
+        )
+
+    def test_survives_config_all_round_trip(self):
+        """Persist a Monday cycle through serialise / re-validate."""
+        config = BackupConfigAll.model_validate({"PGBACKREST_INCREMENTAL_CYCLE": "1"})
+        serialised = {k.upper(): v for k, v in config.model_dump().items()}
+        assert (
+            BackupConfigAll.model_validate(serialised).pgbackrest_incremental_cycle
+            == "1"
+        )
+
+    def test_both_models_declare_the_same_vocabulary(self):
+        """Keep the two models' vocabularies identical."""
+        assert literal_members(BackupPgForm, self._FIELD) == literal_members(
+            BackupConfigAll, self._FIELD
+        )
+
+    def test_every_accepted_value_is_offered_once(self):
+        """Offer exactly the accepted vocabulary as dropdown options."""
+        assert tuple(self._choices()) == literal_members(BackupPgForm, self._FIELD)
+
+    def test_numeric_options_are_labelled_as_weekdays(self):
+        """Name each numeric option by the weekday it selects."""
+        choices = self._choices()
+        assert [choices[str(day)] for day in range(1, 8)] == [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
+        assert not [
+            label for label in choices.values() if re.fullmatch(r"\d+ days?", label)
+        ]
+
+    def test_weekly_label_shows_its_monday_equivalence(self):
+        """Explain the duplicate: ``weekly`` is Monday under another name."""
+        assert "Monday" in self._choices()["weekly"]
