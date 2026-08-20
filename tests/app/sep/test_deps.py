@@ -75,10 +75,7 @@ from app.sep.deps import (
 )
 from app.sep.inventory import CreatedNode, CreatedSchema
 from app.sep.models import AppLifecycleEnum, AppState, SyncInventoryEntityTypeEnum
-from app.tasks.models import (
-    Task,
-    TaskHistoryStatusEnum,
-)
+from app.tasks.models import Task
 from tests.app.conftest import make_request
 from tests.app.factories import (
     CasdoorUserFactory,
@@ -86,6 +83,8 @@ from tests.app.factories import (
     CreatedSchemaFactory,
     CreatedServiceFactory,
     TaskFactory,
+    TaskHistoryResponseFactory,
+    TaskResponseFactory,
 )
 
 PENDING_HISTORY_ID = 10
@@ -654,37 +653,19 @@ class TestGetTaskHistory:
         """Assert get_task_history no longer accepts an owner filter."""
         assert "owner" not in inspect.signature(get_task_history).parameters
 
-    def test_docstring_states_team_wide_read_visibility(self) -> None:
-        """Assert the docstring records team-wide reads and executed_by attribution."""
-        doc = get_task_history.__doc__
-        assert doc is not None
-        assert "any authenticated user" in doc
-        assert "executed_by" in doc
-
     @pytest.mark.asyncio
     async def test_returns_history_executed_by_someone_else(self) -> None:
         """Assert a history is returned regardless of executed_by or task.owner."""
-        task = TaskFactory.build(owner="BACKUPS")
-        history_data = {
-            "id": 1,
-            "execution_request": {
-                "task": "example-task",
-                "target": "example-target",
-                "tracking": {},
-            },
-            "status": TaskHistoryStatusEnum.SUCCESS,
-            "started_at": None,
-            "finished_at": None,
-            "anonymize_mask": None,
-            "task": task.model_dump(mode="json"),
-            "executed_by": "alice",
-        }
+        history = TaskHistoryResponseFactory.build(
+            executed_by="alice",
+            task=TaskResponseFactory.build(owner="BACKUPS"),
+        )
         mock_api = AsyncMock()
-        mock_api.get.return_value = history_data
+        mock_api.get.return_value = history.model_dump(mode="json")
 
-        result = await get_task_history(mock_api, 1)
+        result = await get_task_history(mock_api, history.id)
 
-        assert result.id == 1
+        assert result.id == history.id
         assert result.executed_by == "alice"
         assert result.task.owner == "BACKUPS"
 

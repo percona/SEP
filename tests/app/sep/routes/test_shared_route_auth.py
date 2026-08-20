@@ -31,7 +31,6 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
-from starlette.status import HTTP_200_OK, HTTP_404_NOT_FOUND
 
 from app.core.requests import RemoteAPI
 from app.sep.deps import get_tasks_api, get_tasks_client
@@ -152,5 +151,4 @@ def test_owner_query_does_not_hide_history(
     path = route.replace("/1", f"/{history_id}")
     response = test_client.get(f"{path}?owner=ALTERS")
 
-    assert response.status_code != HTTP_404_NOT_FOUND
-    assert response.status_code == HTTP_200_OK
+    assert response.status_code == status.HTTP_200_OK
