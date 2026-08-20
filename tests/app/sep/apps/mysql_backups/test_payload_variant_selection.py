@@ -170,18 +170,30 @@ def _module_level_import_roots(payload: Path) -> set[str]:
     """Return the root module names a payload imports at module scope.
 
     Only module-scope imports matter: those run the moment the task starts, before
-    any config is read, so a missing distribution fails the task outright.
+    any config is read, so a missing distribution fails the task outright. The walk
+    descends into ``try`` and ``if`` bodies, because guarding an import with
+    ``except ImportError`` is the idiomatic way to make a dependency optional and
+    such an import still runs at module scope. It stops at function and class
+    bodies, whose imports run only once something calls in.
 
     :param payload: The payload file to read.
     :return: The root names of its module-level imports.
     """
-    tree = ast.parse(payload.read_text(encoding="utf-8"))
     roots: set[str] = set()
-    for node in tree.body:
+    pending: list[ast.AST] = [ast.parse(payload.read_text(encoding="utf-8"))]
+    while pending:
+        node = pending.pop()
         if isinstance(node, ast.Import):
             roots.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             roots.add(node.module.split(".")[0])
+        pending.extend(
+            child
+            for child in ast.iter_child_nodes(node)
+            if not isinstance(
+                child, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+            )
+        )
     return roots
 
 

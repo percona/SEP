@@ -17,7 +17,9 @@
 
 from types import SimpleNamespace
 
+import pytest
 import yaml
+from pydantic import ValidationError
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill import _backfill_single_task
@@ -337,9 +339,35 @@ class TestUploadBackfillDropsNothingSilently:
         """
         assert _extract_upload_from_meta(self._meta(["GS"])) == ["gsutil"]
 
-    def test_an_unknown_provider_is_reported_rather_than_dropped(self) -> None:
+    def test_an_unknown_provider_is_not_dropped(self) -> None:
         """Assert an unmapped spelling does not quietly narrow the selection."""
         stored = ["rsync", "azure"]
         extracted = _extract_upload_from_meta(self._meta(stored))
         assert "rsync" in extracted
         assert len(extracted) == len(stored), extracted
+
+    def test_an_unknown_provider_fails_form_validation(self) -> None:
+        """Assert the form rejects the passed-through spelling rather than accepting it.
+
+        Passing an unmapped spelling through is only an improvement on dropping it if
+        something downstream refuses it: ``_run_task_backfill`` logs the errors and
+        reports the task as ``skipped_invalid``, so it stays legacy instead of being
+        stamped with a selection that dispatches a variant it cannot reach. Pinning
+        the error location to the offending element keeps a missing provider gate
+        from passing this test for the wrong reason.
+        """
+        extracted = _extract_upload_from_meta(self._meta(["rsync", "azure"]))
+        with pytest.raises(ValidationError) as excinfo:
+            BackupCreate.model_validate(
+                {
+                    "task_name": "backups-legacy",
+                    "hostname": "executor-host",
+                    "service_id": 1,
+                    "backup_type": BackupType.XTRABACKUP.value,
+                    "upload": extracted,
+                    "rsync_path": "/data/rsync",
+                }
+            )
+        assert [error["loc"] for error in excinfo.value.errors()] == [
+            ("upload", extracted.index("azure"))
+        ]
