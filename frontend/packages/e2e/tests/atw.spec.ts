@@ -433,6 +433,35 @@ test.describe('Support diagnostics (ATW)', () => {
     await expect(page.getByText('Batch execute failed (e2e)')).toBeVisible({ timeout: 15_000 });
   });
 
+  test('batch execute with per-item validation errors shows the outcome beside submit', async ({
+    page,
+  }) => {
+    await mockAtwApis(page, {
+      batchStatus: 201,
+      batchJson: JSON.stringify({
+        items: [
+          {
+            snippet_filename: 'diag/slow-query.sh',
+            task_name: null,
+            task_history_id: null,
+            error: [{ loc: ['executor_host'], msg: 'Field required', type: 'missing' }],
+          },
+        ],
+      }),
+    });
+    await page.goto(APP_ROUTE);
+
+    await openIncidentAndBuildForm(page);
+
+    await page.getByLabel('Executor host').fill('e2e-host.local');
+    await page.getByRole('button', { name: 'Execute batch' }).click();
+
+    await expect(page.getByText(/Dispatched 0 of 1/)).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.getByText(/diag\/slow-query\.sh: Executor host: Field required/),
+    ).toBeVisible();
+  });
+
   test('a long recorded argument string is clipped instead of widening the page', async ({
     page,
   }) => {

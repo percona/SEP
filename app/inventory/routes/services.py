@@ -31,6 +31,7 @@ from app.inventory.deps import (
     SchemaListQueryDep,
     ServiceDep,
     ServiceListQueryDep,
+    ServiceSystemObservationDep,
     SessionDep,
 )
 from app.inventory.models import (
@@ -108,13 +109,10 @@ async def delete_service(session: SessionDep, service: ServiceDep) -> None:
 
 @router.get("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])
 async def retrieve_service_system_observation(
-    session: SessionDep,
-    service: ServiceDep,
+    observation: ServiceSystemObservationDep,
 ) -> ServiceSystemObservationResponse:
     """Retrieve service system observation for a service."""
-    return await ServiceSystemObservationManager.get_or_404(
-        session, service_id=service.id
-    )
+    return observation
 
 
 @router.put("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])

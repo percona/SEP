@@ -240,7 +240,7 @@ def _build_composed_app(schema: AppSchema, plugin_prefix: str) -> FastAPI:
 
 @pytest.fixture
 def authed_client(regular_user: CasdoorUser) -> TestClient:
-    """Yield an authed ``TestClient`` over a production-shape composed app."""
+    """Return an authed ``TestClient`` over a production-shape composed app."""
     app = _build_composed_app(_TEST_SCHEMA, "/test-schema-endpoint")
     app.dependency_overrides[get_current_user] = lambda: regular_user
     return TestClient(app, raise_server_exceptions=False)
@@ -248,7 +248,7 @@ def authed_client(regular_user: CasdoorUser) -> TestClient:
 
 @pytest.fixture
 def authed_all_fields_client(regular_user: CasdoorUser) -> TestClient:
-    """Yield an authed ``TestClient`` whose schema exercises every field class."""
+    """Return an authed ``TestClient`` whose schema exercises every field class."""
     app = _build_composed_app(_ALL_FIELDS_SCHEMA, "/test-all-fields")
     app.dependency_overrides[get_current_user] = lambda: regular_user
     return TestClient(app, raise_server_exceptions=False)
@@ -256,7 +256,7 @@ def authed_all_fields_client(regular_user: CasdoorUser) -> TestClient:
 
 @pytest.fixture
 def authed_empty_forms_client(regular_user: CasdoorUser) -> TestClient:
-    """Yield an authed ``TestClient`` whose schema has zero form sections."""
+    """Return an authed ``TestClient`` whose schema has zero form sections."""
     app = _build_composed_app(_EMPTY_FORMS_SCHEMA, "/test-empty-forms")
     app.dependency_overrides[get_current_user] = lambda: regular_user
     return TestClient(app, raise_server_exceptions=False)
@@ -264,7 +264,7 @@ def authed_empty_forms_client(regular_user: CasdoorUser) -> TestClient:
 
 @pytest.fixture
 def unauthed_client() -> TestClient:
-    """Yield an unauthed ``TestClient`` over the same composed app."""
+    """Return an unauthed ``TestClient`` over the same composed app."""
     app = _build_composed_app(_TEST_SCHEMA, "/test-schema-endpoint")
     return TestClient(app, raise_server_exceptions=False)
 
@@ -537,7 +537,7 @@ _CONDITIONAL_RULES_SCHEMA = AppSchema(
 
 @pytest.fixture
 def authed_conditional_rules_client(regular_user: CasdoorUser) -> TestClient:
-    """Yield an authed client whose schema exercises the new rule primitives."""
+    """Return an authed client whose schema exercises the new rule primitives."""
     app = _build_composed_app(_CONDITIONAL_RULES_SCHEMA, "/test-conditional-rules")
     app.dependency_overrides[get_current_user] = lambda: regular_user
     return TestClient(app, raise_server_exceptions=False)
@@ -640,7 +640,7 @@ _DERIVED_SCHEMA = AppSchema(
 
 @pytest.fixture
 def authed_derived_client(regular_user: CasdoorUser) -> TestClient:
-    """Yield an authed client whose schema exercises the ``derived`` field."""
+    """Return an authed client whose schema exercises the ``derived`` field."""
     app = _build_composed_app(_DERIVED_SCHEMA, "/test-derived")
     app.dependency_overrides[get_current_user] = lambda: regular_user
     return TestClient(app, raise_server_exceptions=False)
@@ -909,7 +909,7 @@ class TestCapabilitiesEndpointAuthenticated:
 
     @pytest.fixture
     def authed_capabilities_client(self, regular_user: CasdoorUser) -> TestClient:
-        """Yield an authed ``TestClient`` over the capabilities-app."""
+        """Return an authed ``TestClient`` over the capabilities-app."""
         _provider_state["flag"] = True
         app = _build_capabilities_app(_stateful_provider)
         app.dependency_overrides[get_current_user] = lambda: regular_user
@@ -966,7 +966,7 @@ class TestCapabilitiesEndpointUnauthenticated:
 
     @pytest.fixture
     def unauthed_capabilities_client(self) -> TestClient:
-        """Yield an unauthed ``TestClient`` over the same composed app."""
+        """Return an unauthed ``TestClient`` over the same composed app."""
         app = _build_capabilities_app(_stateful_provider)
         return TestClient(app, raise_server_exceptions=False)
 
@@ -2331,7 +2331,7 @@ class TestDeriveCrudRoutesUnauthenticated:
 
     @pytest.fixture
     def unauthed_crud_client(self) -> TestClient:
-        """Yield an unauthed client (Tasks-API stubbed, no auth override)."""
+        """Return an unauthed client (Tasks-API stubbed, no auth override)."""
         tasks_api = _make_tasks_api(
             list_items=[], detail_task=_task_dict("t1"), created_task=_task_dict("t1")
         )

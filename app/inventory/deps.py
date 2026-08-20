@@ -22,9 +22,28 @@ from fastapi import Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import ListQuery, make_list_query_dep
-from app.inventory.crud import NodeManager, SchemaManager, ServiceManager, TableManager
+from app.core.exceptions import HTTPNotFoundException
+from app.inventory.constants import (
+    UNCOLLECTED_HOST_OBSERVATION_DETAIL,
+    UNCOLLECTED_SERVICE_OBSERVATION_DETAIL,
+)
+from app.inventory.crud import (
+    HostSystemObservationManager,
+    NodeManager,
+    SchemaManager,
+    ServiceManager,
+    ServiceSystemObservationManager,
+    TableManager,
+)
 from app.inventory.db import get_async_session_maker
-from app.inventory.models import Node, Schema, Service, Table
+from app.inventory.models import (
+    HostSystemObservation,
+    Node,
+    Schema,
+    Service,
+    ServiceSystemObservation,
+    Table,
+)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -116,6 +135,56 @@ NodeDep = Annotated[Node, Depends(get_node)]
 ServiceDep = Annotated[Service, Depends(get_service)]
 SchemaDep = Annotated[Schema, Depends(get_schema)]
 TableDep = Annotated[Table, Depends(get_table)]
+
+
+async def get_host_system_observation(
+    session: SessionDep, node: NodeDep
+) -> HostSystemObservation:
+    """Retrieve the host system observation collected for a node.
+
+    A node that exists but was never visited by the system-facts syncer is a
+    normal state, so raise with :data:`UNCOLLECTED_HOST_OBSERVATION_DETAIL`
+    rather than through ``get_or_404()``, whose default detail is
+    indistinguishable from the missing-node 404 that ``NodeDep`` raises first.
+
+    :param session: The asynchronous database session.
+    :param node: The resolved node the observation belongs to.
+    :return: The host system observation collected for the node.
+    :raises HTTPNotFoundException: If no observation has been collected yet.
+    """
+    observation = await HostSystemObservationManager.first(session, node_id=node.id)
+    if observation is None:
+        raise HTTPNotFoundException(detail=UNCOLLECTED_HOST_OBSERVATION_DETAIL)
+    return observation
+
+
+async def get_service_system_observation(
+    session: SessionDep, service: ServiceDep
+) -> ServiceSystemObservation:
+    """Retrieve the service system observation collected for a service.
+
+    Service-level counterpart of :func:`get_host_system_observation`, raising
+    :data:`UNCOLLECTED_SERVICE_OBSERVATION_DETAIL` for the same reason.
+
+    :param session: The asynchronous database session.
+    :param service: The resolved service the observation belongs to.
+    :return: The service system observation collected for the service.
+    :raises HTTPNotFoundException: If no observation has been collected yet.
+    """
+    observation = await ServiceSystemObservationManager.first(
+        session, service_id=service.id
+    )
+    if observation is None:
+        raise HTTPNotFoundException(detail=UNCOLLECTED_SERVICE_OBSERVATION_DETAIL)
+    return observation
+
+
+HostSystemObservationDep = Annotated[
+    HostSystemObservation, Depends(get_host_system_observation)
+]
+ServiceSystemObservationDep = Annotated[
+    ServiceSystemObservation, Depends(get_service_system_observation)
+]
 
 NodeListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(NodeManager))]
 ServiceListQueryDep = Annotated[ListQuery, Depends(make_list_query_dep(ServiceManager))]

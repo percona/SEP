@@ -30,6 +30,10 @@ CREATED_NODE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
 LIST_QUERY_MATCH_TOTAL = 2
 
+# Pinned verbatim rather than imported from app.inventory.constants: the wording is
+# part of the API contract, so an edit to the constant must fail the test.
+UNCOLLECTED_NODE_DETAIL = "System observation not collected yet for this node"
+
 
 class TestListNodes:
     """Test the GET /nodes/ endpoint."""
@@ -572,16 +576,60 @@ class TestRetrieveHostSystemObservation:
     def test_retrieve_host_system_observation_404_when_no_observation(
         self, test_client: TestClient, node: Node
     ) -> None:
-        """Return 404 when node exists but no observation has been collected yet."""
+        """Return 404 with the uncollected detail when the node has no observation."""
         response = test_client.get(f"/nodes/{node.id}/system-observation")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == UNCOLLECTED_NODE_DETAIL
 
     def test_retrieve_host_system_observation_404_when_node_not_found(
         self, test_client: TestClient
     ) -> None:
-        """Return 404 when the node ID does not exist."""
+        """Return 404 with the default detail when the node ID does not exist."""
         response = test_client.get("/nodes/99999/system-observation")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == "Not Found"
+
+    def test_retrieve_host_system_observation_404_for_another_nodes_observation(
+        self,
+        test_client: TestClient,
+        node: Node,
+        host_observation: HostSystemObservation,
+    ) -> None:
+        """Keep one node's observation from surfacing when reading a sibling node."""
+        other = test_client.post(
+            "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
+        )
+        assert other.status_code == status.HTTP_201_CREATED
+        other_node_id = other.json()["id"]
+        assert other_node_id != node.id
+
+        response = test_client.get(f"/nodes/{other_node_id}/system-observation")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == UNCOLLECTED_NODE_DETAIL
+
+    def test_retrieve_host_system_observation_after_upsert_returns_200(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Leave the uncollected state once the syncer writes an observation.
+
+        The uncollected 404 must be a transient state, not a sticky one: the same
+        GET that reported it has to answer 200 after a PUT lands.
+        """
+        before = test_client.get(f"/nodes/{node.id}/system-observation")
+        assert before.status_code == status.HTTP_404_NOT_FOUND
+        assert before.json()["detail"] == UNCOLLECTED_NODE_DETAIL
+
+        payload = HostSystemObservationWriteFactory.build()
+        upsert = test_client.put(
+            f"/nodes/{node.id}/system-observation",
+            json=payload.model_dump(mode="json"),
+        )
+        assert upsert.status_code == status.HTTP_200_OK
+
+        after = test_client.get(f"/nodes/{node.id}/system-observation")
+        assert after.status_code == status.HTTP_200_OK
+        assert after.json()["node_id"] == node.id
+        assert after.json()["os_version"] == payload.os_version
 
 
 class TestUpsertHostSystemObservation:
