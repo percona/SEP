@@ -39,7 +39,6 @@ services:
     image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-882b6ba}
     environment:
       PMM_ENABLE_SEP: "1"
-      PMM_SEP_POSTGRES_PASSWORD: ${SEP_PG_PASSWORD:?run ./bootstrap.sh first}
       # Bare host:port — the entrypoint rejects a scheme or a trailing path, and
       # the failure surfaces as a routing fault rather than a config error
       PMM_SEP_ADDRESS: sep-sidecar:9000
