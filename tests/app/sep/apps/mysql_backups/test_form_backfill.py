@@ -20,11 +20,9 @@ from types import SimpleNamespace
 import yaml
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.framework.form_backfill import (
-    _backfill_single_task,
-    FormBackfillContext,
-)
+from app.sep.apps.framework.form_backfill import _backfill_single_task
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
+from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.form_backfill import (
     _extract_upload_from_meta,

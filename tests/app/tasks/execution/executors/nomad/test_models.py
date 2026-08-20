@@ -4736,8 +4736,8 @@ class TestPersistNomadTaskLogsCursorDurability:
             new_bytes=b"old",
             force_flush=True,
             producer_offset_after=SEED_OFFSET,
-            nomad_offset_after=SEED_OFFSET,
-            allocation_epoch=SUPERSEDED_ALLOCATION_EPOCH,
+            producer_fetch_offset_after=SEED_OFFSET,
+            producer_epoch=SUPERSEDED_ALLOCATION_EPOCH,
         )
 
         offsets = await NomadExecutor._build_initial_log_offsets(
@@ -4760,8 +4760,8 @@ class TestPersistNomadTaskLogsCursorDurability:
             new_bytes=b"cur",
             force_flush=True,
             producer_offset_after=SEED_OFFSET,
-            nomad_offset_after=SEED_OFFSET,
-            allocation_epoch=CURRENT_ALLOCATION_EPOCH,
+            producer_fetch_offset_after=SEED_OFFSET,
+            producer_epoch=CURRENT_ALLOCATION_EPOCH,
         )
 
         offsets = await NomadExecutor._build_initial_log_offsets(
@@ -4775,7 +4775,7 @@ class TestPersistNomadTaskLogsCursorDurability:
     async def test_build_initial_log_offsets_seeds_legacy_epoch_zero_row(
         self, session, created_task_with_history
     ):
-        """Assert a legacy ``allocation_epoch == 0`` row is trusted for seeding."""
+        """Assert a legacy ``producer_epoch == 0`` row is trusted for seeding."""
         history = created_task_with_history
         await TaskHistoryLogWriter.append(
             session,

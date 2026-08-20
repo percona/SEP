@@ -36,7 +36,11 @@ vi.mock('react-router', () => ({
 // The download button owns a mutation now (the SPA fetches the file through the
 // Bearer-authenticated JSON endpoint), so the download-before-approve guard
 // flips on the mutation's success callback rather than on a plain anchor click.
-vi.mock('@sep/framework', () => ({
+// Partial mock: only the download hook is stubbed. `useDebouncedValue` is a
+// pure timer primitive with no transport of its own, so the page exercises the
+// real one — the same 300ms window it debounced inline before.
+vi.mock('@sep/framework', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sep/framework')>()),
   useSnippetDownload: vi.fn(() => ({
     mutate: (_params: unknown, callbacks?: { onSuccess?: () => void }) => callbacks?.onSuccess?.(),
     isPending: false,

@@ -745,7 +745,10 @@ class TestTaskHistory:
             assert alert_data["severity"] == AlertSeverity.WARNING
             assert alert_data["class"] == "task_stale"
             assert alert_data["dedup_key"] == "task:test-task:node-1:stale"
-            assert "stale" in alert_data["summary"].lower()
+            assert (
+                "skipped as stale (executor placement delayed past threshold)"
+                in alert_data["summary"]
+            )
 
     @pytest.mark.asyncio
     async def test_alert_for_status_stopped_no_action(
