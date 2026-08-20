@@ -15,8 +15,8 @@
 
 """End-to-end handoff between the sync generator and the orphan-head filter.
 
-AC1 for SEP-1813: one tree, readable by both halves, asserts the refusal and
-arming outcomes for every strip shape the shipped advice claims to cover.
+One tree, readable by both halves, asserts the refusal and arming outcomes
+for every strip shape the shipped advice claims to cover.
 """
 
 from __future__ import annotations
@@ -107,15 +107,15 @@ def _build_handoff_tree(tmp_path: Path) -> tuple[Path, Path, Path]:
 def _apply_strip(shape: str, apps_root: Path, alpha_versions: Path) -> None:
     """Mutate the alpha package into one of the four strip shapes."""
     alpha = apps_root / "alpha"
-    if shape == "1":
+    if shape == "versions-removed":
         shutil.rmtree(alpha_versions)
-    elif shape == "2":
+    elif shape == "package-removed":
         shutil.rmtree(alpha)
-    elif shape == "3":
+    elif shape == "init-gone":
         (alpha / "__init__.py").unlink()
         for script in alpha_versions.glob("*.py"):
             script.unlink()
-    elif shape == "4":
+    elif shape == "versions-empty":
         for script in alpha_versions.glob("*.py"):
             script.unlink()
     else:
@@ -142,12 +142,11 @@ def _filter_armed(ini_path: Path) -> bool:
 @pytest.mark.parametrize(
     ("shape", "expect_refuse", "expect_arm"),
     [
-        ("1", True, True),
-        ("2", True, True),
-        ("3", True, True),
-        ("4", False, True),
+        ("versions-removed", True, True),
+        ("package-removed", True, True),
+        ("init-gone", True, True),
+        ("versions-empty", False, True),
     ],
-    ids=["versions-removed", "package-removed", "init-gone", "versions-empty"],
 )
 def test_strip_shape_handoff_matches_shipped_claim(
     tmp_path, shape, expect_refuse, expect_arm

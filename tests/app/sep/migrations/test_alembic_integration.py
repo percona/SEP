@@ -219,12 +219,11 @@ def sep_alembic_config_stripped_alerts(sep_alembic_config, tmp_path):
 def sep_alembic_config_empty_alerts_versions(sep_alembic_config, tmp_path):
     """Return a Config whose alerts location exists on disk but has no revisions.
 
-    Covers strip shapes 3 and 4 for the orphan-head filter: the configured
-    ``versions/`` directory is present (so ``Path.is_dir()`` would have left
-    the filter fail-closed), yet it contributes no scripts to the revision
-    map. Shape 3 drops ``__init__.py`` while leaving ``versions/``; shape 4
-    leaves the package intact with an empty ``versions/``. From the filter's
-    point of view both are the same evidence.
+    The configured ``versions/`` directory is present (so ``Path.is_dir()``
+    would have left the filter fail-closed), yet it contributes no scripts to
+    the revision map — the shared evidence for both a package that lost its
+    ``__init__.py`` while leaving ``versions/``, and a package left intact
+    with an empty ``versions/``.
 
     :param sep_alembic_config: The full-config fixture whose database is shared.
     :param tmp_path: Pytest's per-test temporary directory.
@@ -489,7 +488,7 @@ def test_upgrade_preserves_the_unresolvable_row_when_versions_dir_is_empty(
 def test_upgrade_logs_empty_location_that_armed_the_filter(
     sep_alembic_config, sep_alembic_config_empty_alerts_versions, capsys
 ):
-    """Name the empty versions/ location in the skip WARNING (AC5)."""
+    """Name the empty versions/ location in the skip WARNING."""
     full_cfg, _ = sep_alembic_config
     empty_cfg, _, empty_path = sep_alembic_config_empty_alerts_versions
     command.upgrade(full_cfg, "heads")

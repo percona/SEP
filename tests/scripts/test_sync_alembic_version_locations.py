@@ -456,7 +456,7 @@ class TestRemovalRefusal:
         )
 
     def test_refuses_when_init_py_is_gone_but_versions_remains(self, stripped_tree):
-        """Refuse shape 3: versions/ survives without the package ``__init__.py``."""
+        """Refuse when versions/ survives without the package ``__init__.py``."""
         ini_path, apps_root = stripped_tree
         versions = apps_root / "alpha" / "migrations" / "versions"
         versions.mkdir(parents=True)
@@ -473,7 +473,7 @@ class TestRemovalRefusal:
         assert ini_path.read_text() == before
 
     def test_does_not_refuse_when_versions_is_empty_of_revisions(self, stripped_tree):
-        """Shape 4: the walk still finds the app, so regeneration drops nothing."""
+        """Keep the entry when the walk still finds the app with an empty versions/."""
         ini_path, apps_root = stripped_tree
         _migration_plugin(apps_root, "alpha")
 
