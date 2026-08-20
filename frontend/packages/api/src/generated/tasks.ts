@@ -457,6 +457,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/hosts/states/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Executor Host States
+     * @description Return every host the executor knows about, usable or not.
+     *
+     *     ``GET /hosts/`` answers "where can I place a job", which is what a dispatcher
+     *     needs and all it needs. This answers "what is the state of the fleet", which is a
+     *     different question: a host missing from the other list may never have been
+     *     onboarded, or be onboarded and down, or be up with a broken driver, and those are
+     *     three different things for whoever has to fix it.
+     *
+     *     Wrapped the same way as ``/hosts/`` so an unreachable backend surfaces as a 502
+     *     rather than a 500 with a text/plain body.
+     *
+     *     :param executor: The task executor backend used to fetch host metadata.
+     *     :return: One entry per host the backend knows about.
+     *     :raises HTTPBadGatewayException: If the executor backend is unreachable or
+     *         answers with something the client cannot parse.
+     */
+    get: operations['tasks_get_executor_host_states_hosts_states__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/periodic/': {
     parameters: {
       query?: never;
@@ -754,6 +788,42 @@ export interface components {
       timestamp: string;
       /** Type */
       type: string;
+    };
+    /**
+     * ExecutorHostState
+     * @description Describe one executor host in more detail than "usable or absent".
+     *
+     *     :func:`BaseExecutor.get_hosts` answers a yes/no question -- can a job be placed
+     *     here -- by collapsing several conditions into presence in a mapping. That is the
+     *     right answer for *dispatching*, and the wrong one for *reporting*: a host that is
+     *     missing from it may never have been onboarded, or may be onboarded and down, or up
+     *     with a broken driver, and those are three different jobs for whoever has to fix it.
+     *
+     *     :param name: The host's name as the backend knows it.
+     *     :param address: Its network address.
+     *     :param reachable: Whether the backend currently has contact with it. ``False``
+     *         means the machine is down, the agent is stopped, or it never registered.
+     *     :param driver_healthy: Whether it can actually run this executor's job type. A
+     *         reachable host with an unhealthy driver is onboarded but broken - a different
+     *         problem from one that was never onboarded, and the distinction this type
+     *         exists for.
+     *     :param status: The backend's own word for its state, passed through unmapped so a
+     *         reader can look it up in the backend's documentation.
+     *     :param detail: Why the driver is unhealthy, when the backend says.
+     */
+    ExecutorHostState: {
+      /** Address */
+      address: string;
+      /** Detail */
+      detail?: string | null;
+      /** Driver Healthy */
+      driver_healthy: boolean;
+      /** Name */
+      name: string;
+      /** Reachable */
+      reachable: boolean;
+      /** Status */
+      status?: string | null;
     };
     /**
      * FileMetadata
@@ -1080,8 +1150,8 @@ export interface components {
      *
      *     The wired classes are ``SEPSettings``, ``TasksSettings``,
      *     ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
-     *     ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings`` and
-     *     ``InventorySettings``.
+     *     ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings``,
+     *     ``InventorySettings`` and ``PomDiscoverySettings``.
      *
      *     To wire a new settings class:
      *
@@ -1106,7 +1176,8 @@ export interface components {
       | 'AnonymizerSettings'
       | 'AlertsSettings'
       | 'HealthReportSettings'
-      | 'InventorySettings';
+      | 'InventorySettings'
+      | 'PomDiscoverySettings';
     /**
      * SettingClassGroup
      * @description One settings-class group in the LIST response.
@@ -2430,6 +2501,37 @@ export interface operations {
           'application/json': {
             [key: string]: string;
           };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_get_executor_host_states_hosts_states__get: {
+    parameters: {
+      query?: {
+        backend?: components['schemas']['TaskBackendEnum'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ExecutorHostState'][];
         };
       };
       /** @description Validation Error */

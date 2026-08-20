@@ -2038,6 +2038,338 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/pom_discovery/config': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Config
+     * @description Return this app's configuration: every field, its value and its origin.
+     *
+     *     Served here rather than pointing the caller at ``/api/sep/admin/settings``
+     *     because that router is admin-gated and PMM's principal is not an admin: the
+     *     ``--sep-token`` bearer resolves to the synthetic ``sep-service`` user, built
+     *     with ``is_admin=False`` deliberately, since it is a deployment-level shared
+     *     secret with no person behind it. An app-owned endpoint keeps a schedule change
+     *     scoped to this app instead of requiring SEP-wide administrative access.
+     *
+     *     Every field is listed, not only the overridden ones, and each row carries
+     *     whether an override is in effect - so "why is it sweeping every 10 minutes"
+     *     is answerable without also reading the deployment's YAML.
+     *
+     *     :param session: The database session.
+     *     :return: One row per configuration field.
+     */
+    get: operations['pom_discovery_get_config_api_apps_pom_discovery_config_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Patch Config
+     * @description Change this app's configuration at runtime.
+     *
+     *     The batch is atomic: a single bad key rejects all of it with a per-key 422 and
+     *     writes nothing, so a caller never has to work out how far a partial apply got.
+     *
+     *     Only ``hot_field`` fields are accepted. ``CREDENTIALS_PATH`` is deliberately
+     *     not one: it names a file the payload reads on every database *host* and hands
+     *     to a driver as a URI, so making it settable here would widen "configure this
+     *     app" into "read a chosen file across the estate".
+     *
+     *     A ``SCHEDULE`` change lands without a restart - ``periodic_task_schedules`` is
+     *     a thunk re-read on registry rebuild - but beat runs as a forked side-car
+     *     process, which reaches the new value through its own settings refresher rather
+     *     than through this request.
+     *
+     *     :param request: The incoming request; its ``app.state`` carries the rebind
+     *         callbacks fired for the keys this changed.
+     *     :param body: The ``{key: value, ...}`` batch.
+     *     :param session: The database session.
+     *     :return: One row per applied key, in input order.
+     */
+    patch: operations['pom_discovery_patch_config_api_apps_pom_discovery_config_patch'];
+    trace?: never;
+  };
+  '/api/apps/pom_discovery/config/{key}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete Config Override
+     * @description Put one field back to whatever the deployment configured.
+     *
+     *     Without this, an operator who once changed a value can only ever change it to
+     *     another one: "no override" stops being a reachable state, and the YAML the
+     *     deployment ships becomes unrecoverable through the API. Idempotent, so
+     *     clearing a field that was never overridden is not an error.
+     *
+     *     :param request: The incoming request; its ``app.state`` carries the rebind
+     *         callbacks fired for the reverted key.
+     *     :param key: The field name, or a ``__``-delimited nested key such as
+     *         ``SCHEDULE__every``.
+     *     :param session: The database session.
+     */
+    delete: operations['pom_discovery_delete_config_override_api_apps_pom_discovery_config__key__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/pom_discovery/hosts': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Estate Hosts
+     * @description Return every host POM holds, each with its services.
+     *
+     *     ``has_service=false`` is the question this table exists to answer: which machines
+     *     carry a PMM client and no database. It is a filter rather than an endpoint of its
+     *     own so there is one list contract to learn, and because the same list with the
+     *     filter inverted is the ordinary estate view.
+     *
+     *     Counts describe the *tables*, not the last run. A scoped refresh must not make the
+     *     estate look one host wide.
+     *
+     *     :param session: The database session.
+     *     :param has_service: Filter on whether a MongoDB service is registered here.
+     *     :param failing: Filter on whether the host is currently failing.
+     *     :param executor: Filter on whether an executor serves it.
+     *     :return: The hosts, by name.
+     */
+    get: operations['pom_discovery_list_estate_hosts_api_apps_pom_discovery_hosts_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/pom_discovery/hosts/{node_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Estate Host
+     * @description Return one host, with its services.
+     *
+     *     :param node_id: PMM's node id.
+     *     :param session: The database session.
+     *     :raises HTTPNotFoundException: When POM holds no such host.
+     *     :return: The host.
+     */
+    get: operations['pom_discovery_get_estate_host_api_apps_pom_discovery_hosts__node_id__get'];
+    put?: never;
+    post?: never;
+    /**
+     * Delete Estate Host
+     * @description Forget one host, and by cascade its services.
+     *
+     *     For rows PMM no longer has, which is not hypothetical: restarting a node's
+     *     pmm-agent runs ``setup --force``, which *replaces* the node and mints a new id, so
+     *     POM gains a row and keeps the old one. Nothing prunes automatically yet, and the
+     *     alternative to this endpoint is ``psql`` against a schema an operator should never
+     *     need to know exists.
+     *
+     *     Deliberately not suppression. An entity PMM still knows about comes straight back
+     *     on the next sweep, because POM's job is to describe what PMM says exists, not to
+     *     hold an opinion about it.
+     *
+     *     Its services go with it. That is done explicitly rather than left to the
+     *     ``ON DELETE CASCADE`` on ``pom.service.node_id``, because SQLite enforces no
+     *     foreign key without a per-connection pragma SEP never sets -- and SQLite is the
+     *     shipped default. See :func:`~app.sep.apps.pom_discovery.crud.delete_host`.
+     *
+     *     :param node_id: PMM's node id.
+     *     :param session: The database session.
+     *     :raises HTTPNotFoundException: When POM holds no such host.
+     */
+    delete: operations['pom_discovery_delete_estate_host_api_apps_pom_discovery_hosts__node_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/pom_discovery/runs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Runs
+     * @description Return recent sweeps, newest first.
+     *
+     *     :param session: The database session.
+     *     :param limit: How many to return.
+     *     :return: The sweeps.
+     */
+    get: operations['pom_discovery_list_runs_api_apps_pom_discovery_runs_get'];
+    put?: never;
+    /**
+     * Trigger Probe
+     * @description Queue a probe sweep, over the whole estate or over named hosts.
+     *
+     *     A scoped refresh exists because the two questions are different sizes. "What does
+     *     the estate look like" is a sweep of everything and costs a Nomad job per executor
+     *     host -- a minute and a half in this sandbox. "I just did something to this host,
+     *     is it healthy now" should not cost that, and it is the question PMM's UI will ask
+     *     after every action it grows.
+     *
+     *     The scope is node ids, which is what PMM already holds, so its trigger passes them
+     *     through untranslated (§5.3's payoff).
+     *
+     *     Conflict is judged **per host**, not globally. A refresh of one host has no reason
+     *     to be blocked by a refresh of another, and blocking it would make the scoped
+     *     trigger useless exactly when the estate is busiest. Two runs collide only when
+     *     they would touch the same host; a full refresh collides with everything, including
+     *     another full refresh.
+     *
+     *     :param session: The database session.
+     *     :param request: The optional scope. Absent, or an empty list, means everything.
+     *     :raises HTTPNotFoundException: When a requested node id is not in the estate.
+     *     :raises HTTPConflictException: When a requested host is already being refreshed.
+     *     :return: The queued sweep.
+     */
+    post: operations['pom_discovery_trigger_probe_api_apps_pom_discovery_runs_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/pom_discovery/runs/{run_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Probe Run
+     * @description Return one sweep, with its per-service records and its facts.
+     *
+     *     :param run_id: The sweep's id.
+     *     :param session: The database session.
+     *     :raises HTTPNotFoundException: When there is no such sweep.
+     *     :return: The sweep in full.
+     */
+    get: operations['pom_discovery_get_probe_run_api_apps_pom_discovery_runs__run_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/pom_discovery/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     */
+    get: operations['pom_discovery_get_schema_api_apps_pom_discovery_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/pom_discovery/services': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Estate Services
+     * @description Return the services POM holds, flat.
+     *
+     *     For a consumer that works in services and would otherwise walk every host document
+     *     to find them. ``GET /hosts/{node_id}`` already nests a host's services, so there is
+     *     deliberately no ``/hosts/{node_id}/services``: it would be a second spelling of the
+     *     same list, and ``?node_id=`` covers wanting them without the host.
+     *
+     *     :param session: The database session.
+     *     :param node_id: Restrict to one host.
+     *     :param failing: Filter on whether the service is currently failing.
+     *     :return: The services, by name.
+     */
+    get: operations['pom_discovery_list_estate_services_api_apps_pom_discovery_services_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/pom_discovery/services/{service_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Estate Service
+     * @description Return one service, by PMM's service id.
+     *
+     *     :param service_id: PMM's service id.
+     *     :param session: The database session.
+     *     :raises HTTPNotFoundException: When POM holds no such service.
+     *     :return: The service.
+     */
+    get: operations['pom_discovery_get_estate_service_api_apps_pom_discovery_services__service_id__get'];
+    put?: never;
+    post?: never;
+    /**
+     * Delete Estate Service
+     * @description Forget one service, leaving its host alone.
+     *
+     *     Same contract as deleting a host: for a row PMM no longer has, and no defence
+     *     against one it still does.
+     *
+     *     :param service_id: PMM's service id.
+     *     :param session: The database session.
+     *     :raises HTTPNotFoundException: When POM holds no such service.
+     */
+    delete: operations['pom_discovery_delete_estate_service_api_apps_pom_discovery_services__service_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/report/config': {
     parameters: {
       query?: never;
@@ -3758,27 +4090,6 @@ export interface components {
       detail?: components['schemas']['ValidationError'][];
     };
     /**
-     * HostResponse
-     * @description Represent a single executor target enriched with an inventory display name.
-     *
-     *     :param id: The executor (Nomad / Celery) node name. This is the value
-     *         consumed by dispatch payloads as ``executor_host``.
-     *     :type id: str
-     *     :param name: Human-readable label sourced from inventory when available;
-     *         falls back to ``id`` if the host has no inventory match.
-     *     :type name: str
-     *     :param address: The network address reported by the executor.
-     *     :type address: str
-     */
-    HostResponse: {
-      /** Address */
-      address: string;
-      /** Id */
-      id: string;
-      /** Name */
-      name: string;
-    };
-    /**
      * InventorySelectorOption
      * @description Represent a minimal ``{id, name}`` option for inventory autocomplete selectors.
      *
@@ -3866,17 +4177,6 @@ export interface components {
       items: {
         [key: string]: unknown;
       }[];
-      /** Limit */
-      limit: number;
-      /** Offset */
-      offset: number;
-      /** Total */
-      total: number;
-    };
-    /** PaginatedResponse[ServiceResponse] */
-    PaginatedResponse_ServiceResponse_: {
-      /** Items */
-      items: components['schemas']['ServiceResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -3986,73 +4286,6 @@ export interface components {
      */
     ServiceEnum: 'pmm' | 'inventory' | 'tasks' | 'nomad';
     /**
-     * ServiceResponse
-     * @description Define the service API response.
-     *
-     *     :param id: The primary key for the table. Auto-incremented and not nullable.
-     *     :type id: int | None
-     *     :param created_at: The timestamp when the record is created. Defaults to the current
-     *         time in UTC.
-     *     :type created_at: UTCDatetime
-     *     :param updated_at: The timestamp when the record is last updated. Automatically
-     *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
-     *     :param external_id: An external identifier for the service.
-     *     :type external_id: NonEmptyStr | None
-     *     :param name: The name of the service.
-     *     :type name: NonEmptyStr
-     *     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-     *     :type type: ServiceTypeEnum
-     *     :param port: The port number on which the service is running.
-     *     :type port: int | None
-     *     :param environment: The environment in which the service is running, if set.
-     *     :type environment: str | None
-     *     :param cluster: The cluster in which the service is running, if set.
-     *     :type cluster: str | None
-     *     :param replication_set: The replication set in which the service is running, if set.
-     *     :type replication_set: str | None
-     *     :param custom_labels: Custom labels associated with the service, if set.
-     *     :param node_id: The unique identifier of the node on which the service is running.
-     *     :type node_id: int
-     *     :param schemas: A list of schemas associated with the service.
-     *     :type schemas: list[Schema]
-     *     :param node: The node to which the service is associated.
-     *     :type node: Node
-     */
-    ServiceResponse: {
-      /** Cluster */
-      cluster?: string | null;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at?: string;
-      /** Custom Labels */
-      custom_labels?: {
-        [key: string]: unknown;
-      } | null;
-      /** Environment */
-      environment?: string | null;
-      /** External Id */
-      external_id?: string | null;
-      /** Id */
-      id: number | null;
-      /** Name */
-      name: string;
-      node: components['schemas']['Node'];
-      /** Node Id */
-      node_id: number;
-      /** Port */
-      port?: number | null;
-      /** Replication Set */
-      replication_set?: string | null;
-      /** Schemas */
-      schemas: components['schemas']['Schema'][];
-      type: components['schemas']['ServiceTypeEnum'];
-      /** Updated At */
-      updated_at?: string | null;
-    };
-    /**
      * ServiceTypeEnum
      * @description Enumerate the supported service types.
      *
@@ -4086,8 +4319,8 @@ export interface components {
      *
      *     The wired classes are ``SEPSettings``, ``TasksSettings``,
      *     ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
-     *     ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings`` and
-     *     ``InventorySettings``.
+     *     ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings``,
+     *     ``InventorySettings`` and ``PomDiscoverySettings``.
      *
      *     To wire a new settings class:
      *
@@ -4112,7 +4345,8 @@ export interface components {
       | 'AnonymizerSettings'
       | 'AlertsSettings'
       | 'HealthReportSettings'
-      | 'InventorySettings';
+      | 'InventorySettings'
+      | 'PomDiscoverySettings';
     /**
      * SettingClassGroup
      * @description One settings-class group in the LIST response.
@@ -5255,6 +5489,105 @@ export interface components {
       offset: number;
       /** Total */
       total: number;
+    };
+    /** PaginatedResponse[ServiceResponse] */
+    app__PaginatedResponse_inventory__models__ServiceResponse_: {
+      /** Items */
+      items: components['schemas']['app__inventory__models__ServiceResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /**
+     * ServiceResponse
+     * @description Define the service API response.
+     *
+     *     :param id: The primary key for the table. Auto-incremented and not nullable.
+     *     :type id: int | None
+     *     :param created_at: The timestamp when the record is created. Defaults to the current
+     *         time in UTC.
+     *     :type created_at: UTCDatetime
+     *     :param updated_at: The timestamp when the record is last updated. Automatically
+     *         updated on changes.
+     *     :type updated_at: UTCDatetime | None
+     *     :param external_id: An external identifier for the service.
+     *     :type external_id: NonEmptyStr | None
+     *     :param name: The name of the service.
+     *     :type name: NonEmptyStr
+     *     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
+     *     :type type: ServiceTypeEnum
+     *     :param port: The port number on which the service is running.
+     *     :type port: int | None
+     *     :param environment: The environment in which the service is running, if set.
+     *     :type environment: str | None
+     *     :param cluster: The cluster in which the service is running, if set.
+     *     :type cluster: str | None
+     *     :param replication_set: The replication set in which the service is running, if set.
+     *     :type replication_set: str | None
+     *     :param custom_labels: Custom labels associated with the service, if set.
+     *     :param node_id: The unique identifier of the node on which the service is running.
+     *     :type node_id: int
+     *     :param schemas: A list of schemas associated with the service.
+     *     :type schemas: list[Schema]
+     *     :param node: The node to which the service is associated.
+     *     :type node: Node
+     */
+    app__inventory__models__ServiceResponse: {
+      /** Cluster */
+      cluster?: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /** Custom Labels */
+      custom_labels?: {
+        [key: string]: unknown;
+      } | null;
+      /** Environment */
+      environment?: string | null;
+      /** External Id */
+      external_id?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      node: components['schemas']['Node'];
+      /** Node Id */
+      node_id: number;
+      /** Port */
+      port?: number | null;
+      /** Replication Set */
+      replication_set?: string | null;
+      /** Schemas */
+      schemas: components['schemas']['Schema'][];
+      type: components['schemas']['ServiceTypeEnum'];
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * HostResponse
+     * @description Represent a single executor target enriched with an inventory display name.
+     *
+     *     :param id: The executor (Nomad / Celery) node name. This is the value
+     *         consumed by dispatch payloads as ``executor_host``.
+     *     :type id: str
+     *     :param name: Human-readable label sourced from inventory when available;
+     *         falls back to ``id`` if the host has no inventory match.
+     *     :type name: str
+     *     :param address: The network address reported by the executor.
+     *     :type address: str
+     */
+    app__sep__api__routes__hosts__HostResponse: {
+      /** Address */
+      address: string;
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
     };
     /**
      * ArchivesCreate
@@ -9391,6 +9724,373 @@ export interface components {
       | 'science'
       | 'bar-chart'
       | 'account-tree';
+    /**
+     * HostResponse
+     * @description One host, with the services POM knows are on it.
+     *
+     *     A host is a row whether or not any MongoDB was found on it: that is what makes
+     *     "which hosts have no database" a query rather than an absence, and it is the only
+     *     way a machine that has never run one appears at all.
+     *
+     *     :param node_id: PMM's node id.
+     *     :param name: The node's registered name.
+     *     :param address: The node's registered address.
+     *     :param executor_host: The Nomad client serving it. ``None`` means nothing can be
+     *         run there, which is a fact about the estate rather than a probe failure.
+     *     :param observed: Everything collected about the host, including
+     *         ``unregistered_mongods`` where the probe found a database PMM has no service
+     *         for. Empty when the host has never been successfully probed.
+     *     :param first_seen_at: When POM first wrote a row for it.
+     *     :param last_attempt_at: When a run last probed it.
+     *     :param last_success_at: When it last answered.
+     *     :param failing_since: The first failure after the last success.
+     *     :param consecutive_failures: Failures since the last success.
+     *     :param last_error: The most recent failure detail.
+     *     :param services: The services on it. Empty is a meaningful answer, not a gap.
+     */
+    pom_discovery__HostResponse: {
+      /** Address */
+      address?: string | null;
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
+      /** Executor Host */
+      executor_host?: string | null;
+      /** Failing Since */
+      failing_since?: string | null;
+      /**
+       * First Seen At
+       * Format: date-time
+       */
+      first_seen_at: string;
+      /** Last Attempt At */
+      last_attempt_at?: string | null;
+      /** Last Error */
+      last_error?: string | null;
+      /** Last Success At */
+      last_success_at?: string | null;
+      /** Name */
+      name: string;
+      /** Node Id */
+      node_id: string;
+      /** Observed */
+      observed?: Record<string, never>;
+      /** Services */
+      services?: components['schemas']['pom_discovery__ServiceResponse'][];
+    };
+    /**
+     * ProbeCounts
+     * @description Count what one sweep reached.
+     *
+     *     ``resolved`` versus ``answered`` is the diagnostic split: the first says the
+     *     service mapped to a live executor host, the second says the node ran the payload.
+     *     A sweep with ``resolved=9, answered=0`` is a healthy mapping and broken executors.
+     *
+     *     :param services_total: MongoDB services inventory reported.
+     *     :param services_resolved: ...of which mapped to a live executor host.
+     *     :param services_orphaned: ...of which did not. Not an error.
+     *     :param services_answered: Services that returned a usable probe record.
+     *     :param hosts_total: Hosts in scope this sweep, service or no service.
+     *     :param hosts_probeable: ...of which had a usable executor to dispatch to.
+     *     :param hosts_answered: Hosts that returned a usable record.
+     */
+    pom_discovery__ProbeCounts: {
+      /**
+       * Hosts Answered
+       * @default 0
+       */
+      hosts_answered: number;
+      /**
+       * Hosts Probeable
+       * @default 0
+       */
+      hosts_probeable: number;
+      /**
+       * Hosts Total
+       * @default 0
+       */
+      hosts_total: number;
+      /** Services Answered */
+      services_answered: number;
+      /** Services Orphaned */
+      services_orphaned: number;
+      /** Services Resolved */
+      services_resolved: number;
+      /** Services Total */
+      services_total: number;
+    };
+    /**
+     * ProbeFact
+     * @description One fact about one service, as the probe saw it.
+     *
+     *     :param service_id: **PMM's** service UUID. The consumer joins on this; SEP's own
+     *         inventory id would mean nothing on the other side.
+     *     :param field: The document field this sets, e.g. ``installed_version``.
+     *     :param value: The observed value.
+     *     :param observed_at: When the probe ran. Carried per fact rather than per response
+     *         so a consumer merging several sources can age them against each other.
+     */
+    pom_discovery__ProbeFact: {
+      /** Field */
+      field: string;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+      /** Service Id */
+      service_id: string;
+      /** Value */
+      value: unknown;
+    };
+    /**
+     * ProbeNode
+     * @description One **host** this sweep attempted, and what came of it.
+     *
+     *     Host-oriented, because a sweep attempts hosts. A flat list of services -- which
+     *     this was -- cannot show a machine carrying a PMM client and no database, however
+     *     many times it is probed, and that machine is the case POM most exists to describe.
+     *
+     *     One dispatch covers every service on a host, so the host owns the timing and the
+     *     failure and its services carry only what is theirs. Previously the duration was
+     *     repeated identically across a host's services, which read as several measurements
+     *     when it was one.
+     *
+     *     :param node_id: **PMM's** node id, the key POM holds this host under.
+     *     :param host_name: The node's registered name.
+     *     :param executor_host: The client its probe ran on; ``None`` when none matched.
+     *     :param resolution: ``name`` / ``address`` / ``orphaned`` -- how that client was
+     *         matched, or that it was not. Orphaned is why nothing ran, not an error.
+     *     :param answered: Whether the *host* returned a record. A different question from
+     *         whether its services did: a host with no database answers perfectly well and
+     *         has no services at all.
+     *     :param duration_seconds: The host's wall-clock, dispatch to collected output.
+     *     :param error: The host-level failure, when its probe failed.
+     *     :param services: The services on it, empty when there are none.
+     */
+    pom_discovery__ProbeNode: {
+      /**
+       * Answered
+       * @default false
+       */
+      answered: boolean;
+      /** Duration Seconds */
+      duration_seconds?: number | null;
+      /** Error */
+      error?: string | null;
+      /** Executor Host */
+      executor_host?: string | null;
+      /** Host Name */
+      host_name?: string | null;
+      /** Node Id */
+      node_id: string;
+      /** Resolution */
+      resolution: string;
+      /** Services */
+      services?: components['schemas']['pom_discovery__ProbeNodeService'][];
+    };
+    /**
+     * ProbeNodeService
+     * @description One service on a host, as this sweep saw it.
+     *
+     *     :param service_id: **PMM's** service UUID, or ``None`` where inventory holds none.
+     *     :param service_name: Its name, so a reader is not left joining UUIDs by hand.
+     *     :param answered: Whether the host returned a usable record for it.
+     *     :param error: Why it did not, when it did not.
+     */
+    pom_discovery__ProbeNodeService: {
+      /**
+       * Answered
+       * @default false
+       */
+      answered: boolean;
+      /** Error */
+      error?: string | null;
+      /** Service Id */
+      service_id?: string | null;
+      /** Service Name */
+      service_name?: string | null;
+    };
+    /**
+     * ProbeRunAccepted
+     * @description Acknowledge a queued sweep.
+     *
+     *     Returned with ``202``: a sweep dispatches Nomad jobs and takes tens of seconds, so
+     *     it is never performed synchronously.
+     *
+     *     :param run_id: The queued sweep's id.
+     *     :param status: Always ``running`` at this point.
+     *     :param started_at: When the run row was created.
+     *     :param scope: The hosts it will refresh, or ``None`` for the whole estate.
+     */
+    pom_discovery__ProbeRunAccepted: {
+      /**
+       * Run Id
+       * Format: uuid
+       */
+      run_id: string;
+      /** Scope */
+      scope?: string[] | null;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      /** Status */
+      status: string;
+    };
+    /**
+     * ProbeRunDetail
+     * @description One sweep, with everything it recorded.
+     *
+     *     Kept apart from the list shape on purpose: a sweep's facts run to a few hundred
+     *     records, so returning them for every row of a 25-run history would make the list
+     *     an order of magnitude larger to serve a page that shows one run at a time.
+     *
+     *     :param nodes: What the sweep saw per service.
+     *     :param facts: The facts it collected — every field the probe reads, including the
+     *         ones no consumer maps today.
+     */
+    pom_discovery__ProbeRunDetail: {
+      counts: components['schemas']['pom_discovery__ProbeCounts'];
+      /** Error */
+      error?: string | null;
+      /** Facts */
+      facts?: components['schemas']['pom_discovery__ProbeFact'][];
+      /**
+       * Facts Collected
+       * @default 0
+       */
+      facts_collected: number;
+      /** Finished At */
+      finished_at?: string | null;
+      /** Nodes */
+      nodes?: components['schemas']['pom_discovery__ProbeNode'][];
+      /**
+       * Run Id
+       * Format: uuid
+       */
+      run_id: string;
+      /** Scope */
+      scope?: string[] | null;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      /** Status */
+      status: string;
+    };
+    /**
+     * ProbeRunResponse
+     * @description One sweep's record.
+     *
+     *     :param run_id: The sweep's id.
+     *     :param status: ``running`` / ``success`` / ``partial`` / ``failed``.
+     *     :param started_at: When it began.
+     *     :param finished_at: When it reached a terminal status; ``None`` while running.
+     *     :param counts: What it reached.
+     *     :param facts_collected: How many facts it stored.
+     *     :param scope: The hosts it was asked to refresh, or ``None`` for the whole
+     *         estate. Without it the counters cannot be read: "9 of 13 answered" means
+     *         something different when the run was only ever asked about one host.
+     *     :param error: The failure detail when the sweep itself raised.
+     */
+    pom_discovery__ProbeRunResponse: {
+      counts: components['schemas']['pom_discovery__ProbeCounts'];
+      /** Error */
+      error?: string | null;
+      /**
+       * Facts Collected
+       * @default 0
+       */
+      facts_collected: number;
+      /** Finished At */
+      finished_at?: string | null;
+      /**
+       * Run Id
+       * Format: uuid
+       */
+      run_id: string;
+      /** Scope */
+      scope?: string[] | null;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      /** Status */
+      status: string;
+    };
+    /**
+     * ServiceResponse
+     * @description One MongoDB service PMM has registered, as POM currently holds it.
+     *
+     *     Keyed on **PMM's** service id, which is the whole benefit of storing it that way:
+     *     the path and the payload carry the id every consumer already has, with nothing to
+     *     translate on either side.
+     *
+     *     :param service_id: PMM's service id.
+     *     :param node_id: The host it runs on.
+     *     :param name: The service name as PMM registered it.
+     *     :param port: The port it listens on.
+     *     :param role: What the probe found it to be, when a probe determined one.
+     *     :param observed: Everything collected, with its own ``collected_at``. Empty when
+     *         this service has never been successfully probed.
+     *     :param first_seen_at: When POM first wrote a row for it.
+     *     :param last_attempt_at: When a run last targeted it. ``None`` means no run ever
+     *         has, which is different from having tried and failed.
+     *     :param last_success_at: When it last answered. This is the data's age.
+     *     :param failing_since: The first failure after the last success; ``None`` while
+     *         healthy.
+     *     :param consecutive_failures: Failures since the last success.
+     *     :param last_error: The most recent failure detail.
+     */
+    pom_discovery__ServiceResponse: {
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
+      /** Failing Since */
+      failing_since?: string | null;
+      /**
+       * First Seen At
+       * Format: date-time
+       */
+      first_seen_at: string;
+      /** Last Attempt At */
+      last_attempt_at?: string | null;
+      /** Last Error */
+      last_error?: string | null;
+      /** Last Success At */
+      last_success_at?: string | null;
+      /** Name */
+      name?: string | null;
+      /** Node Id */
+      node_id: string;
+      /** Observed */
+      observed?: Record<string, never>;
+      /** Port */
+      port?: number | null;
+      /** Role */
+      role?: string | null;
+      /** Service Id */
+      service_id: string;
+    };
+    /**
+     * TriggerRequest
+     * @description Ask for a refresh of named hosts rather than the whole estate.
+     *
+     *     :param node_ids: PMM's node ids. Empty, or the whole body absent, means every
+     *         host POM holds -- which is what the scheduled sweep does.
+     */
+    pom_discovery__TriggerRequest: {
+      /** Node Ids */
+      node_ids?: string[];
+    };
     /**
      * AdvisorCheck
      * @description A single advisor check definition (enabled only).
@@ -13703,6 +14403,393 @@ export interface operations {
       };
     };
   };
+  pom_discovery_get_config_api_apps_pom_discovery_config_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SettingResponse'][];
+        };
+      };
+    };
+  };
+  pom_discovery_patch_config_api_apps_pom_discovery_config_patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SettingsPatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SettingResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pom_discovery_delete_config_override_api_apps_pom_discovery_config__key__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        key: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pom_discovery_list_estate_hosts_api_apps_pom_discovery_hosts_get: {
+    parameters: {
+      query?: {
+        /** @description True for hosts running a MongoDB service, False for those with none. Omit for all of them. */
+        has_service?: boolean | null;
+        /** @description Restrict to hosts that are, or are not, failing. */
+        failing?: boolean | null;
+        /** @description True for hosts a payload can run on, False for those with no executor. */
+        executor?: boolean | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['pom_discovery__HostResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pom_discovery_get_estate_host_api_apps_pom_discovery_hosts__node_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['pom_discovery__HostResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pom_discovery_delete_estate_host_api_apps_pom_discovery_hosts__node_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pom_discovery_list_runs_api_apps_pom_discovery_runs_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['pom_discovery__ProbeRunResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pom_discovery_trigger_probe_api_apps_pom_discovery_runs_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['pom_discovery__TriggerRequest'] | null;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['pom_discovery__ProbeRunAccepted'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pom_discovery_get_probe_run_api_apps_pom_discovery_runs__run_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['pom_discovery__ProbeRunDetail'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pom_discovery_get_schema_api_apps_pom_discovery_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['framework__AppSchema'];
+        };
+      };
+    };
+  };
+  pom_discovery_list_estate_services_api_apps_pom_discovery_services_get: {
+    parameters: {
+      query?: {
+        /** @description Restrict to one host. */
+        node_id?: string | null;
+        /** @description Restrict to services that are, or are not, failing. */
+        failing?: boolean | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['pom_discovery__ServiceResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pom_discovery_get_estate_service_api_apps_pom_discovery_services__service_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['pom_discovery__ServiceResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pom_discovery_delete_estate_service_api_apps_pom_discovery_services__service_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   report_report_config_api_apps_report_config_get: {
     parameters: {
       query?: never;
@@ -14707,7 +15794,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['HostResponse'][];
+          'application/json': components['schemas']['app__sep__api__routes__hosts__HostResponse'][];
         };
       };
       /** @description Upstream Tasks API failure. */
@@ -14948,7 +16035,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PaginatedResponse_ServiceResponse_'];
+          'application/json': components['schemas']['app__PaginatedResponse_inventory__models__ServiceResponse_'];
         };
       };
       /** @description Validation Error */

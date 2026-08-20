@@ -610,37 +610,6 @@
         "title": "PaginatedResponse[ArbitraryMapping]",
         "type": "object"
       },
-      "PaginatedResponse_ServiceResponse_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ServiceResponse"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "limit": {
-            "title": "Limit",
-            "type": "integer"
-          },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "offset",
-          "limit"
-        ],
-        "title": "PaginatedResponse[ServiceResponse]",
-        "type": "object"
-      },
       "PaginatedResponse_SnippetResponse_": {
         "properties": {
           "items": {
@@ -787,139 +756,6 @@
         ],
         "title": "ServiceEnum",
         "type": "string"
-      },
-      "ServiceResponse": {
-        "description": "Define the service API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param external_id: An external identifier for the service.\n:type external_id: NonEmptyStr | None\n:param name: The name of the service.\n:type name: NonEmptyStr\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:type type: ServiceTypeEnum\n:param port: The port number on which the service is running.\n:type port: int | None\n:param environment: The environment in which the service is running, if set.\n:type environment: str | None\n:param cluster: The cluster in which the service is running, if set.\n:type cluster: str | None\n:param replication_set: The replication set in which the service is running, if set.\n:type replication_set: str | None\n:param custom_labels: Custom labels associated with the service, if set.\n:param node_id: The unique identifier of the node on which the service is running.\n:type node_id: int\n:param schemas: A list of schemas associated with the service.\n:type schemas: list[Schema]\n:param node: The node to which the service is associated.\n:type node: Node",
-        "properties": {
-          "cluster": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cluster"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "custom_labels": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Custom Labels"
-          },
-          "environment": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Environment"
-          },
-          "external_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Id"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "name": {
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "node": {
-            "$ref": "#/components/schemas/Node"
-          },
-          "node_id": {
-            "title": "Node Id",
-            "type": "integer"
-          },
-          "port": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Port"
-          },
-          "replication_set": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Replication Set"
-          },
-          "schemas": {
-            "items": {
-              "$ref": "#/components/schemas/Schema"
-            },
-            "title": "Schemas",
-            "type": "array"
-          },
-          "type": {
-            "$ref": "#/components/schemas/ServiceTypeEnum"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "name",
-          "type",
-          "node_id",
-          "id",
-          "schemas",
-          "node"
-        ],
-        "title": "ServiceResponse",
-        "type": "object"
       },
       "ServiceTypeEnum": {
         "description": "Enumerate the supported service types.\n\n:cvar MYSQL: Represents the MySQL service type.\n:vartype MYSQL: str\n:cvar POSTGRESQL: Represents the PostgreSQL service type.\n:vartype POSTGRESQL: str\n:cvar MONGODB: Represents the MongoDB service type.\n:vartype MONGODB: str\n:cvar PROXYSQL: Represents the ProxySQL service type.\n:vartype PROXYSQL: str\n:cvar HAPROXY: Represents the HAProxy service type.\n:vartype HAPROXY: str\n:cvar EXTERNAL: Represents an external service type.\n:vartype EXTERNAL: str\n:cvar VALKEY: Represents the Valkey service type.\n:vartype VALKEY: str",
@@ -2785,7 +2621,7 @@
         "type": "object"
       },
       "app__inventory__models__ServiceResponse": {
-        "description": "Define the service API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param external_id: An external identifier for the service.\n:type external_id: NonEmptyStr | None\n:param name: The name of the service.\n:type name: NonEmptyStr\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:type type: ServiceTypeEnum\n:param port: The port number on which the service is running.\n:type port: int | None\n:param environment: The environment in which the service is running, if set.\n:type environment: str | None\n:param cluster: The cluster in which the service is running, if set.\n:type cluster: str | None\n:param replication_set: The replication set in which the service is running, if set.\n:type replication_set: str | None\n:param custom_labels: Custom labels associated with the service, if set.\n:type custom_labels: dict[str, Any] | None\n:param node_id: The unique identifier of the node on which the service is running.\n:type node_id: int\n:param schemas: A list of schemas associated with the service.\n:type schemas: list[Schema]\n:param node: The node to which the service is associated.\n:type node: Node",
+        "description": "Define the service API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param external_id: An external identifier for the service.\n:type external_id: NonEmptyStr | None\n:param name: The name of the service.\n:type name: NonEmptyStr\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:type type: ServiceTypeEnum\n:param port: The port number on which the service is running.\n:type port: int | None\n:param environment: The environment in which the service is running, if set.\n:type environment: str | None\n:param cluster: The cluster in which the service is running, if set.\n:type cluster: str | None\n:param replication_set: The replication set in which the service is running, if set.\n:type replication_set: str | None\n:param custom_labels: Custom labels associated with the service, if set.\n:param node_id: The unique identifier of the node on which the service is running.\n:type node_id: int\n:param schemas: A list of schemas associated with the service.\n:type schemas: list[Schema]\n:param node: The node to which the service is associated.\n:type node: Node",
         "properties": {
           "cluster": {
             "anyOf": [
@@ -2806,6 +2642,7 @@
           "custom_labels": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
