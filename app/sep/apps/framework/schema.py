@@ -89,17 +89,6 @@ from app.sep.apps.framework.rules import (
 )
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
 
-EXECUTOR_HOST_FIELD_NAME = "executor_host"
-SUDO_FIELD_NAME = "sudo"
-SCRIPT_PREVIEW_FIELD_NAME = "script_preview"
-"""Name the execution fields every script app's form synthesises.
-
-Each script app appends these to its frontmatter parameters, and a consumer that
-merges or strips them needs the same spelling the producer used. They live here,
-next to the field types they name, so no app package owns the vocabulary its
-siblings depend on.
-"""
-
 # Dots are permitted so nested one-of branch fields can use paths such as
 # ``source.source_db_id`` (see :class:`OneOfGroup`).
 _FIELD_NAME_PATTERN = r"^[A-Za-z_](?:[\w.-]*\w)?$"
@@ -200,6 +189,17 @@ class ColumnFormat(EnumFieldMixin, StrEnum):
     CODE = auto()
     ACTIONS = auto()
     SCHEDULE = auto()
+
+
+NON_ROW_BOUND_FORMATS: frozenset[ColumnFormat] = frozenset(
+    {ColumnFormat.ACTIONS, ColumnFormat.SCHEDULE}
+)
+"""Column formats whose cells are not derived from the column's own row value.
+
+Their keys are therefore exempt from the list-view column validation gate in
+:meth:`~app.sep.apps.framework.apps.TaskExecutionApp._validate_view_columns`, so such
+a column may use a synthetic key absent from the serialized row.
+"""
 
 
 class DetailHighlightLanguage(EnumFieldMixin, StrEnum):

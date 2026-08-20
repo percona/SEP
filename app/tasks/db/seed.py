@@ -35,14 +35,16 @@ from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.db.engine import engine
+from app.tasks.execution.executors.nomad.constants import (
+    CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
+)
 from app.tasks.execution.executors.nomad.steps import (
     LOG_CAPTURE_HOLD_DEFAULT_SECONDS,
     NomadStep,
+    RUN_SCRIPT_OUTPUT_FILES_PATH,
 )
 from app.tasks.models import (
-    CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
     INVENTORY_SYNC_TASK_NAME,
-    RUN_SCRIPT_OUTPUT_FILES_PATH,
     SYNC_RUNNING_TASKS_TASK_NAME,
     SYSTEM_USER,
     Task,

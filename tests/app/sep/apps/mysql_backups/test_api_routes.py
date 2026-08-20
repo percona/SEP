@@ -16,6 +16,7 @@
 """Tests for the mysql_backups plugin JSON API routes."""
 
 from datetime import datetime, UTC
+from itertools import chain, repeat
 from unittest.mock import AsyncMock
 
 import pytest
@@ -652,3 +653,69 @@ class TestBearerAuthGate:
         }
         response = test_client.get("/api/apps/mysql_backups/")
         assert response.status_code == status.HTTP_200_OK
+
+
+class TestUpdateReselectsThePayloadVariant:
+    """Tests that PUT re-derives the xtrabackup payload from the submitted upload set.
+
+    The update route rebuilds its ``TaskWrite`` through the same create-payload
+    dependency, so an edited upload selection re-selects the variant. Nothing
+    asserted that, and an update path that diffed only the config would keep the
+    original payload: a task edited to add S3 would carry a variant with no S3
+    provider and fail at upload, after the backup had been taken.
+    """
+
+    @staticmethod
+    def _sent_payload(mock_task_api_dep) -> str:
+        """Return the payload reference the route PUT upstream.
+
+        :param mock_task_api_dep: The mocked tasks API the route calls.
+        :return: The dispatched payload reference.
+        """
+        return mock_task_api_dep.put.await_args.kwargs["json"]["data"]["payload"]
+
+    @pytest.mark.parametrize(
+        ("upload", "extra", "expected"),
+        [
+            (["RSYNC"], {"rsync_path": "/data/rsync"}, "xtrabackup_rsync_payload"),
+            (
+                ["RSYNC", "S3"],
+                {"rsync_path": "/data/rsync", "s3_bucket": "bkt"},
+                "xtrabackup_rsync_s3_payload",
+            ),
+            (["S3"], {"s3_bucket": "bkt"}, "xtrabackup_s3_payload"),
+        ],
+        ids=str,
+    )
+    def test_update_dispatches_the_variant_for_the_submitted_selection(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+        upload,
+        extra,
+        expected,
+    ):
+        """Assert the PUT body's upload selection, not the stored one, picks the variant."""
+        task = build_backup_task(backup_type=BackupType.XTRABACKUP)
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        # The update response threads the task's latest status, so the route reads
+        # the task and then paged history; repeat the empty page for any further read.
+        empty_page = {"items": [], "total": 0, "offset": 0, "limit": 50}
+        mock_task_api_dep.get = AsyncMock(side_effect=chain([task], repeat(empty_page)))
+        mock_task_api_dep.put = AsyncMock(return_value=task)
+        body = build_backup_write_body(
+            service_id=created_service.id,
+            backup_type=BackupType.XTRABACKUP,
+        )
+        body.pop("s3_bucket", None)
+        body["upload"] = upload
+        body.update(extra)
+        response = test_client.put(
+            f"/api/apps/mysql_backups/{task['name']}", json=body, headers=BEARER_HEADERS
+        )
+        assert response.status_code == status.HTTP_200_OK, response.text
+        assert self._sent_payload(mock_task_api_dep).endswith(f"/{expected}")

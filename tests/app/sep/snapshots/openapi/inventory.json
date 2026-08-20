@@ -3474,7 +3474,7 @@
     },
     "/api/apps/inventory/nodes/{node_id}/system-observation": {
       "get": {
-        "description": "Proxy the host-level system observation for a node (read-only).\n\nForwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``\nendpoint via ``InventoryAPI``. This three-segment literal path cannot\ncollide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An\nupstream HTTP 404 — the \"not collected yet\" signal — propagates unchanged\nfor the React panel to render as an empty state.\n\n:param node_id: Primary key of the node.\n:param inventory_api: Authenticated inventory ``RemoteAPI`` client.\n:return: The host-level system observation payload.",
+        "description": "Proxy the host-level system observation for a node (read-only).\n\nForwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``\nendpoint via ``InventoryAPI``. This three-segment literal path cannot\ncollide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An\nupstream HTTP 404 propagates unchanged, along with the ``detail`` that tells\na node whose observation has not been collected yet — which the React panel\nrenders as an empty state — apart from a node that does not exist.\n\n:param node_id: Primary key of the node.\n:param inventory_api: Authenticated inventory ``RemoteAPI`` client.\n:return: The host-level system observation payload.",
         "operationId": "inventory_inventory_node_system_observation_api_apps_inventory_nodes__node_id__system_observation_get",
         "parameters": [
           {
@@ -3582,7 +3582,7 @@
     },
     "/api/apps/inventory/services/{service_id}/system-observation": {
       "get": {
-        "description": "Proxy the service-level system observation for a service (read-only).\n\nForwards to the inventory sub-app's\n``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.\nAn upstream HTTP 404 propagates unchanged so the React panel renders its\n\"not collected yet\" empty state.\n\n:param service_id: Primary key of the service.\n:param inventory_api: Authenticated inventory ``RemoteAPI`` client.\n:return: The service-level system observation payload.",
+        "description": "Proxy the service-level system observation for a service (read-only).\n\nForwards to the inventory sub-app's\n``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.\nAn upstream HTTP 404 propagates unchanged, along with the ``detail`` that\ntells a service whose observation has not been collected yet — which the\nReact panel renders as an empty state — apart from a service that does not\nexist.\n\n:param service_id: Primary key of the service.\n:param inventory_api: Authenticated inventory ``RemoteAPI`` client.\n:return: The service-level system observation payload.",
         "operationId": "inventory_inventory_service_system_observation_api_apps_inventory_services__service_id__system_observation_get",
         "parameters": [
           {

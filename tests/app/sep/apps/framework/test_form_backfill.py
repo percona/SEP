@@ -37,14 +37,14 @@ from app.sep.apps.framework.form_backfill import (
     _persist_stamped_form,
     _rollback_backfill_session,
     _TaskBackfillOutcome,
-    FormBackfillContext,
-    FormReconstructor,
     main,
 )
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
 from app.sep.apps.framework.form_backfill_registry import (
     collect_form_backfill_entries,
+    FormBackfillContext,
     FormBackfillEntry,
+    FormReconstructor,
 )
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.tasks.models import Task, TaskBackendEnum
@@ -257,6 +257,36 @@ def test_backfill_single_task_skips_invalid_reconstructed_form():
     assert outcome.label == "skipped_invalid"
     assert outcome.stamped_data is None
     assert RESERVED_FORM_KEY not in task.data
+
+
+def test_backfill_single_task_stamps_a_row_whose_hook_path_predates_the_allow_list():
+    """Stamp a row whose stored hook path the write model would reject.
+
+    ``TaskWrite`` constrains hook paths to an allow-listed namespace, but the
+    envelope built here only carries ``data`` through stamping, so a row whose
+    stored path predates that constraint must not lose its backfill over it.
+    """
+    task = _minimal_task(data={"meta": {}})
+    task.alert_detail_builder = "app.sep.plugins.archives.alerts:build"
+
+    def _valid_body(_task: Task, _ctx: FormBackfillContext) -> dict:
+        return {
+            "task_name": _task.name,
+            "hostname": "executor-1",
+            "service_id": 1,
+            "recursion_method": "processlist",
+        }
+
+    entry = _entry(_valid_body)
+    ctx = FormBackfillContext(
+        log=logging.getLogger("test"), service_lookup=_EMPTY_SERVICE_LOOKUP
+    )
+
+    outcome = _backfill_single_task(task, entry, ctx)
+
+    assert outcome.label == "stamped"
+    assert outcome.stamped_data is not None
+    assert RESERVED_FORM_KEY in outcome.stamped_data
 
 
 @pytest.mark.asyncio

@@ -29,6 +29,7 @@ export { useFailRules } from './hooks/useFailRules';
 export type { FailViolation } from './hooks/useFailRules';
 export { buildValidationRules, coerceFormValues } from './utils/validationMapper';
 export {
+  buildFieldLabelMap,
   flattenSectionFields,
   flattenSectionItem,
   isOneOfGroup,

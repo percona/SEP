@@ -26,11 +26,9 @@ from app.sep.apps.checksums.form_backfill import (
     reconstruct_checksums_form,
 )
 from app.sep.apps.checksums.models import ChecksumsForm
-from app.sep.apps.framework.form_backfill import (
-    _backfill_single_task,
-    FormBackfillContext,
-)
+from app.sep.apps.framework.form_backfill import _backfill_single_task
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
+from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.tasks.models import Task, TaskBackendEnum
 
@@ -158,8 +156,28 @@ def test_reconstruct_checksums_form_happy_path():
         "max_load": "",
         "chunk_time": "",
         "max_lag": "",
+        "defaults_file": "",
         "alert_on_fail": True,
     }
+    ChecksumsForm.model_validate(body)
+
+
+def test_reconstruct_checksums_form_defaults_file():
+    """Rebuild ``defaults_file`` from legacy ``--defaults-file`` args."""
+    lookup = _lookup(
+        _service(42, name="mysql-prod", address="10.0.0.5", port=3306),
+    )
+    task = _legacy_checksums_task(
+        args=(
+            "h=10.0.0.5,P=3306, --recursion-method=processlist "
+            "--defaults-file=/etc/checksum.cnf"
+        ),
+    )
+
+    body = reconstruct_checksums_form(task, _ctx(lookup))
+
+    assert body is not None
+    assert body["defaults_file"] == "/etc/checksum.cnf"
     ChecksumsForm.model_validate(body)
 
 

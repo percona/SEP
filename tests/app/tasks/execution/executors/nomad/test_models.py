@@ -2276,7 +2276,7 @@ class TestGetLogsForAllocation:
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_get_logs_for_allocation_exception_handling(self, mock_nomad_cls):
-        """Assert get_logs_for_allocation handles stream_logs exceptions gracefully."""
+        """Assert get_logs_for_allocation returns empty streams when stream_logs raises."""
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
         mock_backend.client.stream_logs.stream.side_effect = BaseNomadException(
@@ -4266,7 +4266,7 @@ class TestReadFileBytes:
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_read_file_bytes_size_mismatch_logs_warning(self, mock_nomad_cls):
-        """Assert _read_file_bytes handles size mismatch gracefully."""
+        """Assert _read_file_bytes returns the short body when the size disagrees."""
         mock_nomad_cls.return_value = MagicMock()
         executor = _build_executor()
         queue_item = _build_queue_item()
@@ -4681,8 +4681,8 @@ class TestPersistNomadTaskLogsCursorDurability:
             new_bytes=b"old",
             force_flush=True,
             producer_offset_after=SEED_OFFSET,
-            nomad_offset_after=SEED_OFFSET,
-            allocation_epoch=SUPERSEDED_ALLOCATION_EPOCH,
+            producer_fetch_offset_after=SEED_OFFSET,
+            producer_epoch=SUPERSEDED_ALLOCATION_EPOCH,
         )
 
         offsets = await NomadExecutor._build_initial_log_offsets(
@@ -4705,8 +4705,8 @@ class TestPersistNomadTaskLogsCursorDurability:
             new_bytes=b"cur",
             force_flush=True,
             producer_offset_after=SEED_OFFSET,
-            nomad_offset_after=SEED_OFFSET,
-            allocation_epoch=CURRENT_ALLOCATION_EPOCH,
+            producer_fetch_offset_after=SEED_OFFSET,
+            producer_epoch=CURRENT_ALLOCATION_EPOCH,
         )
 
         offsets = await NomadExecutor._build_initial_log_offsets(
@@ -4720,7 +4720,7 @@ class TestPersistNomadTaskLogsCursorDurability:
     async def test_build_initial_log_offsets_seeds_legacy_epoch_zero_row(
         self, session, created_task_with_history
     ):
-        """Assert a legacy ``allocation_epoch == 0`` row is trusted for seeding."""
+        """Assert a legacy ``producer_epoch == 0`` row is trusted for seeding."""
         history = created_task_with_history
         await TaskHistoryLogWriter.append(
             session,

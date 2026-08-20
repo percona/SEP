@@ -27,7 +27,7 @@ from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 from app.sep.apps.framework.form_dsl import DSN_TABLE_DEFAULT
 
 if TYPE_CHECKING:
-    from app.sep.apps.framework.form_backfill import FormBackfillContext
+    from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
     from app.tasks.models import Task
 
 __all__ = ["FORM_BACKFILL_ENTRIES", "reconstruct_checksums_form"]

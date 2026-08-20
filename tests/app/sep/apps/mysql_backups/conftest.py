@@ -17,13 +17,14 @@
 
 import ast
 import pathlib
-from typing import Any
+from typing import Any, get_args
 from unittest.mock import AsyncMock
 
 from httpx import ASGITransport, AsyncClient, Response
+from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.deps import require_admin_for_unsafe_methods
+from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.requests import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
@@ -41,6 +42,22 @@ from tests.app.sep.conftest import (  # noqa: F401
 
 XTRABACKUP_PAYLOAD_PATH = (
     pathlib.Path(__file__).parents[5] / "app/sep/apps/mysql_backups/xtrabackup_payload"
+)
+
+# Spelled out on purpose: this is the cadence vocabulary the product promises, so a
+# test that read it back off a model or the payload would assert a surface against
+# itself. ``literal_members`` answers the separate question of whether two surfaces
+# agree with each other.
+XTRABACKUP_INCREMENTAL_CYCLES = (
+    "daily",
+    "weekly",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
 )
 
 
@@ -97,7 +114,7 @@ async def authenticated_get(
     sep_app.dependency_overrides[get_session] = lambda: session
     sep_app.dependency_overrides[get_current_user] = lambda: user
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_inventory_api] = lambda: inventory
     try:
         transport = ASGITransport(app=sep_app)
@@ -106,3 +123,22 @@ async def authenticated_get(
     finally:
         sep_app.dependency_overrides.clear()
         sep_app.dependency_overrides.update(previous_overrides)
+
+
+def literal_members(model: type[BaseModel], field: str) -> tuple[str, ...]:
+    """Return the string ``Literal`` members a model field accepts.
+
+    Reaches through the optional wrapper (``Literal[...] | EmptyStrToNone``) so a
+    test can parametrize over the vocabulary a form declares instead of restating
+    it and drifting from the model.
+
+    :param model: The model owning the field.
+    :param field: The field name whose annotation carries the ``Literal``.
+    :return: The declared members, in declaration order.
+    """
+    return tuple(
+        arg
+        for member in get_args(model.model_fields[field].annotation)
+        for arg in get_args(member)
+        if isinstance(arg, str)
+    )

@@ -26,6 +26,33 @@
     "protected": false,
     "run_result_recorder": null
   },
+  "defaults_file_custom": {
+    "alert_detail_builder": null,
+    "alert_on_fail": false,
+    "anonymize_mask": null,
+    "backend": "proxy",
+    "data": {
+      "meta": {
+        "_connectivity_host": "db.internal",
+        "_connectivity_port": 3306,
+        "_connectivity_service_type": "mysql",
+        "_service_host": "db.internal",
+        "_service_id": 1,
+        "_service_name": "svc-checksums",
+        "_service_port": 3306,
+        "args": "h=db.internal,P=3306, --recursion-method=processlist --defaults-file=/etc/checksum.cnf",
+        "command": "pt-table-checksum",
+        "target": "executor-host"
+      },
+      "task": "run-command"
+    },
+    "is_template": false,
+    "name": "checksums-golden",
+    "output_files_path": null,
+    "owner": "CHECKSUMS",
+    "protected": false,
+    "run_result_recorder": null
+  },
   "defaults_minimal": {
     "alert_detail_builder": null,
     "alert_on_fail": false,

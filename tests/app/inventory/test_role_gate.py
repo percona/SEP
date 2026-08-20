@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the unsafe-method admin gate on the Inventory sub-app."""
+"""Define tests for the unsafe-method role gate on the Inventory sub-app."""
 
 import pytest
 from fastapi import status
@@ -49,7 +49,7 @@ def bearer_client(session: AsyncSession, casdoor_mock) -> TestClient:
 def admin_bearer_client(
     bearer_client: TestClient, casdoor_user_data, mocker: MockerFixture
 ) -> TestClient:
-    """Yield the Bearer client whose credential resolves to an admin."""
+    """Return the Bearer client whose credential resolves to an admin."""
     mocker.patch(
         "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
         new=mocker.AsyncMock(return_value={**casdoor_user_data, "is_admin": True}),

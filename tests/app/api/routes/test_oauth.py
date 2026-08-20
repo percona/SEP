@@ -30,6 +30,7 @@ from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.auth.utils import get_user_model
 from app.main import app
 from app.sep.config import sep_settings
+from tests.app.conftest import make_roleless_grafana_assertion
 
 User = get_user_model()
 
@@ -603,6 +604,23 @@ def test_grafana_spa_login_then_refresh(
     assert refreshed.json()["access_token"]
 
 
+def test_grafana_spa_refresh_refuses_a_cookie_minted_before_the_role_claim(
+    test_client, grafana_mock, mocker
+):
+    """Assert a refresh cookie predating the role claim ends the SPA session.
+
+    The standalone SPA holds its access token in memory and its refresh
+    credential in the cookie; both predate the claim across the upgrade, so the
+    session ends loudly and the re-login reads the true org role from Grafana.
+    """
+    mocker.patch("app.api.routes.oauth.User", GrafanaUser)
+    test_client.cookies.set("refreshToken", make_roleless_grafana_assertion("refresh"))
+
+    response = test_client.post("/api/oauth/refresh")
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
 EXCHANGE_PATH = "/api/oauth/session/exchange"
 
 
@@ -697,6 +715,16 @@ class TestSpaSessionExchange:
     def test_an_unexchanged_request_is_refused_by_the_same_route(self, test_client):
         """Assert the gated route rejects a caller holding no bearer."""
         gated = test_client.get("/api/config/alerts")
+
+        assert gated.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_a_bearer_minted_before_the_role_claim_is_refused(self, test_client):
+        """Assert a legacy bearer is denied at the API boundary, not a 500."""
+        legacy = make_roleless_grafana_assertion("access")
+
+        gated = test_client.get(
+            "/api/config/alerts", headers={"Authorization": f"Bearer {legacy}"}
+        )
 
         assert gated.status_code == status.HTTP_401_UNAUTHORIZED
 

@@ -45,11 +45,16 @@ class TestBuildOwnerAlertDetails:
             return expected
 
         mocker.patch.dict(
-            hook_resolver._RESOLVED, {"some.module:builder": _fake_builder}, clear=False
+            hook_resolver._RESOLVED,
+            {"app.sep.apps.some_module:builder": _fake_builder},
+            clear=False,
         )
 
         assert (
-            await build_owner_alert_details(_history("some.module:builder")) is expected
+            await build_owner_alert_details(
+                _history("app.sep.apps.some_module:builder")
+            )
+            is expected
         )
 
     @pytest.mark.asyncio
@@ -58,7 +63,10 @@ class TestBuildOwnerAlertDetails:
         mocker.patch.dict(hook_resolver._RESOLVED, {}, clear=True)
 
         assert (
-            await build_owner_alert_details(_history("no.such.module:builder")) is None
+            await build_owner_alert_details(
+                _history("app.sep.apps.no_such_module:builder")
+            )
+            is None
         )
 
     @pytest.mark.asyncio
@@ -70,8 +78,13 @@ class TestBuildOwnerAlertDetails:
 
         mocker.patch.dict(
             hook_resolver._RESOLVED,
-            {"some.module:raising": _raising_builder},
+            {"app.sep.apps.some_module:raising": _raising_builder},
             clear=False,
         )
 
-        assert await build_owner_alert_details(_history("some.module:raising")) is None
+        assert (
+            await build_owner_alert_details(
+                _history("app.sep.apps.some_module:raising")
+            )
+            is None
+        )

@@ -31,7 +31,7 @@ nothing more specific claims either prefix. A future
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import RequireAdminForUnsafeMethods
+from app.api.deps import RequireMinimumRoleForUnsafeMethods
 from app.sep.api.routes.app_info import router as app_info_router
 from app.sep.api.routes.app_state import router as app_state_router
 from app.sep.api.routes.apps import router as apps_catalog_router
@@ -94,7 +94,7 @@ api_router = APIRouter(
     dependencies=[
         IsApiAuthenticated,
         RequireBearerForUnsafeMethods,
-        RequireAdminForUnsafeMethods,
+        RequireMinimumRoleForUnsafeMethods,
     ],
 )
 api_router.include_router(apps_router)

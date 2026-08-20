@@ -38,7 +38,12 @@
  */
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
+import {
+  fulfillConfiguredDelivery,
+  fulfillEnabledApps,
+  isEnabledAppsPath,
+  isSettingsListPath,
+} from './mockEnabledApps';
 
 // ── Mocks ───────────────────────────────────────────────────────────────────
 // NOTE: this auth+API mock is intentionally close to the one in shell.spec.ts.
@@ -129,6 +134,11 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       });
     }
 
+    // The delivery setup gate wraps every ATW route.
+    if (isSettingsListPath(pathname)) {
+      return fulfillConfiguredDelivery(route);
+    }
+
     if (isEnabledAppsPath(pathname)) {
       return fulfillEnabledApps(route);
     }
@@ -173,10 +183,10 @@ const TARGETS: SidebarTarget[] = [
     sentinel: heading('Snippet Manager'),
   },
   {
-    label: 'Collect Diagnostic Data',
+    label: 'Support diagnostics',
     group: 'Diagnostics',
     urlPattern: /\/atw(\/|$)/,
-    sentinel: heading('Collect Diagnostic Data'),
+    sentinel: heading('Support diagnostics'),
   },
   { label: 'Checksums', urlPattern: /\/apps\/checksums(\/|$)/, sentinel: heading('Checksums') },
   {
