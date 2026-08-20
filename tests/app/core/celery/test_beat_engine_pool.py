@@ -74,6 +74,19 @@ def test_non_forked_path_silently_drops_pool_size_and_timeout():
         engine.dispose()
 
 
+def test_non_forked_path_silently_drops_pool_pre_ping():
+    """Drop pool_pre_ping silently on the non-forked NullPool path."""
+    session_manager = SessionManager()
+
+    engine, _ = session_manager.create_session(
+        _BEAT_DBURI, schema=None, pool_pre_ping=True
+    )
+    try:
+        assert isinstance(engine.pool, NullPool)
+    finally:
+        engine.dispose()
+
+
 def test_beat_engine_options_reach_celery_conf():
     """Propagate ``beat_engine_options`` into the Celery config via ``model_dump()``.
 
@@ -86,4 +99,4 @@ def test_beat_engine_options_reach_celery_conf():
 
     celery_app = Celery("test", **options.model_dump())
 
-    assert celery_app.conf.beat_engine_options == pool
+    assert celery_app.conf.beat_engine_options == {"pool_pre_ping": True, **pool}
