@@ -83,6 +83,8 @@ def test_non_forked_path_silently_drops_pool_pre_ping():
     )
     try:
         assert isinstance(engine.pool, NullPool)
+        # NullPool accepts pool_pre_ping; prove the dependency stripped the kwarg.
+        assert engine.pool._pre_ping is False
     finally:
         engine.dispose()
 

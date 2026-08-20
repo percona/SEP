@@ -93,7 +93,7 @@ class CeleryOptions(BaseLowercaseModel):
         will no longer run. Defaults to ``30``.
     :param beat_engine_options: SQLAlchemy pool options (``pool_size``,
         ``max_overflow``, ``pool_timeout``, ``pool_pre_ping``) for both
-        celery-beat-database engines -- the async worker engine and the sync beat
+        celery-beat-database engines — the async worker engine and the sync beat
         scheduler engine. ``pool_pre_ping`` defaults to enabled; sizing keys are
         unset by default. On SEP's non-forked beat path the scheduler pins
         ``NullPool`` and strips every ``pool*`` kwarg (including
