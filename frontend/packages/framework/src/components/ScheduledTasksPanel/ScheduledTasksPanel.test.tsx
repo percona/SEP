@@ -36,6 +36,10 @@ vi.mock('@sep/api', async (importOriginal) => ({
   apiClient: apiMock,
   useAppTasks: (...args: unknown[]) => useAppTasksMock(...args),
 }));
+// `fetchAllAppListPages` (used by `useScheduledTasksForApp`) calls the
+// package-internal `apiClient` bound in `../client`, not the barrel export
+// above, so it needs its own mock pointing at the same spy.
+vi.mock('@sep/api/src/client', () => ({ apiClient: apiMock }));
 
 import { DEFAULT_APP_LIST_LIMIT } from '@sep/api';
 import { ScheduledTasksPanel } from './ScheduledTasksPanel';

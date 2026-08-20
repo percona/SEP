@@ -40,12 +40,11 @@ class PeriodicTaskManager(BasePeriodicTaskManager):
 
     :ivar Model: The SQLAlchemy class this manager is responsible for (`PeriodicTask`).
     :vartype Model: type[PeriodicTask]
-    :cvar ordering: The default ordering for listing periodic tasks. `PeriodicTask`
-        is not a `BaseSQLModel`, so `BaseManager._get_ordering()` has no
-        `created_at` fallback to offer and would leave SELECTs unordered, making
+    :cvar ordering: The default ordering for listing periodic tasks. ``PeriodicTask``
+        is not a ``BaseSQLModel``, so ``BaseManager._get_ordering()`` has no
+        ``created_at`` fallback to offer and would leave SELECTs unordered, making
         offset pagination undefined. The primary key is unique, so ordering by it
-        alone is total and needs no tie-breaker. Business-meaningful ordering is
-        SEP-304.
+        alone is total and needs no tie-breaker.
     :vartype ordering: list[ColumnExpressionOrStrLabelArgument]
     """
 

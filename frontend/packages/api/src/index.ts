@@ -130,7 +130,6 @@ export {
   fetchAllAppListPages,
   DEFAULT_APP_LIST_OFFSET,
   DEFAULT_APP_LIST_LIMIT,
-  MAX_FETCH_ALL_PAGES,
   useCreateAppEntity,
   useUpdateAppEntity,
   useDeleteAppEntity,

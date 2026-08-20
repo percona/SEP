@@ -61,10 +61,10 @@ vi.mock('@sep/api', () => ({
   // when capabilities.chaining is set. Default empty list keeps schedule summary
   // in its "Not scheduled" state.
   useAppTasks: (...args: unknown[]) => useAppTasksMock(...args),
-  DEFAULT_APP_LIST_LIMIT: 50,
-  MAX_FETCH_ALL_PAGES: 50,
-  normalizeAppListResponse: (data: unknown) =>
-    Array.isArray(data) ? { items: data, pagination: null } : { items: [], pagination: null },
+  // `useScheduledTasksForApp` (via ScheduleSummary) uses `fetchAllAppListPages`
+  // to walk the periodic-task list; an empty page keeps schedule summary in
+  // its "Not scheduled" state, matching the previous default.
+  fetchAllAppListPages: vi.fn().mockResolvedValue({ items: [], pagination: null }),
   useDeleteAppTask: () => ({
     mutateAsync: mockDeleteMutate,
     isPending: false,

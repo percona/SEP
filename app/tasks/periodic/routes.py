@@ -17,6 +17,7 @@
 
 import json
 import logging
+from typing import Any
 
 from fastapi import APIRouter, status
 from sqlalchemy_celery_beat import PeriodicTask
@@ -57,7 +58,7 @@ async def list_periodic_tasks(
     pagination: PaginationDep,
     owner: str | None = None,
     enabled: bool | None = None,
-) -> PaginatedResponse[PeriodicTaskResponse]:
+) -> PaginatedResponse[Any]:
     """List periodic tasks for the requested page window."""
     if owner is None:
         page = await PeriodicTaskManager.list_paginated(
