@@ -22,6 +22,7 @@ the integration tests in ``test_alembic_integration.py``.
 """
 
 import logging
+import shutil
 from types import SimpleNamespace
 
 import pytest
@@ -34,7 +35,7 @@ from app.sep.migrations._orphan_heads import (
     skip_unresolvable_heads,
 )
 
-from .conftest import ALEMBIC_INI, ALERTS_HEAD, UNKNOWN_REVISION
+from .conftest import ALEMBIC_INI, ALERTS_HEAD, REPO_ROOT, UNKNOWN_REVISION
 
 _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
 
@@ -131,6 +132,35 @@ def test_empty_version_locations_reports_a_present_but_empty_entry(tmp_path):
     )
 
     assert empty_version_locations(ScriptDirectory.from_config(cfg)) == (str(empty),)
+
+
+def test_empty_version_locations_matches_populated_dir_via_symlink(tmp_path):
+    """Do not treat a populated location as empty when configured via a symlink.
+
+    Alembic stores resolved ``rev.path`` parents; comparing unresolved
+    configured paths against those parents falsely armed the filter on trees
+    where the spelling differs (for example a ``/tmp`` symlink).
+    """
+    real = tmp_path / "real" / "versions"
+    real.mkdir(parents=True)
+    shutil.copy(
+        REPO_ROOT
+        / "app/sep/apps/alerts/migrations/versions"
+        / "2026_04_20_1817-d21ad387df7a_create_alert_backup_table.py",
+        real / "2026_04_20_1817-d21ad387df7a_create_alert_backup_table.py",
+    )
+    link_parent = tmp_path / "via_link"
+    link_parent.mkdir()
+    linked = link_parent / "versions"
+    linked.symlink_to(real)
+    assert str(linked) != str(linked.resolve())
+
+    cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    cfg.set_main_option("version_locations", str(linked))
+    script = ScriptDirectory.from_config(cfg)
+
+    assert empty_version_locations(script) == ()
+    assert script.get_revision(ALERTS_HEAD) is not None
 
 
 def test_empty_version_locations_tolerates_unset_locations():
