@@ -47,6 +47,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
+from typing import NamedTuple
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PAYLOAD_DIR = REPO_ROOT / "app/sep/apps/mysql_backups"
@@ -177,47 +178,91 @@ _MODULE_DUNDERS = frozenset(
 )
 
 
-def bound_names(tree: ast.AST) -> set[str]:
-    """Return every name the module binds anywhere.
+class ModuleNames(NamedTuple):
+    """Namespace the name sets :func:`collect_names` gathers from one variant."""
 
-    Scope is deliberately flattened: the check this feeds asks whether a name
+    #: Names read somewhere in the module, which the unbound sweep checks resolve.
+    loaded: frozenset[str]
+    #: Names bound somewhere in the module, by assignment, import, or definition.
+    bound: frozenset[str]
+    #: Every name the module mentions, including attribute bases and import roots.
+    referenced: frozenset[str]
+
+
+def _argument_names(args: ast.arguments) -> set[str]:
+    """Return every parameter name in ``args``, positional through keyword.
+
+    :param args: A function or lambda argument list.
+    :return: The parameter names, including ``*args`` and ``**kwargs``.
+    """
+    return {
+        a.arg
+        for a in (
+            *args.posonlyargs,
+            *args.args,
+            *args.kwonlyargs,
+            *([args.vararg] if args.vararg else []),
+            *([args.kwarg] if args.kwarg else []),
+        )
+    }
+
+
+def _definition_bindings(node: ast.AST) -> set[str]:
+    """Return the names ``node`` binds by defining or declaring them.
+
+    Covers the binding forms that are not a plain assignment or an import: function
+    and class definitions, their parameters, caught-exception aliases, ``global`` and
+    ``nonlocal`` declarations, and match-statement captures.
+
+    :param node: Any node from the variant's tree.
+    :return: The names it binds, empty for a node that binds nothing this way.
+    """
+    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+        return {node.name} | _argument_names(node.args)
+    if isinstance(node, ast.ClassDef):
+        return {node.name}
+    if isinstance(node, ast.Lambda):
+        return _argument_names(node.args)
+    if isinstance(node, ast.Global | ast.Nonlocal):
+        return set(node.names)
+    # Optional-alias binders: a bare `except:`, `case _:` or `case *_:` binds nothing.
+    if isinstance(node, ast.ExceptHandler | ast.MatchAs | ast.MatchStar):
+        return {node.name} if node.name else set()
+    return set()
+
+
+def collect_names(tree: ast.AST) -> ModuleNames:
+    """Return the names a variant loads, binds, and mentions, from one walk.
+
+    Scope is deliberately flattened: the checks this feeds ask whether a name
     survives *somewhere* in the variant, not whether each reference resolves under
-    Python's scoping rules. Flattening keeps it free of false alarms at the cost of
-    missing genuine scope errors, which are the canonical payload's problem, not the
-    generator's.
+    Python's scoping rules. Flattening keeps them free of false alarms at the cost
+    of missing genuine scope errors, which are the canonical payload's problem, not
+    the generator's.
 
     :param tree: The parsed variant source.
-    :return: The bound names, including imports, definitions, and arguments.
+    :return: The module's loaded, bound, and referenced name sets.
     """
+    loaded: set[str] = set()
     bound: set[str] = set()
+    referenced: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store | ast.Del):
-            bound.add(node.id)
+        if isinstance(node, ast.Name):
+            target = loaded if isinstance(node.ctx, ast.Load) else bound
+            target.add(node.id)
+        elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            referenced.add(node.value.id)
         elif isinstance(node, ast.Import | ast.ImportFrom):
-            bound.update((a.asname or a.name).split(".")[0] for a in node.names)
-        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-            bound.add(node.name)
-            args = getattr(node, "args", None)
-            if args is not None:
-                bound.update(
-                    a.arg
-                    for a in (
-                        *args.posonlyargs,
-                        *args.args,
-                        *args.kwonlyargs,
-                        *([args.vararg] if args.vararg else []),
-                        *([args.kwarg] if args.kwarg else []),
-                    )
-                )
-        elif isinstance(node, ast.Lambda):
-            bound.update(a.arg for a in (*node.args.posonlyargs, *node.args.args))
-        elif isinstance(node, ast.ExceptHandler) and node.name:
-            bound.add(node.name)
-        elif isinstance(node, ast.Global | ast.Nonlocal):
-            bound.update(node.names)
-        elif isinstance(node, ast.MatchAs | ast.MatchStar) and node.name:
-            bound.add(node.name)
-    return bound
+            roots = {(a.asname or a.name).split(".")[0] for a in node.names}
+            bound |= roots
+            referenced |= roots
+        else:
+            bound |= _definition_bindings(node)
+    return ModuleNames(
+        loaded=frozenset(loaded),
+        bound=frozenset(bound),
+        referenced=frozenset(referenced | loaded),
+    )
 
 
 def validate(text: str, omitted: tuple[str, ...], name: str) -> None:
@@ -241,29 +286,17 @@ def validate(text: str, omitted: tuple[str, ...], name: str) -> None:
     except SyntaxError as exc:
         raise RegionError(f"{name} does not parse: {exc}") from exc
 
-    loaded = {
-        node.id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
-    }
-    referenced = loaded | {
-        node.value.id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
-    }
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import | ast.ImportFrom):
-            referenced.update((a.asname or a.name).split(".")[0] for a in node.names)
+    names = collect_names(tree)
 
     for provider in omitted:
-        stranded = sorted(set(EXCLUSIVE_NAMES[provider]) & referenced)
+        stranded = sorted(set(EXCLUSIVE_NAMES[provider]) & names.referenced)
         if stranded:
             raise RegionError(
                 f"{name} omits {provider!r} but still references {stranded}; "
                 "widen that provider's GEN:UPLOAD region in the canonical payload"
             )
 
-    unbound = sorted(loaded - bound_names(tree) - set(dir(builtins)) - _MODULE_DUNDERS)
+    unbound = sorted(names.loaded - names.bound - set(dir(builtins)) - _MODULE_DUNDERS)
     if unbound:
         raise RegionError(
             f"{name} references {unbound}, which nothing in it defines; "
