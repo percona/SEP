@@ -209,6 +209,37 @@
         "title": "LogCaptureStatusEnum",
         "type": "string"
       },
+      "PaginatedResponse_PeriodicTaskResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PeriodicTaskResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[PeriodicTaskResponse]",
+        "type": "object"
+      },
       "PaginatedResponse_TaskHistoryResponse_": {
         "properties": {
           "items": {
@@ -2969,7 +3000,7 @@
     },
     "/periodic/": {
       "get": {
-        "description": "List all periodic tasks.",
+        "description": "List periodic tasks for the requested page window.\n\n:param session: The beat-store session the schedules are read from.\n:param tasks_session: The tasks-database session used to resolve the\n    ``owner`` filter and to stamp each row's last-run status.\n:param pagination: Validated offset/limit window for this page.\n:param owner: Optional owner whose active tasks scope the page; omit to\n    page every SEP-managed schedule.\n:param enabled: Optional enabled-state filter.\n:return: A page of beat-store schedules, each carrying ``last_run_status``.",
         "operationId": "periodic_list_periodic_tasks_periodic__get",
         "parameters": [
           {
@@ -3003,6 +3034,29 @@
               ],
               "title": "Enabled"
             }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -3010,11 +3064,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PeriodicTaskResponse"
-                  },
-                  "title": "Response Periodic List Periodic Tasks Periodic  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_PeriodicTaskResponse_"
                 }
               }
             },
