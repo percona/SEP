@@ -27,11 +27,9 @@ from app.sep.apps.archives.form_backfill import (
     reconstruct_archives_form,
 )
 from app.sep.apps.archives.models import ArchivesCreate
-from app.sep.apps.framework.form_backfill import (
-    _backfill_single_task,
-    FormBackfillContext,
-)
+from app.sep.apps.framework.form_backfill import _backfill_single_task
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
+from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
 from app.tasks.models import Task, TaskBackendEnum
