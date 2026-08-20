@@ -646,7 +646,7 @@ class TestCollectAppOwnedSettingsClasses:
         assert entry.proxy is health_report_settings
 
     def test_reduced_activation_declares_no_alerts_entry(self) -> None:
-        """Yield no alerts entry under the PMM-embedded activation list."""
+        """Return no alerts entry under the PMM-embedded activation list."""
         entries = collect_app_owned_settings_classes(REDUCED_ACTIVATION)
         assert SettingClassEnum.ALERTS_SETTINGS not in {
             entry.setting_class for entry in entries

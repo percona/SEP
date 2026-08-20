@@ -25,11 +25,9 @@ from app.sep.apps.alters.form_backfill import (
     reconstruct_alters_form,
 )
 from app.sep.apps.alters.models import AltersCreate
-from app.sep.apps.framework.form_backfill import (
-    _backfill_single_task,
-    FormBackfillContext,
-)
+from app.sep.apps.framework.form_backfill import _backfill_single_task
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
+from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.tasks.models import Task, TaskBackendEnum
 

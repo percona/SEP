@@ -28,7 +28,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from collections.abc import Callable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import partial
@@ -38,17 +37,18 @@ from pydantic import ValidationError
 from sqlalchemy.orm.attributes import flag_modified
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.inventory.db import get_async_session_maker as get_inventory_session_maker
 from app.sep.apps.framework.form_backfill_inventory import (
     load_schema_id_lookup,
     load_service_id_lookup,
-    SchemaIdLookup,
-    ServiceIdLookup,
 )
 from app.sep.apps.framework.form_backfill_registry import (
     collect_form_backfill_entries,
+    FormBackfillContext,
     FormBackfillEntry,
 )
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY, stamp_form_input
@@ -57,25 +57,6 @@ from app.tasks.db import get_async_session_maker
 from app.tasks.models import Task, TaskWrite
 
 logger = logging.getLogger(__name__)
-
-FormReconstructor = Callable[["Task", "FormBackfillContext"], dict[str, Any] | None]
-"""Reconstruct a legacy task's create-form body, or return ``None`` when impossible."""
-
-
-@dataclass
-class FormBackfillContext:
-    """Carry shared state for per-app form reconstructors.
-
-    :param log: Logger used for per-task skip and error messages.
-    :param dry_run: When ``True``, the orchestrator logs actions but does not persist.
-    :param service_lookup: Inventory service-id resolver built once per backfill run.
-    :param schema_lookup: Inventory schema-id resolver built once per backfill run.
-    """
-
-    log: logging.Logger
-    dry_run: bool = False
-    service_lookup: ServiceIdLookup | None = None
-    schema_lookup: SchemaIdLookup | None = None
 
 
 @dataclass

@@ -1881,7 +1881,7 @@
   "info": {
     "description": "Percona Services Enablement Platform — inventory (nodes, services, schemas, tables).",
     "title": "SEP Inventory API",
-    "version": "v1.0.0.dev0"
+    "version": "v3.10.0.dev0"
   },
   "openapi": "3.1.0",
   "paths": {

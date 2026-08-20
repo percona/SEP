@@ -295,7 +295,7 @@ class TestMakeQueryParamDep:
         assert exc_info.value.detail == "Invalid sort key: 'evil'"
 
     def test_builder_value_object_is_returned_unchanged(self) -> None:
-        """Yield exactly what the builder produced, so each path keeps its own type."""
+        """Return exactly what the builder produced, so each path keeps its own type."""
         sentinel = object()
 
         def build(spec: ListQuerySpec, sort: str, search: str | None) -> object:

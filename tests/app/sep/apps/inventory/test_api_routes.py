@@ -29,6 +29,10 @@ from pydantic import SecretStr
 from app.core.config import settings
 from app.core.pagination import DEFAULT_PAGINATION_OFFSET, MAX_PAGINATION_LIMIT
 from app.core.requests import RemoteAPI
+from app.inventory.constants import (
+    UNCOLLECTED_HOST_OBSERVATION_DETAIL,
+    UNCOLLECTED_SERVICE_OBSERVATION_DETAIL,
+)
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.inventory.deps import (
     get_syncers,
@@ -55,6 +59,11 @@ _REQUEST_LIMIT = 5
 _UPSTREAM_OFFSET = 99
 _UPSTREAM_LIMIT = 1
 _CREATE_SERVICE_TEST_NODE_ID = 7
+
+# The inventory sub-app's uncollected-observation details, pinned verbatim: the proxy
+# must relay them rather than collapse them onto the parent-missing ``Not Found``.
+_UNCOLLECTED_NODE_DETAIL = "System observation not collected yet for this node"
+_UNCOLLECTED_SERVICE_DETAIL = "System observation not collected yet for this service"
 
 
 class TestInventoryResponseModelsInOpenAPI:
@@ -746,10 +755,16 @@ class TestInventorySystemObservation:
         mock_inventory_api_dep.get.assert_awaited_once_with(inventory_path)
 
     @pytest.mark.parametrize(
-        "url",
+        ("url", "detail"),
         [
-            "/api/apps/inventory/nodes/3/system-observation",
-            "/api/apps/inventory/services/9/system-observation",
+            (
+                "/api/apps/inventory/nodes/3/system-observation",
+                _UNCOLLECTED_NODE_DETAIL,
+            ),
+            (
+                "/api/apps/inventory/services/9/system-observation",
+                _UNCOLLECTED_SERVICE_DETAIL,
+            ),
         ],
     )
     def test_system_observation_not_collected_passes_through_404(
@@ -757,14 +772,54 @@ class TestInventorySystemObservation:
         test_client,
         mock_inventory_api_dep,
         url: str,
+        detail: str,
     ):
-        """Ensure an upstream 404 (not collected yet) propagates as HTTP 404."""
+        """Ensure the upstream not-collected detail reaches the gateway response body.
+
+        The inventory sub-app answers the existing-but-uncollected case with its own
+        ``detail`` while a missing node/service keeps the default ``Not Found``.
+        ``RemoteAPI`` re-raises the upstream detail verbatim, so the discrimination
+        must survive the proxy with no gateway-side handling.
+        """
         mock_inventory_api_dep.get.side_effect = HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No system observation",
+            detail=detail,
         )
         response = test_client.get(url)
         assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == detail
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "/api/apps/inventory/nodes/3/system-observation",
+            "/api/apps/inventory/services/9/system-observation",
+        ],
+    )
+    def test_system_observation_parent_missing_passes_through_default_404(
+        self,
+        test_client,
+        mock_inventory_api_dep,
+        url: str,
+    ):
+        """Ensure a missing node/service keeps the default ``Not Found`` detail."""
+        mock_inventory_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not Found",
+        )
+        response = test_client.get(url)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == "Not Found"
+
+    def test_pinned_details_match_inventory_constants(self):
+        """Hold the pinned proxy details equal to the sub-app's own constants.
+
+        The literals this class asserts against are a separate copy of the strings
+        the inventory routes raise. Without this guard, rewording the constants
+        leaves these proxy tests green against wording the sub-app no longer sends.
+        """
+        assert _UNCOLLECTED_NODE_DETAIL == UNCOLLECTED_HOST_OBSERVATION_DETAIL
+        assert _UNCOLLECTED_SERVICE_DETAIL == UNCOLLECTED_SERVICE_OBSERVATION_DETAIL
 
     @pytest.mark.parametrize(
         "url",

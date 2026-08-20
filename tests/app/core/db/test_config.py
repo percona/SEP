@@ -187,7 +187,7 @@ def test_connect_engine_kwargs_maps_per_dialect(engine, expected):
 
 
 def test_connect_engine_kwargs_empty_when_unset():
-    """Yield no connect_args when CONNECT_TIMEOUT is unset."""
+    """Return no connect_args when CONNECT_TIMEOUT is unset."""
     db_options = DatabaseOptions(
         ENGINE=AsyncDatabaseEngine.POSTGRESQL,
         NAME="testdb",

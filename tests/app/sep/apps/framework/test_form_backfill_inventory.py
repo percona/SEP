@@ -21,7 +21,6 @@ from types import SimpleNamespace
 import pytest
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.framework.form_backfill import FormBackfillContext
 from app.sep.apps.framework.form_backfill_inventory import (
     default_port_for_service_type,
     meta_service_hints,
@@ -29,6 +28,7 @@ from app.sep.apps.framework.form_backfill_inventory import (
     SchemaIdLookup,
     ServiceIdLookup,
 )
+from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
 
 
