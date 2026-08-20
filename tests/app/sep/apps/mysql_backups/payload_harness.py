@@ -123,14 +123,10 @@ def load_function(name: str) -> object:
     return namespace[name]
 
 
-def gpg_probe(
-    *, returncode: int = 0, error: Exception | None = None
-) -> tuple[Callable[..., bool], list[list[str]]]:
+def gpg_probe(*, returncode: int = 0) -> tuple[Callable[..., bool], list[list[str]]]:
     """Return the payload's ``is_encrypted_dir`` wired to a faked ``gpg`` binary.
 
     :param returncode: Exit status every faked ``gpg`` run reports.
-    :param error: Exception the faked ``Popen`` raises instead of running, for
-        hosts where ``gpg`` is not installed.
     :return: The lifted function and the list its ``Popen`` calls append to.
     """
     tree = xtrabackup_payload_tree()
@@ -140,8 +136,6 @@ def gpg_probe(
     class _Popen:
         def __init__(self, cmd: list[str], **_kwargs: object) -> None:
             calls.append(list(cmd))
-            if error is not None:
-                raise error
             self.returncode = returncode
 
         def communicate(self) -> tuple[bytes, bytes]:

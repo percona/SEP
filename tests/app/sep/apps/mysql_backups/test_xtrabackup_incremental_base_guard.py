@@ -21,13 +21,10 @@ namespace. ``_is_compressed_backup`` keeps no reference to ``self``, so it is
 lifted as a plain function; the instance methods are lifted onto the synthetic
 class ``payload_instance`` builds. Real files under ``tmp_path`` back the ``os``
 and ``rglob`` calls, so an encrypted base is represented the way a real one is:
-renamed data files beside plaintext metadata. ``gpg`` itself is always faked, so
-no test depends on the binary being installed on the machine running it.
+renamed data files beside plaintext metadata.
 """
 
 import ast
-import shutil
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -45,12 +42,6 @@ from tests.app.sep.apps.mysql_backups.payload_harness import (
     const_nodes as _const_nodes,
 )
 from tests.app.sep.apps.mysql_backups.payload_harness import (
-    gpg_probe as _gpg_probe,
-)
-from tests.app.sep.apps.mysql_backups.payload_harness import (
-    load_function as _load_function,
-)
-from tests.app.sep.apps.mysql_backups.payload_harness import (
     payload_instance as _payload_instance,
 )
 
@@ -58,10 +49,7 @@ CHECKPOINTS = "xtrabackup_checkpoints"
 BASE_LSN = 4242
 UNPREPARED = f"backup_type = full-backuped\nto_lsn = {BASE_LSN}\n"
 PREPARED = f"backup_type = full-prepared\nto_lsn = {BASE_LSN}\n"
-# Return code the faked gpg reports for a file it cannot decrypt, i.e. a plaintext base.
-GPG_NOT_ENCRYPTED = 2
-GPG_BIN = shutil.which("gpg")
-needs_gpg = pytest.mark.skipif(GPG_BIN is None, reason="gpg is not installed")
+ENCRYPTED_SUFFIXES = (".xbcrypt", ".gpg")
 
 
 def _lift_plain(name: str) -> Callable[..., Any]:
@@ -123,51 +111,30 @@ class _Recorder:
 
 def _lift_guards(
     method_names: tuple[str, ...],
-    *,
-    gpg_returncode: int = GPG_NOT_ENCRYPTED,
-    gpg_error: Exception | None = None,
-    probe: Callable[..., bool] | None = None,
 ) -> tuple[Any, _Recorder, list[list[str]]]:
-    """Build a payload instance carrying the named methods over a faked ``gpg``.
+    """Build a payload instance carrying the named methods.
 
     :param method_names: Payload methods to lift onto the synthetic class.
-    :param gpg_returncode: Exit status the faked ``gpg`` reports per file.
-    :param gpg_error: Exception the faked ``gpg`` raises instead of running.
-    :param probe: Replacement for ``is_encrypted_dir``, for tests that want the
-        real one over a real ``gpg``; ``calls`` stays empty in that case.
     :return: The instance, the logger recording its messages, and the list of
-        ``gpg`` argv lists the guards tried to run.
+        argv lists the guards handed to ``subprocess``, which stays empty for as
+        long as encryption detection needs no external binary.
     """
-    faked, calls = _gpg_probe(returncode=gpg_returncode, error=gpg_error)
-    probe = probe or faked
-    instance, _, _ = _payload_instance(
-        method_names, extra_namespace={"is_encrypted_dir": probe}
-    )
+    instance, _, calls = _payload_instance(method_names)
     recorder = _Recorder()
     instance.logger = recorder
     return instance, recorder, calls
 
 
 def _guard(
-    *,
-    method: str | None = "fast_restore",
-    gpg_returncode: int = GPG_NOT_ENCRYPTED,
-    gpg_error: Exception | None = None,
-    probe: Callable[..., bool] | None = None,
+    *, method: str | None = "fast_restore"
 ) -> tuple[Any, _Recorder, list[list[str]]]:
     """Build a payload instance carrying only the base-backup guards.
 
     :param method: Value for ``incremental_method``.
-    :param gpg_returncode: Exit status the faked ``gpg`` reports per file.
-    :param gpg_error: Exception the faked ``gpg`` raises instead of running.
-    :param probe: Replacement for ``is_encrypted_dir``.
-    :return: The instance, its logger, and the recorded ``gpg`` calls.
+    :return: The instance, its logger, and the recorded subprocess calls.
     """
     instance, recorder, calls = _lift_guards(
-        ("_is_good_base_backup", "_is_encrypted_base"),
-        gpg_returncode=gpg_returncode,
-        gpg_error=gpg_error,
-        probe=probe,
+        ("_is_good_base_backup", "_is_encrypted_base")
     )
     instance.incremental_method = method
     return instance, recorder, calls
@@ -188,6 +155,17 @@ def _write_base(
     if data:
         (path / data).write_text("x")
     return str(path)
+
+
+def _write_nested(path: Path, name: str) -> None:
+    """Add a table file inside a schema subdirectory of a base backup.
+
+    :param path: Base backup directory.
+    :param name: File name to create under the schema directory.
+    """
+    schema = path / "sakila"
+    schema.mkdir(exist_ok=True)
+    (schema / name).write_text("x")
 
 
 class TestIsCompressedBackup:
@@ -246,70 +224,76 @@ class TestIsGoodBaseBackup:
         instance, _, _ = _guard()
         assert instance._is_good_base_backup(_write_base(tmp_path)) is True
 
-    def test_aes256_base_rejected_for_fast_restore(self, tmp_path: Path) -> None:
-        """Assert an xbcrypt-encrypted base cannot seed a merged incremental."""
+    @pytest.mark.parametrize("suffix", ENCRYPTED_SUFFIXES)
+    def test_encrypted_base_rejected_for_fast_restore(
+        self, tmp_path: Path, suffix: str
+    ) -> None:
+        """Assert either encryption format stops a base from seeding a merge.
+
+        Neither probe may be conditioned on what the job now encrypts with: a
+        base encrypted by an earlier run stays encrypted after the setting is
+        switched off.
+        """
+        instance, _, _ = _guard()
+        base = _write_base(tmp_path, data=f"ibdata1{suffix}")
+        assert instance._is_good_base_backup(base) is False
+
+    @pytest.mark.parametrize("suffix", ENCRYPTED_SUFFIXES)
+    def test_encrypted_base_accepted_for_less_space(
+        self, tmp_path: Path, suffix: str
+    ) -> None:
+        """Assert ``less_space`` still chains against an encrypted base.
+
+        That method takes its LSN from the plaintext checkpoints and never feeds
+        the encrypted InnoDB files to ``--prepare``, and restore decrypts the
+        whole chain first, so rejecting the base would force a needless full
+        backup.
+        """
+        instance, _, _ = _guard(method="less_space")
+        base = _write_base(tmp_path, data=f"ibdata1{suffix}")
+        assert instance._is_good_base_backup(base) is True
+
+    @pytest.mark.parametrize("suffix", ENCRYPTED_SUFFIXES)
+    def test_detection_spawns_no_process(self, tmp_path: Path, suffix: str) -> None:
+        """Assert the verdict is reached from file names alone.
+
+        Reading file contents would put the guard behind ``gpg`` being installed,
+        which a host that only ever encrypted with xbcrypt has no reason to have.
+        """
         instance, _, calls = _guard()
-        base = _write_base(tmp_path, data="ibdata1.xbcrypt")
+        base = _write_base(tmp_path, data=f"ibdata1{suffix}")
         assert instance._is_good_base_backup(base) is False
         assert calls == []
 
-    def test_aes256_base_accepted_for_less_space(self, tmp_path: Path) -> None:
-        """Assert ``less_space`` still chains against an encrypted base.
-
-        That method takes its LSN from the plaintext checkpoints and never reads
-        the base directory, and restore decrypts the whole chain before preparing
-        it, so rejecting the base would force a needless full backup.
-        """
-        instance, _, _ = _guard(method="less_space")
-        base = _write_base(tmp_path, data="ibdata1.xbcrypt")
-        assert instance._is_good_base_backup(base) is True
-
-    def test_gpg_base_rejected(self, tmp_path: Path) -> None:
-        """Assert a gpg-encrypted base is rejected, whatever the job now encrypts with.
-
-        A base encrypted by an earlier run stays encrypted after gpg encryption is
-        switched off, so the probe may not be conditioned on the current setting.
-        """
-        instance, _, calls = _guard(gpg_returncode=0)
-        base = _write_base(tmp_path, data="ibdata1.gpg")
-        assert instance._is_good_base_backup(base) is False
-        assert calls
-
-    def test_gpg_base_rejected_when_gpg_is_missing(self, tmp_path: Path) -> None:
-        """Assert the ``.gpg`` rename decides when the ``gpg`` binary is absent."""
-        instance, _, _ = _guard(gpg_error=FileNotFoundError("gpg"))
-        base = _write_base(tmp_path, data="ibdata1.gpg")
-        assert instance._is_good_base_backup(base) is False
-
-    def test_plaintext_base_accepted_when_gpg_is_missing(self, tmp_path: Path) -> None:
-        """Assert a host without ``gpg`` still runs incrementals off a plaintext base."""
-        instance, _, _ = _guard(gpg_error=FileNotFoundError("gpg"))
-        assert instance._is_good_base_backup(_write_base(tmp_path)) is True
-
-    def test_nested_encrypted_data_file_is_detected(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("suffix", ENCRYPTED_SUFFIXES)
+    def test_nested_encrypted_data_file_is_detected(
+        self, tmp_path: Path, suffix: str
+    ) -> None:
         """Assert encryption is detected in the schema subdirectories, not just the root."""
         instance, _, _ = _guard()
         base = _write_base(tmp_path, data="")
-        schema = tmp_path / "sakila"
-        schema.mkdir()
-        (schema / "film.ibd.xbcrypt").write_text("x")
+        _write_nested(tmp_path, f"film.ibd{suffix}")
         assert instance._is_good_base_backup(base) is False
 
-    def test_nested_gpg_file_decides_when_gpg_is_missing(self, tmp_path: Path) -> None:
-        """Assert the fallback walks subdirectories, where the data files actually live."""
-        instance, _, _ = _guard(gpg_error=FileNotFoundError("gpg"))
-        base = _write_base(tmp_path, data="")
-        schema = tmp_path / "sakila"
-        schema.mkdir()
-        (schema / "film.ibd.gpg").write_text("x")
+    @pytest.mark.parametrize("suffix", ENCRYPTED_SUFFIXES)
+    def test_partially_encrypted_base_is_rejected(
+        self, tmp_path: Path, suffix: str
+    ) -> None:
+        """Assert a base only partly encrypted cannot seed a merge either.
+
+        An encryption pass that dies part-way leaves this state behind after the
+        backup has already been moved into the retained directory, and a single
+        renamed table is enough to break ``--prepare``. The plaintext ``ibdata1``
+        also defeats the compression guard's existence fallback, so this is the
+        one thing standing between such a base and a merge that cannot work.
+        """
+        instance, _, _ = _guard()
+        base = _write_base(tmp_path)
+        _write_nested(tmp_path, f"film.ibd{suffix}")
         assert instance._is_good_base_backup(base) is False
 
     def test_plaintext_metadata_does_not_hide_encryption(self, tmp_path: Path) -> None:
-        """Assert the metadata SEP leaves in plaintext is not read as unencrypted data.
-
-        All four files are laid down, so shrinking the excluded set would make the
-        guard stop seeing an encrypted base rather than fail loudly.
-        """
+        """Assert the metadata SEP leaves in plaintext does not mask an encrypted base."""
         instance, _, _ = _guard()
         base = _write_base(tmp_path, data="ibdata1.xbcrypt")
         (tmp_path / "md5sum").write_text("checksums")
@@ -329,24 +313,19 @@ class TestIsGoodBaseBackup:
         contents = f"to_lsn = {BASE_LSN}\nbackup_type = full-prepared\n"
         assert instance._is_good_base_backup(_write_base(tmp_path, contents)) is True
 
-    def test_partially_encrypted_base_is_accepted(self, tmp_path: Path) -> None:
-        """Assert a base whose files are only partly encrypted is accepted.
+    def test_base_holding_no_data_files_is_not_called_encrypted(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert a base with only metadata left is passed on, not blamed on encryption.
 
-        Only a crashed encryption pass leaves this state, and the encryption
-        verification that follows a successful backup already raises on it.
+        Nothing in it is encrypted, so this guard has no verdict to give; the
+        compression guard's existence fallback is what stops the merge.
         """
         instance, _, _ = _guard()
-        base = _write_base(tmp_path, data="ibdata1.xbcrypt")
-        (tmp_path / "_etc_my.cnf").write_text("plaintext")
-        assert instance._is_good_base_backup(base) is True
-
-    def test_metadata_only_base_is_rejected(self, tmp_path: Path) -> None:
-        """Assert a base holding no data files at all cannot seed a merge."""
-        instance, _, _ = _guard()
-        assert instance._is_good_base_backup(_write_base(tmp_path, data="")) is False
+        assert instance._is_good_base_backup(_write_base(tmp_path, data="")) is True
 
     def test_accepted_base_logs_nothing(self, tmp_path: Path) -> None:
-        """Assert probing a plaintext base does not log per-file encryption errors."""
+        """Assert deciding on a plaintext base leaks no file names into the log."""
         instance, recorder, _ = _guard()
         assert instance._is_good_base_backup(_write_base(tmp_path)) is True
         assert recorder.errors == []
@@ -366,7 +345,6 @@ class TestDefineIncrementalOptions:
         *,
         backup: str,
         method: str | None = "fast_restore",
-        gpg_returncode: int = GPG_NOT_ENCRYPTED,
         checkpoints: str = UNPREPARED,
         found: bool = True,
     ) -> tuple[Any, _Recorder]:
@@ -375,7 +353,6 @@ class TestDefineIncrementalOptions:
         :param tmp_path: Root standing in for the server's backup directory.
         :param backup: Name of the data file the base backup holds.
         :param method: Value for ``incremental_method``.
-        :param gpg_returncode: Exit status the faked ``gpg`` reports per file.
         :param checkpoints: Body of the base's ``xtrabackup_checkpoints`` file.
         :param found: Whether the backup directory listing reports the base at all.
         :return: The instance after the decision and its logger.
@@ -389,8 +366,7 @@ class TestDefineIncrementalOptions:
                 "_define_incremental_options",
                 "_is_good_base_backup",
                 "_is_encrypted_base",
-            ),
-            gpg_returncode=gpg_returncode,
+            )
         )
         instance.incremental_method = method
         instance.incremental_cycle = "daily"
@@ -407,17 +383,12 @@ class TestDefineIncrementalOptions:
         instance._define_incremental_options()
         return instance, recorder
 
-    @pytest.mark.parametrize(
-        ("backup", "gpg_returncode"),
-        [("ibdata1.xbcrypt", GPG_NOT_ENCRYPTED), ("ibdata1.gpg", 0)],
-    )
+    @pytest.mark.parametrize("suffix", ENCRYPTED_SUFFIXES)
     def test_encrypted_base_blames_encryption_not_compression(
-        self, tmp_path: Path, backup: str, gpg_returncode: int
+        self, tmp_path: Path, suffix: str
     ) -> None:
         """Assert an encrypted base falls back to full naming encryption as the cause."""
-        instance, recorder = self._decide(
-            tmp_path, backup=backup, gpg_returncode=gpg_returncode
-        )
+        instance, recorder = self._decide(tmp_path, backup=f"ibdata1{suffix}")
         assert instance.incremental is False
         assert any("encrypted base" in msg for msg in recorder.warnings)
         assert not any("compressed base" in msg for msg in recorder.warnings)
@@ -427,6 +398,12 @@ class TestDefineIncrementalOptions:
         instance, recorder = self._decide(tmp_path, backup="ibdata1.zst")
         assert instance.incremental is False
         assert any("compressed base" in msg for msg in recorder.warnings)
+
+    def test_base_with_no_data_files_falls_back_to_full(self, tmp_path: Path) -> None:
+        """Assert a base stripped of its data files cannot seed an incremental."""
+        instance, recorder = self._decide(tmp_path, backup="")
+        assert instance.incremental is False
+        assert recorder.warnings
 
     def test_plaintext_base_runs_incremental(self, tmp_path: Path) -> None:
         """Assert a plaintext uncompressed base still produces an incremental."""
@@ -469,52 +446,3 @@ class TestDefineIncrementalOptions:
         assert instance.incremental is False
         assert instance.prepare_backup is True
         assert recorder.warnings == []
-
-
-@needs_gpg
-class TestGuardAgainstRealGpg:
-    """Assert the guard's verdict over a real ``gpg`` process, not a faked one."""
-
-    def _real_probe(self, monkeypatch: pytest.MonkeyPatch) -> Callable[..., bool]:
-        """Return the payload's ``is_encrypted_dir`` bound to the installed ``gpg``."""
-        monkeypatch.setenv("PERCONA_BACKUP_GPG_BIN", str(GPG_BIN))
-        return _load_function("is_encrypted_dir")
-
-    def _encrypt(self, path: Path) -> None:
-        """Encrypt ``path`` in place with a passphrase, the way a backup leaves it.
-
-        Symmetric encryption keeps the test off the machine's keyring while still
-        producing a file only a real ``gpg`` recognizes.
-        """
-        subprocess.run(
-            [
-                str(GPG_BIN),
-                "--batch",
-                "--yes",
-                "--passphrase",
-                "backup",
-                "--symmetric",
-                "--output",
-                f"{path}.gpg",
-                str(path),
-            ],
-            check=True,
-            capture_output=True,
-        )
-        path.unlink()
-
-    def test_real_gpg_base_is_rejected(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Assert a genuinely gpg-encrypted base cannot seed a merged incremental."""
-        base = _write_base(tmp_path)
-        self._encrypt(tmp_path / "ibdata1")
-        instance, _, _ = _guard(probe=self._real_probe(monkeypatch))
-        assert instance._is_good_base_backup(base) is False
-
-    def test_real_gpg_accepts_plaintext_base(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Assert a plaintext base survives the real probe, which cannot decrypt it."""
-        instance, _, _ = _guard(probe=self._real_probe(monkeypatch))
-        assert instance._is_good_base_backup(_write_base(tmp_path)) is True

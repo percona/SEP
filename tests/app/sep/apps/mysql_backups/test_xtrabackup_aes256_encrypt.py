@@ -25,8 +25,11 @@ module constants, a fake ``subprocess`` recording commands, and a stub
 """
 
 import os
+import shutil
+import subprocess
 import types
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
@@ -42,6 +45,9 @@ from tests.app.sep.apps.mysql_backups.payload_harness import (
 from tests.app.sep.apps.mysql_backups.payload_harness import (
     XBCRYPT_BIN as _XBCRYPT_BIN,
 )
+
+GPG_BIN = shutil.which("gpg")
+needs_gpg = pytest.mark.skipif(GPG_BIN is None, reason="gpg is not installed")
 
 
 class TestIsEncryptedDirAes256:
@@ -106,6 +112,54 @@ class TestIsEncryptedDirGpgUnchanged:
         (tmp_path / "plain.txt").write_text("x")
         fn, _ = self._fn_with_proc(2)
         assert fn(str(tmp_path)) is False
+
+
+@needs_gpg
+class TestIsEncryptedDirAgainstRealGpg:
+    """Assert the gpg verification runs a real ``gpg``, not only a faked one."""
+
+    def _fn(self, monkeypatch: pytest.MonkeyPatch) -> Callable[..., bool]:
+        """Return ``is_encrypted_dir`` bound to the installed ``gpg`` binary."""
+        monkeypatch.setenv("PERCONA_BACKUP_GPG_BIN", str(GPG_BIN))
+        return _load_function("is_encrypted_dir")
+
+    def _encrypt(self, path: Path) -> None:
+        """Encrypt ``path`` in place with a passphrase, the way a backup leaves it.
+
+        Symmetric encryption keeps the test off the machine's keyring while still
+        producing a file only a real ``gpg`` recognizes.
+        """
+        subprocess.run(
+            [
+                str(GPG_BIN),
+                "--batch",
+                "--yes",
+                "--passphrase",
+                "backup",
+                "--symmetric",
+                "--output",
+                f"{path}.gpg",
+                str(path),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        path.unlink()
+
+    def test_real_encrypted_file_is_recognized(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert a genuinely gpg-encrypted directory verifies as encrypted."""
+        (tmp_path / "ibdata1").write_text("x")
+        self._encrypt(tmp_path / "ibdata1")
+        assert self._fn(monkeypatch)(str(tmp_path)) is True
+
+    def test_real_plaintext_file_is_rejected(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert a plaintext file the real ``gpg`` cannot decrypt fails verification."""
+        (tmp_path / "ibdata1").write_text("x")
+        assert self._fn(monkeypatch)(str(tmp_path)) is False
 
 
 _ENCRYPT_METHODS = ("encrypt_files_aes256", "_run_encrypt_file_aes256", "_run_xbcrypt")
