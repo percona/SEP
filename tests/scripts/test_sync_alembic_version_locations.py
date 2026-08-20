@@ -455,6 +455,31 @@ class TestRemovalRefusal:
             "%(here)s/app/sep/apps/alpha/migrations/versions",
         )
 
+    def test_refuses_when_init_py_is_gone_but_versions_remains(self, stripped_tree):
+        """Refuse shape 3: versions/ survives without the package ``__init__.py``."""
+        ini_path, apps_root = stripped_tree
+        versions = apps_root / "alpha" / "migrations" / "versions"
+        versions.mkdir(parents=True)
+        before = ini_path.read_text()
+
+        with pytest.raises(
+            sync_alembic_version_locations.VersionLocationsRemovalError
+        ) as excinfo:
+            sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
+
+        assert excinfo.value.removed == (
+            "%(here)s/app/sep/apps/alpha/migrations/versions",
+        )
+        assert ini_path.read_text() == before
+
+    def test_does_not_refuse_when_versions_is_empty_of_revisions(self, stripped_tree):
+        """Shape 4: the walk still finds the app, so regeneration drops nothing."""
+        ini_path, apps_root = stripped_tree
+        _migration_plugin(apps_root, "alpha")
+
+        assert sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
+        assert "app/sep/apps/alpha/migrations/versions" in ini_path.read_text()
+
     def test_allowing_removals_under_check_still_writes_nothing(self, stripped_tree):
         """Keep ``check`` a dry run even when removals are permitted."""
         ini_path, apps_root = stripped_tree
@@ -498,6 +523,7 @@ class TestRemovalRefusalCli:
         assert "app/sep/apps/alpha/migrations/versions" in err
         assert "--allow-removals" in err
         assert "upgrade heads" in err
+        assert "contributes no migration scripts" in err
         assert "Traceback" not in err
         assert ini_path.read_text() == before
 
