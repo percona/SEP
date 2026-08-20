@@ -38,7 +38,8 @@ _SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "sync_alembic_version_locations.py"
 _spec = importlib.util.spec_from_file_location(
     "sync_alembic_version_locations", _SCRIPT_PATH
 )
-assert _spec is not None and _spec.loader is not None
+assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
+assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
 sync_alembic_version_locations = importlib.util.module_from_spec(_spec)
 sys.modules["sync_alembic_version_locations"] = sync_alembic_version_locations
 _spec.loader.exec_module(sync_alembic_version_locations)
@@ -129,8 +130,7 @@ def _generator_refused(ini_path: Path, apps_root: Path) -> bool:
     try:
         sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
     except sync_alembic_version_locations.VersionLocationsRemovalError as exc:
-        assert _ALPHA_ENTRY in exc.removed
-        return True
+        return _ALPHA_ENTRY in exc.removed
     return False
 
 
@@ -138,7 +138,10 @@ def _filter_armed(ini_path: Path) -> bool:
     """Return whether the orphan-head filter would arm on this tree."""
     script = ScriptDirectory.from_config(Config(str(ini_path), ini_section="sep"))
     empty = empty_version_locations(script)
-    return any(Path(location).as_posix().endswith("apps/alpha/migrations/versions") for location in empty)
+    return any(
+        Path(location).as_posix().endswith("apps/alpha/migrations/versions")
+        for location in empty
+    )
 
 
 @pytest.mark.parametrize(
