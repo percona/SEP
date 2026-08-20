@@ -466,7 +466,16 @@ export interface paths {
     };
     /**
      * List Periodic Tasks
-     * @description List all periodic tasks.
+     * @description List periodic tasks for the requested page window.
+     *
+     *     :param session: The beat-store session the schedules are read from.
+     *     :param tasks_session: The tasks-database session used to resolve the
+     *         ``owner`` filter and to stamp each row's last-run status.
+     *     :param pagination: Validated offset/limit window for this page.
+     *     :param owner: Optional owner whose active tasks scope the page; omit to
+     *         page every SEP-managed schedule.
+     *     :param enabled: Optional enabled-state filter.
+     *     :return: A page of beat-store schedules, each carrying ``last_run_status``.
      */
     get: operations['periodic_list_periodic_tasks_periodic__get'];
     put?: never;
@@ -802,6 +811,17 @@ export interface components {
      * @enum {string}
      */
     LogCaptureStatusEnum: 'complete' | 'incomplete' | 'unknown';
+    /** PaginatedResponse[PeriodicTaskResponse] */
+    PaginatedResponse_PeriodicTaskResponse_: {
+      /** Items */
+      items: components['schemas']['PeriodicTaskResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[TaskHistoryResponse] */
     PaginatedResponse_TaskHistoryResponse_: {
       /** Items */
@@ -2437,6 +2457,8 @@ export interface operations {
       query?: {
         owner?: string | null;
         enabled?: boolean | null;
+        offset?: number;
+        limit?: number;
       };
       header?: never;
       path?: never;
@@ -2450,7 +2472,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PeriodicTaskResponse'][];
+          'application/json': components['schemas']['PaginatedResponse_PeriodicTaskResponse_'];
         };
       };
       /** @description Validation Error */
