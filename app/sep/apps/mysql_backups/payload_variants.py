@@ -15,11 +15,10 @@
 
 """Name the ``xtrabackup_payload`` variant carrying a given upload selection.
 
-The rule has two consumers that must never disagree:
-:func:`~app.sep.apps.mysql_backups.spec.build_backup_spec`, which dispatches by
-name, and ``scripts/gen_xtrabackup_payload_variants.py``, which writes the files.
-A divergence between them dispatches a payload that does not exist, so the rule
-lives here and both sides read it.
+The rule is read by both the dispatcher and the generator, which must never
+disagree: a divergence dispatches a payload that does not exist. It lives here so
+neither side owns a second copy, and the generator's ``--check`` mode holds the
+written files to it.
 
 The module is deliberately stdlib-only: the generator runs as a pre-commit hook
 and loads this file directly, without importing the ``mysql_backups`` package,
@@ -50,4 +49,4 @@ def variant_name(providers: tuple[str, ...]) -> str:
         return CANONICAL_PAYLOAD_NAME
     if not providers:
         return "xtrabackup_noupload_payload"
-    return "xtrabackup_{}_payload".format("_".join(providers))
+    return f"xtrabackup_{'_'.join(providers)}_payload"

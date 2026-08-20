@@ -62,9 +62,12 @@ def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPyth
     Select the per-``backup_type`` server-config host (XtraBackup → ``localhost``;
     Binlog → the alternative host or the service address; Mydumper → the service
     address), serialise the ``BackupConfig`` to the YAML ``config``, and select the
-    ``file://`` payload and pip requirements by ``backup_type``. The framework's
-    ``assemble_envelope`` fills ``target`` (the executor ``HostRef``),
-    ``_service_name``, and the connectivity keys around this spec.
+    ``file://`` payload and pip requirements by ``backup_type``. XtraBackup is keyed
+    on ``form.upload`` as well: the dispatched payload is the variant carrying
+    exactly the selected providers, and ``boto3`` is requested only when that
+    variant can reach S3. The framework's ``assemble_envelope`` fills ``target``
+    (the executor ``HostRef``), ``_service_name``, and the connectivity keys around
+    this spec.
 
     :param form: The validated create form (a ``BackupCreate``).
     :param resolved: The entities resolved from the form's reference fields; its

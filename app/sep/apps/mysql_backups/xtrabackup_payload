@@ -2269,9 +2269,11 @@ class Xtrabackup(Backup):
         for upload_type in sorted(self.upload_type):
             self.enable_upload(self.last_backup_dir)
             provider = upload_providers.get(upload_type)
+            # A selected provider absent from the map means this variant was not built
+            # to carry it. Warning and skipping would report the backup OK with no
+            # offsite copy, so fail loudly instead.
             if provider is None:
-                self.logger.warning("Unsupported upload type: %r", upload_type)
-                continue
+                raise BackupError('Unsupported upload type: %r' % (upload_type,))
             uploader = XtraBackupUpload(
                 upload_type=upload_type,
                 upload_provider=provider,

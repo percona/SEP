@@ -15,19 +15,11 @@
 
 """Tests for the ``scripts/check_nomad_payload_size.py`` CLI."""
 
-import importlib.util
 import sys
-from pathlib import Path
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "check_nomad_payload_size.py"
+from tests.scripts import load_script
 
-_spec = importlib.util.spec_from_file_location("check_nomad_payload_size", _SCRIPT_PATH)
-assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-check_nomad_payload_size = importlib.util.module_from_spec(_spec)
-sys.modules["check_nomad_payload_size"] = check_nomad_payload_size
-_spec.loader.exec_module(check_nomad_payload_size)
+check_nomad_payload_size = load_script("check_nomad_payload_size")
 
 
 VERBOSE_SCRIPT = '''\

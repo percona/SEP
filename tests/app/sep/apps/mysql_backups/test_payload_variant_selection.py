@@ -43,7 +43,7 @@ _PROVIDER_FIELDS = {
 }
 
 # Every upload selection, and the payload the dispatch must carry for it. The
-# all-providers selection is the canonical payload -- it is the complete source,
+# all-providers selection is the canonical payload, which is the complete source,
 # not a generated variant.
 _SELECTIONS = [
     ([], "xtrabackup_noupload_payload"),
@@ -159,7 +159,7 @@ class TestOtherBackupTypesUnaffected:
 
     @pytest.mark.parametrize("backup_type", ["M", "B"])
     def test_boto3_still_ships(self, backup_type: str) -> None:
-        """Assert both payloads keep boto3 -- each imports it regardless of upload."""
+        """Assert both payloads keep boto3, which each imports regardless of upload."""
         assert "boto3" in _spec([], backup_type).requirements.splitlines()
 
 

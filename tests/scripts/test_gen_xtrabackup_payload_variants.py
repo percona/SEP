@@ -21,34 +21,15 @@ verification weight for the shipped variants.
 """
 
 import ast
-import importlib.util
 import shutil
-import sys
 from pathlib import Path
 
 import pytest
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "gen_xtrabackup_payload_variants.py"
+from tests.scripts import load_script
 
-_gen_spec = importlib.util.spec_from_file_location(
-    "gen_xtrabackup_payload_variants", _SCRIPT_PATH
-)
-assert _gen_spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _gen_spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-gen_variants = importlib.util.module_from_spec(_gen_spec)
-sys.modules["gen_xtrabackup_payload_variants"] = gen_variants
-_gen_spec.loader.exec_module(gen_variants)
-
-_CHECK_SCRIPT = _PROJECT_ROOT / "scripts" / "check_nomad_payload_size.py"
-_size_spec = importlib.util.spec_from_file_location(
-    "check_nomad_payload_size", _CHECK_SCRIPT
-)
-assert _size_spec is not None, f"cannot load {_CHECK_SCRIPT}"
-assert _size_spec.loader is not None, f"cannot load {_CHECK_SCRIPT}"
-size_gate = importlib.util.module_from_spec(_size_spec)
-sys.modules["check_nomad_payload_size"] = size_gate
-_size_spec.loader.exec_module(size_gate)
+gen_variants = load_script("gen_xtrabackup_payload_variants")
+size_gate = load_script("check_nomad_payload_size")
 
 _EXPECTED_NAMES = {
     (): "xtrabackup_noupload_payload",
@@ -79,12 +60,20 @@ def _variant_path(providers: tuple[str, ...]) -> Path:
     return gen_variants.CANONICAL_SOURCE.parent / gen_variants.variant_name(providers)
 
 
+#: The selections the generator writes, i.e. every one but the canonical's.
+_GENERATED_SELECTIONS = sorted(
+    providers
+    for providers in _EXPECTED_NAMES
+    if len(providers) != len(gen_variants.PROVIDERS)
+)
+
+
 @pytest.fixture
 def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Return a throwaway copy of the payload tree the generator may rewrite.
 
     ``main()`` writes variants in place, so pointing the generator at the working
-    tree would let a test repair drift -- the very failure the ``--check`` guard
+    tree would let a test repair drift, the very failure the ``--check`` guard
     exists to surface.
 
     :param tmp_path: The per-test temporary directory.
@@ -121,7 +110,7 @@ class TestInSyncGuard:
     def test_variant_names_are_pinned(
         self, providers: tuple[str, ...], expected: str
     ) -> None:
-        """Assert filenames stay stable -- ``spec.py`` selects payloads by these names."""
+        """Assert filenames stay stable, since ``spec.py`` selects payloads by name."""
         assert gen_variants.variant_name(providers) == expected
 
     @pytest.mark.parametrize("name", sorted(_EXPECTED_NAMES.values()))
@@ -197,27 +186,27 @@ class TestRenderedVariants:
         noupload = _variant_path(())
         assert len(noupload.read_bytes()) < len(canonical.read_bytes())
 
-    @pytest.mark.parametrize("providers", sorted(_EXPECTED_NAMES), ids=str)
+    @pytest.mark.parametrize("providers", _GENERATED_SELECTIONS, ids=str)
     def test_generated_variants_carry_no_markers(
         self, providers: tuple[str, ...]
     ) -> None:
         """Assert markers are stripped, so no variant reads as a second canonical source."""
         text = _variant_path(providers).read_text(encoding="utf-8")
-        if _variant_path(providers) == gen_variants.CANONICAL_SOURCE:
-            assert gen_variants.BEGIN in text
-        else:
-            assert gen_variants.BEGIN not in text
-            assert gen_variants.END not in text
+        assert gen_variants.BEGIN not in text
+        assert gen_variants.END not in text
 
-    def test_render_is_idempotent(self) -> None:
+    def test_canonical_keeps_its_markers(self) -> None:
+        """Assert the hand-edited source keeps the markers the generator reads."""
+        text = gen_variants.CANONICAL_SOURCE.read_text(encoding="utf-8")
+        assert gen_variants.BEGIN in text
+        assert gen_variants.END in text
+
+    @pytest.mark.parametrize("providers", _GENERATED_SELECTIONS, ids=str)
+    def test_render_is_idempotent(self, providers: tuple[str, ...]) -> None:
         """Assert re-rendering an in-sync variant is a no-op (round-trip stable)."""
-        for providers in gen_variants.selections():
-            path = _variant_path(providers)
-            if path == gen_variants.CANONICAL_SOURCE:
-                continue
-            assert gen_variants.build(_canonical(), providers) == path.read_text(
-                encoding="utf-8"
-            )
+        assert gen_variants.build(_canonical(), providers) == _variant_path(
+            providers
+        ).read_text(encoding="utf-8")
 
 
 class TestMalformedRegions:
@@ -229,7 +218,7 @@ class TestMalformedRegions:
             gen_variants.render(f"a\n{gen_variants.BEGIN} rsync\nb\n", ())
 
     def test_nested_region_raises(self) -> None:
-        """Reject two overlapping regions -- the omission would be ambiguous."""
+        """Reject two overlapping regions, whose omission would be ambiguous."""
         source = f"{gen_variants.BEGIN} rsync\n{gen_variants.BEGIN} s3\nx\n"
         with pytest.raises(gen_variants.RegionError, match="nested"):
             gen_variants.render(source, ())
@@ -274,9 +263,11 @@ class TestMalformedRegions:
         """Assert the sweep does not flag names the interpreter itself supplies."""
         gen_variants.validate("x = len(__file__)\n", (), "fake_payload")
 
-    def test_shipped_variants_have_no_unbound_names(self) -> None:
-        """Assert every shipped variant resolves every name it loads."""
-        for providers in gen_variants.selections():
-            text = _variant_path(providers).read_text(encoding="utf-8")
-            omitted = tuple(p for p in gen_variants.PROVIDERS if p not in providers)
-            gen_variants.validate(text, omitted, gen_variants.variant_name(providers))
+    @pytest.mark.parametrize("providers", sorted(_EXPECTED_NAMES), ids=str)
+    def test_shipped_variants_have_no_unbound_names(
+        self, providers: tuple[str, ...]
+    ) -> None:
+        """Assert the shipped variant resolves every name it loads."""
+        text = _variant_path(providers).read_text(encoding="utf-8")
+        omitted = tuple(p for p in gen_variants.PROVIDERS if p not in providers)
+        gen_variants.validate(text, omitted, gen_variants.variant_name(providers))
