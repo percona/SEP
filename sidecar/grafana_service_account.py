@@ -73,6 +73,7 @@ RETRYABLE_STATUSES = frozenset(
         status.HTTP_500_INTERNAL_SERVER_ERROR,
         status.HTTP_502_BAD_GATEWAY,
         status.HTTP_503_SERVICE_UNAVAILABLE,
+        status.HTTP_504_GATEWAY_TIMEOUT,
     }
 )
 """What a Grafana still starting behind PMM's proxy answers.

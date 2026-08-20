@@ -59,8 +59,8 @@ PATIENT_BOUND_SECONDS = 30
 TOKEN_FILE_MODE = 0o600
 STATE_DIR_MODE = 0o700
 
-EXPECTED_SEARCH_ATTEMPTS = 3
-"""Two transient answers, then the one that succeeds."""
+EXPECTED_SEARCH_ATTEMPTS = 4
+"""Three transient answers, then the one that succeeds."""
 
 
 class StubRoute(StrEnum):
@@ -601,12 +601,13 @@ async def test_a_starting_grafana_is_retried_until_it_answers(
     provider: GrafanaAuthProvider,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Retry the 502 a starting Grafana answers through PMM's proxy."""
+    """Retry every transient answer a starting Grafana gives through PMM's proxy."""
     monkeypatch.setattr(helper, "RETRY_INTERVAL_SECONDS", 0.05)
     grafana_stub.queue(
         StubRoute.SEARCH,
         StubResponse(status=503),
         StubResponse(status=502),
+        StubResponse(status=504),
         DEFAULT_RESPONSES[StubRoute.SEARCH],
     )
 
