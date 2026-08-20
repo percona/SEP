@@ -59,7 +59,17 @@ async def list_periodic_tasks(
     owner: str | None = None,
     enabled: bool | None = None,
 ) -> PaginatedResponse[Any]:
-    """List periodic tasks for the requested page window."""
+    """List periodic tasks for the requested page window.
+
+    :param session: The beat-store session the schedules are read from.
+    :param tasks_session: The tasks-database session used to resolve the
+        ``owner`` filter and to stamp each row's last-run status.
+    :param pagination: Validated offset/limit window for this page.
+    :param owner: Optional owner whose active tasks scope the page; omit to
+        page every SEP-managed schedule.
+    :param enabled: Optional enabled-state filter.
+    :return: A page of beat-store schedules, each carrying ``last_run_status``.
+    """
     if owner is None:
         page = await PeriodicTaskManager.list_paginated(
             session, enabled=enabled, pagination=pagination

@@ -3000,7 +3000,7 @@
     },
     "/periodic/": {
       "get": {
-        "description": "List periodic tasks for the requested page window.",
+        "description": "List periodic tasks for the requested page window.\n\n:param session: The beat-store session the schedules are read from.\n:param tasks_session: The tasks-database session used to resolve the\n    ``owner`` filter and to stamp each row's last-run status.\n:param pagination: Validated offset/limit window for this page.\n:param owner: Optional owner whose active tasks scope the page; omit to\n    page every SEP-managed schedule.\n:param enabled: Optional enabled-state filter.\n:return: A page of beat-store schedules, each carrying ``last_run_status``.",
         "operationId": "periodic_list_periodic_tasks_periodic__get",
         "parameters": [
           {

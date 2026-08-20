@@ -114,7 +114,7 @@ async def _seed_numbered_periodic_tasks(session: AsyncSession, count: int) -> li
 
 
 class TestPeriodicTaskManagerOrdering:
-    """Test the deterministic ordering that offset pagination depends on."""
+    """Cover the deterministic ordering that offset pagination depends on."""
 
     def test_manager_ordering_is_wired_into_the_emitted_sql(self):
         """Assert the paginated SELECT actually carries an ORDER BY clause.

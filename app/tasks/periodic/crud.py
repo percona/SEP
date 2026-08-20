@@ -55,7 +55,6 @@ class PeriodicTaskManager(BasePeriodicTaskManager):
         alone is total and needs no tie-breaker.
 
         :return: The default ordering for every query this manager issues.
-        :rtype: Iterable[ColumnExpressionOrStrLabelArgument] | None
         """
         return [col(PeriodicTask.id)]
 

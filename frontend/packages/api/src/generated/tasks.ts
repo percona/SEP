@@ -467,6 +467,15 @@ export interface paths {
     /**
      * List Periodic Tasks
      * @description List periodic tasks for the requested page window.
+     *
+     *     :param session: The beat-store session the schedules are read from.
+     *     :param tasks_session: The tasks-database session used to resolve the
+     *         ``owner`` filter and to stamp each row's last-run status.
+     *     :param pagination: Validated offset/limit window for this page.
+     *     :param owner: Optional owner whose active tasks scope the page; omit to
+     *         page every SEP-managed schedule.
+     *     :param enabled: Optional enabled-state filter.
+     *     :return: A page of beat-store schedules, each carrying ``last_run_status``.
      */
     get: operations['periodic_list_periodic_tasks_periodic__get'];
     put?: never;
