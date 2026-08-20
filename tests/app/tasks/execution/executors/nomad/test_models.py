@@ -945,6 +945,112 @@ class TestGetHosts:
         mock_backend.nodes.get_nodes.assert_called_once()
 
 
+class TestGetHostStates:
+    """Test NomadExecutor.get_host_states.
+
+    The point of this method is telling apart the three ways a machine ends up
+    absent from ``get_hosts``. Each is asserted separately, because collapsing them
+    is the behaviour being replaced and it would pass a test that only checked "not
+    usable".
+    """
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_reports_every_node_not_only_the_usable_ones(self, mock_nomad_cls):
+        """Assert an unusable node is a row here rather than an omission."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.nodes.get_nodes.return_value = [
+            {
+                "Name": "healthy",
+                "Address": "10.0.0.1",
+                "Status": "ready",
+                "Drivers": {"raw_exec": {"Healthy": True}},
+            },
+            {
+                "Name": "down",
+                "Address": "10.0.0.2",
+                "Status": "down",
+                "Drivers": {"raw_exec": {"Healthy": True}},
+            },
+        ]
+
+        states = {state.name: state for state in _build_executor().get_host_states()}
+
+        assert set(states) == {"healthy", "down"}
+        assert states["healthy"].usable is True
+        assert states["down"].usable is False
+        # No filter: this call must see what get_hosts filters out.
+        assert mock_backend.nodes.get_nodes.call_args.kwargs == {}
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_separates_unreachable_from_driver_unhealthy(self, mock_nomad_cls):
+        """Assert down and broken-driver are different answers, not one.
+
+        Never onboarded and onboarded-but-broken need different people to fix them,
+        so a single "unusable" flag sends the reader to the wrong place half the
+        time.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.nodes.get_nodes.return_value = [
+            {
+                "Name": "down",
+                "Address": "10.0.0.1",
+                "Status": "down",
+                "Drivers": {
+                    "raw_exec": {"Healthy": True, "HealthDescription": "Healthy"}
+                },
+            },
+            {
+                "Name": "broken-driver",
+                "Address": "10.0.0.2",
+                "Status": "ready",
+                "Drivers": {
+                    "raw_exec": {
+                        "Healthy": False,
+                        "HealthDescription": "Failed to find raw_exec",
+                    }
+                },
+            },
+        ]
+
+        states = {state.name: state for state in _build_executor().get_host_states()}
+
+        assert (states["down"].reachable, states["down"].driver_healthy) == (
+            False,
+            True,
+        )
+        assert (
+            states["broken-driver"].reachable,
+            states["broken-driver"].driver_healthy,
+        ) == (True, False)
+        assert states["broken-driver"].detail == "Failed to find raw_exec"
+        # Nomad says "Healthy" on a working driver; a field for explaining failures
+        # full of the word "Healthy" gives a reader nothing to scan by.
+        assert states["down"].detail is None
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_a_missing_driver_entry_is_not_healthy(self, mock_nomad_cls):
+        """Assert an undetected driver reads as unhealthy rather than absent-so-fine.
+
+        Nomad omits drivers it has not detected, so the never-onboarded host has no
+        ``raw_exec`` key at all. Treating a missing key as anything but unhealthy
+        would report the emptiest case as the healthiest.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.nodes.get_nodes.return_value = [
+            {"Name": "bare", "Address": "10.0.0.1", "Status": "ready", "Drivers": {}},
+            {"Name": "no-key", "Address": "10.0.0.2", "Status": "ready"},
+        ]
+
+        states = {state.name: state for state in _build_executor().get_host_states()}
+
+        assert states["bare"].driver_healthy is False
+        assert states["no-key"].driver_healthy is False
+        assert all(state.reachable for state in states.values())
+
+
 class TestGetAllocationForTaskHistory:
     """Test NomadExecutor.get_allocation_for_task_history."""
 
