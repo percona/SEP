@@ -16,7 +16,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, useAppTasks, type TasksComponents } from '@sep/api';
+import { apiClient, fetchAllAppListPages, useAppTasks, type TasksComponents } from '@sep/api';
 
 export type PeriodicTaskResponse = TasksComponents['schemas']['PeriodicTaskResponse'];
 export type PeriodicTaskCreate = TasksComponents['schemas']['PeriodicTaskCreate'];
@@ -26,6 +26,7 @@ export type CrontabSchedule = TasksComponents['schemas']['CrontabSchedule'];
 export type PeriodicTaskExecuteRequest = TasksComponents['schemas']['PeriodicTaskExecuteRequest'];
 
 const PERIODIC_LIST_KEY = ['periodic'] as const;
+const PERIODIC_LIST_PATH = '/sep/periodic-tasks/';
 const POLL_INTERVAL_MS = 30_000;
 
 interface AppTask extends Record<string, unknown> {
@@ -64,10 +65,8 @@ export function useScheduledTasksForApp(
 
   const periodicQuery = useQuery<PeriodicTaskResponse[], Error, PeriodicTaskResponse[]>({
     queryKey: PERIODIC_LIST_KEY,
-    queryFn: async () => {
-      const { data } = await apiClient.get<PeriodicTaskResponse[]>('/sep/periodic-tasks/');
-      return data;
-    },
+    queryFn: async () =>
+      (await fetchAllAppListPages<PeriodicTaskResponse>(PERIODIC_LIST_PATH)).items,
     refetchInterval: disablePolling ? false : pollingIntervalMs,
   });
 
