@@ -3039,11 +3039,12 @@ export interface paths {
     };
     /**
      * List Periodic Tasks
-     * @description Return the upstream periodic-task list through the SEP gateway.
+     * @description Return the upstream periodic-task page through the SEP gateway.
      *
-     *     :param tasks_api: The Tasks API client used to fetch the upstream list.
-     *     :return: The upstream periodic-task list, or ``[]`` when the upstream
-     *         payload is not a list.
+     *     :param tasks_api: The Tasks API client used to fetch the upstream page.
+     *     :param pagination: Validated offset/limit forwarded to the upstream list.
+     *     :return: The upstream paginated envelope, or an empty envelope echoing the
+     *         requested window when the upstream payload is not a dict.
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
      *         (status < 500).
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -14721,7 +14722,10 @@ export interface operations {
   };
   tasks_list_periodic_tasks_api_sep_periodic_tasks__get: {
     parameters: {
-      query?: never;
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -14734,9 +14738,16 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: unknown;
-          }[];
+          'application/json': components['schemas']['PaginatedResponse_ArbitraryMapping_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
       /** @description Upstream Tasks API failure. */
