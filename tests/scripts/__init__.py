@@ -12,3 +12,39 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Load the ``scripts/`` CLIs under test as importable modules."""
+
+import importlib.util
+import sys
+from pathlib import Path
+from types import ModuleType
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+SCRIPTS_DIR = PROJECT_ROOT / "scripts"
+
+
+def load_script(name: str) -> ModuleType:
+    """Return ``scripts/<name>.py`` loaded as a module named ``name``.
+
+    The scripts are CLIs outside any package, so a test importing one has to load
+    it by path. Loading is memoised through ``sys.modules``: two test modules that
+    need the same script share one instance rather than the second re-registering
+    the key the first claimed.
+
+    :param name: The script's module name, without the ``.py`` suffix.
+    :return: The loaded module.
+    :raises RuntimeError: When the script cannot be loaded from ``scripts/``.
+    """
+    cached = sys.modules.get(name)
+    if isinstance(cached, ModuleType):
+        return cached
+
+    path = SCRIPTS_DIR / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
