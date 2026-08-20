@@ -25,6 +25,7 @@ from sqlalchemy_celery_beat import IntervalSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.utils.date_time import utc_now
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.models import (
@@ -37,6 +38,12 @@ from app.tasks.models import (
 from tests.app.factories import TaskFactory
 
 CELERY_TASK_NAME = "app.tasks.celery.execute_task_by_name"
+PAGED_PERIODIC_TOTAL = 5
+UNFILTERED_PAGE_OFFSET = 1
+UNFILTERED_PAGE_LIMIT = 2
+OWNER_FILTER_MATCH_TOTAL = 3
+OWNER_FILTER_PAGE_LIMIT = 2
+OWNER_NAME = "BACKUPS"
 
 
 async def _add_periodic_task(
@@ -140,19 +147,27 @@ class TestListPeriodicTasks:
     """Test the GET /periodic/ endpoint."""
 
     def test_list_all_periodic_tasks(self, periodic_test_client, created_periodic_task):
-        """Assert listing all periodic tasks returns a list."""
+        """Assert listing all periodic tasks returns a paginated envelope."""
         response = periodic_test_client.get("/periodic/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["name"] == "test-periodic-task"
-        assert data[0]["task"] == "my-backup-task"
+        assert data["total"] == 1
+        assert data["offset"] == DEFAULT_PAGINATION_OFFSET
+        assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+        assert len(data["items"]) == 1
+        assert data["items"][0]["name"] == "test-periodic-task"
+        assert data["items"][0]["task"] == "my-backup-task"
 
     def test_list_periodic_tasks_empty(self, periodic_test_client):
-        """Assert listing periodic tasks when none exist returns empty list."""
+        """Assert listing when none exist returns an empty paginated envelope."""
         response = periodic_test_client.get("/periodic/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        assert response.json() == {
+            "items": [],
+            "total": 0,
+            "offset": DEFAULT_PAGINATION_OFFSET,
+            "limit": DEFAULT_PAGINATION_LIMIT,
+        }
 
     def test_list_periodic_tasks_filter_enabled(
         self,
@@ -160,12 +175,149 @@ class TestListPeriodicTasks:
         created_periodic_task,
         second_periodic_task,
     ):
-        """Assert filtering by enabled returns only enabled tasks."""
+        """Assert filtering by enabled returns only enabled tasks and their total."""
         response = periodic_test_client.get("/periodic/", params={"enabled": True})
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["enabled"] is True
+        assert data["total"] == 1
+        assert len(data["items"]) == 1
+        assert data["items"][0]["enabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_list_paginates_unfiltered_window(
+        self, periodic_test_client, celery_beat_session
+    ):
+        """Assert the unfiltered branch returns at most limit rows with full total."""
+        for index in range(PAGED_PERIODIC_TOTAL):
+            await _add_periodic_task(
+                celery_beat_session,
+                name=f"unfiltered-{index}",
+                task_name=f"task-{index}",
+            )
+
+        response = periodic_test_client.get(
+            "/periodic/",
+            params={"offset": UNFILTERED_PAGE_OFFSET, "limit": UNFILTERED_PAGE_LIMIT},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == PAGED_PERIODIC_TOTAL
+        assert data["offset"] == UNFILTERED_PAGE_OFFSET
+        assert data["limit"] == UNFILTERED_PAGE_LIMIT
+        assert len(data["items"]) == UNFILTERED_PAGE_LIMIT
+
+        full = periodic_test_client.get(
+            "/periodic/", params={"offset": 0, "limit": PAGED_PERIODIC_TOTAL}
+        ).json()
+        window_end = UNFILTERED_PAGE_OFFSET + UNFILTERED_PAGE_LIMIT
+        assert [row["id"] for row in data["items"]] == [
+            row["id"] for row in full["items"][UNFILTERED_PAGE_OFFSET:window_end]
+        ]
+
+    @pytest.mark.asyncio
+    async def test_list_pages_are_deterministic_across_requests(
+        self, periodic_test_client, celery_beat_session
+    ):
+        """Assert re-requesting a window and walking every window loses no rows."""
+        for index in range(PAGED_PERIODIC_TOTAL):
+            await _add_periodic_task(
+                celery_beat_session,
+                name=f"stable-{index}",
+                task_name=f"stable-task-{index}",
+            )
+
+        first_ids = [
+            row["id"]
+            for row in periodic_test_client.get(
+                "/periodic/",
+                params={
+                    "offset": UNFILTERED_PAGE_LIMIT,
+                    "limit": UNFILTERED_PAGE_LIMIT,
+                },
+            ).json()["items"]
+        ]
+        second_ids = [
+            row["id"]
+            for row in periodic_test_client.get(
+                "/periodic/",
+                params={
+                    "offset": UNFILTERED_PAGE_LIMIT,
+                    "limit": UNFILTERED_PAGE_LIMIT,
+                },
+            ).json()["items"]
+        ]
+        assert first_ids == second_ids
+        assert len(first_ids) == UNFILTERED_PAGE_LIMIT
+
+        paged_ids = []
+        for offset in range(0, PAGED_PERIODIC_TOTAL, UNFILTERED_PAGE_LIMIT):
+            page = periodic_test_client.get(
+                "/periodic/",
+                params={"offset": offset, "limit": UNFILTERED_PAGE_LIMIT},
+            ).json()
+            paged_ids.extend(row["id"] for row in page["items"])
+        assert paged_ids == sorted(paged_ids)
+        assert len(paged_ids) == PAGED_PERIODIC_TOTAL
+        assert len(set(paged_ids)) == PAGED_PERIODIC_TOTAL
+
+    @pytest.mark.asyncio
+    async def test_list_paginates_owner_filtered_window(
+        self, periodic_test_client, celery_beat_session, tasks_session
+    ):
+        """Assert the owner branch pages only schedules whose tasks match the owner."""
+        for index in range(OWNER_FILTER_MATCH_TOTAL):
+            await TaskManager.create(
+                tasks_session,
+                TaskWrite.model_validate(
+                    TaskFactory.build(name=f"owned-task-{index}", owner=OWNER_NAME)
+                ),
+            )
+            await _add_periodic_task(
+                celery_beat_session,
+                name=f"owned-schedule-{index}",
+                task_name=f"owned-task-{index}",
+            )
+        await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(
+                TaskFactory.build(name="other-owner-task", owner="OTHER")
+            ),
+        )
+        await _add_periodic_task(
+            celery_beat_session,
+            name="other-owner-schedule",
+            task_name="other-owner-task",
+        )
+
+        response = periodic_test_client.get(
+            "/periodic/",
+            params={
+                "owner": OWNER_NAME,
+                "offset": 0,
+                "limit": OWNER_FILTER_PAGE_LIMIT,
+            },
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == OWNER_FILTER_MATCH_TOTAL
+        assert data["offset"] == 0
+        assert data["limit"] == OWNER_FILTER_PAGE_LIMIT
+        assert len(data["items"]) == OWNER_FILTER_PAGE_LIMIT
+        assert all(row["name"].startswith("owned-schedule-") for row in data["items"])
+
+        remainder = periodic_test_client.get(
+            "/periodic/",
+            params={
+                "owner": OWNER_NAME,
+                "offset": OWNER_FILTER_PAGE_LIMIT,
+                "limit": OWNER_FILTER_PAGE_LIMIT,
+            },
+        ).json()
+        assert remainder["total"] == OWNER_FILTER_MATCH_TOTAL
+        assert len(remainder["items"]) == 1
+        walked = [row["id"] for row in data["items"] + remainder["items"]]
+        assert walked == sorted(walked)
+        assert len(set(walked)) == OWNER_FILTER_MATCH_TOTAL
 
 
 class TestRetrievePeriodicTask:
@@ -272,7 +424,9 @@ class TestPeriodicTaskLastRunStatus:
         """Assert each scenario resolves to the expected last_run_status."""
         response = periodic_test_client.get("/periodic/")
         assert response.status_code == status.HTTP_200_OK
-        statuses = {row["name"]: row["last_run_status"] for row in response.json()}
+        statuses = {
+            row["name"]: row["last_run_status"] for row in response.json()["items"]
+        }
 
         assert statuses["never-run"] is None
         assert statuses["succeeded"] == "success"
@@ -313,7 +467,9 @@ class TestPeriodicTaskLastRunStatus:
         """Assert two schedules on one task name report the same last_run_status."""
         response = periodic_test_client.get("/periodic/")
         assert response.status_code == status.HTTP_200_OK
-        statuses = {row["name"]: row["last_run_status"] for row in response.json()}
+        statuses = {
+            row["name"]: row["last_run_status"] for row in response.json()["items"]
+        }
 
         assert statuses["schedule-one"] == "success"
         assert statuses["schedule-two"] == "success"
@@ -367,7 +523,9 @@ class TestPeriodicTaskLastRunStatus:
         """Assert each schedule on a shared name resolves to its own dispatch."""
         response = periodic_test_client.get("/periodic/")
         assert response.status_code == status.HTTP_200_OK
-        statuses = {row["name"]: row["last_run_status"] for row in response.json()}
+        statuses = {
+            row["name"]: row["last_run_status"] for row in response.json()["items"]
+        }
 
         assert statuses["early-schedule"] == "success"
         assert statuses["late-schedule"] == "failed"
@@ -466,7 +624,7 @@ class TestPeriodicTaskLastRunStatus:
         """Assert a later same-name system run does not clobber the schedule's result."""
         response = periodic_test_client.get("/periodic/")
         assert response.status_code == status.HTTP_200_OK
-        row = next(row for row in response.json() if row["name"] == "own-run")
+        row = next(row for row in response.json()["items"] if row["name"] == "own-run")
         assert row["last_run_status"] == "success"
 
     @pytest_asyncio.fixture
@@ -511,7 +669,9 @@ class TestPeriodicTaskLastRunStatus:
         """Assert a same-name system run before last_run_at is not attributed."""
         response = periodic_test_client.get("/periodic/")
         assert response.status_code == status.HTTP_200_OK
-        row = next(row for row in response.json() if row["name"] == "later-run")
+        row = next(
+            row for row in response.json()["items"] if row["name"] == "later-run"
+        )
         assert row["last_run_status"] == "success"
 
     @pytest_asyncio.fixture
@@ -550,7 +710,9 @@ class TestPeriodicTaskLastRunStatus:
         """Assert a sub-second last_run_at still matches its whole-second row."""
         response = periodic_test_client.get("/periodic/")
         assert response.status_code == status.HTTP_200_OK
-        row = next(row for row in response.json() if row["name"] == "subsecond")
+        row = next(
+            row for row in response.json()["items"] if row["name"] == "subsecond"
+        )
         assert row["last_run_status"] == "success"
 
 

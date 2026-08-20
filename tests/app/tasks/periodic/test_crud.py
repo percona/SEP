@@ -30,6 +30,9 @@ from app.tasks.periodic.crud import PeriodicTaskManager
 
 CELERY_TASK_NAME = "app.tasks.celery.execute_task_by_name"
 
+PAGED_TASK_TOTAL = 7
+PAGE_SIZE = 2
+
 
 async def _seed_periodic_tasks(
     session: AsyncSession, *, other_task: str
@@ -82,6 +85,108 @@ async def periodic_tasks(celery_beat_session: AsyncSession) -> list[PeriodicTask
     for task in tasks:
         await celery_beat_session.refresh(task)
     return tasks
+
+
+async def _seed_numbered_periodic_tasks(session: AsyncSession, count: int) -> list[str]:
+    """Seed ``count`` SEP-managed periodic tasks; return their names in creation order.
+
+    The names are deliberately not in alphabetical order relative to creation, so a
+    test walking pages cannot pass by accident on a name-sorted result set.
+    """
+    schedule = IntervalSchedule(every=10, period=Period.MINUTES)
+    session.add(schedule)
+    await session.flush()
+
+    names = [f"periodic-{(index * 3) % count}" for index in range(count)]
+    for name in names:
+        session.add(
+            PeriodicTask(
+                name=name,
+                task=CELERY_TASK_NAME,
+                kwargs=json.dumps({"task_name": "backup-daily"}),
+                enabled=True,
+                description="",
+                schedule_model=schedule,
+            )
+        )
+    await session.commit()
+    return names
+
+
+class TestPeriodicTaskManagerOrdering:
+    """Cover the deterministic ordering that offset pagination depends on."""
+
+    def test_manager_ordering_is_wired_into_the_emitted_sql(self):
+        """Assert the paginated SELECT actually carries an ORDER BY clause.
+
+        The row-order assertions below cannot fail on the in-memory SQLite beat
+        store used by these tests: an unmodified-table scan happens to return
+        insertion order even with no ``ORDER BY`` at all, so they stay green
+        against an unordered query and only a real PostgreSQL run would expose
+        it. Asserting on the compiled SQL is backend-independent.
+        """
+        ordering = PeriodicTaskManager._get_ordering()
+        assert ordering, "manager must supply a default ordering"
+
+        query = PeriodicTaskManager._build_query().order_by(*ordering).limit(PAGE_SIZE)
+        sql = str(query.compile(compile_kwargs={"literal_binds": True}))
+
+        assert "ORDER BY" in sql.upper()
+        assert "celery_periodictask.id" in sql[sql.upper().index("ORDER BY") :]
+
+    @pytest.mark.asyncio
+    async def test_paging_returns_every_row_exactly_once(self, celery_beat_session):
+        """Assert walking every window yields each row once, none repeated or skipped."""
+        await _seed_numbered_periodic_tasks(celery_beat_session, PAGED_TASK_TOTAL)
+
+        paged_ids = []
+        for offset in range(0, PAGED_TASK_TOTAL, PAGE_SIZE):
+            page = await PeriodicTaskManager.list(
+                celery_beat_session, offset=offset, limit=PAGE_SIZE
+            )
+            paged_ids.extend(task.id for task in page)
+
+        all_ids = [
+            task.id for task in await PeriodicTaskManager.list(celery_beat_session)
+        ]
+        assert len(paged_ids) == PAGED_TASK_TOTAL
+        assert paged_ids == sorted(all_ids)
+
+    @pytest.mark.asyncio
+    async def test_repeating_a_window_returns_the_same_rows(self, celery_beat_session):
+        """Assert the same offset/limit window is stable across requests."""
+        await _seed_numbered_periodic_tasks(celery_beat_session, PAGED_TASK_TOTAL)
+
+        first = await PeriodicTaskManager.list(
+            celery_beat_session, offset=PAGE_SIZE, limit=PAGE_SIZE
+        )
+        second = await PeriodicTaskManager.list(
+            celery_beat_session, offset=PAGE_SIZE, limit=PAGE_SIZE
+        )
+
+        assert [task.id for task in first] == [task.id for task in second]
+        assert len(first) == PAGE_SIZE
+
+    @pytest.mark.asyncio
+    async def test_paging_by_task_names_returns_every_row_exactly_once(
+        self, celery_beat_session
+    ):
+        """Assert the task-names branch pages deterministically too."""
+        await _seed_numbered_periodic_tasks(celery_beat_session, PAGED_TASK_TOTAL)
+        where_clause = PeriodicTaskManager.build_where_clause_by_task_names(
+            "backup-daily"
+        )
+
+        paged_ids = []
+        for offset in range(0, PAGED_TASK_TOTAL, PAGE_SIZE):
+            page = await PeriodicTaskManager.list(
+                celery_beat_session, where_clause, offset=offset, limit=PAGE_SIZE
+            )
+            paged_ids.extend(task.id for task in page)
+
+        assert len(paged_ids) == PAGED_TASK_TOTAL
+        assert paged_ids == sorted(paged_ids)
+        assert len(set(paged_ids)) == PAGED_TASK_TOTAL
 
 
 class TestPeriodicTaskManagerFilterQuery:

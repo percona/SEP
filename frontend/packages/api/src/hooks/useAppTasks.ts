@@ -189,9 +189,13 @@ function tasksQueryKey(
  */
 type AppListResponse<T> = T[] | PaginatedAppList<T> | { items: T[] | null };
 
-async function fetchAllAppListPages<T extends Record<string, unknown>>(
-  path: string,
-): Promise<AppListResult<T>> {
+/**
+ * Walk every page of a paginated list endpoint, stopping early for bare arrays.
+ *
+ * Caps at ``MAX_FETCH_ALL_PAGES`` × ``DEFAULT_APP_LIST_LIMIT``; when ``total``
+ * is larger the result sets ``truncated: true`` and logs a warning.
+ */
+export async function fetchAllAppListPages<T>(path: string): Promise<AppListResult<T>> {
   const out: T[] = [];
   let offset = 0;
   let lastTotal: number | null = null;
