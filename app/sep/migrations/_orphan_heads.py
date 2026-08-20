@@ -67,17 +67,27 @@ def partition_heads(
     return tuple(resolvable), tuple(unresolvable)
 
 
-def missing_version_locations(script: "ScriptDirectory") -> tuple[str, ...]:
-    """Return configured ``version_locations`` entries that are not directories.
+def empty_version_locations(script: "ScriptDirectory") -> tuple[str, ...]:
+    """Return configured ``version_locations`` entries that contribute no revisions.
 
-    :param script: The Alembic script directory holding the configured paths.
-    :return: Each configured location that is not a directory on disk, in
+    A location contributes no revisions when it is absent from disk or present
+    but contains no migration scripts the loaded revision map resolved. Both
+    conditions are evidence of a stripped (or scaffolded-but-empty) app and
+    license skipping unresolvable heads.
+
+    :param script: The Alembic script directory holding the configured paths
+        and the loaded revision map.
+    :return: Each configured location that contributed no revisions, in
         configuration order.
     """
+    locations = script.version_locations or ()
+    if not locations:
+        return ()
+    populated = {str(Path(rev.path).parent) for rev in script.walk_revisions()}
     return tuple(
         str(location)
-        for location in script.version_locations or ()
-        if not Path(location).is_dir()
+        for location in locations
+        if str(Path(location)) not in populated
     )
 
 
@@ -90,11 +100,12 @@ def skip_unresolvable_heads(env_context: "EnvironmentContext") -> None:
     specific ``version_num`` when it writes.
 
     Fail-closed: heads are only dropped when a configured ``version_locations``
-    entry is missing from disk, which is what a stripped app looks like. With
-    every location present the evidence is absent — the cause may be version
-    skew, a squashed revision, or an entry pruned from ``version_locations``
-    for an app that is gone — so the heads pass through unfiltered and Alembic
-    raises as it does today.
+    entry contributes no resolvable revisions — absent from disk or present and
+    empty — which is what a stripped app looks like. With every location present
+    and populated the evidence is absent — the cause may be version skew, a
+    squashed revision, or an entry pruned from ``version_locations`` for an app
+    that is gone — so the heads pass through unfiltered and Alembic raises as it
+    does today.
 
     Offline (``--sql``) mode needs no hook: there ``get_current_heads`` returns
     the ``starting_rev`` argument instead of reading the version table.
@@ -113,14 +124,15 @@ def skip_unresolvable_heads(env_context: "EnvironmentContext") -> None:
         if not unresolvable:
             return heads
 
-        absent = missing_version_locations(script)
-        if not absent:
+        empty = empty_version_locations(script)
+        if not empty:
             logger.error(
                 "%d revision(s) recorded in %s do not resolve (%s) while every "
-                "configured version_locations entry is present on disk. Likely "
-                "causes: version skew, a squashed revision, or a version_locations "
-                "entry that was pruned or went stale for an app that is no longer "
-                "installed. They are left in place for Alembic to reject.",
+                "configured version_locations entry is present on disk and "
+                "contributes at least one revision. Likely causes: version skew, "
+                "a squashed revision, or a version_locations entry that was "
+                "pruned or went stale for an app that is no longer installed. "
+                "They are left in place for Alembic to reject.",
                 len(unresolvable),
                 migration_context.version_table,
                 ", ".join(unresolvable),
@@ -129,11 +141,11 @@ def skip_unresolvable_heads(env_context: "EnvironmentContext") -> None:
 
         logger.warning(
             "Skipping %d revision(s) recorded in %s with no migration script: "
-            "%s. Configured version_locations absent from disk: %s.",
+            "%s. Configured version_locations that contributed no revisions: %s.",
             len(unresolvable),
             migration_context.version_table,
             ", ".join(unresolvable),
-            ", ".join(absent),
+            ", ".join(empty),
         )
         return resolvable
 

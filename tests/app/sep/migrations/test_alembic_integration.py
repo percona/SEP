@@ -55,15 +55,16 @@ _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
 
 _SKIP_NOTICE = (
     "Skipping 2 revision(s) recorded in alembic_version_sep with no migration "
-    "script: a1b2c3d4e5f6, 9f8e7d6c5b4a. Configured version_locations absent "
-    "from disk: app/sep/apps/alerts/migrations/versions, "
+    "script: a1b2c3d4e5f6, 9f8e7d6c5b4a. Configured version_locations that "
+    "contributed no revisions: app/sep/apps/alerts/migrations/versions, "
     "app/sep/apps/dipper/migrations/versions."
 )
 _SKEW_NOTICE = (
     "1 revision(s) recorded in alembic_version_sep do not resolve "
     f"({UNKNOWN_REVISION}) while every configured version_locations entry is "
-    "present on disk. That is version skew or a squashed revision, not a "
-    "stripped app, so they are left in place for Alembic to reject."
+    "present on disk and contributes at least one revision. That is version "
+    "skew or a squashed revision, not a stripped app, so they are left in "
+    "place for Alembic to reject."
 )
 
 

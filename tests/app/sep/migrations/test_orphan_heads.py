@@ -15,7 +15,7 @@
 
 """Define tests for the SEP orphan-head filtering helpers.
 
-Exercise ``partition_heads`` and ``missing_version_locations`` against the
+Exercise ``partition_heads`` and ``empty_version_locations`` against the
 real ``alembic.ini`` revision map — the two pure halves of the fail-closed
 decision ``skip_unresolvable_heads`` makes, whose combination is covered by
 the integration tests in ``test_alembic_integration.py``.
@@ -29,7 +29,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 from app.sep.migrations._orphan_heads import (
-    missing_version_locations,
+    empty_version_locations,
     partition_heads,
     skip_unresolvable_heads,
 )
@@ -103,12 +103,12 @@ def test_partition_heads_reports_several_unknown_ids(sep_script):
     assert unresolvable == (UNKNOWN_REVISION, "cafebabe5678")
 
 
-def test_missing_version_locations_is_empty_when_every_entry_exists(sep_script):
-    """Report nothing missing for the checked-in configuration."""
-    assert missing_version_locations(sep_script) == ()
+def test_empty_version_locations_is_empty_when_every_entry_is_populated(sep_script):
+    """Report nothing empty for the checked-in configuration."""
+    assert empty_version_locations(sep_script) == ()
 
 
-def test_missing_version_locations_reports_an_absent_entry(tmp_path):
+def test_empty_version_locations_reports_an_absent_entry(tmp_path):
     """Name the configured location that is not a directory on disk."""
     absent = tmp_path / "gone"
     cfg = Config(str(ALEMBIC_INI), ini_section="sep")
@@ -117,24 +117,37 @@ def test_missing_version_locations_reports_an_absent_entry(tmp_path):
         "version_locations", ":".join([*script.version_locations, str(absent)])
     )
 
-    assert missing_version_locations(ScriptDirectory.from_config(cfg)) == (str(absent),)
+    assert empty_version_locations(ScriptDirectory.from_config(cfg)) == (str(absent),)
 
 
-def test_missing_version_locations_tolerates_unset_locations():
+def test_empty_version_locations_reports_a_present_but_empty_entry(tmp_path):
+    """Name a configured directory that exists but contributes no revisions."""
+    empty = tmp_path / "scaffold" / "versions"
+    empty.mkdir(parents=True)
+    cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    script = ScriptDirectory.from_config(cfg)
+    cfg.set_main_option(
+        "version_locations", ":".join([*script.version_locations, str(empty)])
+    )
+
+    assert empty_version_locations(ScriptDirectory.from_config(cfg)) == (str(empty),)
+
+
+def test_empty_version_locations_tolerates_unset_locations():
     """Return an empty tuple when the ini omits ``version_locations``."""
     stub_script = SimpleNamespace(version_locations=None)
 
-    assert missing_version_locations(stub_script) == ()
+    assert empty_version_locations(stub_script) == ()
 
 
 class TestFailClosedDiagnostic:
-    """Cover the ERROR logged when no configured location is missing."""
+    """Cover the ERROR logged when every configured location is populated."""
 
     @staticmethod
     def _read_fail_closed_error(sep_script, caplog) -> str:
         """Run the filter over an unresolvable head and return the ERROR text.
 
-        :param sep_script: Script directory whose locations are all present.
+        :param sep_script: Script directory whose locations are all populated.
         :param caplog: Pytest log-capture fixture.
         :return: The single ERROR message the filter emitted.
         """
@@ -178,3 +191,9 @@ class TestFailClosedDiagnostic:
 
         assert UNKNOWN_REVISION in message
         assert "alembic_version_sep" in message
+
+    def test_requires_every_location_to_contribute_a_revision(self, sep_script, caplog):
+        """State the widened fail-closed condition in the ERROR text."""
+        message = self._read_fail_closed_error(sep_script, caplog)
+
+        assert "contributes at least one revision" in message
