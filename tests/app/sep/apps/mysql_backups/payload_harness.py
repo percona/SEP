@@ -13,13 +13,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Share the AST-extraction harness for exercising the xtrabackup payload's xbcrypt/AES-256 methods.
+"""Share the AST-extraction harness for exercising the xtrabackup payload's methods.
 
 The payload cannot be imported directly (it pulls boto3 and other heavy
 runtime deps), so callers locate the relevant symbols in the source via AST
 and exec them in an isolated namespace. This module holds the shared pieces
-so both the backup-side and restore-side test modules build on one harness
-instead of one re-exporting private helpers from the other.
+so every test module that reaches into the payload -- encryption, restore, the
+incremental base guards -- builds on one harness instead of re-exporting private
+helpers from each other.
 """
 
 import ast
@@ -27,8 +28,10 @@ import logging
 import multiprocessing.pool
 import os
 import pathlib
+import re
 import subprocess
 import types
+from collections.abc import Callable
 
 from tests.app.sep.apps.mysql_backups.conftest import (
     XTRABACKUP_PAYLOAD_PATH,
@@ -70,6 +73,7 @@ def base_namespace() -> dict:
         "os": os,
         "subprocess": subprocess,
         "logging": logging,
+        "re": re,
         "Path": pathlib.Path,
         "Any": object,
         "thread_pool": multiprocessing.pool,
@@ -117,6 +121,47 @@ def load_function(name: str) -> object:
         namespace,
     )
     return namespace[name]
+
+
+def gpg_probe(
+    *, returncode: int = 0, error: Exception | None = None
+) -> tuple[Callable[..., bool], list[list[str]]]:
+    """Return the payload's ``is_encrypted_dir`` wired to a faked ``gpg`` binary.
+
+    :param returncode: Exit status every faked ``gpg`` run reports.
+    :param error: Exception the faked ``Popen`` raises instead of running, for
+        hosts where ``gpg`` is not installed.
+    :return: The lifted function and the list its ``Popen`` calls append to.
+    """
+    tree = xtrabackup_payload_tree()
+    namespace = base_namespace()
+    calls: list[list[str]] = []
+
+    class _Popen:
+        def __init__(self, cmd: list[str], **_kwargs: object) -> None:
+            calls.append(list(cmd))
+            if error is not None:
+                raise error
+            self.returncode = returncode
+
+        def communicate(self) -> tuple[bytes, bytes]:
+            return b"", b"err"
+
+    namespace["subprocess"] = types.SimpleNamespace(Popen=_Popen, PIPE=-1)
+    fn_nodes = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "is_encrypted_dir"
+    ]
+    exec(  # noqa: S102
+        compile(
+            ast.Module(body=const_nodes(tree) + fn_nodes, type_ignores=[]),
+            str(XTRABACKUP_PAYLOAD_PATH),
+            "exec",
+        ),
+        namespace,
+    )
+    return namespace["is_encrypted_dir"], calls
 
 
 class FakeProc:

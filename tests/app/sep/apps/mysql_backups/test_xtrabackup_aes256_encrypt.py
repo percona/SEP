@@ -24,21 +24,14 @@ module constants, a fake ``subprocess`` recording commands, and a stub
 "plaintext removed on success" behaviour is observed for real.
 """
 
-import ast
 import os
 import types
+from collections.abc import Callable
 
 import pytest
 
-from tests.app.sep.apps.mysql_backups.conftest import (
-    XTRABACKUP_PAYLOAD_PATH,
-    xtrabackup_payload_tree,
-)
 from tests.app.sep.apps.mysql_backups.payload_harness import (
-    base_namespace as _base_namespace,
-)
-from tests.app.sep.apps.mysql_backups.payload_harness import (
-    const_nodes as _const_nodes,
+    gpg_probe as _gpg_probe,
 )
 from tests.app.sep.apps.mysql_backups.payload_harness import (
     load_function as _load_function,
@@ -95,34 +88,10 @@ class TestIsEncryptedDirAes256:
 class TestIsEncryptedDirGpgUnchanged:
     """Assert the gpg path keeps its per-file ``gpg --decrypt`` return-code check."""
 
-    def _fn_with_proc(self, returncode: int):
-        namespace = _base_namespace()
-        tree = xtrabackup_payload_tree()
-        calls: list[list[str]] = []
-
-        class _Popen:
-            def __init__(self, cmd, **_kwargs):
-                calls.append(cmd)
-                self.returncode = returncode
-
-            def communicate(self):
-                return b"", b"err"
-
-        namespace["subprocess"] = types.SimpleNamespace(Popen=_Popen, PIPE=-1)
-        fn_nodes = [
-            node
-            for node in tree.body
-            if isinstance(node, ast.FunctionDef) and node.name == "is_encrypted_dir"
-        ]
-        exec(
-            compile(
-                ast.Module(body=_const_nodes(tree) + fn_nodes, type_ignores=[]),
-                str(XTRABACKUP_PAYLOAD_PATH),
-                "exec",
-            ),
-            namespace,
-        )
-        return namespace["is_encrypted_dir"], calls
+    def _fn_with_proc(
+        self, returncode: int
+    ) -> tuple[Callable[..., bool], list[list[str]]]:
+        return _gpg_probe(returncode=returncode)
 
     def test_gpg_zero_return_is_true(self, tmp_path) -> None:
         """Assert gpg return-code 0 for every file means encrypted (True)."""
