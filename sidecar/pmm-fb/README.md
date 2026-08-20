@@ -115,8 +115,8 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   Nothing secret is committed; re-running keeps an existing `.env` and appends
   any slot it predates.
 - **PMM owns every SEP deployment secret.** With `PMM_ENABLE_SEP=1` it writes
-  six files into the `pmm-sep-secrets` volume, which pmm-server mounts at
-  `/srv/sep-secrets` and the side-car mounts read-only at `/run/secrets/sep`.
+  four files into the `pmm-sep` volume, which pmm-server mounts at
+  `/srv/sep` and the side-car mounts read-only at `/run/secrets/sep`.
   `SECRETS_DIR` points SEP at that directory and it reads each file as the
   canonical setting the filename names:
 
@@ -124,18 +124,15 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   |---|---|---|
   | `SECRET_KEY` | the entrypoint | seconds after container start |
   | `SEP__DATABASE__PASSWORD`, `INVENTORY__DATABASE__PASSWORD`, `TASKS__DATABASE__PASSWORD` | the entrypoint | seconds after container start |
-  | `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY` | `grafana-sep`, a supervisord one-shot | after Grafana's first-boot migration |
 
-  None of the six reaches the side-car as environment, so none appears in
+  None of the four reaches the side-car as environment, so none appears in
   `docker inspect` or in the process environment. `SEP_NOMAD_ENDPOINT` is the
   one credential that does: PMM's stock `admin:admin`, a published default
   rather than a provisioned secret.
-- **The two-stage write is why `sep-sidecar` waits on
-  `condition: service_healthy`.** SEP builds its settings once, at process
-  start, and never re-reads them: a side-car released between the two stages
-  would come up with Grafana authentication permanently inert. pmm-server's
-  healthcheck gates on the current provisioning run having published both token
-  files, so health means the side-car can safely read everything.
+- **`sep-sidecar` waits on `condition: service_healthy`** because SEP builds its
+  settings once, at process start, and never re-reads them: a side-car released
+  before the files exist comes up with those settings permanently unset. Health
+  means the current provisioning run has published them.
 - **Group 0, not a matching uid.** The side-car runs as uid/gid 1001 and PMM
   writes the files mode 0640 owned by group `root` under a setgid `02770`
   directory. `group_add: ["0"]` is what makes them readable, and it keeps
