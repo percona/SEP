@@ -31,6 +31,7 @@ from app.sep.apps.mysql_backups.form_backfill import (
 )
 from app.sep.apps.mysql_backups.forms import BackupCreate
 from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.payload_variants import PROVIDERS
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
 from app.tasks.models import Task, TaskBackendEnum
 
@@ -292,3 +293,53 @@ def test_backfill_single_task_stamps_mysql_backups_form():
     assert stamped_form["backup_type"] == BackupType.XTRABACKUP.value
     assert stamped_form["upload"] == ["rsync"]
     assert stamped_form["rsync_path"] == "/remote/backups"
+
+
+class TestUploadBackfillDropsNothingSilently:
+    """Assert reconstruction never narrows a legacy task's upload selection unnoticed.
+
+    The reconstructed ``upload`` list chooses which payload variant a backfilled
+    task dispatches. A provider spelling the alias map does not know is dropped, so
+    the task would silently dispatch a variant that cannot reach it.
+    """
+
+    @staticmethod
+    def _meta(upload: list[str]) -> dict[str, str]:
+        """Return a task meta carrying ``upload`` in its persisted config.
+
+        :param upload: The provider spellings the stored config records.
+        :return: The meta dict the extractor reads.
+        """
+        return {
+            "config": yaml.dump(
+                {
+                    "SERVER_LIST": [
+                        {
+                            "HOST": "10.0.0.5",
+                            "BACKUP_TYPE": BackupType.XTRABACKUP.value,
+                            "UPLOAD": upload,
+                        }
+                    ]
+                }
+            )
+        }
+
+    def test_every_canonical_spelling_survives(self) -> None:
+        """Assert the provider names the dispatcher writes all round-trip."""
+        extracted = _extract_upload_from_meta(self._meta(list(PROVIDERS)))
+        assert sorted(extracted) == sorted(PROVIDERS)
+
+    def test_the_documented_legacy_alias_is_not_dropped(self) -> None:
+        """Assert ``GS``, the spelling the payload's own docstring documents, maps through.
+
+        Dropping it reconstructs an empty selection, which dispatches the no-upload
+        variant for a task that was uploading to Google Cloud Storage.
+        """
+        assert _extract_upload_from_meta(self._meta(["GS"])) == ["gsutil"]
+
+    def test_an_unknown_provider_is_reported_rather_than_dropped(self) -> None:
+        """Assert an unmapped spelling does not quietly narrow the selection."""
+        stored = ["rsync", "azure"]
+        extracted = _extract_upload_from_meta(self._meta(stored))
+        assert "rsync" in extracted
+        assert len(extracted) == len(stored), extracted

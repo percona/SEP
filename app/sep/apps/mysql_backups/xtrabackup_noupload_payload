@@ -1805,7 +1805,6 @@ class Xtrabackup(Backup):
 
         # Upload options to keep backward-compatibility
         self.server_setting = server_data
-        self.rsync_dir = server_data.get('XTRABACKUP_RSYNC_DIR')
 
         # report options
         self.report_options['options'] = {
@@ -1945,7 +1944,9 @@ class Xtrabackup(Backup):
         upload_destination = None
         for upload_type in sorted(self.upload_type):
             self.enable_upload(self.last_backup_dir)
-            provider = upload_providers.get(upload_type)
+            # Configs written before the provider names were lowercased record
+            # them capitalised, and those stored tasks still dispatch here.
+            provider = upload_providers.get(upload_type.casefold())
             # A selected provider absent from the map means this variant was not built
             # to carry it. Warning and skipping would report the backup OK with no
             # offsite copy, so fail loudly instead.

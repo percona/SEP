@@ -41,7 +41,6 @@ import argparse
 import ast
 import builtins
 import importlib.util
-import itertools
 import re
 import sys
 from collections.abc import Callable
@@ -76,6 +75,7 @@ _NAMING = _load_naming_rule()
 #: app module so the generator and the dispatcher cannot disagree on a filename.
 PROVIDERS: tuple[str, ...] = _NAMING.PROVIDERS
 variant_name: Callable[[tuple[str, ...]], str] = _NAMING.variant_name
+selections: Callable[[], list[tuple[str, ...]]] = _NAMING.selections
 
 CANONICAL_SOURCE = PAYLOAD_DIR / _NAMING.CANONICAL_PAYLOAD_NAME
 
@@ -102,18 +102,6 @@ _BANNER = (
 
 class RegionError(RuntimeError):
     """Raise when a variant cannot be rendered unambiguously from the canonical source."""
-
-
-def selections() -> list[tuple[str, ...]]:
-    """Return every upload selection, from the empty set to all providers.
-
-    :return: One tuple per selection, each in :data:`PROVIDERS` order.
-    """
-    return [
-        combo
-        for size in range(len(PROVIDERS) + 1)
-        for combo in itertools.combinations(PROVIDERS, size)
-    ]
 
 
 def render(source: str, providers: tuple[str, ...]) -> str:
@@ -169,6 +157,10 @@ def with_banner(text: str, providers: tuple[str, ...]) -> str:
     """
     banner = _BANNER.format(providers=", ".join(providers) if providers else "none")
     lines = text.split("\n")
+    # Inserting at index 1 unconditionally would bury the banner under a first
+    # line that is not a shebang, and split an opening docstring in two.
+    if not lines or not lines[0].startswith("#!"):
+        return "\n".join([banner.rstrip("\n"), *lines])
     return "\n".join([lines[0], banner.rstrip("\n"), *lines[1:]])
 
 
@@ -179,13 +171,18 @@ _MODULE_DUNDERS = frozenset(
 
 
 class ModuleNames(NamedTuple):
-    """Namespace the name sets :func:`collect_names` gathers from one variant."""
+    """Namespace the name sets :func:`collect_names` gathers from one variant.
 
-    #: Names read somewhere in the module, which the unbound sweep checks resolve.
+    :param loaded: Names read somewhere in the module, which the unbound sweep
+        checks resolve.
+    :param bound: Names bound somewhere in the module, by assignment, import, or
+        definition.
+    :param referenced: Every name the module mentions, including attribute bases
+        and import roots.
+    """
+
     loaded: frozenset[str]
-    #: Names bound somewhere in the module, by assignment, import, or definition.
     bound: frozenset[str]
-    #: Every name the module mentions, including attribute bases and import roots.
     referenced: frozenset[str]
 
 

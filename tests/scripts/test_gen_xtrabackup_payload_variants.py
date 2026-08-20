@@ -21,6 +21,7 @@ verification weight for the shipped variants.
 """
 
 import ast
+import re
 import shutil
 from pathlib import Path
 
@@ -66,6 +67,59 @@ _GENERATED_SELECTIONS = sorted(
     for providers in _EXPECTED_NAMES
     if len(providers) != len(gen_variants.PROVIDERS)
 )
+
+
+def _string_constants(source: str) -> frozenset[str]:
+    """Return every string constant in ``source``.
+
+    :param source: The payload source to parse.
+    :return: The distinct string constant values it holds.
+    """
+    return frozenset(
+        node.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    )
+
+
+def _region_split(source: str, provider: str) -> tuple[str, str]:
+    """Split ``source`` into the text inside ``provider``'s regions and the rest.
+
+    :param source: The canonical payload source.
+    :param provider: The provider whose regions are separated out.
+    :return: The text inside the provider's regions, and the text outside them.
+    """
+    inside: list[str] = []
+    outside: list[str] = []
+    open_provider: str | None = None
+    for line in source.split("\n"):
+        match = gen_variants._MARKER.match(line)
+        if match is not None:
+            kind, named = match.group("kind"), match.group("provider")
+            open_provider = named if kind == "BEGIN" else None
+            continue
+        (inside if open_provider == provider else outside).append(line)
+    return "\n".join(inside), "\n".join(outside)
+
+
+def _region_text(source: str, provider: str) -> str:
+    """Return the canonical text inside ``provider``'s marker regions.
+
+    :param source: The canonical payload source.
+    :param provider: The provider whose regions are wanted.
+    :return: The text those regions carry.
+    """
+    return _region_split(source, provider)[0]
+
+
+def _outside_region_text(source: str, provider: str) -> str:
+    """Return the canonical text outside ``provider``'s marker regions.
+
+    :param source: The canonical payload source.
+    :param provider: The provider whose regions are excluded.
+    :return: The text every other line carries.
+    """
+    return _region_split(source, provider)[1]
 
 
 @pytest.fixture
@@ -271,3 +325,63 @@ class TestMalformedRegions:
         text = _variant_path(providers).read_text(encoding="utf-8")
         omitted = tuple(p for p in gen_variants.PROVIDERS if p not in providers)
         gen_variants.validate(text, omitted, gen_variants.variant_name(providers))
+
+
+class TestExclusiveNames:
+    """Assert the hand-maintained canary list still describes the canonical source.
+
+    ``EXCLUSIVE_NAMES`` is how the generator catches a region drawn too narrowly for
+    an import-bound name, which the unbound-name sweep cannot see because the import
+    binds it. The list is hand-written, so a rename inside a region retires a canary
+    silently and the protection lapses with every test still green.
+    """
+
+    @pytest.mark.parametrize("provider", sorted(gen_variants.EXCLUSIVE_NAMES), ids=str)
+    def test_every_canary_appears_in_its_own_region(self, provider: str) -> None:
+        """Assert each canary is a name the provider's own region actually carries."""
+        inside = _region_text(_canonical(), provider)
+        for name in gen_variants.EXCLUSIVE_NAMES[provider]:
+            assert name in inside, f"{provider} canary {name} is not in its region"
+
+    @pytest.mark.parametrize("provider", sorted(gen_variants.EXCLUSIVE_NAMES), ids=str)
+    def test_no_canary_appears_outside_its_region(self, provider: str) -> None:
+        """Assert a canary names nothing outside its region, which would reject variants.
+
+        A canary that also appears in shared code makes the stranded-reference check
+        reject every variant omitting that provider, whatever the region boundaries.
+        """
+        outside = _outside_region_text(_canonical(), provider)
+        for name in gen_variants.EXCLUSIVE_NAMES[provider]:
+            assert name not in outside, f"{provider} canary {name} leaks outside"
+
+
+class TestStringLiteralsSurviveRendering:
+    """Assert rendering never rewrites the inside of a string literal.
+
+    ``render`` works line by line and then collapses blank-line runs across the whole
+    file, so a marker-looking line or a long blank run inside a multi-line literal
+    would be rewritten in every variant while the canonical kept it. Both are latent
+    today, and the existing tests only check that a variant parses.
+    """
+
+    def test_canonical_carries_no_marker_inside_a_literal(self) -> None:
+        """Assert no string constant embeds a marker the line scanner would consume."""
+        for value in _string_constants(_canonical()):
+            assert gen_variants.BEGIN not in value
+            assert gen_variants.END not in value
+
+    def test_canonical_carries_no_collapsible_run_inside_a_literal(self) -> None:
+        """Assert no string constant holds a blank-line run the squeeze would shorten."""
+        for value in _string_constants(_canonical()):
+            assert re.search(r"\n{3,}", value) is None
+
+    @pytest.mark.parametrize("providers", _GENERATED_SELECTIONS, ids=str)
+    def test_variant_literals_all_come_from_the_canonical(
+        self, providers: tuple[str, ...]
+    ) -> None:
+        """Assert every literal in a variant is byte-identical to a canonical one."""
+        canonical = _string_constants(_canonical())
+        rendered = _string_constants(
+            _variant_path(providers).read_text(encoding="utf-8")
+        )
+        assert rendered <= canonical
