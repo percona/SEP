@@ -62,7 +62,7 @@ ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 
 REDUCED_ACTIVATION = [
     App(module_name=name)
-    for name in ("inventory", "atw", "mysql_backups", "pom_discovery")
+    for name in ("inventory", "atw", "mysql_backups", "om_inventory")
 ]
 """The PMM-embedded side-car activation list (``sidecar/settings.yaml``)."""
 

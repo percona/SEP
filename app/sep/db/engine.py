@@ -24,17 +24,17 @@ from app.core.db.utils import (
     get_async_session_maker_from_engine,
 )
 from app.sep.config import sep_settings
-from app.sep.pom.config import pom_schema_translate_map
+from app.sep.om.config import om_schema_translate_map
 
-# POM's tables declare a symbolic ``pom_schema`` (app/sep/pom/config.py); this is
+# OM's tables declare a symbolic ``om_schema`` (app/sep/om/config.py); this is
 # where it becomes a real schema, or the default one. It belongs on the engine rather
-# than at the call sites because both paths that reach POM's tables come from here:
+# than at the call sites because both paths that reach OM's tables come from here:
 # the routes through ``SessionDep`` and the Celery task through
 # ``get_async_session_maker``. One option therefore covers the HTTP path and the
 # background path together -- which is the whole reason a schema was affordable where
 # a second database would not have been.
 engine = create_app_async_engine(sep_settings.DATABASE).execution_options(
-    schema_translate_map=pom_schema_translate_map(sep_settings.DATABASE)
+    schema_translate_map=om_schema_translate_map(sep_settings.DATABASE)
 )
 
 

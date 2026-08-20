@@ -27,7 +27,7 @@ from app.core.db.utils import compare_type
 from app.sep.config import sep_settings
 from app.sep.migrations._discovery import discover_plugin_migrations_and_models
 from app.sep.migrations._orphan_heads import skip_unresolvable_heads
-from app.sep.pom.config import pom_schema_translate_map
+from app.sep.om.config import om_schema_translate_map
 from app.core.settings_override.models import *
 from app.sep.models import *
 from app.sep.snippets.models import *
@@ -66,8 +66,8 @@ def run_migrations_offline() -> None:
     Calls to context.execute() here emit the given string to the
     script output.
 
-    Note for POM: Alembic applies no ``schema_translate_map`` offline -- there is no
-    connection to carry one -- so a generated script names ``pom_schema`` literally
+    Note for OM: Alembic applies no ``schema_translate_map`` offline -- there is no
+    connection to carry one -- so a generated script names ``om_schema`` literally
     and has to be edited before it is run. Online mode is what ``make migrate`` uses.
 
     """
@@ -111,12 +111,12 @@ async def run_async_migrations() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    # POM's migrations name ``pom_schema`` symbolically, exactly as its models do, so
+    # OM's migrations name ``om_schema`` symbolically, exactly as its models do, so
     # the connection that runs them has to translate it the way the application engine
-    # does. Without this a POM migration creates a literal ``pom_schema`` schema on a
+    # does. Without this a OM migration creates a literal ``om_schema`` schema on a
     # PostgreSQL bind and fails outright on SQLite.
     connectable = connectable.execution_options(
-        schema_translate_map=pom_schema_translate_map(sep_settings.DATABASE)
+        schema_translate_map=om_schema_translate_map(sep_settings.DATABASE)
     )
 
     async with connectable.connect() as connection:

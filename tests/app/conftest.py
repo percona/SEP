@@ -59,7 +59,7 @@ from app.sep.deps import (
 )
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.main import sep_app
-from app.sep.pom.config import POM_SCHEMA_SYMBOL
+from app.sep.om.config import OM_SCHEMA_SYMBOL
 from app.sep.snippets.config import snippets_settings
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
@@ -90,23 +90,23 @@ if "stream_writer" in inspect.signature(ClientResponse.__init__).parameters:
 
 
 @event.listens_for(Engine, "connect")
-def _attach_pom_schema_on_sqlite(dbapi_connection: Any, _record: Any) -> None:
-    """Make POM's symbolic schema a real one on every SQLite connection.
+def _attach_om_schema_on_sqlite(dbapi_connection: Any, _record: Any) -> None:
+    """Make OM's symbolic schema a real one on every SQLite connection.
 
-    POM's tables declare ``pom_schema`` (``app/sep/pom/config.py``) and the
-    application engine translates it -- to ``pom`` on PostgreSQL, to the default
+    OM's tables declare ``om_schema`` (``app/sep/om/config.py``) and the
+    application engine translates it -- to ``om`` on PostgreSQL, to the default
     schema on SQLite, where SEP and inventory are separate database files and cannot
     collide. This suite is the one place they *can*: it creates every service's
-    metadata in a single in-memory database, where a POM table called ``service``
+    metadata in a single in-memory database, where a OM table called ``service``
     would be SEP inventory's ``service``.
 
     So rather than translate the token here, satisfy it: SQLite has no schemas but it
     has ``ATTACH``, and an attached in-memory database *is* a schema as far as SQL is
     concerned. Attaching it under the token's own name means the untranslated
-    ``pom_schema.service`` resolves, and no fixture needs a
+    ``om_schema.service`` resolves, and no fixture needs a
     ``schema_translate_map`` -- which matters because the suite builds engines in
     some thirty places, and each one that forgot would fail with "unknown database
-    pom_schema".
+    om_schema".
 
     Registered on the ``Engine`` class so it covers engines that do not exist yet.
     It fires when the DBAPI connection is opened, before any statement, so
@@ -121,7 +121,7 @@ def _attach_pom_schema_on_sqlite(dbapi_connection: Any, _record: Any) -> None:
     if "sqlite" not in type(dbapi_connection).__module__:
         return
     cursor = dbapi_connection.cursor()
-    cursor.execute(f"ATTACH DATABASE ':memory:' AS {POM_SCHEMA_SYMBOL}")
+    cursor.execute(f"ATTACH DATABASE ':memory:' AS {OM_SCHEMA_SYMBOL}")
     cursor.close()
 
 
@@ -445,13 +445,13 @@ async def postgres_engine() -> AsyncEngine:
     try:
         async with base.begin() as conn:
             await conn.exec_driver_sql(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
-        # POM's tables declare a symbolic ``pom_schema``. PostgreSQL has no ``ATTACH``
+        # OM's tables declare a symbolic ``om_schema``. PostgreSQL has no ``ATTACH``
         # for the SQLite trick above, so translate it -- into the *same* per-worker
         # schema as everything else, because that is what teardown drops. Routing it
-        # to a literal ``pom`` would escape the worker schema and collide across xdist
+        # to a literal ``om`` would escape the worker schema and collide across xdist
         # workers.
         yield base.execution_options(
-            schema_translate_map={None: schema, POM_SCHEMA_SYMBOL: schema}
+            schema_translate_map={None: schema, OM_SCHEMA_SYMBOL: schema}
         )
     finally:
         try:
@@ -521,13 +521,13 @@ async def mysql_engine() -> AsyncEngine:
     try:
         async with base.begin() as conn:
             await conn.exec_driver_sql(f"CREATE DATABASE IF NOT EXISTS `{database}`")
-        # ``pom_schema`` joins the per-worker database for the same reason ``None``
+        # ``om_schema`` joins the per-worker database for the same reason ``None``
         # does. MySQL's schema *is* a database, which is why production resolves the
-        # token to the default schema there (``app/sep/pom/config.py``): the isolation
-        # POM wants does not exist on this dialect, and pointing it at a second
+        # token to the default schema there (``app/sep/om/config.py``): the isolation
+        # OM wants does not exist on this dialect, and pointing it at a second
         # database nothing provisions would be worse than not isolating.
         yield base.execution_options(
-            schema_translate_map={None: database, POM_SCHEMA_SYMBOL: database}
+            schema_translate_map={None: database, OM_SCHEMA_SYMBOL: database}
         )
     finally:
         try:

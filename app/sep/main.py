@@ -185,7 +185,7 @@ async def _reseed_system_periodic_tasks(_: Mapping[str, object]) -> None:
 
     Wired for ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``),
     ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``) and
-    ``PomDiscoverySettings.SCHEDULE`` (``sep__run_pom_probe``). Rebuilds the
+    ``OmInventorySettings.SCHEDULE`` (``sep__run_om_probe``). Rebuilds the
     system periodic-task set via
     :func:`app.sep.db.seed.get_system_periodic_tasks` -- which re-reads the now-live
     interval from the refreshed proxy snapshot -- and re-invokes
@@ -253,7 +253,7 @@ def build_sep_override_callbacks(app: FastAPI) -> CallbackRegistry:
             "APP_DRAIN",
         ): _reseed_system_periodic_tasks,
         (
-            SettingClassEnum.POM_DISCOVERY_SETTINGS,
+            SettingClassEnum.OM_INVENTORY_SETTINGS,
             "SCHEDULE",
         ): _reseed_system_periodic_tasks,
     }

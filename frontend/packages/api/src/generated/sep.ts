@@ -2038,7 +2038,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/apps/pom_discovery/config': {
+  '/api/apps/om_inventory/config': {
     parameters: {
       query?: never;
       header?: never;
@@ -2063,7 +2063,7 @@ export interface paths {
      *     :param session: The database session.
      *     :return: One row per configuration field.
      */
-    get: operations['pom_discovery_get_config_api_apps_pom_discovery_config_get'];
+    get: operations['om_inventory_get_config_api_apps_om_inventory_config_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2092,10 +2092,10 @@ export interface paths {
      *     :param session: The database session.
      *     :return: One row per applied key, in input order.
      */
-    patch: operations['pom_discovery_patch_config_api_apps_pom_discovery_config_patch'];
+    patch: operations['om_inventory_patch_config_api_apps_om_inventory_config_patch'];
     trace?: never;
   };
-  '/api/apps/pom_discovery/config/{key}': {
+  '/api/apps/om_inventory/config/{key}': {
     parameters: {
       query?: never;
       header?: never;
@@ -2120,13 +2120,13 @@ export interface paths {
      *         ``SCHEDULE__every``.
      *     :param session: The database session.
      */
-    delete: operations['pom_discovery_delete_config_override_api_apps_pom_discovery_config__key__delete'];
+    delete: operations['om_inventory_delete_config_override_api_apps_om_inventory_config__key__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/apps/pom_discovery/hosts': {
+  '/api/apps/om_inventory/hosts': {
     parameters: {
       query?: never;
       header?: never;
@@ -2135,7 +2135,7 @@ export interface paths {
     };
     /**
      * List Estate Hosts
-     * @description Return every host POM holds, each with its services.
+     * @description Return every host OM holds, each with its services.
      *
      *     ``has_service=false`` is the question this table exists to answer: which machines
      *     carry a PMM client and no database. It is a filter rather than an endpoint of its
@@ -2151,7 +2151,7 @@ export interface paths {
      *     :param executor: Filter on whether an executor serves it.
      *     :return: The hosts, by name.
      */
-    get: operations['pom_discovery_list_estate_hosts_api_apps_pom_discovery_hosts_get'];
+    get: operations['om_inventory_list_estate_hosts_api_apps_om_inventory_hosts_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2160,7 +2160,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/apps/pom_discovery/hosts/{node_id}': {
+  '/api/apps/om_inventory/hosts/{node_id}': {
     parameters: {
       query?: never;
       header?: never;
@@ -2173,10 +2173,10 @@ export interface paths {
      *
      *     :param node_id: PMM's node id.
      *     :param session: The database session.
-     *     :raises HTTPNotFoundException: When POM holds no such host.
+     *     :raises HTTPNotFoundException: When OM holds no such host.
      *     :return: The host.
      */
-    get: operations['pom_discovery_get_estate_host_api_apps_pom_discovery_hosts__node_id__get'];
+    get: operations['om_inventory_get_estate_host_api_apps_om_inventory_hosts__node_id__get'];
     put?: never;
     post?: never;
     /**
@@ -2185,30 +2185,30 @@ export interface paths {
      *
      *     For rows PMM no longer has, which is not hypothetical: restarting a node's
      *     pmm-agent runs ``setup --force``, which *replaces* the node and mints a new id, so
-     *     POM gains a row and keeps the old one. Nothing prunes automatically yet, and the
+     *     OM gains a row and keeps the old one. Nothing prunes automatically yet, and the
      *     alternative to this endpoint is ``psql`` against a schema an operator should never
      *     need to know exists.
      *
      *     Deliberately not suppression. An entity PMM still knows about comes straight back
-     *     on the next sweep, because POM's job is to describe what PMM says exists, not to
+     *     on the next sweep, because OM's job is to describe what PMM says exists, not to
      *     hold an opinion about it.
      *
      *     Its services go with it. That is done explicitly rather than left to the
-     *     ``ON DELETE CASCADE`` on ``pom.service.node_id``, because SQLite enforces no
+     *     ``ON DELETE CASCADE`` on ``om.service.node_id``, because SQLite enforces no
      *     foreign key without a per-connection pragma SEP never sets -- and SQLite is the
-     *     shipped default. See :func:`~app.sep.apps.pom_discovery.crud.delete_host`.
+     *     shipped default. See :func:`~app.sep.apps.om_inventory.crud.delete_host`.
      *
      *     :param node_id: PMM's node id.
      *     :param session: The database session.
-     *     :raises HTTPNotFoundException: When POM holds no such host.
+     *     :raises HTTPNotFoundException: When OM holds no such host.
      */
-    delete: operations['pom_discovery_delete_estate_host_api_apps_pom_discovery_hosts__node_id__delete'];
+    delete: operations['om_inventory_delete_estate_host_api_apps_om_inventory_hosts__node_id__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/apps/pom_discovery/runs': {
+  '/api/apps/om_inventory/runs': {
     parameters: {
       query?: never;
       header?: never;
@@ -2223,7 +2223,7 @@ export interface paths {
      *     :param limit: How many to return.
      *     :return: The sweeps.
      */
-    get: operations['pom_discovery_list_runs_api_apps_pom_discovery_runs_get'];
+    get: operations['om_inventory_list_runs_api_apps_om_inventory_runs_get'];
     put?: never;
     /**
      * Trigger Probe
@@ -2250,14 +2250,14 @@ export interface paths {
      *     :raises HTTPConflictException: When a requested host is already being refreshed.
      *     :return: The queued sweep.
      */
-    post: operations['pom_discovery_trigger_probe_api_apps_pom_discovery_runs_post'];
+    post: operations['om_inventory_trigger_probe_api_apps_om_inventory_runs_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/apps/pom_discovery/runs/{run_id}': {
+  '/api/apps/om_inventory/runs/{run_id}': {
     parameters: {
       query?: never;
       header?: never;
@@ -2273,7 +2273,7 @@ export interface paths {
      *     :raises HTTPNotFoundException: When there is no such sweep.
      *     :return: The sweep in full.
      */
-    get: operations['pom_discovery_get_probe_run_api_apps_pom_discovery_runs__run_id__get'];
+    get: operations['om_inventory_get_probe_run_api_apps_om_inventory_runs__run_id__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2282,7 +2282,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/apps/pom_discovery/schema': {
+  '/api/apps/om_inventory/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -2295,7 +2295,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['pom_discovery_get_schema_api_apps_pom_discovery_schema_get'];
+    get: operations['om_inventory_get_schema_api_apps_om_inventory_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2304,7 +2304,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/apps/pom_discovery/services': {
+  '/api/apps/om_inventory/services': {
     parameters: {
       query?: never;
       header?: never;
@@ -2313,7 +2313,7 @@ export interface paths {
     };
     /**
      * List Estate Services
-     * @description Return the services POM holds, flat.
+     * @description Return the services OM holds, flat.
      *
      *     For a consumer that works in services and would otherwise walk every host document
      *     to find them. ``GET /hosts/{node_id}`` already nests a host's services, so there is
@@ -2325,7 +2325,7 @@ export interface paths {
      *     :param failing: Filter on whether the service is currently failing.
      *     :return: The services, by name.
      */
-    get: operations['pom_discovery_list_estate_services_api_apps_pom_discovery_services_get'];
+    get: operations['om_inventory_list_estate_services_api_apps_om_inventory_services_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2334,7 +2334,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/apps/pom_discovery/services/{service_id}': {
+  '/api/apps/om_inventory/services/{service_id}': {
     parameters: {
       query?: never;
       header?: never;
@@ -2347,10 +2347,10 @@ export interface paths {
      *
      *     :param service_id: PMM's service id.
      *     :param session: The database session.
-     *     :raises HTTPNotFoundException: When POM holds no such service.
+     *     :raises HTTPNotFoundException: When OM holds no such service.
      *     :return: The service.
      */
-    get: operations['pom_discovery_get_estate_service_api_apps_pom_discovery_services__service_id__get'];
+    get: operations['om_inventory_get_estate_service_api_apps_om_inventory_services__service_id__get'];
     put?: never;
     post?: never;
     /**
@@ -2362,9 +2362,9 @@ export interface paths {
      *
      *     :param service_id: PMM's service id.
      *     :param session: The database session.
-     *     :raises HTTPNotFoundException: When POM holds no such service.
+     *     :raises HTTPNotFoundException: When OM holds no such service.
      */
-    delete: operations['pom_discovery_delete_estate_service_api_apps_pom_discovery_services__service_id__delete'];
+    delete: operations['om_inventory_delete_estate_service_api_apps_om_inventory_services__service_id__delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -4320,7 +4320,7 @@ export interface components {
      *     The wired classes are ``SEPSettings``, ``TasksSettings``,
      *     ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
      *     ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings``,
-     *     ``InventorySettings`` and ``PomDiscoverySettings``.
+     *     ``InventorySettings`` and ``OmInventorySettings``.
      *
      *     To wire a new settings class:
      *
@@ -4346,7 +4346,7 @@ export interface components {
       | 'AlertsSettings'
       | 'HealthReportSettings'
       | 'InventorySettings'
-      | 'PomDiscoverySettings';
+      | 'OmInventorySettings';
     /**
      * SettingClassGroup
      * @description One settings-class group in the LIST response.
@@ -9726,7 +9726,7 @@ export interface components {
       | 'account-tree';
     /**
      * HostResponse
-     * @description One host, with the services POM knows are on it.
+     * @description One host, with the services OM knows are on it.
      *
      *     A host is a row whether or not any MongoDB was found on it: that is what makes
      *     "which hosts have no database" a query rather than an absence, and it is the only
@@ -9740,7 +9740,7 @@ export interface components {
      *     :param observed: Everything collected about the host, including
      *         ``unregistered_mongods`` where the probe found a database PMM has no service
      *         for. Empty when the host has never been successfully probed.
-     *     :param first_seen_at: When POM first wrote a row for it.
+     *     :param first_seen_at: When OM first wrote a row for it.
      *     :param last_attempt_at: When a run last probed it.
      *     :param last_success_at: When it last answered.
      *     :param failing_since: The first failure after the last success.
@@ -9748,7 +9748,7 @@ export interface components {
      *     :param last_error: The most recent failure detail.
      *     :param services: The services on it. Empty is a meaningful answer, not a gap.
      */
-    pom_discovery__HostResponse: {
+    om_inventory__HostResponse: {
       /** Address */
       address?: string | null;
       /**
@@ -9778,7 +9778,7 @@ export interface components {
       /** Observed */
       observed?: Record<string, never>;
       /** Services */
-      services?: components['schemas']['pom_discovery__ServiceResponse'][];
+      services?: components['schemas']['om_inventory__ServiceResponse'][];
     };
     /**
      * ProbeCounts
@@ -9796,7 +9796,7 @@ export interface components {
      *     :param hosts_probeable: ...of which had a usable executor to dispatch to.
      *     :param hosts_answered: Hosts that returned a usable record.
      */
-    pom_discovery__ProbeCounts: {
+    om_inventory__ProbeCounts: {
       /**
        * Hosts Answered
        * @default 0
@@ -9832,7 +9832,7 @@ export interface components {
      *     :param observed_at: When the probe ran. Carried per fact rather than per response
      *         so a consumer merging several sources can age them against each other.
      */
-    pom_discovery__ProbeFact: {
+    om_inventory__ProbeFact: {
       /** Field */
       field: string;
       /**
@@ -9851,14 +9851,14 @@ export interface components {
      *
      *     Host-oriented, because a sweep attempts hosts. A flat list of services -- which
      *     this was -- cannot show a machine carrying a PMM client and no database, however
-     *     many times it is probed, and that machine is the case POM most exists to describe.
+     *     many times it is probed, and that machine is the case OM most exists to describe.
      *
      *     One dispatch covers every service on a host, so the host owns the timing and the
      *     failure and its services carry only what is theirs. Previously the duration was
      *     repeated identically across a host's services, which read as several measurements
      *     when it was one.
      *
-     *     :param node_id: **PMM's** node id, the key POM holds this host under.
+     *     :param node_id: **PMM's** node id, the key OM holds this host under.
      *     :param host_name: The node's registered name.
      *     :param executor_host: The client its probe ran on; ``None`` when none matched.
      *     :param resolution: ``name`` / ``address`` / ``orphaned`` -- how that client was
@@ -9870,7 +9870,7 @@ export interface components {
      *     :param error: The host-level failure, when its probe failed.
      *     :param services: The services on it, empty when there are none.
      */
-    pom_discovery__ProbeNode: {
+    om_inventory__ProbeNode: {
       /**
        * Answered
        * @default false
@@ -9889,7 +9889,7 @@ export interface components {
       /** Resolution */
       resolution: string;
       /** Services */
-      services?: components['schemas']['pom_discovery__ProbeNodeService'][];
+      services?: components['schemas']['om_inventory__ProbeNodeService'][];
     };
     /**
      * ProbeNodeService
@@ -9900,7 +9900,7 @@ export interface components {
      *     :param answered: Whether the host returned a usable record for it.
      *     :param error: Why it did not, when it did not.
      */
-    pom_discovery__ProbeNodeService: {
+    om_inventory__ProbeNodeService: {
       /**
        * Answered
        * @default false
@@ -9925,7 +9925,7 @@ export interface components {
      *     :param started_at: When the run row was created.
      *     :param scope: The hosts it will refresh, or ``None`` for the whole estate.
      */
-    pom_discovery__ProbeRunAccepted: {
+    om_inventory__ProbeRunAccepted: {
       /**
        * Run Id
        * Format: uuid
@@ -9953,12 +9953,12 @@ export interface components {
      *     :param facts: The facts it collected — every field the probe reads, including the
      *         ones no consumer maps today.
      */
-    pom_discovery__ProbeRunDetail: {
-      counts: components['schemas']['pom_discovery__ProbeCounts'];
+    om_inventory__ProbeRunDetail: {
+      counts: components['schemas']['om_inventory__ProbeCounts'];
       /** Error */
       error?: string | null;
       /** Facts */
-      facts?: components['schemas']['pom_discovery__ProbeFact'][];
+      facts?: components['schemas']['om_inventory__ProbeFact'][];
       /**
        * Facts Collected
        * @default 0
@@ -9967,7 +9967,7 @@ export interface components {
       /** Finished At */
       finished_at?: string | null;
       /** Nodes */
-      nodes?: components['schemas']['pom_discovery__ProbeNode'][];
+      nodes?: components['schemas']['om_inventory__ProbeNode'][];
       /**
        * Run Id
        * Format: uuid
@@ -9998,8 +9998,8 @@ export interface components {
      *         something different when the run was only ever asked about one host.
      *     :param error: The failure detail when the sweep itself raised.
      */
-    pom_discovery__ProbeRunResponse: {
-      counts: components['schemas']['pom_discovery__ProbeCounts'];
+    om_inventory__ProbeRunResponse: {
+      counts: components['schemas']['om_inventory__ProbeCounts'];
       /** Error */
       error?: string | null;
       /**
@@ -10026,7 +10026,7 @@ export interface components {
     };
     /**
      * ServiceResponse
-     * @description One MongoDB service PMM has registered, as POM currently holds it.
+     * @description One MongoDB service PMM has registered, as OM currently holds it.
      *
      *     Keyed on **PMM's** service id, which is the whole benefit of storing it that way:
      *     the path and the payload carry the id every consumer already has, with nothing to
@@ -10039,7 +10039,7 @@ export interface components {
      *     :param role: What the probe found it to be, when a probe determined one.
      *     :param observed: Everything collected, with its own ``collected_at``. Empty when
      *         this service has never been successfully probed.
-     *     :param first_seen_at: When POM first wrote a row for it.
+     *     :param first_seen_at: When OM first wrote a row for it.
      *     :param last_attempt_at: When a run last targeted it. ``None`` means no run ever
      *         has, which is different from having tried and failed.
      *     :param last_success_at: When it last answered. This is the data's age.
@@ -10048,7 +10048,7 @@ export interface components {
      *     :param consecutive_failures: Failures since the last success.
      *     :param last_error: The most recent failure detail.
      */
-    pom_discovery__ServiceResponse: {
+    om_inventory__ServiceResponse: {
       /**
        * Consecutive Failures
        * @default 0
@@ -10085,9 +10085,9 @@ export interface components {
      * @description Ask for a refresh of named hosts rather than the whole estate.
      *
      *     :param node_ids: PMM's node ids. Empty, or the whole body absent, means every
-     *         host POM holds -- which is what the scheduled sweep does.
+     *         host OM holds -- which is what the scheduled sweep does.
      */
-    pom_discovery__TriggerRequest: {
+    om_inventory__TriggerRequest: {
       /** Node Ids */
       node_ids?: string[];
     };
@@ -14403,7 +14403,7 @@ export interface operations {
       };
     };
   };
-  pom_discovery_get_config_api_apps_pom_discovery_config_get: {
+  om_inventory_get_config_api_apps_om_inventory_config_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -14423,7 +14423,7 @@ export interface operations {
       };
     };
   };
-  pom_discovery_patch_config_api_apps_pom_discovery_config_patch: {
+  om_inventory_patch_config_api_apps_om_inventory_config_patch: {
     parameters: {
       query?: never;
       header?: never;
@@ -14456,7 +14456,7 @@ export interface operations {
       };
     };
   };
-  pom_discovery_delete_config_override_api_apps_pom_discovery_config__key__delete: {
+  om_inventory_delete_config_override_api_apps_om_inventory_config__key__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -14485,7 +14485,7 @@ export interface operations {
       };
     };
   };
-  pom_discovery_list_estate_hosts_api_apps_pom_discovery_hosts_get: {
+  om_inventory_list_estate_hosts_api_apps_om_inventory_hosts_get: {
     parameters: {
       query?: {
         /** @description True for hosts running a MongoDB service, False for those with none. Omit for all of them. */
@@ -14507,7 +14507,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['pom_discovery__HostResponse'][];
+          'application/json': components['schemas']['om_inventory__HostResponse'][];
         };
       };
       /** @description Validation Error */
@@ -14521,7 +14521,7 @@ export interface operations {
       };
     };
   };
-  pom_discovery_get_estate_host_api_apps_pom_discovery_hosts__node_id__get: {
+  om_inventory_get_estate_host_api_apps_om_inventory_hosts__node_id__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -14538,7 +14538,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['pom_discovery__HostResponse'];
+          'application/json': components['schemas']['om_inventory__HostResponse'];
         };
       };
       /** @description Validation Error */
@@ -14552,7 +14552,7 @@ export interface operations {
       };
     };
   };
-  pom_discovery_delete_estate_host_api_apps_pom_discovery_hosts__node_id__delete: {
+  om_inventory_delete_estate_host_api_apps_om_inventory_hosts__node_id__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -14581,7 +14581,7 @@ export interface operations {
       };
     };
   };
-  pom_discovery_list_runs_api_apps_pom_discovery_runs_get: {
+  om_inventory_list_runs_api_apps_om_inventory_runs_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -14598,7 +14598,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['pom_discovery__ProbeRunResponse'][];
+          'application/json': components['schemas']['om_inventory__ProbeRunResponse'][];
         };
       };
       /** @description Validation Error */
@@ -14612,7 +14612,7 @@ export interface operations {
       };
     };
   };
-  pom_discovery_trigger_probe_api_apps_pom_discovery_runs_post: {
+  om_inventory_trigger_probe_api_apps_om_inventory_runs_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -14621,7 +14621,7 @@ export interface operations {
     };
     requestBody?: {
       content: {
-        'application/json': components['schemas']['pom_discovery__TriggerRequest'] | null;
+        'application/json': components['schemas']['om_inventory__TriggerRequest'] | null;
       };
     };
     responses: {
@@ -14631,7 +14631,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['pom_discovery__ProbeRunAccepted'];
+          'application/json': components['schemas']['om_inventory__ProbeRunAccepted'];
         };
       };
       /** @description Validation Error */
@@ -14645,7 +14645,7 @@ export interface operations {
       };
     };
   };
-  pom_discovery_get_probe_run_api_apps_pom_discovery_runs__run_id__get: {
+  om_inventory_get_probe_run_api_apps_om_inventory_runs__run_id__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -14662,7 +14662,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['pom_discovery__ProbeRunDetail'];
+          'application/json': components['schemas']['om_inventory__ProbeRunDetail'];
         };
       };
       /** @description Validation Error */
@@ -14676,7 +14676,7 @@ export interface operations {
       };
     };
   };
-  pom_discovery_get_schema_api_apps_pom_discovery_schema_get: {
+  om_inventory_get_schema_api_apps_om_inventory_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -14696,7 +14696,7 @@ export interface operations {
       };
     };
   };
-  pom_discovery_list_estate_services_api_apps_pom_discovery_services_get: {
+  om_inventory_list_estate_services_api_apps_om_inventory_services_get: {
     parameters: {
       query?: {
         /** @description Restrict to one host. */
@@ -14716,7 +14716,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['pom_discovery__ServiceResponse'][];
+          'application/json': components['schemas']['om_inventory__ServiceResponse'][];
         };
       };
       /** @description Validation Error */
@@ -14730,7 +14730,7 @@ export interface operations {
       };
     };
   };
-  pom_discovery_get_estate_service_api_apps_pom_discovery_services__service_id__get: {
+  om_inventory_get_estate_service_api_apps_om_inventory_services__service_id__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -14747,7 +14747,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['pom_discovery__ServiceResponse'];
+          'application/json': components['schemas']['om_inventory__ServiceResponse'];
         };
       };
       /** @description Validation Error */
@@ -14761,7 +14761,7 @@ export interface operations {
       };
     };
   };
-  pom_discovery_delete_estate_service_api_apps_pom_discovery_services__service_id__delete: {
+  om_inventory_delete_estate_service_api_apps_om_inventory_services__service_id__delete: {
     parameters: {
       query?: never;
       header?: never;

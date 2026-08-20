@@ -243,7 +243,7 @@ class TestSepConfigExportYaml:
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             SettingClassEnum.ALERTS_SETTINGS.value,
             SettingClassEnum.HEALTH_REPORT_SETTINGS.value,
-            SettingClassEnum.POM_DISCOVERY_SETTINGS.value,
+            SettingClassEnum.OM_INVENTORY_SETTINGS.value,
         ):
             assert set(export[setting_class]) == list_keys[setting_class]
 
@@ -582,7 +582,7 @@ HEALTH_REPORT_CLASS = SettingClassEnum.HEALTH_REPORT_SETTINGS.value
 SETTINGS_CLASS = SettingClassEnum.SETTINGS.value
 ALERT_CLASS = SettingClassEnum.ALERT_SETTINGS.value
 TASKS_CLASS = SettingClassEnum.TASKS_SETTINGS.value
-POM_DISCOVERY_CLASS = SettingClassEnum.POM_DISCOVERY_SETTINGS.value
+OM_INVENTORY_CLASS = SettingClassEnum.OM_INVENTORY_SETTINGS.value
 FULL_EXPORT_CLASSES = {
     SEP_CLASS,
     SNIPPETS_CLASS,
@@ -591,7 +591,7 @@ FULL_EXPORT_CLASSES = {
     SETTINGS_CLASS,
     ALERT_CLASS,
     TASKS_CLASS,
-    POM_DISCOVERY_CLASS,
+    OM_INVENTORY_CLASS,
 }
 TASKS_SAMPLE_KEY = "STALENESS_THRESHOLD_SECONDS"
 MIN_MULTI_KEYS = 2

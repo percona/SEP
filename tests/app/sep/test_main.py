@@ -267,12 +267,12 @@ class TestPrefixedRouting:
     @pytest.mark.parametrize("root_path", ["", "/sep"])
     @pytest.mark.usefixtures("guarded_client")
     @pytest.mark.asyncio
-    async def test_pom_discovery_resolves_under_the_prefix(self, root_path):
-        """Resolve POM's estate route under the prefix PMM proxies it at.
+    async def test_om_inventory_resolves_under_the_prefix(self, root_path):
+        """Resolve OM's estate route under the prefix PMM proxies it at.
 
-        Pinned separately from the inventory case because POM is the app the
+        Pinned separately from the inventory case because OM is the app the
         PMM-embedded profile is deployed for: ``sidecar/settings.yaml`` activates
-        ``pom_discovery`` and sets ``ROOT_PATH: /sep`` together, and pmm-managed
+        ``om_inventory`` and sets ``ROOT_PATH: /sep`` together, and pmm-managed
         pulls ``GET /services`` through that prefix. A regression here reads as an
         authentication failure rather than a routing one, because the caller fails
         closed on the session exchange it cannot reach.
@@ -280,11 +280,11 @@ class TestPrefixedRouting:
         client = TestClient(sep_app, root_path=root_path, raise_server_exceptions=False)
 
         assert (
-            client.get(f"{root_path}/api/apps/pom_discovery/hosts").status_code
+            client.get(f"{root_path}/api/apps/om_inventory/hosts").status_code
             == status.HTTP_200_OK
         )
         assert (
-            client.get(f"{root_path}/api/apps/pom_discovery/services").status_code
+            client.get(f"{root_path}/api/apps/om_inventory/services").status_code
             == status.HTTP_200_OK
         )
 
@@ -392,7 +392,7 @@ async def test_proxy_map_composes_app_owned_and_sep_entries(mocker):
         SettingClassEnum.ALERT_SETTINGS,
         SettingClassEnum.ALERTS_SETTINGS,
         SettingClassEnum.HEALTH_REPORT_SETTINGS,
-        SettingClassEnum.POM_DISCOVERY_SETTINGS,
+        SettingClassEnum.OM_INVENTORY_SETTINGS,
     }
     alerts_entry = proxies[SettingClassEnum.ALERTS_SETTINGS]
     assert alerts_entry.proxy is alerts_settings

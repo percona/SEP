@@ -326,12 +326,12 @@ class TestSepSettingsList:
 
         SEP serves its own classes locally (including ``AlertSettings``),
         proxies ``TasksSettings`` from the Tasks sub-app, and appends
-        app-owned classes such as ``AlertsSettings`` and ``PomDiscoverySettings``.
+        app-owned classes such as ``AlertsSettings`` and ``OmInventorySettings``.
 
         An app-owned class appears here *and* on its own app's endpoint. That is
         deliberate rather than duplication: this router is admin-gated, and an app
         whose configuration a non-admin service principal must reach serves its own
-        (``pom_discovery`` does, for PMM). Both read and write the same override
+        (``om_inventory`` does, for PMM). Both read and write the same override
         rows through the same manager, so they cannot disagree.
         """
         response = api_admin_client.get("/api/sep/admin/settings/")
@@ -346,7 +346,7 @@ class TestSepSettingsList:
             SettingClassEnum.SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
             SettingClassEnum.ALERT_SETTINGS.value,
-            SettingClassEnum.POM_DISCOVERY_SETTINGS.value,
+            SettingClassEnum.OM_INVENTORY_SETTINGS.value,
         }
 
     async def test_all_sealed_nested_parent_is_listed_whole(
@@ -1851,7 +1851,7 @@ class TestSepOverridesLifespanWiring:
                 (SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"),
                 (SettingClassEnum.ALERTS_SETTINGS, "BACKUP_INTERVAL"),
                 (SettingClassEnum.SEP_SETTINGS, "APP_DRAIN"),
-                (SettingClassEnum.POM_DISCOVERY_SETTINGS, "SCHEDULE"),
+                (SettingClassEnum.OM_INVENTORY_SETTINGS, "SCHEDULE"),
             }
         finally:
             sep_app.state.override_callbacks = original
