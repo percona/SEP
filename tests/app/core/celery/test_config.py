@@ -108,12 +108,9 @@ def test_beat_engine_options_pre_ping_opt_out_on_env_path(
     """Allow disabling pool_pre_ping via CELERY__BEAT_ENGINE_OPTIONS__POOL_PRE_PING."""
     monkeypatch.setenv("CELERY__BEAT_ENGINE_OPTIONS__POOL_PRE_PING", "false")
 
-    assert (
-        Settings(_env_file=None).CELERY.beat_engine_options.model_dump(
-            exclude_none=True
-        )
-        == {"pool_pre_ping": False}
-    )
+    assert Settings(_env_file=None).CELERY.beat_engine_options.model_dump(
+        exclude_none=True
+    ) == {"pool_pre_ping": False}
 
 
 @pytest.mark.parametrize(
