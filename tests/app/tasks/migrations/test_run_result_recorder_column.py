@@ -33,7 +33,7 @@ _PRE_COLUMN_REVISION = "13e897d11734"
 
 @pytest.fixture
 def tasks_alembic_config(tmp_path, monkeypatch):
-    """Yield an Alembic ``Config`` and sync URL pointing at a temp SQLite file."""
+    """Return an Alembic ``Config`` and sync URL pointing at a temp SQLite file."""
     db_path = tmp_path / "test_tasks.sqlite"
     sync_url = f"sqlite:///{db_path}"
 

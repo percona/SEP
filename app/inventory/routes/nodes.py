@@ -26,6 +26,7 @@ from app.core.pagination.deps import PaginationDep
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.crud import HostSystemObservationManager, NodeManager, ServiceManager
 from app.inventory.deps import (
+    HostSystemObservationDep,
     NodeDep,
     NodeListQueryDep,
     ServiceListQueryDep,
@@ -119,11 +120,10 @@ async def delete_node(session: SessionDep, node: NodeDep) -> None:
 
 @router.get("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])
 async def retrieve_host_system_observation(
-    session: SessionDep,
-    node: NodeDep,
+    observation: HostSystemObservationDep,
 ) -> HostSystemObservationResponse:
     """Retrieve host system observation for a node."""
-    return await HostSystemObservationManager.get_or_404(session, node_id=node.id)
+    return observation
 
 
 @router.put("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])

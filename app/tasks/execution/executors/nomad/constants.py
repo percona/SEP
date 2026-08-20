@@ -13,18 +13,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define constants for the Inventory service."""
+"""Define the Nomad-only system task names the tasks service seeds.
 
-DEFAULT_MYSQL_PORT = 3306
-DEFAULT_POSTGRESQL_PORT = 5432
+Imports nothing from the rest of the tasks or sep packages so seed can use these
+values without the Nomad executor import graph. Constants that name a Nomad
+job-spec step, or derive from one, belong in :mod:`.steps` instead.
+"""
 
-#: Part of the API contract: callers tell an uncollected observation apart from a
-#: missing parent by this wording, so both routes and their tests share it.
-UNCOLLECTED_HOST_OBSERVATION_DETAIL = (
-    "System observation not collected yet for this node"
-)
-#: Service-level counterpart of :data:`UNCOLLECTED_HOST_OBSERVATION_DETAIL`, pinned
-#: by the same contract.
-UNCOLLECTED_SERVICE_OBSERVATION_DETAIL = (
-    "System observation not collected yet for this service"
-)
+#: Seeded name of the Nomad-only periodic task that checks TLS cert expiry.
+CHECK_NOMAD_CERT_EXPIRY_TASK_NAME = "tasks__check_nomad_cert_expiry"

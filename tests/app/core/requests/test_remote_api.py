@@ -19,7 +19,11 @@ import pytest
 from aioresponses import aioresponses
 from fastapi import HTTPException, status
 
-from app.core.exceptions import HTTPBadGatewayException, HTTPConflictException
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPConflictException,
+    HTTPNotFoundException,
+)
 from app.core.requests import RemoteAPI
 from app.core.requests.remote_api import (
     _REDACTED_VALUE,
@@ -231,6 +235,72 @@ class TestUpload:
             async with remote_api:
                 with pytest.raises(HTTPBadGatewayException):
                     await remote_api.upload("upload", files=_one_file())
+
+    async def test_carries_upstream_not_found_detail(self, remote_api):
+        """Carry an upstream 404's body ``detail`` onto ``HTTPNotFoundException``.
+
+        Sub-app routes discriminate two 404 conditions by ``detail`` alone, so a
+        proxy route can only relay that distinction if the upstream string survives
+        the mapping rather than collapsing to the exception's default.
+        """
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_404_NOT_FOUND,
+                payload={
+                    "detail": "System observation not collected yet for this node"
+                },
+            )
+            async with remote_api:
+                with pytest.raises(HTTPNotFoundException) as exc_info:
+                    await remote_api.upload("upload", files=_one_file())
+
+        assert (
+            exc_info.value.detail
+            == "System observation not collected yet for this node"
+        )
+
+    async def test_non_json_not_found_stays_unmapped(self, remote_api):
+        """Leave a non-JSON 404 as a bare ``HTTPException``.
+
+        A 404 with a non-JSON body comes from proxy or gateway infrastructure, not
+        from an app route answering "this resource is absent". Mapping it would let
+        a caller narrowing to ``HTTPNotFoundException`` to read an uncollected
+        observation treat an infrastructure failure as a real absence.
+        """
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_404_NOT_FOUND,
+                body="<html>404 not found</html>",
+                content_type="text/html",
+            )
+            async with remote_api:
+                with pytest.raises(HTTPException) as exc_info:
+                    await remote_api.upload("upload", files=_one_file())
+
+        assert not isinstance(exc_info.value, HTTPNotFoundException)
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+        assert exc_info.value.headers.get(UPSTREAM_NON_JSON_HEADER) == "1"
+
+    async def test_not_found_without_detail_key_falls_back(self, remote_api):
+        """Fall back to the generic detail for a JSON 404 carrying no ``detail``.
+
+        Routes that discriminate 404 conditions by ``detail`` must not read the
+        fallback as one of their own strings, so pin what a detail-less upstream
+        body produces.
+        """
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_404_NOT_FOUND,
+                payload={"message": "gone"},
+            )
+            async with remote_api:
+                with pytest.raises(HTTPNotFoundException) as exc_info:
+                    await remote_api.upload("upload", files=_one_file())
+
+        assert exc_info.value.detail == "An unexpected error occurred on the server."
 
     async def test_non_json_success_body_returns_none(self, remote_api):
         """Return ``None`` for a 2xx response whose body is not JSON."""

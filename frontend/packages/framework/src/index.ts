@@ -19,7 +19,11 @@
 export { SEP_TABLE_CLASS } from './constants';
 
 // Components
-export { SchemaFormRenderer } from './components/SchemaFormRenderer';
+export {
+  SchemaFormRenderer,
+  buildFieldLabelMap,
+  flattenSectionFields,
+} from './components/SchemaFormRenderer';
 export type { RenderFieldArgs, RenderFieldOverride } from './components/SchemaFormRenderer';
 export { SchemaListView } from './components/SchemaListView';
 export type {
@@ -152,6 +156,8 @@ export {
   useTaskHistoryFiles,
   useTaskFileDownload,
   useSnippetDownload,
+  useDebouncedValue,
+  SEARCH_DEBOUNCE_MS,
 } from './hooks';
 export type {
   TaskLogsState,
