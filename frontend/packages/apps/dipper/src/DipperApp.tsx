@@ -235,6 +235,8 @@ export function DipperApp() {
             }
           }}
           isStopping={stop.isPending}
+          actionError={stop.error}
+          onDismissActionError={stop.reset}
         />
       )}
 

@@ -18,6 +18,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
+import { useSnippetDownload } from '@sep/framework';
 import { SnippetsListPage } from './SnippetsListPage';
 import {
   useSnippets,
@@ -280,6 +281,137 @@ describe('SnippetsListPage — ApproveButton', () => {
       expect(screen.getByRole('checkbox', { name: /select approved\.sh/i })).toBeDisabled();
       expect(screen.getByRole('button', { name: /batch approve \(1\)/i })).toBeInTheDocument();
     });
+  });
+});
+
+describe('SnippetsListPage — row action failure reporting', () => {
+  const approveMutate = vi.fn();
+  const removeMutate = vi.fn();
+  const batchMutate = vi.fn();
+  const refusal = new ApiError({
+    kind: 'http',
+    status: 403,
+    message: "You don't have permission to perform this action",
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseApproveSnippet.mockReturnValue({
+      mutate: approveMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useApproveSnippet>);
+    mockUseRemoveSnippetApproval.mockReturnValue({
+      mutate: removeMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useRemoveSnippetApproval>);
+    mockUseBatchApproveSnippets.mockReturnValue({
+      mutate: batchMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useBatchApproveSnippets>);
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: false },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+    vi.mocked(useSnippetDownload).mockReturnValue({
+      mutate: (_params: unknown, callbacks?: { onSuccess?: () => void }) =>
+        callbacks?.onSuccess?.(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useSnippetDownload>);
+  });
+
+  it('reports a refused download', () => {
+    mockUseSnippets.mockReturnValue(snippetsListResult([unapprovedSnippet]));
+    vi.mocked(useSnippetDownload).mockReturnValue({
+      mutate: (_params: unknown, callbacks?: { onError?: (error: unknown) => void }) =>
+        callbacks?.onError?.(refusal),
+      isPending: false,
+    } as unknown as ReturnType<typeof useSnippetDownload>);
+
+    render(<SnippetsListPage />);
+    fireEvent.click(screen.getByRole('button', { name: /download/i }));
+
+    expect(screen.getByTestId('snippet-row-action-error')).toHaveTextContent(
+      "You don't have permission to perform this action",
+    );
+  });
+
+  it('reports a refused approve on the list the dialog closed over', async () => {
+    mockUseSnippets.mockReturnValue(snippetsListResult([unapprovedSnippet]));
+    approveMutate.mockImplementation((_vars, opts) => opts.onError?.(refusal));
+
+    render(<SnippetsListPage />);
+    fireEvent.click(screen.getByRole('button', { name: /download/i }));
+    fireEvent.click(screen.getByRole('button', { name: /approve/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^approve$/i }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('snippet-row-action-error')).toHaveTextContent(
+        "You don't have permission to perform this action",
+      ),
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('reports a refused remove-approval', () => {
+    mockUseSnippets.mockReturnValue(snippetsListResult([approvedSnippet]));
+    removeMutate.mockImplementation((_vars, opts) => opts.onError?.(refusal));
+
+    render(<SnippetsListPage />);
+    fireEvent.click(screen.getByRole('button', { name: /remove/i }));
+
+    expect(screen.getByTestId('snippet-row-action-error')).toHaveTextContent(
+      "You don't have permission to perform this action",
+    );
+  });
+
+  it('reports nothing when a row action succeeds', () => {
+    mockUseSnippets.mockReturnValue(snippetsListResult([approvedSnippet]));
+    removeMutate.mockImplementation((_vars, opts) => opts.onSuccess?.());
+
+    render(<SnippetsListPage />);
+    fireEvent.click(screen.getByRole('button', { name: /remove/i }));
+
+    expect(screen.queryByTestId('snippet-row-action-error')).not.toBeInTheDocument();
+  });
+
+  it('drops a previous row failure when the next row action is fired', () => {
+    // One alert serves every row, so a refusal from one attempt must not outlive
+    // the next attempt and read as its result.
+    mockUseSnippets.mockReturnValue(snippetsListResult([approvedSnippet]));
+    removeMutate.mockImplementationOnce((_vars, opts) => opts.onError?.(refusal));
+
+    render(<SnippetsListPage />);
+    fireEvent.click(screen.getByRole('button', { name: /remove/i }));
+    expect(screen.getByTestId('snippet-row-action-error')).toBeInTheDocument();
+
+    removeMutate.mockImplementation((_vars, opts) => opts.onSuccess?.());
+    fireEvent.click(screen.getByRole('button', { name: /remove/i }));
+
+    expect(screen.queryByTestId('snippet-row-action-error')).not.toBeInTheDocument();
+  });
+
+  it("reports a refused batch approve with the server's reason, not a 400-only string", () => {
+    mockUseSnippets.mockReturnValue(snippetsListResult([unapprovedSnippet]));
+    // The hook wraps every unstructured failure in an Error whose own message
+    // says nothing; the reason it carries is on `raw`.
+    const wrapped = Object.assign(new Error('Batch approval failed'), {
+      structured: false as const,
+      raw: refusal,
+    });
+    batchMutate.mockImplementation((_vars, opts) => opts.onError?.(wrapped));
+
+    render(<SnippetsListPage />);
+    fireEvent.click(screen.getByRole('checkbox', { name: /select check\.sh/i }));
+    fireEvent.click(screen.getByRole('button', { name: /batch approve/i }));
+    fireEvent.click(screen.getByRole('button', { name: /approve selected/i }));
+
+    expect(
+      screen.getByText("You don't have permission to perform this action"),
+    ).toBeInTheDocument();
   });
 });
 

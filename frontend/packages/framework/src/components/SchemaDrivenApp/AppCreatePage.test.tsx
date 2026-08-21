@@ -20,7 +20,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router';
 import { SnackbarProvider } from 'notistack';
-import type { AppSchema } from '@sep/api';
+import { ApiError, type AppSchema } from '@sep/api';
 import { AppCreatePage } from './AppCreatePage';
 import type { RenderFormSlot } from './types';
 
@@ -33,6 +33,22 @@ vi.mock('@sep/api', () => ({
   useCreateAppTask: () => ({ mutate: mockCreateTaskMutate, isPending: false }),
   useCreateAppEntity: () => ({ mutate: vi.fn(), isPending: false }),
   useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
+  ApiError: class ApiError extends Error {
+    status?: number;
+    data?: unknown;
+    constructor(details: { status?: number; message: string; data?: unknown }) {
+      super(details.message);
+      this.status = details.status;
+      this.data = details.data;
+    }
+  },
+  parseFieldErrors: (error: { data?: { detail?: unknown } }) =>
+    Array.isArray(error?.data?.detail)
+      ? (error.data.detail as { loc?: string[]; msg?: string }[]).map((entry) => ({
+          path: (entry.loc ?? []).filter((seg) => seg !== 'body').join('.'),
+          message: entry.msg ?? 'Invalid value',
+        }))
+      : [],
 }));
 
 vi.mock('react-router', async (importOriginal) => {
@@ -158,6 +174,78 @@ describe('AppCreatePage — post-create navigation', () => {
     act(() => onSuccess({ name: 'my task' }));
 
     expect(mockNavigate).toHaveBeenCalledWith('..', { relative: 'path' });
+  });
+});
+
+/** Alerts rendered by the page itself, excluding notistack's toast region. */
+function inTreeAlerts(): HTMLElement[] {
+  return screen.queryAllByRole('alert').filter((el) => !el.className.includes('notistack'));
+}
+
+describe('AppCreatePage — failure reporting', () => {
+  const submitSlot: RenderFormSlot = ({ onSubmit }) => (
+    <button type="button" onClick={() => onSubmit({ title: 'x' })}>
+      Submit slot
+    </button>
+  );
+
+  async function submitAndGetOnError() {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: 'Create Checksum' }));
+    await waitFor(() => expect(mockCreateTaskMutate).toHaveBeenCalledTimes(1));
+    return mockCreateTaskMutate.mock.calls[0][1].onError as (error: unknown) => void;
+  }
+
+  it("banners a refusal with the server's own reason, with no toast alongside it", async () => {
+    const onError = await submitAndGetOnError();
+
+    act(() =>
+      onError(
+        new ApiError({
+          kind: 'http',
+          status: 403,
+          message: "You don't have permission to perform this action",
+        }),
+      ),
+    );
+
+    await waitFor(() => expect(inTreeAlerts()).toHaveLength(1));
+    expect(inTreeAlerts()[0]).toHaveTextContent("You don't have permission to perform this action");
+    // The banner is the only signal: no error toast is raised alongside it.
+    expect(screen.queryAllByRole('alert')).toHaveLength(1);
+  });
+
+  it('keeps the per-field path for a 422', async () => {
+    const onError = await submitAndGetOnError();
+
+    act(() =>
+      onError(
+        new ApiError({
+          kind: 'http',
+          status: 422,
+          message: 'HTTP 422',
+          data: {
+            detail: [{ loc: ['body', 'count'], msg: 'ensure this value is greater than 0' }],
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => expect(inTreeAlerts()).toHaveLength(1));
+    expect(inTreeAlerts()[0]).toHaveTextContent('ensure this value is greater than 0');
+  });
+
+  it('shows no banner on a successful create', async () => {
+    const user = userEvent.setup();
+    renderPage({ renderCreateForm: submitSlot });
+
+    await user.click(screen.getByRole('button', { name: 'Submit slot' }));
+    await waitFor(() => expect(mockCreateTaskMutate).toHaveBeenCalledTimes(1));
+    act(() => mockCreateTaskMutate.mock.calls[0][1].onSuccess({ name: 'my task' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('..', { relative: 'path' });
+    expect(inTreeAlerts()).toEqual([]);
   });
 });
 

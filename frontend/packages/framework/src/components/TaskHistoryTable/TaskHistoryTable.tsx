@@ -31,6 +31,7 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import { MaterialReactTable, type MRT_ColumnDef } from 'material-react-table';
 import { useAuth } from '@sep/api';
+import { ActionErrorAlert } from '../ActionErrorAlert';
 import {
   isRunningStatus,
   useStopTaskHistory,
@@ -148,6 +149,10 @@ interface ViewProps {
   isStopping: boolean;
   /** True when the row's stop action will resolve to a real handler (callback or internal mutation). */
   canStop: (entry: TaskHistoryEntry) => boolean;
+  /** Failure of the last action fired from the table, or `null`/`undefined`. */
+  actionError: unknown;
+  /** Dismiss handler for `actionError`, when the owner supports clearing it. */
+  onDismissActionError?: () => void;
 }
 
 function TaskHistoryTableView({
@@ -161,6 +166,8 @@ function TaskHistoryTableView({
   onConfirmStop,
   isStopping,
   canStop,
+  actionError,
+  onDismissActionError,
 }: ViewProps) {
   const { canMutate } = useAuth();
   const [pendingStopEntry, setPendingStopEntry] = useState<TaskHistoryEntry | null>(null);
@@ -312,6 +319,14 @@ function TaskHistoryTableView({
 
   return (
     <>
+      {/* The stop dialog closes on confirm, so a refusal that arrives after it
+          is gone has to land here, above the rows the user is left looking at. */}
+      <ActionErrorAlert
+        error={actionError}
+        onClose={onDismissActionError}
+        sx={{ mb: 2 }}
+        testId="task-history-action-error"
+      />
       <MaterialReactTable
         columns={columns}
         data={rows}
@@ -386,6 +401,8 @@ function ConnectedTaskHistoryTable({
   onDownloadFiles,
   onChainItemClick,
   hideTaskNameColumn,
+  actionError,
+  onDismissActionError,
 }: ConnectedProps) {
   const allHistory = useTaskHistory({
     status: statusFilter,
@@ -434,6 +451,11 @@ function ConnectedTaskHistoryTable({
       onConfirmStop={onConfirmStop}
       isStopping={stopMutation.isPending}
       canStop={canStop}
+      // With no `onStopTask` the stop is this component's own mutation, so it
+      // reports itself; otherwise the caller owns the mutation and threads its
+      // error back in.
+      actionError={onStopTask ? actionError : stopMutation.error}
+      onDismissActionError={onStopTask ? onDismissActionError : stopMutation.reset}
     />
   );
 }
@@ -455,6 +477,8 @@ function PresentationalTaskHistoryTable({
   onDownloadFiles,
   onChainItemClick,
   hideTaskNameColumn,
+  actionError,
+  onDismissActionError,
 }: PresentationalProps) {
   const onConfirmStop = useCallback((entry: TaskHistoryEntry) => onStopTask?.(entry), [onStopTask]);
 
@@ -472,6 +496,8 @@ function PresentationalTaskHistoryTable({
       onConfirmStop={onConfirmStop}
       isStopping={!!isStopping}
       canStop={canStop}
+      actionError={actionError}
+      onDismissActionError={onDismissActionError}
     />
   );
 }

@@ -39,6 +39,7 @@ import {
 } from '@mui/material';
 import { useNavigate, useParams } from 'react-router';
 import {
+  ActionErrorAlert,
   ChainDisplay,
   RUNNING_STATUSES,
   SEP_TABLE_CLASS,
@@ -203,6 +204,11 @@ export function TaskDetailPage() {
       </Paper>
 
       <TaskSpecificationSection task={task} />
+
+      {/* One alert for both tables below: they share the stop mutation, and the
+          stop confirmation closes before the request settles, so a refusal has
+          to surface on the page the user is returned to — exactly once. */}
+      <ActionErrorAlert error={stop.error} onClose={stop.reset} sx={{ mb: 2 }} />
 
       {!isTemplate ? (
         <>
