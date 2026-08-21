@@ -6405,7 +6405,9 @@ export interface components {
       /** Pgbackrest Datadir */
       pgbackrest_datadir?: string | null;
       /** Pgbackrest Incremental Cycle */
-      pgbackrest_incremental_cycle?: string | number | null;
+      pgbackrest_incremental_cycle?:
+        | ('daily' | 'weekly' | '1' | '2' | '3' | '4' | '5' | '6' | '7')
+        | null;
       /** Pgbackrest Retention Archive */
       pgbackrest_retention_archive?: number | null;
       /** Pgbackrest Retention Full */
