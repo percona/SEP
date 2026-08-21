@@ -49,7 +49,14 @@ import DownloadIcon from '@mui/icons-material/Download';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import SearchIcon from '@mui/icons-material/Search';
 import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET, useAuth } from '@sep/api';
-import { useDebouncedValue, useSnippetDownload } from '@sep/framework';
+import {
+  ActionErrorAlert,
+  actionErrorMessage,
+  useActionError,
+  useDebouncedValue,
+  useSnippetDownload,
+  type ActionErrorState,
+} from '@sep/framework';
 import {
   useSnippets,
   useApproveSnippet,
@@ -122,9 +129,12 @@ interface BatchResult {
 function DownloadButton({
   snippet,
   onDownloaded,
+  rowActionError,
 }: {
   snippet: SnippetResponse;
   onDownloaded: () => void;
+  /** Page-level failure state shared by every row action; see its declaration. */
+  rowActionError: ActionErrorState;
 }) {
   const download = useSnippetDownload();
 
@@ -136,7 +146,15 @@ function DownloadButton({
           download.isPending ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />
         }
         disabled={download.isPending}
-        onClick={() => download.mutate({ filename: snippet.filename }, { onSuccess: onDownloaded })}
+        onClick={() => {
+          // One alert serves every row, so each attempt starts by dropping the
+          // previous row's failure rather than leaving it standing.
+          rowActionError.clearError();
+          download.mutate(
+            { filename: snippet.filename },
+            { onSuccess: onDownloaded, onError: rowActionError.reportError },
+          );
+        }}
       >
         Download
       </Button>
@@ -147,9 +165,12 @@ function DownloadButton({
 function ApproveButton({
   snippet,
   hasDownloaded,
+  rowActionError,
 }: {
   snippet: SnippetResponse;
   hasDownloaded: boolean;
+  /** Page-level failure state shared by every row action; see its declaration. */
+  rowActionError: ActionErrorState;
 }) {
   const approve = useApproveSnippet(snippet.filename);
   const removeApproval = useRemoveSnippetApproval(snippet.filename);
@@ -166,7 +187,8 @@ function ApproveButton({
           disabled={isPending}
           onClick={(e) => {
             e.stopPropagation();
-            removeApproval.mutate();
+            rowActionError.clearError();
+            removeApproval.mutate(undefined, { onError: rowActionError.reportError });
           }}
         >
           Remove
@@ -203,8 +225,11 @@ function ApproveButton({
           <Button
             variant="contained"
             onClick={() => {
+              // The dialog closes on confirm, so the failure surfaces on the
+              // list behind it rather than in a dialog that is already gone.
               setConfirmOpen(false);
-              approve.mutate();
+              rowActionError.clearError();
+              approve.mutate(undefined, { onError: rowActionError.reportError });
             }}
           >
             Approve
@@ -232,6 +257,12 @@ export function SnippetsListPage() {
   });
 
   const [search, setSearch] = useState('');
+  // Per-row download / approve / remove-approval failures. The buttons live in
+  // table cells that the refetch can unmount, and approve is confirmed in a
+  // dialog that closes first, so the page holds the failure and renders it.
+  // One alert covers every row, so each row action clears it before firing and a
+  // stale failure never outlives the attempt that produced it.
+  const rowActionError = useActionError();
   const [approvalFilter, setApprovalFilter] = useState<ApprovalFilter>('all');
   const [serviceTypeFilter, setServiceTypeFilter] = useState<string>(ALL_SERVICES);
 
@@ -381,7 +412,13 @@ export function SnippetsListPage() {
           if (err.structured) {
             setBatchResult({ error: err.detail });
           } else {
-            setBatchResult({ generic: 'Batch approval failed. Please try again.' });
+            // Any status, not just 400: a refusal, a 409, a 5xx and a transport
+            // failure all report, each carrying whatever reason it came with.
+            // The reason lives on `raw` — the hook wraps every unstructured
+            // failure in an Error of its own, whose message says nothing.
+            setBatchResult({
+              generic: actionErrorMessage(err.raw, 'Batch approval failed. Please try again.'),
+            });
           }
         },
       },
@@ -418,6 +455,13 @@ export function SnippetsListPage() {
         Pre-approved snippets discovered from disk. Click a row to view its execution form and
         history.
       </Typography>
+
+      <ActionErrorAlert
+        error={rowActionError.error}
+        onClose={rowActionError.clearError}
+        sx={{ mb: 2 }}
+        testId="snippet-row-action-error"
+      />
 
       {canMutate && batchResult?.success && (
         <Alert severity="success" onClose={() => setBatchResult(null)} sx={{ mb: 2 }}>
@@ -702,10 +746,12 @@ export function SnippetsListPage() {
                           <DownloadButton
                             snippet={snippet}
                             onDownloaded={() => markDownloaded(snippet.filename)}
+                            rowActionError={rowActionError}
                           />
                           <ApproveButton
                             snippet={snippet}
                             hasDownloaded={downloaded.has(snippet.filename)}
+                            rowActionError={rowActionError}
                           />
                         </Stack>
                       </TableCell>

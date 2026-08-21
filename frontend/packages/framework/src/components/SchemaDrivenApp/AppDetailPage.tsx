@@ -56,6 +56,7 @@ import {
   type AppSchema,
 } from '@sep/api';
 import { resolvePath } from '../../utils/resolvePath';
+import { ActionErrorAlert, useActionError } from '../ActionErrorAlert';
 import {
   TaskHistoryTable,
   TaskHistoryStatusBadge,
@@ -556,6 +557,8 @@ function LogsTab({ taskNames }: LogsTabProps) {
               }
             }}
             isStopping={stop.isPending}
+            actionError={stop.error}
+            onDismissActionError={stop.reset}
           />
         </Paper>
       )}
@@ -606,9 +609,14 @@ function ActionBar({
   const { enqueueSnackbar } = useSnackbar();
   const deleteTask = useDeleteAppTask(pluginName);
   const executeTask = useExecuteTask(pluginName);
+  // Both actions are confirmed in a dialog that closes before the request
+  // settles, so the failure is held here and rendered on the page behind it.
+  const actionError = useActionError();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingExecute, setPendingExecute] = useState<TaskExecuteAction | null>(null);
   const [chain, setChain] = useState<ChainValue>(emptyChain);
+  /** Which execute action the current `chain` was composed for. */
+  const [chainActionKey, setChainActionKey] = useState<string | null>(null);
 
   const chainingEnabled = !!schema.capabilities?.chaining;
   const {
@@ -626,8 +634,19 @@ function ActionBar({
   );
 
   useEffect(() => {
-    setChain(emptyChain());
-  }, [pendingExecute]);
+    // Opening a different action starts from an empty chain; reopening the same
+    // one keeps what was composed, so a refused execute can be retried without
+    // rebuilding the chain. Closing the dialog (which now happens on failure
+    // too) leaves the chain alone for that retry.
+    if (!pendingExecute) {
+      return;
+    }
+    const key = `${pendingExecute.taskName}\u0000${pendingExecute.label}`;
+    if (key !== chainActionKey) {
+      setChain(emptyChain());
+      setChainActionKey(key);
+    }
+  }, [pendingExecute, chainActionKey]);
 
   const resolvedExecuteActions =
     executeActions ??
@@ -652,6 +671,7 @@ function ActionBar({
         chain_on_failure: chain.chain_on_failure,
       };
     }
+    actionError.clearError();
     try {
       const executeArgs = executeBody
         ? { taskName: pendingExecute.taskName, executeBody }
@@ -660,15 +680,17 @@ function ActionBar({
       enqueueSnackbar(`${schema.display_name} task "${pendingExecute.taskName}" started`, {
         variant: 'success',
       });
-      setPendingExecute(null);
     } catch (e) {
-      enqueueSnackbar(e instanceof Error ? e.message : 'Failed to execute task', {
-        variant: 'error',
-      });
+      actionError.reportError(e);
+    } finally {
+      // Close on confirm whatever the outcome, like the adjacent delete: a
+      // dialog left open holding a failure hides the message rendered behind it.
+      setPendingExecute(null);
     }
   };
 
   const handleDelete = async () => {
+    actionError.clearError();
     try {
       await deleteTask.mutateAsync(taskName);
       enqueueSnackbar(`${schema.display_name} task deleted`, { variant: 'success' });
@@ -677,9 +699,7 @@ function ActionBar({
       // sub-route via nested `<Routes>`), so use an absolute path.
       navigate(routeBase);
     } catch (e) {
-      enqueueSnackbar(e instanceof Error ? e.message : 'Failed to delete task', {
-        variant: 'error',
-      });
+      actionError.reportError(e);
     } finally {
       setConfirmOpen(false);
     }
@@ -761,6 +781,13 @@ function ActionBar({
           </Button>
         )}
       </Stack>
+
+      <ActionErrorAlert
+        error={actionError.error}
+        onClose={actionError.clearError}
+        sx={{ mb: 3 }}
+        testId="plugin-task-action-error"
+      />
 
       <Dialog
         open={pendingExecute !== null}
@@ -904,13 +931,18 @@ export function AppDetailPage({
   );
 
   const [entityDeleteOpen, setEntityDeleteOpen] = useState(false);
+  // The confirm dialog closes on confirm, so a refusal has to land on the
+  // detail page the user is returned to.
+  const deleteEntityError = useActionError();
 
   const confirmEntityDelete = () => {
     setEntityDeleteOpen(false);
     if (!id || !multi) {
       return;
     }
+    deleteEntityError.clearError();
     deleteEntity.mutate(id, {
+      onError: (error) => deleteEntityError.reportError(error),
       onSuccess: () =>
         customParentPath
           ? navigate(customParentPath)
@@ -968,6 +1000,13 @@ export function AppDetailPage({
               ? `Permanently delete ${title} "${recordName}" (id ${id}) from ${schema.display_name}? This cannot be undone.`
               : `Permanently delete ${title} (id ${id}) from ${schema.display_name}? This cannot be undone.`
           }
+        />
+
+        <ActionErrorAlert
+          error={deleteEntityError.error}
+          onClose={deleteEntityError.clearError}
+          sx={{ mb: 2 }}
+          testId="entity-detail-action-error"
         />
 
         {headingWhenChromeHidden ? (
