@@ -39,7 +39,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.api.deps import _SERVICE_PRINCIPAL
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import hot_field_names
 from app.sep.apps.framework.registry import collect_app_owned_settings_classes
 from app.sep.apps.om_inventory.config import (
@@ -129,7 +128,7 @@ class TestTheAppIsActuallyWiredIn:
         """
         entries = collect_app_owned_settings_classes()
 
-        assert SettingClassEnum.OM_INVENTORY_SETTINGS in {
+        assert OmInventorySettings.__name__ in {
             entry.setting_class for entry in entries
         }
 
@@ -145,7 +144,7 @@ class TestTheAppIsActuallyWiredIn:
         callbacks = build_sep_override_callbacks(sep_app)
 
         assert (
-            SettingClassEnum.OM_INVENTORY_SETTINGS,
+            OmInventorySettings.__name__,
             "SCHEDULE",
         ) in callbacks
 
@@ -263,7 +262,7 @@ class TestPatchConfig:
 
         rows = await SettingsOverrideManager.list(
             session,
-            setting_class=SettingClassEnum.OM_INVENTORY_SETTINGS,
+            setting_class=OmInventorySettings.__name__,
             is_active=True,
         )
         assert [(row.key, row.value) for row in rows] == [("RUN_RETENTION", 5)]
@@ -338,7 +337,7 @@ class TestPatchConfig:
         assert om_inventory_settings.RUN_RETENTION == DEFAULTS.RUN_RETENTION
         assert not await SettingsOverrideManager.list(
             session,
-            setting_class=SettingClassEnum.OM_INVENTORY_SETTINGS,
+            setting_class=OmInventorySettings.__name__,
             is_active=True,
         )
 
