@@ -94,6 +94,10 @@ async def get_current_user(
     ``HTTPException`` for a header-less request, bypassing SEP's project
     exceptions.
 
+    The request travels on with the token, so a credential something else on the
+    same request already authenticated is served from that resolution rather than
+    authenticated again.
+
     :param request: The incoming HTTP request.
     :return: The authenticated user.
     :raises HTTPUnauthorizedException: If no Bearer token is present, or the
@@ -103,7 +107,7 @@ async def get_current_user(
     if not is_bearer_authenticated(request):
         raise HTTPUnauthorizedException
     bearer_token = await oauth2_scheme(request)
-    return await get_current_user_api(bearer_token)
+    return await get_current_user_api(request, bearer_token)
 
 
 IsApiAuthenticated = Depends(get_current_user)

@@ -18,6 +18,7 @@
 import logging
 import secrets
 from collections.abc import Callable
+from hashlib import sha256
 from typing import Annotated, Any, Final, TypeVar
 from uuid import UUID
 
@@ -75,7 +76,7 @@ def _build_service_principal(secret: str) -> User:
     return user
 
 
-async def get_current_user(token: AuthToken) -> User:
+async def authenticate_bearer_token(token: str) -> User:
     """Return the authenticated user from an OAuth2 token.
 
     When ``settings.SEP_INTERNAL_TOKEN`` is configured and the incoming Bearer
@@ -95,6 +96,8 @@ async def get_current_user(token: AuthToken) -> User:
     :raises HTTPUnauthorizedException: If the token is invalid and authentication fails.
     :raises InactiveUserException: If authentication succeeds but the user is not
         active.
+    :raises BaseAuthProviderException: If the auth provider errors while
+        validating the credential.
     """
     if (token_setting := settings.SEP_INTERNAL_TOKEN) is not None:
         secret = token_setting.get_secret_value()
@@ -109,6 +112,45 @@ async def get_current_user(token: AuthToken) -> User:
     if not user.is_active:
         raise InactiveUserException
     set_log_context(user=user.username)
+    return user
+
+
+#: Scope key under which a request's resolved users are cached. Kept out of
+#: ``scope["state"]``, which a request inherits as a shallow copy of the ASGI
+#: lifespan state: a cache found there would be shared process-wide. Entries key
+#: on a digest of the credential rather than the credential itself, so no
+#: structure the request carries grows a key that is a secret.
+_RESOLVED_USERS_KEY: Final = "app.api.deps.resolved_users"
+
+
+async def get_current_user(request: Request, token: AuthToken) -> User:
+    """Return the authenticated user, resolving each credential once per request.
+
+    The cache is keyed on a digest of the credential, so a resolution is never
+    served to a caller presenting a different one, and holds successes only, so a
+    refused credential is re-derived rather than remembered. It lives under a
+    private key in the request scope, which the ASGI server builds per request, so
+    it cannot outlive the request that created it.
+
+    A hit re-establishes the log identity the resolution it replaces would have
+    set, since that identity is a context variable the last resolution wrote
+    rather than something the returned user carries.
+
+    :param request: The incoming HTTP request, whose scope holds the cache.
+    :param token: The OAuth2 token to authenticate the user.
+    :return: The authenticated user, resolved here or on an earlier call.
+    :raises HTTPUnauthorizedException: If the token is invalid and authentication fails.
+    :raises InactiveUserException: If authentication succeeds but the user is not
+        active.
+    :raises BaseAuthProviderException: If the auth provider errors while
+        validating the credential.
+    """
+    resolved: dict[bytes, User] = request.scope.setdefault(_RESOLVED_USERS_KEY, {})
+    key = sha256(token.encode()).digest()
+    if (user := resolved.get(key)) is not None:
+        set_log_context(user=user.username)
+        return user
+    resolved[key] = user = await authenticate_bearer_token(token)
     return user
 
 
@@ -201,7 +243,9 @@ async def require_minimum_role_for_unsafe_methods(request: Request) -> None:
 
     The user is resolved in the body rather than through a sub-dependency: a
     sub-dependency resolves eagerly and would force authentication onto the
-    unauthenticated ``GET /health`` that every service exposes.
+    unauthenticated ``GET /health`` that every service exposes. The request is
+    passed along so the route's own authentication dependency is served from this
+    resolution rather than repeating it.
 
     ``SEP_INTERNAL_TOKEN``'s service principal is admitted by identity so
     scheduled inventory sync and scheduled execution keep working. It holds
@@ -224,7 +268,7 @@ async def require_minimum_role_for_unsafe_methods(request: Request) -> None:
         return
     if not is_bearer_authenticated(request):
         raise HTTPUnauthorizedException
-    user = await get_current_user(await oauth2_scheme(request))
+    user = await get_current_user(request, await oauth2_scheme(request))
     if user.id == SERVICE_PRINCIPAL_ID:
         return
     if user.role < minimum:
