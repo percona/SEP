@@ -9,12 +9,14 @@
 # from main under a suffix-less tag — the build emits a single artifact. See
 # pmm-fb/README.md "Which image to pin".
 #
-# Run ./bootstrap.sh first: it generates the .env this file interpolates. PMM
-# owns every SEP deployment secret: it writes them into the pmm-sep
-# volume, which the side-car reads through SECRETS_DIR, and it serves SEP under
-# its own /sep prefix. SEP's remaining settings come from the profile baked into
-# the image, with the per-deployment values below overriding it — environment
-# outranks the file.
+# ./bootstrap.sh is only for the `mysql` profile — it generates the .env holding
+# that profile's three test-fixture passwords, and the pair below needs none of
+# them. PMM owns the four secrets SEP reads from disk: it writes them into the
+# pmm-sep volume, which the side-car reads through SECRETS_DIR, and it serves SEP
+# under its own /sep prefix. The Grafana service-account token is the side-car's
+# own — it mints and persists that one itself. SEP's remaining settings come from
+# the profile baked into the image, with the per-deployment values below
+# overriding it — environment outranks the file.
 #
 # sep-mysql is the task-execution target, behind the `mysql` profile; see
 # mysql-target.md.
@@ -36,7 +38,17 @@ x-sep-mysql-address: &sep_mysql_address 172.28.9.40
 services:
   pmm-server:
     # Default repeated on sep-mysql's PMM_FB_TAG build arg — a repin edits both
-    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-882b6ba}
+    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-73298a4}
+    # The image ships start_period 25s with 3 retries at 4s, so it is marked
+    # unhealthy around 37s while a cold start needs appreciably longer to first
+    # pass readyz — and sep-sidecar's service_healthy dependency turns that into
+    # an aborted bring-up rather than a wait. The build once widened this itself;
+    # the PR that did was closed unmerged, so the harness sets it here instead.
+    # Only the start period is set: Docker merges the healthcheck field by field,
+    # so the probe and the other timings stay whatever the pinned image ships and
+    # cannot go stale against a repin.
+    healthcheck:
+      start_period: 300s
     environment:
       PMM_ENABLE_SEP: "1"
       # Bare host:port — the entrypoint rejects a scheme or a trailing path, and
@@ -54,13 +66,11 @@ services:
       - sep-pmm
 
   sep-sidecar:
-    image: docker.io/percona/percona-sep:29d29624626c54360d354975d1e2f8706c8323c7
-    # service_healthy, not service_started: PMM publishes SEP's secrets in two
-    # stages and SEP builds its settings once, at process start, so a side-car
-    # released early comes up with Grafana auth inert and never recovers. Only
-    # correct against a pin carrying PMM-15331, whose healthcheck additionally
-    # requires the current provisioning run to have published both token files.
-    # An older pin turns this into a bring-up failure — see README.md "Caveats".
+    image: docker.io/percona/percona-sep:95a70382022ee2ec8fe6b87e86296b9271c320f0
+    # service_healthy, not service_started: SEP builds its settings once, at
+    # process start, so a side-car released before pmm-server has written the
+    # four secret files exits on the missing SECRET_KEY. Health is what says they
+    # exist; the start period above is what gives a cold start room to get there.
     depends_on:
       pmm-server:
         condition: service_healthy
@@ -83,6 +93,10 @@ services:
       - "127.0.0.1:9002:9002" # tasks API
     volumes:
       - pmm-sep:/run/secrets/sep:ro
+      # SEP's own writable state. The side-car mints its own Grafana
+      # service-account token at start and persists it here, so a recreate
+      # reuses that token instead of minting a second one against Grafana.
+      - sep-state:/home/sep/state
     networks:
       - sep-pmm
 
@@ -92,7 +106,7 @@ services:
       context: .
       dockerfile: Containerfile.mysql
       args:
-        PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-882b6ba}
+        PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-73298a4}
     # service_started, not service_healthy: this node consumes none of the SEP
     # secret provisioning pmm-server's health now gates on, and ordering is all
     # it needs — pmm-managed starts answering registration requests later still,
@@ -103,9 +117,15 @@ services:
         condition: service_started
     hostname: sep-mysql
     environment:
-      SEP_MYSQL_ROOT_PASSWORD: ${SEP_MYSQL_ROOT_PASSWORD:?run ./bootstrap.sh first}
-      SEP_MYSQL_BACKUP_PASSWORD: ${SEP_MYSQL_BACKUP_PASSWORD:?run ./bootstrap.sh first}
-      SEP_MYSQL_PMM_PASSWORD: ${SEP_MYSQL_PMM_PASSWORD:?run ./bootstrap.sh first}
+      # Passed through unset rather than guarded with :? here. Compose
+      # interpolates every service at parse time whatever profile is active, so
+      # a :? on this profile-gated service made ./bootstrap.sh a prerequisite of
+      # the pmm-server + sep-sidecar bring-up too, which needs none of these.
+      # mysql-entrypoint.sh's require_secrets runs unconditionally at container
+      # start and carries the same message, so the mysql path stays guarded.
+      SEP_MYSQL_ROOT_PASSWORD: ${SEP_MYSQL_ROOT_PASSWORD:-}
+      SEP_MYSQL_BACKUP_PASSWORD: ${SEP_MYSQL_BACKUP_PASSWORD:-}
+      SEP_MYSQL_PMM_PASSWORD: ${SEP_MYSQL_PMM_PASSWORD:-}
       PMM_AGENT_SERVER_ADDRESS: pmm-server:8443
       PMM_AGENT_SERVER_USERNAME: admin
       PMM_AGENT_SERVER_PASSWORD: admin
@@ -144,6 +164,7 @@ volumes:
   # Project-scoped deliberately: an unqualified name: would collide with a real
   # PMM install's pmm-sep volume on the same host
   pmm-sep:
+  sep-state:
   sep-mysql-data:
   sep-mysql-pmm-config:
   sep-mysql-nomad:
