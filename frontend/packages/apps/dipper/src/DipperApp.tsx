@@ -34,7 +34,9 @@ import {
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { useSnackbar } from 'notistack';
+import { useAuth } from '@sep/api';
 import {
+  ReadOnlyNotice,
   SchemaFormRenderer,
   ServiceSelector,
   TaskHistoryTable,
@@ -78,6 +80,7 @@ function buildArgs(values: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function DipperApp() {
+  const { canMutate } = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const selectionForm = useForm<DipperSelectionValues>({
     defaultValues: { service_id: null, collector_type: 'environment' },
@@ -177,7 +180,16 @@ export function DipperApp() {
         </Box>
       </FormProvider>
 
-      {serviceId === null ? (
+      {/* The form is the execute control, so a read-only session never gets it. */}
+      {!canMutate ? (
+        <Alert severity="info" sx={{ maxWidth: 640 }}>
+          <ReadOnlyNotice
+            variant="inline"
+            action="run diagnostic collection"
+            testId="dipper-execute-read-only"
+          />
+        </Alert>
+      ) : serviceId === null ? (
         <Alert severity="info" sx={{ maxWidth: 640 }}>
           Select a database service to load the execution form.
         </Alert>

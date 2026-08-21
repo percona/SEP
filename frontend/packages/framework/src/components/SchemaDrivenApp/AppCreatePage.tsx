@@ -22,7 +22,8 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useSnackbar } from 'notistack';
-import { useCreateAppEntity, useCreateAppTask, type AppSchema } from '@sep/api';
+import { useAuth, useCreateAppEntity, useCreateAppTask, type AppSchema } from '@sep/api';
+import { ReadOnlyNotice } from '../ReadOnlyNotice';
 import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
 import type { RenderFieldOverride } from '../SchemaFormRenderer/types';
 import type { RenderFormSlot } from './types';
@@ -48,6 +49,7 @@ export function AppCreatePage({
   renderCreateForm,
 }: AppCreatePageProps) {
   const navigate = useNavigate();
+  const { canMutate } = useAuth();
   const { entityName } = useParams<{ entityName?: string }>();
   const entitySchema = useMemo(
     () => schema.entities?.find((e) => e.name === entityName),
@@ -106,6 +108,27 @@ export function AppCreatePage({
       },
     });
   };
+
+  // Creating is a mutation, so the whole page is the control: a read-only
+  // session gets the guard state instead of a form that would answer 403. The
+  // back chrome stays — nothing links here for such a session, so anyone who
+  // arrives did so by URL and needs a way out.
+  if (!canMutate) {
+    return (
+      <Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+          <IconButton
+            onClick={() => navigate('..', { relative: 'path' })}
+            aria-label={`Back to ${title}`}
+          >
+            <ArrowBackIcon />
+          </IconButton>
+          <Typography variant="h4">New {title}</Typography>
+        </Box>
+        <ReadOnlyNotice action={`create ${title}`} testId="app-create-read-only" />
+      </Box>
+    );
+  }
 
   return (
     <Box>

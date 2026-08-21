@@ -33,11 +33,19 @@ const { apiMock, useAppTasksMock } = vi.hoisted(() => ({
   useAppTasksMock: vi.fn(),
 }));
 
+/** Flipped per test to cover the read-only (non-admin) rendering. */
+let mockCanMutate = true;
+
 vi.mock('@sep/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@sep/api')>()),
   apiClient: apiMock,
   useAppTasks: (...args: unknown[]) => useAppTasksMock(...args),
+  useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
 }));
+
+beforeEach(() => {
+  mockCanMutate = true;
+});
 // `fetchAllAppListPages` (used by `useScheduledTasksForApp`) calls the
 // package-internal `apiClient` bound in `../client`, not the barrel export
 // above, so it needs its own mock pointing at the same spy.
@@ -414,5 +422,32 @@ describe('InventorySchedulePage', () => {
       await user.click(screen.getByRole('button', { name: /^Cancel$/i }));
       expect(apiMock.delete).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('InventorySchedulePage — write access', () => {
+  it('renders attach, edit, clear and the enable toggle for a session that may mutate', async () => {
+    setupHooks([makePeriodic({ id: 10 })]);
+    renderPage();
+
+    await screen.findByTestId('inv-sched-row-10');
+    expect(screen.getByTestId('inv-sched-attach')).toBeInTheDocument();
+    expect(screen.getByTestId('inv-sched-edit-10')).toBeInTheDocument();
+    expect(screen.getByTestId('inv-sched-delete-10')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Enable schedule for/i)).toBeInTheDocument();
+  });
+
+  it('renders none of those controls for a non-admin', async () => {
+    mockCanMutate = false;
+    setupHooks([makePeriodic({ id: 10 })]);
+    renderPage();
+
+    await screen.findByTestId('inv-sched-row-10');
+    expect(screen.queryByTestId('inv-sched-attach')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('inv-sched-edit-10')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('inv-sched-delete-10')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Enable schedule for/i)).not.toBeInTheDocument();
+    // The schedule stays readable, enabled state included.
+    expect(within(screen.getByTestId('inv-sched-row-10')).getByText('Enabled')).toBeInTheDocument();
   });
 });
