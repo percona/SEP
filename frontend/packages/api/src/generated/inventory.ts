@@ -1289,8 +1289,8 @@ export interface components {
      *
      *     The wired classes are ``SEPSettings``, ``TasksSettings``,
      *     ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
-     *     ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings`` and
-     *     ``InventorySettings``.
+     *     ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings``,
+     *     ``InventorySettings`` and ``OmInventorySettings``.
      *
      *     To wire a new settings class:
      *
@@ -1315,7 +1315,8 @@ export interface components {
       | 'AnonymizerSettings'
       | 'AlertsSettings'
       | 'HealthReportSettings'
-      | 'InventorySettings';
+      | 'InventorySettings'
+      | 'OmInventorySettings';
     /**
      * SettingClassGroup
      * @description One settings-class group in the LIST response.
