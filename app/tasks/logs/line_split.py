@@ -115,7 +115,7 @@ class WithheldLineBuffer:
     r"""Hold bytes withheld from anonymization until a terminator completes them.
 
     :meth:`append` is the only way bytes enter the buffer, and it releases every
-    line the arriving frame completed -- so what stays withheld is always
+    line the arriving frame completed — so what stays withheld is always
     terminator-free. That invariant is what lets each frame search only the
     bytes it delivered: any terminator must lie in them, and a scan starting at
     the pre-append length sees everything a whole-buffer scan would. The frames
