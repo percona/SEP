@@ -388,11 +388,25 @@ async def alerts_api_push(
                     for_duration=DEFAULT_FOR_DURATION,
                     group=alerts_settings.ALERT_FOLDER_NAME,
                 )
-            except (HTTPException, OSError):
-                logger.debug("Rule already exists for %s", name, exc_info=True)
+            except (HTTPException, OSError) as exc:
+                detail = str(getattr(exc, "detail", exc))
+                if "conflicts with existing" in detail:
+                    logger.debug("Rule already exists for %s", name, exc_info=True)
+                    results.append(
+                        PushItemResult(
+                            name=name,
+                            status="skipped",
+                            message="Already present in PMM",
+                        )
+                    )
+                else:
+                    results.append(
+                        PushItemResult(name=name, status="error", message=detail)
+                    )
+                continue
             results.append(
                 PushItemResult(
-                    name=name, status="skipped", message="Already present in PMM"
+                    name=name, status="success", message="Pushed successfully"
                 )
             )
             continue

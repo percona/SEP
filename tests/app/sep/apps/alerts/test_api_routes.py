@@ -786,8 +786,11 @@ class TestAlertsPushApi:
         assert response.json()["detail"] == "PMM is not configured"
 
     def test_push_already_present(self, api_client, mock_pmm_api):
-        """Skip templates that are already present in PMM."""
+        """Skip when the template and its rule are already present in PMM."""
         sep_app.dependency_overrides[get_pmm_present_names] = lambda: {"High CPU"}
+        mock_pmm_api.create_rule.side_effect = HTTPException(
+            status_code=502, detail="rule conflicts with existing rule"
+        )
         response = api_client.post(
             f"{API_BASE}/push", json={"selected_templates": ["High CPU"]}
         )
@@ -796,6 +799,22 @@ class TestAlertsPushApi:
         assert result["status"] == "skipped"
         assert result["message"] == "Already present in PMM"
         mock_pmm_api.create_template.assert_not_awaited()
+        mock_pmm_api.create_rule.assert_awaited_once()
+
+    def test_push_already_present_recreates_missing_rule(
+        self, api_client, mock_pmm_api
+    ):
+        """Report ``success`` when the template is present but ``create_rule`` recreates the rule."""
+        sep_app.dependency_overrides[get_pmm_present_names] = lambda: {"High CPU"}
+        response = api_client.post(
+            f"{API_BASE}/push", json={"selected_templates": ["High CPU"]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        result = response.json()["results"][0]
+        assert result["status"] == "success"
+        assert result["message"] == "Pushed successfully"
+        mock_pmm_api.create_template.assert_not_awaited()
+        mock_pmm_api.create_rule.assert_awaited_once()
 
     def test_push_template_not_found(self, api_client, mock_pmm_api):
         """Emit a per-template error when the template name is unknown."""
@@ -881,16 +900,10 @@ class TestAlertsPushApi:
         response = api_client.post(f"{API_BASE}/push", json={"selected_templates": []})
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-    def test_push_already_present_swallows_create_rule_failure(
+    def test_push_already_present_reports_create_rule_failure(
         self, api_client, mock_pmm_api
     ):
-        """Report ``skipped`` even when the inner ``create_rule`` call raises.
-
-        When a template is already present in PMM the handler still attempts a
-        no-op ``create_rule`` and silently absorbs any failure (the rule
-        already exists upstream). Covers the ``except (HTTPException, OSError)``
-        arm inside the already-present branch.
-        """
+        """Report ``error`` when already-present ``create_rule`` fails for a non-collision."""
         sep_app.dependency_overrides[get_pmm_present_names] = lambda: {"High CPU"}
         mock_pmm_api.create_rule.side_effect = HTTPException(
             status_code=502, detail="rule already exists"
@@ -900,8 +913,43 @@ class TestAlertsPushApi:
         )
         assert response.status_code == status.HTTP_200_OK
         result = response.json()["results"][0]
-        assert result["status"] == "skipped"
-        assert result["message"] == "Already present in PMM"
+        assert result["status"] == "error"
+        assert result["message"] == "rule already exists"
+        mock_pmm_api.create_template.assert_not_awaited()
+        mock_pmm_api.create_rule.assert_awaited_once()
+
+    def test_push_already_present_stringifies_non_str_create_rule_detail(
+        self, api_client, mock_pmm_api
+    ):
+        """Report ``error`` when already-present ``create_rule`` raises a non-str detail."""
+        sep_app.dependency_overrides[get_pmm_present_names] = lambda: {"High CPU"}
+        mock_pmm_api.create_rule.side_effect = HTTPException(
+            status_code=502, detail={"message": "upstream failed"}
+        )
+        response = api_client.post(
+            f"{API_BASE}/push", json={"selected_templates": ["High CPU"]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        result = response.json()["results"][0]
+        assert result["status"] == "error"
+        assert "upstream failed" in result["message"]
+        mock_pmm_api.create_template.assert_not_awaited()
+        mock_pmm_api.create_rule.assert_awaited_once()
+
+    def test_push_already_present_reports_create_rule_oserror(
+        self, api_client, mock_pmm_api
+    ):
+        """Report ``error`` when already-present ``create_rule`` raises ``OSError``."""
+        sep_app.dependency_overrides[get_pmm_present_names] = lambda: {"High CPU"}
+        mock_pmm_api.create_rule.side_effect = OSError("connection reset")
+        response = api_client.post(
+            f"{API_BASE}/push", json={"selected_templates": ["High CPU"]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        result = response.json()["results"][0]
+        assert result["status"] == "error"
+        assert "connection reset" in result["message"]
+        mock_pmm_api.create_template.assert_not_awaited()
         mock_pmm_api.create_rule.assert_awaited_once()
 
     def test_push_conflict_retry_deletes_matching_rules_only(
