@@ -19,11 +19,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 from faker import Faker
-from fastapi import status
+from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_current_user
+from app.api.routes.users import retrieve_user
+from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.auth.models import UserRole
+from app.core.auth.providers.grafana.models import GrafanaUser
 from app.core.auth.utils import get_user_model
 from app.main import app
 from tests.app.factories import CasdoorUserFactory
@@ -139,3 +142,43 @@ class TestUserRoleIsServed:
             UserRole.ADMIN.value,
             UserRole.VIEWER.value,
         ]
+
+
+class TestRetrieveUnderAnOrgScopedGrafanaAccount:
+    """Verify the by-username route resolves when the lookup endpoint is refused.
+
+    The route is exercised directly rather than through the client because the
+    response model is bound to the configured provider's user model at import,
+    while the provider under test here is pinned by ``grafana_mock``.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _pin_grafana_user_model(self, mocker, grafana_mock):
+        """Resolve the route's lookups through the Grafana provider."""
+        mocker.patch("app.api.routes.users.User", GrafanaUser)
+        grafana_mock.lookup_user.side_effect = HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permissions needed: users:read",
+        )
+
+    @pytest.mark.asyncio
+    async def test_admin_retrieves_another_user(
+        self, admin_user, grafana_org_users, valid_username
+    ):
+        """Verify the admin branch serves the record from the org listing."""
+        user = await retrieve_user(admin_user, valid_username)
+
+        assert user.username == valid_username
+        assert user.role is UserRole.VIEWER
+        assert user.email == grafana_org_users[0]["email"]
+
+    @pytest.mark.asyncio
+    async def test_non_admin_is_refused_before_any_upstream_call(
+        self, regular_user, grafana_mock, other_user
+    ):
+        """Verify the route gate still runs ahead of the provider."""
+        with pytest.raises(HTTPForbiddenException):
+            await retrieve_user(regular_user, other_user.username)
+
+        grafana_mock.lookup_user.assert_not_awaited()
+        grafana_mock.get_org_users.assert_not_awaited()

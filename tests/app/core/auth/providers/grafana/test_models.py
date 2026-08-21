@@ -15,6 +15,7 @@
 
 """Define tests for the Grafana user and token-payload models."""
 
+import logging
 from datetime import timedelta
 from uuid import uuid4
 
@@ -35,11 +36,14 @@ from app.core.auth.providers.grafana.models import (
     GrafanaTokenPayload,
     GrafanaUser,
 )
+from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
 from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.config import settings
 from app.core.exceptions import HTTPNotFoundException
 from tests.app.conftest import make_roleless_grafana_assertion
 from tests.app.factories import GrafanaUserFactory
+
+_MODELS_LOGGER = "app.core.auth.providers.grafana.models"
 
 
 class TestGrafanaUserIdentity:
@@ -432,11 +436,12 @@ class TestGrafanaUserLookup:
         assert await GrafanaUser.get_users() == []
 
     @pytest.mark.asyncio
-    async def test_get_users_record_missing_login_fails_closed(self, grafana_mock):
-        """Verify a malformed org-user record propagates a ``KeyError``."""
+    async def test_get_users_rejects_a_malformed_record(self, grafana_mock):
+        """Verify a record breaking the listing contract reports an upstream error."""
         grafana_mock.get_org_users.return_value = [{"userId": 1, "role": "Viewer"}]
-        with pytest.raises(KeyError):
+        with pytest.raises(GrafanaException) as exc_info:
             await GrafanaUser.get_users()
+        assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
 
 
 class TestGrafanaUserEdgeCases:
@@ -718,12 +723,14 @@ class TestGrafanaOrgScopedUserLookup:
     same token already reads for the listing route.
     """
 
-    upstream_detail = (
+    upstream_detail: str = (
         "You'll need additional permissions to perform this action. "
         "Permissions needed: users:read"
     )
 
-    def _refuse_lookup(self, grafana_mock, error=None):
+    def _refuse_lookup(
+        self, grafana_mock: GrafanaAuthProvider, error: HTTPException | None = None
+    ) -> None:
         """Make the server-admin lookup fail the way an org-scoped token does.
 
         :param grafana_mock: The mocked active Grafana provider.
@@ -794,12 +801,12 @@ class TestGrafanaOrgScopedUserLookup:
 
         assert user.role is UserRole.ADMIN
 
-    @pytest.mark.parametrize("org_role", ["None", "Superuser", "", None])
+    @pytest.mark.parametrize("org_role", ["None", None])
     @pytest.mark.asyncio
-    async def test_org_scope_refuses_a_row_naming_no_ranked_role(
-        self, grafana_mock, grafana_org_users, valid_username, org_role
+    async def test_org_scope_reports_a_roleless_membership_as_none(
+        self, grafana_mock, grafana_org_users, valid_username, org_role, caplog
     ):
-        """Verify an unrankable role is refused instead of served as the lowest."""
+        """Verify a membership Grafana itself ranks as none resolves, silently."""
         self._refuse_lookup(grafana_mock)
         row = {**grafana_org_users[0]}
         if org_role is None:
@@ -808,26 +815,43 @@ class TestGrafanaOrgScopedUserLookup:
             row["role"] = org_role
         grafana_mock.get_org_users.return_value = [row]
 
-        with pytest.raises(GrafanaException) as exc_info:
-            await GrafanaUser.get_user(valid_username)
+        with caplog.at_level(logging.WARNING, logger=_MODELS_LOGGER):
+            user = await GrafanaUser.get_user(valid_username)
 
-        assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
-        assert "users:read" not in str(exc_info.value.detail)
+        assert user.role is UserRole.NONE
+        assert not caplog.records
+
+    @pytest.mark.parametrize("org_role", ["Superuser", ""])
+    @pytest.mark.asyncio
+    async def test_org_scope_ranks_an_unknown_role_lowest_and_warns(
+        self, grafana_mock, grafana_org_users, valid_username, org_role, caplog
+    ):
+        """Verify an unrecognized role grants nothing and is reported as drift."""
+        self._refuse_lookup(grafana_mock)
+        grafana_mock.get_org_users.return_value = [
+            {**grafana_org_users[0], "role": org_role}
+        ]
+
+        with caplog.at_level(logging.WARNING, logger=_MODELS_LOGGER):
+            user = await GrafanaUser.get_user(valid_username)
+
+        assert user.role is UserRole.NONE
+        assert repr(org_role) in caplog.text
 
     @pytest.mark.asyncio
-    async def test_org_scope_refusal_is_not_reported_as_absent(
+    async def test_both_read_paths_rank_a_roleless_membership_alike(
         self, grafana_mock, grafana_org_users, valid_username
     ):
-        """Verify an unrankable role does not read as a missing user."""
+        """Verify the single lookup and the listing never disagree on one row."""
         self._refuse_lookup(grafana_mock)
         grafana_mock.get_org_users.return_value = [
             {**grafana_org_users[0], "role": "None"}
         ]
 
-        with pytest.raises(HTTPException) as exc_info:
-            await GrafanaUser.get_user(valid_username)
+        single = await GrafanaUser.get_user(valid_username)
+        listed = await GrafanaUser.get_users()
 
-        assert not isinstance(exc_info.value, HTTPNotFoundException)
+        assert single.role is listed[0].role is UserRole.NONE
 
     @pytest.mark.asyncio
     async def test_org_scope_resolves_by_email(
@@ -951,12 +975,26 @@ class TestGrafanaOrgScopedUserLookup:
         assert not isinstance(exc_info.value, HTTPNotFoundException)
 
     @pytest.mark.asyncio
-    async def test_org_scope_malformed_row_fails_closed(
-        self, grafana_mock, valid_username
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"users": []},
+            ["bob"],
+            [{"userId": 1, "role": "Viewer"}],
+            [{"userId": 1, "login": 7, "role": "Viewer"}],
+            [{"userId": 1, "login": "bob", "email": 9, "role": "Viewer"}],
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_org_scope_rejects_a_malformed_listing(
+        self, grafana_mock, valid_username, payload
     ):
-        """Verify a row without a login propagates a ``KeyError``."""
+        """Verify a listing breaking the record contract fails closed as upstream."""
         self._refuse_lookup(grafana_mock)
-        grafana_mock.get_org_users.return_value = [{"userId": 1, "role": "Viewer"}]
+        grafana_mock.get_org_users.return_value = payload
 
-        with pytest.raises(KeyError):
+        with pytest.raises(GrafanaException) as exc_info:
             await GrafanaUser.get_user(valid_username)
+
+        assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
+        assert "users:read" not in str(exc_info.value.detail)
