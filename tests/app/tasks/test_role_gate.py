@@ -24,6 +24,7 @@ from pydantic import SecretStr
 from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.celery.deps import get_session as get_celery_beat_session
 from app.core.config import settings
 from app.core.settings_override.models import SettingClassEnum
 from app.tasks.crud import TaskHistoryManager, TaskManager
@@ -39,15 +40,26 @@ SERVICE_TOKEN = "supersecret"
 
 @pytest.fixture
 def bearer_client(
-    session: AsyncSession, mock_executor: AsyncMock, casdoor_mock
+    session: AsyncSession,
+    celery_beat_session: AsyncSession,
+    mock_executor: AsyncMock,
+    casdoor_mock,
 ) -> TestClient:
     """Yield a Tasks TestClient that authenticates every request by Bearer token.
 
     No authentication dependency is overridden: the gate resolves the user
     imperatively, so an override could not reach it, and leaving the chain real
     is what makes the gate the thing under test.
+
+    The celery-beat session is overridden so a periodic route answers from the
+    in-memory beat tables. Without it that route raises on a missing table, and
+    an assertion that the gate let the request through cannot tell a route's own
+    answer from a failure on the way to it.
     """
     tasks_app.dependency_overrides[get_session] = lambda: session
+    tasks_app.dependency_overrides[get_celery_beat_session] = (
+        lambda: celery_beat_session
+    )
     tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
     yield TestClient(tasks_app, raise_server_exceptions=False)
     tasks_app.dependency_overrides = {}
@@ -81,23 +93,28 @@ def test_mutations_are_refused_for_a_non_admin(
 
 
 @pytest.mark.parametrize(
-    ("method", "path"),
+    ("method", "path", "expected_status"),
     [
-        ("POST", "/"),
-        ("PUT", "/periodic/1"),
-        ("POST", "/connectivity-check/"),
+        ("POST", "/", status.HTTP_422_UNPROCESSABLE_CONTENT),
+        ("PUT", "/periodic/1", status.HTTP_404_NOT_FOUND),
+        ("POST", "/connectivity-check/", status.HTTP_422_UNPROCESSABLE_CONTENT),
     ],
     ids=["tasks", "periodic", "connectivity"],
 )
 def test_mutations_pass_the_gate_for_an_admin(
-    admin_bearer_client: TestClient, method: str, path: str
+    admin_bearer_client: TestClient, method: str, path: str, expected_status: int
 ) -> None:
-    """Admit an admin's mutation on each router, leaving the route to answer."""
+    """Admit an admin's mutation on each router, leaving the route to answer.
+
+    The answer each route gives the empty body is the assertion. "Not 403" also
+    passes when the request never reached the handler, which is how a route that
+    raises on the way in reads as an admitted mutation.
+    """
     response = admin_bearer_client.request(
         method, path, json={}, headers=BEARER_HEADERS
     )
 
-    assert response.status_code != status.HTTP_403_FORBIDDEN
+    assert response.status_code == expected_status
 
 
 def test_reads_are_unaffected_for_a_non_admin(bearer_client: TestClient) -> None:
