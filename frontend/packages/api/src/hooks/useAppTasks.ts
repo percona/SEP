@@ -160,16 +160,46 @@ export type AppListQueryOptions = {
   disablePolling?: boolean;
   /** Override poll cadence (ms) while a running task is visible. */
   pollingIntervalMs?: number;
+  /**
+   * Public sort key for endpoints that honor server-side ordering. Prefix with
+   * ``-`` for descending (for example ``-created_at``). Omitted when unset.
+   */
+  sort?: string;
+  /**
+   * Case-insensitive search term for endpoints that honor server-side search.
+   * Blank / whitespace-only values are omitted from the request.
+   */
+  search?: string;
 };
+
+/** Options that shape a list GET's query string and React Query cache key. */
+type AppListFetchOptions = Pick<
+  AppListQueryOptions,
+  'offset' | 'limit' | 'fetchAllPages' | 'sort' | 'search'
+>;
+
+function listQueryParams(
+  options: Pick<AppListQueryOptions, 'offset' | 'limit' | 'sort' | 'search'>,
+): Record<string, string | number> {
+  const params: Record<string, string | number> = {
+    offset: options.offset ?? DEFAULT_APP_LIST_OFFSET,
+    limit: options.limit ?? DEFAULT_APP_LIST_LIMIT,
+  };
+  if (options.sort) {
+    params.sort = options.sort;
+  }
+  const search = options.search?.trim();
+  if (search) {
+    params.search = search;
+  }
+  return params;
+}
 
 function mockItemsToResult<T>(mockItems: T[]): AppListResult<T> {
   return { items: mockItems, pagination: null };
 }
 
-function tasksQueryKey(
-  pluginName: string,
-  options: Pick<AppListQueryOptions, 'offset' | 'limit' | 'fetchAllPages'>,
-) {
+function tasksQueryKey(pluginName: string, options: AppListFetchOptions) {
   return [
     'plugins',
     pluginName,
@@ -178,6 +208,8 @@ function tasksQueryKey(
       offset: options.offset ?? DEFAULT_APP_LIST_OFFSET,
       limit: options.limit ?? DEFAULT_APP_LIST_LIMIT,
       fetchAllPages: options.fetchAllPages ?? false,
+      sort: options.sort || undefined,
+      search: options.search?.trim() || undefined,
     },
   ] as const;
 }
@@ -193,9 +225,13 @@ type AppListResponse<T> = T[] | PaginatedAppList<T> | { items: T[] | null };
  * Walk every page of a paginated list endpoint, stopping early for bare arrays.
  *
  * Caps at ``MAX_FETCH_ALL_PAGES`` × ``DEFAULT_APP_LIST_LIMIT``; when ``total``
- * is larger the result sets ``truncated: true`` and logs a warning.
+ * is larger the result sets ``truncated: true`` and logs a warning. Optional
+ * ``sort`` / ``search`` are forwarded on every page request.
  */
-export async function fetchAllAppListPages<T>(path: string): Promise<AppListResult<T>> {
+export async function fetchAllAppListPages<T extends Record<string, unknown>>(
+  path: string,
+  options: Pick<AppListQueryOptions, 'sort' | 'search'> = {},
+): Promise<AppListResult<T>> {
   const out: T[] = [];
   let offset = 0;
   let lastTotal: number | null = null;
@@ -203,7 +239,7 @@ export async function fetchAllAppListPages<T>(path: string): Promise<AppListResu
 
   for (let iter = 0; iter < MAX_FETCH_ALL_PAGES; iter++) {
     const { data } = await apiClient.get<AppListResponse<T>>(path, {
-      params: { offset, limit },
+      params: listQueryParams({ ...options, offset, limit }),
     });
     const page = normalizeAppListResponse(data);
 
@@ -229,15 +265,16 @@ export async function fetchAllAppListPages<T>(path: string): Promise<AppListResu
 
 async function fetchAppList<T extends Record<string, unknown>>(
   path: string,
-  options: Pick<AppListQueryOptions, 'offset' | 'limit' | 'fetchAllPages'> = {},
+  options: AppListFetchOptions = {},
 ): Promise<AppListResult<T>> {
   if (options.fetchAllPages) {
-    return fetchAllAppListPages<T>(path);
+    return fetchAllAppListPages<T>(path, {
+      sort: options.sort,
+      search: options.search,
+    });
   }
-  const offset = options.offset ?? DEFAULT_APP_LIST_OFFSET;
-  const limit = options.limit ?? DEFAULT_APP_LIST_LIMIT;
   const { data } = await apiClient.get<AppListResponse<T>>(path, {
-    params: { offset, limit },
+    params: listQueryParams(options),
   });
   return normalizeAppListResponse(data);
 }
@@ -245,7 +282,7 @@ async function fetchAppList<T extends Record<string, unknown>>(
 /** Fetch plugin task list rows, optionally across all pages. */
 export async function fetchAppTasksList<T extends Record<string, unknown>>(
   pluginName: string,
-  options: Pick<AppListQueryOptions, 'offset' | 'limit' | 'fetchAllPages'> = {},
+  options: AppListFetchOptions = {},
 ): Promise<AppListResult<T>> {
   return fetchAppList<T>(`/apps/${pluginName}/`, options);
 }
@@ -254,7 +291,7 @@ export async function fetchAppTasksList<T extends Record<string, unknown>>(
 export async function fetchAppEntityList<T extends Record<string, unknown>>(
   pluginName: string,
   entityName: string,
-  options: Pick<AppListQueryOptions, 'offset' | 'limit' | 'fetchAllPages'> = {},
+  options: AppListFetchOptions = {},
 ): Promise<AppListResult<T>> {
   return fetchAppList<T>(`/apps/${pluginName}/${entityName}/`, options);
 }
@@ -284,15 +321,18 @@ export function useAppTasks<T extends Record<string, unknown>>(
   const offset = options?.offset ?? DEFAULT_APP_LIST_OFFSET;
   const limit = options?.limit ?? DEFAULT_APP_LIST_LIMIT;
   const fetchAllPages = options?.fetchAllPages ?? false;
+  const sort = options?.sort || undefined;
+  const search = options?.search?.trim() || undefined;
   const disablePolling = options?.disablePolling ?? false;
   const pollingIntervalMs = options?.pollingIntervalMs ?? DEFAULT_TASK_POLLING_INTERVAL_MS;
+  const fetchOptions = { offset, limit, fetchAllPages, sort, search };
 
   return useQuery<AppListResult<T>>({
-    queryKey: tasksQueryKey(pluginName, { offset, limit, fetchAllPages }),
+    queryKey: tasksQueryKey(pluginName, fetchOptions),
     enabled: options?.enabled !== false,
     queryFn: async () => {
       try {
-        return await fetchAppTasksList<T>(pluginName, { offset, limit, fetchAllPages });
+        return await fetchAppTasksList<T>(pluginName, fetchOptions);
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
           return mockItemsToResult(mockTasks);
@@ -395,17 +435,15 @@ function entityQueriesPrefix(pluginName: string, entityName: string) {
   return ['plugins', pluginName, 'entity', entityName] as const;
 }
 
-function entityListQueryKey(
-  pluginName: string,
-  entityName: string,
-  options: Pick<AppListQueryOptions, 'offset' | 'limit' | 'fetchAllPages'>,
-) {
+function entityListQueryKey(pluginName: string, entityName: string, options: AppListFetchOptions) {
   return [
     ...entityQueriesPrefix(pluginName, entityName),
     {
       offset: options.offset ?? DEFAULT_APP_LIST_OFFSET,
       limit: options.limit ?? DEFAULT_APP_LIST_LIMIT,
       fetchAllPages: options.fetchAllPages ?? false,
+      sort: options.sort || undefined,
+      search: options.search?.trim() || undefined,
     },
   ] as const;
 }
@@ -435,17 +473,16 @@ export function useAppEntityList<T extends Record<string, unknown>>(
   const offset = options?.offset ?? DEFAULT_APP_LIST_OFFSET;
   const limit = options?.limit ?? DEFAULT_APP_LIST_LIMIT;
   const fetchAllPages = options?.fetchAllPages ?? false;
+  const sort = options?.sort || undefined;
+  const search = options?.search?.trim() || undefined;
+  const fetchOptions = { offset, limit, fetchAllPages, sort, search };
 
   return useQuery<AppListResult<T>>({
-    queryKey: entityListQueryKey(pluginName, entityName, { offset, limit, fetchAllPages }),
+    queryKey: entityListQueryKey(pluginName, entityName, fetchOptions),
     enabled: options?.enabled !== false,
     queryFn: async () => {
       try {
-        return await fetchAppEntityList<T>(pluginName, entityName, {
-          offset,
-          limit,
-          fetchAllPages,
-        });
+        return await fetchAppEntityList<T>(pluginName, entityName, fetchOptions);
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
           return mockItemsToResult(mockItems);
