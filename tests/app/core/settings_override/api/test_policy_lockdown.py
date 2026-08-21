@@ -654,6 +654,37 @@ class TestLegacyCasedOverrideRows:
         assert rows[0].is_active is True
 
     @pytest.mark.asyncio
+    async def test_patch_updates_legacy_and_canonical_duplicates(
+        self,
+        client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Assert PATCH of the canonical key updates every matching stored row."""
+        await _seed_row(
+            override_session,
+            setting_class=SettingClassEnum.SETTINGS,
+            key=self._LEGACY_PMM,
+            value="https://legacy.example.com",
+            is_active=True,
+        )
+        await _seed_row(
+            override_session,
+            setting_class=SettingClassEnum.SETTINGS,
+            key=self._CANONICAL_PMM,
+            value="https://canonical.example.com",
+            is_active=True,
+        )
+        new_value = "https://pmm.example.com"
+        response = client.patch(SETTINGS_URL, json={self._CANONICAL_PMM: new_value})
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SETTINGS
+        )
+        assert {row.key for row in rows} == {self._LEGACY_PMM, self._CANONICAL_PMM}
+        assert {row.value for row in rows} == {new_value}
+        assert all(row.is_active for row in rows)
+
+    @pytest.mark.asyncio
     async def test_patch_updates_legacy_top_level_row_instead_of_duplicating(
         self,
         client: TestClient,
