@@ -184,8 +184,9 @@ async def _apply_logging_dictconfig(_: Mapping[str, object]) -> None:
 async def _reseed_system_periodic_tasks(_: Mapping[str, object]) -> None:
     """Re-seed the SEP beat schedule after a hot interval override.
 
-    Wired for both ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``) and
-    ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``). Rebuilds the
+    Wired for ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``),
+    ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``) and
+    ``OmInventorySettings.SCHEDULE`` (``sep__run_om_probe``). Rebuilds the
     system periodic-task set via
     :func:`app.sep.db.seed.get_system_periodic_tasks` -- which re-reads the now-live
     interval from the refreshed proxy snapshot -- and re-invokes
@@ -198,12 +199,13 @@ async def _reseed_system_periodic_tasks(_: Mapping[str, object]) -> None:
     Celery beat reloads the schedule on its next scheduler tick without a restart.
 
     Gating is then re-applied, because preserving it is only true of the **update**
-    path. A schedule an app may set to ``None`` -- which is how an app-owned sweep is
-    turned off -- contributes no task at all while it is null, and the orphan cleanup
-    in ``init_periodic_tasks_db`` deletes its row. Setting it again takes the *create*
-    path, which builds a fresh row at the model's default ``enabled``, so a disabled
-    app would start running on the next beat tick. This is the same pair
-    :func:`app.sep.db.seed.init_sep_db` runs at startup, for the same reason.
+    path. A schedule that may be ``None`` -- ``OmInventorySettings.SCHEDULE`` is,
+    which is how the sweep is turned off -- contributes no task at all, and the
+    orphan cleanup in ``init_periodic_tasks_db`` deletes its row. Setting it again
+    takes the *create* path, which builds a fresh row at the model's default
+    ``enabled``: a disabled app would start sweeping on the next beat tick. This is
+    the same pair :func:`app.sep.db.seed.init_sep_db` runs at startup, for the same
+    reason.
 
     :param _: The new effective settings snapshot mapping (unused -- the interval is
         re-read from the proxy by the task-set builder).
@@ -261,6 +263,10 @@ def build_sep_override_callbacks(app: FastAPI) -> CallbackRegistry:
         (
             SettingClassEnum.SEP_SETTINGS,
             "APP_DRAIN",
+        ): _reseed_system_periodic_tasks,
+        (
+            SettingClassEnum.OM_INVENTORY_SETTINGS,
+            "SCHEDULE",
         ): _reseed_system_periodic_tasks,
     }
 
