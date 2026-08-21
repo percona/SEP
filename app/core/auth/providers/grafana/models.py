@@ -35,6 +35,7 @@ from app.core.auth.models import (
 )
 from app.core.auth.providers.grafana.sdk import GrafanaException, GrafanaSDK
 from app.core.config import settings
+from app.core.exceptions import HTTPNotFoundException
 from app.core.utils.fields import NonEmptyStr
 
 ASSERTION_SALT: Final = "sep.auth.grafana.v1"
@@ -68,6 +69,14 @@ _GRAFANA_ORG_ROLE_TO_USER_ROLE: Final[Mapping[str, UserRole]] = {
     "Editor": UserRole.EDITOR,
     "Admin": UserRole.ADMIN,
 }
+
+# A membership naming anything outside this set proves no rank, so it cannot
+# stand in for a real one.
+_RANKED_ORG_ROLES: Final[frozenset[str]] = frozenset(
+    role
+    for role, user_role in _GRAFANA_ORG_ROLE_TO_USER_ROLE.items()
+    if user_role is not UserRole.NONE
+)
 
 
 class _GrafanaUserRecord(TypedDict):
@@ -421,17 +430,86 @@ class GrafanaUser(BaseUser):
     async def get_user(cls, username: NonEmptyStr) -> Self:
         """Fetch a single user by login or email.
 
-        The user-lookup endpoint carries the server-admin flag but no org
-        memberships, so the role here is either ``SUPER_ADMIN`` or the lowest
-        role, unlike the login flow, which also ranks org memberships.
+        The user-lookup endpoint needs Grafana's instance-scoped ``users:read``,
+        which only a Server Admin holds, so a service account scoped to a single
+        org is refused. That refusal alone falls back to the org-users listing the
+        same token already reads for :meth:`get_users`. Every other status
+        propagates: a 401 means the credential itself is bad and a 404 means the
+        user is genuinely absent, and re-reading a listing answers neither.
+        Nothing in this provider raises a SEP-side 403, so the status is
+        unambiguous here.
+
+        The lookup endpoint carries the server-admin flag but no org memberships,
+        so its role is either ``SUPER_ADMIN`` or the lowest role, unlike the login
+        flow, which also ranks org memberships. The fallback sees no server-admin
+        flag at all, so it reports the org role and never reaches ``SUPER_ADMIN``
+        -- the same limitation :meth:`get_users` carries -- and inherits that
+        call's cache, which can answer both stale and after the upstream has begun
+        refusing.
 
         :param username: The login or email to look up.
         :return: The mapped ``GrafanaUser``.
+        :raises HTTPException: Whatever the lookup endpoint raised, for every
+            status other than 403.
+        :raises HTTPNotFoundException: If the org-scoped fallback holds no such
+            user.
+        :raises GrafanaException: If the org-scoped fallback matches a row naming
+            no role this provider ranks.
         """
-        record = cast(
-            "_GrafanaUserRecord", await _active_grafana_sdk().lookup_user(username)
-        )
+        try:
+            record = cast(
+                "_GrafanaUserRecord", await _active_grafana_sdk().lookup_user(username)
+            )
+        except HTTPException as exc:
+            if exc.status_code != status.HTTP_403_FORBIDDEN:
+                raise
+            return await cls._from_org_scope(username)
         return cls._from_grafana_record(record, [])
+
+    @classmethod
+    async def _from_org_scope(cls, username: NonEmptyStr) -> Self:
+        """Resolve a user from the listing an org-scoped service account can read.
+
+        Accept either field the lookup endpoint's ``loginOrEmail`` accepts, but
+        rank a login match above an email match: Grafana allows a login shaped
+        like an email, so one user's login can equal another's email, and a single
+        pass would resolve by listing order. Comparison is case-folded because
+        Grafana treats logins case-insensitively, and an absent email is skipped
+        rather than compared, so a blank input matches nothing.
+
+        A matched row must name a role this provider ranks. A row carrying no
+        role, or one Grafana does not define, is refused rather than mapped to the
+        lowest rank, so an unreadable membership is never served as a real user
+        who holds no access. ``login`` is read without a default for the same
+        reason: a row missing it fails closed.
+
+        :param username: The login or email to resolve.
+        :return: The mapped ``GrafanaUser``.
+        :raises HTTPNotFoundException: If no org user matches ``username``.
+        :raises GrafanaException: If the matched row names no role this provider
+            ranks.
+        """
+        wanted = username.casefold()
+        records = cast(
+            "list[_GrafanaOrgUserRecord]", await _active_grafana_sdk().get_org_users()
+        )
+        record = next(
+            (row for row in records if row["login"].casefold() == wanted), None
+        ) or next(
+            (
+                row
+                for row in records
+                if row.get("email") and row["email"].casefold() == wanted
+            ),
+            None,
+        )
+        if record is None:
+            raise HTTPNotFoundException(detail="User not found")
+        if record.get("role") not in _RANKED_ORG_ROLES:
+            raise GrafanaException(
+                detail="Grafana grants this user no organization role."
+            )
+        return cls._from_org_user_record(record)
 
     @classmethod
     async def get_users(cls) -> list[Self]:
