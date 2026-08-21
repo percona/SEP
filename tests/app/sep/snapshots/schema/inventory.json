@@ -100,7 +100,8 @@
           }
         ],
         "default_sort": "-created_at",
-        "overview_hidden_fields": []
+        "overview_hidden_fields": [],
+        "server_side_query": true
       },
       "name": "nodes"
     },
@@ -247,7 +248,8 @@
           }
         ],
         "default_sort": "-name",
-        "overview_hidden_fields": []
+        "overview_hidden_fields": [],
+        "server_side_query": true
       },
       "name": "services"
     },
@@ -304,7 +306,8 @@
           }
         ],
         "default_sort": "-created_at",
-        "overview_hidden_fields": []
+        "overview_hidden_fields": [],
+        "server_side_query": true
       },
       "name": "schemas"
     },
@@ -379,7 +382,8 @@
           }
         ],
         "default_sort": "-created_at",
-        "overview_hidden_fields": []
+        "overview_hidden_fields": [],
+        "server_side_query": true
       },
       "name": "tables"
     }
