@@ -140,6 +140,10 @@ async def get_current_user(request: Request, token: AuthToken) -> User:
     in the request scope, which the ASGI server builds per request, so it cannot
     outlive the request that created it.
 
+    A hit re-establishes the log identity the resolution it replaces would have
+    set, since that identity is a context variable the last resolution wrote
+    rather than something the returned user carries.
+
     :param request: The incoming HTTP request, whose scope holds the cache.
     :param token: The OAuth2 token to authenticate the user.
     :return: The authenticated user, resolved here or on an earlier call.
@@ -151,6 +155,7 @@ async def get_current_user(request: Request, token: AuthToken) -> User:
     """
     resolved = request.scope.setdefault(_RESOLVED_USERS_KEY, {})
     if (user := resolved.get(token)) is not None:
+        set_log_context(user=user.username)
         return user
     resolved[token] = user = await resolve_current_user(token)
     return user

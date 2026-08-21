@@ -34,6 +34,7 @@ from app.core.auth.models import UserRole
 from app.core.auth.providers.grafana.models import GrafanaUser
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
+from app.core.log import _CONTEXT_VARS
 from app.sep.apps.alerts.api_routes import (
     alerts_api_pagerduty_delete,
     alerts_api_pagerduty_save,
@@ -441,6 +442,33 @@ class TestGetCurrentUserRequestCache:
         await get_current_user(request, "valid_token")
 
         assert request.scope["state"] == {}
+
+    @pytest.mark.asyncio
+    async def test_a_cached_resolution_still_names_its_own_user_in_the_logs(
+        self, casdoor_mock, casdoor_user_data, mocker
+    ):
+        """Assert a hit re-establishes the log identity a miss would have set.
+
+        Log enrichment reads a context variable the last resolution wrote, so a
+        hit that returns one user while the variable still names another
+        attributes the rest of the request to the wrong caller.
+        """
+        mocker.patch(
+            "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
+            new=mocker.AsyncMock(
+                side_effect=[
+                    {**casdoor_user_data, "username": "first-user"},
+                    {**casdoor_user_data, "username": "second-user"},
+                ]
+            ),
+        )
+        request = make_request("POST", authorization="Bearer first_token")
+        await get_current_user(request, "first_token")
+        await get_current_user(request, "second_token")
+
+        cached = await get_current_user(request, "first_token")
+
+        assert _CONTEXT_VARS["user"].get() == cached.username
 
     @pytest.mark.asyncio
     async def test_the_service_principal_is_cached_intact(self, casdoor_mock, mocker):
