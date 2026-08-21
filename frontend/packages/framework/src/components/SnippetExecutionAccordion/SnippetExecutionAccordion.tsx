@@ -140,7 +140,12 @@ export function SnippetExecutionAccordion({
   const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
 
   // The form is the execute control, so a read-only session never renders it —
-  // and never needs its schema. History and logs stay readable.
+  // and never needs its schema. Disabling the query is only the request
+  // optimization: react-query still serves a cached entry, and this schema is
+  // held with `staleTime: Infinity` under a key that carries no identity, so an
+  // admin's fetch would otherwise render the form for a non-admin reaching the
+  // same snippet later in the same tab. The render gates on `canMutate` too.
+  // History and logs stay readable.
   const schemaQuery = useSnippetAccordionSchema(snippetFilename, expanded && canMutate);
   const executionMutation = useSnippetAccordionExecution(snippetFilename);
   const historyQuery = useSnippetAccordionHistory(snippetFilename, showHistory);
@@ -225,7 +230,7 @@ export function SnippetExecutionAccordion({
           </Alert>
         )}
 
-        {schemaQuery.data && (
+        {canMutate && schemaQuery.data && (
           <SchemaFormRenderer
             sections={filteredSections}
             onSubmit={handleSubmit}
