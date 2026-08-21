@@ -221,6 +221,14 @@ default:
       HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
       PORT: null
       NAME: sep.db
+    OM:
+      # Shared by every OM app, so it sits here rather than under one of them.
+      #
+      # The schema OM's tables live in, inside the SEP database above. `null` puts
+      # them in the default schema alongside everything else. Honoured on PostgreSQL
+      # only: SQLite has no schemas, and MySQL's "schema" is a database, so on either
+      # of those the setting is ignored and the tables use the default schema.
+      SCHEMA: om
     SYNCERS:
       - SYNCER: PMMSyncer
       - SYNCER: MySQLSyncer
