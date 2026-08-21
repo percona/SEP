@@ -208,7 +208,7 @@ function tasksQueryKey(pluginName: string, options: AppListFetchOptions) {
       offset: options.offset ?? DEFAULT_APP_LIST_OFFSET,
       limit: options.limit ?? DEFAULT_APP_LIST_LIMIT,
       fetchAllPages: options.fetchAllPages ?? false,
-      sort: options.sort,
+      sort: options.sort || undefined,
       search: options.search?.trim() || undefined,
     },
   ] as const;
@@ -314,7 +314,7 @@ export function useAppTasks<T extends Record<string, unknown>>(
   const offset = options?.offset ?? DEFAULT_APP_LIST_OFFSET;
   const limit = options?.limit ?? DEFAULT_APP_LIST_LIMIT;
   const fetchAllPages = options?.fetchAllPages ?? false;
-  const sort = options?.sort;
+  const sort = options?.sort || undefined;
   const search = options?.search?.trim() || undefined;
   const disablePolling = options?.disablePolling ?? false;
   const pollingIntervalMs = options?.pollingIntervalMs ?? DEFAULT_TASK_POLLING_INTERVAL_MS;
@@ -435,7 +435,7 @@ function entityListQueryKey(pluginName: string, entityName: string, options: App
       offset: options.offset ?? DEFAULT_APP_LIST_OFFSET,
       limit: options.limit ?? DEFAULT_APP_LIST_LIMIT,
       fetchAllPages: options.fetchAllPages ?? false,
-      sort: options.sort,
+      sort: options.sort || undefined,
       search: options.search?.trim() || undefined,
     },
   ] as const;
@@ -466,7 +466,7 @@ export function useAppEntityList<T extends Record<string, unknown>>(
   const offset = options?.offset ?? DEFAULT_APP_LIST_OFFSET;
   const limit = options?.limit ?? DEFAULT_APP_LIST_LIMIT;
   const fetchAllPages = options?.fetchAllPages ?? false;
-  const sort = options?.sort;
+  const sort = options?.sort || undefined;
   const search = options?.search?.trim() || undefined;
   const fetchOptions = { offset, limit, fetchAllPages, sort, search };
 

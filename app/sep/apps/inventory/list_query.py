@@ -176,7 +176,7 @@ def list_query_upstream_params(query: InMemoryListQuery) -> dict[str, str]:
     :return: Query params to merge into the upstream inventory list request.
     """
     sort = f"-{query.sort_key}" if query.descending else query.sort_key
-    params: dict[str, str] = {"sort": sort}
+    params = {"sort": sort}
     if query.search is not None and query.search.strip():
         params["search"] = query.search
     return params

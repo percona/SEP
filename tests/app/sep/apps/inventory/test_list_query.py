@@ -42,12 +42,13 @@ class TestInventoryListQuery:
         params = inspect.signature(inventory_list_query).parameters
         assert set(params) == {"entity", "sort", "search"}
 
-    def test_omitted_sort_uses_entity_default(self) -> None:
+    @pytest.mark.parametrize("entity", ENTITY_LIST_QUERY_SPECS)
+    def test_omitted_sort_uses_entity_default(self, entity: str) -> None:
         """Resolve each entity's own default when ``sort`` is omitted."""
-        for entity, spec in ENTITY_LIST_QUERY_SPECS.items():
-            query = inventory_list_query(entity=entity, sort=None, search=None)
-            expected = InMemoryListQuery.from_sort(spec.default_sort, None)
-            assert query == expected
+        spec = ENTITY_LIST_QUERY_SPECS[entity]
+        query = inventory_list_query(entity=entity, sort=None, search=None)
+        expected = InMemoryListQuery.from_sort(spec.default_sort, None)
+        assert query == expected
 
     def test_explicit_sort_and_search_pass_through(self) -> None:
         """Carry a vetted ascending sort key and search term onto the query."""
@@ -94,25 +95,37 @@ class TestInventoryListQuery:
 class TestListQueryUpstreamParams:
     """Cover mapping the validated query onto upstream inventory query params."""
 
-    def test_ascending_sort_without_search(self) -> None:
-        """Emit a bare sort key and omit search when none was supplied."""
-        query = InMemoryListQuery(sort_key="name", descending=False, search=None)
-        assert list_query_upstream_params(query) == {"sort": "name"}
-
-    def test_descending_sort_reprefixes_key(self) -> None:
-        """Reconstruct the ``-``-prefixed sort value for upstream."""
-        query = InMemoryListQuery(sort_key="created_at", descending=True, search=None)
-        assert list_query_upstream_params(query) == {"sort": "-created_at"}
-
-    def test_search_term_included_when_present(self) -> None:
-        """Forward a non-blank search term alongside sort."""
-        query = InMemoryListQuery(sort_key="name", descending=False, search="db1")
-        assert list_query_upstream_params(query) == {
-            "sort": "name",
-            "search": "db1",
-        }
-
-    def test_blank_search_omitted(self) -> None:
-        """Drop whitespace-only search so upstream treats it as unset."""
-        query = InMemoryListQuery(sort_key="name", descending=False, search="   ")
-        assert list_query_upstream_params(query) == {"sort": "name"}
+    @pytest.mark.parametrize(
+        ("query", "expected"),
+        [
+            (
+                InMemoryListQuery(sort_key="name", descending=False, search=None),
+                {"sort": "name"},
+            ),
+            (
+                InMemoryListQuery(sort_key="created_at", descending=True, search=None),
+                {"sort": "-created_at"},
+            ),
+            (
+                InMemoryListQuery(sort_key="name", descending=False, search="db1"),
+                {"sort": "name", "search": "db1"},
+            ),
+            (
+                InMemoryListQuery(sort_key="name", descending=False, search="   "),
+                {"sort": "name"},
+            ),
+        ],
+        ids=[
+            "ascending_sort_without_search",
+            "descending_sort_reprefixes_key",
+            "search_term_included_when_present",
+            "blank_search_omitted",
+        ],
+    )
+    def test_maps_validated_query_to_upstream_params(
+        self,
+        query: InMemoryListQuery,
+        expected: dict[str, str],
+    ) -> None:
+        """Map sort direction and blank-search omission onto upstream params."""
+        assert list_query_upstream_params(query) == expected
