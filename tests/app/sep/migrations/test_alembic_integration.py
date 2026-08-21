@@ -55,15 +55,16 @@ _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
 
 _SKIP_NOTICE = (
     "Skipping 2 revision(s) recorded in alembic_version_sep with no migration "
-    "script: a1b2c3d4e5f6, 9f8e7d6c5b4a. Configured version_locations absent "
-    "from disk: app/sep/apps/alerts/migrations/versions, "
+    "script: a1b2c3d4e5f6, 9f8e7d6c5b4a. Configured version_locations that "
+    "contributed no revisions: app/sep/apps/alerts/migrations/versions, "
     "app/sep/apps/dipper/migrations/versions."
 )
 _SKEW_NOTICE = (
     "1 revision(s) recorded in alembic_version_sep do not resolve "
     f"({UNKNOWN_REVISION}) while every configured version_locations entry is "
-    "present on disk. That is version skew or a squashed revision, not a "
-    "stripped app, so they are left in place for Alembic to reject."
+    "present on disk and contributes at least one revision. That is version "
+    "skew or a squashed revision, not a stripped app, so they are left in "
+    "place for Alembic to reject."
 )
 
 
@@ -212,6 +213,34 @@ def sep_alembic_config_stripped_alerts(sep_alembic_config, tmp_path):
         ),
     )
     return cfg, sync_url, str(absent)
+
+
+@pytest.fixture
+def sep_alembic_config_empty_alerts_versions(sep_alembic_config, tmp_path):
+    """Return a Config whose alerts location exists on disk but has no revisions.
+
+    The configured ``versions/`` directory is present (so ``Path.is_dir()``
+    would have left the filter fail-closed), yet it contributes no scripts to
+    the revision map — the shared evidence for both a package that lost its
+    ``__init__.py`` while leaving ``versions/``, and a package left intact
+    with an empty ``versions/``.
+
+    :param sep_alembic_config: The full-config fixture whose database is shared.
+    :param tmp_path: Pytest's per-test temporary directory.
+    :return: A tuple of (Config, sync sqlite URL, the empty alerts path).
+    """
+    _, sync_url = sep_alembic_config
+    empty = tmp_path / "empty" / "alerts" / "migrations" / "versions"
+    empty.mkdir(parents=True)
+    cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    locations = ScriptDirectory.from_config(cfg).version_locations
+    cfg.set_main_option(
+        "version_locations",
+        ":".join(
+            str(empty) if "alerts" in location else location for location in locations
+        ),
+    )
+    return cfg, sync_url, str(empty)
 
 
 def _stamp_extra_revision(sync_url: str, revision: str) -> None:
@@ -430,6 +459,52 @@ def test_a_stripped_app_and_version_skew_are_skipped_together(
     assert UNKNOWN_REVISION in matching[0]
     stamped = _get_stamped_revisions(sync_url)
     assert {ALERTS_HEAD, UNKNOWN_REVISION} <= stamped
+
+
+def test_upgrade_succeeds_when_versions_dir_exists_but_is_empty(
+    sep_alembic_config, sep_alembic_config_empty_alerts_versions
+):
+    """Upgrade when alerts' versions/ is present on disk but contributes nothing."""
+    full_cfg, _ = sep_alembic_config
+    empty_cfg, _, _ = sep_alembic_config_empty_alerts_versions
+    command.upgrade(full_cfg, "heads")
+
+    command.upgrade(empty_cfg, "heads")
+
+
+def test_upgrade_preserves_the_unresolvable_row_when_versions_dir_is_empty(
+    sep_alembic_config, sep_alembic_config_empty_alerts_versions
+):
+    """Keep the orphaned alerts row when the filter arms on an empty versions/."""
+    full_cfg, sync_url = sep_alembic_config
+    empty_cfg, _, _ = sep_alembic_config_empty_alerts_versions
+    command.upgrade(full_cfg, "heads")
+
+    command.upgrade(empty_cfg, "heads")
+
+    assert ALERTS_HEAD in _get_stamped_revisions(sync_url)
+
+
+def test_upgrade_logs_empty_location_that_armed_the_filter(
+    sep_alembic_config, sep_alembic_config_empty_alerts_versions, capsys
+):
+    """Name the empty versions/ location in the skip WARNING."""
+    full_cfg, _ = sep_alembic_config
+    empty_cfg, _, empty_path = sep_alembic_config_empty_alerts_versions
+    command.upgrade(full_cfg, "heads")
+    capsys.readouterr()
+
+    command.upgrade(empty_cfg, "heads")
+    err = capsys.readouterr().err
+    matching = [
+        line
+        for line in err.splitlines()
+        if _ORPHAN_HEADS_LOGGER in line and "Skipping" in line
+    ]
+    assert len(matching) == 1, err
+    assert ALERTS_HEAD in matching[0]
+    assert empty_path in matching[0]
+    assert "contributed no revisions" in matching[0]
 
 
 def test_alembic_upgrade_heads_fresh_db_creates_alert_backup(sep_alembic_config):
