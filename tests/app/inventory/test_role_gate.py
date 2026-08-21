@@ -167,6 +167,24 @@ def test_a_gated_mutation_resolves_the_credential_once(
     assert casdoor_mock.get_user.await_count == 1
 
 
+def test_a_safe_method_resolves_only_for_the_route(
+    admin_bearer_client: TestClient, casdoor_mock
+) -> None:
+    """Resolve nothing in the gate on a safe method, leaving the route its own.
+
+    The gate answers its method check ahead of everything else, so a read costs
+    the one resolution its route declares rather than gaining the gate's.
+    """
+    casdoor_mock.introspect_token.reset_mock()
+    casdoor_mock.get_user.reset_mock()
+
+    response = admin_bearer_client.get("/services/1", headers=BEARER_HEADERS)
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert casdoor_mock.introspect_token.await_count == 1
+    assert casdoor_mock.get_user.await_count == 1
+
+
 def test_the_health_probe_resolves_no_credential(
     bearer_client: TestClient, casdoor_mock
 ) -> None:

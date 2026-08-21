@@ -15,6 +15,7 @@
 
 """Define tests for the app.api.deps module."""
 
+import logging
 from datetime import timedelta
 from types import SimpleNamespace
 from typing import Final
@@ -23,10 +24,10 @@ import pytest
 from pydantic import SecretStr
 
 from app.api.deps import (
+    authenticate_bearer_token,
     get_current_admin,
     get_current_user,
     require_minimum_role_for_unsafe_methods,
-    resolve_current_user,
     SERVICE_PRINCIPAL_ID,
 )
 from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
@@ -34,7 +35,7 @@ from app.core.auth.models import UserRole
 from app.core.auth.providers.grafana.models import GrafanaUser
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
-from app.core.log import _CONTEXT_VARS
+from app.core.log import ContextFilter
 from app.sep.apps.alerts.api_routes import (
     alerts_api_pagerduty_delete,
     alerts_api_pagerduty_save,
@@ -51,41 +52,62 @@ REPEATED_ATTEMPTS: Final = 2
 User = get_user_model()
 
 
+def _logged_identity() -> str:
+    """Return the user the log context currently names.
+
+    Reads through the filter that enriches every record rather than through the
+    context variables, which are private to ``app.core.log``.
+
+    :return: The identity a log record emitted now would carry.
+    """
+    record = logging.LogRecord(
+        name=__name__,
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg="",
+        args=None,
+        exc_info=None,
+    )
+    ContextFilter().filter(record)
+    return record.user
+
+
 @pytest.mark.asyncio
-async def test_get_current_user_valid_token(casdoor_mock, valid_username):
-    """Test get_current_user returns user for a valid token."""
+async def test_authenticate_bearer_token_valid_token(casdoor_mock, valid_username):
+    """Verify a valid token authenticates and yields an active user."""
     token = "valid_token"
-    user = await resolve_current_user(token)
+    user = await authenticate_bearer_token(token)
     assert user.username == valid_username
     assert user.is_active
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_invalid_token(casdoor_mock, mocker):
-    """Test get_current_user raises HTTPUnauthorizedException for an invalid token."""
+async def test_authenticate_bearer_token_invalid_token(casdoor_mock, mocker):
+    """Verify an invalid token raises the project 401."""
     token = "invalid_token"
     casdoor_mock.get_user.return_value = {}
     with pytest.raises(HTTPUnauthorizedException):
-        await resolve_current_user(token)
+        await authenticate_bearer_token(token)
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_inactive_user(casdoor_mock, mocker):
-    """Test get_current_user raises HTTPForbiddenException if user is inactive."""
+async def test_authenticate_bearer_token_inactive_user(casdoor_mock, mocker):
+    """Verify an inactive user is refused rather than returned."""
     token = "valid_token"
     user = await User.from_jwt(token)
     user.is_forbidden = True
     mocker.patch("app.api.deps.User.from_jwt", return_value=user)
     with pytest.raises(HTTPForbiddenException):
-        await resolve_current_user(token)
+        await authenticate_bearer_token(token)
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_internal_token_match(casdoor_mock, mocker):
-    """Test get_current_user returns the service principal when the token matches."""
+async def test_authenticate_bearer_token_internal_token_match(casdoor_mock, mocker):
+    """Verify the service principal answers a token matching the internal secret."""
     secret = "supersecret"
     mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(secret))
-    user = await resolve_current_user(secret)
+    user = await authenticate_bearer_token(secret)
     assert user.username == "sep-service"
     assert user.is_admin is False
     assert user.access_token == secret
@@ -94,46 +116,46 @@ async def test_get_current_user_internal_token_match(casdoor_mock, mocker):
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_internal_token_mismatch_falls_through(
+async def test_authenticate_bearer_token_internal_token_mismatch_falls_through(
     casdoor_mock, valid_username, mocker
 ):
-    """Test get_current_user falls through to Casdoor when the token does not match."""
+    """Verify a token that does not match the secret falls through to the provider."""
     mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr("supersecret"))
-    user = await resolve_current_user("not-the-secret")
+    user = await authenticate_bearer_token("not-the-secret")
     assert user.username == valid_username
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_internal_token_unset_falls_through(
+async def test_authenticate_bearer_token_internal_token_unset_falls_through(
     casdoor_mock, valid_username, mocker
 ):
-    """Test get_current_user uses Casdoor when SEP_INTERNAL_TOKEN is None."""
+    """Verify an unset ``SEP_INTERNAL_TOKEN`` leaves every token to the provider."""
     mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", None)
-    user = await resolve_current_user("supersecret")
+    user = await authenticate_bearer_token("supersecret")
     assert user.username == valid_username
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_internal_token_empty_falls_through(
+async def test_authenticate_bearer_token_internal_token_empty_falls_through(
     casdoor_mock, valid_username, mocker
 ):
-    """Test get_current_user falls through when SEP_INTERNAL_TOKEN is empty.
+    """Verify an empty ``SEP_INTERNAL_TOKEN`` matches nothing.
 
     An empty configured secret must not match an empty Bearer token; the
     request must continue down the Casdoor path.
     """
     mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(""))
-    user = await resolve_current_user("")
+    user = await authenticate_bearer_token("")
     assert user.username == valid_username
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_internal_token_trailing_whitespace_mismatch(
+async def test_authenticate_bearer_token_internal_token_trailing_whitespace_mismatch(
     casdoor_mock, valid_username, mocker
 ):
-    """Test get_current_user rejects tokens that differ only by trailing whitespace."""
+    """Verify a token differing only by trailing whitespace is not the secret."""
     mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr("supersecret"))
-    user = await resolve_current_user("supersecret ")
+    user = await authenticate_bearer_token("supersecret ")
     assert user.username == valid_username
 
 
@@ -141,7 +163,7 @@ async def test_get_current_user_internal_token_trailing_whitespace_mismatch(
 async def test_get_current_admin_valid_admin(casdoor_mock, valid_username):
     """Test get_current_admin returns the user if they are admin."""
     token = "valid_admin_token"
-    user = await resolve_current_user(token)
+    user = await authenticate_bearer_token(token)
     user.role = UserRole.ADMIN
     admin_user = await get_current_admin(user)
     assert admin_user == user
@@ -152,13 +174,13 @@ async def test_get_current_admin_valid_admin(casdoor_mock, valid_username):
 async def test_get_current_admin_non_admin_user(casdoor_mock, valid_username):
     """Test get_current_admin raises HTTPForbiddenException if user is not an admin."""
     token = "valid_non_admin_token"
-    user = await resolve_current_user(token)
+    user = await authenticate_bearer_token(token)
     user.role = UserRole.VIEWER
     with pytest.raises(HTTPForbiddenException):
         await get_current_admin(user)
 
 
-class TestGetCurrentUserBearerTypes:
+class TestAuthenticateBearerTokenTypes:
     """Verify which assertion types authenticate on the API Bearer surface.
 
     ``app.api.deps.User`` is bound at import time, so ``grafana_mock`` — which
@@ -176,7 +198,7 @@ class TestGetCurrentUserBearerTypes:
         """Verify the existing Bearer credential still authenticates."""
         oauth = await GrafanaUser.get_oauth_token(username="alice", password="secret")
 
-        user = await resolve_current_user(oauth.access_token)
+        user = await authenticate_bearer_token(oauth.access_token)
 
         assert user.username == grafana_user_record["login"]
 
@@ -185,7 +207,7 @@ class TestGetCurrentUserBearerTypes:
         """Verify a session-exchange assertion authenticates an API call."""
         exchange = await GrafanaUser.exchange_token_from_session("ambient")
 
-        user = await resolve_current_user(exchange.access_token)
+        user = await authenticate_bearer_token(exchange.access_token)
 
         assert user.username == grafana_user_record["login"]
 
@@ -195,7 +217,7 @@ class TestGetCurrentUserBearerTypes:
         oauth = await GrafanaUser.get_oauth_token(username="alice", password="secret")
 
         with pytest.raises(HTTPUnauthorizedException):
-            await resolve_current_user(oauth.refresh_token)
+            await authenticate_bearer_token(oauth.refresh_token)
 
     @pytest.mark.asyncio
     async def test_rejects_an_expired_exchange_assertion(self, grafana_mock, mocker):
@@ -206,7 +228,7 @@ class TestGetCurrentUserBearerTypes:
         )
 
         with pytest.raises(HTTPUnauthorizedException):
-            await resolve_current_user(exchange.access_token)
+            await authenticate_bearer_token(exchange.access_token)
 
     @pytest.mark.asyncio
     async def test_rejects_an_assertion_minted_before_the_role_claim(self):
@@ -214,7 +236,7 @@ class TestGetCurrentUserBearerTypes:
         legacy = make_roleless_grafana_assertion("access")
 
         with pytest.raises(HTTPUnauthorizedException):
-            await resolve_current_user(legacy)
+            await authenticate_bearer_token(legacy)
 
     @pytest.mark.asyncio
     async def test_an_editor_resolves_to_the_editor_identity(
@@ -231,7 +253,7 @@ class TestGetCurrentUserBearerTypes:
         ]
         exchange = await GrafanaUser.exchange_token_from_session("ambient")
 
-        user = await resolve_current_user(exchange.access_token)
+        user = await authenticate_bearer_token(exchange.access_token)
 
         assert user.role is UserRole.EDITOR
         assert user.is_admin is False
@@ -253,7 +275,7 @@ class TestGetCurrentUserBearerTypes:
         exchange = await GrafanaUser.exchange_token_from_session("ambient")
 
         user = await get_current_admin(
-            await resolve_current_user(exchange.access_token)
+            await authenticate_bearer_token(exchange.access_token)
         )
 
         assert user.is_admin is True
@@ -269,7 +291,7 @@ class TestGetCurrentUserBearerTypes:
         ]
         exchange = await GrafanaUser.exchange_token_from_session("ambient")
 
-        user = await resolve_current_user(exchange.access_token)
+        user = await authenticate_bearer_token(exchange.access_token)
 
         assert user.is_admin is False
         with pytest.raises(HTTPForbiddenException):
@@ -286,7 +308,7 @@ class TestGetCurrentUserBearerTypes:
         mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(secret))
         from_bearer = mocker.patch.object(GrafanaUser, "from_bearer")
 
-        user = await resolve_current_user(secret)
+        user = await authenticate_bearer_token(secret)
 
         assert user.username == "sep-service"
         assert user.is_admin is False
@@ -339,6 +361,27 @@ class TestGetCurrentUserRequestCache:
         assert second is first
         assert casdoor_mock.introspect_token.await_count == 1
         assert casdoor_mock.get_user.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_the_shared_instance_is_not_rewritten_between_consumers(
+        self, casdoor_mock
+    ):
+        """Assert the second consumer is served the first one's user unchanged.
+
+        The gate and the route observe one instance where they used to observe two
+        independently built copies. This covers the cache's own handling of it;
+        that no consumer writes to a resolved user is a property of the consumers,
+        which a test here cannot reach.
+        """
+        request = make_request("POST", authorization="Bearer valid_token")
+
+        first = await get_current_user(request, "valid_token")
+        snapshot = (first.model_dump(), first.access_token)
+
+        second = await get_current_user(request, "valid_token")
+
+        assert second is first
+        assert (second.model_dump(), second.access_token) == snapshot
 
     @pytest.mark.asyncio
     async def test_a_second_credential_is_resolved_on_its_own(
@@ -468,7 +511,7 @@ class TestGetCurrentUserRequestCache:
 
         cached = await get_current_user(request, "first_token")
 
-        assert _CONTEXT_VARS["user"].get() == cached.username
+        assert _logged_identity() == cached.username
 
     @pytest.mark.asyncio
     async def test_the_service_principal_is_cached_intact(self, casdoor_mock, mocker):
@@ -755,7 +798,7 @@ class TestRequireMinimumRoleForUnsafeMethods:
         before.
         """
         mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
-        principal = await resolve_current_user(SERVICE_TOKEN)
+        principal = await authenticate_bearer_token(SERVICE_TOKEN)
 
         assert principal.role is UserRole.VIEWER
         assert principal.is_admin is False
