@@ -70,8 +70,8 @@ from app.sep.connectivity import (
 from app.sep.deps import get_created_entity, InventoryAPI
 from app.sep.inventory import CreatedEntity, CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.tasks.execution.executors.nomad.steps import RUN_SCRIPT_OUTPUT_FILES_PATH
 from app.tasks.models import (
-    RUN_SCRIPT_OUTPUT_FILES_PATH,
     TaskBackendEnum,
     TaskWrite,
 )

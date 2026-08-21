@@ -33,11 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar
 
-from app.core.db.list_query import (
-    search_query_param,
-    sort_query_param,
-    UnknownSortKeyError,
-)
+from app.core.db.list_query import make_query_param_dep, UnknownSortKeyError
 from app.core.exceptions import HTTPUnprocessableEntityException
 
 if TYPE_CHECKING:
@@ -161,17 +157,11 @@ def make_in_memory_list_query_dep(
 ) -> Callable[..., InMemoryListQuery]:
     """Create a FastAPI dependency yielding a validated :class:`InMemoryListQuery`.
 
-    Presents the same request boundary as
-    :func:`app.core.db.list_query.make_list_query_dep`: ``sort`` always, ``search``
-    only when the spec's searchable set is non-empty, and an out-of-allowlist sort key
-    rejected with HTTP 422. The allowlist check, the error type, and the 422 mapping are
-    Core's, reached through :meth:`ListQuerySpec.resolve_sort` and
-    :class:`UnknownSortKeyError`. The parameter declarations themselves are Core's too,
-    through :func:`~app.core.db.list_query.sort_query_param` and
-    :func:`~app.core.db.list_query.search_query_param`, so the description and the
-    allowlist ``enum`` a generated client reads are identical on both paths. What
-    remains restated is the two-statically-defined-inner-functions shape FastAPI needs
-    to reflect the params into OpenAPI.
+    The request boundary is Core's, through
+    :func:`~app.core.db.list_query.make_query_param_dep`, so this path and the SQL one
+    expose the same parameters, publish the same allowlist ``enum`` and descriptions,
+    and reject an out-of-allowlist sort key with the same HTTP 422. Only the resolved
+    value object differs.
 
     :param spec: The spec whose allowlist and searchable set bound the request.
     :return: A dependency callable resolving the request into an
@@ -182,22 +172,25 @@ def make_in_memory_list_query_dep(
     # Resolved for its exception only: a misdeclared spec has to fail here, at wiring
     # time, rather than once per request inside the applier.
     _spec_attrs(spec)
-    if spec.search_enabled:
+    return make_query_param_dep(spec, _build_in_memory_query)
 
-        def _in_memory_list_query_dep(
-            sort: str = sort_query_param(spec),
-            search: str | None = search_query_param(),
-        ) -> InMemoryListQuery:
-            return build_in_memory_list_query(spec, sort, search)
 
-        return _in_memory_list_query_dep
+def _build_in_memory_query(
+    spec: ListQuerySpec,
+    sort: str,
+    search: str | None,
+) -> InMemoryListQuery:
+    """Resolve a request's sort and search into an :class:`InMemoryListQuery`.
 
-    def _in_memory_list_query_dep_no_search(
-        sort: str = sort_query_param(spec),
-    ) -> InMemoryListQuery:
-        return build_in_memory_list_query(spec, sort, None)
-
-    return _in_memory_list_query_dep_no_search
+    :param spec: The spec whose allowlist bounds the request.
+    :param sort: The requested public sort key (possibly ``-`` prefixed).
+    :param search: The raw search term, or ``None`` when search is disabled or unset.
+    :return: The resolved in-memory list query.
+    :raises UnknownSortKeyError: When ``sort`` is not in the allowlist; the dependency
+        maps it to a 422.
+    """
+    spec.resolve_sort(sort)
+    return InMemoryListQuery.from_sort(sort, search)
 
 
 def build_in_memory_list_query(
@@ -220,12 +213,11 @@ def build_in_memory_list_query(
     :raises HTTPUnprocessableEntityException: When ``sort`` is not in the allowlist.
     """
     try:
-        spec.resolve_sort(sort)
+        return _build_in_memory_query(spec, sort, search)
     except UnknownSortKeyError as exc:
         raise HTTPUnprocessableEntityException(
             detail=f"Invalid sort key: {exc.key!r}"
         ) from exc
-    return InMemoryListQuery.from_sort(sort, search)
 
 
 def default_in_memory_query(spec: ListQuerySpec) -> InMemoryListQuery:

@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
-from app.api.deps import require_admin_for_unsafe_methods
+from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPBadGatewayException
@@ -126,7 +126,7 @@ def api_admin_client_fixture(
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_tasks_api] = lambda: mock_tasks_api
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
@@ -142,7 +142,7 @@ def api_non_admin_client_fixture(
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_admin_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_tasks_api] = lambda: mock_tasks_api
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
@@ -611,7 +611,7 @@ class TestSepConfigExportFilter:
     async def test_omitted_keys_returns_full_export(
         self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
     ) -> None:
-        """Yield the full export and fan out once when ``keys`` is omitted."""
+        """Return the full export and fan out once when ``keys`` is omitted."""
         response = api_admin_client.get(EXPORT_URL)
         assert response.status_code == status.HTTP_200_OK
         payload = yaml.safe_load(response.text)
@@ -663,7 +663,7 @@ class TestSepConfigExportFilter:
     async def test_mixed_class_and_key_selectors(
         self, api_admin_client: TestClient
     ) -> None:
-        """Yield exactly two blocks for ``SEPSettings.<key>`` plus whole ``AlertsSettings``."""
+        """Return exactly two blocks for ``SEPSettings.<key>`` plus whole ``AlertsSettings``."""
         key = _one_sep_key(api_admin_client)
         list_keys = _list_keys_by_class(api_admin_client)
         response = api_admin_client.get(

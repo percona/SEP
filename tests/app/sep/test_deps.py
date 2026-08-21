@@ -27,7 +27,11 @@ from app.core.auth.exceptions import (
     HTTPForbiddenException,
     HTTPUnauthorizedException,
 )
-from app.core.auth.models import OAuthToken, SessionExchangeTokenResponse
+from app.core.auth.models import (
+    OAuthToken,
+    SessionExchangeTokenResponse,
+    UserRole,
+)
 from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.exceptions import (
     HTTPConflictException,
@@ -344,14 +348,14 @@ class TestGetApiAuthenticatedAdmin:
     @pytest.mark.asyncio
     async def test_admin_returns_user(self) -> None:
         """Assert an admin user is returned unchanged."""
-        admin_user = CasdoorUserFactory.build(is_admin=True)
+        admin_user = CasdoorUserFactory.build(role=UserRole.ADMIN)
         result = await get_api_authenticated_admin(admin_user)
         assert result is admin_user
 
     @pytest.mark.asyncio
     async def test_non_admin_raises_forbidden(self) -> None:
         """Assert an authenticated non-admin gets 403 (not 401)."""
-        regular_user = CasdoorUserFactory.build(is_admin=False)
+        regular_user = CasdoorUserFactory.build(role=UserRole.VIEWER)
         with pytest.raises(HTTPForbiddenException):
             await get_api_authenticated_admin(regular_user)
 

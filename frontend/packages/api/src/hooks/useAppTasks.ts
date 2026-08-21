@@ -221,7 +221,14 @@ function tasksQueryKey(pluginName: string, options: AppListFetchOptions) {
  */
 type AppListResponse<T> = T[] | PaginatedAppList<T> | { items: T[] | null };
 
-async function fetchAllAppListPages<T extends Record<string, unknown>>(
+/**
+ * Walk every page of a paginated list endpoint, stopping early for bare arrays.
+ *
+ * Caps at ``MAX_FETCH_ALL_PAGES`` × ``DEFAULT_APP_LIST_LIMIT``; when ``total``
+ * is larger the result sets ``truncated: true`` and logs a warning. Optional
+ * ``sort`` / ``search`` are forwarded on every page request.
+ */
+export async function fetchAllAppListPages<T extends Record<string, unknown>>(
   path: string,
   options: Pick<AppListQueryOptions, 'sort' | 'search'> = {},
 ): Promise<AppListResult<T>> {

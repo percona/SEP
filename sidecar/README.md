@@ -54,7 +54,7 @@ name. What a file supplies is a *canonical destination*:
 |---|---|
 | `SECRET_KEY` | **Yes.** The gate accepts a file and the script never exports the key, so each process reads it from the file. |
 | `{SEP,INVENTORY,TASKS}__DATABASE__HOST` / `__PORT` / `__PASSWORD`, `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY`, `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT`, `TASKS__NOMAD__ENDPOINT` | **Yes.** A file suppresses the derived export. An explicitly-set variable of the same name still wins over both. |
-| `SEP_INTERNAL_TOKEN`, `BASE_URL` | **Yes.** Already canonical and never touched by the script. |
+| `SEP_INTERNAL_TOKEN`, `BASE_URL` | **Yes.** Already canonical; the script clears only a blank inherited value and otherwise leaves either alone. |
 | `CELERY__BEAT_DBURI` | **Yes.** The script only clears a blank inherited value, which would otherwise outrank the file; the setting itself carries a default derived from `SEP__DATABASE__*`, which a file outranks. |
 | `CELERY__BROKER_URL`, `CELERY__RESULT_BACKEND` | **No.** `entrypoint.sh` mints the bundled Valkey credential per container run and exports both unconditionally, so a file has nothing to supply. |
 | The `SEP_*` deployment inputs | **No.** Shell inputs, not settings fields. |
@@ -94,12 +94,14 @@ ignored by both; the Kubernetes `..data` projected layout resolves normally.
 `SECRETS_DIR` has no baked default, so a side-car that mounts nothing is
 unaffected.
 
-When you mount a file for a name, leave that variable **unset** rather than
-empty. A canonical variable set to the empty string outranks a file of the same
-name, because a blank environment variable still counts as supplied. The script
-clears the blank for `SECRET_KEY` and for every name it derives, but a name
-whose `SEP_*` guard is inactive — `PMM__API_KEY` with no `SEP_GRAFANA_TOKEN`
-set, say — is left as it found it, and the mount goes unused.
+Leaving a mounted name **unset** and leaving it **empty** both work: a
+canonical variable inherited as the empty string would otherwise outrank the
+file, since a blank environment variable still counts as supplied, so the
+script clears the blank for every canonical name it manages — `SECRET_KEY`,
+every name it derives, and every name a `SEP_*` guard would otherwise leave
+untouched when that guard is inactive (`PMM__API_KEY` with no
+`SEP_GRAFANA_TOKEN` set, say). Unset is still the clearer choice for a
+deployment that writes its own compose file or job template.
 
 ### App set
 
@@ -190,7 +192,7 @@ Already canonical, so they are passed straight through with no expansion:
 
 | Input | Required | Notes |
 |---|---|---|
-| `SEP_INTERNAL_TOKEN` | no | Derived from `SECRET_KEY` by HMAC when unset. Set it explicitly when PMM's nginx overlay pins a specific value. |
+| `SEP_INTERNAL_TOKEN` | no | Authenticates SEP-internal service-to-service calls, such as the scheduled inventory sync. Derived from `SECRET_KEY` by HMAC when unset, so every process sharing the key resolves the same token. Set it explicitly only to rotate it independently of `SECRET_KEY`. |
 | `BASE_URL` | no* | The side-car's address as reachable from Nomad task executors, including SEP's URL prefix — `https://pmm-server:8443/sep`, not `https://pmm-server:8443`. Download URLs are joined onto its path rather than replacing it, so a value omitting the prefix yields a well-formed URL that no longer routes to SEP; startup warns when it does. *Required when tasks download scripts or artifacts. |
 
 Any canonical variable can also be set directly — an explicit

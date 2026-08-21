@@ -51,7 +51,7 @@ const TasksApp = lazy(() => import('@sep/tasks').then((m) => ({ default: m.Tasks
 const SnippetsAppLazy = lazy(() =>
   import('@sep/snippets').then((m) => ({ default: m.SnippetsApp })),
 );
-const AtwApp = lazy(() => import('@sep/atw').then((m) => ({ default: m.AtwApp })));
+const AtwAppLazy = lazy(() => import('@sep/atw').then((m) => ({ default: m.AtwApp })));
 const DipperApp = lazy(() => import('@sep/dipper').then((m) => ({ default: m.DipperApp })));
 const AlertsApp = lazy(() => import('@sep/alerts').then((m) => ({ default: m.AlertsApp })));
 const AlertTroubleshootingApp = lazy(() =>
@@ -69,6 +69,13 @@ const TopologyApp = lazy(() => import('@sep/topology').then((m) => ({ default: m
 function SnippetsApp() {
   const { isAdmin } = useAuth();
   return <SnippetsAppLazy isAdmin={isAdmin} />;
+}
+
+// ATW's delivery setup gate offers admins a link to the settings page that
+// fixes an unconfigured deployment; everyone else gets the explanation alone.
+function AtwApp() {
+  const { isAdmin } = useAuth();
+  return <AtwAppLazy isAdmin={isAdmin} />;
 }
 
 function customEntry(appKey: string, Component: ComponentType): CustomAppRegistryEntry {

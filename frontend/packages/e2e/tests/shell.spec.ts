@@ -204,7 +204,7 @@ test.describe('shell sanity smoke', () => {
     const diagnosticsGroup = page.getByRole('button', { name: 'Diagnostics', exact: true });
     await expect(diagnosticsGroup).toBeVisible();
     await diagnosticsGroup.click();
-    await expect(page.getByRole('button', { name: 'Collect Diagnostic Data' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Support diagnostics' })).toBeVisible();
   });
 
   test('checksums app route mounts without console errors', async ({ page }) => {
