@@ -360,8 +360,9 @@ export interface ListView {
   /** Column key to sort by. Prefix with '-' for descending (e.g. '-last_run'). */
   default_sort?: string;
   /**
-   * When true, the list endpoint honors whole-result-set sort/search via server
-   * query params; SchemaListView enables manualSorting/manualFiltering only then.
+   * When true and the list is also server-paginated, SchemaListView enables
+   * manualSorting/manualFiltering and drives them through server query params.
+   * A capability-on list rendered without pagination stays client-side.
    * Omitted (or undefined) keeps client-side sort/filter over the loaded page.
    */
   server_side_query?: boolean;

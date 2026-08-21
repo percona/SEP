@@ -105,6 +105,21 @@ ENTITY_LIST_QUERY_SPECS: MappingProxyType[str, ListQuerySpec] = MappingProxyType
     }
 )
 
+# ``inventory_list_query`` always advertises ``?search=`` (one shared signature
+# cannot gate per entity the way ``make_in_memory_list_query_dep`` does). Fail
+# at import if a future entity ships with an empty searchable set so OpenAPI
+# and the client cannot advertise a param upstream would ignore.
+_non_searchable = [
+    entity
+    for entity, spec in ENTITY_LIST_QUERY_SPECS.items()
+    if not spec.search_enabled
+]
+if _non_searchable:
+    raise ValueError(
+        "inventory list-query specs must all be searchable because the shared "
+        f"route always declares ?search=; got empty searchable for {_non_searchable!r}"
+    )
+
 # Union of every entity's public sort keys (both directions). Documents the
 # shared route's OpenAPI enum; runtime validation still uses the per-entity
 # allowlist so a schemas-only key is rejected on nodes.

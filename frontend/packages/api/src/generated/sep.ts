@@ -7841,9 +7841,11 @@ export interface components {
      *     :type default_sort: NonEmptyStr | None
      *     :param server_side_query: Opt-in capability flag declaring that the list
      *         endpoint honors whole-result-set sort and search via server query
-     *         params. When ``True``, the React list view enables manual sorting and
-     *         filtering and drives them through those params instead of sorting the
-     *         loaded page. Typed ``bool | None`` so the discovery endpoint's
+     *         params. When ``True`` and the list is also server-paginated, the React
+     *         list view enables manual sorting and filtering and drives them through
+     *         those params instead of sorting the loaded page; a capability-on list
+     *         rendered without pagination stays client-side.
+     *         Typed ``bool | None`` so the discovery endpoint's
      *         ``exclude_none`` posture drops it from the wire until a plugin opts
      *         in, keeping the addition byte-compatible with existing schemas.
      *         Defaults to ``None``.
