@@ -441,30 +441,6 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
-      "HostResponse": {
-        "description": "Represent a single executor target enriched with an inventory display name.\n\n:param id: The executor (Nomad / Celery) node name. This is the value\n    consumed by dispatch payloads as ``executor_host``.\n:type id: str\n:param name: Human-readable label sourced from inventory when available;\n    falls back to ``id`` if the host has no inventory match.\n:type name: str\n:param address: The network address reported by the executor.\n:type address: str",
-        "properties": {
-          "address": {
-            "title": "Address",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "address"
-        ],
-        "title": "HostResponse",
-        "type": "object"
-      },
       "InventorySelectorOption": {
         "description": "Represent a minimal ``{id, name}`` option for inventory autocomplete selectors.\n\n:param id: The inventory entity ID consumed by form payloads.\n:type id: int\n:param name: The human-readable display label.\n:type name: str",
         "properties": {
@@ -634,37 +610,6 @@
         "title": "PaginatedResponse[ArbitraryMapping]",
         "type": "object"
       },
-      "PaginatedResponse_ServiceResponse_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ServiceResponse"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "limit": {
-            "title": "Limit",
-            "type": "integer"
-          },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "offset",
-          "limit"
-        ],
-        "title": "PaginatedResponse[ServiceResponse]",
-        "type": "object"
-      },
       "PaginatedResponse_SnippetResponse_": {
         "properties": {
           "items": {
@@ -812,139 +757,6 @@
         "title": "ServiceEnum",
         "type": "string"
       },
-      "ServiceResponse": {
-        "description": "Define the service API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param external_id: An external identifier for the service.\n:type external_id: NonEmptyStr | None\n:param name: The name of the service.\n:type name: NonEmptyStr\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:type type: ServiceTypeEnum\n:param port: The port number on which the service is running.\n:type port: int | None\n:param environment: The environment in which the service is running, if set.\n:type environment: str | None\n:param cluster: The cluster in which the service is running, if set.\n:type cluster: str | None\n:param replication_set: The replication set in which the service is running, if set.\n:type replication_set: str | None\n:param custom_labels: Custom labels associated with the service, if set.\n:param node_id: The unique identifier of the node on which the service is running.\n:type node_id: int\n:param schemas: A list of schemas associated with the service.\n:type schemas: list[Schema]\n:param node: The node to which the service is associated.\n:type node: Node",
-        "properties": {
-          "cluster": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cluster"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "custom_labels": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Custom Labels"
-          },
-          "environment": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Environment"
-          },
-          "external_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Id"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "name": {
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "node": {
-            "$ref": "#/components/schemas/Node"
-          },
-          "node_id": {
-            "title": "Node Id",
-            "type": "integer"
-          },
-          "port": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Port"
-          },
-          "replication_set": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Replication Set"
-          },
-          "schemas": {
-            "items": {
-              "$ref": "#/components/schemas/Schema"
-            },
-            "title": "Schemas",
-            "type": "array"
-          },
-          "type": {
-            "$ref": "#/components/schemas/ServiceTypeEnum"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "name",
-          "type",
-          "node_id",
-          "id",
-          "schemas",
-          "node"
-        ],
-        "title": "ServiceResponse",
-        "type": "object"
-      },
       "ServiceTypeEnum": {
         "description": "Enumerate the supported service types.\n\n:cvar MYSQL: Represents the MySQL service type.\n:vartype MYSQL: str\n:cvar POSTGRESQL: Represents the PostgreSQL service type.\n:vartype POSTGRESQL: str\n:cvar MONGODB: Represents the MongoDB service type.\n:vartype MONGODB: str\n:cvar PROXYSQL: Represents the ProxySQL service type.\n:vartype PROXYSQL: str\n:cvar HAPROXY: Represents the HAProxy service type.\n:vartype HAPROXY: str\n:cvar EXTERNAL: Represents an external service type.\n:vartype EXTERNAL: str\n:cvar VALKEY: Represents the Valkey service type.\n:vartype VALKEY: str",
         "enum": [
@@ -960,7 +772,7 @@
         "type": "string"
       },
       "SettingClassEnum": {
-        "description": "Enumerate settings classes that may have HOT override rows.\n\nThe wired classes are ``SEPSettings``, ``TasksSettings``,\n``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,\n``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings`` and\n``InventorySettings``.\n\nTo wire a new settings class:\n\n1. Add a member here whose value matches the Pydantic class ``__name__``.\n2. Generate an Alembic migration on every consumer track that extends the\n   ``CHECK`` constraint on ``settingoverride.setting_class``. The column\n   uses ``native_enum=False`` so the value list lives in a constraint,\n   not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.\n   Note that the column and ``CHECK`` constraint persist the enum member\n   *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member\n   *value* (the Pydantic class name, e.g. ``SEPSettings``).\n3. Wire a ``ProxyEntry`` for the new class in the relevant service's\n   lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).",
+        "description": "Enumerate settings classes that may have HOT override rows.\n\nThe wired classes are ``SEPSettings``, ``TasksSettings``,\n``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,\n``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings``,\n``InventorySettings`` and ``OmInventorySettings``.\n\nTo wire a new settings class:\n\n1. Add a member here whose value matches the Pydantic class ``__name__``.\n2. Generate an Alembic migration on every consumer track that extends the\n   ``CHECK`` constraint on ``settingoverride.setting_class``. The column\n   uses ``native_enum=False`` so the value list lives in a constraint,\n   not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.\n   Note that the column and ``CHECK`` constraint persist the enum member\n   *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member\n   *value* (the Pydantic class name, e.g. ``SEPSettings``).\n3. Wire a ``ProxyEntry`` for the new class in the relevant service's\n   lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).",
         "enum": [
           "SEPSettings",
           "TasksSettings",
@@ -970,7 +782,8 @@
           "AnonymizerSettings",
           "AlertsSettings",
           "HealthReportSettings",
-          "InventorySettings"
+          "InventorySettings",
+          "OmInventorySettings"
         ],
         "title": "SettingClassEnum",
         "type": "string"
@@ -2774,6 +2587,194 @@
           "limit"
         ],
         "title": "PaginatedResponse[AltersTaskResponse]",
+        "type": "object"
+      },
+      "app__PaginatedResponse_inventory__models__ServiceResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/app__inventory__models__ServiceResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[ServiceResponse]",
+        "type": "object"
+      },
+      "app__inventory__models__ServiceResponse": {
+        "description": "Define the service API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param external_id: An external identifier for the service.\n:type external_id: NonEmptyStr | None\n:param name: The name of the service.\n:type name: NonEmptyStr\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:type type: ServiceTypeEnum\n:param port: The port number on which the service is running.\n:type port: int | None\n:param environment: The environment in which the service is running, if set.\n:type environment: str | None\n:param cluster: The cluster in which the service is running, if set.\n:type cluster: str | None\n:param replication_set: The replication set in which the service is running, if set.\n:type replication_set: str | None\n:param custom_labels: Custom labels associated with the service, if set.\n:param node_id: The unique identifier of the node on which the service is running.\n:type node_id: int\n:param schemas: A list of schemas associated with the service.\n:type schemas: list[Schema]\n:param node: The node to which the service is associated.\n:type node: Node",
+        "properties": {
+          "cluster": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "custom_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Labels"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node": {
+            "$ref": "#/components/schemas/Node"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "integer"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "replication_set": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replication Set"
+          },
+          "schemas": {
+            "items": {
+              "$ref": "#/components/schemas/Schema"
+            },
+            "title": "Schemas",
+            "type": "array"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ServiceTypeEnum"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "node_id",
+          "id",
+          "schemas",
+          "node"
+        ],
+        "title": "ServiceResponse",
+        "type": "object"
+      },
+      "app__sep__api__routes__hosts__HostResponse": {
+        "description": "Represent a single executor target enriched with an inventory display name.\n\n:param id: The executor (Nomad / Celery) node name. This is the value\n    consumed by dispatch payloads as ``executor_host``.\n:type id: str\n:param name: Human-readable label sourced from inventory when available;\n    falls back to ``id`` if the host has no inventory match.\n:type name: str\n:param address: The network address reported by the executor.\n:type address: str",
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "address"
+        ],
+        "title": "HostResponse",
         "type": "object"
       },
       "archives__ArchivesCreate": {
@@ -11940,6 +11941,635 @@
         "title": "NavIcon",
         "type": "string"
       },
+      "om_inventory__HostResponse": {
+        "description": "One host, with the services OM knows are on it.\n\nA host is a row whether or not any MongoDB was found on it: that is what makes\n\"which hosts have no database\" a query rather than an absence, and it is the only\nway a machine that has never run one appears at all.\n\n:param node_id: PMM's node id.\n:param name: The node's registered name.\n:param address: The node's registered address.\n:param executor_host: The Nomad client serving it. ``None`` means nothing can be\n    run there, which is a fact about the estate rather than a probe failure.\n:param observed: Everything collected about the host, including\n    ``unregistered_mongods`` where the probe found a database PMM has no service\n    for. Empty when the host has never been successfully probed.\n:param first_seen_at: When OM first wrote a row for it.\n:param last_attempt_at: When a run last probed it.\n:param last_success_at: When it last answered.\n:param failing_since: The first failure after the last success.\n:param consecutive_failures: Failures since the last success.\n:param last_error: The most recent failure detail.\n:param services: The services on it. Empty is a meaningful answer, not a gap.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "consecutive_failures": {
+            "default": 0,
+            "title": "Consecutive Failures",
+            "type": "integer"
+          },
+          "executor_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executor Host"
+          },
+          "failing_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failing Since"
+          },
+          "first_seen_at": {
+            "format": "date-time",
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "observed": {
+            "title": "Observed",
+            "type": "object"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/om_inventory__ServiceResponse"
+            },
+            "title": "Services",
+            "type": "array"
+          }
+        },
+        "required": [
+          "node_id",
+          "name",
+          "first_seen_at"
+        ],
+        "title": "HostResponse",
+        "type": "object"
+      },
+      "om_inventory__ProbeCounts": {
+        "description": "Count what one sweep reached.\n\n``resolved`` versus ``answered`` is the diagnostic split: the first says the\nservice mapped to a live executor host, the second says the node ran the payload.\nA sweep with ``resolved=9, answered=0`` is a healthy mapping and broken executors.\n\n:param services_total: MongoDB services inventory reported.\n:param services_resolved: ...of which mapped to a live executor host.\n:param services_orphaned: ...of which did not. Not an error.\n:param services_answered: Services that returned a usable probe record.\n:param hosts_total: Hosts in scope this sweep, service or no service.\n:param hosts_probeable: ...of which had a usable executor to dispatch to.\n:param hosts_answered: Hosts that returned a usable record.",
+        "properties": {
+          "hosts_answered": {
+            "default": 0,
+            "title": "Hosts Answered",
+            "type": "integer"
+          },
+          "hosts_probeable": {
+            "default": 0,
+            "title": "Hosts Probeable",
+            "type": "integer"
+          },
+          "hosts_total": {
+            "default": 0,
+            "title": "Hosts Total",
+            "type": "integer"
+          },
+          "services_answered": {
+            "title": "Services Answered",
+            "type": "integer"
+          },
+          "services_orphaned": {
+            "title": "Services Orphaned",
+            "type": "integer"
+          },
+          "services_resolved": {
+            "title": "Services Resolved",
+            "type": "integer"
+          },
+          "services_total": {
+            "title": "Services Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "services_total",
+          "services_resolved",
+          "services_orphaned",
+          "services_answered"
+        ],
+        "title": "ProbeCounts",
+        "type": "object"
+      },
+      "om_inventory__ProbeFact": {
+        "description": "One fact about one service, as the probe saw it.\n\n:param service_id: **PMM's** service UUID. The consumer joins on this; SEP's own\n    inventory id would mean nothing on the other side.\n:param field: The document field this sets, e.g. ``installed_version``.\n:param value: The observed value.\n:param observed_at: When the probe ran. Carried per fact rather than per response\n    so a consumer merging several sources can age them against each other.",
+        "properties": {
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "service_id": {
+            "title": "Service Id",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "required": [
+          "service_id",
+          "field",
+          "value",
+          "observed_at"
+        ],
+        "title": "ProbeFact",
+        "type": "object"
+      },
+      "om_inventory__ProbeNode": {
+        "description": "One **host** this sweep attempted, and what came of it.\n\nHost-oriented, because a sweep attempts hosts. A flat list of services -- which\nthis was -- cannot show a machine carrying a PMM client and no database, however\nmany times it is probed, and that machine is the case OM most exists to describe.\n\nOne dispatch covers every service on a host, so the host owns the timing and the\nfailure and its services carry only what is theirs. Previously the duration was\nrepeated identically across a host's services, which read as several measurements\nwhen it was one.\n\n:param node_id: **PMM's** node id, the key OM holds this host under.\n:param host_name: The node's registered name.\n:param executor_host: The client its probe ran on; ``None`` when none matched.\n:param resolution: ``name`` / ``address`` / ``orphaned`` -- how that client was\n    matched, or that it was not. Orphaned is why nothing ran, not an error.\n:param answered: Whether the *host* returned a record. A different question from\n    whether its services did: a host with no database answers perfectly well and\n    has no services at all.\n:param duration_seconds: The host's wall-clock, dispatch to collected output.\n:param error: The host-level failure, when its probe failed.\n:param services: The services on it, empty when there are none.",
+        "properties": {
+          "answered": {
+            "default": false,
+            "title": "Answered",
+            "type": "boolean"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "executor_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executor Host"
+          },
+          "host_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host Name"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "resolution": {
+            "title": "Resolution",
+            "type": "string"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/om_inventory__ProbeNodeService"
+            },
+            "title": "Services",
+            "type": "array"
+          }
+        },
+        "required": [
+          "node_id",
+          "resolution"
+        ],
+        "title": "ProbeNode",
+        "type": "object"
+      },
+      "om_inventory__ProbeNodeService": {
+        "description": "One service on a host, as this sweep saw it.\n\n:param service_id: **PMM's** service UUID, or ``None`` where inventory holds none.\n:param service_name: Its name, so a reader is not left joining UUIDs by hand.\n:param answered: Whether the host returned a usable record for it.\n:param error: Why it did not, when it did not.",
+        "properties": {
+          "answered": {
+            "default": false,
+            "title": "Answered",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "service_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Id"
+          },
+          "service_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Name"
+          }
+        },
+        "title": "ProbeNodeService",
+        "type": "object"
+      },
+      "om_inventory__ProbeRunAccepted": {
+        "description": "Acknowledge a queued sweep.\n\nReturned with ``202``: a sweep dispatches Nomad jobs and takes tens of seconds, so\nit is never performed synchronously.\n\n:param run_id: The queued sweep's id.\n:param status: Always ``running`` at this point.\n:param started_at: When the run row was created.\n:param scope: The hosts it will refresh, or ``None`` for the whole estate.",
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "started_at"
+        ],
+        "title": "ProbeRunAccepted",
+        "type": "object"
+      },
+      "om_inventory__ProbeRunDetail": {
+        "description": "One sweep, with everything it recorded.\n\nKept apart from the list shape on purpose: a sweep's facts run to a few hundred\nrecords, so returning them for every row of a 25-run history would make the list\nan order of magnitude larger to serve a page that shows one run at a time.\n\n:param nodes: What the sweep saw per service.\n:param facts: The facts it collected — every field the probe reads, including the\n    ones no consumer maps today.",
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/om_inventory__ProbeCounts"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "facts": {
+            "items": {
+              "$ref": "#/components/schemas/om_inventory__ProbeFact"
+            },
+            "title": "Facts",
+            "type": "array"
+          },
+          "facts_collected": {
+            "default": 0,
+            "title": "Facts Collected",
+            "type": "integer"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/om_inventory__ProbeNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "started_at",
+          "counts"
+        ],
+        "title": "ProbeRunDetail",
+        "type": "object"
+      },
+      "om_inventory__ProbeRunResponse": {
+        "description": "One sweep's record.\n\n:param run_id: The sweep's id.\n:param status: ``running`` / ``success`` / ``partial`` / ``failed``.\n:param started_at: When it began.\n:param finished_at: When it reached a terminal status; ``None`` while running.\n:param counts: What it reached.\n:param facts_collected: How many facts it stored.\n:param scope: The hosts it was asked to refresh, or ``None`` for the whole\n    estate. Without it the counters cannot be read: \"9 of 13 answered\" means\n    something different when the run was only ever asked about one host.\n:param error: The failure detail when the sweep itself raised.",
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/om_inventory__ProbeCounts"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "facts_collected": {
+            "default": 0,
+            "title": "Facts Collected",
+            "type": "integer"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "started_at",
+          "counts"
+        ],
+        "title": "ProbeRunResponse",
+        "type": "object"
+      },
+      "om_inventory__ServiceResponse": {
+        "description": "One MongoDB service PMM has registered, as OM currently holds it.\n\nKeyed on **PMM's** service id, which is the whole benefit of storing it that way:\nthe path and the payload carry the id every consumer already has, with nothing to\ntranslate on either side.\n\n:param service_id: PMM's service id.\n:param node_id: The host it runs on.\n:param name: The service name as PMM registered it.\n:param port: The port it listens on.\n:param role: What the probe found it to be, when a probe determined one.\n:param observed: Everything collected, with its own ``collected_at``. Empty when\n    this service has never been successfully probed.\n:param first_seen_at: When OM first wrote a row for it.\n:param last_attempt_at: When a run last targeted it. ``None`` means no run ever\n    has, which is different from having tried and failed.\n:param last_success_at: When it last answered. This is the data's age.\n:param failing_since: The first failure after the last success; ``None`` while\n    healthy.\n:param consecutive_failures: Failures since the last success.\n:param last_error: The most recent failure detail.",
+        "properties": {
+          "consecutive_failures": {
+            "default": 0,
+            "title": "Consecutive Failures",
+            "type": "integer"
+          },
+          "failing_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failing Since"
+          },
+          "first_seen_at": {
+            "format": "date-time",
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "observed": {
+            "title": "Observed",
+            "type": "object"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "service_id": {
+            "title": "Service Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service_id",
+          "node_id",
+          "first_seen_at"
+        ],
+        "title": "ServiceResponse",
+        "type": "object"
+      },
+      "om_inventory__TriggerRequest": {
+        "description": "Ask for a refresh of named hosts rather than the whole estate.\n\n:param node_ids: PMM's node ids. Empty, or the whole body absent, means every\n    host OM holds -- which is what the scheduled sweep does.",
+        "properties": {
+          "node_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Node Ids",
+            "type": "array"
+          }
+        },
+        "title": "TriggerRequest",
+        "type": "object"
+      },
       "report__AdvisorCheck": {
         "description": "A single advisor check definition (enabled only).\n\n:param name: The unique check name.\n:type name: str\n:param description: Human-readable description of what the check tests.\n:type description: str\n:param summary: Short one-line summary of the check.\n:type summary: str\n:param family: The advisor family key this check belongs to, if any.\n:type family: str | None",
         "properties": {
@@ -18665,6 +19295,595 @@
         ]
       }
     },
+    "/api/apps/om_inventory/config": {
+      "get": {
+        "description": "Return this app's configuration: every field, its value and its origin.\n\nServed here rather than pointing the caller at ``/api/sep/admin/settings``\nbecause that router is admin-gated and PMM's principal is not an admin: the\n``--sep-token`` bearer resolves to the synthetic ``sep-service`` user, built\nwith ``is_admin=False`` deliberately, since it is a deployment-level shared\nsecret with no person behind it. An app-owned endpoint keeps a schedule change\nscoped to this app instead of requiring SEP-wide administrative access.\n\nEvery field is listed, not only the overridden ones, and each row carries\nwhether an override is in effect - so \"why is it sweeping every 10 minutes\"\nis answerable without also reading the deployment's YAML.\n\n:param session: The database session.\n:return: One row per configuration field.",
+        "operationId": "om_inventory_get_config_api_apps_om_inventory_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SettingResponse"
+                  },
+                  "title": "Response Om Inventory Get Config Api Apps Om Inventory Config Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Config",
+        "tags": [
+          "om_inventory"
+        ]
+      },
+      "patch": {
+        "description": "Change this app's configuration at runtime.\n\nThe batch is atomic: a single bad key rejects all of it with a per-key 422 and\nwrites nothing, so a caller never has to work out how far a partial apply got.\n\nOnly ``hot_field`` fields are accepted. ``CREDENTIALS_PATH`` is deliberately\nnot one: it names a file the payload reads on every database *host* and hands\nto a driver as a URI, so making it settable here would widen \"configure this\napp\" into \"read a chosen file across the estate\".\n\nA ``SCHEDULE`` change lands without a restart - ``periodic_task_schedules`` is\na thunk re-read on registry rebuild - but beat runs as a forked side-car\nprocess, which reaches the new value through its own settings refresher rather\nthan through this request.\n\n:param request: The incoming request; its ``app.state`` carries the rebind\n    callbacks fired for the keys this changed.\n:param body: The ``{key: value, ...}`` batch.\n:param session: The database session.\n:return: One row per applied key, in input order.",
+        "operationId": "om_inventory_patch_config_api_apps_om_inventory_config_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SettingResponse"
+                  },
+                  "title": "Response Om Inventory Patch Config Api Apps Om Inventory Config Patch",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Config",
+        "tags": [
+          "om_inventory"
+        ]
+      }
+    },
+    "/api/apps/om_inventory/config/{key}": {
+      "delete": {
+        "description": "Put one field back to whatever the deployment configured.\n\nWithout this, an operator who once changed a value can only ever change it to\nanother one: \"no override\" stops being a reachable state, and the YAML the\ndeployment ships becomes unrecoverable through the API. Idempotent, so\nclearing a field that was never overridden is not an error.\n\n:param request: The incoming request; its ``app.state`` carries the rebind\n    callbacks fired for the reverted key.\n:param key: The field name, or a ``__``-delimited nested key such as\n    ``SCHEDULE__every``.\n:param session: The database session.",
+        "operationId": "om_inventory_delete_config_override_api_apps_om_inventory_config__key__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Config Override",
+        "tags": [
+          "om_inventory"
+        ]
+      }
+    },
+    "/api/apps/om_inventory/hosts": {
+      "get": {
+        "description": "Return every host OM holds, each with its services.\n\n``has_service=false`` is the question this table exists to answer: which machines\ncarry a PMM client and no database. It is a filter rather than an endpoint of its\nown so there is one list contract to learn, and because the same list with the\nfilter inverted is the ordinary estate view.\n\nCounts describe the *tables*, not the last run. A scoped refresh must not make the\nestate look one host wide.\n\n:param session: The database session.\n:param has_service: Filter on whether a MongoDB service is registered here.\n:param failing: Filter on whether the host is currently failing.\n:param executor: Filter on whether an executor serves it.\n:return: The hosts, by name.",
+        "operationId": "om_inventory_list_estate_hosts_api_apps_om_inventory_hosts_get",
+        "parameters": [
+          {
+            "description": "True for hosts running a MongoDB service, False for those with none. Omit for all of them.",
+            "in": "query",
+            "name": "has_service",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "True for hosts running a MongoDB service, False for those with none. Omit for all of them.",
+              "title": "Has Service"
+            }
+          },
+          {
+            "description": "Restrict to hosts that are, or are not, failing.",
+            "in": "query",
+            "name": "failing",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to hosts that are, or are not, failing.",
+              "title": "Failing"
+            }
+          },
+          {
+            "description": "True for hosts a payload can run on, False for those with no executor.",
+            "in": "query",
+            "name": "executor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "True for hosts a payload can run on, False for those with no executor.",
+              "title": "Executor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/om_inventory__HostResponse"
+                  },
+                  "title": "Response Om Inventory List Estate Hosts Api Apps Om Inventory Hosts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Estate Hosts",
+        "tags": [
+          "om_inventory"
+        ]
+      }
+    },
+    "/api/apps/om_inventory/hosts/{node_id}": {
+      "delete": {
+        "description": "Forget one host, and by cascade its services.\n\nFor rows PMM no longer has, which is not hypothetical: restarting a node's\npmm-agent runs ``setup --force``, which *replaces* the node and mints a new id, so\nOM gains a row and keeps the old one. Nothing prunes automatically yet, and the\nalternative to this endpoint is ``psql`` against a schema an operator should never\nneed to know exists.\n\nDeliberately not suppression. An entity PMM still knows about comes straight back\non the next sweep, because OM's job is to describe what PMM says exists, not to\nhold an opinion about it.\n\nIts services go with it. That is done explicitly rather than left to the\n``ON DELETE CASCADE`` on ``om.service.node_id``, because SQLite enforces no\nforeign key without a per-connection pragma SEP never sets -- and SQLite is the\nshipped default. See :func:`~app.sep.apps.om_inventory.crud.delete_host`.\n\n:param node_id: PMM's node id.\n:param session: The database session.\n:raises HTTPNotFoundException: When OM holds no such host.",
+        "operationId": "om_inventory_delete_estate_host_api_apps_om_inventory_hosts__node_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Estate Host",
+        "tags": [
+          "om_inventory"
+        ]
+      },
+      "get": {
+        "description": "Return one host, with its services.\n\n:param node_id: PMM's node id.\n:param session: The database session.\n:raises HTTPNotFoundException: When OM holds no such host.\n:return: The host.",
+        "operationId": "om_inventory_get_estate_host_api_apps_om_inventory_hosts__node_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_inventory__HostResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Estate Host",
+        "tags": [
+          "om_inventory"
+        ]
+      }
+    },
+    "/api/apps/om_inventory/runs": {
+      "get": {
+        "description": "Return recent sweeps, newest first.\n\n:param session: The database session.\n:param limit: How many to return.\n:return: The sweeps.",
+        "operationId": "om_inventory_list_runs_api_apps_om_inventory_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/om_inventory__ProbeRunResponse"
+                  },
+                  "title": "Response Om Inventory List Runs Api Apps Om Inventory Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Runs",
+        "tags": [
+          "om_inventory"
+        ]
+      },
+      "post": {
+        "description": "Queue a probe sweep, over the whole estate or over named hosts.\n\nA scoped refresh exists because the two questions are different sizes. \"What does\nthe estate look like\" is a sweep of everything and costs a Nomad job per executor\nhost -- a minute and a half in this sandbox. \"I just did something to this host,\nis it healthy now\" should not cost that, and it is the question PMM's UI will ask\nafter every action it grows.\n\nThe scope is node ids, which is what PMM already holds, so its trigger passes them\nthrough untranslated (§5.3's payoff).\n\nConflict is judged **per host**, not globally. A refresh of one host has no reason\nto be blocked by a refresh of another, and blocking it would make the scoped\ntrigger useless exactly when the estate is busiest. Two runs collide only when\nthey would touch the same host; a full refresh collides with everything, including\nanother full refresh.\n\n:param session: The database session.\n:param request: The optional scope. Absent, or an empty list, means everything.\n:raises HTTPNotFoundException: When a requested node id is not in the estate.\n:raises HTTPConflictException: When a requested host is already being refreshed.\n:return: The queued sweep.",
+        "operationId": "om_inventory_trigger_probe_api_apps_om_inventory_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/om_inventory__TriggerRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_inventory__ProbeRunAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trigger Probe",
+        "tags": [
+          "om_inventory"
+        ]
+      }
+    },
+    "/api/apps/om_inventory/runs/{run_id}": {
+      "get": {
+        "description": "Return one sweep, with its per-service records and its facts.\n\n:param run_id: The sweep's id.\n:param session: The database session.\n:raises HTTPNotFoundException: When there is no such sweep.\n:return: The sweep in full.",
+        "operationId": "om_inventory_get_probe_run_api_apps_om_inventory_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_inventory__ProbeRunDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Probe Run",
+        "tags": [
+          "om_inventory"
+        ]
+      }
+    },
+    "/api/apps/om_inventory/schema": {
+      "get": {
+        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
+        "operationId": "om_inventory_get_schema_api_apps_om_inventory_schema_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/framework__AppSchema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Schema",
+        "tags": [
+          "om_inventory"
+        ]
+      }
+    },
+    "/api/apps/om_inventory/services": {
+      "get": {
+        "description": "Return the services OM holds, flat.\n\nFor a consumer that works in services and would otherwise walk every host document\nto find them. ``GET /hosts/{node_id}`` already nests a host's services, so there is\ndeliberately no ``/hosts/{node_id}/services``: it would be a second spelling of the\nsame list, and ``?node_id=`` covers wanting them without the host.\n\n:param session: The database session.\n:param node_id: Restrict to one host.\n:param failing: Filter on whether the service is currently failing.\n:return: The services, by name.",
+        "operationId": "om_inventory_list_estate_services_api_apps_om_inventory_services_get",
+        "parameters": [
+          {
+            "description": "Restrict to one host.",
+            "in": "query",
+            "name": "node_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to one host.",
+              "title": "Node Id"
+            }
+          },
+          {
+            "description": "Restrict to services that are, or are not, failing.",
+            "in": "query",
+            "name": "failing",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to services that are, or are not, failing.",
+              "title": "Failing"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/om_inventory__ServiceResponse"
+                  },
+                  "title": "Response Om Inventory List Estate Services Api Apps Om Inventory Services Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Estate Services",
+        "tags": [
+          "om_inventory"
+        ]
+      }
+    },
+    "/api/apps/om_inventory/services/{service_id}": {
+      "delete": {
+        "description": "Forget one service, leaving its host alone.\n\nSame contract as deleting a host: for a row PMM no longer has, and no defence\nagainst one it still does.\n\n:param service_id: PMM's service id.\n:param session: The database session.\n:raises HTTPNotFoundException: When OM holds no such service.",
+        "operationId": "om_inventory_delete_estate_service_api_apps_om_inventory_services__service_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "title": "Service Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Estate Service",
+        "tags": [
+          "om_inventory"
+        ]
+      },
+      "get": {
+        "description": "Return one service, by PMM's service id.\n\n:param service_id: PMM's service id.\n:param session: The database session.\n:raises HTTPNotFoundException: When OM holds no such service.\n:return: The service.",
+        "operationId": "om_inventory_get_estate_service_api_apps_om_inventory_services__service_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "title": "Service Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_inventory__ServiceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Estate Service",
+        "tags": [
+          "om_inventory"
+        ]
+      }
+    },
     "/api/apps/report/config": {
       "get": {
         "description": "Return upload configuration status.\n\n:return: JSON response with ``upload_disabled_reasons``.\n:rtype: JSONResponse",
@@ -20138,7 +21357,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/HostResponse"
+                    "$ref": "#/components/schemas/app__sep__api__routes__hosts__HostResponse"
                   },
                   "title": "Response Sep List Hosts Api Sep Hosts  Get",
                   "type": "array"
@@ -20532,7 +21751,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse_ServiceResponse_"
+                  "$ref": "#/components/schemas/app__PaginatedResponse_inventory__models__ServiceResponse_"
                 }
               }
             },

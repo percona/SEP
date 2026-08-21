@@ -38,6 +38,7 @@ from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableE
 from app.core.health import build_health_router
 from app.core.requests import RemoteAPI
 from app.core.settings_override.lifecycle import (
+    CallbackRegistry,
     RefreshCallback,
     settings_override_refresher,
 )
@@ -50,6 +51,7 @@ from app.sep.apps.framework.registry import (
 from app.sep.config import sep_settings, warn_if_base_url_lacks_root_path
 from app.sep.db import get_async_session_maker
 from app.sep.db.seed import get_system_periodic_tasks, init_sep_db
+from app.sep.periodic_tasks import sync_app_periodic_task_gating
 from app.sep.routes.artifacts import router as artifacts_router
 from app.sep.settings_override import (
     build_sep_override_proxies,
@@ -182,8 +184,9 @@ async def _apply_logging_dictconfig(_: Mapping[str, object]) -> None:
 async def _reseed_system_periodic_tasks(_: Mapping[str, object]) -> None:
     """Re-seed the SEP beat schedule after a hot interval override.
 
-    Wired for both ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``) and
-    ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``). Rebuilds the
+    Wired for ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``),
+    ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``) and
+    ``OmInventorySettings.SCHEDULE`` (``sep__run_om_probe``). Rebuilds the
     system periodic-task set via
     :func:`app.sep.db.seed.get_system_periodic_tasks` -- which re-reads the now-live
     interval from the refreshed proxy snapshot -- and re-invokes
@@ -195,38 +198,39 @@ async def _reseed_system_periodic_tasks(_: Mapping[str, object]) -> None:
     Updating the ``IntervalSchedule`` bumps ``PeriodicTaskChanged.last_update``, so
     Celery beat reloads the schedule on its next scheduler tick without a restart.
 
+    Gating is then re-applied, because preserving it is only true of the **update**
+    path. A schedule that may be ``None`` -- ``OmInventorySettings.SCHEDULE`` is,
+    which is how the sweep is turned off -- contributes no task at all, and the
+    orphan cleanup in ``init_periodic_tasks_db`` deletes its row. Setting it again
+    takes the *create* path, which builds a fresh row at the model's default
+    ``enabled``: a disabled app would start sweeping on the next beat tick. This is
+    the same pair :func:`app.sep.db.seed.init_sep_db` runs at startup, for the same
+    reason.
+
     :param _: The new effective settings snapshot mapping (unused -- the interval is
         re-read from the proxy by the task-set builder).
     """
-    await init_periodic_tasks_db(get_system_periodic_tasks(), "sep__")
+    system_tasks = get_system_periodic_tasks()
+    await init_periodic_tasks_db(system_tasks, "sep__")
+    await sync_app_periodic_task_gating(system_tasks)
 
 
-@asynccontextmanager
-async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Wire the SEP-side settings override refresher into a lifespan.
+def build_sep_override_callbacks(app: FastAPI) -> CallbackRegistry:
+    """Compose the SEP web process's rebind callbacks.
 
-    Start the background refresher for the duration of the wrapped block over
-    the proxy map :func:`build_sep_override_proxies` composes, the shared set
-    every SEP process refreshes, so no wiring drifts from another's.
-    Endpoint and PMM rebind callbacks are built here -- where ``app`` is
-    available -- so both run modes wire them.
+    A function rather than a literal inside the lifespan so the wiring is
+    assertable: every entry here is a change that has an effect *outside* the
+    settings snapshot -- a client rebound, a logging config re-applied, a beat row
+    rewritten -- and a missing one fails silently. The setting changes, the API
+    reports the new value, and nothing acts on it until the process restarts. A
+    ``SCHEDULE`` override that beat never picked up is exactly that shape, and it
+    is why this is testable at all.
 
-    This is extracted from :func:`sep_lifespan` because ``sep_app`` is mounted
-    under the top-level ``app`` via Starlette's ``Mount``, which only forwards
-    ``http``/``websocket`` scopes -- never ``lifespan``. Without calling this
-    context manager from :func:`app.main.main_lifespan`, the SEP refresher
-    would never run when ``python -m app.main`` serves ``app.main:app``.
-
-    The two call sites are mutually exclusive at runtime: uvicorn serves
-    either ``app.main:app`` (in which case ``main_lifespan`` enters this
-    block) or ``app.sep.main:sep_app`` standalone (in which case
-    ``sep_lifespan`` enters it). The refresher therefore starts exactly once.
-
-    :param app: The FastAPI application instance, used to wire endpoint rebind
-        callbacks against ``app.state``.
-    :return: None
+    :param app: The FastAPI application whose ``state`` the endpoint rebinders
+        write their refreshed clients to.
+    :return: The callback registry, keyed by ``(settings class, field)``.
     """
-    callbacks = {
+    return {
         (
             SettingClassEnum.SEP_SETTINGS,
             "INVENTORY_ENDPOINT",
@@ -260,7 +264,39 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             SettingClassEnum.SEP_SETTINGS,
             "APP_DRAIN",
         ): _reseed_system_periodic_tasks,
+        (
+            SettingClassEnum.OM_INVENTORY_SETTINGS,
+            "SCHEDULE",
+        ): _reseed_system_periodic_tasks,
     }
+
+
+@asynccontextmanager
+async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Wire the SEP-side settings override refresher into a lifespan.
+
+    Start the background refresher for the duration of the wrapped block over
+    the proxy map :func:`build_sep_override_proxies` composes, the shared set
+    every SEP process refreshes, so no wiring drifts from another's.
+    Endpoint and PMM rebind callbacks are built here -- where ``app`` is
+    available -- so both run modes wire them.
+
+    This is extracted from :func:`sep_lifespan` because ``sep_app`` is mounted
+    under the top-level ``app`` via Starlette's ``Mount``, which only forwards
+    ``http``/``websocket`` scopes -- never ``lifespan``. Without calling this
+    context manager from :func:`app.main.main_lifespan`, the SEP refresher
+    would never run when ``python -m app.main`` serves ``app.main:app``.
+
+    The two call sites are mutually exclusive at runtime: uvicorn serves
+    either ``app.main:app`` (in which case ``main_lifespan`` enters this
+    block) or ``app.sep.main:sep_app`` standalone (in which case
+    ``sep_lifespan`` enters it). The refresher therefore starts exactly once.
+
+    :param app: The FastAPI application instance, used to wire endpoint rebind
+        callbacks against ``app.state``.
+    :return: None
+    """
+    callbacks = build_sep_override_callbacks(app)
     # On ``sep_app``'s state, not the lifespan's parent ``app``: requests to
     # ``/api/sep/...`` resolve ``request.app`` to the mounted ``sep_app``, where
     # the settings-API handlers read it.

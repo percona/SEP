@@ -127,6 +127,12 @@ default:
       - MODULE_NAME: inventory
       - MODULE_NAME: atw
       - MODULE_NAME: mysql_backups
+      # OM's on-host half. It sweeps the MongoDB estate over Nomad for the facts
+      # no metric carries and serves them at /api/apps/om_inventory/services,
+      # which pmm-managed pulls. The topology and health half is in pmm-managed,
+      # so a PMM that ships this app also needs a build carrying
+      # managed/services/om.
+      - MODULE_NAME: om_inventory
     SYNCERS:
       - SYNCER: PMMSyncer
       - SYNCER: MySQLSyncer
