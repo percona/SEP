@@ -116,9 +116,15 @@ services:
         condition: service_started
     hostname: sep-mysql
     environment:
-      SEP_MYSQL_ROOT_PASSWORD: ${SEP_MYSQL_ROOT_PASSWORD:?run ./bootstrap.sh first}
-      SEP_MYSQL_BACKUP_PASSWORD: ${SEP_MYSQL_BACKUP_PASSWORD:?run ./bootstrap.sh first}
-      SEP_MYSQL_PMM_PASSWORD: ${SEP_MYSQL_PMM_PASSWORD:?run ./bootstrap.sh first}
+      # Passed through unset rather than guarded with :? here. Compose
+      # interpolates every service at parse time whatever profile is active, so
+      # a :? on this profile-gated service made ./bootstrap.sh a prerequisite of
+      # the pmm-server + sep-sidecar bring-up too, which needs none of these.
+      # mysql-entrypoint.sh's require_secrets runs unconditionally at container
+      # start and carries the same message, so the mysql path stays guarded.
+      SEP_MYSQL_ROOT_PASSWORD: ${SEP_MYSQL_ROOT_PASSWORD:-}
+      SEP_MYSQL_BACKUP_PASSWORD: ${SEP_MYSQL_BACKUP_PASSWORD:-}
+      SEP_MYSQL_PMM_PASSWORD: ${SEP_MYSQL_PMM_PASSWORD:-}
       PMM_AGENT_SERVER_ADDRESS: pmm-server:8443
       PMM_AGENT_SERVER_USERNAME: admin
       PMM_AGENT_SERVER_PASSWORD: admin

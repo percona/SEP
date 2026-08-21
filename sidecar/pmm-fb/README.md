@@ -57,6 +57,16 @@ The pmm-server pin is subject to its own constraint — see
 git clone -b pmm git@github.com:percona/SEP.git  # already cloned: git checkout pmm && git pull
 cd SEP/sidecar/pmm-fb
 
+docker compose up -d                          # pmm-server + sep-sidecar
+```
+
+That is the whole prerequisite list. PMM generates every secret the pair needs
+and publishes them itself, so nothing has to be chosen or seeded in advance.
+
+`./bootstrap.sh` is needed **only** for the `mysql` profile, whose three
+test-fixture passwords are the only thing the generated `.env` still holds:
+
+```bash
 ./bootstrap.sh                                # generate .env
 docker compose --profile mysql up -d --build  # or: podman compose ...
 ```
@@ -116,7 +126,11 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
 
 - `bootstrap.sh` generates the gitignored `.env`, which now holds only the three
   `sep-mysql` passwords — test-fixture credentials for the `mysql` profile, not
-  anything the pair needs. PMM generates every SEP secret itself, including the
+  anything the pair needs, so a bring-up without that profile can skip it
+  entirely. `sep-mysql`'s entrypoint refuses to start without them; `compose.yaml`
+  deliberately does not, because Compose interpolates every service at parse time
+  regardless of the active profile, and a guard there would make the script a
+  prerequisite of every bring-up. PMM generates every SEP secret itself, including the
   PostgreSQL role's password. Nothing secret is committed; re-running keeps an
   existing `.env` and appends any slot it predates.
 - **PMM owns every SEP deployment secret.** With `PMM_ENABLE_SEP=1` it writes
