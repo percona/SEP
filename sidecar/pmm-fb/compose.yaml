@@ -54,7 +54,7 @@ services:
       - sep-pmm
 
   sep-sidecar:
-    image: docker.io/percona/percona-sep:29d29624626c54360d354975d1e2f8706c8323c7
+    image: docker.io/percona/percona-sep:95a70382022ee2ec8fe6b87e86296b9271c320f0
     # service_healthy, not service_started: PMM publishes SEP's secrets in two
     # stages and SEP builds its settings once, at process start, so a side-car
     # released early comes up with Grafana auth inert and never recovers. Only
@@ -83,6 +83,10 @@ services:
       - "127.0.0.1:9002:9002" # tasks API
     volumes:
       - pmm-sep:/run/secrets/sep:ro
+      # SEP's own writable state. The side-car mints its own Grafana
+      # service-account token at start and persists it here, so a recreate
+      # reuses that token instead of minting a second one against Grafana.
+      - sep-state:/home/sep/state
     networks:
       - sep-pmm
 
@@ -144,6 +148,7 @@ volumes:
   # Project-scoped deliberately: an unqualified name: would collide with a real
   # PMM install's pmm-sep volume on the same host
   pmm-sep:
+  sep-state:
   sep-mysql-data:
   sep-mysql-pmm-config:
   sep-mysql-nomad:

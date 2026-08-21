@@ -90,9 +90,14 @@ dataset` before expecting a backup to have data to copy. Then:
   that is the embedded topology working, not a routing fault.
 - SEP APIs directly: http://127.0.0.1:9000-9002 (sep / inventory / tasks)
 
-There is no token-minting step. PMM mints the Grafana service-account token
-itself and publishes it to the side-car, so Grafana-backed sign-in, the PMM
-syncer and task-lifecycle PMM annotations all work on a first boot.
+There is no manual token-minting step. The side-car obtains its own Grafana
+service-account token at container start when no token reaches it through
+`SECRETS_DIR`, so Grafana-backed sign-in, the PMM syncer and task-lifecycle PMM
+annotations all work on a first boot. It persists that token in the `sep-state`
+volume, so a recreate reuses it rather than minting a second one. A PMM build
+that publishes the two Grafana token names into the secrets directory still
+outranks the mint, which then does nothing — the side-car resolves each
+canonical name from its own file first.
 
 To probe the API by hand, exchange your PMM browser session for a short-lived
 SEP bearer rather than looking for a static token — an unauthenticated request
