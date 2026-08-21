@@ -389,7 +389,7 @@ async def alerts_api_push(
                     group=alerts_settings.ALERT_FOLDER_NAME,
                 )
             except (HTTPException, OSError) as exc:
-                detail = getattr(exc, "detail", str(exc))
+                detail = str(getattr(exc, "detail", exc))
                 if "conflicts with existing" in detail:
                     logger.debug("Rule already exists for %s", name, exc_info=True)
                     results.append(

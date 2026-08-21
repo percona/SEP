@@ -918,6 +918,40 @@ class TestAlertsPushApi:
         mock_pmm_api.create_template.assert_not_awaited()
         mock_pmm_api.create_rule.assert_awaited_once()
 
+    def test_push_already_present_stringifies_non_str_create_rule_detail(
+        self, api_client, mock_pmm_api
+    ):
+        """Report ``error`` when already-present ``create_rule`` raises a non-str detail."""
+        sep_app.dependency_overrides[get_pmm_present_names] = lambda: {"High CPU"}
+        mock_pmm_api.create_rule.side_effect = HTTPException(
+            status_code=502, detail={"message": "upstream failed"}
+        )
+        response = api_client.post(
+            f"{API_BASE}/push", json={"selected_templates": ["High CPU"]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        result = response.json()["results"][0]
+        assert result["status"] == "error"
+        assert "upstream failed" in result["message"]
+        mock_pmm_api.create_template.assert_not_awaited()
+        mock_pmm_api.create_rule.assert_awaited_once()
+
+    def test_push_already_present_reports_create_rule_oserror(
+        self, api_client, mock_pmm_api
+    ):
+        """Report ``error`` when already-present ``create_rule`` raises ``OSError``."""
+        sep_app.dependency_overrides[get_pmm_present_names] = lambda: {"High CPU"}
+        mock_pmm_api.create_rule.side_effect = OSError("connection reset")
+        response = api_client.post(
+            f"{API_BASE}/push", json={"selected_templates": ["High CPU"]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        result = response.json()["results"][0]
+        assert result["status"] == "error"
+        assert "connection reset" in result["message"]
+        mock_pmm_api.create_template.assert_not_awaited()
+        mock_pmm_api.create_rule.assert_awaited_once()
+
     def test_push_conflict_retry_deletes_matching_rules_only(
         self, api_client, mock_pmm_api
     ):
