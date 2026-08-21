@@ -113,6 +113,7 @@ async def test_reseed_callback_reseeds_beat_with_live_interval(
     beat's next tick.
     """
     reseed = mocker.patch("app.sep.main.init_periodic_tasks_db", new_callable=AsyncMock)
+    mocker.patch("app.sep.main.sync_app_periodic_task_gating", new_callable=AsyncMock)
     snippets_settings._set_snapshot(
         {"SYNC_INTERVAL": IntervalSchedule(every=15, period=Period.MINUTES)}
     )
@@ -208,3 +209,33 @@ async def test_logging_and_app_drain_callbacks_registered() -> None:
         )
     finally:
         sep_main.sep_app.state.override_callbacks = original
+
+
+@pytest.mark.asyncio
+async def test_reseed_callback_reapplies_app_gating(mocker: MockerFixture) -> None:
+    """Assert the re-seed re-applies app gating over the task set it just seeded.
+
+    ``init_periodic_tasks_db`` preserves ``enabled`` on its **update** path only. A
+    schedule an app may set to ``None`` -- which is how an app-owned periodic task is
+    turned off -- contributes no task while it is null, so the orphan cleanup deletes
+    its beat row. Setting it again takes the **create** path, which builds a fresh row
+    at the model's default ``enabled``: without gating re-applied, a ``PATCH`` that
+    restores the schedule could start the task on an app that is switched off.
+
+    Asserted as the call, with the same task set, because that is exactly what was
+    missing; what gating then does with a disabled app is pinned in
+    tests/app/sep/test_periodic_tasks.py.
+
+    :param mocker: The pytest-mock fixture.
+    """
+    reseed = mocker.patch("app.sep.main.init_periodic_tasks_db", new_callable=AsyncMock)
+    gating = mocker.patch(
+        "app.sep.main.sync_app_periodic_task_gating", new_callable=AsyncMock
+    )
+
+    await _reseed_system_periodic_tasks({})
+
+    gating.assert_awaited_once()
+    seeded_tasks, prefix = reseed.await_args.args
+    assert prefix == "sep__"
+    assert gating.await_args.args[0] is seeded_tasks
