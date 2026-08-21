@@ -23,6 +23,7 @@ import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import { useSnackbar } from 'notistack';
 import {
+  useAuth,
   useDeleteAppEntity,
   useAppEntityDetail,
   type ListView,
@@ -533,6 +534,7 @@ function NestedListSection({
   schema: AppSchema;
 }) {
   const navigate = useNavigate();
+  const { canMutate } = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const [pendingDelete, setPendingDelete] = useState<{
     id: string;
@@ -553,7 +555,7 @@ function NestedListSection({
 
   const hasActionsColumn = listView.columns.some((c) => c.format === 'actions');
   const onDeleteRow =
-    allowListEntityDelete && hasActionsColumn
+    canMutate && allowListEntityDelete && hasActionsColumn
       ? (row: Record<string, unknown>) => {
           const rid = row.id;
           if (rid === undefined || rid === null) {

@@ -45,6 +45,8 @@ export type { TaskExecuteAction } from './components/SchemaDrivenApp/AppDetailPa
 export type { TaskExecuteBody } from './hooks';
 export { pathToEntityList } from './components/SchemaDrivenApp/AppDetailPage';
 export { getStoredForm, STORED_FORM_KEY } from './components/SchemaDrivenApp';
+export { ReadOnlyNotice } from './components/ReadOnlyNotice';
+export type { ReadOnlyNoticeProps } from './components/ReadOnlyNotice';
 export { ServiceSelector } from './components/ServiceSelector';
 export type { ServiceSelectorProps } from './components/ServiceSelector';
 export { SchemaSelector } from './components/SchemaSelector';

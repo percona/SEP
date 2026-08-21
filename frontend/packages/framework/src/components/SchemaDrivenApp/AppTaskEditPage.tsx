@@ -23,7 +23,7 @@ import Skeleton from '@mui/material/Skeleton';
 import Typography from '@mui/material/Typography';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useSnackbar } from 'notistack';
-import { useAppTask, useUpdateAppTask, type AppSchema } from '@sep/api';
+import { useAppTask, useAuth, useUpdateAppTask, type AppSchema } from '@sep/api';
 import {
   SchemaFormRenderer,
   coerceFormValues,
@@ -33,6 +33,7 @@ import {
 } from '../SchemaFormRenderer';
 import type { FormSection, RenderFieldOverride } from '../SchemaFormRenderer/types';
 import type { RenderFormSlot } from './types';
+import { ReadOnlyNotice } from '../ReadOnlyNotice';
 import { getStoredForm } from './storedForm';
 import { EMPTY_SUBMIT_ERROR, mapSubmitError, type SubmitErrorState } from './submitErrorMapping';
 
@@ -109,6 +110,7 @@ export function AppTaskEditPage({
   renderEditForm?: RenderFormSlot;
 }) {
   const navigate = useNavigate();
+  const { canMutate } = useAuth();
   const { id } = useParams<{ id: string }>();
   const { enqueueSnackbar } = useSnackbar();
   const updateTask = useUpdateAppTask(pluginName, mockTasks);
@@ -168,6 +170,30 @@ export function AppTaskEditPage({
       },
     );
   };
+
+  // Editing is a mutation, so the whole page is the control (see AppCreatePage),
+  // and the back chrome stays so a URL arrival is not a dead end.
+  if (!canMutate) {
+    return (
+      <Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+          <IconButton
+            onClick={() => navigate('..', { relative: 'path' })}
+            aria-label={`Back to ${schema.display_name}`}
+          >
+            <ArrowBackIcon />
+          </IconButton>
+          <Typography variant="h4">
+            {schema.display_name}: {id}
+          </Typography>
+        </Box>
+        <ReadOnlyNotice
+          action={`edit ${schema.display_name} tasks`}
+          testId="app-task-edit-read-only"
+        />
+      </Box>
+    );
+  }
 
   if (isLoading) {
     return (

@@ -25,10 +25,12 @@ import type { AppSchema } from '@sep/api';
 // module-scope bindings (TDZ risk). Route the useAppTasks mock through a
 // `vi.hoisted` spy — the same pattern as ScheduledTasksPanel.test.tsx — so it
 // both supplies the rows and captures the options the page passes in.
-const { useAppTasksMock, useAppEntityListMock, schemaListViewMock } = vi.hoisted(() => ({
+const { useAppTasksMock, useAppEntityListMock, schemaListViewMock, authMock } = vi.hoisted(() => ({
   useAppTasksMock: vi.fn(),
   useAppEntityListMock: vi.fn(),
   schemaListViewMock: vi.fn(),
+  /** Flipped per test to cover the read-only (non-admin) rendering. */
+  authMock: { canMutate: true },
 }));
 
 vi.mock('../SchemaListView', () => ({
@@ -45,6 +47,7 @@ vi.mock('@sep/api', () => ({
   useAppTasks: (...args: unknown[]) => useAppTasksMock(...args),
   useAppEntityList: (...args: unknown[]) => useAppEntityListMock(...args),
   useDeleteAppEntity: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
+  useAuth: () => ({ isAdmin: authMock.canMutate, canMutate: authMock.canMutate }),
 }));
 
 import { AppListPage } from './AppListPage';
@@ -102,6 +105,7 @@ beforeEach(() => {
     isLoading: false,
   });
   schemaListViewMock.mockClear();
+  authMock.canMutate = true;
 });
 
 describe('AppListPage — generic Schedules button', () => {
@@ -286,5 +290,77 @@ describe('AppListPage — poll-while-running escape hatch', () => {
       undefined,
       expect.objectContaining({ disablePolling: true }),
     );
+  });
+});
+
+describe('AppListPage — write access', () => {
+  const deletableEntitySchema: AppSchema = {
+    name: 'inventory',
+    display_name: 'Inventory',
+    capabilities: { scheduling: false },
+    entities: [
+      {
+        name: 'nodes',
+        display_name: 'Nodes',
+        forms: [],
+        list_view: {
+          columns: [
+            { key: 'name', label: 'Name' },
+            { key: '_actions', label: 'Actions', format: 'actions' },
+          ],
+        },
+      },
+    ],
+  };
+
+  function renderDeletableEntityList() {
+    useAppEntityListMock.mockReturnValue({
+      data: { items: [{ id: 1, name: 'node-a' }], pagination: null },
+      isLoading: false,
+    });
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/inventory/:entityName',
+          element: (
+            <AppListPage
+              schema={deletableEntitySchema}
+              pluginName="inventory"
+              allowListEntityDelete
+            />
+          ),
+        },
+      ],
+      { initialEntries: ['/inventory/nodes'] },
+    );
+    return render(
+      <SnackbarProvider>
+        <RouterProvider router={router} />
+      </SnackbarProvider>,
+    );
+  }
+
+  function lastListViewProps() {
+    return schemaListViewMock.mock.calls.at(-1)?.[0] as { onDeleteRow?: unknown };
+  }
+
+  it('renders the create button and wires row delete for a session that may mutate', () => {
+    renderPage();
+    expect(screen.getByRole('button', { name: 'New Sched' })).toBeInTheDocument();
+
+    renderDeletableEntityList();
+    expect(lastListViewProps().onDeleteRow).toBeInstanceOf(Function);
+  });
+
+  it('renders no create button and no row delete for a non-admin', () => {
+    authMock.canMutate = false;
+
+    renderPage();
+    expect(screen.queryByRole('button', { name: 'New Sched' })).not.toBeInTheDocument();
+    // Reads stay: the list itself and the Schedules link are unaffected.
+    expect(screen.getByTestId('plugin-schedule-link')).toBeInTheDocument();
+
+    renderDeletableEntityList();
+    expect(lastListViewProps().onDeleteRow).toBeUndefined();
   });
 });

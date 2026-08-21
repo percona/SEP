@@ -17,7 +17,7 @@
 
 import { Box, Button, CircularProgress, Tooltip } from '@mui/material';
 import NetworkCheckIcon from '@mui/icons-material/NetworkCheck';
-import { ApiError } from '@sep/api';
+import { ApiError, useAuth } from '@sep/api';
 import { useSnackbar } from 'notistack';
 import { useCheckServiceConnectivity } from './hooks';
 
@@ -42,6 +42,7 @@ export function ConnectivityControl({
   serviceId: string | number;
   serviceType?: unknown;
 }) {
+  const { canMutate } = useAuth();
   const checkConnectivity = useCheckServiceConnectivity(serviceId);
   const { enqueueSnackbar } = useSnackbar();
 
@@ -68,6 +69,11 @@ export function ConnectivityControl({
         enqueueSnackbar(message, { variant: 'error' });
       },
     });
+  }
+
+  // The probe is a POST, so a read-only session is offered no button at all.
+  if (!canMutate) {
+    return null;
   }
 
   return (
