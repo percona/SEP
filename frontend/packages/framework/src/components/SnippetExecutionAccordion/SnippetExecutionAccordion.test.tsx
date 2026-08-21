@@ -24,8 +24,12 @@ import { SnippetExecutionAccordion } from './SnippetExecutionAccordion';
 import { apiClient, type AppSchema } from '@sep/api';
 import type { TaskHistoryEntry } from '../TaskHistoryTable';
 
+/** Flipped per test to cover the read-only (non-admin) rendering. */
+let mockCanMutate = true;
+
 vi.mock('@sep/api', () => ({
   apiClient: { get: vi.fn(), post: vi.fn() },
+  useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
 }));
 
 vi.mock('../TaskLogViewer', () => ({
@@ -115,6 +119,7 @@ function renderWithProviders(ui: ReactNode) {
 describe('SnippetExecutionAccordion', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCanMutate = true;
   });
 
   it('renders title in collapsed state without fetching schema', () => {
@@ -501,5 +506,40 @@ describe('SnippetExecutionAccordion', () => {
       const pre = document.querySelector('pre[data-language="bash"]');
       expect(pre?.textContent).toContain('echo hello');
     });
+  });
+});
+
+describe('SnippetExecutionAccordion — write access', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCanMutate = true;
+  });
+
+  it('renders the execute form for a session that may mutate', async () => {
+    mockedApi.get.mockResolvedValue({ data: makeSchema() });
+
+    renderWithProviders(
+      <SnippetExecutionAccordion snippetFilename="check.sh" executorHost="db1" defaultExpanded />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Execute' })).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('snippet-execute-read-only')).not.toBeInTheDocument();
+  });
+
+  it('renders no execute form for a non-admin and fetches no schema', async () => {
+    mockCanMutate = false;
+    mockedApi.get.mockResolvedValue({ data: makeSchema() });
+
+    renderWithProviders(
+      <SnippetExecutionAccordion snippetFilename="check.sh" executorHost="db1" defaultExpanded />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('snippet-execute-read-only')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: 'Execute' })).not.toBeInTheDocument();
+    expect(mockedApi.get).not.toHaveBeenCalled();
   });
 });

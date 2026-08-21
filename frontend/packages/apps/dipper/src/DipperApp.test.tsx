@@ -25,7 +25,16 @@ import {
   useDipperAppSchema,
 } from './hooks';
 
-const { stopMutate } = vi.hoisted(() => ({ stopMutate: vi.fn() }));
+const { stopMutate, authMock } = vi.hoisted(() => ({
+  stopMutate: vi.fn(),
+  /** Flipped per test to cover the read-only (non-admin) rendering. */
+  authMock: { canMutate: true },
+}));
+
+vi.mock('@sep/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sep/api')>()),
+  useAuth: () => ({ isAdmin: authMock.canMutate, canMutate: authMock.canMutate }),
+}));
 
 vi.mock('notistack', () => ({
   useSnackbar: () => ({ enqueueSnackbar: vi.fn() }),
@@ -94,6 +103,9 @@ vi.mock('@sep/framework', async () => {
       <div>logs for {taskHistoryId}</div>
     ),
     useStopTaskHistory: () => ({ mutate: stopMutate, isPending: false }),
+    ReadOnlyNotice: ({ action, testId }: { action?: string; testId?: string }) => (
+      <div data-testid={testId}>no permission to {action}</div>
+    ),
   };
 });
 
@@ -107,6 +119,7 @@ describe('DipperApp', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    authMock.canMutate = true;
     mockAppSchema.mockReturnValue({
       data: {
         name: 'dipper',
@@ -193,5 +206,54 @@ describe('DipperApp', () => {
       42,
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
+  });
+});
+
+describe('DipperApp — write access', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authMock.canMutate = true;
+    mockAppSchema.mockReturnValue({
+      data: { display_name: 'Dipper', description: 'Collect' },
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useDipperAppSchema>);
+    mockFormSchema.mockReturnValue({
+      data: { forms: [] },
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useDipperFormSchema>);
+    mockHistory.mockReturnValue({
+      data: { items: [] },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useDipperHistory>);
+    mockExecution.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      isError: false,
+      error: null,
+    } as unknown as ReturnType<typeof useDipperExecution>);
+  });
+
+  it('renders the execute form for a session that may mutate', () => {
+    render(<DipperApp />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select service' }));
+
+    expect(screen.getByRole('button', { name: 'Execute' })).toBeInTheDocument();
+    expect(screen.queryByTestId('dipper-execute-read-only')).not.toBeInTheDocument();
+  });
+
+  it('renders no execute form for a non-admin, keeping the history readable', () => {
+    authMock.canMutate = false;
+    render(<DipperApp />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select service' }));
+
+    expect(screen.getByTestId('dipper-execute-read-only')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Execute' })).not.toBeInTheDocument();
+    expect(screen.getByText('Execution history')).toBeInTheDocument();
   });
 });

@@ -52,6 +52,7 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import cronstrue from 'cronstrue';
 import { useNavigate } from 'react-router';
+import { useAuth } from '@sep/api';
 import {
   useScheduledTasksForApp,
   useCreateScheduledTask,
@@ -433,6 +434,7 @@ function InventoryScheduleRow({
   toggling,
   errorMessage,
 }: ScheduleRowProps) {
+  const { canMutate } = useAuth();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const label = syncerLabel(task, availableSyncers);
   const period = describePeriod(task);
@@ -473,37 +475,43 @@ function InventoryScheduleRow({
         <TableCell>{formatDateTime(task.next_run_at ?? null)}</TableCell>
         <TableCell>{task.total_run_count}</TableCell>
         <TableCell>
-          <Switch
-            checked={task.enabled}
-            disabled={toggling}
-            onChange={(_, checked) => onToggleEnabled(task, checked)}
-            slotProps={{ input: { 'aria-label': `Enable schedule for ${label}` } }}
-          />
+          {canMutate ? (
+            <Switch
+              checked={task.enabled}
+              disabled={toggling}
+              onChange={(_, checked) => onToggleEnabled(task, checked)}
+              slotProps={{ input: { 'aria-label': `Enable schedule for ${label}` } }}
+            />
+          ) : (
+            <Typography variant="body2">{task.enabled ? 'Enabled' : 'Disabled'}</Typography>
+          )}
         </TableCell>
-        <TableCell>
-          <Stack direction="row" spacing={0.5}>
-            <Tooltip title="Edit schedule">
-              <IconButton
-                size="small"
-                onClick={onStartEdit}
-                aria-label={`Edit schedule for ${label}`}
-                data-testid={`inv-sched-edit-${task.id}`}
-              >
-                <EditOutlinedIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Clear schedule">
-              <IconButton
-                size="small"
-                onClick={() => setConfirmOpen(true)}
-                aria-label={`Clear schedule for ${label}`}
-                data-testid={`inv-sched-delete-${task.id}`}
-              >
-                <DeleteOutlineIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Stack>
-        </TableCell>
+        {canMutate && (
+          <TableCell>
+            <Stack direction="row" spacing={0.5}>
+              <Tooltip title="Edit schedule">
+                <IconButton
+                  size="small"
+                  onClick={onStartEdit}
+                  aria-label={`Edit schedule for ${label}`}
+                  data-testid={`inv-sched-edit-${task.id}`}
+                >
+                  <EditOutlinedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Clear schedule">
+                <IconButton
+                  size="small"
+                  onClick={() => setConfirmOpen(true)}
+                  aria-label={`Clear schedule for ${label}`}
+                  data-testid={`inv-sched-delete-${task.id}`}
+                >
+                  <DeleteOutlineIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Stack>
+          </TableCell>
+        )}
       </TableRow>
 
       <Dialog
@@ -544,6 +552,7 @@ interface InventorySchedulePageProps {
 
 export function InventorySchedulePage({ schedulingEnabled }: InventorySchedulePageProps) {
   const navigate = useNavigate();
+  const { canMutate } = useAuth();
   const { periodicTasks, appTasks, isLoading, isError, error } =
     useScheduledTasksForApp('inventory');
   const syncersQuery = useAvailableSyncers();
@@ -688,7 +697,7 @@ export function InventorySchedulePage({ schedulingEnabled }: InventorySchedulePa
                   <TableCell>Next Run</TableCell>
                   <TableCell>Runs</TableCell>
                   <TableCell>Enabled</TableCell>
-                  <TableCell>Actions</TableCell>
+                  {canMutate && <TableCell>Actions</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -728,7 +737,7 @@ export function InventorySchedulePage({ schedulingEnabled }: InventorySchedulePa
           </Box>
         )}
 
-        {schedulingEnabled && !creating && (
+        {schedulingEnabled && !creating && canMutate && (
           <Stack
             direction="row"
             justifyContent="flex-end"

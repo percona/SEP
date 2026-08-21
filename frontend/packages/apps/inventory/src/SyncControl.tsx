@@ -19,7 +19,7 @@ import { useState } from 'react';
 import { Button, ButtonGroup, CircularProgress, Menu, MenuItem } from '@mui/material';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { ApiError } from '@sep/api';
+import { ApiError, useAuth } from '@sep/api';
 import { useSnackbar } from 'notistack';
 import {
   useAvailableSyncers,
@@ -29,6 +29,7 @@ import {
 } from './hooks';
 
 export function SyncControl() {
+  const { canMutate } = useAuth();
   const { data: syncers = [], isLoading: syncersLoading } = useAvailableSyncers();
   const hasSyncers = !syncersLoading && syncers.length > 0;
   const { data: syncStatus } = useSyncStatus(hasSyncers);
@@ -40,7 +41,7 @@ export function SyncControl() {
   const { enqueueSnackbar } = useSnackbar();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
-  if (syncersLoading || syncers.length === 0) {
+  if (!canMutate || syncersLoading || syncers.length === 0) {
     return null;
   }
 

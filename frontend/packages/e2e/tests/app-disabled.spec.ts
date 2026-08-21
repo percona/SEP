@@ -42,7 +42,9 @@ const MOCK_USER = {
   email: 'smoke@percona.com',
   firstName: 'Smoke',
   lastName: 'Test',
-  isAdmin: false,
+  // Admin: the app pages under test render their create / execute / delete
+  // controls only for a session that may mutate (SEP-1844).
+  isAdmin: true,
 };
 
 /** Minimal atw listing so the enabled-passthrough case mounts cleanly. */

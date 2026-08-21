@@ -23,7 +23,7 @@ import {
   useDebouncedValue,
   buildFieldLabelMap,
 } from '@sep/framework';
-import { parseFieldErrors, type FormSection, type SectionField } from '@sep/api';
+import { parseFieldErrors, useAuth, type FormSection, type SectionField } from '@sep/api';
 import { CategoryBrowser } from './CategoryBrowser';
 import { useAtwBatchExecute, useAtwMergedSchema, useAtwSnippetSearch } from './hooks';
 import type {
@@ -256,6 +256,7 @@ export function filterSnippetOptions(
  * Per-task status is polled by the Results pane's execution list.
  */
 export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) {
+  const { canMutate } = useAuth();
   const [available, setAvailable] = useState<AtwSnippetSummary[]>([]);
   const [selected, setSelected] = useState<AtwSnippetSummary[]>([]);
   const [batchOutcome, setBatchOutcome] = useState<BatchOutcomeSummary | null>(null);
@@ -500,7 +501,7 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
         </Alert>
       )}
 
-      {selected.length > 0 && schemaQuery.data && !isClosed && (
+      {selected.length > 0 && schemaQuery.data && !isClosed && canMutate && (
         <Box sx={{ mt: 3 }}>
           <SchemaFormRenderer
             key={formKey}
