@@ -122,31 +122,33 @@ class _GrafanaOrgUserRecord(TypedDict):
 
 
 def _find_org_user(
-    records: list[_GrafanaOrgUserRecord], wanted_login_or_email: str
+    records: list[_GrafanaOrgUserRecord], login_or_email: str
 ) -> _GrafanaOrgUserRecord | None:
     """Return the row a login or email names, ranking a login match first.
 
     Grafana allows a login shaped like an email, so one user's login can equal
     another's email; matching every login before any email keeps the result
     independent of listing order. Comparison is case-folded because Grafana
-    treats logins case-insensitively, and an absent email is skipped rather
-    than compared, so a blank input matches nothing.
+    treats logins case-insensitively, and a row whose field is absent or null is
+    skipped rather than compared, so a blank input matches nothing.
 
     :param records: The org-users listing.
-    :param wanted_login_or_email: The case-folded login or email to match.
+    :param login_or_email: The login or email to match, in any case.
     :return: The matching row, or ``None`` when the listing names neither.
     """
-    return next(
-        (row for row in records if row["login"].casefold() == wanted_login_or_email),
-        None,
-    ) or next(
-        (
-            row
-            for row in records
-            if row.get("email") and row["email"].casefold() == wanted_login_or_email
-        ),
-        None,
-    )
+    wanted = login_or_email.casefold()
+    for field in ("login", "email"):
+        match = next(
+            (
+                row
+                for row in records
+                if (value := row.get(field)) and value.casefold() == wanted
+            ),
+            None,
+        )
+        if match is not None:
+            return match
+    return None
 
 
 def _active_grafana_sdk() -> GrafanaSDK:
@@ -516,6 +518,10 @@ class GrafanaUser(BaseUser):
         Grafana never promised surfaces as an upstream failure instead of
         escaping from inside the mapping as an unhandled key or attribute error.
 
+        A null ``email`` passes: the mapper already reads that field as an
+        optional string, so refusing it would reject a listing the provider has
+        always been able to map.
+
         :return: The listing rows.
         :raises GrafanaException: If the payload is not a list of records each
             carrying a string ``login`` and, where present, a string ``email``.
@@ -524,7 +530,7 @@ class GrafanaUser(BaseUser):
         if not isinstance(payload, list) or not all(
             isinstance(row, Mapping)
             and isinstance(row.get("login"), str)
-            and isinstance(row.get("email", ""), str)
+            and isinstance(row.get("email") or "", str)
             for row in payload
         ):
             raise GrafanaException(detail="Grafana returned an unreadable user list.")
@@ -545,7 +551,7 @@ class GrafanaUser(BaseUser):
         :raises HTTPNotFoundException: If no org user matches ``username``.
         :raises GrafanaException: If the listing breaks the record contract.
         """
-        record = _find_org_user(await cls._org_user_records(), username.casefold())
+        record = _find_org_user(await cls._org_user_records(), username)
         if record is None:
             raise HTTPNotFoundException(detail="User not found")
         return cls._from_org_user_record(record)

@@ -975,6 +975,19 @@ class TestGrafanaOrgScopedUserLookup:
         assert not isinstance(exc_info.value, HTTPNotFoundException)
 
     @pytest.mark.asyncio
+    async def test_org_scope_accepts_a_null_email(
+        self, grafana_mock, grafana_org_users, valid_username
+    ):
+        """Verify a null email maps to an empty string rather than being refused."""
+        self._refuse_lookup(grafana_mock)
+        grafana_mock.get_org_users.return_value = [
+            {**grafana_org_users[0], "email": None}
+        ]
+
+        user = await GrafanaUser.get_user(valid_username)
+
+        assert user.email == ""
+
     @pytest.mark.parametrize(
         "payload",
         [
