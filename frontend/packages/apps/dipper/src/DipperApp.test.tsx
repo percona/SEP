@@ -25,8 +25,9 @@ import {
   useDipperAppSchema,
 } from './hooks';
 
-const { stopMutate, authMock } = vi.hoisted(() => ({
+const { stopMutate, stopState, authMock } = vi.hoisted(() => ({
   stopMutate: vi.fn(),
+  stopState: { error: null as unknown },
   /** Flipped per test to cover the read-only (non-admin) rendering. */
   authMock: { canMutate: true },
 }));
@@ -82,10 +83,12 @@ vi.mock('@sep/framework', async () => {
       data,
       onViewLogs,
       onStopTask,
+      actionError,
     }: {
       data: Array<{ id: number; status: string; task?: { name: string } }>;
       onViewLogs: (entry: unknown) => void;
       onStopTask?: (entry: { id: number }) => void;
+      actionError?: unknown;
     }) => (
       <div>
         <span>history rows: {data.length}</span>
@@ -97,12 +100,24 @@ vi.mock('@sep/framework', async () => {
             Stop {String(data[0].id)}
           </button>
         ) : null}
+        {actionError ? (
+          <div data-testid="task-history-action-error">
+            {actionError instanceof Error ? actionError.message : String(actionError)}
+          </div>
+        ) : null}
       </div>
     ),
     TaskLogViewer: ({ taskHistoryId }: { taskHistoryId: number }) => (
       <div>logs for {taskHistoryId}</div>
     ),
-    useStopTaskHistory: () => ({ mutate: stopMutate, isPending: false }),
+    useStopTaskHistory: () => ({
+      mutate: stopMutate,
+      isPending: false,
+      error: stopState.error,
+      reset: () => {
+        stopState.error = null;
+      },
+    }),
     ReadOnlyNotice: ({ action, testId }: { action?: string; testId?: string }) => (
       <div data-testid={testId}>no permission to {action}</div>
     ),
@@ -119,6 +134,7 @@ describe('DipperApp', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    stopState.error = null;
     authMock.canMutate = true;
     mockAppSchema.mockReturnValue({
       data: {
@@ -206,12 +222,24 @@ describe('DipperApp', () => {
       42,
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
+    expect(screen.queryByTestId('task-history-action-error')).not.toBeInTheDocument();
+  });
+
+  it("reports a failed stop above the history with the server's own reason", () => {
+    stopState.error = new Error("You don't have permission to perform this action");
+
+    render(<DipperApp />);
+
+    expect(screen.getByTestId('task-history-action-error')).toHaveTextContent(
+      "You don't have permission to perform this action",
+    );
   });
 });
 
 describe('DipperApp — write access', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    stopState.error = null;
     authMock.canMutate = true;
     mockAppSchema.mockReturnValue({
       data: { display_name: 'Dipper', description: 'Collect' },

@@ -38,6 +38,7 @@ import {
   type AppSchema,
   type TaskHistoryStatus,
 } from '@sep/api';
+import { ActionErrorAlert, useActionError } from '../ActionErrorAlert';
 import { SchemaListView, type RenderListColumnOverride } from '../SchemaListView';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 
@@ -168,6 +169,9 @@ export function AppListPage({
   const description = multi ? entitySchema?.description : schema.description;
 
   const hasActionsColumn = listView?.columns.some((c) => c.format === 'actions') ?? false;
+  // The confirm dialog closes on confirm, so a refusal surfaces on the list
+  // page the user is left looking at.
+  const deleteError = useActionError();
   const deleteEntity = useDeleteAppEntity(
     pluginName,
     entityName ?? '',
@@ -198,13 +202,15 @@ export function AppListPage({
     if (!sid) {
       return;
     }
+    deleteError.clearError();
     deleteEntity.mutate(sid, {
       onSuccess: () => {
         enqueueSnackbar(`${title} deleted`, { variant: 'success' });
       },
-      onError: (err: Error) => {
-        enqueueSnackbar(err.message || 'Delete failed', { variant: 'error' });
-      },
+      // Reported by the list's own alert rather than a toast: the confirm
+      // dialog is already closed, and the alert does not depend on the host
+      // application mounting a snackbar provider.
+      onError: (err: Error) => deleteError.reportError(err),
     });
   };
 
@@ -218,6 +224,13 @@ export function AppListPage({
 
   return (
     <Box>
+      <ActionErrorAlert
+        error={deleteError.error}
+        onClose={deleteError.clearError}
+        sx={{ mb: 2 }}
+        testId="app-list-action-error"
+      />
+
       {multi && schema.entities && !hideEntityTabs && (
         <Tabs
           sx={{ mb: 2 }}

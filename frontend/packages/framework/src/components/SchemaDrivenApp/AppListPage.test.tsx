@@ -16,7 +16,8 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router';
 import { SnackbarProvider } from 'notistack';
 import type { AppSchema } from '@sep/api';
@@ -25,13 +26,15 @@ import type { AppSchema } from '@sep/api';
 // module-scope bindings (TDZ risk). Route the useAppTasks mock through a
 // `vi.hoisted` spy — the same pattern as ScheduledTasksPanel.test.tsx — so it
 // both supplies the rows and captures the options the page passes in.
-const { useAppTasksMock, useAppEntityListMock, schemaListViewMock, authMock } = vi.hoisted(() => ({
-  useAppTasksMock: vi.fn(),
-  useAppEntityListMock: vi.fn(),
-  schemaListViewMock: vi.fn(),
-  /** Flipped per test to cover the read-only (non-admin) rendering. */
-  authMock: { canMutate: true },
-}));
+const { useAppTasksMock, useAppEntityListMock, schemaListViewMock, deleteEntityMock, authMock } =
+  vi.hoisted(() => ({
+    useAppTasksMock: vi.fn(),
+    useAppEntityListMock: vi.fn(),
+    schemaListViewMock: vi.fn(),
+    deleteEntityMock: vi.fn(),
+    /** Flipped per test to cover the read-only (non-admin) rendering. */
+    authMock: { canMutate: true },
+  }));
 
 vi.mock('../SchemaListView', () => ({
   SchemaListView: (props: unknown) => {
@@ -46,8 +49,28 @@ vi.mock('@sep/api', () => ({
   RUNNING_STATUSES: new Set(['running', 'pending']),
   useAppTasks: (...args: unknown[]) => useAppTasksMock(...args),
   useAppEntityList: (...args: unknown[]) => useAppEntityListMock(...args),
-  useDeleteAppEntity: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
+  useDeleteAppEntity: () => ({
+    mutate: deleteEntityMock,
+    isPending: false,
+    variables: undefined,
+  }),
   useAuth: () => ({ isAdmin: authMock.canMutate, canMutate: authMock.canMutate }),
+  ApiError: class ApiError extends Error {
+    status?: number;
+    data?: unknown;
+    constructor(details: { status?: number; message: string; data?: unknown }) {
+      super(details.message);
+      this.status = details.status;
+      this.data = details.data;
+    }
+  },
+  parseFieldErrors: (error: { data?: { detail?: unknown } }) =>
+    Array.isArray(error?.data?.detail)
+      ? (error.data.detail as { loc?: string[]; msg?: string }[]).map((entry) => ({
+          path: (entry.loc ?? []).filter((seg) => seg !== 'body').join('.'),
+          message: entry.msg ?? 'Invalid value',
+        }))
+      : [],
 }));
 
 import { AppListPage } from './AppListPage';
@@ -105,6 +128,7 @@ beforeEach(() => {
     isLoading: false,
   });
   schemaListViewMock.mockClear();
+  deleteEntityMock.mockReset();
   authMock.canMutate = true;
 });
 
@@ -362,5 +386,87 @@ describe('AppListPage — write access', () => {
 
     renderDeletableEntityList();
     expect(lastListViewProps().onDeleteRow).toBeUndefined();
+  });
+});
+
+describe('AppListPage — delete failure reporting', () => {
+  const deletableEntitySchema: AppSchema = {
+    name: 'inventory',
+    display_name: 'Inventory',
+    capabilities: { scheduling: false },
+    entities: [
+      {
+        name: 'nodes',
+        display_name: 'Nodes',
+        forms: [],
+        list_view: {
+          columns: [
+            { key: 'name', label: 'Name' },
+            { key: '_actions', label: 'Actions', format: 'actions' },
+          ],
+        },
+      },
+    ],
+  };
+
+  function renderDeletableEntityList() {
+    useAppEntityListMock.mockReturnValue({
+      data: { items: [{ id: 1, name: 'node-a' }], pagination: null },
+      isLoading: false,
+    });
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/inventory/:entityName',
+          element: (
+            <AppListPage
+              schema={deletableEntitySchema}
+              pluginName="inventory"
+              allowListEntityDelete
+            />
+          ),
+        },
+      ],
+      { initialEntries: ['/inventory/nodes'] },
+    );
+    return render(
+      <SnackbarProvider>
+        <RouterProvider router={router} />
+      </SnackbarProvider>,
+    );
+  }
+
+  async function confirmDelete() {
+    const props = schemaListViewMock.mock.calls.at(-1)?.[0] as {
+      onDeleteRow?: (row: Record<string, unknown>) => void;
+    };
+    act(() => props.onDeleteRow?.({ id: 1, name: 'node-a' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+  }
+
+  it("reports a refused delete on the list with the server's own reason", async () => {
+    deleteEntityMock.mockImplementation((_id, opts) =>
+      opts.onError?.(new Error("You don't have permission to perform this action")),
+    );
+    renderDeletableEntityList();
+
+    await confirmDelete();
+
+    expect(await screen.findByTestId('app-list-action-error')).toHaveTextContent(
+      "You don't have permission to perform this action",
+    );
+    // The alert replaces the previous error toast rather than joining it.
+    expect(document.querySelector('[class*="notistack"]')).toBeNull();
+  });
+
+  it('reports nothing when the delete succeeds', async () => {
+    deleteEntityMock.mockImplementation((_id, opts) => opts.onSuccess?.());
+    renderDeletableEntityList();
+
+    await confirmDelete();
+
+    await waitFor(() => expect(deleteEntityMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('app-list-action-error')).not.toBeInTheDocument();
   });
 });

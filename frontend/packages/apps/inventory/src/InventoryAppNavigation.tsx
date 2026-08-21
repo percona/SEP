@@ -30,7 +30,12 @@ import {
   type AppEntitySchema,
   type AppSchema,
 } from '@sep/api';
-import { DeleteConfirmDialog, SchemaListView } from '@sep/framework';
+import {
+  ActionErrorAlert,
+  DeleteConfirmDialog,
+  SchemaListView,
+  useActionError,
+} from '@sep/framework';
 import { ConnectivityControl } from './ConnectivityControl';
 import {
   inventoryMountPrefix,
@@ -547,6 +552,9 @@ function NestedListSection({
     [listEntityName, schema.entities],
   );
 
+  // The confirm dialog closes on confirm, so a refusal surfaces on the nested
+  // list the user is returned to rather than in a dialog that is already gone.
+  const deleteError = useActionError();
   const deleteEntity = useDeleteAppEntity(
     pluginName,
     listEntityName,
@@ -578,13 +586,14 @@ function NestedListSection({
     if (!sid) {
       return;
     }
+    deleteError.clearError();
     deleteEntity.mutate(sid, {
       onSuccess: () => {
         enqueueSnackbar(`${entityTitle} deleted`, { variant: 'success' });
       },
-      onError: (err: Error) => {
-        enqueueSnackbar(err.message || 'Delete failed', { variant: 'error' });
-      },
+      // Reported in-tree instead of as a toast: one signal per failure, and one
+      // that survives a host application with no snackbar provider.
+      onError: (err: Error) => deleteError.reportError(err),
     });
   };
 
@@ -602,6 +611,12 @@ function NestedListSection({
               : `Permanently delete ${entityTitle} (id ${pendingDelete.id}) from ${schema.display_name}? This cannot be undone.`
             : ''
         }
+      />
+      <ActionErrorAlert
+        error={deleteError.error}
+        onClose={deleteError.clearError}
+        sx={{ mb: 2 }}
+        testId="nested-list-action-error"
       />
       <Typography variant="h6" sx={{ mb: 2 }}>
         {title}

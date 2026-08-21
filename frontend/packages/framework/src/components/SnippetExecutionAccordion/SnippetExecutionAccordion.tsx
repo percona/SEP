@@ -277,6 +277,8 @@ export function SnippetExecutionAccordion({
                   }
                 }}
                 isStopping={stop.isPending}
+                actionError={stop.error}
+                onDismissActionError={stop.reset}
               />
             )}
           </>

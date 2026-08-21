@@ -189,25 +189,50 @@ describe('SyncControl', () => {
     });
   });
 
-  describe('snackbar-on-400', () => {
+  describe('failure reporting', () => {
     afterEach(() => vi.restoreAllMocks());
 
-    it('shows error snackbar with server message when POST returns 400', async () => {
+    it("reports a 400 with the server's message", async () => {
       const user = userEvent.setup();
       stubGet([{ name: 'myapp.MySyncer', display_name: 'My Syncer' }]);
       await stubPost(400, { detail: 'Unknown syncer: myapp.MySyncer' });
       render(<SyncControl />, { wrapper: makeWrapper() });
       await user.click(await screen.findByRole('button', { name: /sync all/i }));
-      await screen.findByText(/Unknown syncer: myapp\.MySyncer/i);
+      expect(await screen.findByTestId('sync-action-error')).toHaveTextContent(
+        /Unknown syncer: myapp\.MySyncer/i,
+      );
     });
 
-    it('shows generic snackbar for non-400 errors', async () => {
+    it("reports a refusal with the server's message, not a generic string", async () => {
+      const user = userEvent.setup();
+      stubGet([{ name: 'myapp.MySyncer', display_name: 'My Syncer' }]);
+      await stubPost(403, { detail: "You don't have permission to perform this action" });
+      render(<SyncControl />, { wrapper: makeWrapper() });
+      await user.click(await screen.findByRole('button', { name: /sync all/i }));
+      expect(await screen.findByTestId('sync-action-error')).toHaveTextContent(
+        "You don't have permission to perform this action",
+      );
+    });
+
+    it('reports a 500 with its message', async () => {
       const user = userEvent.setup();
       stubGet([{ name: 'myapp.MySyncer', display_name: 'My Syncer' }]);
       await stubPost(500, { detail: 'Internal server error' });
       render(<SyncControl />, { wrapper: makeWrapper() });
       await user.click(await screen.findByRole('button', { name: /sync all/i }));
-      await screen.findByText(/Failed to start sync/i);
+      expect(await screen.findByTestId('sync-action-error')).toHaveTextContent(
+        /Internal server error/i,
+      );
+    });
+
+    it('reports nothing when the sync starts', async () => {
+      const user = userEvent.setup();
+      stubGet([{ name: 'myapp.MySyncer', display_name: 'My Syncer' }]);
+      await stubPost(200, { started: true });
+      render(<SyncControl />, { wrapper: makeWrapper() });
+      await user.click(await screen.findByRole('button', { name: /sync all/i }));
+      await waitFor(() => expect(apiClient.post).toHaveBeenCalled());
+      expect(screen.queryByTestId('sync-action-error')).not.toBeInTheDocument();
     });
   });
 
