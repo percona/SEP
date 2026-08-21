@@ -55,6 +55,12 @@ export function actionErrorMessage(
           .map(({ path, message }) => (path ? `${path}: ${message}` : message))
           .join('; ');
       }
+      // Neither a per-field array nor a string ``detail``: what is left is the
+      // ``HTTP 422`` ``@sep/api`` synthesizes when the body carries no reason,
+      // which tells the user nothing the caller's own wording does not.
+      if (error.message === `HTTP ${error.status}`) {
+        return fallback;
+      }
     }
     return error.message || fallback;
   }
