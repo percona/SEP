@@ -172,7 +172,7 @@ class TestInventoryGateway:
     def test_list_forwards_validated_sort_and_search(
         self, test_client, mock_inventory_api_dep
     ):
-        """Ensure allowlisted sort/search reach upstream and override raw query values."""
+        """Ensure allowlisted sort/search reach upstream as validated query params."""
         mock_inventory_api_dep.get.return_value = {
             "items": [{"id": 1}],
             "total": _FILTERED_TOTAL,
@@ -192,6 +192,25 @@ class TestInventoryGateway:
                 "limit": _REQUEST_LIMIT,
                 "sort": "name",
                 "search": "db1",
+            },
+        )
+
+    def test_list_drops_whitespace_only_search_from_upstream(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure a blank search is stripped so the raw query value cannot leak upstream."""
+        mock_inventory_api_dep.get.return_value = {"items": [], "total": 0}
+        response = test_client.get(
+            "/api/apps/inventory/nodes/",
+            params={"search": "  ", "sort": "-name", "limit": _REQUEST_LIMIT},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        mock_inventory_api_dep.get.assert_awaited_once_with(
+            "/nodes/",
+            params={
+                "offset": DEFAULT_PAGINATION_OFFSET,
+                "limit": _REQUEST_LIMIT,
+                "sort": "-name",
             },
         )
 
