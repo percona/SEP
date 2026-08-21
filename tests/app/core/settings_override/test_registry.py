@@ -951,10 +951,14 @@ async def test_override_rows_for_key_returns_empty_for_no_match(
 
 
 @pytest.mark.asyncio
-async def test_override_rows_for_key_matches_top_level_exactly(
+async def test_override_rows_for_key_matches_top_level_case_insensitively(
     session: AsyncSession,
 ) -> None:
-    """Assert a top-level key matches stored spelling exactly, not by case-folding."""
+    """Assert a top-level key also matches a mixed-case stored spelling.
+
+    Keeps DELETE/PATCH aligned with MySQL's historical case-insensitive
+    ``key`` lookups after the match moved from SQL into Python.
+    """
     await _insert(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
@@ -975,4 +979,4 @@ async def test_override_rows_for_key_matches_top_level_exactly(
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key=_TOP_LEVEL,
     )
-    assert [row.key for row in rows] == [_TOP_LEVEL]
+    assert {row.key for row in rows} == {_TOP_LEVEL, _TOP_LEVEL.lower()}

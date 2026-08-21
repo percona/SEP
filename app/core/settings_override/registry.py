@@ -1156,6 +1156,33 @@ def override_keys_for_rows(
     return keys
 
 
+def _stored_key_matches_override_key(
+    settings_cls: type[BaseModel],
+    stored_key: str,
+    key: str,
+) -> bool:
+    """Return whether a stored override key resolves to the same field as ``key``.
+
+    Nested keys go through :func:`canonical_override_key`. Top-level keys also
+    match case-insensitively: the previous SQL ``WHERE key = ...`` lookup
+    inherited MySQL's ``utf8mb4_0900_ai_ci`` collation, so moving the filter
+    into Python must not drop a mixed-case top-level row that DELETE/PATCH
+    used to find. Snapshot application still ignores unknown casing via
+    :func:`app.core.settings_override.cache._apply_top_level_row`; this match
+    only keeps write paths able to clear or update those inert rows.
+
+    :param settings_cls: The Pydantic settings class the rows belong to.
+    :param stored_key: The key column value from an override row.
+    :param key: The canonical override key requested by the caller.
+    :return: ``True`` when ``stored_key`` should be treated as the same override.
+    """
+    if canonical_override_key(settings_cls, stored_key) == key:
+        return True
+    if "__" in key or "__" in stored_key:
+        return False
+    return stored_key.casefold() == key.casefold()
+
+
 async def override_rows_for_key(
     session: AsyncSession,
     *,
@@ -1163,35 +1190,32 @@ async def override_rows_for_key(
     setting_class: SettingClassEnum,
     key: str,
 ) -> list[SettingOverride]:
-    """Return the :class:`SettingOverride` rows whose stored key canonicalizes to ``key``.
+    """Return the :class:`SettingOverride` rows whose stored key resolves to ``key``.
 
     Lists every row for ``setting_class`` and keeps those whose stored ``key``
-    canonicalizes (via :func:`canonical_override_key`) to the requested key.
-    That makes a legacy non-canonically-cased nested row visible to DELETE and
-    PATCH, which previously matched the stored column with string equality and
-    missed it.
+    matches via :func:`_stored_key_matches_override_key`. That makes a legacy
+    non-canonically-cased nested or top-level row visible to DELETE and PATCH,
+    which previously matched the stored column with dialect-dependent SQL
+    equality and, after the filter moved into Python, missed mixed-case
+    top-level rows on MySQL.
 
     Inactive rows are included: both write paths currently match on
     ``(setting_class, key)`` alone, so an inactive row stays deletable and
-    re-activatable. For a key without ``__``, :func:`canonical_override_key`
-    returns the stored key unchanged, so the match degrades to exact equality
-    -- matching :func:`app.core.settings_override.cache._apply_top_level_row`,
-    which already ignores a mixed-case top-level row as an unknown field.
+    re-activatable.
 
     :param session: The sub-app's database session.
-    :type session: AsyncSession
     :param settings_cls: The Pydantic settings class the rows belong to.
-    :type settings_cls: type[BaseModel]
     :param setting_class: The class identifier used to filter override rows.
-    :type setting_class: SettingClassEnum
     :param key: The canonical override key to resolve against.
-    :type key: str
     :return: Every matching row, in the order :meth:`SettingsOverrideManager.list`
         returns them.
-    :rtype: list[SettingOverride]
     """
     rows = await SettingsOverrideManager.list(session, setting_class=setting_class)
-    return [row for row in rows if canonical_override_key(settings_cls, row.key) == key]
+    return [
+        row
+        for row in rows
+        if _stored_key_matches_override_key(settings_cls, row.key, key)
+    ]
 
 
 def _clear_cached_properties(instance: BaseModel) -> None:

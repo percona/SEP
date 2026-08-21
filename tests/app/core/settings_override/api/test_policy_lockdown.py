@@ -490,6 +490,8 @@ class TestLegacyCasedOverrideRows:
     _LEGACY_NESTED = "nomad__TIMEOUT"
     _CANONICAL_PMM = "PMM__endpoint"
     _LEGACY_PMM = "pmm__ENDPOINT"
+    _CANONICAL_TOP = "INVENTORY_ENDPOINT"
+    _LEGACY_TOP = "inventory_endpoint"
 
     @pytest.mark.asyncio
     async def test_delete_removes_legacy_cased_row(
@@ -573,6 +575,60 @@ class TestLegacyCasedOverrideRows:
         )
 
     @pytest.mark.asyncio
+    async def test_delete_removes_legacy_cased_top_level_row(
+        self,
+        client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Assert DELETE of a top-level key removes a mixed-case stored row.
+
+        Mirrors MySQL's historical case-insensitive key match after the lookup
+        moved from SQL into Python.
+        """
+        await _seed_row(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=self._LEGACY_TOP,
+            value="https://stale.example.com",
+            is_active=True,
+        )
+        response = client.delete(f"{SEP_URL}/{self._CANONICAL_TOP}")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert (
+            await SettingsOverrideManager.count(
+                override_session,
+                setting_class=SettingClassEnum.SEP_SETTINGS,
+            )
+            == 0
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_legacy_top_level_under_allowlist_is_not_conflict(
+        self,
+        client: TestClient,
+        override_session: AsyncSession,
+        restrict: Callable[..., None],
+    ) -> None:
+        """Assert a withheld top-level legacy row is still found and deleted."""
+        await _seed_row(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=self._LEGACY_TOP,
+            value="https://stale.example.com",
+            is_active=True,
+        )
+        restrict(LOGGING_KEY)
+        response = client.delete(f"{SEP_URL}/{self._CANONICAL_TOP}")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert (
+            await SettingsOverrideManager.count(
+                override_session,
+                setting_class=SettingClassEnum.SEP_SETTINGS,
+            )
+            == 0
+        )
+
+    @pytest.mark.asyncio
     async def test_patch_updates_legacy_row_instead_of_duplicating(
         self,
         client: TestClient,
@@ -594,5 +650,30 @@ class TestLegacyCasedOverrideRows:
         )
         assert len(rows) == 1
         assert rows[0].key == self._LEGACY_PMM
+        assert rows[0].value == new_value
+        assert rows[0].is_active is True
+
+    @pytest.mark.asyncio
+    async def test_patch_updates_legacy_top_level_row_instead_of_duplicating(
+        self,
+        client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Assert PATCH of a top-level key updates a mixed-case row in place."""
+        await _seed_row(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=self._LEGACY_TOP,
+            value="https://stale.example.com",
+            is_active=True,
+        )
+        new_value = "https://inventory.example.com/"
+        response = client.patch(SEP_URL, json={self._CANONICAL_TOP: new_value})
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+        )
+        assert len(rows) == 1
+        assert rows[0].key == self._LEGACY_TOP
         assert rows[0].value == new_value
         assert rows[0].is_active is True
