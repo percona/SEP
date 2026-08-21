@@ -15,6 +15,7 @@
 """Verify the baked PMM-embedded settings profile."""
 
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -190,6 +191,53 @@ def test_override_allowlist_resolves_from_the_profile(embedded_profile_data: dic
 def test_profile_carries_a_single_default_block(embedded_profile_data: dict):
     """Assert one block keeps the profile independent of ``FASTAPI_ENV``."""
     assert set(embedded_profile_data) == {"default"}
+
+
+def test_profile_database_block_is_defined_once(embedded_profile_data: dict):
+    """Assert the shared database is anchored once and aliased to every service."""
+    default = embedded_profile_data["default"]
+    shared = default["DATABASE"]
+    assert default["SEP"]["DATABASE"] is shared
+    assert default["INVENTORY"]["DATABASE"] is shared
+    assert default["TASKS"]["DATABASE"] is shared
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_all_services_resolve_the_same_database_connection():
+    """Assert SEP, Inventory, and Tasks read identical connection values from the profile."""
+    databases = [
+        settings_cls().DATABASE
+        for settings_cls in (SEPSettings, InventorySettings, TasksSettings)
+    ]
+    reference = databases[0]
+    for database in databases[1:]:
+        assert database.ENGINE == reference.ENGINE
+        assert (database.HOST, database.NAME, database.PORT, database.USER) == (
+            reference.HOST,
+            reference.NAME,
+            reference.PORT,
+            reference.USER,
+        )
+    assert (reference.HOST, reference.NAME, reference.PORT, reference.USER) == (
+        "pmm-server",
+        "sep",
+        5432,
+        "sep",
+    )
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_global_database_password_reaches_every_service(embedded_profile_cwd: Path):
+    """Assert one global password file supplies all three services from the profile."""
+    secrets_dir = embedded_profile_cwd / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "DATABASE__PASSWORD").write_text("shared-pw", encoding="utf-8")
+
+    for settings_cls in (SEPSettings, InventorySettings, TasksSettings):
+        assert (
+            settings_cls(_secrets_dir=secrets_dir).DATABASE.PASSWORD.get_secret_value()
+            == "shared-pw"
+        )
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")

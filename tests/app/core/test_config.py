@@ -877,6 +877,92 @@ def test_foreign_prefix_file_does_not_resolve(tmp_path):
 
 
 @pytest.mark.parametrize(
+    "env_order",
+    [
+        ("DATABASE__PASSWORD", "SEP__DATABASE__PASSWORD"),
+        ("SEP__DATABASE__PASSWORD", "DATABASE__PASSWORD"),
+    ],
+    ids=["global-first", "per-service-first"],
+)
+def test_per_service_env_beats_global_env(monkeypatch, env_order):
+    """Prefer a per-service environment variable over the global spelling."""
+    values = {
+        "DATABASE__PASSWORD": "globalpw",
+        "SEP__DATABASE__PASSWORD": "seppw",
+    }
+    for name in values:
+        monkeypatch.delenv(name, raising=False)
+    for name in env_order:
+        monkeypatch.setenv(name, values[name])
+
+    assert SEPSettings().DATABASE.PASSWORD.get_secret_value() == "seppw"
+
+
+@pytest.mark.parametrize(
+    "dotenv_lines",
+    [
+        "DATABASE__PASSWORD=globalpw\nSEP__DATABASE__PASSWORD=seppw\n",
+        "SEP__DATABASE__PASSWORD=seppw\nDATABASE__PASSWORD=globalpw\n",
+    ],
+    ids=["global-first", "per-service-first"],
+)
+def test_per_service_dotenv_beats_global_dotenv(tmp_path, dotenv_lines):
+    """Prefer a per-service dotenv entry over the global spelling."""
+    env_file = tmp_path / "dotenv"
+    env_file.write_text(dotenv_lines, encoding="utf-8")
+
+    assert (
+        SEPSettings(_env_file=env_file).DATABASE.PASSWORD.get_secret_value() == "seppw"
+    )
+
+
+def test_per_service_secret_file_beats_global_secret_file(tmp_path):
+    """Prefer a per-service secret file over the global spelling."""
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "DATABASE__PASSWORD").write_text("globalpw", encoding="utf-8")
+    (secrets_dir / "SEP__DATABASE__PASSWORD").write_text("seppw", encoding="utf-8")
+
+    assert (
+        SEPSettings(_secrets_dir=secrets_dir).DATABASE.PASSWORD.get_secret_value()
+        == "seppw"
+    )
+
+
+@pytest.mark.parametrize(
+    "settings_cls",
+    [SEPSettings, InventorySettings, TasksSettings],
+)
+def test_global_database_password_resolves_for_every_service(tmp_path, settings_cls):
+    """Resolve one global password file for every service when none overrides it."""
+    (tmp_path / "DATABASE__PASSWORD").write_text("shared-pw", encoding="utf-8")
+
+    assert (
+        settings_cls(_secrets_dir=tmp_path).DATABASE.PASSWORD.get_secret_value()
+        == "shared-pw"
+    )
+
+
+def test_per_service_env_rewrite_beats_global_in_source_payload(monkeypatch):
+    """Hand the model the per-service value when both spellings share one source."""
+    for name in ("DATABASE__PASSWORD", "SEP__DATABASE__PASSWORD"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("DATABASE__PASSWORD", "globalpw")
+    monkeypatch.setenv("SEP__DATABASE__PASSWORD", "seppw")
+
+    sources = SEPSettings.settings_customise_sources(
+        SEPSettings,
+        InitSettingsSource(SEPSettings, init_kwargs={}),
+        EnvSettingsSource(SEPSettings),
+        DotEnvSettingsSource(SEPSettings, env_file=None),
+        SecretsSettingsSource(SEPSettings, secrets_dir=None),
+    )
+    env_source = sources[1]
+
+    assert env_source.env_vars["database__password"] == "seppw"
+
+
+@pytest.mark.parametrize(
     ("settings_cls", "filename", "content", "expected", "read"), SECRET_FILE_MATRIX
 )
 def test_every_settings_class_reads_its_own_secret_file(
@@ -1100,6 +1186,16 @@ class TestDerivedBeatStoreDefault:
     def test_mounted_password_reaches_the_derived_store(self, tmp_path):
         """Carry a mounted password into the store without exporting it anywhere."""
         secrets_dir = _mounted_secrets(tmp_path, SEP__DATABASE__PASSWORD="pw")
+
+        assert (
+            Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi
+            == "postgresql+psycopg2://sep:pw@pmm-server:5432/sep"
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_global_password_reaches_the_derived_store(self, tmp_path):
+        """Carry a global mounted password into the store for every service."""
+        secrets_dir = _mounted_secrets(tmp_path, DATABASE__PASSWORD="pw")
 
         assert (
             Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi

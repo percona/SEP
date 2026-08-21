@@ -66,10 +66,20 @@ default:
     # Superseded per container start by the credentialed URLs entrypoint.sh mints.
     BROKER_URL: redis://127.0.0.1:6379/0
     RESULT_BACKEND: redis://127.0.0.1:6379/1
-    # No BEAT_DBURI: the beat store defaults to the resolved SEP database, so the
-    # mounted SEP__DATABASE__PASSWORD reaches it without an env-visible URI.
+    # No BEAT_DBURI: the beat store defaults to the resolved SEP database, so a
+    # mounted DATABASE__PASSWORD or SEP__DATABASE__PASSWORD reaches it without an
+    # env-visible URI.
     RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
+
+  # One database for all three services: PMM_ENABLE_SEP provisions exactly the
+  # `sep` role and `sep` database, so this is defined once and aliased below.
+  DATABASE: &shared_database
+    ENGINE: postgresql
+    HOST: pmm-server
+    NAME: sep
+    PORT: 5432
+    USER: sep
 
   SEP:
     AMBIENT_SESSION_SSO_ENABLED: true
@@ -77,12 +87,7 @@ default:
     # rather than a per-deployment input. The loopback healthcheck stays
     # unprefixed: routing tolerates a request that arrives without the prefix.
     ROOT_PATH: /sep
-    DATABASE:
-      ENGINE: postgresql
-      HOST: pmm-server
-      NAME: sep
-      PORT: 5432
-      USER: sep
+    DATABASE: *shared_database
     # Where diagnostics bundles go once an operator supplies the credentials.
     # The secret names are declared but empty: the plan's cross-reference
     # validator requires every cited name to be declared, and the values arrive
@@ -138,24 +143,14 @@ default:
       - SYNCER: SystemFactsSyncer
 
   INVENTORY:
-    DATABASE:
-      ENGINE: postgresql
-      HOST: pmm-server
-      NAME: sep
-      PORT: 5432
-      USER: sep
+    DATABASE: *shared_database
     UVICORN_HOST: 0.0.0.0
     UVICORN_PORT: 9001
     SSL_CERTFILE: null
     SSL_KEYFILE: null
 
   TASKS:
-    DATABASE:
-      ENGINE: postgresql
-      HOST: pmm-server
-      NAME: sep
-      PORT: 5432
-      USER: sep
+    DATABASE: *shared_database
     UVICORN_HOST: 0.0.0.0
     UVICORN_PORT: 9002
     NOMAD:

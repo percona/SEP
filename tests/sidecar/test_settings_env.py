@@ -482,9 +482,10 @@ def test_a_mounted_password_never_reaches_the_environment(tmp_path: Path):
 
 
 def test_a_mounted_password_supplies_only_the_name_it_is_named_for(tmp_path: Path):
-    """Leave the sibling services unsupplied, since only the raw input fans out.
+    """Leave sibling services unsupplied in the shell, since only ``SEP_DB_PASSWORD`` fans out.
 
-    This is why the documented mount recipe names all three password files.
+    The settings classes still read a global ``DATABASE__PASSWORD`` mount for every
+    service; this test pins what the shell exports, not what settings resolve.
     """
     secrets_dir = write_secrets(tmp_path, SEP__DATABASE__PASSWORD="from-file")
 
