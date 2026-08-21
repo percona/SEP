@@ -36,6 +36,8 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from itsdangerous import URLSafeTimedSerializer
 from pytest_mock import MockerFixture
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlalchemy_celery_beat.models import PeriodicTask
@@ -66,6 +68,7 @@ from app.sep.deps import (
 )
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.main import sep_app
+from app.sep.om.config import OM_SCHEMA_SYMBOL
 from app.sep.snippets.config import snippets_settings
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
@@ -185,6 +188,42 @@ def health_probe_server_fixture() -> Iterator[HealthProbeServer]:
     server = HealthProbeServer()
     yield server
     server.stop()
+
+
+@event.listens_for(Engine, "connect")
+def _attach_om_schema_on_sqlite(dbapi_connection: Any, _record: Any) -> None:
+    """Make OM's symbolic schema a real one on every SQLite connection.
+
+    OM's tables declare ``om_schema`` (``app/sep/om/config.py``) and the
+    application engine translates it -- to ``om`` on PostgreSQL, to the default
+    schema on SQLite, where SEP and inventory are separate database files and cannot
+    collide. This suite is the one place they *can*: it creates every service's
+    metadata in a single in-memory database, where a OM table called ``service``
+    would be SEP inventory's ``service``.
+
+    So rather than translate the token here, satisfy it: SQLite has no schemas but it
+    has ``ATTACH``, and an attached in-memory database *is* a schema as far as SQL is
+    concerned. Attaching it under the token's own name means the untranslated
+    ``om_schema.service`` resolves, and no fixture needs a
+    ``schema_translate_map`` -- which matters because the suite builds engines in
+    some thirty places, and each one that forgot would fail with "unknown database
+    om_schema".
+
+    Registered on the ``Engine`` class so it covers engines that do not exist yet.
+    It fires when the DBAPI connection is opened, before any statement, so
+    ``create_all`` already sees the schema. Every SQLite engine here is in-memory and
+    single-connection, so the attached database lives exactly as long as the main
+    one. Non-SQLite binds are left alone -- they have real schemas, and the
+    PostgreSQL and MySQL fixtures below route the token into their per-worker one.
+
+    :param dbapi_connection: The freshly opened DBAPI connection.
+    :param _record: The pool's record for it. Unused.
+    """
+    if "sqlite" not in type(dbapi_connection).__module__:
+        return
+    cursor = dbapi_connection.cursor()
+    cursor.execute(f"ATTACH DATABASE ':memory:' AS {OM_SCHEMA_SYMBOL}")
+    cursor.close()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -532,7 +571,14 @@ async def postgres_engine() -> AsyncEngine:
     try:
         async with base.begin() as conn:
             await conn.exec_driver_sql(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
-        yield base.execution_options(schema_translate_map={None: schema})
+        # OM's tables declare a symbolic ``om_schema``. PostgreSQL has no ``ATTACH``
+        # for the SQLite trick above, so translate it -- into the *same* per-worker
+        # schema as everything else, because that is what teardown drops. Routing it
+        # to a literal ``om`` would escape the worker schema and collide across xdist
+        # workers.
+        yield base.execution_options(
+            schema_translate_map={None: schema, OM_SCHEMA_SYMBOL: schema}
+        )
     finally:
         try:
             async with base.begin() as conn:
@@ -601,7 +647,14 @@ async def mysql_engine() -> AsyncEngine:
     try:
         async with base.begin() as conn:
             await conn.exec_driver_sql(f"CREATE DATABASE IF NOT EXISTS `{database}`")
-        yield base.execution_options(schema_translate_map={None: database})
+        # ``om_schema`` joins the per-worker database for the same reason ``None``
+        # does. MySQL's schema *is* a database, which is why production resolves the
+        # token to the default schema there (``app/sep/om/config.py``): the isolation
+        # OM wants does not exist on this dialect, and pointing it at a second
+        # database nothing provisions would be worse than not isolating.
+        yield base.execution_options(
+            schema_translate_map={None: database, OM_SCHEMA_SYMBOL: database}
+        )
     finally:
         try:
             async with base.begin() as conn:
