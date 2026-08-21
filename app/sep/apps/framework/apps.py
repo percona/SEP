@@ -51,6 +51,7 @@ from app.sep.apps.framework.api import (
     derive_crud_routes,
     derive_execute_route,
     derive_script_routes,
+    resolve_response_model,
 )
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.connectivity import CONNECTIVITY_WARNING_FIELD
@@ -280,7 +281,10 @@ class TaskExecutionApp(BaseApp):
     :param create_model: The model-first ``AppFormModel`` subclass whose fields
         drive the derived schema and create form. Mutually exclusive with the
         transitional ``schema=`` passthrough; one of the two is required.
-    :param response_model: The list/detail response model. Defaults to
+    :param response_model: The list/detail response model. When an explicit
+        ``response_builder`` is set, must equal its return type — the derived list
+        route serializes the builder's model, and every ``response_model`` reader
+        (including the ``list_view`` column gate) measures this field. Defaults to
         :class:`~app.sep.apps.framework.responses.BaseTaskResponse`.
     :param views: The presentation bundle (layout, list/detail views, UI
         capabilities). Its ``layout`` is required when ``create_model`` is set.
@@ -499,8 +503,9 @@ class TaskExecutionApp(BaseApp):
 
         :raises ValueError: When the schema source, the create-payload path, the
             connectivity references, the route knobs, the list-query wiring, the
-            response/filter knobs, the list-view columns, or the ``ArgFormat`` markers
-            are inconsistent (see the per-aspect helpers).
+            response/filter knobs, the ``response_model`` / ``response_builder``
+            agreement, the list-view columns, or the ``ArgFormat`` markers are
+            inconsistent (see the per-aspect helpers).
         """
         self._validate_schema_source()
         self._validate_create_path()
@@ -510,6 +515,7 @@ class TaskExecutionApp(BaseApp):
         self._validate_list_suppress()
         self._validate_list_query()
         self._validate_response_knobs()
+        self._validate_response_model_agreement()
         self._validate_view_columns()
         self._validate_arg_formats()
         self._validate_related_apps()
@@ -824,6 +830,36 @@ class TaskExecutionApp(BaseApp):
             raise ValueError(
                 "TaskExecutionApp: list_filter.service_type needs a service_type to "
                 "filter against; set service_type or drop the filter"
+            )
+
+    def _validate_response_model_agreement(self) -> None:
+        """Reject a ``response_builder`` whose return type is not ``response_model``.
+
+        The derived list route serializes the builder's return annotation, while
+        ``response_model`` is what every other reader — including the ``list_view``
+        column gate — measures. When an app supplies an explicit builder, the two
+        must agree.
+
+:raises TypeError: When the explicit builder lacks a valid ``BaseModel``
+    return annotation.
+:raises ValueError: When the explicit builder's return annotation is not
+    ``response_model``.
+        """
+        if self.response_builder is None or self.script_source is not None:
+            return
+        builder_model = resolve_response_model(
+            self.response_builder,
+            helper="TaskExecutionApp",
+            param="response_builder",
+        )
+        if builder_model is not self.response_model:
+            raise ValueError(
+                "TaskExecutionApp: response_builder returns "
+                f"{builder_model.__name__} but response_model declares "
+                f"{self.response_model.__name__}; the derived list route serializes "
+                "the builder's model, so every response_model reader (the list_view "
+                "column gate among them) measures the wrong object — set "
+                "response_model to the builder's return type"
             )
 
     def _extra_routes_have_detail(self) -> bool:
