@@ -25,6 +25,7 @@ import {
   MaterialReactTable,
   type MRT_ColumnDef,
   type MRT_PaginationState,
+  type MRT_SortingState,
 } from 'material-react-table';
 import { DEFAULT_APP_LIST_LIMIT, type ListColumn, type ListView } from '@sep/api';
 import { SEP_TABLE_CLASS } from '../../constants';
@@ -65,6 +66,21 @@ export interface SchemaListServerPagination {
   onChange: (next: { offset: number; limit: number }) => void;
 }
 
+/**
+ * Server-driven sort/search state for endpoints that advertise
+ * ``list_view.server_side_query``. Only consulted when server pagination is
+ * also active; otherwise the table keeps client-side sort/filter over the
+ * loaded page.
+ */
+export interface SchemaListServerQuery {
+  /** Public sort key; prefix with ``-`` for descending. */
+  sort?: string;
+  /** Active search term, or omit / undefined when unset. */
+  search?: string;
+  onSortChange: (sort: string | undefined) => void;
+  onSearchChange: (search: string | undefined) => void;
+}
+
 interface SchemaListViewProps {
   listView: ListView;
   data: Record<string, unknown>[];
@@ -95,6 +111,32 @@ interface SchemaListViewProps {
    * pagination over the full ``data`` prop).
    */
   pagination?: SchemaListServerPagination | null;
+  /**
+   * When set together with server pagination and ``listView.server_side_query``,
+   * enables manual sorting/filtering and drives them through these server
+   * params. Omit to keep client-side sort/filter over the loaded page.
+   */
+  serverQuery?: SchemaListServerQuery | null;
+}
+
+function sortingFromSortParam(sort: string | undefined): MRT_SortingState {
+  if (!sort) {
+    return [];
+  }
+  return [
+    {
+      id: sort.replace(/^-/, ''),
+      desc: sort.startsWith('-'),
+    },
+  ];
+}
+
+function sortParamFromSorting(sorting: MRT_SortingState): string | undefined {
+  const first = sorting[0];
+  if (!first) {
+    return undefined;
+  }
+  return first.desc ? `-${first.id}` : first.id;
 }
 
 function formatCellValue(value: unknown, format: ListColumn['format']): ReactNode {
@@ -235,6 +277,7 @@ function SchemaListViewCore({
   deletingRowId,
   renderListColumn,
   pagination,
+  serverQuery = null,
   scheduleByTask,
   scheduleLoading = false,
 }: SchemaListViewProps & {
@@ -243,11 +286,22 @@ function SchemaListViewCore({
 }) {
   const serverPagination = pagination ?? null;
   const manualPagination = serverPagination !== null;
+  // Capability alone is not enough: nested inventory child lists reuse the same
+  // ListView schema (which opts in) but pass no pagination and must stay
+  // client-side over the embedded detail arrays.
+  const activeServerQuery =
+    manualPagination && listView.server_side_query && serverQuery !== null ? serverQuery : null;
+  const serverSideQuery = activeServerQuery !== null;
   const pageIndex =
     manualPagination && serverPagination.limit > 0
       ? Math.floor(serverPagination.offset / serverPagination.limit)
       : 0;
   const pageSize = manualPagination ? serverPagination.limit : 10;
+
+  const sorting = activeServerQuery
+    ? sortingFromSortParam(activeServerQuery.sort ?? listView.default_sort ?? undefined)
+    : undefined;
+  const globalFilter = activeServerQuery ? (activeServerQuery.search ?? '') : undefined;
 
   const columns = useMemo<MRT_ColumnDef<Record<string, unknown>>[]>(
     () =>
@@ -336,12 +390,20 @@ function SchemaListViewCore({
       state={{
         isLoading,
         ...(manualPagination && { pagination: { pageIndex, pageSize } }),
+        ...(serverSideQuery && {
+          sorting,
+          globalFilter,
+          showGlobalFilter: true,
+        }),
       }}
       enableColumnActions={false}
       enableDensityToggle={false}
       enableFullScreenToggle={false}
       enablePagination
       manualPagination={manualPagination}
+      manualSorting={serverSideQuery}
+      manualFiltering={serverSideQuery}
+      enableGlobalFilter={serverSideQuery ? true : undefined}
       rowCount={manualPagination ? serverPagination.total : undefined}
       onPaginationChange={
         manualPagination
@@ -355,6 +417,25 @@ function SchemaListViewCore({
             }
           : undefined
       }
+      onSortingChange={
+        activeServerQuery
+          ? (updater) => {
+              const prev = sorting ?? [];
+              const next = typeof updater === 'function' ? updater(prev) : updater;
+              activeServerQuery.onSortChange(sortParamFromSorting(next));
+            }
+          : undefined
+      }
+      onGlobalFilterChange={
+        activeServerQuery
+          ? (updater) => {
+              const prev = globalFilter ?? '';
+              const next = typeof updater === 'function' ? updater(prev) : updater;
+              const term = typeof next === 'string' ? next.trim() : '';
+              activeServerQuery.onSearchChange(term || undefined);
+            }
+          : undefined
+      }
       muiTablePaginationProps={
         manualPagination
           ? {
@@ -364,14 +445,16 @@ function SchemaListViewCore({
           : undefined
       }
       initialState={{
-        sorting: listView.default_sort
-          ? [
-              {
-                id: listView.default_sort.replace(/^-/, ''),
-                desc: listView.default_sort.startsWith('-'),
-              },
-            ]
-          : [],
+        ...(!serverSideQuery && {
+          sorting: listView.default_sort
+            ? [
+                {
+                  id: listView.default_sort.replace(/^-/, ''),
+                  desc: listView.default_sort.startsWith('-'),
+                },
+              ]
+            : [],
+        }),
         density: 'compact',
         ...(!manualPagination && { pagination: { pageIndex: 0, pageSize: 10 } }),
       }}
