@@ -36,12 +36,13 @@ from app.core.config import Settings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.api.routes import build_settings_router
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
 from app.core.utils import json_serializer
 from app.inventory.config import inventory_settings, InventorySettings
 from app.sep.config import sep_settings, SEPSettings
 from app.tasks.config import tasks_settings, TasksSettings
+from tests.app.core.settings_override.conftest import insert_override_row
 
 ANNOTATIONS_KEY = "Settings.PMM__annotations_enabled"
 LOGGING_KEY = "Settings.LOGGING"
@@ -96,11 +97,6 @@ def client_fixture(override_session: AsyncSession) -> Iterator[TestClient]:
     app = FastAPI()
     app.include_router(router, prefix="/settings")
     return TestClient(app, raise_server_exceptions=False)
-
-
-async def _seed_row(session: AsyncSession, **kwargs: object) -> None:
-    """Insert one override row straight through the manager, bypassing the API."""
-    await SettingsOverrideManager.create(session, SettingOverride(**kwargs))
 
 
 def _error_types(response_json: dict) -> set[str]:
@@ -364,7 +360,7 @@ class TestDeleteGate:
         restrict: Callable[..., None],
     ) -> None:
         """Assert a stale row for a now-locked key is removable."""
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.SEP_SETTINGS,
             key="INVENTORY_ENDPOINT",
@@ -409,7 +405,7 @@ class TestDeleteGate:
         restrict: Callable[..., None],
     ) -> None:
         """Assert a stale leaf row survives its parent becoming unaddressable."""
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.TASKS_SETTINGS,
             key="NOMAD__timeout",
@@ -443,7 +439,7 @@ class TestDeleteGate:
         restrict: Callable[..., None],
     ) -> None:
         """Assert a whole-parent row survives every leaf beneath it being withheld."""
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.TASKS_SETTINGS,
             key="NOMAD",
@@ -500,7 +496,7 @@ class TestLegacyCasedOverrideRows:
         override_session: AsyncSession,
     ) -> None:
         """Assert DELETE of the canonical key removes a mixed-case stored row."""
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.TASKS_SETTINGS,
             key=self._LEGACY_NESTED,
@@ -525,7 +521,7 @@ class TestLegacyCasedOverrideRows:
         restrict: Callable[..., None],
     ) -> None:
         """Assert a withheld field's legacy row is still found and deleted."""
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.TASKS_SETTINGS,
             key=self._LEGACY_NESTED,
@@ -550,14 +546,14 @@ class TestLegacyCasedOverrideRows:
         override_session: AsyncSession,
     ) -> None:
         """Assert DELETE of the canonical key removes every matching stored row."""
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.TASKS_SETTINGS,
             key=self._LEGACY_NESTED,
             value=30,
             is_active=True,
         )
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.TASKS_SETTINGS,
             key=self._CANONICAL_NESTED,
@@ -585,7 +581,7 @@ class TestLegacyCasedOverrideRows:
         Mirrors MySQL's historical case-insensitive key match after the lookup
         moved from SQL into Python.
         """
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.SEP_SETTINGS,
             key=self._LEGACY_TOP,
@@ -610,7 +606,7 @@ class TestLegacyCasedOverrideRows:
         restrict: Callable[..., None],
     ) -> None:
         """Assert a withheld top-level legacy row is still found and deleted."""
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.SEP_SETTINGS,
             key=self._LEGACY_TOP,
@@ -635,7 +631,7 @@ class TestLegacyCasedOverrideRows:
         override_session: AsyncSession,
     ) -> None:
         """Assert PATCH of the canonical key updates the legacy row in place."""
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.SETTINGS,
             key=self._LEGACY_PMM,
@@ -660,14 +656,14 @@ class TestLegacyCasedOverrideRows:
         override_session: AsyncSession,
     ) -> None:
         """Assert PATCH of the canonical key updates every matching stored row."""
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.SETTINGS,
             key=self._LEGACY_PMM,
             value="https://legacy.example.com",
             is_active=True,
         )
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.SETTINGS,
             key=self._CANONICAL_PMM,
@@ -691,7 +687,7 @@ class TestLegacyCasedOverrideRows:
         override_session: AsyncSession,
     ) -> None:
         """Assert PATCH of a top-level key updates a mixed-case row in place."""
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.SEP_SETTINGS,
             key=self._LEGACY_TOP,

@@ -25,8 +25,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.alerts.config import AlertSettings
 from app.core.alerts.models import BaseAlertProvider
 from app.core.alerts.providers.pagerduty import PagerDutyEventsAlertProvider
-from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import (
     chain_has_advanced,
     dump_field_value,
@@ -56,6 +55,7 @@ from app.inventory.config import InventorySettings
 from app.sep.config import SEPSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.config import TasksSettings
+from tests.app.core.settings_override.conftest import insert_override_row
 
 
 def _ctx(settings_cls: type, field_name: str, raw: object) -> MaterializerContext:
@@ -813,17 +813,12 @@ _LEGACY_NESTED = "nomad__TIMEOUT"
 _TOP_LEVEL = "INVENTORY_ENDPOINT"
 
 
-async def _insert(session: AsyncSession, **kwargs: object) -> SettingOverride:
-    """Insert one override row through the manager, bypassing the API."""
-    return await SettingsOverrideManager.create(session, SettingOverride(**kwargs))
-
-
 @pytest.mark.asyncio
 async def test_override_rows_for_key_resolves_legacy_nested_casing(
     session: AsyncSession,
 ) -> None:
     """Assert a mixed-case nested row is found under its canonical key."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key=_LEGACY_NESTED,
@@ -844,14 +839,14 @@ async def test_override_rows_for_key_returns_legacy_and_canonical_duplicates(
     session: AsyncSession,
 ) -> None:
     """Assert every row that canonicalizes to the requested key is returned."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key=_LEGACY_NESTED,
         value=30,
         is_active=True,
     )
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key=_CANONICAL_NESTED,
@@ -872,14 +867,14 @@ async def test_override_rows_for_key_excludes_other_setting_class(
     session: AsyncSession,
 ) -> None:
     """Assert a matching stored key on another class is not returned."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key=_LEGACY_NESTED,
         value=30,
         is_active=True,
     )
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key=_LEGACY_NESTED,
@@ -901,7 +896,7 @@ async def test_override_rows_for_key_includes_inactive_row(
     session: AsyncSession,
 ) -> None:
     """Assert an inactive row is still resolved (write paths match on key alone)."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key=_LEGACY_NESTED,
@@ -923,7 +918,7 @@ async def test_override_rows_for_key_returns_empty_for_no_match(
     session: AsyncSession,
 ) -> None:
     """Assert a missing key or an unresolvable stored key yields no rows."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="NOMAD__does_not_exist",
@@ -959,14 +954,14 @@ async def test_override_rows_for_key_matches_top_level_case_insensitively(
     Keeps DELETE/PATCH aligned with MySQL's historical case-insensitive
     ``key`` lookups after the match moved from SQL into Python.
     """
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key=_TOP_LEVEL,
         value="https://canonical.example.com",
         is_active=True,
     )
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key=_TOP_LEVEL.lower(),
