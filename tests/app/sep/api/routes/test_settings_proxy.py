@@ -167,9 +167,26 @@ class TestListAggregation:
         assert {"SEPSettings", "SnippetsSettings", "AlertSettings"}.issubset(
             set(classes)
         )
-        assert classes[-3] == SettingClassEnum.TASKS_SETTINGS.value
-        assert classes[-2] == SettingClassEnum.ALERTS_SETTINGS.value
-        assert classes[-1] == SettingClassEnum.HEALTH_REPORT_SETTINGS.value
+        # Asserted as an ordering rather than by index: app-owned groups are appended,
+        # so every app that declares a settings class shifts a fixed index and the
+        # contract being checked here -- core, then remote, then app-owned -- does not
+        # change.
+        remote = classes.index(SettingClassEnum.TASKS_SETTINGS.value)
+        app_owned = [
+            classes.index(member.value)
+            for member in (
+                SettingClassEnum.ALERTS_SETTINGS,
+                SettingClassEnum.HEALTH_REPORT_SETTINGS,
+            )
+        ]
+        assert remote > max(
+            classes.index(member.value)
+            for member in (
+                SettingClassEnum.SEP_SETTINGS,
+                SettingClassEnum.SNIPPETS_SETTINGS,
+            )
+        )
+        assert min(app_owned) > remote
         mock_tasks.get.assert_awaited_once_with(f"{REMOTE_BASE}/")
 
     def test_list_emits_is_advanced_for_sep_settings(
