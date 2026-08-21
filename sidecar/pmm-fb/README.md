@@ -180,15 +180,17 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
 
 ## Caveats
 
-- **The pmm-server pin must carry the SEP readiness gate** (PMM-15331, first in
-  `PR-4500-882b6ba`), which widens the start period to 720 s and holds the
-  container unhealthy until SEP provisioning completes. Against an older pin,
-  `condition: service_healthy` stops being a gate and becomes a bring-up
-  failure: the old 25 s start period flips pmm-server to `unhealthy` at ~37 s
-  while a cold start needs ~90 s to first pass `readyz`, and compose aborts the
-  dependent. If you ever repin backwards, revert `sep-sidecar`'s condition to
-  `service_started` in the same edit.
-- **`PMM_ENABLE_SEP` unset takes SEP down**, it does not degrade it. All six
+- **pmm-server's start period is set by this compose file, not by the image.**
+  The image ships 25 s with 3 retries at 4 s, so it is marked `unhealthy` around
+  37 s while a cold start needs appreciably longer to first pass `readyz` — and
+  because `sep-sidecar` depends on `service_healthy`, compose aborts the
+  dependent instead of waiting. A build-side gate (PMM-15331) once widened this,
+  but the PR was closed unmerged, so `compose.yaml` overrides the healthcheck
+  with a 300 s start period. Keep that override whenever you repin: dropping it
+  reintroduces the aborted bring-up, and switching `sep-sidecar` to
+  `service_started` instead trades it for a side-car that exits on a missing
+  `SECRET_KEY` when it wins the race.
+- **`PMM_ENABLE_SEP` unset takes SEP down**, it does not degrade it. All four
   files are removed on pmm-server's next start, and the side-car exits 1 with a
   single actionable `SECRET_KEY is required` rather than coming up
   half-configured. A side-car already running is unaffected until it restarts,

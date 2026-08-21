@@ -36,7 +36,18 @@ x-sep-mysql-address: &sep_mysql_address 172.28.9.40
 services:
   pmm-server:
     # Default repeated on sep-mysql's PMM_FB_TAG build arg — a repin edits both
-    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-882b6ba}
+    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-73298a4}
+    # The image ships start_period 25s with 3 retries at 4s, so it is marked
+    # unhealthy around 37s while a cold start needs appreciably longer to first
+    # pass readyz — and sep-sidecar's service_healthy dependency turns that into
+    # an aborted bring-up rather than a wait. The build once widened this itself;
+    # the PR that did was closed unmerged, so the harness sets it here instead.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/v1/server/readyz"]
+      interval: 5s
+      timeout: 5s
+      start_period: 300s
+      retries: 3
     environment:
       PMM_ENABLE_SEP: "1"
       # Bare host:port — the entrypoint rejects a scheme or a trailing path, and
@@ -55,12 +66,10 @@ services:
 
   sep-sidecar:
     image: docker.io/percona/percona-sep:95a70382022ee2ec8fe6b87e86296b9271c320f0
-    # service_healthy, not service_started: PMM publishes SEP's secrets in two
-    # stages and SEP builds its settings once, at process start, so a side-car
-    # released early comes up with Grafana auth inert and never recovers. Only
-    # correct against a pin carrying PMM-15331, whose healthcheck additionally
-    # requires the current provisioning run to have published both token files.
-    # An older pin turns this into a bring-up failure — see README.md "Caveats".
+    # service_healthy, not service_started: SEP builds its settings once, at
+    # process start, so a side-car released before pmm-server has written the
+    # four secret files exits on the missing SECRET_KEY. Health is what says they
+    # exist; the start period above is what gives a cold start room to get there.
     depends_on:
       pmm-server:
         condition: service_healthy
@@ -96,7 +105,7 @@ services:
       context: .
       dockerfile: Containerfile.mysql
       args:
-        PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-882b6ba}
+        PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-73298a4}
     # service_started, not service_healthy: this node consumes none of the SEP
     # secret provisioning pmm-server's health now gates on, and ordering is all
     # it needs — pmm-managed starts answering registration requests later still,
