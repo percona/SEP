@@ -146,6 +146,28 @@ describe('TasksListPage', () => {
     );
   });
 
+  it('does not enable server-side sort/search (tasks stay client-side)', () => {
+    render(
+      <MemoryRouter>
+        <TasksListPage />
+      </MemoryRouter>,
+    );
+
+    expect(mockUseTasksList).toHaveBeenCalledWith({
+      enabled: true,
+      offset: 0,
+      limit: 50,
+    });
+    expect(schemaListViewMock).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        serverQuery: expect.anything(),
+      }),
+    );
+    const lastCall = schemaListViewMock.mock.calls[schemaListViewMock.mock.calls.length - 1];
+    const props = lastCall?.[0] as Record<string, unknown> | undefined;
+    expect(props).not.toHaveProperty('serverQuery');
+  });
+
   it('omits server pagination when the hook returns a bare list', () => {
     mockUseTasksList.mockReturnValue({
       data: {

@@ -36,3 +36,11 @@ def test_inventory_schema_serialises_entities():
         "create": "sql",
         "keys": "json",
     }
+
+
+def test_inventory_list_views_advertise_server_side_query():
+    """Assert every inventory entity list view opts into server-side sort/search."""
+    assert inventory_schema.entities is not None
+    for entity in inventory_schema.entities:
+        assert entity.list_view is not None
+        assert entity.list_view.server_side_query is True

@@ -19,8 +19,16 @@ import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPBadRequestException
-from app.inventory.crud import ServiceManager
+from app.inventory.crud import SchemaManager, ServiceManager, TableManager
 from tests.app.factories import ServiceWriteFactory
+
+
+def test_schema_and_table_sortable_allowlists_include_parent_ids() -> None:
+    """Expose parent FK sort keys so the inventory UI sortable columns stay valid."""
+    assert "service_id" in SchemaManager.list_query_spec.sortable
+    assert "schema_id" in TableManager.list_query_spec.sortable
+    SchemaManager.list_query_spec.resolve_sort("service_id")
+    TableManager.list_query_spec.resolve_sort("-schema_id")
 
 
 @pytest.mark.asyncio
