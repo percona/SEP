@@ -693,6 +693,24 @@ class TestCreateAppAsyncEngine:
         finally:
             await engine.dispose()
 
+    @pytest.mark.asyncio
+    async def test_pre_pings_by_default(self):
+        """Enable pool_pre_ping on the async engine when unset."""
+        engine = create_app_async_engine(self._postgres_options())
+        try:
+            assert engine.pool._pre_ping is True
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_respects_pre_ping_opt_out(self):
+        """Disable pool_pre_ping when POOL_PRE_PING is false."""
+        engine = create_app_async_engine(self._postgres_options(POOL_PRE_PING=False))
+        try:
+            assert engine.pool._pre_ping is False
+        finally:
+            await engine.dispose()
+
     def test_forwards_connect_args_when_set(self, monkeypatch: pytest.MonkeyPatch):
         """Forward dialect-mapped connect_args into create_async_engine."""
         recorded: dict[str, object] = {}
