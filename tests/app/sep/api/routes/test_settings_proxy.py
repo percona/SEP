@@ -174,6 +174,7 @@ class TestListAggregation:
             for member in (
                 SettingClassEnum.ALERTS_SETTINGS,
                 SettingClassEnum.HEALTH_REPORT_SETTINGS,
+                SettingClassEnum.OM_INVENTORY_SETTINGS,
             )
         ]
         assert remote > max(

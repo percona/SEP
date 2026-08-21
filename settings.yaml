@@ -2,6 +2,10 @@ default:
   ALLOWED_HOSTS:
     - "localhost"
     - "127.0.0.1"
+    # pmm-managed reaches SEP from inside the pmm-server container, where the host is
+    # only addressable by this name. Without it TrustedHostMiddleware answers 400 to
+    # every cross-container request, whatever the credentials.
+    - "host.docker.internal"
   ALLOW_CONCURRENT_SESSIONS: False
   SECRET_KEY: "dev-only-not-for-production"  # Dev only; production must override
   LOGGING: WARNING  # LogLevel: DEBUG, INFO, WARNING, ERROR, CRITICAL
