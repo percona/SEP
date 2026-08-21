@@ -68,6 +68,7 @@ from app.tasks.execution.executors.nomad.models import (
 )
 from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.execution.utils import gzip_compress, minify_file_content
+from app.tasks.logs.line_split import WithheldLineBuffer
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     ExecutionEvent,
@@ -115,6 +116,7 @@ MULTIBYTE_WITHHELD_BYTES = 6  # raw byte length of the withheld "€uro"
 NEWLINELESS_TAIL_FRAME_EOF_OFFSET = 21  # raw EOF of "card=4111111111111111"
 # Ceiling low enough that the 21-byte newline-less card line forces a flush.
 FORCED_FLUSH_CEILING_BYTES = 10
+RUN_LINE_EOF_OFFSET = 22  # raw EOF of "card=4111111111111111\n" split across frames
 NOMAD_MODELS_LOGGER = "app.tasks.execution.executors.nomad.models"
 
 
@@ -2760,6 +2762,17 @@ class TestNomadLogStreaming:
         }
 
     @staticmethod
+    def _alloc_for_logs_run_script():
+        return {
+            "ID": "alloc-stream",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "TaskStates": {
+                "run-script": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"}
+            },
+        }
+
+    @staticmethod
     def _nomad_log_frame(*, msg: str | None, offset: int) -> bytes:
         frame = {"Offset": offset}
         if msg is not None:
@@ -2822,7 +2835,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         assert state == "running"
@@ -2926,7 +2939,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         assert state == _NOMAD_LOG_STREAM_CLIENT_ERROR
@@ -2969,7 +2982,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         assert state == _NOMAD_LOG_STREAM_SOCK_TIMEOUT
@@ -3012,7 +3025,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3079,7 +3092,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities={PIIEntity.CREDIT_CARD},
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3123,7 +3136,7 @@ class TestNomadLogStreaming:
             "offset": 0,
         }
         queue = asyncio.Queue()
-        pending = bytearray()
+        pending = WithheldLineBuffer()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
             await executor._consume_nomad_log_stream(
@@ -3190,7 +3203,7 @@ class TestNomadLogStreaming:
             "offset": 0,
         }
         queue = asyncio.Queue()
-        pending = bytearray()
+        pending = WithheldLineBuffer()
 
         with (
             patch.object(executor, "_request", return_value=mock_ctx),
@@ -3300,7 +3313,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3356,7 +3369,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3424,7 +3437,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3469,7 +3482,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
     @pytest.mark.asyncio
@@ -3568,7 +3581,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         assert state != "running"
@@ -3654,6 +3667,171 @@ class TestNomadLogStreaming:
             emitted = [log async for log in executor.stream_logs(queue_item)]
 
         assert emitted == [None]
+
+    @staticmethod
+    def _frames_with_running_offsets(payloads: list[str]) -> list[bytes]:
+        """Build framed payloads carrying the raw EOF offset each one reaches.
+
+        :param payloads: The frame payloads, in arrival order.
+        :return: The encoded Nomad log frames.
+        """
+        frames = []
+        offset = 0
+        for payload in payloads:
+            offset += len(payload.encode())
+            frames.append(
+                TestNomadLogStreaming._nomad_log_frame(msg=payload, offset=offset)
+            )
+        return frames
+
+    def _stream_response(self, chunks: list[bytes]):
+        """Build a 200 log-stream response yielding ``chunks``.
+
+        :param chunks: The framed payloads the response body delivers.
+        :return: An async context manager standing in for ``_request``.
+        """
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        return mock_ctx
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    async def test_consume_stream_completion_frame_releases_the_whole_run(
+        self, mock_anonymize
+    ):
+        """Assert a terminator-free run is emitted whole by the frame that ends it.
+
+        Each frame searches only its own bytes, so the frame carrying the
+        terminator must still release everything the earlier frames withheld.
+        """
+        mock_anonymize.side_effect = _redact_card_token
+        chunks = self._frames_with_running_offsets(
+            ["card=41", "111111", "111111", "11\ntail"]
+        )
+        executor = _build_executor()
+        params = {
+            "task": "run-script",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+        pending = WithheldLineBuffer()
+
+        with patch.object(
+            executor, "_request", return_value=self._stream_response(chunks)
+        ):
+            await executor._consume_nomad_log_stream(
+                alloc=self._alloc_for_logs_run_script(),
+                step="run-script",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities={PIIEntity.CREDIT_CARD},
+                pending=pending,
+            )
+
+        logs = await self._drain_task_logs(queue)
+        assert [log.msg for log in logs] == ["card=[REDACTED]\n"]
+        # raw EOF (26) minus the 4 withheld bytes of "tail"
+        assert logs[0].offset == RUN_LINE_EOF_OFFSET
+        assert bytes(pending) == b"tail"
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    async def test_consume_stream_narrowed_scan_survives_a_reconnect(
+        self, mock_anonymize
+    ):
+        """Assert the frame after a reconnect neither re-scans nor skips bytes.
+
+        The buffer outlives a single request, so a reconnect resumes mid-line
+        with the same withheld remainder and the terminator arriving later must
+        still release exactly that remainder plus the new bytes.
+        """
+        mock_anonymize.side_effect = _redact_card_token
+        first_stream = self._frames_with_running_offsets(["card=41", "111111"])
+        params = {
+            "task": "run-script",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        executor = _build_executor()
+        queue = asyncio.Queue()
+        pending = WithheldLineBuffer()
+        responses = [
+            self._stream_response(first_stream),
+            self._stream_response(
+                [
+                    self._nomad_log_frame(msg="111111", offset=19),
+                    self._nomad_log_frame(msg="11\n", offset=RUN_LINE_EOF_OFFSET),
+                ]
+            ),
+        ]
+
+        with patch.object(executor, "_request", side_effect=responses):
+            for _ in responses:
+                await executor._consume_nomad_log_stream(
+                    alloc=self._alloc_for_logs_run_script(),
+                    step="run-script",
+                    log_type=TaskLogType.STDOUT,
+                    queue=queue,
+                    params=params,
+                    client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                    anonymize_entities={PIIEntity.CREDIT_CARD},
+                    pending=pending,
+                )
+
+        logs = await self._drain_task_logs(queue)
+        assert [log.msg for log in logs] == ["card=[REDACTED]\n"]
+        assert logs[0].offset == RUN_LINE_EOF_OFFSET
+        assert bytes(pending) == b""
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    async def test_consume_stream_leaves_no_terminator_withheld(self, mock_anonymize):
+        """Assert every frame releases the lines it completed and withholds no more.
+
+        A terminator left in the buffer would silently stall a line that was
+        already complete until the ceiling flushed it.
+        """
+        mock_anonymize.side_effect = _redact_card_token
+        chunks = self._frames_with_running_offsets(["a\nb", "c\nd", "e"])
+        executor = _build_executor()
+        params = {
+            "task": "run-script",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+        pending = WithheldLineBuffer()
+
+        with patch.object(
+            executor, "_request", return_value=self._stream_response(chunks)
+        ):
+            await executor._consume_nomad_log_stream(
+                alloc=self._alloc_for_logs_run_script(),
+                step="run-script",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities={PIIEntity.CREDIT_CARD},
+                pending=pending,
+            )
+
+        logs = await self._drain_task_logs(queue)
+        assert [(log.msg, log.offset) for log in logs] == [("a\n", 2), ("bc\n", 5)]
+        assert bytes(pending) == b"de"
+        assert b"\n" not in bytes(pending)
+        assert b"\r" not in bytes(pending)
 
 
 class TestListFiles:
