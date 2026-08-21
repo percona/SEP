@@ -17,10 +17,11 @@ the app packages the settings profile activates — see [App set](#app-set).
 | Input | Role |
 |---|---|
 | `Containerfile.sidecar` | Final stage; ships the backend only, with no frontend-builder stage, and reuses the shared `sep:builder` wheel image. |
-| `entrypoint.sh` | PID 1. Mints the broker credential for the container run, then hands off to `supervisord`. |
+| `entrypoint.sh` | PID 1. Mints the broker credential for the container run, resolves SEP's Grafana service-account token, then hands off to `supervisord`. |
 | `supervisord.conf` | Runs `valkey`, three `migrate-*` one-shots, the `sep`/`inventory`/`tasks` APIs, and the Celery worker and beat. |
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables, leaving unexported any name a file under `SECRETS_DIR` already supplies. |
+| `grafana_service_account.py` | Run by `entrypoint.sh` before `supervisord`; resolves SEP's Grafana service-account token, minting one when no source supplies it. |
 | `settings.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
 | `restrict_apps.py` | Build-step strip: removes every app package the baked profile does not activate. Deleted in the same `RUN`, so `make image`'s squashed build ships no copy of it. |
 | `verify_image_apps.py` | Post-build assertion that an image's app set matches its own baked profile. Piped into the image, never copied into it. |
@@ -182,11 +183,24 @@ alongside the other deployment secrets, and either pass it in or mount it as a
 file named `SECRET_KEY` under `SECRETS_DIR` — the mount keeps it out of every
 process's environment.
 
-`SEP_GRAFANA_TOKEN` is optional and the container boots without it, but
-Grafana-backed sign-in and the PMM syncer stay inert until it is supplied — the
-profile ships an empty `service_account_token`, which is a valid `SecretStr`.
-The same shape means a *misspelled* token yields a silently inert provider
-rather than a startup error.
+`SEP_GRAFANA_TOKEN` is optional, and the container no longer stays inert without
+it: two further sources sit below it — a token SEP persisted on an earlier start,
+and one it mints against Grafana. See
+[The Grafana token is minted, not required](#the-grafana-token-is-minted-not-required).
+Supplying either canonical name, here or as a file under `SECRETS_DIR`, skips
+minting altogether. The profile ships an empty `service_account_token`, which is
+a valid `SecretStr`, so a *misspelled* token still yields a silently inert
+provider rather than a startup error.
+
+Read by that mint step rather than expanded into a canonical name, so none of
+them is mountable and all are optional:
+
+| Input | Default | What it controls |
+|---|---|---|
+| `GF_SECURITY_ADMIN_USER` | `admin` | The Grafana admin login the mint authenticates as. Used only when SEP holds no valid token. |
+| `GF_SECURITY_ADMIN_PASSWORD` | `admin` | Its password. A blank value falls back to the default rather than being sent empty. |
+| `SEP_STATE_DIR` | `/home/sep/state` | Where the minted token is persisted. Mount a volume here to carry it across a container recreate. |
+| `SEP_GRAFANA_MINT_TIMEOUT` | `60` | Seconds the mint may keep retrying a Grafana that has not started yet. |
 
 Already canonical, so they are passed straight through with no expansion:
 
@@ -230,6 +244,76 @@ through `REDISCLI_AUTH`), because argv is readable by every process in the
 container's PID namespace. A container restart mints a fresh one, which is safe:
 the broker runs with `save ""` and `appendonly no`, so no broker state crosses
 restarts.
+
+### The Grafana token is minted, not required
+
+`SEP_GRAFANA_TOKEN` is the last value an operator supplies. Below it,
+`entrypoint.sh` runs `grafana_service_account.py` once, before supervisord, and
+fans its answer out to both canonical names through the same
+`export_grafana_token` the `SEP_GRAFANA_TOKEN` guard uses — so all five programs
+inherit one resolved value, and nothing in the application copies one setting
+into the other.
+
+The helper does nothing at all when either canonical name already resolves, from
+an explicit variable or from a file under `SECRETS_DIR`, or when the active auth
+provider is not Grafana. A blank value counts as absent at every rank the helper
+reads.
+
+One caveat on the rank above it: `settings-env.sh` defers to a `SECRETS_DIR` file
+on the file *existing*, not on it holding a value, because the settings source
+resolves an empty secret file to the empty string rather than falling through. So
+a mounted-but-empty file named for either canonical name pins that name to the
+empty string, and a token minted below it cannot displace it. Mount a file only
+when it carries a value; to leave a name to the mint, do not mount it at all.
+
+Otherwise it finds or creates a service account named `sep` with the `Admin` org
+role and asks it for a non-expiring token, authenticating as Grafana's admin.
+Lookup is by that fixed name, so repeated starts leave Grafana with one `sep`
+account rather than one per start. The minted token is written mode `0600` to
+`$SEP_STATE_DIR/grafana_service_account_token` and re-read on the next start:
+the admin credential is what minting needs, not what restarting needs. Mount a
+volume at `/home/sep/state` for the token to survive a container *recreate* as
+well. Without one, every recreate mints a further token on the same account, and
+because minted tokens are asked not to expire, the ones earlier containers
+resolved stay valid in Grafana until an operator deletes them.
+
+A persisted token is revalidated with one short, bounded call. Rejected, it is
+re-minted and the file replaced; accepted, it is used as-is and nothing is
+minted; and when Grafana cannot be reached it is used unvalidated, without
+waiting out the retry bound, because an outage must never retract a working
+credential.
+
+Only the states holding no token wait: a first start, and a re-mint after an
+actual rejection. `SEP_GRAFANA_MINT_TIMEOUT` bounds that wait. Exhausting it
+leaves the token unresolved and logs one message naming Grafana's address and the
+elapsed wait; the five programs still start, with sign-in and the PMM syncer
+inert exactly as they are with no token at all. Raising the bound much past 90s
+should be paired with a larger `HEALTHCHECK --start-period` — the current 150s
+also has to cover migrations and three API starts.
+
+`GF_SECURITY_ADMIN_*` is unset before `exec supervisord`, so the admin pair
+reaches the mint step and nothing else: it is more privileged than the token it
+mints, and no supervised program reads it.
+
+Like the broker credential, the token reaches the programs through the process
+environment, so it appears in no image- or compose-declared environment and
+therefore in no `docker inspect` output. Unlike a mounted secret it is readable
+through `/proc` by processes running as the same user in the container;
+`SECRETS_DIR` is not available as an alternative, being PMM-owned and mounted
+read-only, so SEP cannot write the file its own settings source reads.
+
+Two limitations follow from minting through Grafana's admin API:
+
+- **The admin credential is needed whenever SEP holds no valid token, not only on
+  first boot.** A Grafana volume wipe, or a restore predating the service
+  account, forces a re-mint. If the admin password was changed through
+  `change-admin-password` rather than through the environment, the value SEP
+  holds is stale and the re-mint fails. Set `GF_SECURITY_ADMIN_PASSWORD` and give
+  SEP the same value; relying on the `admin`/`admin` default means SEP can mint
+  only until that password is first changed.
+- **A Grafana with admin-user bootstrap disabled cannot be minted against at
+  all.** Supply `SEP_GRAFANA_TOKEN` on such a deployment, or mount either
+  canonical name under `SECRETS_DIR`.
 
 ## What the settings API will and will not change
 
@@ -294,6 +378,16 @@ writable volume — at minimum `SEP.artifact_dir`, which defaults to
 
 ```
 -v report-artifacts:/home/sep/app/data/health-reports
+```
+
+`/home/sep/state` is the one path the image creates for SEP to write its own
+files into (`0700 sep:sep`) — `$APP_HOME` above admits new entries beside the
+shipped tree, but nothing under it is SEP's to write. It holds the minted
+Grafana token; mounting it is what makes that token survive a container recreate
+rather than only a restart:
+
+```
+-v sep-state:/home/sep/state
 ```
 
 ## Health

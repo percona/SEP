@@ -54,8 +54,27 @@ def source_helper(**inputs: str) -> subprocess.CompletedProcess[str]:
     :param inputs: The deployment inputs to place in the environment.
     :return: The completed ``bash`` run, whose stdout is a NUL-delimited ``env``.
     """
-    script = (
-        f"{CALLER_SHELL_OPTIONS}\n. {shlex.quote(str(SETTINGS_ENV_HELPER))}\nenv -0"
+    return source_helper_then("", **inputs)
+
+
+def source_helper_then(command: str, **inputs: str) -> subprocess.CompletedProcess[str]:
+    """Run the helper, then ``command``, from an otherwise empty environment.
+
+    ``entrypoint.sh`` sources the helper with ``.``, so the functions it defines
+    stay in scope for the rest of PID 1; this is the shape in which the mint
+    step reaches the Grafana fan-out.
+
+    :param command: The shell to run once the helper has been sourced.
+    :param inputs: The deployment inputs to place in the environment.
+    :return: The completed ``bash`` run, whose stdout is a NUL-delimited ``env``.
+    """
+    script = "\n".join(
+        [
+            CALLER_SHELL_OPTIONS,
+            f". {shlex.quote(str(SETTINGS_ENV_HELPER))}",
+            command,
+            "env -0",
+        ]
     )
     return subprocess.run(
         ["bash", "-c", script],
@@ -242,6 +261,50 @@ def test_no_grafana_variables_without_a_token():
 
     assert "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN" not in environment
     assert "PMM__API_KEY" not in environment
+
+
+def test_the_grafana_fan_out_survives_as_a_callable_function():
+    """Expose the fan-out as a function, which is what lets the mint step reuse it."""
+    environment = exported(
+        source_helper_then("export_grafana_token glsa_minted", SECRET_KEY="k")
+    )
+
+    assert (
+        environment["AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"] == "glsa_minted"
+    )
+    assert environment["PMM__API_KEY"] == "glsa_minted"
+
+
+def test_a_mounted_single_name_outranks_a_minted_token(tmp_path: Path):
+    """Leave a mounted name to its file while the other takes the minted value."""
+    secrets_dir = write_secrets(tmp_path, PMM__API_KEY="from-file")
+
+    environment = exported(
+        source_helper_then(
+            "export_grafana_token glsa_minted", SECRET_KEY="k", SECRETS_DIR=secrets_dir
+        )
+    )
+
+    assert (
+        environment["AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"] == "glsa_minted"
+    )
+    assert "PMM__API_KEY" not in environment
+
+
+def test_an_explicit_single_name_outranks_a_minted_token():
+    """Leave an operator's own value standing, which the mint must never displace."""
+    environment = exported(
+        source_helper_then(
+            "export_grafana_token glsa_minted",
+            SECRET_KEY="k",
+            PMM__API_KEY="glsa_explicit",
+        )
+    )
+
+    assert environment["PMM__API_KEY"] == "glsa_explicit"
+    assert (
+        environment["AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"] == "glsa_minted"
+    )
 
 
 @pytest.mark.parametrize(
