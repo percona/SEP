@@ -55,13 +55,10 @@ def bearer_client(
 
 @pytest.fixture
 def admin_bearer_client(
-    bearer_client: TestClient, casdoor_user_data, mocker: MockerFixture
+    bearer_client: TestClient, casdoor_mock, casdoor_user_data
 ) -> TestClient:
     """Return the Bearer client whose credential resolves to an admin."""
-    mocker.patch(
-        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
-        new=mocker.AsyncMock(return_value={**casdoor_user_data, "is_admin": True}),
-    )
+    casdoor_mock.get_user.return_value = {**casdoor_user_data, "is_admin": True}
     return bearer_client
 
 
@@ -222,3 +219,53 @@ def test_the_batch_read_stays_reachable_for_a_non_admin(
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"absent-task": None}
+
+
+def test_a_gated_mutation_resolves_the_credential_once(
+    admin_bearer_client: TestClient, casdoor_mock
+) -> None:
+    """Resolve one credential once across the gate and the route's own dependency.
+
+    The status pins that the request reached the handler, so both consumers ran.
+    """
+    casdoor_mock.introspect_token.reset_mock()
+    casdoor_mock.get_user.reset_mock()
+
+    response = admin_bearer_client.put("/no-such-task", json={}, headers=BEARER_HEADERS)
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert casdoor_mock.introspect_token.await_count == 1
+    assert casdoor_mock.get_user.await_count == 1
+
+
+def test_the_waived_batch_read_still_resolves_once(
+    bearer_client: TestClient, casdoor_mock
+) -> None:
+    """Keep the waived batch read at the one resolution its own dependency makes.
+
+    Its ``UserRole.NONE`` minimum is answered before the gate looks at the
+    credential, so the route's ``IsAuthenticatedDep`` is the only thing resolving
+    it — and stays so for a non-admin.
+    """
+    casdoor_mock.introspect_token.reset_mock()
+    casdoor_mock.get_user.reset_mock()
+
+    response = bearer_client.post(
+        "/history/latest", json={"names": ["absent-task"]}, headers=BEARER_HEADERS
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert casdoor_mock.introspect_token.await_count == 1
+    assert casdoor_mock.get_user.await_count == 1
+
+
+def test_the_health_probe_resolves_no_credential(
+    bearer_client: TestClient, casdoor_mock
+) -> None:
+    """Keep the liveness probe unauthenticated, resolving nothing at all."""
+    casdoor_mock.introspect_token.reset_mock()
+
+    response = bearer_client.get("/health")
+
+    assert response.status_code != status.HTTP_401_UNAUTHORIZED
+    casdoor_mock.introspect_token.assert_not_awaited()
