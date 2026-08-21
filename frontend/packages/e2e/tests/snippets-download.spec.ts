@@ -34,9 +34,10 @@ const MOCK_USER = {
   email: 'smoke@percona.com',
   firstName: 'Smoke',
   lastName: 'Test',
-  // Admin: the app pages under test render their create / execute / delete
-  // controls only for a session that may mutate (SEP-1844).
-  isAdmin: true,
+  // Deliberately non-admin: snippet download is a GET, still permitted for a
+  // read-only session, so this keeps end-to-end proof that the read path works
+  // for exactly the users whose write controls are hidden (SEP-1844).
+  isAdmin: false,
 };
 
 const MOCK_SNIPPET_SCHEMA = {

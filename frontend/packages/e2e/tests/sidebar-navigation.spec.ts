@@ -59,9 +59,10 @@ const MOCK_USER = {
   email: 'smoke@percona.com',
   firstName: 'Smoke',
   lastName: 'Test',
-  // Admin: the app pages under test render their create / execute / delete
-  // controls only for a session that may mutate (SEP-1844).
-  isAdmin: true,
+  // Deliberately non-admin: these specs only navigate and assert readable
+  // sentinels, so they double as cross-app smoke coverage of the read-only
+  // experience (SEP-1844).
+  isAdmin: false,
 };
 
 // Heading served for schema-driven apps whose display name we don't assert
