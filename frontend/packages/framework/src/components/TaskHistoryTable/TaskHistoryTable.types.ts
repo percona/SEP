@@ -60,8 +60,10 @@ export interface TaskHistoryTableProps {
    * request settles with the user looking at the table — this is where the
    * refusal has to appear.
    *
-   * Presentational mode only: a caller owning the stop mutation passes its
-   * `error`. The connected variant reports its own mutation and ignores this.
+   * Required of any caller that owns the stop mutation, in either mode: pass its
+   * `error` here or the failure is reported nowhere. Only the connected variant
+   * *without* an `onStopTask` reports for itself, from its internal mutation,
+   * and ignores this prop.
    */
   actionError?: unknown;
   /** Dismiss handler for {@link actionError} (e.g. the mutation's `reset`). */

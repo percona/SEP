@@ -47,7 +47,7 @@ export function ConnectivityControl({
   const { canMutate } = useAuth();
   const checkConnectivity = useCheckServiceConnectivity(serviceId);
   const { enqueueSnackbar } = useSnackbar();
-  const checkError = useActionError('Connectivity check could not be started. Please try again.');
+  const checkError = useActionError();
   const [probeFailure, setProbeFailure] = useState<string | null>(null);
 
   const isConnectable =
@@ -102,6 +102,7 @@ export function ConnectivityControl({
       <ActionErrorAlert
         error={checkError.error}
         onClose={checkError.clearError}
+        fallback="Connectivity check could not be started. Please try again."
         sx={{ mt: 2 }}
         testId="connectivity-action-error"
       />

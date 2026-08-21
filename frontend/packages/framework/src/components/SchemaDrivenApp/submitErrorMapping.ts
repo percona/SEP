@@ -61,14 +61,10 @@ export function mapSubmitError(
 
   const fieldErrors = parseFieldErrors(error);
   if (fieldErrors.length === 0) {
-    // A 422 whose `detail` is a string rather than the per-field array still
-    // carries a server reason, lifted into `ApiError.message`; only the
-    // synthesized `HTTP 422` means nothing usable arrived.
-    const synthesized = error.message === `HTTP ${error.status}`;
-    return {
-      submitError: synthesized || !error.message ? fallbackMessage : error.message,
-      fieldErrors: [],
-    };
+    // A 422 whose ``detail`` is a string rather than the per-field array still
+    // carries a server reason; ``actionErrorMessage`` keeps it and falls back
+    // only for the synthesized ``HTTP 422``.
+    return { submitError: actionErrorMessage(error, fallbackMessage), fieldErrors: [] };
   }
 
   const labelByPath = buildFieldLabelMap(sections);
