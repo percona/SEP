@@ -72,7 +72,7 @@ from app.tasks.execution.executors.nomad.steps import (
     LOG_CAPTURE_HOLD_DEFAULT_SECONDS,
     NomadStep,
 )
-from app.tasks.execution.models import BaseExecutor
+from app.tasks.execution.models import BaseExecutor, ExecutorHostState
 from app.tasks.execution.utils import gzip_compress, minify_file_content
 from app.tasks.logs.line_split import split_complete_lines
 from app.tasks.logs.log_reader import decompress_legacy_logs
@@ -98,6 +98,12 @@ NOMAD_DEAD_JOB_STATUS = "dead"
 NOMAD_DEAD_TASK_STATE = "dead"
 NOMAD_RUNNING_TASK_STATE = "running"
 _CAPTURE_HOLD_RELEASE_SIGNAL = "SIGTERM"
+#: The Nomad task driver every SEP payload runs under. Named once because the
+#: dispatch filter and the reporting in ``get_host_states`` must agree on it: if they
+#: drift, a host is reported healthy and jobs still refuse to place on it.
+RAW_EXEC_DRIVER = "raw_exec"
+#: Nomad's own word for a client it currently has contact with.
+NODE_STATUS_READY = "ready"
 # Internal states returned by :meth:`NomadExecutor._consume_nomad_log_stream` (not Nomad task states).
 _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
@@ -811,11 +817,57 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             as values.
         :rtype: dict[str, str]
         """
-        filter_expression = "Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true"
+        filter_expression = (
+            f"Status == {NODE_STATUS_READY} "
+            f"and {RAW_EXEC_DRIVER} in Drivers "
+            f"and Drivers.{RAW_EXEC_DRIVER}.Healthy == true"
+        )
         return {
             node["Name"]: node["Address"]
             for node in self.backend.nodes.get_nodes(filter_=filter_expression)
         }
+
+    def get_host_states(self) -> list[ExecutorHostState]:
+        """Describe every node Nomad knows about, including the unusable ones.
+
+        The same three conditions :meth:`get_hosts` filters on, reported separately
+        instead of collapsed: ``Status == ready``, ``raw_exec`` present in
+        ``Drivers``, and its ``Healthy`` flag. A caller asking "why can I not run
+        anything on this machine" gets an answer here, where ``get_hosts`` can only
+        omit the row.
+
+        ``resources=True`` is not requested: the stub list carries ``Status`` and
+        ``Drivers`` already, and the per-node detail fetch would be one request per
+        node against a Nomad that may have hundreds.
+
+        :return: One entry per registered Nomad client.
+        """
+        states = []
+        for node in self.backend.nodes.get_nodes():
+            driver = (node.get("Drivers") or {}).get(RAW_EXEC_DRIVER) or {}
+            states.append(
+                ExecutorHostState(
+                    name=node["Name"],
+                    address=node["Address"],
+                    reachable=node.get("Status") == NODE_STATUS_READY,
+                    # An absent driver entry is not a healthy one: Nomad omits
+                    # drivers it has not detected, and "not detected" is exactly the
+                    # never-onboarded case worth telling apart.
+                    driver_healthy=bool(driver.get("Healthy")),
+                    status=node.get("Status"),
+                    # Only when it is a problem. Nomad sets HealthDescription to
+                    # the literal "Healthy" on a working driver, and a field that
+                    # explains failures must not be full of the word "Healthy" --
+                    # a reader scanning for the broken ones would find nothing to
+                    # scan by.
+                    detail=(
+                        None
+                        if driver.get("Healthy")
+                        else driver.get("HealthDescription") or None
+                    ),
+                )
+            )
+        return states
 
     def get_allocation_for_task_history(
         self, queue_item: TaskHistory

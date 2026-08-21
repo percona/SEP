@@ -20,6 +20,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.models import BaseCaseInsensitiveModel
@@ -45,6 +46,44 @@ _TERMINAL_STATUS_EVENT_MAP = {
     TaskHistoryStatusEnum.LOST: "LOST",
     TaskHistoryStatusEnum.STALE: "STALE",
 }
+
+
+class ExecutorHostState(BaseModel):
+    """Describe one executor host in more detail than "usable or absent".
+
+    :func:`BaseExecutor.get_hosts` answers a yes/no question -- can a job be placed
+    here -- by collapsing several conditions into presence in a mapping. That is the
+    right answer for *dispatching*, and the wrong one for *reporting*: a host that is
+    missing from it may never have been onboarded, or may be onboarded and down, or up
+    with a broken driver, and those are three different jobs for whoever has to fix it.
+
+    :param name: The host's name as the backend knows it.
+    :param address: Its network address.
+    :param reachable: Whether the backend currently has contact with it. ``False``
+        means the machine is down, the agent is stopped, or it never registered.
+    :param driver_healthy: Whether it can actually run this executor's job type. A
+        reachable host with an unhealthy driver is onboarded but broken - a different
+        problem from one that was never onboarded, and the distinction this type
+        exists for.
+    :param status: The backend's own word for its state, passed through unmapped so a
+        reader can look it up in the backend's documentation.
+    :param detail: Why the driver is unhealthy, when the backend says.
+    """
+
+    name: str
+    address: str
+    reachable: bool
+    driver_healthy: bool
+    status: str | None = None
+    detail: str | None = None
+
+    @property
+    def usable(self) -> bool:
+        """Return whether a job can be placed here.
+
+        :return: ``True`` when the host is both reachable and driver-healthy.
+        """
+        return self.reachable and self.driver_healthy
 
 
 class BaseExecutor(BaseCaseInsensitiveModel, ABC):
@@ -176,6 +215,28 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
             as values.
         :rtype: list[str]
         """
+
+    def get_host_states(self) -> list[ExecutorHostState]:
+        """Describe every host the backend knows about, usable or not.
+
+        Deliberately concrete rather than abstract: a backend with nothing to add
+        should not have to say so, and for most of them there is nothing to add.
+        The default reports exactly what :meth:`get_hosts` returns as reachable and
+        healthy, which is true by construction - that method returns the usable
+        hosts - and reports nothing about hosts it cannot see, because a backend
+        with no notion of an unusable host has none to report.
+
+        Override it where the backend can distinguish "not registered" from
+        "registered and broken"; :class:`NomadExecutor` does.
+
+        :return: One entry per host the backend knows about.
+        """
+        return [
+            ExecutorHostState(
+                name=name, address=address, reachable=True, driver_healthy=True
+            )
+            for name, address in self.get_hosts().items()
+        ]
 
     @abstractmethod
     async def stream_logs(
