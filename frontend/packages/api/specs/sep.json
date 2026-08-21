@@ -20970,22 +20970,6 @@
               "title": "Task History Id",
               "type": "integer"
             }
-          },
-          {
-            "in": "query",
-            "name": "owner",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Owner"
-            }
           }
         ],
         "responses": {
@@ -21032,22 +21016,6 @@
             "schema": {
               "title": "Task History Id",
               "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "owner",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Owner"
             }
           }
         ],
@@ -21096,22 +21064,6 @@
               "title": "Task History Id",
               "type": "integer"
             }
-          },
-          {
-            "in": "query",
-            "name": "owner",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Owner"
-            }
           }
         ],
         "responses": {
@@ -21153,22 +21105,6 @@
               "title": "Task History Id",
               "type": "integer"
             }
-          },
-          {
-            "in": "query",
-            "name": "owner",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Owner"
-            }
           }
         ],
         "responses": {
@@ -21209,22 +21145,6 @@
             "schema": {
               "title": "Task History Id",
               "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "owner",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Owner"
             }
           }
         ],

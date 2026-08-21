@@ -15,6 +15,7 @@
 
 """Define tests for base SEP dependencies."""
 
+import inspect
 from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -74,10 +75,7 @@ from app.sep.deps import (
 )
 from app.sep.inventory import CreatedNode, CreatedSchema
 from app.sep.models import AppLifecycleEnum, AppState, SyncInventoryEntityTypeEnum
-from app.tasks.models import (
-    Task,
-    TaskHistoryStatusEnum,
-)
+from app.tasks.models import Task
 from tests.app.conftest import make_request
 from tests.app.factories import (
     CasdoorUserFactory,
@@ -85,6 +83,8 @@ from tests.app.factories import (
     CreatedSchemaFactory,
     CreatedServiceFactory,
     TaskFactory,
+    TaskHistoryResponseFactory,
+    TaskResponseFactory,
 )
 
 PENDING_HISTORY_ID = 10
@@ -649,25 +649,25 @@ class TestGetTaskHistory:
         with pytest.raises(HTTPNotFoundException):
             await get_task_history(mock_api, 1)
 
-    @pytest.mark.asyncio
-    async def test_owner_mismatch_raises_not_found(self) -> None:
-        """Assert wrong owner raises 404."""
-        task = TaskFactory.build(owner="BACKUPS")
-        history_data = {
-            "id": 1,
-            "execution_request": {"tracking": {}},
-            "status": TaskHistoryStatusEnum.SUCCESS,
-            "started_at": None,
-            "finished_at": None,
-            "anonymize_mask": None,
-            "task": task.model_dump(mode="json"),
-            "executed_by": None,
-        }
-        mock_api = AsyncMock()
-        mock_api.get.return_value = history_data
+    def test_has_no_owner_parameter(self) -> None:
+        """Assert get_task_history no longer accepts an owner filter."""
+        assert "owner" not in inspect.signature(get_task_history).parameters
 
-        with pytest.raises(HTTPNotFoundException):
-            await get_task_history(mock_api, 1, owner="ALTERS")
+    @pytest.mark.asyncio
+    async def test_returns_history_executed_by_someone_else(self) -> None:
+        """Assert a history is returned regardless of executed_by or task.owner."""
+        history = TaskHistoryResponseFactory.build(
+            executed_by="alice",
+            task=TaskResponseFactory.build(owner="BACKUPS"),
+        )
+        mock_api = AsyncMock()
+        mock_api.get.return_value = history.model_dump(mode="json")
+
+        result = await get_task_history(mock_api, history.id)
+
+        assert result.id == history.id
+        assert result.executed_by == "alice"
+        assert result.task.owner == "BACKUPS"
 
 
 class TestCheckForConflictedRunningTasks:
