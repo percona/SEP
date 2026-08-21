@@ -60,8 +60,9 @@ cd SEP/sidecar/pmm-fb
 docker compose up -d                          # pmm-server + sep-sidecar
 ```
 
-That is the whole prerequisite list. PMM generates every secret the pair needs
-and publishes them itself, so nothing has to be chosen or seeded in advance.
+That is the whole prerequisite list. PMM publishes the four secrets SEP reads
+from disk and the side-car mints its own Grafana token, so nothing has to be
+chosen or seeded in advance.
 
 `./bootstrap.sh` is needed **only** for the `mysql` profile, whose three
 test-fixture passwords are the only thing the generated `.env` still holds:
@@ -130,11 +131,11 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   entirely. `sep-mysql`'s entrypoint refuses to start without them; `compose.yaml`
   deliberately does not, because Compose interpolates every service at parse time
   regardless of the active profile, and a guard there would make the script a
-  prerequisite of every bring-up. PMM generates every SEP secret itself, including the
-  PostgreSQL role's password. Nothing secret is committed; re-running keeps an
-  existing `.env` and appends any slot it predates.
-- **PMM owns every SEP deployment secret.** With `PMM_ENABLE_SEP=1` it writes
-  four files into the `pmm-sep` volume, which pmm-server mounts at
+  prerequisite of every bring-up. PMM generates the secrets it publishes itself,
+  including the PostgreSQL role's password. Nothing secret is committed;
+  re-running keeps an existing `.env` and appends any slot it predates.
+- **PMM owns the four secrets SEP reads from disk.** With `PMM_ENABLE_SEP=1` it
+  writes four files into the `pmm-sep` volume, which pmm-server mounts at
   `/srv/sep` and the side-car mounts read-only at `/run/secrets/sep`.
   `SECRETS_DIR` points SEP at that directory and it reads each file as the
   canonical setting the filename names:
@@ -148,6 +149,11 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   `docker inspect` or in the process environment. `SEP_NOMAD_ENDPOINT` is the
   one credential that does: PMM's stock `admin:admin`, a published default
   rather than a provisioned secret.
+- **The Grafana service-account token is the side-car's own.** It is the one SEP
+  credential this pin does not get from PMM: the side-car mints it against
+  Grafana at start and persists it in the `sep-state` volume. A PMM build that
+  publishes the two canonical token names into `SECRETS_DIR` still outranks the
+  mint, which is what makes the two owners compatible rather than competing.
 - **`sep-sidecar` waits on `condition: service_healthy`** because SEP builds its
   settings once, at process start, and never re-reads them: a side-car released
   before the files exist comes up with those settings permanently unset. Health
@@ -199,8 +205,10 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   37 s while a cold start needs appreciably longer to first pass `readyz` — and
   because `sep-sidecar` depends on `service_healthy`, compose aborts the
   dependent instead of waiting. A build-side gate (PMM-15331) once widened this,
-  but the PR was closed unmerged, so `compose.yaml` overrides the healthcheck
-  with a 300 s start period. Keep that override whenever you repin: dropping it
+  but the PR was closed unmerged, so `compose.yaml` sets a 300 s start period of
+  its own. That is the only healthcheck field it sets — Docker merges the rest
+  field by field, so the probe and the other timings keep tracking whatever the
+  pinned image ships. Keep that override whenever you repin: dropping it
   reintroduces the aborted bring-up, and switching `sep-sidecar` to
   `service_started` instead trades it for a side-car that exits on a missing
   `SECRET_KEY` when it wins the race.

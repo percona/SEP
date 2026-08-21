@@ -42,12 +42,11 @@ services:
     # pass readyz — and sep-sidecar's service_healthy dependency turns that into
     # an aborted bring-up rather than a wait. The build once widened this itself;
     # the PR that did was closed unmerged, so the harness sets it here instead.
+    # Only the start period is set: Docker merges the healthcheck field by field,
+    # so the probe and the other timings stay whatever the pinned image ships and
+    # cannot go stale against a repin.
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/v1/server/readyz"]
-      interval: 5s
-      timeout: 5s
       start_period: 300s
-      retries: 3
     environment:
       PMM_ENABLE_SEP: "1"
       # Bare host:port — the entrypoint rejects a scheme or a trailing path, and
