@@ -47,6 +47,7 @@ from pathlib import Path
 from aiohttp import ClientError
 from fastapi import HTTPException, status
 
+from app.core.auth.providers.grafana.sdk import GrafanaSDK
 from app.core.config import settings
 from app.core.requests.connectivity import PROBE_TIMEOUT_SECONDS
 from app.core.requests.remote_api import RemoteAPI
@@ -224,7 +225,7 @@ def quiet_client_logging(api: RemoteAPI, floor: int) -> Generator[None]:
         logger.setLevel(configured_level)
 
 
-async def validate_token(provider: RemoteAPI, token: str) -> TokenStateEnum:
+async def validate_token(provider: GrafanaSDK, token: str) -> TokenStateEnum:
     """Check what Grafana makes of a token SEP already holds.
 
     The call is bounded independently of the client's own pool timeouts, so a
@@ -263,7 +264,7 @@ def token_name() -> str:
     return f"{SERVICE_ACCOUNT_NAME}-{utc_now():%Y%m%d%H%M%S}-{secrets.token_hex(3)}"
 
 
-async def search_account(provider: RemoteAPI) -> int | None:
+async def search_account(provider: GrafanaSDK) -> int | None:
     """Return the id of the service account named exactly ``sep``, if it exists.
 
     Grafana's ``query`` filters by substring, so the results are matched on the
@@ -289,7 +290,7 @@ async def search_account(provider: RemoteAPI) -> int | None:
     return None
 
 
-async def find_or_create_account(provider: RemoteAPI) -> int:
+async def find_or_create_account(provider: GrafanaSDK) -> int:
     """Return the id of SEP's service account, creating it when absent.
 
     A refused creation is re-checked against a second lookup rather than
@@ -332,7 +333,7 @@ async def find_or_create_account(provider: RemoteAPI) -> int:
     return account_id
 
 
-async def mint(provider: RemoteAPI, credentials: str) -> str:
+async def mint(provider: GrafanaSDK, credentials: str) -> str:
     """Obtain a fresh service-account token from Grafana in one attempt.
 
     ``secondsToLive`` is left out of the request: Grafana reads its absence as
@@ -366,7 +367,7 @@ async def mint(provider: RemoteAPI, credentials: str) -> str:
 
 
 async def mint_with_retry(
-    provider: RemoteAPI, credentials: str, deadline: float
+    provider: GrafanaSDK, credentials: str, deadline: float
 ) -> str:
     """Mint a token, retrying only what a still-starting Grafana explains.
 
@@ -442,7 +443,7 @@ def already_supplied(service_account_token: str, pmm_api_key: str) -> bool:
     return bool(service_account_token.strip() or pmm_api_key.strip())
 
 
-def resolve_provider() -> RemoteAPI | None:
+def resolve_provider() -> GrafanaSDK | None:
     """Return the Grafana client to resolve a token through, if there is one.
 
     Answers ``None`` for each case with nothing to do: settings that did not
@@ -479,7 +480,7 @@ def resolve_provider() -> RemoteAPI | None:
     return provider
 
 
-async def keep_persisted_token(provider: RemoteAPI, token: str) -> bool:
+async def keep_persisted_token(provider: GrafanaSDK, token: str) -> bool:
     """Return whether Grafana's answer leaves the persisted token usable.
 
     :param provider: The open Grafana client.
