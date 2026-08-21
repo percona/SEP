@@ -17,9 +17,11 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import {
+  fulfillConfiguredDelivery,
   fulfillEnabledApps,
   fulfillEnabledAppsWith,
   isEnabledAppsPath,
+  isSettingsListPath,
   type EnabledAppOverride,
 } from './mockEnabledApps';
 
@@ -27,7 +29,7 @@ import {
 // effective-disabled renders AppDisabledPage. The blocking_dependencies in the
 // mocks below are synthetic: no shipped app declares requires_apps today.
 const APP_ROUTE = '/atw';
-const APP_DISPLAY_NAME = 'Collect Diagnostic Data';
+const APP_DISPLAY_NAME = 'Support diagnostics';
 
 const GENERIC_TITLE = 'This feature is currently disabled.';
 const GENERIC_BODY = 'Contact an administrator to re-enable it.';
@@ -102,6 +104,11 @@ async function mockApis(
       });
     }
 
+    // The delivery setup gate wraps every ATW route.
+    if (isSettingsListPath(pathname)) {
+      return fulfillConfiguredDelivery(route);
+    }
+
     if (pathname === '/api/apps/atw/schema') {
       return route.fulfill({
         status: 200,
@@ -136,7 +143,7 @@ test.describe('Disabled-app splash', () => {
     });
     await page.goto(APP_ROUTE);
 
-    await expect(page.getByText('Collect Diagnostic Data is unavailable')).toBeVisible({
+    await expect(page.getByText(`${APP_DISPLAY_NAME} is unavailable`)).toBeVisible({
       timeout: 10_000,
     });
     await expect(
@@ -171,7 +178,7 @@ test.describe('Disabled-app splash', () => {
     });
     await page.goto(APP_ROUTE);
 
-    await expect(page.getByText('Collect Diagnostic Data is unavailable')).toBeVisible({
+    await expect(page.getByText(`${APP_DISPLAY_NAME} is unavailable`)).toBeVisible({
       timeout: 10_000,
     });
     await expect(

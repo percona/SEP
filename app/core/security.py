@@ -15,6 +15,7 @@
 
 """Security utilities module."""
 
+from fastapi import Request
 from itsdangerous import URLSafeSerializer, URLSafeTimedSerializer
 
 from app.core.config import settings
@@ -23,6 +24,21 @@ crypto_serializer = URLSafeSerializer(settings.SECRET_KEY.get_secret_value())
 crypto_timestamp_serializer = URLSafeTimedSerializer(
     settings.SECRET_KEY.get_secret_value()
 )
+
+SAFE_HTTP_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def is_bearer_authenticated(request: Request) -> bool:
+    """Return whether the request carries an ``Authorization: Bearer`` header.
+
+    Inspects only the ``Authorization`` header prefix — the token itself is not
+    validated. Used to reject a credential-less request before ``oauth2_scheme``
+    can raise a bare Starlette error, and to gate mutating methods.
+
+    :param request: The incoming HTTP request.
+    :return: ``True`` when the header starts with ``Bearer ``, ``False`` otherwise.
+    """
+    return request.headers.get("authorization", "").lower().startswith("bearer ")
 
 
 def get_internal_token() -> str | None:

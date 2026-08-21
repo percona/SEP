@@ -166,6 +166,38 @@ class TestListTables:
         assert first_page.json()["items"][0]["id"] == created_ids[0]
         assert second_page.json()["items"][0]["id"] == created_ids[1]
 
+    def test_list_tables_sort_by_schema_id(
+        self, test_client: TestClient, schema: Schema, service: Service
+    ) -> None:
+        """Order tables by the allowlisted ``schema_id`` sort key."""
+        other_schema_response = test_client.post(
+            f"/services/{service.id}/schemas/",
+            json=SchemaWriteFactory.build(name="other_schema_id_sort").model_dump(
+                mode="json"
+            ),
+        )
+        assert other_schema_response.status_code == status.HTTP_201_CREATED
+        other_schema_id = other_schema_response.json()["id"]
+
+        low_schema_id, high_schema_id = sorted((schema.id, other_schema_id))
+        for schema_id, name in (
+            (high_schema_id, "HighSchemaTable"),
+            (low_schema_id, "LowSchemaTable"),
+        ):
+            create_response = test_client.post(
+                f"/schemas/{schema_id}/tables/",
+                json=TableWriteFactory.build(name=name).model_dump(mode="json"),
+            )
+            assert create_response.status_code == status.HTTP_201_CREATED
+
+        response = test_client.get(
+            "/tables/",
+            params={"sort": "schema_id", "search": "SchemaTable"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        items = response.json()["items"]
+        assert [item["schema_id"] for item in items] == [low_schema_id, high_schema_id]
+
 
 class TestRetrieveTable:
     """Test the GET /tables/{table_id} endpoint."""

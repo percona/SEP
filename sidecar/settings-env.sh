@@ -101,20 +101,33 @@ export_canonical SEP__DATABASE__PORT "$SEP_DB_PORT"
 export_canonical INVENTORY__DATABASE__PORT "$SEP_DB_PORT"
 export_canonical TASKS__DATABASE__PORT "$SEP_DB_PORT"
 
+# The four guards below skip calling export_canonical -- and so skip its blank
+# clear -- whenever their raw input is absent; SEP_INTERNAL_TOKEN, BASE_URL and
+# CELERY__BEAT_DBURI have no guard and no export_canonical call at all. A blank
+# inherited value on any of these still outranks the file or default below it,
+# and for the URL-typed ones an inherited blank fails settings validation
+# outright, so all of them are cleared unconditionally before any guard decides.
+blank_cleared_names=(
+    SEP__DATABASE__PASSWORD INVENTORY__DATABASE__PASSWORD TASKS__DATABASE__PASSWORD
+    AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN PMM__API_KEY
+    PMM__ENDPOINT AUTH__PROVIDER__GRAFANA__ENDPOINT
+    TASKS__NOMAD__ENDPOINT
+    SEP_INTERNAL_TOKEN BASE_URL
+    CELERY__BEAT_DBURI
+)
+for name in "${blank_cleared_names[@]}"; do
+    if [[ -z ${!name:-} ]]; then
+        unset "$name"
+    fi
+done
+unset name
+
 # The outer guard stays: without a raw input and without a file, export_canonical
 # alone would export the canonical name empty.
 if [[ -n ${SEP_DB_PASSWORD:-} ]]; then
     export_canonical SEP__DATABASE__PASSWORD "$SEP_DB_PASSWORD"
     export_canonical INVENTORY__DATABASE__PASSWORD "$SEP_DB_PASSWORD"
     export_canonical TASKS__DATABASE__PASSWORD "$SEP_DB_PASSWORD"
-fi
-
-# Cleared for the same reason export_canonical clears a deferred name: the beat
-# store is never exported here, so an inherited empty string would outrank both a
-# mounted CELERY__BEAT_DBURI and the derived default -- and an empty URL fails
-# settings validation rather than falling through to either.
-if [[ -z ${CELERY__BEAT_DBURI:-} ]]; then
-    unset CELERY__BEAT_DBURI
 fi
 
 if [[ -n ${SEP_GRAFANA_TOKEN:-} ]]; then

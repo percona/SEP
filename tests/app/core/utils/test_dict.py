@@ -62,6 +62,14 @@ def test_deep_dict_update(main_dict, update_dict, expected):
     assert main_dict == expected
 
 
+def test_deep_dict_update_self_merge_is_noop():
+    """Assert merging a dict into itself does not double any list."""
+    d = {"items": ["a", "b"], "nested": {"nums": [1, 2], "k": "v"}, "s": "x"}
+    expected = {"items": ["a", "b"], "nested": {"nums": [1, 2], "k": "v"}, "s": "x"}
+    deep_dict_update(d, d)
+    assert d == expected
+
+
 @pytest.mark.parametrize(
     ("unsorted_dict", "key", "expected_keys"),
     [

@@ -29,13 +29,22 @@ from pydantic import SecretStr
 from app.core.config import settings
 from app.core.pagination import DEFAULT_PAGINATION_OFFSET, MAX_PAGINATION_LIMIT
 from app.core.requests import RemoteAPI
+from app.inventory.constants import (
+    UNCOLLECTED_HOST_OBSERVATION_DETAIL,
+    UNCOLLECTED_SERVICE_OBSERVATION_DETAIL,
+)
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.inventory.deps import (
     get_syncers,
     INVENTORY_PLUGIN_ENTITY_NAMES,
 )
 from app.sep.crud import SyncItemManager
-from app.sep.deps import BEARER_REQUIRED_DETAIL, get_created_service, get_tasks_api
+from app.sep.deps import (
+    BEARER_REQUIRED_DETAIL,
+    get_created_service,
+    get_current_user,
+    get_tasks_api,
+)
 from app.sep.main import sep_app
 from app.sep.models import SyncInventoryEntityTypeEnum
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
@@ -45,11 +54,18 @@ _EXPECTED_SCHEMA_ENTITY_COUNT = len(INVENTORY_PLUGIN_ENTITY_NAMES)
 _MYSQL_PORT = 3306
 _TASK_HISTORY_ID = 42
 _ENVELOPE_TOTAL = 7
+_FILTERED_TOTAL = 3
+_PAGE_ITEM_COUNT = 2
 _REQUEST_OFFSET = 2
 _REQUEST_LIMIT = 5
 _UPSTREAM_OFFSET = 99
 _UPSTREAM_LIMIT = 1
 _CREATE_SERVICE_TEST_NODE_ID = 7
+
+# The inventory sub-app's uncollected-observation details, pinned verbatim: the proxy
+# must relay them rather than collapse them onto the parent-missing ``Not Found``.
+_UNCOLLECTED_NODE_DETAIL = "System observation not collected yet for this node"
+_UNCOLLECTED_SERVICE_DETAIL = "System observation not collected yet for this service"
 
 
 class TestInventoryResponseModelsInOpenAPI:
@@ -135,7 +151,11 @@ class TestInventoryGateway:
         assert body["limit"] == _REQUEST_LIMIT
         mock_inventory_api_dep.get.assert_awaited_once_with(
             "/nodes/",
-            params={"offset": _REQUEST_OFFSET, "limit": _REQUEST_LIMIT},
+            params={
+                "offset": _REQUEST_OFFSET,
+                "limit": _REQUEST_LIMIT,
+                "sort": "-created_at",
+            },
         )
 
     def test_list_forwards_validated_pagination_and_preserves_filters(
@@ -154,6 +174,92 @@ class TestInventoryGateway:
                 "name": "db1",
                 "offset": DEFAULT_PAGINATION_OFFSET,
                 "limit": _REQUEST_LIMIT,
+                "sort": "-created_at",
+            },
+        )
+
+    def test_list_forwards_validated_sort_and_search(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure allowlisted sort/search reach upstream as validated query params."""
+        mock_inventory_api_dep.get.return_value = {
+            "items": [{"id": 1}],
+            "total": _FILTERED_TOTAL,
+        }
+        response = test_client.get(
+            "/api/apps/inventory/nodes/",
+            params={"sort": "name", "search": "db1", "limit": _REQUEST_LIMIT},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == _FILTERED_TOTAL
+        assert len(body["items"]) == 1
+        mock_inventory_api_dep.get.assert_awaited_once_with(
+            "/nodes/",
+            params={
+                "offset": DEFAULT_PAGINATION_OFFSET,
+                "limit": _REQUEST_LIMIT,
+                "sort": "name",
+                "search": "db1",
+            },
+        )
+
+    def test_list_drops_whitespace_only_search_from_upstream(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure a blank search is stripped so the raw query value cannot leak upstream."""
+        mock_inventory_api_dep.get.return_value = {"items": [], "total": 0}
+        response = test_client.get(
+            "/api/apps/inventory/nodes/",
+            params={"search": "  ", "sort": "-name", "limit": _REQUEST_LIMIT},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        mock_inventory_api_dep.get.assert_awaited_once_with(
+            "/nodes/",
+            params={
+                "offset": DEFAULT_PAGINATION_OFFSET,
+                "limit": _REQUEST_LIMIT,
+                "sort": "-name",
+            },
+        )
+
+    def test_list_rejects_out_of_allowlist_sort_with_422(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure an unknown sort key is rejected before any upstream call."""
+        response = test_client.get(
+            "/api/apps/inventory/nodes/",
+            params={"sort": "bogus"},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_inventory_api_dep.get.assert_not_called()
+
+    def test_list_preserves_upstream_total_not_page_length(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure the proxied total is the upstream filtered total, never ``len(items)``."""
+        mock_inventory_api_dep.get.return_value = {
+            "items": [{"id": i} for i in range(1, _PAGE_ITEM_COUNT + 1)],
+            "total": _FILTERED_TOTAL,
+            "offset": 0,
+            "limit": _REQUEST_LIMIT,
+        }
+        response = test_client.get(
+            "/api/apps/inventory/schemas/",
+            params={"sort": "service_id", "search": "db", "limit": _REQUEST_LIMIT},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert len(body["items"]) == _PAGE_ITEM_COUNT
+        assert body["total"] == _FILTERED_TOTAL
+        assert body["total"] != len(body["items"])
+        mock_inventory_api_dep.get.assert_awaited_once_with(
+            "/schemas/",
+            params={
+                "offset": DEFAULT_PAGINATION_OFFSET,
+                "limit": _REQUEST_LIMIT,
+                "sort": "service_id",
+                "search": "db",
             },
         )
 
@@ -741,10 +847,16 @@ class TestInventorySystemObservation:
         mock_inventory_api_dep.get.assert_awaited_once_with(inventory_path)
 
     @pytest.mark.parametrize(
-        "url",
+        ("url", "detail"),
         [
-            "/api/apps/inventory/nodes/3/system-observation",
-            "/api/apps/inventory/services/9/system-observation",
+            (
+                "/api/apps/inventory/nodes/3/system-observation",
+                _UNCOLLECTED_NODE_DETAIL,
+            ),
+            (
+                "/api/apps/inventory/services/9/system-observation",
+                _UNCOLLECTED_SERVICE_DETAIL,
+            ),
         ],
     )
     def test_system_observation_not_collected_passes_through_404(
@@ -752,14 +864,54 @@ class TestInventorySystemObservation:
         test_client,
         mock_inventory_api_dep,
         url: str,
+        detail: str,
     ):
-        """Ensure an upstream 404 (not collected yet) propagates as HTTP 404."""
+        """Ensure the upstream not-collected detail reaches the gateway response body.
+
+        The inventory sub-app answers the existing-but-uncollected case with its own
+        ``detail`` while a missing node/service keeps the default ``Not Found``.
+        ``RemoteAPI`` re-raises the upstream detail verbatim, so the discrimination
+        must survive the proxy with no gateway-side handling.
+        """
         mock_inventory_api_dep.get.side_effect = HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No system observation",
+            detail=detail,
         )
         response = test_client.get(url)
         assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == detail
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "/api/apps/inventory/nodes/3/system-observation",
+            "/api/apps/inventory/services/9/system-observation",
+        ],
+    )
+    def test_system_observation_parent_missing_passes_through_default_404(
+        self,
+        test_client,
+        mock_inventory_api_dep,
+        url: str,
+    ):
+        """Ensure a missing node/service keeps the default ``Not Found`` detail."""
+        mock_inventory_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not Found",
+        )
+        response = test_client.get(url)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == "Not Found"
+
+    def test_pinned_details_match_inventory_constants(self):
+        """Hold the pinned proxy details equal to the sub-app's own constants.
+
+        The literals this class asserts against are a separate copy of the strings
+        the inventory routes raise. Without this guard, rewording the constants
+        leaves these proxy tests green against wording the sub-app no longer sends.
+        """
+        assert _UNCOLLECTED_NODE_DETAIL == UNCOLLECTED_HOST_OBSERVATION_DETAIL
+        assert _UNCOLLECTED_SERVICE_DETAIL == UNCOLLECTED_SERVICE_OBSERVATION_DETAIL
 
     @pytest.mark.parametrize(
         "url",
@@ -803,6 +955,18 @@ class TestInventorySystemObservation:
 class TestInventoryServiceCheckConnectivity:
     """Cover POST /api/apps/inventory/services/{service_id}/check-connectivity/."""
 
+    @pytest.fixture(autouse=True)
+    def _admin_identity(self, test_client, admin_user):
+        """Resolve the API identity to an admin for the probe's own ``IsApiAdmin``.
+
+        Declared after ``test_client`` so it replaces the non-admin identity that
+        fixture installs; :meth:`test_non_admin_is_refused` opts out by
+        re-installing the non-admin.
+        """
+        sep_app.dependency_overrides[get_current_user] = lambda: admin_user
+        yield
+        sep_app.dependency_overrides.pop(get_current_user, None)
+
     @pytest.fixture
     def created_node(self):
         """Return a fake inventory node."""
@@ -835,6 +999,23 @@ class TestInventoryServiceCheckConnectivity:
 
     def _url(self, service) -> str:
         return f"/api/apps/inventory/services/{service.id}/check-connectivity/"
+
+    @pytest.mark.usefixtures("_mock_mysql_service_dep")
+    def test_non_admin_is_refused(
+        self, test_client, mysql_service, mock_tasks_api_dep, regular_user
+    ):
+        """Refuse a non-admin: the probe opens a connection with stored credentials.
+
+        Its already-admin sibling is ``POST /api/sep/admin/connectivity-check/``,
+        and the declaration is on the route rather than left to the router-level
+        gate so the posture is readable where the route is defined.
+        """
+        sep_app.dependency_overrides[get_current_user] = lambda: regular_user
+
+        response = test_client.post(self._url(mysql_service))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        mock_tasks_api_dep.post.assert_not_awaited()
 
     @pytest.mark.usefixtures("_mock_mysql_service_dep")
     def test_successful_probe_returns_200(

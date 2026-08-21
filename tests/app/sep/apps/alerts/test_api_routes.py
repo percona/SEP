@@ -15,7 +15,7 @@
 
 """Define HTTP integration tests for the alerts plugin JSON API routes."""
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from unittest.mock import AsyncMock
 
 import pytest
@@ -25,6 +25,8 @@ from fastapi.exceptions import HTTPException
 from fastapi.testclient import TestClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api.deps import require_minimum_role_for_unsafe_methods
+from app.core.auth.models import UserRole
 from app.core.exceptions import HTTPNotFoundException
 from app.sep.apps.alerts.crud import AlertBackupManager
 from app.sep.apps.alerts.deps import (
@@ -46,7 +48,11 @@ from app.sep.clients.pmm import (
     NotificationPolicy,
     PMMRemoteAPI,
 )
-from app.sep.deps import get_session, require_bearer_for_unsafe_methods
+from app.sep.deps import (
+    get_current_user,
+    get_session,
+    require_bearer_for_unsafe_methods,
+)
 from app.sep.main import sep_app
 
 API_BASE = "/api/apps/alerts"
@@ -146,6 +152,26 @@ def mock_pmm_api(api_client: TestClient) -> AsyncMock:
 def _mock_pmm_unavailable(api_client: TestClient) -> None:
     """Override the PMM API dependency to return ``None`` — should yield 503."""
     sep_app.dependency_overrides[get_pmm_api] = lambda: None
+
+
+@pytest.fixture
+def gate_live_client(
+    api_client: TestClient, resolve_casdoor_as_role: Callable[[UserRole], None]
+) -> Callable[[UserRole], TestClient]:
+    """Return a factory yielding the alerts client at a chosen rank, gate live.
+
+    Pop the gate override so the real gate runs, and the user override with it:
+    the gate resolves the caller imperatively, so the two must agree on who is
+    calling and only a real provider payload makes them.
+    """
+
+    def at_role(role: UserRole) -> TestClient:
+        sep_app.dependency_overrides.pop(require_minimum_role_for_unsafe_methods, None)
+        sep_app.dependency_overrides.pop(get_current_user, None)
+        resolve_casdoor_as_role(role)
+        return api_client
+
+    return at_role
 
 
 @pytest_asyncio.fixture
@@ -1101,3 +1127,171 @@ def test_api_routes_mount_under_plugins_prefix():
         "/api/apps/alerts/push",
     }
     assert expected.issubset(set(paths)), expected - set(paths)
+
+
+class TestRoleGate:
+    """Cover the live minimum-role gate over the alerts JSON API routes."""
+
+    _PUSH_BODY = {"selected_templates": [_TEMPLATE_A.name]}
+    _PAGERDUTY_BODY = {"integration_key": "k"}
+
+    @staticmethod
+    def _prime_restore(mock_pmm_api: AsyncMock) -> None:
+        """Point the PMM mock at the responses a successful restore reads.
+
+        :param mock_pmm_api: The mock standing in for the PMM API client.
+        """
+        mock_pmm_api.list_rules.return_value = []
+        mock_pmm_api.list_contact_points.return_value = []
+        mock_pmm_api.list_folders.return_value = [_FOLDER]
+        mock_pmm_api.template_exists.return_value = True
+
+    @pytest.mark.parametrize(
+        "role", [UserRole.EDITOR, UserRole.ADMIN], ids=["editor", "admin"]
+    )
+    def test_push_is_admitted_from_editor_upwards(
+        self, gate_live_client, mock_pmm_api: AsyncMock, role: UserRole
+    ):
+        """Push templates as each rank the route admits, and land the push.
+
+        Alert-template content is what PMM itself puts at editor rank. The
+        awaited count is asserted alongside the body because a 200 carrying no
+        results would also satisfy a status-only check.
+        """
+        client = gate_live_client(role)
+
+        response = client.post(f"{API_BASE}/push", json=self._PUSH_BODY)
+
+        assert response.status_code == status.HTTP_200_OK
+        results = response.json()["results"]
+        assert len(results) == len(self._PUSH_BODY["selected_templates"])
+        assert all(r["status"] == "success" for r in results)
+        assert mock_pmm_api.create_template.await_count == len(results)
+
+    @pytest.mark.parametrize(
+        "role", [UserRole.EDITOR, UserRole.ADMIN], ids=["editor", "admin"]
+    )
+    @pytest.mark.asyncio
+    async def test_restore_is_admitted_from_editor_upwards(
+        self,
+        gate_live_client,
+        mock_pmm_api: AsyncMock,
+        seeded_backup: AlertBackup,
+        role: UserRole,
+    ):
+        """Restore a backup as each rank the route admits, and land the restore."""
+        self._prime_restore(mock_pmm_api)
+        client = gate_live_client(role)
+
+        response = client.post(
+            f"{API_BASE}/restore", json={"backup_id": seeded_backup.id}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["status"] == "success"
+        assert "templates" in body["details"]
+
+    @pytest.mark.usefixtures("mock_pmm_api")
+    def test_push_is_refused_below_editor(self, gate_live_client):
+        """Refuse a viewer's push.
+
+        This row is the canary for the fixture itself: with the gate override
+        left in place every rank would be admitted, and a refusal is the only
+        assertion that notices.
+        """
+        client = gate_live_client(UserRole.VIEWER)
+
+        response = client.post(f"{API_BASE}/push", json=self._PUSH_BODY)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    @pytest.mark.usefixtures("mock_pmm_api")
+    @pytest.mark.asyncio
+    async def test_restore_is_refused_below_editor(
+        self, gate_live_client, seeded_backup: AlertBackup
+    ):
+        """Refuse a viewer's restore, the second canary for the fixture."""
+        client = gate_live_client(UserRole.VIEWER)
+
+        response = client.post(
+            f"{API_BASE}/restore", json={"backup_id": seeded_backup.id}
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    @pytest.mark.parametrize(
+        ("path", "body"),
+        [("/pagerduty", _PAGERDUTY_BODY), ("/pagerduty/delete", None)],
+        ids=["save", "delete"],
+    )
+    @pytest.mark.usefixtures("mock_pmm_api")
+    def test_the_pagerduty_routes_stay_administrator_only(
+        self, gate_live_client, path: str, body
+    ):
+        """Refuse an editor on the PagerDuty pair.
+
+        They sit on the same router as the two routes an editor reaches, and
+        take their administrator minimum from the default rather than from a
+        registration — so nothing but the default keeps them closed.
+        """
+        client = gate_live_client(UserRole.EDITOR)
+
+        response = client.post(f"{API_BASE}{path}", json=body)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_a_sibling_admin_route_still_refuses_an_editor(self, gate_live_client):
+        """Refuse an editor outside the alerts app, where nothing was lowered.
+
+        The route is chosen for carrying no admin dependency of its own, so the
+        403 can only have come from the unregistered-route default.
+        """
+        client = gate_live_client(UserRole.EDITOR)
+
+        response = client.post("/api/sep/periodic-tasks/some-task/")
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    def test_an_admitted_rank_is_admitted_under_a_url_prefix(
+        self, gate_live_client, mock_pmm_api: AsyncMock, root_path: str
+    ):
+        """Admit an editor identically with and without PMM's nginx prefix.
+
+        The registry is keyed on the endpoint object, which no prefix touches,
+        and the overrides the fixtures install live on ``sep_app`` — so the
+        client is rebuilt here only to carry ``root_path``. A 403 here would
+        mean the registry had acquired a path dependency; a 404 would mean this
+        test mis-addressed the prefix.
+        """
+        gate_live_client(UserRole.EDITOR)
+        client = TestClient(sep_app, root_path=root_path, raise_server_exceptions=False)
+
+        response = client.post(
+            f"{root_path}{API_BASE}/push",
+            json=self._PUSH_BODY,
+            headers=BEARER_HEADERS,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert mock_pmm_api.create_template.await_count == len(
+            self._PUSH_BODY["selected_templates"]
+        )
+
+    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    @pytest.mark.usefixtures("mock_pmm_api")
+    def test_a_refused_rank_is_refused_under_a_url_prefix(
+        self, gate_live_client, root_path: str
+    ):
+        """Refuse a viewer identically with and without PMM's nginx prefix."""
+        gate_live_client(UserRole.VIEWER)
+        client = TestClient(sep_app, root_path=root_path, raise_server_exceptions=False)
+
+        response = client.post(
+            f"{root_path}{API_BASE}/push",
+            json=self._PUSH_BODY,
+            headers=BEARER_HEADERS,
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN

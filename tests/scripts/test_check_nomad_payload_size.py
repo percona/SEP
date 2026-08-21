@@ -15,19 +15,11 @@
 
 """Tests for the ``scripts/check_nomad_payload_size.py`` CLI."""
 
-import importlib.util
 import sys
-from pathlib import Path
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "check_nomad_payload_size.py"
+from tests.scripts import load_script
 
-_spec = importlib.util.spec_from_file_location("check_nomad_payload_size", _SCRIPT_PATH)
-assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-check_nomad_payload_size = importlib.util.module_from_spec(_spec)
-sys.modules["check_nomad_payload_size"] = check_nomad_payload_size
-_spec.loader.exec_module(check_nomad_payload_size)
+check_nomad_payload_size = load_script("check_nomad_payload_size")
 
 
 VERBOSE_SCRIPT = '''\
@@ -60,7 +52,7 @@ def _write(tmp_path, name, text):
 
 
 def test_check_payload_uses_minified_text_for_size(tmp_path, monkeypatch):
-    """``check_payload`` gzip-compresses the minified source, not the original text."""
+    """Gzip-compress the minified source in ``check_payload``, not the original text."""
     path = _write(tmp_path, "verbose.py", VERBOSE_SCRIPT)
     seen = {}
     real_minify = check_nomad_payload_size.minify
@@ -78,7 +70,7 @@ def test_check_payload_uses_minified_text_for_size(tmp_path, monkeypatch):
 
 
 def test_check_payload_falls_back_on_syntax_error(tmp_path, monkeypatch):
-    """``check_payload`` ignores ``SyntaxError`` from ``minify`` and uses raw source."""
+    """Ignore ``SyntaxError`` from ``minify`` in ``check_payload`` and use raw source."""
     path = _write(tmp_path, "broken.py", INVALID_SCRIPT)
 
     def raise_syntax(src, **kwargs):
@@ -93,7 +85,7 @@ def test_check_payload_falls_back_on_syntax_error(tmp_path, monkeypatch):
 
 
 def test_main_reports_oversized_file_and_returns_one(tmp_path, monkeypatch, capsys):
-    """``main`` exits 1 and prints path, size, and limit when a file exceeds the limit."""
+    """Exit 1 from ``main`` and print path, size, and limit when a file exceeds the limit."""
     path = _write(tmp_path, "verbose.py", VERBOSE_SCRIPT)
     monkeypatch.setattr(check_nomad_payload_size, "NOMAD_PAYLOAD_SIZE_LIMIT", 1)
     monkeypatch.setattr(sys, "argv", ["check_nomad_payload_size.py", str(path)])
@@ -105,8 +97,50 @@ def test_main_reports_oversized_file_and_returns_one(tmp_path, monkeypatch, caps
 
 
 def test_main_returns_zero_when_within_limit(tmp_path, monkeypatch, capsys):
-    """``main`` exits 0 and prints nothing when all files are within the limit."""
+    """Exit 0 from ``main`` and print nothing when all files are within the limit."""
     path = _write(tmp_path, "verbose.py", VERBOSE_SCRIPT)
     monkeypatch.setattr(sys, "argv", ["check_nomad_payload_size.py", str(path)])
     assert check_nomad_payload_size.main() == 0
     assert capsys.readouterr().out == ""
+
+
+def test_report_prints_size_headroom_and_returns_zero(tmp_path, monkeypatch, capsys):
+    """Print size, limit, and headroom for a within-limit payload and exit 0."""
+    path = _write(tmp_path, "verbose.py", VERBOSE_SCRIPT)
+    limit = 10_000
+    monkeypatch.setattr(check_nomad_payload_size, "NOMAD_PAYLOAD_SIZE_LIMIT", limit)
+    size = check_nomad_payload_size.payload_size(str(path))
+    headroom = limit - size
+    assert check_nomad_payload_size.main(["--report", str(path)]) == 0
+    out = capsys.readouterr().out.strip()
+    assert out == (f"{path}: {size:,} / {limit:,} bytes ({headroom:,} bytes headroom)")
+
+
+def test_report_returns_zero_when_over_limit(tmp_path, monkeypatch, capsys):
+    """Exit 0 from ``--report`` even when a payload exceeds the limit."""
+    path = _write(tmp_path, "verbose.py", VERBOSE_SCRIPT)
+    monkeypatch.setattr(check_nomad_payload_size, "NOMAD_PAYLOAD_SIZE_LIMIT", 1)
+    size = check_nomad_payload_size.payload_size(str(path))
+    over = size - 1
+    assert check_nomad_payload_size.main(["--report", str(path)]) == 0
+    out = capsys.readouterr().out.strip()
+    assert "OVER LIMIT" in out
+    assert f"{over:,} bytes OVER LIMIT" in out
+    assert str(path) in out
+
+
+def test_report_prints_one_line_per_path(tmp_path, monkeypatch, capsys):
+    """Print one line per path when ``--report`` is given multiple paths."""
+    path_a = _write(tmp_path, "a.py", VERBOSE_SCRIPT)
+    path_b = _write(tmp_path, "b.py", VERBOSE_SCRIPT)
+    paths = [str(path_a), str(path_b)]
+    limit = 10_000
+    monkeypatch.setattr(check_nomad_payload_size, "NOMAD_PAYLOAD_SIZE_LIMIT", limit)
+    size = check_nomad_payload_size.payload_size(paths[0])
+    headroom = limit - size
+    line = f"{paths[0]}: {size:,} / {limit:,} bytes ({headroom:,} bytes headroom)"
+    assert check_nomad_payload_size.main(["--report", *paths]) == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == len(paths)
+    assert lines[0] == line
+    assert lines[1] == line.replace(paths[0], paths[1])

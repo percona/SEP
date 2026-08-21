@@ -37,6 +37,8 @@ import logging
 from fastapi import APIRouter
 from fastapi.exceptions import HTTPException
 
+from app.api.deps import require_minimum_role
+from app.core.auth.models import UserRole
 from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPNotFoundException,
@@ -101,20 +103,15 @@ async def alerts_api_index(
 
     ``present_names`` is ``None`` when PMM is unconfigured or unreachable, which
     is the same signal used to drive ``pmm_connected`` and per-template
-    ``in_pmm`` flags so the UI degrades gracefully.
+    ``in_pmm`` flags, so the response carries no PMM data rather than failing.
 
     :param alert_templates: Local alert templates grouped by service type.
-    :type alert_templates: AlertTemplatesDep
     :param present_names: Template names already present in PMM, or ``None`` when
         PMM is unreachable.
-    :type present_names: set[str] | None
     :param recent_backups: The most recent alert backups, newest first.
-    :type recent_backups: list[AlertBackup]
     :param pagerduty_status: PagerDuty contact-point status, or ``None`` when PMM
         is unreachable.
-    :type pagerduty_status: dict[str, Any] | None
     :return: The aggregated index payload.
-    :rtype: IndexResponse
     """
     pmm_connected = present_names is not None
     groups = [
@@ -221,6 +218,7 @@ async def alerts_api_get_backup(session: SessionDep, backup_id: int) -> BackupDe
 
 
 @router.post("/restore")
+@require_minimum_role(UserRole.EDITOR)
 async def alerts_api_restore(
     payload: RestoreRequest,
     pmm_api: RequiredPMMAPIDep,
@@ -342,6 +340,7 @@ async def alerts_api_pagerduty_delete(
 
 
 @router.post("/push")
+@require_minimum_role(UserRole.EDITOR)
 async def alerts_api_push(
     payload: PushRequest,
     pmm_api: RequiredPMMAPIDep,

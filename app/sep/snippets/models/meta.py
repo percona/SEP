@@ -67,8 +67,10 @@ from app.core.utils.pydantic import (
     field_with_metadata,
     loc_to_dot_sep,
 )
+from app.sep.apps.field_names import (
+    RESERVED_EXECUTION_FIELD_NAMES,
+)
 from app.sep.snippets.models.constants import (
-    EXTRA_ARGS_FIELD_NAME,
     TextInputHTMLElement,
 )
 
@@ -310,14 +312,21 @@ class SnippetMetaParameter(BaseModel):
     def _reject_reserved_name(cls, value: str) -> str:
         """Reject a parameter name reserved for a synthesized execution field.
 
+        Reservation is unconditional and case-sensitive. A name in
+        :data:`~app.sep.apps.field_names.RESERVED_EXECUTION_FIELD_NAMES` is
+        rejected even when the app rendering this script never synthesizes that
+        particular field, so an author can apply the rule to the frontmatter in
+        front of them without knowing which app will render it.
+
         :param value: The candidate parameter name.
         :return: ``value`` unchanged, when it is not reserved.
         :raises ValueError: When the name matches a reserved synthesized field name.
         """
-        if value == EXTRA_ARGS_FIELD_NAME:
+        if value in RESERVED_EXECUTION_FIELD_NAMES:
+            reserved = ", ".join(sorted(RESERVED_EXECUTION_FIELD_NAMES))
             raise ValueError(
-                f"parameter name {value!r} is reserved for the synthesized "
-                "Extra Args field"
+                f"parameter name {value!r} is reserved for a synthesized "
+                f"execution field; rename it (reserved names: {reserved})"
             )
         return value
 

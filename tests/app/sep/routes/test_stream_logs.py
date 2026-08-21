@@ -102,6 +102,49 @@ def test_archives_logs_event_stream(
     )
 
 
+def test_sync_hop_is_authenticated_as_the_service_principal(
+    test_client, mock_tasks_client, task_history_response, mocker
+):
+    """Send the end-of-stream reconciliation under the internal token.
+
+    The log stream is reachable by any authenticated user, and the ``sync`` hop
+    it issues at stream end is a mutating request on the Tasks API — which is
+    admin-gated. Carrying the viewing user's own bearer there ends a non-admin's
+    stream in an error frame instead of the finish frame, so the hop is
+    authenticated as the service principal the gate admits by identity.
+
+    Evidence stops at the credential the request carries; whether the gate then
+    admits that identity is asserted elsewhere, not here.
+    """
+    mocker.patch(
+        "app.sep.routes.stream_logs.require_internal_token",
+        return_value="internal-token",
+    )
+    active_tokens: list[str] = []
+    sync_token: dict[str, str] = {}
+
+    @contextmanager
+    def recording_auth(token: str):
+        active_tokens.append(token)
+        try:
+            yield mock_tasks_client
+        finally:
+            active_tokens.pop()
+
+    async def recording_post(_path, **_kwargs):
+        sync_token["value"] = active_tokens[-1]
+        return task_history_response.model_dump()
+
+    mock_tasks_client.auth = recording_auth
+    mock_tasks_client.post.side_effect = recording_post
+
+    response = test_client.get(f"/stream-logs/{task_history_response.id}")
+
+    assert response.status_code == HTTP_200_OK
+    assert "event: finish" in response.text
+    assert sync_token["value"] == "internal-token"
+
+
 def test_logs_event_stream_emits_sep_error_on_upstream_error(
     test_client, mock_tasks_client, task_history_response
 ):

@@ -2076,7 +2076,7 @@ export interface operations {
         offset?: number;
         limit?: number;
         /** @description Sort key; prefix with '-' for descending order. */
-        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        sort?: 'created_at' | '-created_at' | 'name' | '-name' | 'service_id' | '-service_id';
         /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
@@ -2207,7 +2207,7 @@ export interface operations {
         offset?: number;
         limit?: number;
         /** @description Sort key; prefix with '-' for descending order. */
-        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        sort?: 'created_at' | '-created_at' | 'name' | '-name' | 'schema_id' | '-schema_id';
         /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
@@ -2413,7 +2413,7 @@ export interface operations {
         offset?: number;
         limit?: number;
         /** @description Sort key; prefix with '-' for descending order. */
-        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        sort?: 'created_at' | '-created_at' | 'name' | '-name' | 'service_id' | '-service_id';
         /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };
@@ -2574,7 +2574,7 @@ export interface operations {
         offset?: number;
         limit?: number;
         /** @description Sort key; prefix with '-' for descending order. */
-        sort?: 'created_at' | '-created_at' | 'name' | '-name';
+        sort?: 'created_at' | '-created_at' | 'name' | '-name' | 'schema_id' | '-schema_id';
         /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
       };

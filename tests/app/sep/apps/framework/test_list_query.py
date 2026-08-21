@@ -20,9 +20,12 @@ from __future__ import annotations
 import ast
 import inspect
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import Annotated, Any, TYPE_CHECKING
 
 import pytest
+import pytest_asyncio
+from fastapi import Depends, FastAPI, status
+from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel
 from sqlalchemy import cast, column, String
 
@@ -34,9 +37,11 @@ from app.core.db.list_query import (
 )
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import Pagination
+from app.core.pagination.deps import pagination_dep
 from app.sep.apps.framework import list_query as list_query_module
 from app.sep.apps.framework.list_query import (
     apply_in_memory,
+    build_in_memory_list_query,
     default_in_memory_query,
     in_memory_list_scripts,
     InMemoryListQuery,
@@ -44,7 +49,7 @@ from app.sep.apps.framework.list_query import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import AsyncIterator, Awaitable, Callable
     from typing import TypeAlias
 
 
@@ -89,6 +94,23 @@ def _rows(*specs: tuple[str, str | None, int]) -> list[_Row]:
     :return: The rows to hand to the applier.
     """
     return [_Row(filename=f, title=t, created_at=c) for f, t, c in specs]
+
+
+class TestBuildInMemoryListQuery:
+    """Cover the public builder a hand-written route can call without a FastAPI dep."""
+
+    def test_resolves_sort_and_search(self) -> None:
+        """Carry a vetted sort key and search term onto the resolved query."""
+        query = build_in_memory_list_query(SPEC, "-filename", "needle")
+        assert query == InMemoryListQuery(
+            sort_key="filename", descending=True, search="needle"
+        )
+
+    def test_unknown_sort_key_raises_422(self) -> None:
+        """Reject an out-of-allowlist sort key with HTTP 422."""
+        with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
+            build_in_memory_list_query(SPEC, "bogus", None)
+        assert "bogus" in str(excinfo.value.detail)
 
 
 class TestMakeInMemoryListQueryDep:
@@ -350,6 +372,22 @@ class TestSpecAttributeValidation:
         with pytest.raises(ValueError, match="exposes no name"):
             make_in_memory_list_query_dep(spec)
 
+    @pytest.mark.parametrize("role", ["tie_breaker", "searchable"])
+    def test_unnamed_non_sortable_expression_also_rejected_at_dep_construction(
+        self, role: str
+    ) -> None:
+        """Guard every role at wiring time, not just the sortable allowlist."""
+        unnamed = cast(column("filename"), String)
+        spec = ListQuerySpec(
+            sortable={"filename": column("filename")},
+            default_sort="filename",
+            tie_breaker=unnamed if role == "tie_breaker" else column("filename"),
+            searchable=[unnamed] if role == "searchable" else [],
+        )
+
+        with pytest.raises(ValueError, match=f"spec {role}"):
+            make_in_memory_list_query_dep(spec)
+
     def test_unnamed_tie_breaker_rejected_by_applier(self) -> None:
         """Reject an unnamed tie-breaker even when the dependency was bypassed."""
         spec = ListQuerySpec(
@@ -376,6 +414,18 @@ class TestSpecAttributeValidation:
     def test_out_of_allowlist_sort_key_rejected(self) -> None:
         """Reject a hand-built query whose sort key was never vetted by the spec."""
         query = InMemoryListQuery(sort_key="secret", descending=False, search=None)
+
+        with pytest.raises(UnknownSortKeyError):
+            apply_in_memory(_rows(("a.sh", None, 1)), SPEC, query, Pagination())
+
+    @pytest.mark.parametrize("sort_key", ["__class__", "__dict__"])
+    def test_dunder_sort_key_rejected(self, sort_key: str) -> None:
+        """Reject a dunder sort key, which the allowlist gate keeps out of ``getattr``.
+
+        The ordering reads the sort key off each row as an attribute, so an unvetted key
+        would otherwise sort on object internals rather than on data.
+        """
+        query = InMemoryListQuery(sort_key=sort_key, descending=False, search=None)
 
         with pytest.raises(UnknownSortKeyError):
             apply_in_memory(_rows(("a.sh", None, 1)), SPEC, query, Pagination())
@@ -509,3 +559,153 @@ class TestApplierIsBackingAgnostic:
         }
 
         assert not [name for name in imported if name.endswith("script_source")]
+
+
+_ROUTE_APP = FastAPI()
+_ROUTE_ROWS = _rows(("a.sh", "Alpha", 1), ("b.sh", "Beta", 2), ("c.sh", "Gamma", 3))
+
+_search_dep = make_in_memory_list_query_dep(SPEC)
+_no_search_dep = make_in_memory_list_query_dep(NO_SEARCH_SPEC)
+
+
+@_ROUTE_APP.get("/scripts")
+async def _list_scripts(
+    list_query: Annotated[InMemoryListQuery, Depends(_search_dep)],
+    pagination: Annotated[Pagination, Depends(pagination_dep)],
+) -> dict[str, Any]:
+    page, total = apply_in_memory(_ROUTE_ROWS, SPEC, list_query, pagination)
+    return {"items": [row.filename for row in page], "total": total}
+
+
+@_ROUTE_APP.get("/scripts-nosearch")
+async def _list_scripts_no_search(
+    list_query: Annotated[InMemoryListQuery, Depends(_no_search_dep)],
+    pagination: Annotated[Pagination, Depends(pagination_dep)],
+) -> dict[str, Any]:
+    page, total = apply_in_memory(_ROUTE_ROWS, NO_SEARCH_SPEC, list_query, pagination)
+    return {"items": [row.filename for row in page], "total": total}
+
+
+@pytest_asyncio.fixture(name="route_client")
+async def route_client_fixture() -> AsyncIterator[AsyncClient]:
+    """Yield an async client bound to the throwaway in-memory list-query app.
+
+    :return: A client whose lifetime is scoped to the requesting test.
+    """
+    client = AsyncClient(
+        transport=ASGITransport(app=_ROUTE_APP), base_url="http://test"
+    )
+    try:
+        yield client
+    finally:
+        await client.aclose()
+
+
+def _route_params(path: str) -> dict[str, dict[str, Any]]:
+    """Return the generated OpenAPI query parameters of a route, keyed by name.
+
+    :param path: The route path to read the generated parameters of.
+    :return: Each declared query parameter's schema entry, keyed by parameter name.
+    """
+    return {
+        param["name"]: param
+        for param in _ROUTE_APP.openapi()["paths"][path]["get"]["parameters"]
+    }
+
+
+class TestInMemoryListQueryDepAtTheRequestBoundary:
+    """Pin the in-memory dependency's boundary against the SQL dependency's.
+
+    The direct-call tests above cover resolution; these cover what a client sees —
+    the reflected OpenAPI parameters and the rejection body — which is the half a
+    request contract can drift on without any unit test noticing.
+    """
+
+    def test_search_enabled_route_exposes_both_params(self) -> None:
+        """Reflect ``sort`` and ``search`` into the generated OpenAPI."""
+        assert {"sort", "search"} <= set(_route_params("/scripts"))
+
+    def test_search_disabled_route_omits_search(self) -> None:
+        """Reflect only ``sort`` when the spec declares nothing searchable."""
+        names = set(_route_params("/scripts-nosearch"))
+        assert "sort" in names
+        assert "search" not in names
+
+    def test_params_document_the_allowlist_and_descriptions(self) -> None:
+        """Publish the allowlist enum and both descriptions a generated client reads."""
+        params = _route_params("/scripts")
+
+        assert params["sort"]["schema"]["enum"] == [
+            "created_at",
+            "-created_at",
+            "filename",
+            "-filename",
+            "title",
+            "-title",
+        ]
+        assert params["sort"]["description"] == SORT_PARAM_DESCRIPTION
+        assert params["search"]["description"] == SEARCH_PARAM_DESCRIPTION
+
+    @pytest.mark.asyncio
+    async def test_out_of_allowlist_sort_returns_a_flat_422(
+        self, route_client: AsyncClient
+    ) -> None:
+        """Reject an unvetted sort key with the SQL path's exact 422 body."""
+        response = await route_client.get("/scripts", params={"sort": "evil"})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json() == {"detail": "Invalid sort key: 'evil'"}
+
+    @pytest.mark.asyncio
+    async def test_dunder_sort_key_rejected_at_the_boundary(
+        self, route_client: AsyncClient
+    ) -> None:
+        """Stop an attribute-shaped sort key at the allowlist, before any row read."""
+        response = await route_client.get("/scripts", params={"sort": "__class__"})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json() == {"detail": "Invalid sort key: '__class__'"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("term", ["%", "_", "\\", "a%a"])
+    async def test_search_metacharacters_match_literally(
+        self, route_client: AsyncClient, term: str
+    ) -> None:
+        """Treat LIKE metacharacters as text, matching the escaped SQL predicate."""
+        response = await route_client.get("/scripts", params={"search": term})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["total"] == 0
+
+    @pytest.mark.asyncio
+    async def test_default_sort_applied_when_omitted(
+        self, route_client: AsyncClient
+    ) -> None:
+        """Apply the spec's descending default when the request omits ``sort``."""
+        response = await route_client.get("/scripts")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"] == ["c.sh", "b.sh", "a.sh"]
+
+    @pytest.mark.asyncio
+    async def test_search_filters_and_reports_filtered_total(
+        self, route_client: AsyncClient
+    ) -> None:
+        """Filter by the search term and report the filtered total."""
+        response = await route_client.get(
+            "/scripts", params={"sort": "filename", "search": "beta"}
+        )
+
+        assert response.json() == {"items": ["b.sh"], "total": 1}
+
+    @pytest.mark.asyncio
+    async def test_search_param_ignored_where_the_spec_disables_it(
+        self, route_client: AsyncClient
+    ) -> None:
+        """Ignore a ``search`` the route never declared instead of filtering on it."""
+        response = await route_client.get(
+            "/scripts-nosearch", params={"search": "beta"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["total"] == len(_ROUTE_ROWS)

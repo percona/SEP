@@ -67,8 +67,6 @@ class TaskManager(BaseSQLModelManager):
     such as listing active tasks, retrieving tasks by name, and deleting tasks.
 
     :ivar Model: The SQLModel class this manager is responsible for (``Task``).
-    :cvar ordering: Legacy default ordering (``created_at`` desc, ``id`` desc);
-        superseded by :attr:`list_query_spec` when set.
     :cvar list_query_spec: Sort allowlist, searchable columns, default sort, and
         unique ``id`` tie-breaker for Task list endpoints.
     """
@@ -344,24 +342,24 @@ class TaskHistoryManager(BaseSQLModelManager):
     )
 
     @classmethod
-    async def get_log_allocation_epoch(
+    async def get_log_producer_epoch(
         cls,
         session: AsyncSession,
         task_history_id: int,
         *,
         for_update: bool = False,
     ) -> int:
-        """Return the task-level log allocation-epoch high-water mark.
+        """Return the task-level log producer-epoch high-water mark.
 
         The log writer consults this on the first-insert path — before any
         per-stream ``TaskHistoryLogState`` row exists — to discard writes from a
-        superseded allocation. A missing row yields the ``0`` sentinel so the
+        superseded producer. A missing row yields the ``0`` sentinel so the
         caller trusts the write.
 
         With ``for_update`` the ``TaskHistory`` row is locked (``SELECT ... FOR
         UPDATE``) and the lock is held until the caller's transaction ends. This
         serialises the first-insert discard decision against
-        :meth:`bump_log_allocation_epoch` (stamped during a frontier reset) so a
+        :meth:`bump_log_producer_epoch` (stamped during a frontier reset) so a
         reset cannot commit a newer epoch in the window between the guard read
         and the row insert. Both the first-insert writer and the frontier reset
         acquire this same row first, giving a consistent lock order. On SQLite
@@ -372,10 +370,10 @@ class TaskHistoryManager(BaseSQLModelManager):
         :param task_history_id: The ``TaskHistory`` identifier.
         :param for_update: Whether to lock the row for the duration of the
             transaction.
-        :return: The stored ``log_allocation_epoch``, or ``0`` when the row is
+        :return: The stored ``log_producer_epoch``, or ``0`` when the row is
             absent.
         """
-        query = select(TaskHistory.log_allocation_epoch).where(
+        query = select(TaskHistory.log_producer_epoch).where(
             col(TaskHistory.id) == task_history_id
         )
         if for_update:
@@ -385,14 +383,14 @@ class TaskHistoryManager(BaseSQLModelManager):
         return epoch if epoch is not None else 0
 
     @classmethod
-    async def bump_log_allocation_epoch(
+    async def bump_log_producer_epoch(
         cls,
         session: AsyncSession,
         task_history_id: int,
         *,
-        new_allocation_epoch: int,
+        new_producer_epoch: int,
     ) -> None:
-        """Advance the task-level allocation-epoch high-water mark monotonically.
+        """Advance the task-level producer-epoch high-water mark monotonically.
 
         Stamped wherever the log frontier is reset. The ``< new`` guard makes the
         update monotonic: an out-of-order or stale reset carrying a smaller epoch
@@ -403,16 +401,16 @@ class TaskHistoryManager(BaseSQLModelManager):
         :param session: The SQLAlchemy asynchronous session to use for query
             execution.
         :param task_history_id: The ``TaskHistory`` identifier.
-        :param new_allocation_epoch: The ``CreateIndex`` of the allocation the
-            frontier is being reset onto.
+        :param new_producer_epoch: The producer epoch the frontier is being
+            reset onto (for example a Nomad allocation ``CreateIndex``).
         """
         stmt = (
             update(TaskHistory)
             .where(
                 col(TaskHistory.id) == task_history_id,
-                col(TaskHistory.log_allocation_epoch) < new_allocation_epoch,
+                col(TaskHistory.log_producer_epoch) < new_producer_epoch,
             )
-            .values(log_allocation_epoch=new_allocation_epoch)
+            .values(log_producer_epoch=new_producer_epoch)
         )
         await cls._exec(session, stmt)
 
@@ -747,7 +745,6 @@ class TaskHistoryLogManager(BaseSQLModelManager):
     """
 
     Model = TaskHistoryLog
-    ordering = None
 
     @classmethod
     async def delete_aged_batch(
@@ -1184,8 +1181,8 @@ class TaskHistoryLogStateManager(BaseManager):
             stream=stream,
             persisted_offset=0,
             producer_offset=0,
-            nomad_offset=0,
-            allocation_epoch=0,
+            producer_fetch_offset=0,
+            producer_epoch=0,
             staging=b"",
             staging_updated_at=utc_now(),
             capture_status=LogCaptureStatusEnum.INCOMPLETE,
@@ -1273,38 +1270,36 @@ class TaskHistoryLogStateManager(BaseManager):
         return list(result.all())
 
     @classmethod
-    async def reset_allocation_frontier(
+    async def reset_producer_frontier(
         cls,
         session: AsyncSession,
         task_history_id: int,
         *,
-        new_allocation_epoch: int,
+        new_producer_epoch: int,
     ) -> None:
         """Reset both cursors to zero and stamp the new epoch for every stream.
 
-        Called when Nomad reschedules a task to a follow-up allocation: the
-        new allocation's log file starts at byte 0, so both allocation-relative
-        cursors (``producer_offset`` and ``nomad_offset``) must be cleared in
-        the database before the writer dedups or fetches against them, and
-        ``allocation_epoch`` must be advanced to the new allocation's
-        ``CreateIndex`` so stale-allocation writes are discarded by the write
-        guard. Bumps ``version`` so concurrent writers re-read the row.
+        Called when the executor reschedules onto a follow-up producer (for
+        example a Nomad allocation): the new producer's log file starts at byte
+        0, so both producer-relative cursors (``producer_offset`` and
+        ``producer_fetch_offset``) must be cleared in the database before the
+        writer dedups or fetches against them, and ``producer_epoch`` must be
+        advanced so stale-producer writes are discarded by the write guard.
+        Bumps ``version`` so concurrent writers re-read the row.
 
         :param session: The SQLAlchemy asynchronous session.
-        :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier whose state
             rows should be reset.
-        :type task_history_id: int
-        :param new_allocation_epoch: The ``CreateIndex`` of the allocation the
-            frontier is being reset onto.
+        :param new_producer_epoch: The producer epoch the frontier is being
+            reset onto (for example a Nomad allocation ``CreateIndex``).
         """
         stmt = (
             update(TaskHistoryLogState)
             .where(col(TaskHistoryLogState.task_history_id) == task_history_id)
             .values(
                 producer_offset=0,
-                nomad_offset=0,
-                allocation_epoch=new_allocation_epoch,
+                producer_fetch_offset=0,
+                producer_epoch=new_producer_epoch,
                 version=col(TaskHistoryLogState.version) + 1,
                 updated_at=utc_now(),
             )
@@ -1321,8 +1316,8 @@ class TaskHistoryLogStateManager(BaseManager):
         stream: TaskLogType,
         persisted_offset: int,
         producer_offset: int,
-        nomad_offset: int,
-        allocation_epoch: int,
+        producer_fetch_offset: int,
+        producer_epoch: int,
         staging: bytes,
         version: int,
         now: datetime,
@@ -1341,9 +1336,11 @@ class TaskHistoryLogStateManager(BaseManager):
         :param stream: The log stream (stdout or stderr).
         :param persisted_offset: The user-facing byte offset already persisted.
         :param producer_offset: The producer-relative byte offset already
-            consumed from the current allocation.
-        :param nomad_offset: The raw Nomad-space fetch offset for the next read.
-        :param allocation_epoch: The Nomad ``CreateIndex`` the cursors belong to.
+            consumed from the current producer epoch.
+        :param producer_fetch_offset: The raw producer-space fetch offset for
+            the next read.
+        :param producer_epoch: The producer-generation stamp the cursors belong
+            to (for example a Nomad allocation ``CreateIndex``).
         :param staging: Bytes pending flush to the chunk store.
         :param version: The initial optimistic-locking version counter.
         :param now: The insertion timestamp used for audit columns.
@@ -1359,8 +1356,8 @@ class TaskHistoryLogStateManager(BaseManager):
             stream=stream,
             persisted_offset=persisted_offset,
             producer_offset=producer_offset,
-            nomad_offset=nomad_offset,
-            allocation_epoch=allocation_epoch,
+            producer_fetch_offset=producer_fetch_offset,
+            producer_epoch=producer_epoch,
             staging=staging,
             staging_updated_at=now,
             capture_status=capture_status,
@@ -1382,8 +1379,8 @@ class TaskHistoryLogStateManager(BaseManager):
         new_version: int,
         persisted_offset: int,
         producer_offset: int,
-        nomad_offset: int,
-        allocation_epoch: int,
+        producer_fetch_offset: int,
+        producer_epoch: int,
         staging: bytes,
         now: datetime,
         capture_status: LogCaptureStatusEnum | None = None,
@@ -1404,9 +1401,10 @@ class TaskHistoryLogStateManager(BaseManager):
         :param new_version: The bumped version to write.
         :param persisted_offset: The updated user-facing persisted offset.
         :param producer_offset: The updated producer-relative offset.
-        :param nomad_offset: The updated raw Nomad-space fetch offset.
-        :param allocation_epoch: The updated Nomad ``CreateIndex`` the cursors
-            belong to.
+        :param producer_fetch_offset: The updated raw producer-space fetch
+            offset.
+        :param producer_epoch: The updated producer-generation stamp the
+            cursors belong to (for example a Nomad allocation ``CreateIndex``).
         :param staging: The updated staging bytes buffer.
         :param now: The update timestamp used for the audit columns.
         :param capture_status: The capture verdict to write, or ``None`` to
@@ -1419,8 +1417,8 @@ class TaskHistoryLogStateManager(BaseManager):
         values = {
             "persisted_offset": persisted_offset,
             "producer_offset": producer_offset,
-            "nomad_offset": nomad_offset,
-            "allocation_epoch": allocation_epoch,
+            "producer_fetch_offset": producer_fetch_offset,
+            "producer_epoch": producer_epoch,
             "staging": staging,
             "staging_updated_at": now,
             "version": new_version,
