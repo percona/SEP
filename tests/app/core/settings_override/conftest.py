@@ -36,7 +36,9 @@ from app.core.utils import json_serializer
 START_REFRESH_TASK = "app.core.settings_override.worker.start_refresh_task"
 
 
-async def insert_override_row(session: AsyncSession, **kwargs: object) -> SettingOverride:
+async def insert_override_row(
+    session: AsyncSession, **kwargs: object
+) -> SettingOverride:
     """Insert one override row through the manager, bypassing the API.
 
     :param session: The async DB session to write through.
