@@ -101,6 +101,8 @@ default:
       - MODULE_NAME: alerts
       - MODULE_NAME: alert_troubleshooting
       - MODULE_NAME: report
+      - MODULE_NAME: om_inventory
+        ENABLED: true
     HEALTH_REPORT:
       # Periodic report generation - empty by default (no automatic generation).
       # Each entry pairs a SCHEDULE (interval or crontab) with optional params:

@@ -16,7 +16,9 @@
 """REST API surface for the DB-backed settings override layer."""
 
 __all__ = [
+    "apply_class_overrides",
     "AppOwnedClassEntry",
+    "clear_class_override",
     "SettingClassAppMetadata",
     "SettingClassGroup",
     "SettingResponse",
@@ -36,7 +38,9 @@ from app.core.settings_override.api.models import (
     SettingsPatch,
 )
 from app.core.settings_override.api.routes import (
+    apply_class_overrides,
     AppOwnedClassEntry,
     build_settings_router,
+    clear_class_override,
     collect_class_setting_responses,
 )
