@@ -22,8 +22,8 @@ variants no longer exist. `main`'s `image` target builds it with
 Repin to a newer one by picking a tag published from `main` — the tag list on
 Docker Hub is ordered by publish date.
 
-Two properties of the pinned image are load-bearing, and both are worth checking
-on the **artifact** rather than on the commit that built it:
+Three properties of the pinned image are load-bearing, and all three are worth
+checking on the **artifact** rather than on the commit that built it:
 
 ```bash
 TAG=<the tag you are pinning>
@@ -31,6 +31,10 @@ TAG=<the tag you are pinning>
 # It must read secrets from a directory (SECRETS_DIR); expect a non-zero count.
 docker run --rm --entrypoint sh docker.io/percona/percona-sep:$TAG \
   -c 'grep -c SECRETS_DIR /home/sep/app/settings-env.sh'
+
+# It must carry the Grafana token mint; expect the helper and a 0700 state dir.
+docker run --rm --entrypoint sh docker.io/percona/percona-sep:$TAG \
+  -c 'ls /home/sep/app/grafana_service_account.py; ls -ld /home/sep/state'
 
 # It must carry a HEALTHCHECK; expect a Test naming healthcheck.sh.
 skopeo inspect --config --raw docker://docker.io/percona/percona-sep:$TAG \
@@ -43,6 +47,11 @@ tag including ones that carry the instruction. Only the raw config blob answers
 the question. Every side-car recipe builds in docker format for the same reason:
 OCI discards the instruction. The 150 s start period keeps the side-car out of
 `unhealthy` while PMM provisioning and SEP migrations finish.
+
+The mint is the property a backwards repin loses most quietly. An image without
+it satisfies the other two checks, comes up healthy, and mounts the `sep-state`
+volume over a directory nothing ever writes to — the only symptom is that
+Grafana-backed sign-in and the PMM syncer are inert, with nothing logged.
 
 The pmm-server pin is subject to its own constraint — see
 [Caveats](#caveats).
