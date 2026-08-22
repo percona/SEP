@@ -99,6 +99,8 @@ jobs:
               - 'snippets/**'
               - 'pyproject.toml'
               - 'poetry.lock'
+              - '.trivyignore.yaml'
+              - '.github/workflows/ci.yml'
             pipeline:
               - 'build/**/*.pipeline'
               - 'scripts/lint_pipelines.groovy'
@@ -329,6 +331,24 @@ jobs:
 
       - name: Smoke test - restricted image ships exactly the activated apps
         run: sidecar/verify_image_apps.sh "sep:HEAD" restricted
+
+      # Trivy vulnerability scan: fails on any HIGH/CRITICAL finding not
+      # covered by .trivyignore.yaml.  The --ignorefile flag is required
+      # because Trivy's default ignore file is ".trivyignore" (no .yaml
+      # extension), so without it the YAML-format exception list from
+      # SEP-1864 would be silently ignored.
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin v0.69.3
+
+      - name: Trivy image scan
+        run: >-
+          trivy image
+          --ignorefile .trivyignore.yaml
+          --severity HIGH,CRITICAL
+          --exit-code 1
+          "sep:HEAD"
 
   pipeline-syntax:
     if: >-
