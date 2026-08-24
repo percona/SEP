@@ -24,11 +24,9 @@ exceed it, the whole buffer is flushed as complete instead. That accepts a
 single redaction-boundary leak so an un-terminated line cannot stall log
 persistence, stall the live viewer, or drive unbounded re-fetching.
 
-Two shapes are offered. :func:`split_complete_lines` splits a buffer the caller
-already holds whole, which is what a fetch-per-cycle consumer needs.
-:class:`WithheldLineBuffer` owns the withheld bytes across frames instead, so a
-streaming consumer pays for the bytes each frame delivered rather than for the
-whole buffer it is holding.
+:func:`split_complete_lines` splits a buffer the caller already holds whole.
+:class:`WithheldLineBuffer` owns the withheld bytes across successive frames
+and releases what each frame completed.
 """
 
 from typing import NamedTuple
@@ -55,18 +53,32 @@ class LineRelease(NamedTuple):
 
     :param complete: Every byte released for anonymization, or ``b""`` when the
         frame completed no line.
-    :param forced: ``True`` when the ceiling flushed an un-terminated buffer.
+    :param forced: ``True`` when the ceiling released the whole buffer, which
+        includes any complete lines preceding the un-terminated tail.
     """
 
     complete: bytes
     forced: bool
 
 
+def _last_terminator(buf: bytes | bytearray, start: int = 0) -> int:
+    """Return the index of the last line terminator at or after ``start``.
+
+    A carriage return terminates a line alongside the newline, so progress
+    output that only ever returns the cursor still flushes. Both are ASCII, so
+    neither can appear inside a multi-byte UTF-8 sequence and a split on either
+    is codepoint-safe.
+
+    :param buf: The bytes to scan.
+    :param start: The offset to scan from; earlier bytes are not examined.
+    :return: The index of the last terminator, or ``-1`` when the scanned range
+        holds none.
+    """
+    return max(buf.rfind(b"\n", start), buf.rfind(b"\r", start))
+
+
 def _exceeds_ceiling(withheld: int, max_withheld: int | None) -> bool:
     """Return whether withholding ``withheld`` bytes would breach the ceiling.
-
-    Shared by both shapes in this module so the live and persisted paths cannot
-    disagree about a remainder of exactly ``max_withheld`` bytes.
 
     :param withheld: The raw byte length that would be withheld.
     :param max_withheld: The ceiling, or ``None`` to disable it.
@@ -76,82 +88,53 @@ def _exceeds_ceiling(withheld: int, max_withheld: int | None) -> bool:
 
 
 def split_complete_lines(buf: bytes, max_withheld: int | None = None) -> LineSplit:
-    r"""Split ``buf`` at the last line terminator.
-
-    A carriage return is treated as a terminator alongside the newline so that
-    ``\r``-driven progress output does not stall un-flushed on the live tail.
-    Both are ASCII (< 0x80), so neither can appear inside a multi-byte UTF-8
-    sequence -- splitting on either is inherently codepoint-safe.
+    """Split ``buf`` at the last line terminator.
 
     When ``max_withheld`` is set and the trailing remainder would exceed that
     byte length, the whole ``buf`` is returned as ``complete`` with an empty
-    remainder and ``forced=True``. The buffer is returned intact rather than
-    cut at ``max_withheld`` so no new mid-codepoint split is introduced, but
-    ``buf`` may itself end mid-codepoint; the caller accepts a redaction miss
-    and one replacement character at exactly that boundary.
+    remainder and ``forced=True``. Returning it intact introduces no new
+    mid-codepoint split, though ``buf`` may itself end mid-codepoint; the
+    caller accepts a redaction miss and one replacement character there.
 
     :param buf: The raw (pre-anonymization) bytes fetched so far.
     :param max_withheld: Optional ceiling on the raw byte length that may be
         withheld awaiting a terminator. A remainder of exactly this length is
         still withheld; only a length strictly greater forces a flush. ``None``
-        disables the ceiling (legacy unbounded withholding).
-    :return: A :class:`LineSplit` of ``(complete, remainder, forced)`` where
-        ``complete`` is every byte up to and including the last ``\n`` or
-        ``\r`` and ``remainder`` is the trailing partial line to withhold.
-        When ``buf`` holds no terminator the whole buffer is withheld as the
-        remainder unless the ceiling forces a flush.
+        disables the ceiling.
+    :return: A :class:`LineSplit` whose ``complete`` runs to the last terminator
+        and whose ``remainder`` is the trailing partial line to withhold. A
+        ``buf`` holding no terminator is withheld whole unless the ceiling
+        forces a flush.
     """
-    index = max(buf.rfind(b"\n"), buf.rfind(b"\r"))
-    if index == -1:
-        complete, remainder = b"", buf
-    else:
-        complete, remainder = buf[: index + 1], buf[index + 1 :]
+    cut = _last_terminator(buf) + 1
+    remainder = buf[cut:]
     if _exceeds_ceiling(len(remainder), max_withheld):
         return LineSplit(buf, b"", forced=True)
-    return LineSplit(complete, remainder, forced=False)
+    return LineSplit(buf[:cut], remainder, forced=False)
 
 
 class WithheldLineBuffer:
-    r"""Hold bytes withheld from anonymization until a terminator completes them.
+    """Hold bytes withheld from anonymization until a terminator completes them.
 
-    :meth:`append` is the only way bytes enter the buffer, and it releases every
-    line the arriving frame completed — so what stays withheld is always
-    terminator-free. That invariant is what lets each frame search only the
-    bytes it delivered: any terminator must lie in them, and a scan starting at
-    the pre-append length sees everything a whole-buffer scan would. The frames
-    that release nothing therefore cost their own bytes instead of the megabyte
-    they may be sitting on.
+    :meth:`append` is the only way bytes enter the buffer and it releases every
+    line the arriving frame completed, so whatever stays withheld holds no
+    terminator. Each frame therefore costs a scan of its own bytes, not of the
+    whole buffer behind it.
     """
 
     __slots__ = ("_buf",)
 
     def __init__(self) -> None:
-        """Start with nothing withheld."""
         self._buf = bytearray()
 
     def __len__(self) -> int:
-        """Return the raw byte length currently withheld.
-
-        :return: The number of withheld bytes.
-        """
+        """Return the raw byte length currently withheld."""
         return len(self._buf)
 
-    def __bytes__(self) -> bytes:
-        """Return a copy of the withheld bytes.
-
-        :return: The withheld bytes.
-        """
-        return bytes(self._buf)
-
     def append(self, data: bytes, max_withheld: int | None = None) -> LineRelease:
-        r"""Add one frame's bytes and release whatever lines it completed.
+        """Add one frame's bytes and release whatever lines it completed.
 
-        A carriage return terminates a line alongside the newline so that
-        ``\r``-driven progress output does not stall un-flushed. Both are ASCII
-        (< 0x80), so neither can appear inside a multi-byte UTF-8 sequence --
-        splitting on either is inherently codepoint-safe.
-
-        The ceiling is taken per call rather than per buffer because it is a
+        The ceiling is read per call rather than per buffer because it is a
         runtime-tunable setting: lowering it must release a buffer that is
         already over the new value on the very next frame.
 
@@ -165,10 +148,7 @@ class WithheldLineBuffer:
         """
         scan_from = len(self._buf)
         self._buf += data
-        index = max(
-            self._buf.rfind(b"\n", scan_from), self._buf.rfind(b"\r", scan_from)
-        )
-        cut = index + 1
+        cut = _last_terminator(self._buf, scan_from) + 1
         if _exceeds_ceiling(len(self._buf) - cut, max_withheld):
             return LineRelease(self.drain(), forced=True)
         if not cut:

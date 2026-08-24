@@ -332,6 +332,18 @@ class TestWithheldLineBuffer:
         buf.append(b"more\n")
         assert release.complete == b"line\n"
 
+    def test_withheld_bytes_have_no_public_snapshot(self):
+        """Assert the withheld bytes cannot be copied out wholesale.
+
+        The type exists so no caller pays for the whole buffer on every frame.
+        A public snapshot hands that cost straight back, and the live-log path
+        would silently regain the per-frame copy the narrowed scan removed.
+        """
+        buf = WithheldLineBuffer()
+        buf.append(b"tail")
+        with pytest.raises(TypeError):
+            bytes(buf)
+
     def test_remainder_exactly_at_ceiling_still_withheld(self):
         """Assert the ceiling boundary is strictly greater-than."""
         buf = WithheldLineBuffer()

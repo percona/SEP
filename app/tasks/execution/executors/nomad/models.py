@@ -2040,8 +2040,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
     async def _push_logs_to_queue(
         self,
-        # TODO(yan): Use Pydantic model for alloc
-        # SEP-154
+        # TODO(yan): Use Pydantic model for alloc  # noqa: TD003
         alloc: dict[str, Any],
         step: str,
         log_type: TaskLogType,
@@ -2156,9 +2155,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         instead and ``pending`` is cleared so the live viewer keeps advancing.
         Non-anonymized steps decode and emit each frame unchanged.
 
-        :param pending: The withheld-remainder buffer, mutated in place. Only
-            the bytes this frame delivers are searched for a terminator, since
-            the buffer it already holds is terminator-free by construction.
+        :param pending: The withheld-remainder buffer, mutated in place.
         :param raw_msg: This frame's base64-encoded ``Data`` field.
         :param step: The Nomad task name within the allocation.
         :param offset: The raw Nomad byte offset at the end of this frame.
