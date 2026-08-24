@@ -646,6 +646,30 @@ class TestReferenceFields:
         assert fields["precedence"].depends_on == "service_id"
         assert fields["precedence"].target_service == "other_id"
 
+    def test_host_ref_empty_target_service_does_not_fall_back(self) -> None:
+        """Treat only ``None`` as unset — do not fall back on empty string via ``or``.
+
+        An explicit ``target_service=""`` must not silently inherit
+        ``Ui(depends_on=...)``. The wire type rejects empty strings
+        (``NonEmptyStr``), so derivation fails instead of emitting the
+        cascade field name.
+        """
+
+        class _EmptyTarget(AppFormModel):
+            service_id: Annotated[
+                int,
+                ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
+                Ui(label="Service", section="s"),
+            ]
+            hostname: Annotated[
+                str,
+                HostRef(target_service=""),
+                Ui(label="Host", section="s", depends_on="service_id"),
+            ]
+
+        with pytest.raises(ValidationError):
+            derive_form_sections(_EmptyTarget, _SINGLE_SECTION)
+
     def test_allow_custom_emitted_only_when_true(self) -> None:
         """Emit ``allow_custom`` only when the ref opts in."""
         fields = _fields_by_name(_RefModel)
