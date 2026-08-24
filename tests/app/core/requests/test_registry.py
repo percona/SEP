@@ -82,9 +82,9 @@ async def test_invalidate_defers_the_close_while_a_consumer_holds() -> None:
         async with client.hold():
             await registry.invalidate("https://a.example.org")
 
-            assert client._session is not None  # the holder keeps it usable
+            assert client._session is not None
             reborn = await registry.get(RemoteAPI, endpoint="https://a.example.org")
-            assert reborn is not client  # new work goes to a fresh client
+            assert reborn is not client
 
         assert client._session is None
     finally:

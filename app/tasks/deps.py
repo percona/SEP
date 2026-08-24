@@ -108,11 +108,8 @@ def resolve_request_executor(
     :func:`get_executor` unchanged.
 
     :param request: The incoming request, injected by FastAPI.
-    :type request: Request
     :param backend: The backend type to get an executor for.
-    :type backend: TaskBackendEnum
     :return: The task executor.
-    :rtype: BaseExecutor
     :raises ValueError: If the backend is not supported.
     """
     if backend == TaskBackendEnum.NOMAD:

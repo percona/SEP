@@ -189,8 +189,8 @@ async def test_endpoint_rebinder_defers_app_state_close_while_a_consumer_holds(
             await rebind(SnapshotChange({}, {}))
 
             new = app.state.inventory_api
-            assert new is not old  # new work is handed the rebuilt client
-            assert old._session is not None  # the holder keeps the old one usable
+            assert new is not old
+            assert old._session is not None
 
         assert old._session is None
     finally:
