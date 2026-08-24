@@ -314,11 +314,10 @@ class HostRef:
 
     ``target_service`` is independent of ``Ui(depends_on=...)``. It names the
     service field whose node address the renderer compares against the selected
-    host for a non-blocking co-location warning. Cascade auto-select and the
-    warning stay separate: setting one does not imply the other. When
-    ``target_service`` is omitted, derivation falls back to ``Ui(depends_on=...)``
-    if that is set, so a form that already declares cascade (e.g. MongoDB
-    Backup) gets the warning without a second declaration.
+    host for a non-blocking co-location warning. Explicit ``target_service``
+    configuration is independent of cascade auto-select. When it is omitted,
+    derivation falls back to ``Ui(depends_on=...)`` when set, so an existing
+    service-driven cascade (e.g. MongoDB Backup) also enables the warning.
 
     :param allow_custom: When ``True``, the field also accepts a free-typed
         value and emits ``allow_custom`` on the wire. Defaults to ``False``.
