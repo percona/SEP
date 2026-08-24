@@ -16,7 +16,7 @@
  */
 
 import { ApiError, parseFieldErrors, type FieldValidationError } from '@sep/api';
-import { flattenSectionFields } from '../SchemaFormRenderer';
+import { buildFieldLabelMap } from '../SchemaFormRenderer';
 import type { FormSection } from '../SchemaFormRenderer/types';
 
 /** Error state shared by the SchemaDrivenApp create and edit forms. */
@@ -57,10 +57,7 @@ export function mapSubmitError(
     return { submitError: fallbackMessage, fieldErrors: [] };
   }
 
-  const labelByPath = new Map<string, string>();
-  for (const field of flattenSectionFields(sections)) {
-    labelByPath.set(field.name, field.label || field.name);
-  }
+  const labelByPath = buildFieldLabelMap(sections);
 
   const lines = fieldErrors.map(({ path, message }) => {
     const label = path ? (labelByPath.get(path) ?? path) : '';

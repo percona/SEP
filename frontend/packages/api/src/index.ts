@@ -127,6 +127,7 @@ export {
   useAppEntityList,
   useAppEntityDetail,
   normalizeAppListResponse,
+  fetchAllAppListPages,
   DEFAULT_APP_LIST_OFFSET,
   DEFAULT_APP_LIST_LIMIT,
   useCreateAppEntity,

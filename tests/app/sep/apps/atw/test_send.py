@@ -82,7 +82,7 @@ async def _chunks(content: bytes) -> AsyncIterator[bytes]:
     """Yield ``content`` a byte at a time, as the Tasks API stream would.
 
     :param content: The file bytes to hand out.
-    :yield: One single-byte chunk of the content.
+    :return: One single-byte chunk of the content.
     """
     for index in range(len(content)):
         yield content[index : index + 1]
@@ -93,7 +93,7 @@ async def _blocks(content: bytes, size: int = 64 * 1024) -> AsyncIterator[bytes]
 
     :param content: The file bytes to hand out.
     :param size: The block size in bytes.
-    :yield: One block of the content.
+    :return: One block of the content.
     """
     for start in range(0, len(content), size):
         yield content[start : start + size]

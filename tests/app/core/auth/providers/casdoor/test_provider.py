@@ -20,6 +20,7 @@ from uuid import UUID
 import pytest
 
 from app.core.auth.base import BaseAuthProvider
+from app.core.auth.models import UserRole
 from app.core.auth.providers.casdoor.models import CasdoorTokenPayload, CasdoorUser
 from app.core.auth.providers.casdoor.provider import CasdoorAuthProvider
 
@@ -83,17 +84,18 @@ class TestBuildServicePrincipal:
     def test_sets_required_owner(self):
         """Verify the Casdoor service principal fills the required ``owner``."""
         user = CasdoorUser.build_service_principal(
-            user_id=_SERVICE_ID, username="sep-service"
+            user_id=_SERVICE_ID, username="sep-service", role=UserRole.VIEWER
         )
         assert isinstance(user, CasdoorUser)
         assert user.owner == "built-in"
         assert user.username == "sep-service"
+        assert user.role is UserRole.VIEWER
         assert user.is_admin is False
 
     def test_access_token_survives_model_copy_via_setter(self):
         """Verify ``access_token`` set via the setter survives a ``model_copy``."""
         user = CasdoorUser.build_service_principal(
-            user_id=_SERVICE_ID, username="sep-service"
+            user_id=_SERVICE_ID, username="sep-service", role=UserRole.VIEWER
         )
         copy = user.model_copy()
         copy.access_token = "secret-token"

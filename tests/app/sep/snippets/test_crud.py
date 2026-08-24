@@ -488,7 +488,7 @@ class TestSnippetManagerListQueryPaginated:
         assert page.total == len(page.items) == seeded
 
     async def test_empty_table_returns_zero_total(self, session):
-        """Yield an empty page with a zero total for an empty table."""
+        """Return an empty page with a zero total for an empty table."""
         page = await _page(session)
 
         assert page.total == 0

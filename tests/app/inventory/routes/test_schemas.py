@@ -187,6 +187,43 @@ class TestListSchemas:
         assert first_page.json()["items"][0]["id"] == created_ids[0]
         assert second_page.json()["items"][0]["id"] == created_ids[1]
 
+    def test_list_schemas_sort_by_service_id(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Order schemas by the allowlisted ``service_id`` sort key."""
+        node_response = test_client.post(
+            "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
+        )
+        assert node_response.status_code == status.HTTP_201_CREATED
+        other_service_response = test_client.post(
+            f"/nodes/{node_response.json()['id']}/services/",
+            json=ServiceWriteFactory.build(port=5102).model_dump(mode="json"),
+        )
+        assert other_service_response.status_code == status.HTTP_201_CREATED
+        other_service_id = other_service_response.json()["id"]
+
+        low_service_id, high_service_id = sorted((service.id, other_service_id))
+        for service_id, name in (
+            (high_service_id, "HighServiceSchema"),
+            (low_service_id, "LowServiceSchema"),
+        ):
+            create_response = test_client.post(
+                f"/services/{service_id}/schemas/",
+                json=SchemaWriteFactory.build(name=name).model_dump(mode="json"),
+            )
+            assert create_response.status_code == status.HTTP_201_CREATED
+
+        response = test_client.get(
+            "/schemas/",
+            params={"sort": "service_id", "search": "ServiceSchema"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        items = response.json()["items"]
+        assert [item["service_id"] for item in items] == [
+            low_service_id,
+            high_service_id,
+        ]
+
 
 class TestRetrieveSchema:
     """Test GET /schemas/{schema_id} endpoint."""

@@ -15,13 +15,24 @@
 
 """Tests for the app.sep.apps.mysql_backups.forms module."""
 
+import re
+
 import pytest
 from pydantic import ValidationError
 
 from app.sep.apps.framework import BaseTaskResponse
-from app.sep.apps.mysql_backups.forms import BackupConfigAll, BackupTaskResponse
+from app.sep.apps.framework.form_dsl import Choices, Ui
+from app.sep.apps.mysql_backups.forms import (
+    BackupConfigAll,
+    BackupCreate,
+    BackupTaskResponse,
+)
 from app.sep.apps.mysql_backups.models import BackupType
 from app.tasks.models import TaskBackendEnum
+from tests.app.sep.apps.mysql_backups.conftest import (
+    literal_members,
+    XTRABACKUP_INCREMENTAL_CYCLES,
+)
 
 
 class TestXtrabackupQuietField:
@@ -136,3 +147,149 @@ class TestBackupTaskResponseModel:
         assert "anonymize_mask" in dumped
         assert "anonymized_entities" in dumped
         assert "connectivity_warning" in dumped
+
+
+class TestXtrabackupIncrementalCycleField:
+    """Cover for the ``xtrabackup_incremental_cycle`` field on both form models."""
+
+    _FIELD = "xtrabackup_incremental_cycle"
+
+    @staticmethod
+    def _create_body(**overrides: object) -> dict[str, object]:
+        """Return a gated XtraBackup create body the per-mode rules accept."""
+        return {
+            "task_name": "cycle-form",
+            "hostname": "host-1",
+            "service_id": 1,
+            "backup_type": BackupType.XTRABACKUP.value,
+            "upload": ["RSYNC"],
+            "rsync_path": "/data/rsync",
+            **overrides,
+        }
+
+    @classmethod
+    def _choices(cls) -> dict[str, str]:
+        """Return the create form's cycle options as ``{value: label}``."""
+        marker = next(
+            entry
+            for entry in BackupCreate.model_fields[cls._FIELD].metadata
+            if isinstance(entry, Choices)
+        )
+        return {str(option.value): option.label for option in marker.options}
+
+    @classmethod
+    def _description(cls) -> str:
+        """Return the create form's cycle help text."""
+        marker = next(
+            entry
+            for entry in BackupCreate.model_fields[cls._FIELD].metadata
+            if isinstance(entry, Ui)
+        )
+        return marker.description or ""
+
+    @pytest.mark.parametrize("cycle", XTRABACKUP_INCREMENTAL_CYCLES)
+    def test_config_model_accepts_every_cycle(self, cycle):
+        """Accept the whole vocabulary on the configuration-file model."""
+        config = BackupConfigAll.model_validate({"XTRABACKUP_INCREMENTAL_CYCLE": cycle})
+        assert config.xtrabackup_incremental_cycle == cycle
+
+    @pytest.mark.parametrize("cycle", XTRABACKUP_INCREMENTAL_CYCLES)
+    def test_create_model_accepts_every_cycle(self, cycle):
+        """Accept the whole vocabulary on the create form."""
+        form = BackupCreate.model_validate(
+            self._create_body(xtrabackup_incremental_cycle=cycle)
+        )
+        assert form.xtrabackup_incremental_cycle == cycle
+
+    @pytest.mark.parametrize("cycle", ["0", "8", "monday", "01", " 1"])
+    def test_both_models_reject_values_outside_the_vocabulary(self, cycle):
+        """Reject anything the payload would reject, at the request boundary."""
+        with pytest.raises(ValidationError):
+            BackupConfigAll.model_validate({"XTRABACKUP_INCREMENTAL_CYCLE": cycle})
+        with pytest.raises(ValidationError):
+            BackupCreate.model_validate(
+                self._create_body(xtrabackup_incremental_cycle=cycle)
+            )
+
+    def test_empty_string_becomes_none(self):
+        """Read an empty submission as unset rather than as a cycle."""
+        config = BackupConfigAll.model_validate({"XTRABACKUP_INCREMENTAL_CYCLE": ""})
+        assert config.xtrabackup_incremental_cycle is None
+        form = BackupCreate.model_validate(
+            self._create_body(xtrabackup_incremental_cycle="")
+        )
+        assert form.xtrabackup_incremental_cycle is None
+
+    def test_stays_unset_by_default(self):
+        """Introduce no default: an unset field reaches the payload absent.
+
+        The payload supplies ``weekly`` when the configuration carries no
+        ``XTRABACKUP_INCREMENTAL_CYCLE`` key, so a form-side default would silently
+        pin the cadence for every task that never touched the field.
+        """
+        assert BackupConfigAll.model_validate({}).xtrabackup_incremental_cycle is None
+        assert (
+            BackupCreate.model_validate(
+                self._create_body()
+            ).xtrabackup_incremental_cycle
+            is None
+        )
+
+    def test_survives_config_all_round_trip(self):
+        """Persist a Monday cycle through serialise / re-validate.
+
+        ``BackupConfigAll`` uses ``extra='ignore'``, so a value the model cannot
+        express is dropped from the stored YAML and the payload never sees it.
+        """
+        config = BackupConfigAll.model_validate({"XTRABACKUP_INCREMENTAL_CYCLE": "1"})
+        serialised = {k.upper(): v for k, v in config.model_dump().items()}
+        assert (
+            BackupConfigAll.model_validate(serialised).xtrabackup_incremental_cycle
+            == "1"
+        )
+
+    def test_both_models_declare_the_same_vocabulary(self):
+        """Keep the two models' vocabularies identical.
+
+        A value one model accepts must be accepted by the other, or a
+        configuration written through the create form fails to load back.
+        """
+        assert literal_members(BackupCreate, self._FIELD) == literal_members(
+            BackupConfigAll, self._FIELD
+        )
+
+    def test_every_accepted_value_is_offered_once(self):
+        """Offer exactly the accepted vocabulary as dropdown options.
+
+        Choice derivation returns the ``Choices`` marker verbatim and never
+        cross-checks it against the annotation, so an option missing here is a
+        value the form accepts but the user cannot pick.
+        """
+        assert tuple(self._choices()) == literal_members(BackupCreate, self._FIELD)
+
+    def test_numeric_options_are_labelled_as_weekdays(self):
+        """Name each numeric option by the weekday it selects."""
+        choices = self._choices()
+        assert [choices[str(day)] for day in range(1, 8)] == [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
+        assert not [
+            label for label in choices.values() if re.fullmatch(r"\d+ days?", label)
+        ]
+
+    def test_weekly_label_shows_its_monday_equivalence(self):
+        """Explain the duplicate: ``weekly`` is Monday under another name."""
+        assert "Monday" in self._choices()["weekly"]
+
+    def test_help_text_states_the_vocabulary_and_its_reach(self):
+        """State the vocabulary, the ISO weekday reading, and the governed method."""
+        description = self._description()
+        assert "ISO weekday" in description
+        assert "1-7" in description
+        assert "less_space" in description

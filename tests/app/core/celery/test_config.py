@@ -19,8 +19,11 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.celery.config import CeleryOptions
+from app.core.config import Settings
 
 _BROKER_URL = "redis://localhost:6379/0"
+_MASKED_BROKER_URL = "amqp://celery-user:****@rabbit:5672/vhost"
+_MASKED_RESULT_BACKEND = "redis://celery-user:****@redis:6379/0"
 
 
 def test_beat_engine_options_defaults_to_empty_dict():
@@ -75,3 +78,37 @@ def test_beat_engine_options_allows_fractional_pool_timeout():
     assert options.beat_engine_options.model_dump(exclude_none=True) == {
         "pool_timeout": 25.5
     }
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"broker_url": _MASKED_BROKER_URL}, "broker_url"),
+        (
+            {"broker_url": _BROKER_URL, "result_backend": _MASKED_RESULT_BACKEND},
+            "result_backend",
+        ),
+    ],
+)
+def test_credential_url_mask_rejected_on_yaml_path(
+    kwargs: dict[str, str], match: str
+) -> None:
+    """Fail when a masked export is re-fed as a Celery broker or result backend URL."""
+    with pytest.raises(ValidationError, match=match):
+        CeleryOptions(**kwargs)
+
+
+@pytest.mark.parametrize(
+    ("env_name", "value", "match"),
+    [
+        ("CELERY__BROKER_URL", _MASKED_BROKER_URL, "broker_url"),
+        ("CELERY__RESULT_BACKEND", _MASKED_RESULT_BACKEND, "result_backend"),
+    ],
+)
+def test_credential_url_mask_rejected_on_env_path(
+    env_name: str, value: str, match: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fail Settings load when a masked Celery URL arrives via the environment."""
+    monkeypatch.setenv(env_name, value)
+    with pytest.raises(ValidationError, match=match):
+        Settings(_env_file=None)

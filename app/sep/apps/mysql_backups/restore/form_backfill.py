@@ -30,7 +30,7 @@ from app.sep.apps.mysql_backups.restore.deps import parse_restore_task_data
 from app.sep.apps.mysql_backups.restore.models import OWNER, RestoreCreate
 
 if TYPE_CHECKING:
-    from app.sep.apps.framework.form_backfill import FormBackfillContext
+    from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
     from app.tasks.models import Task
 
 __all__ = ["FORM_BACKFILL_ENTRY", "reconstruct_mysql_restores_form"]

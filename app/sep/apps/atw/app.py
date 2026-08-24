@@ -15,7 +15,7 @@
 
 """Wire the ATW plugin as a declarative ``BaseApp``.
 
-Register ``atw`` ("Collect Diagnostic Data") through the registry's definition
+Register ``atw`` ("Support diagnostics") through the registry's definition
 path, carrying the existing JSON ``api_router`` (the category listing + schema)
 and ``atw_schema`` so the conformance suite reads the schema from the definition.
 ``atw`` owns no task and derives no execute route -- execution is delegated to the
@@ -56,7 +56,7 @@ def _atw_periodic_tasks() -> list[AppPeriodicTask]:
 
 app = BaseApp(
     name="atw",
-    display_name="Collect Diagnostic Data",
+    display_name="Support diagnostics",
     uri_path="/atw",
     css_class="atw",
     custom_ui=True,

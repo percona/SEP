@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal, NoReturn, Self, TypeVar
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, params
 from fastapi.applications import AppType
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
@@ -887,6 +887,7 @@ _UNSET = _UnsetType()
 
 def create_app(
     *routers: APIRouter,
+    dependencies: Sequence[params.Depends] | None = None,
     lifespan: Lifespan[AppType] | None = None,
     backend_cors_origins: list[StrHttpUrl] | None = None,
     allowed_hosts: list[str] | None = None,
@@ -902,6 +903,8 @@ def create_app(
     """Create and configure the FastAPI app.
 
     :param routers: Routers to include in the created app.
+    :param dependencies: Dependencies applied to every route the app includes,
+        inherited by routers added after creation. Defaults to None.
     :param lifespan: Lifespan context manager for the FastAPI app, if any. Defaults to
         None.
     :param backend_cors_origins: A list of allowed origins for the CORSMiddleware.
@@ -942,7 +945,12 @@ def create_app(
         openapi_kwargs["docs_url"] = docs_url
     if redoc_url is not _UNSET:
         openapi_kwargs["redoc_url"] = redoc_url
-    app = FastAPI(lifespan=lifespan, root_path=root_path, **openapi_kwargs)
+    app = FastAPI(
+        lifespan=lifespan,
+        root_path=root_path,
+        dependencies=dependencies,
+        **openapi_kwargs,
+    )
     if backend_cors_origins is not None:
         app.add_middleware(
             CORSMiddleware,
