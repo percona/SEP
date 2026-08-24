@@ -522,6 +522,7 @@ class MultiHostField(BaseField):
     target_service: NonEmptyStr | None = None
     allow_custom: bool | None = None
 
+
 class SchemaField(BaseField):
     """Represent an inventory database-schema selector field.
 

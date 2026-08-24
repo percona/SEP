@@ -211,7 +211,6 @@ function HostServiceCascade({
 function HostMismatchWarning({
   name,
   targetService,
-  serviceTypes,
   hosts,
   hostsLoading,
   hostsError,
@@ -219,17 +218,16 @@ function HostMismatchWarning({
 }: {
   name: string;
   targetService: string;
-  serviceTypes?: readonly ServiceType[];
   hosts: HostOption[];
   hostsLoading: boolean;
   hostsError: boolean;
   fieldError?: string;
 }) {
   const hostValue = useWatch({ name });
-  const { service, isResolving, isError: serviceError } = useResolvedServiceField(
-    targetService,
-    serviceTypes,
-  );
+  // Resolve types from the target service field, not cascade ``serviceTypes``
+  // (those are scoped to ``dependsOn``, which may name a different field).
+  const { service, isResolving, isError: serviceError } =
+    useResolvedServiceField(targetService);
 
   if (fieldError) {
     return null;
@@ -374,7 +372,6 @@ export function HostSelector({
       <HostMismatchWarning
         name={name}
         targetService={targetService}
-        serviceTypes={serviceTypes}
         hosts={hosts}
         hostsLoading={isLoading}
         hostsError={isError}

@@ -24,6 +24,7 @@ import { SnackbarProvider } from 'notistack';
 import { useEffect, type PropsWithChildren } from 'react';
 import { HostSelector } from './HostSelector';
 import { SchemaFormRenderer } from '../SchemaFormRenderer';
+import { FormFieldsProvider } from '../SchemaFormRenderer/formFieldsContext';
 import type { FormSection } from '../SchemaFormRenderer/types';
 
 vi.mock('@sep/api', async (importOriginal) => ({
@@ -752,6 +753,15 @@ describe('HostSelector', () => {
       schemas: [],
     };
 
+    const SERVICE_MONGO_ON_NODE_A = {
+      id: 9,
+      name: 'mongo-svc',
+      type: 'mongodb',
+      node: { name: 'node-a', address: '10.0.0.1', type: 'generic' },
+      node_id: 1,
+      schemas: [],
+    };
+
     const warningMatcher = /is not the node where/;
 
     function expectNoMismatchWarning() {
@@ -848,6 +858,73 @@ describe('HostSelector', () => {
       await expectMismatchWarning();
       expect(screen.getByText(warningMatcher)).toHaveTextContent('Display A');
       expect(screen.getByText(warningMatcher)).toHaveTextContent('10.0.0.2');
+    });
+
+    it('resolves the target service by its own types when depends_on names a different field', async () => {
+      mocked.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+        if (url === '/sep/hosts/') {
+          return Promise.resolve(makeResponse(HOSTS));
+        }
+        if (url === '/sep/services/') {
+          const type = config?.params?.service_type;
+          const items =
+            type === 'mongodb'
+              ? [SERVICE_MONGO_ON_NODE_A]
+              : type === 'mysql'
+                ? [SERVICE_ON_NODE_B]
+                : [];
+          return Promise.resolve({
+            data: {
+              items,
+              total: items.length,
+              offset: 0,
+              limit: 200,
+            },
+          });
+        }
+        return Promise.reject(new Error(`unexpected url ${url}`));
+      });
+
+      const client = makeClient();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer
+            sections={[
+              {
+                title: 'Task',
+                fields: [
+                  {
+                    type: 'service',
+                    name: 'other_id',
+                    label: 'Other Service',
+                    required: true,
+                    service_types: ['mongodb'],
+                  },
+                  {
+                    type: 'service',
+                    name: 'service_id',
+                    label: 'Database Service',
+                    required: true,
+                    service_types: ['mysql'],
+                  },
+                  {
+                    type: 'host',
+                    name: 'hostname',
+                    label: 'Execution Host',
+                    required: true,
+                    depends_on: 'other_id',
+                    target_service: 'service_id',
+                  },
+                ],
+              },
+            ]}
+            onSubmit={vi.fn()}
+            defaultValues={{ other_id: 9, service_id: 7, hostname: 'node-a' }}
+          />
+        </Wrapper>,
+      );
+
+      await expectMismatchWarning();
     });
 
     it('is silent when the executor address matches the service node', async () => {
@@ -1100,14 +1177,25 @@ describe('HostSelector', () => {
           methods.setError('hostname', { type: 'manual', message: 'Pick a valid host' });
         }, [methods]);
         return (
-          <FormProvider {...methods}>
-            <HostSelector
-              name="hostname"
-              label="Execution Host"
-              targetService="service_id"
-              serviceTypes={['mysql']}
-            />
-          </FormProvider>
+          <FormFieldsProvider
+            value={[
+              {
+                type: 'service',
+                name: 'service_id',
+                label: 'Database Service',
+                required: true,
+                service_types: ['mysql'],
+              },
+            ]}
+          >
+            <FormProvider {...methods}>
+              <HostSelector
+                name="hostname"
+                label="Execution Host"
+                targetService="service_id"
+              />
+            </FormProvider>
+          </FormFieldsProvider>
         );
       }
 
