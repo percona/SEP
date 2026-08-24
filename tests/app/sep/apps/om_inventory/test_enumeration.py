@@ -70,9 +70,6 @@ def service(name: str, node_name: str | None, node_address: str | None = None):
         external_id=f"svc-{name}",
         name=name,
         port=27017,
-        cluster=None,
-        replication_set=None,
-        environment=None,
         node_name=node_name,
         node_address=node_address,
     )
