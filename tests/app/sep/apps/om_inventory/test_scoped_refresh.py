@@ -41,6 +41,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.utils.date_time import utc_now
 from app.sep.apps.om_inventory.config import om_inventory_settings
@@ -88,6 +89,7 @@ async def api(regular_user: CasdoorUser, session: AsyncSession) -> AsyncClient:
     :return: The client.
     """
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session
     client = AsyncClient(
