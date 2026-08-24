@@ -29,13 +29,14 @@ from starlette.status import HTTP_200_OK, HTTP_503_SERVICE_UNAVAILABLE
 from app.core.config import settings
 from app.core.requests import RemoteAPI
 from app.core.settings_override.lifecycle import SnapshotChange
+from app.core.settings_override.models import SettingClassEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
     get_current_user,
     get_task_history,
     get_tasks_client,
 )
-from app.sep.main import make_remote_api_rebinder, sep_app
+from app.sep.main import sep_app, sep_overrides_lifespan
 from app.tasks.models import TaskHistoryStatusEnum
 from tests.app.asgi_stream import asgi_stream
 from tests.app.sep.routes.conftest import (
@@ -312,15 +313,19 @@ def test_execution_events_stream_emits_sep_error_on_upstream_error(
 NEW_TASKS_ENDPOINT = "http://tasks-rebound.example.org"
 
 
-def _tasks_endpoint_rebinder():
-    """Point ``TASKS_ENDPOINT`` at a new host and return the SEP rebind callback.
+async def _tasks_endpoint_rebinder():
+    """Point ``TASKS_ENDPOINT`` at a new host and return the registered rebind callback.
+
+    Reads the callback out of ``sep_app.state.override_callbacks`` rather than
+    building one, so the test exercises the wiring the settings-API handler
+    fires and fails if the ``TASKS_ENDPOINT`` key stops being registered.
 
     :return: The callback ``app.sep.main`` wires to a ``TASKS_ENDPOINT`` change.
     """
     sep_settings._set_snapshot({"TASKS_ENDPOINT": NEW_TASKS_ENDPOINT})
-    return make_remote_api_rebinder(
-        sep_app, "tasks_api", sep_settings, "TASKS_ENDPOINT"
-    )
+    async with sep_overrides_lifespan(sep_app):
+        callbacks = sep_app.state.override_callbacks
+    return callbacks[(SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT")]
 
 
 @pytest.mark.usefixtures("real_client_route_overrides")
@@ -346,7 +351,7 @@ class TestStreamsSurviveARebind:
         history_id = task_history_response.id
         old = await RemoteAPI(endpoint=TASKS_ENDPOINT).open()
         sep_app.state.tasks_api = old
-        rebind = _tasks_endpoint_rebinder()
+        rebind = await _tasks_endpoint_rebinder()
 
         async def held_logs(_url, **_kwargs):
             await release.wait()
@@ -437,7 +442,7 @@ class TestStreamsSurviveARebind:
         history_id = task_history_response.id
         old = await RemoteAPI(endpoint=TASKS_ENDPOINT).open()
         sep_app.state.tasks_api = old
-        rebind = _tasks_endpoint_rebinder()
+        rebind = await _tasks_endpoint_rebinder()
 
         finished = task_history_response.model_dump(mode="json")
         running = finished | {"status": TaskHistoryStatusEnum.RUNNING.value}
@@ -501,7 +506,7 @@ class TestRequestsArrivingAfterARebind:
         history_id = task_history_response.id
         old = await RemoteAPI(endpoint=TASKS_ENDPOINT).open()
         sep_app.state.tasks_api = old
-        rebind = _tasks_endpoint_rebinder()
+        rebind = await _tasks_endpoint_rebinder()
 
         try:
             await rebind(SnapshotChange({}, {}))

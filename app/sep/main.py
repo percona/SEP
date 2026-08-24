@@ -110,7 +110,7 @@ async def sep_startup() -> None:
     warn_if_external_base_lacks_prefix()
 
 
-def make_remote_api_rebinder(
+def _make_remote_api_rebinder(
     app: FastAPI,
     name: str,
     proxy: OverridableSettingsProxy,
@@ -217,7 +217,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         (
             SettingClassEnum.SEP_SETTINGS,
             "INVENTORY_ENDPOINT",
-        ): make_remote_api_rebinder(
+        ): _make_remote_api_rebinder(
             app,
             "inventory_api",
             sep_settings,
@@ -226,7 +226,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ssl_keyfile=inventory_settings.SSL_KEYFILE,
             ssl_certfile=inventory_settings.SSL_CERTFILE,
         ),
-        (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"): make_remote_api_rebinder(
+        (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"): _make_remote_api_rebinder(
             app,
             "tasks_api",
             sep_settings,

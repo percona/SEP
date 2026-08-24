@@ -31,8 +31,8 @@ from app.core.settings_override.lifecycle import SnapshotChange
 from app.core.settings_override.models import SettingClassEnum
 from app.sep.config import sep_settings
 from app.sep.main import (
+    _make_remote_api_rebinder,
     _reseed_system_periodic_tasks,
-    make_remote_api_rebinder,
 )
 from app.sep.settings_override import apply_logging_dictconfig, invalidate_pmm_clients
 from app.sep.snippets.config import snippets_settings
@@ -59,7 +59,7 @@ async def test_endpoint_rebinder_swaps_app_state_client(
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     new = None
-    rebind = make_remote_api_rebinder(
+    rebind = _make_remote_api_rebinder(
         app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
     )
     try:
@@ -86,7 +86,7 @@ async def test_endpoint_rebinder_invalidates_when_no_app_state_client(
     sep_settings._set_snapshot({"INVENTORY_ENDPOINT": endpoint})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
-    rebind = make_remote_api_rebinder(
+    rebind = _make_remote_api_rebinder(
         app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
     )
     try:
@@ -114,7 +114,7 @@ async def test_endpoint_rebinder_created_evicts_base_and_new(
     sep_settings._set_snapshot({"INVENTORY_ENDPOINT": new_endpoint})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
-    rebind = make_remote_api_rebinder(
+    rebind = _make_remote_api_rebinder(
         app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
     )
     try:
@@ -135,7 +135,7 @@ async def test_endpoint_rebinder_changed_evicts_previous_and_new(
     sep_settings._set_snapshot({"INVENTORY_ENDPOINT": new_endpoint})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
-    rebind = make_remote_api_rebinder(
+    rebind = _make_remote_api_rebinder(
         app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
     )
     try:
@@ -162,7 +162,7 @@ async def test_endpoint_rebinder_deleted_evicts_previous_and_base(
     sep_settings._set_snapshot({})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
-    rebind = make_remote_api_rebinder(
+    rebind = _make_remote_api_rebinder(
         app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
     )
     await rebind(SnapshotChange({"INVENTORY_ENDPOINT": previous_endpoint}, {}))
@@ -181,7 +181,7 @@ async def test_endpoint_rebinder_defers_app_state_close_while_a_consumer_holds(
     mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     new = None
-    rebind = make_remote_api_rebinder(
+    rebind = _make_remote_api_rebinder(
         app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
     )
     try:
@@ -205,7 +205,7 @@ async def test_endpoint_rebinder_defers_registry_close_while_a_consumer_holds() 
     app = FastAPI()
     endpoint = "https://held-inv.example.org"
     sep_settings._set_snapshot({"INVENTORY_ENDPOINT": endpoint})
-    rebind = make_remote_api_rebinder(
+    rebind = _make_remote_api_rebinder(
         app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
     )
     try:
