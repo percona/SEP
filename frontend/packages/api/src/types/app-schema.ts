@@ -216,8 +216,7 @@ export interface HostField extends BaseField {
    */
   depends_on?: string;
   /**
-   * Optional service field whose node address is compared against the
-   * selected host for a non-blocking co-location warning. Independent of
+   * Service field for a non-blocking co-location warning. Independent of
    * ``depends_on``. Omitted when unset.
    */
   target_service?: string;

@@ -460,20 +460,16 @@ class HostField(BaseField):
     upstream service; when omitted every available executor is listed and no
     cascade runs.
 
-    ``target_service`` is independent of ``depends_on``: it names the service
-    field whose node address the renderer compares against the selected host
-    for a non-blocking co-location warning. Cascade auto-select and the
-    warning stay separate.
-
     :param field_type: The discriminator literal; always ``"host"`` for this
         class. Serialised as the JSON key ``"type"``.
     :type field_type: Literal["host"]
     :param depends_on: Optional name of the field whose value drives the
         default executor selection. ``None`` (the default) omits the key from
         the wire so plugins that do not opt in stay byte-identical.
-    :param target_service: Optional name of the service field used for the
-        co-location warning. ``None`` (the default) omits the key from the
-        wire so plugins that do not declare a target stay byte-identical.
+    :param target_service: Optional service field for a non-blocking
+        co-location warning. Independent of ``depends_on`` (see
+        :class:`~app.sep.apps.framework.form_dsl.markers.HostRef`).
+        ``None`` (the default) omits the key from the wire.
     :param allow_custom: When ``True``, the selector also accepts a free-typed
         value alongside the inventory options. ``None`` (the default) omits the
         key from the wire so plugins that do not opt in stay byte-identical.
@@ -497,9 +493,8 @@ class MultiHostField(BaseField):
     Cascade auto-select is single-host only (:class:`HostField`). ``depends_on``
     may still be emitted when ``Ui(depends_on=...)`` is set so derivation stays
     uniform, but the multi-host renderer does not honour it today.
-
-    ``target_service`` is mirrored the same way for wire uniformity; the
-    multi-host renderer ignores it (no co-location warning).
+    ``target_service`` is mirrored the same way; the multi-host renderer
+    ignores it (no co-location warning).
 
     :param field_type: The discriminator literal; always ``"multi_host"`` for
         this class. Serialised as the JSON key ``"type"``.
@@ -508,8 +503,8 @@ class MultiHostField(BaseField):
         :class:`HostField`; the current multi-host renderer ignores it (no
         cascade). ``None`` (the default) omits the key from the wire.
     :param target_service: Optional service field name mirrored for wire
-        uniformity with :class:`HostField`; the multi-host renderer ignores
-        it. ``None`` (the default) omits the key from the wire.
+        uniformity with :class:`HostField`; ignored by the multi-host
+        renderer. ``None`` (the default) omits the key from the wire.
     :param allow_custom: When ``True``, the selector also accepts free-typed
         values alongside the inventory options. ``None`` (the default) omits the
         key from the wire so plugins that do not opt in stay byte-identical.

@@ -462,14 +462,8 @@ def _build_ref_field(
         # MultiHostField may carry the key for wire uniformity, but only the
         # single-value HostField renderer honours it today.
         #
-        # target_service is independent of depends_on: prefer the marker's
-        # value when it is not None (including an explicit empty string —
-        # do not treat "" as unset via ``or``). Fall back to
-        # Ui(depends_on=...) only when the marker omits the field, so
-        # cascade-only forms (e.g. MongoDB Backup) get the co-location
-        # warning without a second declaration. MultiHostField emits the
-        # key for wire uniformity; the multi-host renderer ignores it
-        # (no warning).
+        # target_service: prefer HostRef when not None (None-check, not ``or``);
+        # else fall back to Ui(depends_on=...). Semantics: see HostRef.
         return field_class(
             **common,
             allow_custom=allow_custom,

@@ -51,10 +51,8 @@ export interface HostSelectorProps {
    */
   dependsOn?: string;
   /**
-   * Optional service field whose node address is compared against the selected
-   * host for a non-blocking co-location warning. Independent of ``dependsOn``;
-   * cascade auto-select and the warning stay separate. Single-value fields
-   * only — multi-value host fields ignore this prop.
+   * Service field for the non-blocking co-location warning. Independent of
+   * ``dependsOn``. Single-value only — multi-value host fields ignore this.
    */
   targetService?: string;
   /**
