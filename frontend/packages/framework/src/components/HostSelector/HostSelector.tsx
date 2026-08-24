@@ -15,8 +15,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { Alert } from '@mui/material';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { get, useFormContext } from 'react-hook-form';
+import { get, useFormContext, useWatch } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useSnackbar } from 'notistack';
 import { useHosts, type HostOption } from '../../hooks/useHosts';
@@ -24,6 +25,7 @@ import { useResolvedServiceField } from '../../hooks/useResolvedServiceField';
 import type { ServiceType } from '../../hooks/useServices';
 import { FreeSoloMultiSelect } from '../FreeSoloMultiSelect';
 import { FreeSoloSelect } from '../FreeSoloSelect';
+import { isHostMismatch } from './isHostMismatch';
 import { resolveExecutorHostForService } from './resolveExecutorHostForService';
 
 const EMPTY_HOSTS: HostOption[] = [];
@@ -48,6 +50,13 @@ export interface HostSelectorProps {
    * Cascade auto-select applies to single mode only.
    */
   dependsOn?: string;
+  /**
+   * Optional service field whose node address is compared against the selected
+   * host for a non-blocking co-location warning. Independent of ``dependsOn``;
+   * cascade auto-select and the warning stay separate. Single-value fields
+   * only — multi-value host fields ignore this prop.
+   */
+  targetService?: string;
   /**
    * When resolving a scalar ``dependsOn`` id, bound the services fetch to these
    * types (typically the parent ``ServiceField.service_types``). Omit only when
@@ -193,6 +202,69 @@ function HostServiceCascade({
   return null;
 }
 
+/**
+ * Non-blocking co-location warning for a single host field. Mounted only when
+ * ``targetService`` is set. Compares the selected host's network address
+ * against the resolved service's node address; stays silent whenever either
+ * side cannot be established.
+ */
+function HostMismatchWarning({
+  name,
+  targetService,
+  serviceTypes,
+  hosts,
+  hostsLoading,
+  hostsError,
+  fieldError,
+}: {
+  name: string;
+  targetService: string;
+  serviceTypes?: readonly ServiceType[];
+  hosts: HostOption[];
+  hostsLoading: boolean;
+  hostsError: boolean;
+  fieldError?: string;
+}) {
+  const hostValue = useWatch({ name });
+  const { service, isResolving, isError: serviceError } = useResolvedServiceField(
+    targetService,
+    serviceTypes,
+  );
+
+  if (fieldError) {
+    return null;
+  }
+  if (hostsLoading || hostsError || isResolving || serviceError) {
+    return null;
+  }
+  if (!service) {
+    return null;
+  }
+
+  const hostId = hostValueId(hostValue);
+  if (!hostId) {
+    return null;
+  }
+
+  const selectedHost = hosts.find((host) => host.id === hostId);
+  if (!selectedHost) {
+    return null;
+  }
+
+  if (!isHostMismatch(selectedHost.address, service.node?.address)) {
+    return null;
+  }
+
+  const serviceNodeAddress = service.node?.address;
+  return (
+    <Alert severity="warning" sx={{ mt: 1 }}>
+      The selected executor host ({selectedHost.name}, {selectedHost.address}) is not
+      the node where {service.name} runs
+      {serviceNodeAddress ? ` (${serviceNodeAddress})` : ''}.
+    </Alert>
+  );
+}
+
 export function HostSelector({
   name,
   label,
@@ -200,6 +272,7 @@ export function HostSelector({
   disabled,
   helperText,
   dependsOn,
+  targetService,
   serviceTypes,
   allowCustom,
   multiple,
@@ -295,6 +368,21 @@ export function HostSelector({
     );
   }
 
+  let mismatchWarning: ReactNode = null;
+  if (targetService) {
+    mismatchWarning = (
+      <HostMismatchWarning
+        name={name}
+        targetService={targetService}
+        serviceTypes={serviceTypes}
+        hosts={hosts}
+        hostsLoading={isLoading}
+        hostsError={isError}
+        fieldError={fieldError}
+      />
+    );
+  }
+
   if (freeSolo) {
     return (
       <>
@@ -314,6 +402,7 @@ export function HostSelector({
             void refetch();
           }}
         />
+        {mismatchWarning}
       </>
     );
   }
@@ -341,6 +430,7 @@ export function HostSelector({
         }}
         textFieldProps={{ helperText: text, error: showError }}
       />
+      {mismatchWarning}
     </>
   );
 }
