@@ -554,6 +554,35 @@ class _MultiHostCascadeModel(AppFormModel):
     ] = Field(default_factory=list)
 
 
+class _HostTargetServiceModel(AppFormModel):
+    """Cover ``HostRef(target_service=...)`` precedence and omit-when-unset."""
+
+    service_id: Annotated[
+        int,
+        ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
+        Ui(label="Service", section="s"),
+    ]
+    other_id: Annotated[
+        int,
+        ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
+        Ui(label="Other", section="s"),
+    ]
+    # Marker only — no Ui(depends_on=...), so target_service is the sole source.
+    explicit_only: Annotated[
+        str,
+        HostRef(target_service="service_id"),
+        Ui(label="Explicit", section="s"),
+    ]
+    # Marker wins over a different Ui(depends_on=...).
+    precedence: Annotated[
+        str,
+        HostRef(target_service="other_id"),
+        Ui(label="Precedence", section="s", depends_on="service_id"),
+    ]
+    # No marker, no depends_on — key omitted from the wire.
+    plain_host: Annotated[str, HostRef(), Ui(label="Plain Host", section="s")]
+
+
 class TestReferenceFields:
     """Cover ref markers driving the schema field class and their extras."""
 
@@ -578,6 +607,11 @@ class TestReferenceFields:
         assert fields["hostname"].model_dump(exclude_none=True)["depends_on"] == (
             "service_id"
         )
+        # Cascade-only forms fall back: target_service mirrors depends_on.
+        assert fields["hostname"].target_service == "service_id"
+        assert "target_service" not in fields["plain_host"].model_dump(
+            exclude_none=True
+        )
 
     def test_multi_host_ref_depends_on_emitted_when_set(self) -> None:
         """Emit ``depends_on`` on MultiHostField for wire uniformity (no cascade).
@@ -588,7 +622,29 @@ class TestReferenceFields:
         fields = _fields_by_name(_MultiHostCascadeModel)
         assert isinstance(fields["hosts"], MultiHostField)
         assert fields["hosts"].depends_on == "service_id"
+        # Wire uniformity: target_service falls back from depends_on too.
+        assert fields["hosts"].target_service == "service_id"
 
+    def test_host_ref_target_service_explicit_and_omitted(self) -> None:
+        """Emit ``target_service`` from the marker; omit it when neither source is set."""
+        fields = _fields_by_name(_HostTargetServiceModel)
+        assert isinstance(fields["explicit_only"], HostField)
+        assert fields["explicit_only"].target_service == "service_id"
+        assert fields["explicit_only"].depends_on is None
+        assert "depends_on" not in fields["explicit_only"].model_dump(exclude_none=True)
+        assert fields["explicit_only"].model_dump(exclude_none=True)[
+            "target_service"
+        ] == "service_id"
+        assert "target_service" not in fields["plain_host"].model_dump(
+            exclude_none=True
+        )
+
+    def test_host_ref_target_service_marker_precedes_depends_on(self) -> None:
+        """Prefer ``HostRef(target_service=...)`` over ``Ui(depends_on=...)``."""
+        fields = _fields_by_name(_HostTargetServiceModel)
+        assert isinstance(fields["precedence"], HostField)
+        assert fields["precedence"].depends_on == "service_id"
+        assert fields["precedence"].target_service == "other_id"
     def test_allow_custom_emitted_only_when_true(self) -> None:
         """Emit ``allow_custom`` only when the ref opts in."""
         fields = _fields_by_name(_RefModel)
