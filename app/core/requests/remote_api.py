@@ -861,15 +861,12 @@ class RemoteAPI(BaseRemoteAPI):
         }
 
     @contextmanager
-    def auth(self, api_key: str, auth_scheme: str = "Bearer") -> AsyncGenerator[Self]:
+    def auth(self, api_key: str, auth_scheme: str = "Bearer") -> Generator[Self]:
         """Define context manager to temporarily set authentication for API requests.
 
         :param api_key: The API key to use for authentication.
-        :type api_key: str
         :param auth_scheme: The authentication scheme to use. Defaults to "Bearer".
-        :type auth_scheme: str
-        :yield: The `RemoteAPI` instance with authentication headers set.
-        :rtype: AsyncGenerator[Self]
+        :return: The `RemoteAPI` instance with authentication headers set.
         """
         with self.extra_headers(
             {"Authorization": f"{auth_scheme} {api_key}".strip()}
