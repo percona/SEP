@@ -346,11 +346,13 @@ class SweepOutcome:
         a host in scope, orphans included -- all of them get a row.
     :param attempted: PMM's service ids for the subset this run actually probed. The
         rest keep the freshness columns they already had.
-    :param dispatched: Executor hosts a payload was actually sent to. A host with an
-        executor and no MongoDB service is *not* in here: dispatch is driven by
-        targets, so nothing ran there. Recording it as a failed attempt would have it
-        accumulate a failure every sweep for a condition that is not a failure --
-        probing a host that has no database is §11 work and does not exist yet.
+    :param dispatched: Executor hosts a payload was actually sent to -- every host with
+        a usable executor, whether or not it serves a mapped service: a machine
+        carrying a PMM client and no database is exactly the one an install decision is
+        about, so it is dispatched to like any other. A host with **no** usable
+        executor is not in here, and must not be: recording it as a failed attempt
+        would have it accumulate a failure every sweep for a condition that is not a
+        failure -- there was nothing to dispatch to.
     :param host_errors: Why a host did not answer, keyed by PMM's node id. The
         dispatch's own error where it had one, and otherwise that it answered nothing;
         the estate row and the receipt both read it, so the two cannot give an
