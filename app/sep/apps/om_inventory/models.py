@@ -202,12 +202,13 @@ class OmHost(ObservedEntity, table=True):
     ``uuid`` column would reject the one node every installation has.
 
     The consequence to accept openly is that if PMM re-registers a node under a new
-    id, OM gets a second row and the old one stays until retention prunes it. The
-    usual answer -- a OM-minted id plus a natural key to recognise the machine across
-    ids -- has no natural key available: ``machine_id`` is inherited from the container
-    image, so most of this sandbox reports one shared value and the rest report an
-    empty string. Matching on it would merge unrelated hosts. Hence no surrogate key:
-    it would only move the guess into a matching function.
+    id, OM gets a second row and the old one stays -- there is no host retention, only
+    ``DELETE /hosts/{node_id}`` removes it. The usual answer -- a OM-minted id plus a
+    natural key to recognise the machine across ids -- has no natural key available:
+    ``machine_id`` is inherited from the container image, so most of this sandbox
+    reports one shared value and the rest report an empty string. Matching on it would
+    merge unrelated hosts. Hence no surrogate key: it would only move the guess into a
+    matching function.
 
     Class named ``OmHost`` rather than ``Host`` even though the *table* is
     ``om.host``: the schema qualifies the table, but SQLModel keeps one registry for
