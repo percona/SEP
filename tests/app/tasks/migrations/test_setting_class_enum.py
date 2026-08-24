@@ -63,7 +63,7 @@ def test_setting_class_accepts_unregistered_token_after_upgrade(tasks_alembic_co
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, "heads")
 
-    unregistered = ("HEALTH_REPORT_SETTINGS", "APP_OWNED_SETTINGS")
+    unregistered = ("CUSTOM_PLUGIN_SETTINGS", "APP_OWNED_SETTINGS")
     engine = create_engine(sync_url)
     try:
         with engine.begin() as conn:

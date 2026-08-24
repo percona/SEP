@@ -16,7 +16,7 @@
 """add taskhistory_log_state capture_status
 
 Revision ID: a19da5cf0bca
-Revises: 6a19d56d7985
+Revises: e2f3a4b5c6d7
 Create Date: 2026-08-13 21:43:58.711511
 
 Add a per-``(source, stream)`` capture verdict on ``taskhistory_log_state`` so a
@@ -48,7 +48,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "a19da5cf0bca"
-down_revision: Union[str, None] = "6a19d56d7985"
+down_revision: Union[str, None] = "e2f3a4b5c6d7"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

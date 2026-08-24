@@ -32,11 +32,13 @@ from alembic import command
 from alembic.config import Config
 from pydantic import SecretStr
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     create_engine,
     inspect,
     Integer,
     MetaData,
+    String,
     Table,
 )
 from sqlalchemy import (
@@ -250,6 +252,32 @@ class TestCheckConstraintName:
                     check_constraint_name(conn, "settingoverride", "setting_class")
                     is None
                 )
+        finally:
+            engine.dispose()
+
+    def test_raises_when_multiple_checks_mention_column(self):
+        """Fail fast when more than one CHECK mentions the column."""
+        engine = create_engine("sqlite://")
+        metadata = MetaData()
+        Table(
+            "settingoverride",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("setting_class", String(64), nullable=False),
+            CheckConstraint(
+                "setting_class IN ('A', 'B')",
+                name="setting_class_enum_check",
+            ),
+            CheckConstraint(
+                "length(setting_class) > 0",
+                name="setting_class_nonempty_check",
+            ),
+        )
+        metadata.create_all(engine)
+        try:
+            with engine.connect() as conn:
+                with pytest.raises(RuntimeError, match="at most one CHECK"):
+                    check_constraint_name(conn, "settingoverride", "setting_class")
         finally:
             engine.dispose()
 

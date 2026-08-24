@@ -31,7 +31,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 
 # The head immediately before capture_status is added.
-_PRE_CAPTURE_STATUS_REVISION = "6a19d56d7985"
+_PRE_CAPTURE_STATUS_REVISION = "e2f3a4b5c6d7"
 
 _INSERT_STATE_ROW = (
     "INSERT INTO taskhistory_log_state "

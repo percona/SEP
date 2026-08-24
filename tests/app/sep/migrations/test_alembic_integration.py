@@ -402,7 +402,7 @@ def test_setting_class_accepts_unregistered_token_after_upgrade(sep_alembic_conf
     cfg, sync_url = sep_alembic_config
     command.upgrade(cfg, "heads")
 
-    unregistered = ("HEALTH_REPORT_SETTINGS", "APP_OWNED_SETTINGS")
+    unregistered = ("CUSTOM_PLUGIN_SETTINGS", "APP_OWNED_SETTINGS")
     engine = create_engine(sync_url)
     try:
         with engine.begin() as conn:

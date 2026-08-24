@@ -403,15 +403,28 @@ def check_constraint_name(
     shared PostgreSQL database can no-op once the first track has already
     dropped ``settingoverride.setting_class``'s CHECK.
 
+    Raises when more than one CHECK mentions ``column_name`` so a schema
+    drift fails fast instead of returning an arbitrary inspector-ordered
+    name that a drop migration might apply to the wrong constraint.
+
     :param bind: The migration's bound connection (``op.get_bind()``).
     :param table_name: The table whose CHECK constraints are inspected.
     :param column_name: The constrained column.
     :return: The constraint name, or ``None`` when the table or constraint is
         absent.
+    :raises RuntimeError: If more than one CHECK constraint's SQL text
+        mentions ``column_name``.
     """
     constraints = _check_constraints_for_column(bind, table_name, column_name)
     if not constraints:
         return None
+    if len(constraints) > 1:
+        names = [constraint.get("name") for constraint in constraints]
+        raise RuntimeError(
+            f"Expected at most one CHECK constraint mentioning "
+            f"{column_name!r} on {table_name!r}, found {len(constraints)}: "
+            f"{names}"
+        )
     return constraints[0].get("name")
 
 
