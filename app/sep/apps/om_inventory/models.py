@@ -295,7 +295,14 @@ class OmService(ObservedEntity, table=True):
 
 
 class ProbeRun(BaseUUIDSQLModel, table=True):
-    """Record one probe sweep and the facts it collected.
+    """Record one probe sweep: which hosts it attempted, and what came of it.
+
+    A receipt, not a copy of the estate. What the probe *found* lives on
+    :class:`OmHost` and :class:`OmService`, upserted and current; this table only
+    says which entity was attempted, on which executor host, whether it answered,
+    how long it took and what failed. Keeping the collected attributes out of it is
+    load-bearing -- with ``RUN_RETENTION`` runs kept, putting them here would store
+    the same facts that many times over and create a second source of truth for them.
 
     :param started_at: When the sweep began.
     :param finished_at: When it reached a terminal status; ``None`` while running.
@@ -309,15 +316,13 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
         difference from ``hosts_total`` is the estate nothing can be run on, which is
         a fact about onboarding rather than a failure of the sweep.
     :param hosts_answered: Hosts that returned a usable record.
-    :param facts: The collected facts, each ``{service_id, field, value,
-        observed_at}`` where ``service_id`` is **PMM's** service UUID -- the only key
-        the consumer can join on, and the reason the API translates away SEP's own
-        inventory id before storing.
-    :param nodes: One record per mapped service: where it was probed, how that host
-        was matched, whether it answered and how long its host took. The counters
-        above are this list's summary, and a summary is all a sweep could show until
-        this column existed -- "5 of 14 answered" cannot say *which* five, on which
-        hosts, or which one took a minute.
+    :param nodes: One record per host: where it was probed, how that host was
+        matched, whether it answered, how long it took, and its dispatch's task
+        history id -- so a reader can still open the probe's raw output, which the
+        receipt itself does not carry. The counters above are this list's summary,
+        and a summary is all a sweep could show until this column existed -- "5 of 14
+        answered" cannot say *which* five, on which hosts, or which one took a
+        minute.
     :param scope: The node ids this run was asked to refresh, or ``None`` for the
         whole estate. Stored rather than inferred, because without it the receipt
         cannot be read honestly -- "9 of 13 answered" means something different when
@@ -364,18 +369,9 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
 
     # Explicit JSONB rather than ``AutoJSON``: the latter silently drops
     # ``none_as_null`` on PostgreSQL, so a Python ``None`` lands as the JSON scalar
-    # ``null`` and a caller cannot tell "no facts" from "the column was never set".
-    facts: list[dict[str, Any]] = SQLField(
-        default_factory=list,
-        sa_column=Column(
-            postgresql.JSONB(astext_type=JSON()).with_variant(JSON(), "sqlite"),
-            nullable=False,
-            server_default="[]",
-        ),
-    )
-    # Same JSONB treatment, and for the same reason: a run reads its nodes all at
-    # once or not at all, and a per-node table would need its own retention story on
-    # top of the run's.
+    # ``null`` and a caller cannot tell "no nodes" from "the column was never set".
+    # A run reads its nodes all at once or not at all, and a per-node table would
+    # need its own retention story on top of the run's.
     nodes: list[dict[str, Any]] = SQLField(
         default_factory=list,
         sa_column=Column(
