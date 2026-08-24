@@ -2265,7 +2265,7 @@ export interface paths {
     };
     /**
      * Get Probe Run
-     * @description Return one sweep, with its per-service records and its facts.
+     * @description Return one sweep, with its per-host receipt.
      *
      *     :param run_id: The sweep's id.
      *     :param session: The database session.
@@ -9833,30 +9833,6 @@ export interface components {
       services_total: number;
     };
     /**
-     * ProbeFact
-     * @description One fact about one service, as the probe saw it.
-     *
-     *     :param service_id: **PMM's** service UUID. The consumer joins on this; SEP's own
-     *         inventory id would mean nothing on the other side.
-     *     :param field: The document field this sets, e.g. ``installed_version``.
-     *     :param value: The observed value.
-     *     :param observed_at: When the probe ran. Carried per fact rather than per response
-     *         so a consumer merging several sources can age them against each other.
-     */
-    om_inventory__ProbeFact: {
-      /** Field */
-      field: string;
-      /**
-       * Observed At
-       * Format: date-time
-       */
-      observed_at: string;
-      /** Service Id */
-      service_id: string;
-      /** Value */
-      value: unknown;
-    };
-    /**
      * ProbeNode
      * @description One **host** this sweep attempted, and what came of it.
      *
@@ -9878,6 +9854,8 @@ export interface components {
      *         whether its services did: a host with no database answers perfectly well and
      *         has no services at all.
      *     :param duration_seconds: The host's wall-clock, dispatch to collected output.
+     *     :param task_history_id: The dispatch's task history id, so a reader can open the
+     *         probe's raw output. ``None`` when the dispatch never got one back.
      *     :param error: The host-level failure, when its probe failed.
      *     :param services: The services on it, empty when there are none.
      */
@@ -9901,6 +9879,8 @@ export interface components {
       resolution: string;
       /** Services */
       services?: components['schemas']['om_inventory__ProbeNodeService'][];
+      /** Task History Id */
+      task_history_id?: number | null;
     };
     /**
      * ProbeNodeService
@@ -9956,25 +9936,16 @@ export interface components {
      * ProbeRunDetail
      * @description One sweep, with everything it recorded.
      *
-     *     Kept apart from the list shape on purpose: a sweep's facts run to a few hundred
+     *     Kept apart from the list shape on purpose: a sweep's nodes run to a few hundred
      *     records, so returning them for every row of a 25-run history would make the list
      *     an order of magnitude larger to serve a page that shows one run at a time.
      *
-     *     :param nodes: What the sweep saw per service.
-     *     :param facts: The facts it collected — every field the probe reads, including the
-     *         ones no consumer maps today.
+     *     :param nodes: What the sweep attempted per host.
      */
     om_inventory__ProbeRunDetail: {
       counts: components['schemas']['om_inventory__ProbeCounts'];
       /** Error */
       error?: string | null;
-      /** Facts */
-      facts?: components['schemas']['om_inventory__ProbeFact'][];
-      /**
-       * Facts Collected
-       * @default 0
-       */
-      facts_collected: number;
       /** Finished At */
       finished_at?: string | null;
       /** Nodes */
@@ -10003,7 +9974,6 @@ export interface components {
      *     :param started_at: When it began.
      *     :param finished_at: When it reached a terminal status; ``None`` while running.
      *     :param counts: What it reached.
-     *     :param facts_collected: How many facts it stored.
      *     :param scope: The hosts it was asked to refresh, or ``None`` for the whole
      *         estate. Without it the counters cannot be read: "9 of 13 answered" means
      *         something different when the run was only ever asked about one host.
@@ -10013,11 +9983,6 @@ export interface components {
       counts: components['schemas']['om_inventory__ProbeCounts'];
       /** Error */
       error?: string | null;
-      /**
-       * Facts Collected
-       * @default 0
-       */
-      facts_collected: number;
       /** Finished At */
       finished_at?: string | null;
       /**

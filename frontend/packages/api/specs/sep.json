@@ -12112,37 +12112,8 @@
         "title": "ProbeCounts",
         "type": "object"
       },
-      "om_inventory__ProbeFact": {
-        "description": "One fact about one service, as the probe saw it.\n\n:param service_id: **PMM's** service UUID. The consumer joins on this; SEP's own\n    inventory id would mean nothing on the other side.\n:param field: The document field this sets, e.g. ``installed_version``.\n:param value: The observed value.\n:param observed_at: When the probe ran. Carried per fact rather than per response\n    so a consumer merging several sources can age them against each other.",
-        "properties": {
-          "field": {
-            "title": "Field",
-            "type": "string"
-          },
-          "observed_at": {
-            "format": "date-time",
-            "title": "Observed At",
-            "type": "string"
-          },
-          "service_id": {
-            "title": "Service Id",
-            "type": "string"
-          },
-          "value": {
-            "title": "Value"
-          }
-        },
-        "required": [
-          "service_id",
-          "field",
-          "value",
-          "observed_at"
-        ],
-        "title": "ProbeFact",
-        "type": "object"
-      },
       "om_inventory__ProbeNode": {
-        "description": "One **host** this sweep attempted, and what came of it.\n\nHost-oriented, because a sweep attempts hosts. A flat list of services -- which\nthis was -- cannot show a machine carrying a PMM client and no database, however\nmany times it is probed, and that machine is the case OM most exists to describe.\n\nOne dispatch covers every service on a host, so the host owns the timing and the\nfailure and its services carry only what is theirs. Previously the duration was\nrepeated identically across a host's services, which read as several measurements\nwhen it was one.\n\n:param node_id: **PMM's** node id, the key OM holds this host under.\n:param host_name: The node's registered name.\n:param executor_host: The client its probe ran on; ``None`` when none matched.\n:param resolution: ``name`` / ``address`` / ``orphaned`` -- how that client was\n    matched, or that it was not. Orphaned is why nothing ran, not an error.\n:param answered: Whether the *host* returned a record. A different question from\n    whether its services did: a host with no database answers perfectly well and\n    has no services at all.\n:param duration_seconds: The host's wall-clock, dispatch to collected output.\n:param error: The host-level failure, when its probe failed.\n:param services: The services on it, empty when there are none.",
+        "description": "One **host** this sweep attempted, and what came of it.\n\nHost-oriented, because a sweep attempts hosts. A flat list of services -- which\nthis was -- cannot show a machine carrying a PMM client and no database, however\nmany times it is probed, and that machine is the case OM most exists to describe.\n\nOne dispatch covers every service on a host, so the host owns the timing and the\nfailure and its services carry only what is theirs. Previously the duration was\nrepeated identically across a host's services, which read as several measurements\nwhen it was one.\n\n:param node_id: **PMM's** node id, the key OM holds this host under.\n:param host_name: The node's registered name.\n:param executor_host: The client its probe ran on; ``None`` when none matched.\n:param resolution: ``name`` / ``address`` / ``orphaned`` -- how that client was\n    matched, or that it was not. Orphaned is why nothing ran, not an error.\n:param answered: Whether the *host* returned a record. A different question from\n    whether its services did: a host with no database answers perfectly well and\n    has no services at all.\n:param duration_seconds: The host's wall-clock, dispatch to collected output.\n:param task_history_id: The dispatch's task history id, so a reader can open the\n    probe's raw output. ``None`` when the dispatch never got one back.\n:param error: The host-level failure, when its probe failed.\n:param services: The services on it, empty when there are none.",
         "properties": {
           "answered": {
             "default": false,
@@ -12207,6 +12178,17 @@
             },
             "title": "Services",
             "type": "array"
+          },
+          "task_history_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task History Id"
           }
         },
         "required": [
@@ -12302,7 +12284,7 @@
         "type": "object"
       },
       "om_inventory__ProbeRunDetail": {
-        "description": "One sweep, with everything it recorded.\n\nKept apart from the list shape on purpose: a sweep's facts run to a few hundred\nrecords, so returning them for every row of a 25-run history would make the list\nan order of magnitude larger to serve a page that shows one run at a time.\n\n:param nodes: What the sweep saw per service.\n:param facts: The facts it collected — every field the probe reads, including the\n    ones no consumer maps today.",
+        "description": "One sweep, with everything it recorded.\n\nKept apart from the list shape on purpose: a sweep's nodes run to a few hundred\nrecords, so returning them for every row of a 25-run history would make the list\nan order of magnitude larger to serve a page that shows one run at a time.\n\n:param nodes: What the sweep attempted per host.",
         "properties": {
           "counts": {
             "$ref": "#/components/schemas/om_inventory__ProbeCounts"
@@ -12317,18 +12299,6 @@
               }
             ],
             "title": "Error"
-          },
-          "facts": {
-            "items": {
-              "$ref": "#/components/schemas/om_inventory__ProbeFact"
-            },
-            "title": "Facts",
-            "type": "array"
-          },
-          "facts_collected": {
-            "default": 0,
-            "title": "Facts Collected",
-            "type": "integer"
           },
           "finished_at": {
             "anyOf": [
@@ -12388,7 +12358,7 @@
         "type": "object"
       },
       "om_inventory__ProbeRunResponse": {
-        "description": "One sweep's record.\n\n:param run_id: The sweep's id.\n:param status: ``running`` / ``success`` / ``partial`` / ``failed``.\n:param started_at: When it began.\n:param finished_at: When it reached a terminal status; ``None`` while running.\n:param counts: What it reached.\n:param facts_collected: How many facts it stored.\n:param scope: The hosts it was asked to refresh, or ``None`` for the whole\n    estate. Without it the counters cannot be read: \"9 of 13 answered\" means\n    something different when the run was only ever asked about one host.\n:param error: The failure detail when the sweep itself raised.",
+        "description": "One sweep's record.\n\n:param run_id: The sweep's id.\n:param status: ``running`` / ``success`` / ``partial`` / ``failed``.\n:param started_at: When it began.\n:param finished_at: When it reached a terminal status; ``None`` while running.\n:param counts: What it reached.\n:param scope: The hosts it was asked to refresh, or ``None`` for the whole\n    estate. Without it the counters cannot be read: \"9 of 13 answered\" means\n    something different when the run was only ever asked about one host.\n:param error: The failure detail when the sweep itself raised.",
         "properties": {
           "counts": {
             "$ref": "#/components/schemas/om_inventory__ProbeCounts"
@@ -12403,11 +12373,6 @@
               }
             ],
             "title": "Error"
-          },
-          "facts_collected": {
-            "default": 0,
-            "title": "Facts Collected",
-            "type": "integer"
           },
           "finished_at": {
             "anyOf": [
@@ -19732,7 +19697,7 @@
     },
     "/api/apps/om_inventory/runs/{run_id}": {
       "get": {
-        "description": "Return one sweep, with its per-service records and its facts.\n\n:param run_id: The sweep's id.\n:param session: The database session.\n:raises HTTPNotFoundException: When there is no such sweep.\n:return: The sweep in full.",
+        "description": "Return one sweep, with its per-host receipt.\n\n:param run_id: The sweep's id.\n:param session: The database session.\n:raises HTTPNotFoundException: When there is no such sweep.\n:return: The sweep in full.",
         "operationId": "om_inventory_get_probe_run_api_apps_om_inventory_runs__run_id__get",
         "parameters": [
           {
