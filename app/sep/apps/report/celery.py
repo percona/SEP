@@ -190,12 +190,12 @@ async def _generate_health_report(
     :return: None.
     :rtype: None
     """
-    from app.sep.apps.report.deps import resolve_pmm_api
     from app.sep.apps.report.service import (
         generate_pdf_report,
         generate_report,
         upload_pdf_report,
     )
+    from app.sep.deps import resolve_pmm_api
 
     pmm_api = await resolve_pmm_api()
     if pmm_api is None:

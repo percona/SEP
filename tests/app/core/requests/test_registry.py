@@ -74,7 +74,7 @@ async def test_invalidate_noop_when_no_match() -> None:
 
 @pytest.mark.asyncio
 async def test_invalidate_defers_the_close_while_a_consumer_holds() -> None:
-    """``invalidate`` evicts at once and closes once the last holder releases."""
+    """Evict the client at once and close it once the last holder releases."""
     registry = ClientRegistry()
     try:
         client = await registry.get(RemoteAPI, endpoint="https://a.example.org")
