@@ -173,6 +173,58 @@ def build_facts(
     return facts
 
 
+#: How a service's role is read off its probe record.
+#:
+#: Order matters: an arbiter *is* a ``mongod`` process, so it has to be tested before
+#: the ``mongod`` fallback or it would be misclassified as one; mongos is tested before
+#: config for the same reason -- both run distinct programs, but checking the more
+#: specific signal first keeps the table readable top to bottom.
+#:
+#: ============  =========================================================
+#: role          how the record says so
+#: ============  =========================================================
+#: arbiter       ``database.is_arbiter`` is true (``hello.arbiterOnly``)
+#: mongos        ``process.program == "mongos"``, or ``database.msg == "isdbgrid"``
+#: config        ``sharding.clusterRole == "configsvr"`` in ``getCmdLineOpts``,
+#:               or ``--configsvr`` in ``process.argv``
+#: mongod        otherwise, when a server process was found
+#: ============  =========================================================
+def classify_role(record: dict[str, Any]) -> str | None:
+    """Classify a service's role from what its probe record actually saw.
+
+    Deliberately not from ``process.program`` alone: an arbiter is a ``mongod``
+    process too, and stopping there would fill the column with a value that is not
+    wrong but is not the distinction it exists to make.
+
+    A config server is read from ``getCmdLineOpts``, not from the command line.
+    ``--configsvr`` as a flag is the rarer shape: a config server is ordinarily
+    started as ``mongod --config /etc/mongod.conf`` with ``sharding.clusterRole:
+    configsvr`` *inside* that file, so argv carries no trace of the role at all and
+    every config server in the estate reads as a plain ``mongod``. ``parsed`` is
+    mongod's own resolved view of both, which is why it is the source and the flag
+    is only a fallback for a record whose database facts did not come back.
+
+    :param record: One probe record for a service.
+    :return: The role, or ``None`` when no server process was found for it.
+    """
+    database = record.get("database") or {}
+    process = record.get("process") or {}
+    parsed = ((database.get("raw") or {}).get("cmd_line_opts") or {}).get(
+        "parsed"
+    ) or {}
+    cluster_role = (parsed.get("sharding") or {}).get("clusterRole")
+
+    if database.get("is_arbiter"):
+        return "arbiter"
+    if process.get("program") == "mongos" or database.get("msg") == "isdbgrid":
+        return "mongos"
+    if cluster_role == "configsvr" or "--configsvr" in (process.get("argv") or ""):
+        return "config"
+    if process.get("running"):
+        return "mongod"
+    return None
+
+
 def _record_for(entry: Any, host_results: dict[str, HostProbeResult]) -> dict | None:
     """Return the probe record for one mapped service, if it answered.
 
@@ -283,6 +335,10 @@ class SweepOutcome:
         executor host -- the level those attributes belong to.
     :param service_documents: The ``observed`` document per service that answered,
         keyed by PMM's service id.
+    :param service_roles: The role :func:`classify_role` read off an answering
+        service's record, keyed by PMM's service id. Absent where the record carried
+        no server process, which :func:`~app.sep.apps.om_inventory.crud.upsert_service`
+        already treats as "this attempt saw nothing" and must not overwrite.
     :param service_errors: Why a service did not answer, keyed by PMM's service id.
         Only for services a run actually attempted: an entity nobody targeted must
         not have its timestamps touched at all.
@@ -310,6 +366,7 @@ class SweepOutcome:
     hosts: list[InventoryHost] = dc_field(default_factory=list)
     host_documents: dict[str, dict[str, Any]] = dc_field(default_factory=dict)
     service_documents: dict[str, dict[str, Any]] = dc_field(default_factory=dict)
+    service_roles: dict[str, str] = dc_field(default_factory=dict)
     service_errors: dict[str, str] = dc_field(default_factory=dict)
     seen: list[tuple[InventoryService, str]] = dc_field(default_factory=list)
     attempted: set[str] = dc_field(default_factory=set)
@@ -657,6 +714,9 @@ def _record_entity(
     outcome.service_documents[entry.service.external_id] = build_document(
         record, SERVICE_FIELDS, observed_at
     )
+    role = classify_role(record)
+    if role is not None:
+        outcome.service_roles[entry.service.external_id] = role
 
 
 async def _finalise(
@@ -745,7 +805,7 @@ async def _persist_estate(outcome: SweepOutcome, run_id: UUID) -> None:
                 node_id=node_id,
                 name=service.name,
                 port=service.port,
-                role=None,
+                role=outcome.service_roles.get(service_id),
                 observed=outcome.service_documents.get(service_id),
                 error=outcome.service_errors.get(service_id),
                 run_id=run_id,
