@@ -632,9 +632,10 @@ class TestReferenceFields:
         assert fields["explicit_only"].target_service == "service_id"
         assert fields["explicit_only"].depends_on is None
         assert "depends_on" not in fields["explicit_only"].model_dump(exclude_none=True)
-        assert fields["explicit_only"].model_dump(exclude_none=True)[
-            "target_service"
-        ] == "service_id"
+        assert (
+            fields["explicit_only"].model_dump(exclude_none=True)["target_service"]
+            == "service_id"
+        )
         assert "target_service" not in fields["plain_host"].model_dump(
             exclude_none=True
         )

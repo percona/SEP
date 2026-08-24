@@ -224,8 +224,7 @@ function HostMismatchWarning({
   const hostValue = useWatch({ name });
   // Resolve types from the target service field, not cascade ``serviceTypes``
   // (those are scoped to ``dependsOn``, which may name a different field).
-  const { service, isResolving, isError: serviceError } =
-    useResolvedServiceField(targetService);
+  const { service, isResolving, isError: serviceError } = useResolvedServiceField(targetService);
 
   if (fieldError) {
     return null;
@@ -254,8 +253,8 @@ function HostMismatchWarning({
   const serviceNodeAddress = service.node?.address;
   return (
     <Alert severity="warning" sx={{ mt: 1 }}>
-      The selected executor host ({selectedHost.name}, {selectedHost.address}) is not
-      the node where {service.name} runs
+      The selected executor host ({selectedHost.name}, {selectedHost.address}) is not the node where{' '}
+      {service.name} runs
       {serviceNodeAddress ? ` (${serviceNodeAddress})` : ''}.
     </Alert>
   );

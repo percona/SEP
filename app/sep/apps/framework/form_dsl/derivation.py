@@ -469,9 +469,7 @@ def _build_ref_field(
             allow_custom=allow_custom,
             depends_on=ui.depends_on,
             target_service=(
-                ref.target_service
-                if ref.target_service is not None
-                else ui.depends_on
+                ref.target_service if ref.target_service is not None else ui.depends_on
             ),
         )
     return field_class(**common, allow_custom=allow_custom)

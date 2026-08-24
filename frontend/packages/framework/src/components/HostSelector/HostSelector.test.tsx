@@ -774,15 +774,11 @@ describe('HostSelector', () => {
 
     async function waitForServicesFetch() {
       await waitFor(() => {
-        expect(mocked.get.mock.calls.some((call) => call[0] === '/sep/services/')).toBe(
-          true,
-        );
+        expect(mocked.get.mock.calls.some((call) => call[0] === '/sep/services/')).toBe(true);
       });
     }
 
-    function mockHostsAndServices(
-      services: typeof SERVICE_ON_NODE_B[] = [SERVICE_ON_NODE_B],
-    ) {
+    function mockHostsAndServices(services: (typeof SERVICE_ON_NODE_B)[] = [SERVICE_ON_NODE_B]) {
       mocked.get.mockImplementation((url: string) => {
         if (url === '/sep/hosts/') {
           return Promise.resolve(makeResponse(HOSTS));
@@ -861,29 +857,31 @@ describe('HostSelector', () => {
     });
 
     it('resolves the target service by its own types when depends_on names a different field', async () => {
-      mocked.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
-        if (url === '/sep/hosts/') {
-          return Promise.resolve(makeResponse(HOSTS));
-        }
-        if (url === '/sep/services/') {
-          const type = config?.params?.service_type;
-          const items =
-            type === 'mongodb'
-              ? [SERVICE_MONGO_ON_NODE_A]
-              : type === 'mysql'
-                ? [SERVICE_ON_NODE_B]
-                : [];
-          return Promise.resolve({
-            data: {
-              items,
-              total: items.length,
-              offset: 0,
-              limit: 200,
-            },
-          });
-        }
-        return Promise.reject(new Error(`unexpected url ${url}`));
-      });
+      mocked.get.mockImplementation(
+        (url: string, config?: { params?: Record<string, unknown> }) => {
+          if (url === '/sep/hosts/') {
+            return Promise.resolve(makeResponse(HOSTS));
+          }
+          if (url === '/sep/services/') {
+            const type = config?.params?.service_type;
+            const items =
+              type === 'mongodb'
+                ? [SERVICE_MONGO_ON_NODE_A]
+                : type === 'mysql'
+                  ? [SERVICE_ON_NODE_B]
+                  : [];
+            return Promise.resolve({
+              data: {
+                items,
+                total: items.length,
+                offset: 0,
+                limit: 200,
+              },
+            });
+          }
+          return Promise.reject(new Error(`unexpected url ${url}`));
+        },
+      );
 
       const client = makeClient();
       render(
@@ -1077,10 +1075,7 @@ describe('HostSelector', () => {
       const user = userEvent.setup();
       render(
         <Wrapper client={client}>
-          <SchemaFormRenderer
-            sections={taskSections({ allow_custom: true })}
-            onSubmit={vi.fn()}
-          />
+          <SchemaFormRenderer sections={taskSections({ allow_custom: true })} onSubmit={vi.fn()} />
         </Wrapper>,
       );
       await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
@@ -1189,11 +1184,7 @@ describe('HostSelector', () => {
             ]}
           >
             <FormProvider {...methods}>
-              <HostSelector
-                name="hostname"
-                label="Execution Host"
-                targetService="service_id"
-              />
+              <HostSelector name="hostname" label="Execution Host" targetService="service_id" />
             </FormProvider>
           </FormFieldsProvider>
         );
