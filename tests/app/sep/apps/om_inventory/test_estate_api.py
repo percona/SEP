@@ -166,6 +166,42 @@ class TestHosts:
         assert [host["node_id"] for host in response.json()] == [NODE_WITH_DB]
 
     @pytest.mark.asyncio
+    async def test_executor_true_excludes_a_registered_but_down_agent(
+        self, api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """``?executor=`` means *usable*, not merely matched.
+
+        A host whose agent is registered but unreachable, or reachable with an
+        unhealthy driver, has ``executor_host`` set -- matching is against every known
+        executor, broken ones included, so an onboarding problem does not masquerade
+        as "no executor". ``?executor=true`` asks a different question: can a payload
+        actually run here, which is exactly the query a dispatch target picker needs.
+
+        :param api: The authenticated client.
+        :param session: The database session.
+        """
+        await upsert_host(
+            session,
+            node_id="id-down00",
+            name="down00",
+            address="10.0.0.9",
+            executor_host="down00",
+            executor={
+                "registered": True,
+                "reachable": True,
+                "driver_healthy": False,
+                "detail": "Failed to find raw_exec",
+            },
+        )
+        await session.commit()
+
+        usable = await api.get(f"{BASE}/hosts", params={"executor": "true"})
+        unusable = await api.get(f"{BASE}/hosts", params={"executor": "false"})
+
+        assert "id-down00" not in {h["node_id"] for h in usable.json()}
+        assert "id-down00" in {h["node_id"] for h in unusable.json()}
+
+    @pytest.mark.asyncio
     async def test_one_host_by_pmms_node_id(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:

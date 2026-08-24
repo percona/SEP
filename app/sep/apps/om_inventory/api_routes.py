@@ -340,6 +340,22 @@ def _service_response(service: OmService) -> ServiceResponse:
     )
 
 
+def _executor_usable(host: OmHost) -> bool:
+    """Return whether a payload can actually be dispatched to this host.
+
+    Reads ``observed.executor``, which :func:`~app.sep.apps.om_inventory.crud.
+    upsert_host` writes on every sweep for every host regardless of whether it was
+    probed -- unlike ``executor_host``, which is set the moment *any* known executor
+    matches, usable or not. A missing or absent sub-document reads as not usable,
+    which is the honest answer for a host that has never been swept at all.
+
+    :param host: The stored row.
+    :return: ``True`` when the host's executor is reachable and driver-healthy.
+    """
+    executor = (host.observed or {}).get("executor") or {}
+    return bool(executor.get("reachable")) and bool(executor.get("driver_healthy"))
+
+
 def _host_response(host: OmHost, services: list[OmService]) -> HostResponse:
     """Project one host row, with its services nested.
 
@@ -443,7 +459,7 @@ async def list_estate_hosts(
         for host in hosts
         if (has_service is None or bool(by_node.get(host.node_id)) is has_service)
         and (failing is None or (host.failing_since is not None) is failing)
-        and (executor is None or (host.executor_host is not None) is executor)
+        and (executor is None or _executor_usable(host) is executor)
     ]
 
 
