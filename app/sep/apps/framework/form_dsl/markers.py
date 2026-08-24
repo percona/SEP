@@ -312,15 +312,27 @@ class HostRef:
     (``multiple=True``) may still emit ``depends_on`` on ``MultiHostField``,
     but cascade auto-select is single-host only today.
 
+    ``target_service`` is independent of ``Ui(depends_on=...)``. It names the
+    service field whose node address the renderer compares against the selected
+    host for a non-blocking co-location warning. Cascade auto-select and the
+    warning stay separate: setting one does not imply the other. When
+    ``target_service`` is omitted, derivation falls back to ``Ui(depends_on=...)``
+    if that is set, so a form that already declares cascade (e.g. MongoDB
+    Backup) gets the warning without a second declaration.
+
     :param allow_custom: When ``True``, the field also accepts a free-typed
         value and emits ``allow_custom`` on the wire. Defaults to ``False``.
     :param multiple: When ``True``, the field is a multi-value selector backed by
         a ``list[...]`` / ``set[...]`` annotation and derives a
         ``MultiHostField``. Defaults to ``False`` (single-value).
+    :param target_service: Optional name of the service field used for the
+        co-location warning. ``None`` (the default) lets derivation fall back
+        to ``Ui(depends_on=...)`` when that is set.
     """
 
     allow_custom: bool = False
     multiple: bool = False
+    target_service: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

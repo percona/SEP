@@ -461,8 +461,17 @@ def _build_ref_field(
         # otherwise so exclude_none keeps other apps' wire schemas unchanged.
         # MultiHostField may carry the key for wire uniformity, but only the
         # single-value HostField renderer honours it today.
+        #
+        # target_service is independent of depends_on: prefer the marker's
+        # value, fall back to Ui(depends_on=...) so cascade-only forms (e.g.
+        # MongoDB Backup) get the co-location warning without a second
+        # declaration. MultiHostField emits the key for wire uniformity; the
+        # multi-host renderer ignores it (no warning).
         return field_class(
-            **common, allow_custom=allow_custom, depends_on=ui.depends_on
+            **common,
+            allow_custom=allow_custom,
+            depends_on=ui.depends_on,
+            target_service=ref.target_service or ui.depends_on,
         )
     return field_class(**common, allow_custom=allow_custom)
 
