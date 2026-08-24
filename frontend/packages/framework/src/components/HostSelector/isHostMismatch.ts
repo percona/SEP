@@ -15,10 +15,21 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { HostSelector } from './HostSelector';
-export type { HostSelectorProps } from './HostSelector';
-export { StandaloneHostSelector } from './StandaloneHostSelector';
-export type { StandaloneHostSelectorProps } from './StandaloneHostSelector';
-export { resolveExecutorHostForService } from './resolveExecutorHostForService';
-export type { ServiceHostResolveInput } from './resolveExecutorHostForService';
-export { isHostMismatch } from './isHostMismatch';
+/**
+ * Decide whether the selected executor host and the target service's node
+ * live at different network addresses.
+ *
+ * Co-location is address-only: Nomad node names and inventory display names
+ * are independent namespaces, so two hosts sharing one address are the same
+ * machine and must not warn. An absent or empty address is unknown, not a
+ * difference — prefer silence whenever co-location cannot be established.
+ */
+export function isHostMismatch(
+  hostAddress: string | undefined,
+  serviceNodeAddress: string | undefined,
+): boolean {
+  if (!hostAddress || !serviceNodeAddress) {
+    return false;
+  }
+  return hostAddress !== serviceNodeAddress;
+}

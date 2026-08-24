@@ -645,6 +645,7 @@ class TestReferenceFields:
         assert isinstance(fields["precedence"], HostField)
         assert fields["precedence"].depends_on == "service_id"
         assert fields["precedence"].target_service == "other_id"
+
     def test_allow_custom_emitted_only_when_true(self) -> None:
         """Emit ``allow_custom`` only when the ref opts in."""
         fields = _fields_by_name(_RefModel)
