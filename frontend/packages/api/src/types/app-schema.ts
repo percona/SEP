@@ -215,6 +215,12 @@ export interface HostField extends BaseField {
    * not cascaded.
    */
   depends_on?: string;
+  /**
+   * Optional service field whose node address is compared against the
+   * selected host for a non-blocking co-location warning. Independent of
+   * ``depends_on``. Omitted when unset.
+   */
+  target_service?: string;
   /** Offer free-text (free-solo) entry alongside the inventory options. */
   allow_custom?: boolean;
 }
@@ -227,6 +233,11 @@ export interface MultiHostField extends BaseField {
    * today. Omitted when unset.
    */
   depends_on?: string;
+  /**
+   * Optional service field name mirrored for wire uniformity. The
+   * multi-host renderer ignores it. Omitted when unset.
+   */
+  target_service?: string;
   /** Offer free-text (free-solo) entry alongside the inventory options. */
   allow_custom?: boolean;
 }
