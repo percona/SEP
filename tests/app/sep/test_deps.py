@@ -523,7 +523,12 @@ class TestGetPmmApi:
             endpoint="https://pmm.example.com", api_key="secret-key"
         ).open()
 
-        with patch("app.sep.deps.resolve_pmm_api", AsyncMock(return_value=client)):
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = "secret-key"
+            mock_settings.PMM.verify_ssl = True
+            mock_settings.SSL_CAFILE = None
+            mock_settings.get_remote_api = AsyncMock(return_value=client)
             async for held in get_pmm_api():
                 assert held is client
                 await client.close_when_idle()
@@ -534,7 +539,9 @@ class TestGetPmmApi:
     @pytest.mark.asyncio
     async def test_yields_none_when_pmm_is_not_configured(self) -> None:
         """Yield ``None`` without reaching for a hold on a client that is absent."""
-        with patch("app.sep.deps.resolve_pmm_api", AsyncMock(return_value=None)):
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = None
+            mock_settings.PMM.api_key = None
             results = [held async for held in get_pmm_api()]
 
         assert results == [None]
