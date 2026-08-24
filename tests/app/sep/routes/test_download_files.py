@@ -39,41 +39,8 @@ from app.sep.deps import (
     get_tasks_client,
 )
 from app.sep.main import sep_app
-from app.tasks.models import (
-    Task,
-    TaskExecutionRequest,
-    TaskHistoryResponse,
-    TaskHistoryStatusEnum,
-)
 from tests.app.asgi_stream import asgi_stream
-from tests.app.factories import TaskFactory
 from tests.app.sep.routes.conftest import TASKS_ENDPOINT
-
-
-@pytest.fixture
-def created_task() -> Task:
-    """Return a fake created task."""
-    return TaskFactory.build()
-
-
-@pytest.fixture
-def task_history_response(faker, created_task):
-    """Return a fake task history response."""
-    started_at = faker.past_datetime(start_date="-15d")
-    return TaskHistoryResponse(
-        id=faker.random_int(min=1),
-        execution_request=TaskExecutionRequest(
-            task="example-task",
-            target="example-target",
-            meta={"key": "value"},
-            tracking={"allocation_id": "12345", "evaluation_id": "67890"},
-        ),
-        status=TaskHistoryStatusEnum.SUCCESS,
-        task=created_task,
-        started_at=started_at,
-        finished_at=started_at + faker.time_delta(end_datetime="+1h"),
-        executed_by=None,
-    )
 
 
 async def _mock_file_stream(chunks):
