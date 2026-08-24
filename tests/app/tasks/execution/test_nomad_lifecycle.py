@@ -107,6 +107,16 @@ async def test_aenter_enters_effective_config_and_publishes_holder() -> None:
 
 
 @pytest.mark.asyncio
+async def test_aenter_leaves_the_settings_executor_unentered() -> None:
+    """``__aenter__`` enters a private executor, never the shared settings value."""
+    _override_nomad(_NOMAD_A)
+    settings_executor = tasks_settings.NOMAD
+    async with NomadLifecycle(FastAPI()) as holder:
+        assert holder.current is not settings_executor
+        assert settings_executor._session is None
+
+
+@pytest.mark.asyncio
 async def test_reconcile_is_noop_when_config_unchanged() -> None:
     """``reconcile`` keeps the same executor when the config is unchanged."""
     _override_nomad(_NOMAD_A)
@@ -127,6 +137,30 @@ async def test_reconcile_swaps_and_drains_on_change() -> None:
         assert holder.current is not old
         assert str(holder.current.endpoint).startswith("https://nomad-b.example.org")
         assert old._session is None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_opens_a_fresh_session_for_a_copied_override() -> None:
+    """Open a new session when the override is a ``model_copy`` of the entered executor.
+
+    The snapshot builder merges nested leaves with ``model_copy``, which carries
+    the source's private attributes over, its aiohttp session included, so the
+    first override after startup arrives holding the very session the rebind is
+    about to close.
+    """
+    _override_nomad(_NOMAD_A)
+    async with NomadLifecycle(FastAPI()) as holder:
+        startup = holder.current
+        tasks_settings._set_snapshot(
+            {"NOMAD": startup.model_copy(update={"log_socket_read_timeout": 13})}
+        )
+
+        await holder.reconcile()
+
+        assert holder.current is not startup
+        assert startup._session is None
+        assert holder.current._session is not None
+        assert not holder.current._session.closed
 
 
 @pytest.mark.asyncio
