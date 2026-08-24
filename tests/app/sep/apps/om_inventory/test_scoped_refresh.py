@@ -161,9 +161,6 @@ def service_on(name: str) -> InventoryService:
         external_id=f"svc-{name}",
         name=name,
         port=27017,
-        cluster=None,
-        replication_set=None,
-        environment=None,
         node_name=name,
         node_address=None,
     )
