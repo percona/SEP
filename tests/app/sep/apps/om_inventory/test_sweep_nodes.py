@@ -195,6 +195,18 @@ async def test_records_the_host_it_probed_and_the_services_on_it() -> None:
 
 
 @pytest.mark.asyncio
+async def test_an_answering_service_s_role_is_classified() -> None:
+    """The role a sweep read off the record reaches the outcome, keyed by PMM's id."""
+    record = {**RECORD, "process": {**RECORD["process"], "running": True}}
+    outcome = await run_sweep(
+        [mapped("svc-a", "node00", NodeResolution.NAME)],
+        {"node00": HostProbeResult(executor_host="node00", records={"svc-a": record})},
+    )
+
+    assert outcome.service_roles == {"ff0275b6-3633-474a-8068-3c39d3c7a4da": "mongod"}
+
+
+@pytest.mark.asyncio
 async def test_a_host_with_no_database_is_in_the_receipt() -> None:
     """The case the flat service list could not show at all.
 
