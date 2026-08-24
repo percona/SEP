@@ -424,7 +424,7 @@ class GrafanaUser(BaseUser):
 
         The user-lookup endpoint carries the server-admin flag but no org
         memberships, so the target's membership is read from the org-users
-        listing -- the same source :meth:`get_users` reads, so an org role
+        listing — the same source :meth:`get_users` reads, so an org role
         reported there is reported here too. A server admin still outranks that
         listing, which carries no server-admin flag of its own. The listing is
         scoped to the service account's own org, so a target whose only
@@ -435,7 +435,9 @@ class GrafanaUser(BaseUser):
 
         :param username: The login or email to look up.
         :return: The mapped ``GrafanaUser``.
-        :raises GrafanaException: If Grafana is unreachable, so a role is never
+        :raises HTTPException: If either Grafana call fails — a
+            :class:`GrafanaException` when Grafana is unreachable, otherwise the
+            project exception mapped to the response status — so a role is never
             reported from membership data that could not be read.
         :raises KeyError: If an org-users row omits the ``userId`` the match
             keys on, matching the listing path's own refusal to read a
