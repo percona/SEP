@@ -35,6 +35,7 @@ from fastapi import status
 from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.om_inventory.crud import upsert_host, upsert_service
 from app.sep.deps import (
@@ -63,6 +64,7 @@ async def api(regular_user: CasdoorUser, session: AsyncSession) -> AsyncClient:
     :return: The client.
     """
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: session
     client = AsyncClient(
