@@ -57,13 +57,13 @@ class TestSplitCompleteLines:
         )
 
     def test_carriage_return_is_a_terminator(self):
-        r"""Assert a lone ``\r`` (progress output) terminates a line so it flushes."""
+        """Assert a lone carriage return terminates a line so it flushes."""
         assert split_complete_lines(b"progress\rmore") == LineSplit(
             b"progress\r", b"more", forced=False
         )
 
     def test_crlf_splits_after_the_newline(self):
-        r"""Assert ``\r\n`` keeps both bytes in the complete portion."""
+        """Assert a carriage-return / newline pair keeps both bytes in complete."""
         assert split_complete_lines(b"a\r\nb") == LineSplit(
             b"a\r\n", b"b", forced=False
         )
@@ -144,15 +144,27 @@ class TestSplitCompleteLines:
         assert split.complete is buf
 
 
+def _withheld(buf: WithheldLineBuffer) -> bytes:
+    """Return the bytes ``buf`` is still withholding.
+
+    Reads private storage: the withheld bytes are deliberately not exposed as a
+    public snapshot, and this module is the white-box test of the type that owns
+    them.
+
+    :param buf: The buffer to inspect.
+    :return: The withheld bytes.
+    """
+    return bytes(buf._buf)
+
+
 class _ScanRecordingBytearray(bytearray):
     """Record the start offset of every ``rfind`` run against the buffer."""
 
-    def __init__(self, *args):
-        """Initialise the buffer and its empty scan log."""
+    def __init__(self, *args: object) -> None:
         super().__init__(*args)
         self.scan_starts: list[int] = []
 
-    def rfind(self, sub, start=0, *args):
+    def rfind(self, sub: bytes, start: int = 0, *args: int) -> int:
         """Log the scan start offset and delegate to ``bytearray.rfind``.
 
         :param sub: The byte sequence to search for.
@@ -203,6 +215,10 @@ CHUNK_SEQUENCES = [
     pytest.param(
         ["café=x\n".encode()[:5], "café=x\n".encode()[5:]], None, id="multibyte-split"
     ),
+    pytest.param([b"\n\n\n"], None, id="all-terminators"),
+    pytest.param([b"a\r", b"b\r", b"c\r"], None, id="carriage-return-run"),
+    pytest.param([b"a\nb"], 0, id="zero-ceiling"),
+    pytest.param([b"card=41111111", b"11111111\n"], 8, id="ceiling-splits-a-token"),
 ]
 
 
@@ -214,21 +230,21 @@ class TestWithheldLineBuffer:
         buf = WithheldLineBuffer()
         assert len(buf) == 0
         assert not buf
-        assert bytes(buf) == b""
+        assert _withheld(buf) == b""
         assert buf.drain() == b""
 
     def test_terminator_free_append_releases_nothing(self):
         """Assert a frame with no terminator releases nothing and is withheld."""
         buf = WithheldLineBuffer()
         assert buf.append(b"card=41") == LineRelease(b"", forced=False)
-        assert bytes(buf) == b"card=41"
+        assert _withheld(buf) == b"card=41"
         assert buf
 
     def test_append_releases_up_to_the_last_terminator(self):
         """Assert the release ends at the last terminator, not the first."""
         buf = WithheldLineBuffer()
         assert buf.append(b"a\nb\nc") == LineRelease(b"a\nb\n", forced=False)
-        assert bytes(buf) == b"c"
+        assert _withheld(buf) == b"c"
 
     def test_accumulated_run_released_whole_by_completion_frame(self):
         """Assert a terminating frame releases everything accumulated before it.
@@ -244,28 +260,41 @@ class TestWithheldLineBuffer:
         assert buf.append(b"end\n") == LineRelease(
             frame * frames + b"end\n", forced=False
         )
-        assert bytes(buf) == b""
+        assert not buf
 
-    def test_terminator_already_withheld_is_not_re_released(self):
-        """Assert a released terminator cannot be found again by a later frame."""
+    def test_frame_after_a_partial_release_accumulates_onto_the_remainder(self):
+        """Assert a terminator-free frame concatenates onto what was withheld."""
         buf = WithheldLineBuffer()
         buf.append(b"first\ntail")
         assert buf.append(b"more") == LineRelease(b"", forced=False)
-        assert bytes(buf) == b"tailmore"
+        assert _withheld(buf) == b"tailmore"
+
+    def test_terminator_behind_the_scan_start_is_never_re_released(self):
+        """Assert a terminator already among the withheld bytes is not re-found.
+
+        Seeds a state ``append`` cannot produce, because the scan window is the
+        one thing an all-public exercise of the type cannot observe: with a
+        terminator behind the window, a whole-buffer scan releases a line and a
+        narrowed scan releases nothing.
+        """
+        buf = WithheldLineBuffer()
+        buf._buf += b"already\nreleased"
+        assert buf.append(b"more") == LineRelease(b"", forced=False)
+        assert _withheld(buf) == b"already\nreleasedmore"
 
     def test_carriage_return_is_a_terminator(self):
-        r"""Assert a lone ``\r`` releases the progress line it ends."""
+        """Assert a lone carriage return releases the progress line it ends."""
         buf = WithheldLineBuffer()
         assert buf.append(b"progress\rmore") == LineRelease(b"progress\r", forced=False)
-        assert bytes(buf) == b"more"
+        assert _withheld(buf) == b"more"
 
     def test_crlf_split_across_frames_releases_both_halves(self):
-        r"""Assert a ``\r\n`` pair split across frames releases at each byte."""
+        """Assert a split carriage-return / newline pair releases at each byte."""
         buf = WithheldLineBuffer()
         assert buf.append(b"a\r") == LineRelease(b"a\r", forced=False)
-        assert bytes(buf) == b""
+        assert not buf
         assert buf.append(b"\nb") == LineRelease(b"\n", forced=False)
-        assert bytes(buf) == b"b"
+        assert _withheld(buf) == b"b"
 
     def test_multibyte_codepoint_split_across_frames_intact(self):
         """Assert a codepoint straddling two frames is released undamaged."""
@@ -281,14 +310,14 @@ class TestWithheldLineBuffer:
         buf = WithheldLineBuffer()
         buf.append(b"abc")
         assert buf.append(b"") == LineRelease(b"", forced=False)
-        assert bytes(buf) == b"abc"
+        assert _withheld(buf) == b"abc"
 
     def test_drain_returns_everything_and_clears(self):
         """Assert the end-of-stream drain empties the buffer."""
         buf = WithheldLineBuffer()
         buf.append(b"tail")
         assert buf.drain() == b"tail"
-        assert bytes(buf) == b""
+        assert not buf
         assert buf.drain() == b""
 
     def test_release_is_a_copy_not_a_view(self):
@@ -309,7 +338,7 @@ class TestWithheldLineBuffer:
         assert buf.append(b"done\ncard=41", max_withheld=7) == LineRelease(
             b"done\n", forced=False
         )
-        assert bytes(buf) == b"card=41"
+        assert _withheld(buf) == b"card=41"
 
     def test_remainder_above_ceiling_forces_flush(self):
         """Assert an over-ceiling remainder flushes the whole buffer and clears it."""
@@ -317,7 +346,7 @@ class TestWithheldLineBuffer:
         assert buf.append(b"done\ncard=4111", max_withheld=8) == LineRelease(
             b"done\ncard=4111", forced=True
         )
-        assert bytes(buf) == b""
+        assert not buf
 
     def test_terminator_free_run_trips_ceiling_across_frames(self):
         """Assert the ceiling measures the whole withheld buffer, not one frame."""
@@ -326,7 +355,7 @@ class TestWithheldLineBuffer:
         assert buf.append(b"y" * 4, max_withheld=6) == LineRelease(
             b"x" * 4 + b"y" * 4, forced=True
         )
-        assert bytes(buf) == b""
+        assert not buf
 
     def test_no_ceiling_never_forces_flush(self):
         """Assert an unset ceiling preserves unbounded withholding."""
@@ -346,7 +375,48 @@ class TestWithheldLineBuffer:
         buf = WithheldLineBuffer()
         buf.append(b"x" * 10, max_withheld=100)
         assert buf.append(b"", max_withheld=5) == LineRelease(b"x" * 10, forced=True)
-        assert bytes(buf) == b""
+        assert not buf
+
+    def test_forced_flush_preserves_mid_codepoint_bytes(self):
+        """Assert a forced flush releases the withheld bytes uncut.
+
+        Cutting at the ceiling could split a multi-byte UTF-8 sequence the
+        buffer holds complete; releasing everything introduces no such cut.
+        """
+        buf = WithheldLineBuffer()
+        raw = b"cafe\xc3"  # incomplete "é"
+        assert buf.append(raw, max_withheld=3) == LineRelease(raw, forced=True)
+        assert not buf
+
+    def test_ceiling_releases_a_token_in_halves(self):
+        """Assert the ceiling splits an un-terminated token across two releases.
+
+        This is the accepted redaction-boundary leak: each half is anonymized
+        alone, so a token straddling the flush is matched in neither. Pinned so
+        the boundary cannot move unnoticed.
+        """
+        buf = WithheldLineBuffer()
+        assert buf.append(b"card=41111111", max_withheld=8) == LineRelease(
+            b"card=41111111", forced=True
+        )
+        assert buf.append(b"11111111\n") == LineRelease(b"11111111\n", forced=False)
+
+    @pytest.mark.parametrize(
+        ("data", "expected"),
+        [
+            pytest.param(b"a\nb", LineRelease(b"a\nb", forced=True), id="tail-remains"),
+            pytest.param(b"a\n", LineRelease(b"a\n", forced=False), id="nothing-left"),
+        ],
+    )
+    def test_zero_ceiling_forces_a_flush_only_when_a_tail_remains(self, data, expected):
+        """Assert a zero ceiling withholds nothing yet only forces on a remainder.
+
+        A zero ceiling is falsy, so a truthiness test in its place would stop
+        forcing the flush a strictly-greater-than comparison still forces.
+        """
+        buf = WithheldLineBuffer()
+        assert buf.append(data, max_withheld=0) == expected
+        assert not buf
 
     @pytest.mark.parametrize(("chunks", "max_withheld"), CHUNK_SEQUENCES)
     def test_matches_the_unnarrowed_full_scan(self, chunks, max_withheld):
@@ -359,7 +429,7 @@ class TestWithheldLineBuffer:
             chunks, max_withheld
         )
         assert releases == expected_releases
-        assert bytes(buf) == expected_remainder
+        assert _withheld(buf) == expected_remainder
 
     @pytest.mark.parametrize(("chunks", "max_withheld"), CHUNK_SEQUENCES)
     def test_withheld_bytes_stay_terminator_free(self, chunks, max_withheld):
@@ -371,21 +441,24 @@ class TestWithheldLineBuffer:
         buf = WithheldLineBuffer()
         for chunk in chunks:
             buf.append(chunk, max_withheld=max_withheld)
-            withheld = bytes(buf)
+            withheld = _withheld(buf)
             assert b"\n" not in withheld
             assert b"\r" not in withheld
 
     def test_each_frame_scans_only_the_bytes_it_delivered(self):
-        """Assert every scan starts at the length the buffer had before the append.
+        """Assert no frame's scan reaches back into bytes it did not deliver.
 
-        Behaviourally a full-buffer scan is indistinguishable, so the narrowing
-        itself is pinned here or a regression to quadratic work goes unnoticed.
+        A full-buffer scan is behaviourally indistinguishable while the buffer
+        obeys its own invariant, so the narrowing is pinned directly or a
+        regression to quadratic work over a growing buffer goes unnoticed.
         """
         buf = WithheldLineBuffer()
         recorder = _ScanRecordingBytearray()
         buf._buf = recorder
 
-        buf.append(b"a" * 10)
-        buf.append(b"b" * 5)
-
-        assert recorder.scan_starts == [0, 0, 10, 10]
+        for frame in (b"a" * 10, b"b" * 5, b"c" * 3):
+            scan_from = len(buf)
+            recorder.scan_starts.clear()
+            buf.append(frame)
+            assert recorder.scan_starts, "append performed no scan"
+            assert set(recorder.scan_starts) == {scan_from}
