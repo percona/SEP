@@ -91,5 +91,7 @@ class TaskFormModel(AppFormModel):
 
     task_name: Annotated[NonEmptyStr, Ui(section="Task")]
     hostname: Annotated[
-        NonEmptyStr, HostRef(), Ui(label=EXECUTION_HOST_LABEL, section="Task")
+        NonEmptyStr,
+        HostRef(target_service="service_id"),
+        Ui(label=EXECUTION_HOST_LABEL, section="Task"),
     ]
