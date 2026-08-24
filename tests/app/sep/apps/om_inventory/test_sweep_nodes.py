@@ -72,9 +72,6 @@ def make_service(
         external_id=external_id,
         name=name,
         port=27017,
-        cluster="c",
-        replication_set="rs",
-        environment="sandbox",
         node_name="node00",
         node_address="10.0.0.1",
     )

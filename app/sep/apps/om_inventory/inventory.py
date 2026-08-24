@@ -32,10 +32,11 @@ DEFAULT_MONGODB_PORT = 27017
 class InventoryService:
     """Carry one MongoDB service as inventory reports it.
 
-    ``cluster`` and ``replication_set`` come straight from inventory and are recorded
-    rather than interpreted here. Note that one ``cluster`` value can span two
-    generations of members with different replica sets, so downstream topology work
-    must group on ``replication_set``.
+    Topology grouping -- cluster identity, replica-set membership, environment -- is
+    PMM's to derive, not SEP's; this app only has to find the service and probe its
+    host. There used to be ``cluster``, ``replication_set`` and ``environment`` fields
+    here, left over from when that grouping lived in SEP. They had zero consumers and
+    were removed rather than kept as a temptation to start grouping here again.
 
     :param service_id: The inventory service id.
     :param external_id: **PMM's** service UUID, which inventory stores as
@@ -47,9 +48,6 @@ class InventoryService:
         invisible to the metrics source.
     :param name: The inventory service name.
     :param port: The service port, defaulted when inventory carries none.
-    :param cluster: The service's cluster attribute, if any.
-    :param replication_set: The service's replica set; empty for a mongos.
-    :param environment: The service's environment label, set once at registration.
     :param node_name: The node's registered name, if any.
     :param node_address: The node's registered address, if any.
     """
@@ -58,9 +56,6 @@ class InventoryService:
     external_id: str | None
     name: str
     port: int
-    cluster: str | None
-    replication_set: str | None
-    environment: str | None
     node_name: str | None
     node_address: str | None
 
@@ -89,9 +84,6 @@ def _service_from_entry(entry: dict) -> InventoryService | None:
         external_id=entry.get("external_id") or None,
         name=entry.get("name") or node_name or node_address or "",
         port=entry.get("port") or DEFAULT_MONGODB_PORT,
-        cluster=entry.get("cluster") or None,
-        replication_set=entry.get("replication_set") or None,
-        environment=entry.get("environment") or None,
         node_name=node_name,
         node_address=node_address,
     )
