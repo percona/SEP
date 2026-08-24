@@ -31,8 +31,8 @@ from app.core.settings_override.lifecycle import SnapshotChange
 from app.core.settings_override.models import SettingClassEnum
 from app.sep.config import sep_settings
 from app.sep.main import (
-    _make_remote_api_rebinder,
     _reseed_system_periodic_tasks,
+    make_remote_api_rebinder,
 )
 from app.sep.settings_override import apply_logging_dictconfig, invalidate_pmm_clients
 from app.sep.snippets.config import snippets_settings
@@ -59,7 +59,7 @@ async def test_endpoint_rebinder_swaps_app_state_client(
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     new = None
-    rebind = _make_remote_api_rebinder(
+    rebind = make_remote_api_rebinder(
         app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
     )
     try:
@@ -86,7 +86,7 @@ async def test_endpoint_rebinder_invalidates_when_no_app_state_client(
     sep_settings._set_snapshot({"INVENTORY_ENDPOINT": endpoint})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
-    rebind = _make_remote_api_rebinder(
+    rebind = make_remote_api_rebinder(
         app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
     )
     try:
@@ -114,7 +114,7 @@ async def test_endpoint_rebinder_created_evicts_base_and_new(
     sep_settings._set_snapshot({"INVENTORY_ENDPOINT": new_endpoint})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
-    rebind = _make_remote_api_rebinder(
+    rebind = make_remote_api_rebinder(
         app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
     )
     try:
@@ -135,7 +135,7 @@ async def test_endpoint_rebinder_changed_evicts_previous_and_new(
     sep_settings._set_snapshot({"INVENTORY_ENDPOINT": new_endpoint})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
-    rebind = _make_remote_api_rebinder(
+    rebind = make_remote_api_rebinder(
         app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
     )
     try:
@@ -162,11 +162,90 @@ async def test_endpoint_rebinder_deleted_evicts_previous_and_base(
     sep_settings._set_snapshot({})
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
-    rebind = _make_remote_api_rebinder(
+    rebind = make_remote_api_rebinder(
         app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
     )
     await rebind(SnapshotChange({"INVENTORY_ENDPOINT": previous_endpoint}, {}))
     assert _awaited_endpoints(invalidate) == [previous_endpoint, base_endpoint]
+
+
+@pytest.mark.asyncio
+async def test_endpoint_rebinder_defers_app_state_close_while_a_consumer_holds(
+    mocker: MockerFixture,
+) -> None:
+    """Keep a held ``app.state`` client alive through the rebind, closing on release."""
+    app = FastAPI()
+    old = await RemoteAPI(endpoint="https://old-inv.example.org").open()
+    app.state.inventory_api = old
+    sep_settings._set_snapshot({"INVENTORY_ENDPOINT": "https://new-inv.example.org"})
+    mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
+
+    new = None
+    rebind = make_remote_api_rebinder(
+        app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
+    )
+    try:
+        async with old.hold():
+            await rebind(SnapshotChange({}, {}))
+
+            new = app.state.inventory_api
+            assert new is not old  # new work is handed the rebuilt client
+            assert old._session is not None  # the holder keeps the old one usable
+
+        assert old._session is None
+    finally:
+        if new is not None:
+            await new.close()
+        sep_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+async def test_endpoint_rebinder_defers_registry_close_while_a_consumer_holds() -> None:
+    """Keep a held registry client alive through the eviction, closing on release."""
+    app = FastAPI()
+    endpoint = "https://held-inv.example.org"
+    sep_settings._set_snapshot({"INVENTORY_ENDPOINT": endpoint})
+    rebind = make_remote_api_rebinder(
+        app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
+    )
+    try:
+        client = await settings.get_remote_api(endpoint=endpoint)
+
+        async with client.hold():
+            await rebind(
+                SnapshotChange(
+                    {"INVENTORY_ENDPOINT": endpoint},
+                    {"INVENTORY_ENDPOINT": endpoint},
+                )
+            )
+
+            assert client._session is not None
+            assert await settings.get_remote_api(endpoint=endpoint) is not client
+
+        assert client._session is None
+    finally:
+        await settings.invalidate_client(endpoint)
+        sep_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+async def test_invalidate_pmm_clients_defers_close_while_a_consumer_holds() -> None:
+    """Keep a held PMM client alive through the eviction, closing on release."""
+    endpoint = "https://held-pmm.example.org"
+    pmm = PMMSettings(endpoint=endpoint)
+    settings._set_snapshot({"PMM": pmm})
+    try:
+        client = await settings.get_remote_api(endpoint=endpoint)
+
+        async with client.hold():
+            await invalidate_pmm_clients(SnapshotChange({"PMM": pmm}, {"PMM": pmm}))
+
+            assert client._session is not None
+
+        assert client._session is None
+    finally:
+        await settings.invalidate_client(endpoint)
+        settings._set_snapshot({})
 
 
 @pytest.mark.asyncio

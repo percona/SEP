@@ -42,7 +42,7 @@ class TestGenerateHealthReportCooperativeCancel:
     async def test_skips_generation_when_pmm_not_configured(self, mocker):
         """Assert the PMM is not configured (``get_pmm_api`` -> ``None``) skips report generation."""
         mocker.patch(
-            "app.sep.apps.report.deps.get_pmm_api",
+            "app.sep.apps.report.deps.resolve_pmm_api",
             new=AsyncMock(return_value=None),
         )
         generate = mocker.patch(
@@ -58,7 +58,7 @@ class TestGenerateHealthReportCooperativeCancel:
     async def test_stops_before_generation_on_cancel(self, mocker):
         """A cancel before generation skips report generation entirely."""
         mocker.patch(
-            "app.sep.apps.report.deps.get_pmm_api",
+            "app.sep.apps.report.deps.resolve_pmm_api",
             new=AsyncMock(return_value=MagicMock()),
         )
         generate = mocker.patch(
@@ -76,7 +76,7 @@ class TestGenerateHealthReportCooperativeCancel:
         """Scheduled upload renders/uploads same report without second collection."""
         report = self._mock_report()
         mocker.patch(
-            "app.sep.apps.report.deps.get_pmm_api",
+            "app.sep.apps.report.deps.resolve_pmm_api",
             new=AsyncMock(return_value=MagicMock()),
         )
         mock_settings = mocker.patch(f"{MODULE}.health_report_settings")
@@ -114,7 +114,7 @@ class TestGenerateHealthReportCooperativeCancel:
     ):
         """Keep the scheduled task alive when the upload fails, logging the cause."""
         mocker.patch(
-            "app.sep.apps.report.deps.get_pmm_api",
+            "app.sep.apps.report.deps.resolve_pmm_api",
             new=AsyncMock(return_value=MagicMock()),
         )
         mock_settings = mocker.patch(f"{MODULE}.health_report_settings")

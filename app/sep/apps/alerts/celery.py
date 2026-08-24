@@ -41,10 +41,10 @@ def backup_alert_config() -> None:
 
 async def _backup_alert_config() -> None:
     """Fetch alert configuration from PMM and store as a backup."""
-    from app.sep.apps.alerts.deps import get_pmm_api
+    from app.sep.apps.alerts.deps import resolve_pmm_api
     from app.sep.apps.alerts.models import AlertBackup
 
-    pmm_api = await get_pmm_api()
+    pmm_api = await resolve_pmm_api()
     if pmm_api is None:
         logger.warning("PMM not configured, skipping alert backup")
         return

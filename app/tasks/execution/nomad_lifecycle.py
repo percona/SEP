@@ -132,7 +132,7 @@ class NomadLifecycle:
 
         Opens the new executor first, swaps the reference (a GIL-atomic
         assignment, so readers of :attr:`current` see either the old or the new
-        executor but never a half-built one), then closes the old one. A no-op
+        executor but never a half-built one), then retires the old one. A no-op
         when the config is unchanged. A construction failure propagates to the
         refresher's per-cycle handler, leaving the old executor live.
 
@@ -140,8 +140,12 @@ class NomadLifecycle:
         atomic against a concurrent reconcile. This is safe because
         :meth:`NomadExecutor.__aenter__` only builds an aiohttp ``ClientSession``
         (no network I/O), so it never blocks the lock for a meaningful duration;
-        the old executor is closed *outside* the lock to keep shutdown's
+        the old executor is retired *outside* the lock to keep shutdown's
         :meth:`__aexit__` from waiting on the close.
+
+        The old executor is retired rather than closed outright: routes that
+        resolved it stream off that instance for the whole response, so it stays
+        open until the last of them releases it.
 
         :raises ValidationError: If the overridden config fingerprint cannot be
             reconstructed into a :class:`NomadExecutor` (propagated from
@@ -161,4 +165,4 @@ class NomadLifecycle:
             old, self._current = self._current, new
             self._current_config = desired_config
         if old is not None:
-            await old.__aexit__(None, None, None)
+            await old.close_when_idle()

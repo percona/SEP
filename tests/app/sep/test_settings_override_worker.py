@@ -45,7 +45,7 @@ from app.core.settings_override.worker import SEED_TIMEOUT_FRACTION
 from app.core.utils import json_serializer
 from app.sep import settings_override as sep_worker
 from app.sep.config import sep_settings
-from app.sep.deps import get_pmm_api
+from app.sep.deps import resolve_pmm_api
 from app.sep.settings_override import (
     build_sep_override_proxies,
     republish_sep_settings_snapshot,
@@ -343,7 +343,7 @@ class TestWorkerPmmClientInvalidation:
     async def test_api_key_only_override_evicts_the_cached_client(
         self, override_session_maker: async_sessionmaker
     ) -> None:
-        """Hand a fresh client with the new key to the next ``get_pmm_api()``.
+        """Hand a fresh client with the new key to the next ``resolve_pmm_api()``.
 
         ``ClientRegistry.IMMUTABLE_KEYS`` excludes ``api_key``, so republishing
         the ``PMM`` snapshot alone leaves the stale client cached; only the
@@ -357,7 +357,7 @@ class TestWorkerPmmClientInvalidation:
             value={"endpoint": PMM_ENDPOINT, "api_key": "old-key"},
         )
         await refresh_all(lambda: override_session_maker, proxies)
-        stale = await get_pmm_api()
+        stale = await resolve_pmm_api()
         try:
             await _upsert_override(
                 override_session_maker,
@@ -370,7 +370,7 @@ class TestWorkerPmmClientInvalidation:
                 lambda: override_session_maker, proxies, WORKER_OVERRIDE_CALLBACKS
             )
 
-            fresh = await get_pmm_api()
+            fresh = await resolve_pmm_api()
             assert fresh is not stale
             assert fresh.api_key == SecretStr("new-key")
         finally:
@@ -395,7 +395,7 @@ class TestWorkerPmmClientInvalidation:
             value={"endpoint": PMM_ENDPOINT, "api_key": "old-key"},
         )
         await refresh_all(lambda: override_session_maker, proxies)
-        stale = await get_pmm_api()
+        stale = await resolve_pmm_api()
         try:
             await _upsert_override(
                 override_session_maker,
@@ -407,7 +407,7 @@ class TestWorkerPmmClientInvalidation:
             await refresh_all(lambda: override_session_maker, proxies)
 
             assert settings.PMM.api_key == SecretStr("new-key")
-            assert await get_pmm_api() is stale
+            assert await resolve_pmm_api() is stale
         finally:
             await settings.invalidate_client(PMM_ENDPOINT)
 

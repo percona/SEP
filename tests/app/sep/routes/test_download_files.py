@@ -15,11 +15,13 @@
 
 """Define tests for the app.sep.routes.download_files module."""
 
+import asyncio
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from aioresponses import aioresponses, CallbackResult
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.status import (
@@ -43,7 +45,9 @@ from app.tasks.models import (
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
 )
+from tests.app.asgi_stream import asgi_stream
 from tests.app.factories import TaskFactory
+from tests.app.sep.routes.conftest import TASKS_ENDPOINT
 
 
 @pytest.fixture
@@ -336,3 +340,110 @@ class TestDownloadTaskHistoryFile:
         assert response.status_code == HTTP_200_OK
         assert response.headers["x-accel-buffering"] == "no"
         assert "content-disposition" not in response.headers
+
+
+class TestDownloadThroughTheRealClientDependency:
+    """Cover ``download_task_history_file`` without stubbing ``get_tasks_client``."""
+
+    pytestmark = pytest.mark.asyncio
+
+    async def test_streamed_request_carries_the_access_token(
+        self, app_state_tasks_client, async_test_client, task_history_response
+    ):
+        """Authenticate the body stream as the viewing user, not anonymously."""
+        url = f"{TASKS_ENDPOINT}/history/{task_history_response.id}/file/"
+        with aioresponses() as upstream:
+            upstream.get(url, status=HTTP_200_OK, body=b"payload")
+
+            response = await async_test_client.get(
+                f"/files/{task_history_response.id}/download"
+            )
+
+            recorded = next(iter(upstream.requests.values()))[0]
+
+        assert response.status_code == HTTP_200_OK
+        assert response.content == b"payload"
+        assert recorded.kwargs["headers"]["Authorization"] == "Bearer test-token"
+
+    async def test_file_list_survives_a_rebind_while_a_consumer_holds(
+        self, app_state_tasks_client, async_test_client, task_history_response
+    ):
+        """Keep a retired client serving the consumers that already hold it."""
+        url = f"{TASKS_ENDPOINT}/history/{task_history_response.id}/files/"
+        with aioresponses() as upstream:
+            upstream.get(url, status=HTTP_200_OK, payload={})
+
+            async with app_state_tasks_client.hold():
+                await app_state_tasks_client.close_when_idle()
+
+                response = await async_test_client.get(
+                    f"/files/{task_history_response.id}"
+                )
+
+        assert response.status_code == HTTP_200_OK
+        assert app_state_tasks_client._session is None
+
+    @pytest.mark.usefixtures("async_test_client")
+    async def test_download_survives_a_rebind_mid_transfer(
+        self, app_state_tasks_client, task_history_response
+    ):
+        """Deliver a full download whose client was retired while the body was in flight."""
+        release = asyncio.Event()
+
+        async def held_body(_url, **_kwargs):
+            await release.wait()
+            return CallbackResult(status=HTTP_200_OK, body=b"payload")
+
+        url = f"{TASKS_ENDPOINT}/history/{task_history_response.id}/file/"
+        with aioresponses() as upstream:
+            upstream.get(url, callback=held_body)
+
+            async with asgi_stream(
+                sep_app, f"/files/{task_history_response.id}/download"
+            ) as response:
+                assert response.status_code == HTTP_200_OK
+
+                await app_state_tasks_client.close_when_idle()
+                assert app_state_tasks_client._session is not None
+
+                release.set()
+                body = await response.drain()
+
+        assert response.status_code == HTTP_200_OK
+        assert body == b"payload"
+        assert app_state_tasks_client._session is None
+
+    @pytest.mark.usefixtures("async_test_client")
+    async def test_disconnect_mid_stream_releases_the_hold(
+        self, app_state_tasks_client, task_history_response
+    ):
+        """Close a retired client when the consumer disconnects mid-download.
+
+        Abandoning the response cancels the request task, which is what a client
+        closing the connection does. FastAPI unwinds the dependency exit stack,
+        so the hold releases and the deferred close still fires rather than
+        leaving the session open for the life of the process.
+
+        This is what pins the shield around the deferred close: replacing it with
+        a bare await leaves the session open here, while the unit-level
+        cancellation test passes either way.
+        """
+        never_released = asyncio.Event()
+
+        async def held_body(_url, **_kwargs):
+            await never_released.wait()
+            return CallbackResult(status=HTTP_200_OK, body=b"payload")
+
+        url = f"{TASKS_ENDPOINT}/history/{task_history_response.id}/file/"
+        with aioresponses() as upstream:
+            upstream.get(url, callback=held_body)
+
+            async with asgi_stream(
+                sep_app, f"/files/{task_history_response.id}/download"
+            ) as response:
+                assert response.status_code == HTTP_200_OK
+
+                await app_state_tasks_client.close_when_idle()
+                assert app_state_tasks_client._session is not None
+
+        assert app_state_tasks_client._session is None

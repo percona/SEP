@@ -30,14 +30,16 @@ from app.sep.apps.alerts.loader import get_alert_templates
 from app.sep.apps.alerts.models import AlertBackup, AlertTemplate, ServiceType
 from app.sep.clients.pmm import ContactPoint, Folder, PMMRemoteAPI
 
-# ``get_pmm_api`` / ``PMMAPIDep`` / ``require_pmm_api`` / ``RequiredPMMAPIDep`` now
-# live in ``app.sep.deps`` alongside the sibling Inventory / Tasks client deps;
-# they are re-exported here for existing importers (routes, celery, tests).
+# ``get_pmm_api`` / ``resolve_pmm_api`` / ``PMMAPIDep`` / ``require_pmm_api`` /
+# ``RequiredPMMAPIDep`` now live in ``app.sep.deps`` alongside the sibling
+# Inventory / Tasks client deps; they are re-exported here for existing importers
+# (routes, celery, tests).
 from app.sep.deps import (
     get_pmm_api,  # noqa: F401 -- re-exported for existing importers
     PMMAPIDep,
     require_pmm_api,  # noqa: F401 -- re-exported for existing importers
     RequiredPMMAPIDep,  # noqa: F401 -- re-exported for existing importers
+    resolve_pmm_api,  # noqa: F401 -- re-exported for existing importers
     SessionDep,
 )
 

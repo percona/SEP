@@ -15,12 +15,14 @@
 
 """Define dependencies for the report plugin."""
 
-# ``get_pmm_api`` / ``PMMAPIDep`` / ``require_pmm_api`` / ``RequiredPMMAPIDep`` live
-# in ``app.sep.deps`` alongside the sibling Inventory / Tasks client deps; they are
-# re-exported here for existing importers (api_routes, celery, tests).
+# ``get_pmm_api`` / ``resolve_pmm_api`` / ``PMMAPIDep`` / ``require_pmm_api`` /
+# ``RequiredPMMAPIDep`` live in ``app.sep.deps`` alongside the sibling Inventory /
+# Tasks client deps; they are re-exported here for existing importers (api_routes,
+# celery, tests).
 from app.sep.deps import (
     get_pmm_api,  # noqa: F401 -- re-exported for existing importers
     PMMAPIDep,  # noqa: F401 -- re-exported for existing importers
     require_pmm_api,  # noqa: F401 -- re-exported for existing importers
     RequiredPMMAPIDep,  # noqa: F401 -- re-exported for existing importers
+    resolve_pmm_api,  # noqa: F401 -- re-exported for existing importers
 )

@@ -18,6 +18,7 @@
 import logging
 from collections import defaultdict
 from collections.abc import AsyncGenerator
+from contextlib import nullcontext
 from typing import Annotated
 
 from fastapi import Depends
@@ -29,6 +30,7 @@ from starlette.requests import Request
 from app.api.deps import CurrentUserID
 from app.core.db import ListQuery, make_list_query_dep
 from app.core.exceptions import HTTPBadRequestException, HTTPNotFoundException
+from app.core.requests import BaseRemoteAPI
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager, TaskManager
@@ -93,7 +95,7 @@ def get_executor(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> BaseExecut
     raise ValueError(f"Unsupported backend {backend}")
 
 
-def get_request_executor(
+def resolve_request_executor(
     request: Request, backend: TaskBackendEnum = TaskBackendEnum.NOMAD
 ) -> BaseExecutor:
     """Resolve the request-scoped task executor for the given backend.
@@ -123,6 +125,32 @@ def get_request_executor(
                 # instead of failing the request.
                 pass
     return get_executor(backend)
+
+
+async def get_request_executor(
+    request: Request, backend: TaskBackendEnum = TaskBackendEnum.NOMAD
+) -> AsyncGenerator[BaseExecutor]:
+    """Hold the resolved executor for the duration of the request.
+
+    A ``NOMAD`` reconcile retires the entered executor the moment its config
+    changes; holding it here keeps this request's executor open until the
+    response has been sent, so a log stream or a file transfer already running
+    on it finishes. A :class:`CeleryExecutor` owns no session and is yielded
+    unchanged.
+
+    :param request: The incoming request, injected by FastAPI.
+    :param backend: The backend type to get an executor for.
+    :return: The task executor.
+    :raises ValueError: If the backend is not supported.
+    """
+    executor = resolve_request_executor(request, backend)
+    hold = (
+        executor.hold()
+        if isinstance(executor, BaseRemoteAPI)
+        else nullcontext(executor)
+    )
+    async with hold:
+        yield executor
 
 
 TaskExecutor = Annotated[BaseExecutor, Depends(get_request_executor)]

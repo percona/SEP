@@ -299,6 +299,8 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     ssl_certfile: RelativeFilePathField | None = Field(None, frozen=True)
     logger_name: str = __name__
     _session: ClientSession | None = None
+    _in_flight: int = 0
+    _close_when_idle: bool = False
     _extra_headers: ContextVar[dict[str, str] | None] = PrivateAttr(
         default_factory=lambda: ContextVar("api_extra_headers", default=None)
     )
@@ -397,6 +399,45 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         Closes the aiohttp `ClientSession` if it was initialized.
         """
         await self.__aexit__(None, None, None)
+
+    @asynccontextmanager
+    async def hold(self) -> AsyncGenerator[Self, None]:
+        """Count the caller as an in-flight consumer for the duration of the block.
+
+        A consumer that resolved this client keeps it for every call it makes,
+        including the ones it issues after an earlier response finished, so the
+        accounting unit is the hold rather than the individual HTTP call. The
+        releaser that drops the count to zero performs a close that
+        :meth:`close_when_idle` deferred.
+
+        The release runs during cancellation too, when the consuming task is
+        cancelled by a client disconnecting mid-response, so the deferred close
+        is shielded; a bare ``await`` would leave it interrupted with the
+        session still open.
+
+        :return: This client, unchanged.
+        """
+        self._in_flight += 1
+        try:
+            yield self
+        finally:
+            self._in_flight -= 1
+            if not self._in_flight and self._close_when_idle:
+                self._close_when_idle = False
+                await asyncio.shield(self.close())
+
+    async def close_when_idle(self) -> None:
+        """Close the session now when idle, or once the last consumer releases.
+
+        Unlike :meth:`close`, which closes unconditionally, this waits on the
+        consumers registered by :meth:`hold`, and imposes no deadline on them.
+        Callers that retire a client on a settings rebind use this so an
+        in-flight stream or download is not cut off mid-response.
+        """
+        if self._in_flight:
+            self._close_when_idle = True
+            return
+        await self.close()
 
     def set_extra_headers(self, extra_headers: dict[str, str] | None) -> Token:
         """Set extra headers to be included in API requests.
@@ -610,7 +651,10 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                 extra_sensitive_body_fields=self._extra_sensitive_body_fields.get(),
             ),
         )
-        async with self._session.request(method, prepared_path, **kwargs) as response:
+        async with (
+            self.hold(),
+            self._session.request(method, prepared_path, **kwargs) as response,
+        ):
             yield response
 
     @staticmethod
