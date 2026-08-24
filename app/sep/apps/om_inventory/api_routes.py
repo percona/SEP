@@ -29,7 +29,14 @@ reached it, where the last sweep's output answered only "what did the last sweep
 see".
 
 Auth is applied at the mount level: ``/api/apps`` carries the ``IsApiAuthenticated``
-router guard, and unsafe methods additionally require a bearer.
+router guard, and unsafe methods additionally require a bearer and the rank
+:func:`app.api.deps.require_minimum_role` registers per route. An unregistered route
+resolves to ``DEFAULT_MINIMUM_ROLE`` (admin), so every unsafe route here registers its
+rank explicitly rather than inheriting one: the estate deletes and the configuration
+writes are admin, and refreshing is **editor**, because a refresh runs a fixed payload
+and is the button beside a row -- requiring admin would put the routine question behind
+the rarest role. pmm-managed's service principal is admitted by identity at that gate,
+so PMM reaches all of these with its deployment token whatever rank a human needs.
 """
 
 from datetime import datetime
@@ -40,6 +47,8 @@ from fastapi import APIRouter, Query, Request
 from fastapi import status as http_status
 from pydantic import BaseModel, Field
 
+from app.api.deps import require_minimum_role
+from app.core.auth.models import UserRole
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.core.settings_override.api import (
     apply_class_overrides,
@@ -501,6 +510,7 @@ async def get_estate_service(service_id: str, session: SessionDep) -> ServiceRes
 
 
 @router.delete("/hosts/{node_id}", status_code=http_status.HTTP_204_NO_CONTENT)
+@require_minimum_role(UserRole.ADMIN)
 async def delete_estate_host(node_id: str, session: SessionDep) -> None:
     """Forget one host, and by cascade its services.
 
@@ -530,6 +540,7 @@ async def delete_estate_host(node_id: str, session: SessionDep) -> None:
 
 
 @router.delete("/services/{service_id}", status_code=http_status.HTTP_204_NO_CONTENT)
+@require_minimum_role(UserRole.ADMIN)
 async def delete_estate_service(service_id: str, session: SessionDep) -> None:
     """Forget one service, leaving its host alone.
 
@@ -584,6 +595,7 @@ async def get_probe_run(run_id: UUID, session: SessionDep) -> ProbeRunDetail:
     response_model=ProbeRunAccepted,
     status_code=http_status.HTTP_202_ACCEPTED,
 )
+@require_minimum_role(UserRole.EDITOR)
 async def trigger_probe(
     session: SessionDep, request: TriggerRequest | None = None
 ) -> ProbeRunAccepted:
@@ -669,6 +681,7 @@ async def get_config(session: SessionDep) -> list[SettingResponse]:
 
 
 @router.patch("/config", response_model=list[SettingResponse])
+@require_minimum_role(UserRole.ADMIN)
 async def patch_config(
     request: Request, body: SettingsPatch, session: SessionDep
 ) -> list[SettingResponse]:
@@ -704,6 +717,7 @@ async def patch_config(
 
 
 @router.delete("/config/{key}", status_code=http_status.HTTP_204_NO_CONTENT)
+@require_minimum_role(UserRole.ADMIN)
 async def delete_config_override(
     request: Request, key: str, session: SessionDep
 ) -> None:
