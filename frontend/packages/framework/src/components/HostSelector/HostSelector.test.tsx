@@ -21,7 +21,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FormProvider, useForm } from 'react-hook-form';
 import { SnackbarProvider } from 'notistack';
-import type { PropsWithChildren } from 'react';
+import { useEffect, type PropsWithChildren } from 'react';
 import { HostSelector } from './HostSelector';
 import { SchemaFormRenderer } from '../SchemaFormRenderer';
 import type { FormSection } from '../SchemaFormRenderer/types';
@@ -734,6 +734,475 @@ describe('HostSelector', () => {
       await user.type(screen.getByLabelText('Hosts'), 'custom-executor{Enter}');
 
       expect(screen.getByTestId('hosts-value').textContent).toBe('["nomad-1","custom-executor"]');
+    });
+  });
+
+  describe('mismatch warning', () => {
+    const HOSTS = [
+      { id: 'node-a', name: 'Display A', address: '10.0.0.1' },
+      { id: 'node-b', name: 'Display B', address: '10.0.0.2' },
+    ];
+
+    const SERVICE_ON_NODE_B = {
+      id: 7,
+      name: 'mysql-svc',
+      type: 'mysql',
+      node: { name: 'node-b', address: '10.0.0.2', type: 'generic' },
+      node_id: 2,
+      schemas: [],
+    };
+
+    const warningMatcher = /is not the node where/;
+
+    function expectNoMismatchWarning() {
+      expect(screen.queryByText(warningMatcher)).not.toBeInTheDocument();
+    }
+
+    async function expectMismatchWarning() {
+      expect(await screen.findByText(warningMatcher)).toBeInTheDocument();
+    }
+
+    async function waitForServicesFetch() {
+      await waitFor(() => {
+        expect(mocked.get.mock.calls.some((call) => call[0] === '/sep/services/')).toBe(
+          true,
+        );
+      });
+    }
+
+    function mockHostsAndServices(
+      services: typeof SERVICE_ON_NODE_B[] = [SERVICE_ON_NODE_B],
+    ) {
+      mocked.get.mockImplementation((url: string) => {
+        if (url === '/sep/hosts/') {
+          return Promise.resolve(makeResponse(HOSTS));
+        }
+        if (url === '/sep/services/') {
+          return Promise.resolve({
+            data: {
+              items: services,
+              total: services.length,
+              offset: 0,
+              limit: 200,
+            },
+          });
+        }
+        return Promise.reject(new Error(`unexpected url ${url}`));
+      });
+    }
+
+    function taskSections(
+      hostExtras: {
+        depends_on?: string;
+        target_service?: string;
+        allow_custom?: boolean;
+      } = {},
+    ): FormSection[] {
+      return [
+        {
+          title: 'Task',
+          fields: [
+            {
+              type: 'service',
+              name: 'service_id',
+              label: 'Database Service',
+              required: true,
+              service_types: ['mysql'],
+            },
+            {
+              type: 'host',
+              name: 'hostname',
+              label: 'Execution Host',
+              required: true,
+              target_service: 'service_id',
+              ...hostExtras,
+            },
+          ],
+        },
+      ];
+    }
+
+    async function selectServiceAndHost(
+      user: ReturnType<typeof userEvent.setup>,
+      hostLabel: string,
+    ) {
+      await user.click(screen.getByLabelText(/^Database Service\b/));
+      await user.click(await screen.findByRole('option', { name: 'mysql-svc (mysql)' }));
+      await user.click(screen.getByLabelText(/^Execution Host\b/));
+      await user.click(await screen.findByRole('option', { name: hostLabel }));
+    }
+
+    it('shows a warning when the executor address differs from the service node', async () => {
+      mockHostsAndServices();
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer sections={taskSections()} onSubmit={vi.fn()} />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+
+      await selectServiceAndHost(user, 'Display A');
+
+      await expectMismatchWarning();
+      expect(screen.getByText(warningMatcher)).toHaveTextContent('Display A');
+      expect(screen.getByText(warningMatcher)).toHaveTextContent('10.0.0.2');
+    });
+
+    it('is silent when the executor address matches the service node', async () => {
+      mockHostsAndServices();
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer sections={taskSections()} onSubmit={vi.fn()} />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+
+      await selectServiceAndHost(user, 'Display B');
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/^Execution Host\b/)).toHaveValue('Display B');
+      });
+      expectNoMismatchWarning();
+    });
+
+    it('is silent when no target service is declared', async () => {
+      mockHostsAndServices();
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer
+            sections={taskSections({ target_service: undefined })}
+            onSubmit={vi.fn()}
+          />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+
+      await selectServiceAndHost(user, 'Display A');
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/^Execution Host\b/)).toHaveValue('Display A');
+      });
+      expectNoMismatchWarning();
+    });
+
+    it('is silent when the target service is unselected', async () => {
+      mockHostsAndServices();
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer sections={taskSections()} onSubmit={vi.fn()} />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+
+      await user.click(screen.getByLabelText(/^Execution Host\b/));
+      await user.click(await screen.findByRole('option', { name: 'Display A' }));
+
+      expectNoMismatchWarning();
+    });
+
+    it('is silent while the target service is still resolving', async () => {
+      let resolveServices!: (value: unknown) => void;
+      mocked.get.mockImplementation((url: string) => {
+        if (url === '/sep/hosts/') {
+          return Promise.resolve(makeResponse(HOSTS));
+        }
+        if (url === '/sep/services/') {
+          return new Promise((resolve) => {
+            resolveServices = resolve;
+          });
+        }
+        return Promise.reject(new Error(`unexpected url ${url}`));
+      });
+
+      const client = makeClient();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer
+            sections={taskSections()}
+            onSubmit={vi.fn()}
+            defaultValues={{ service_id: 7, hostname: 'node-a' }}
+          />
+        </Wrapper>,
+      );
+
+      await waitForServicesFetch();
+      expectNoMismatchWarning();
+
+      resolveServices({
+        data: {
+          items: [SERVICE_ON_NODE_B],
+          total: 1,
+          offset: 0,
+          limit: 200,
+        },
+      });
+      await expectMismatchWarning();
+    });
+
+    it('is silent when the target service failed to resolve', async () => {
+      mocked.get.mockImplementation((url: string) => {
+        if (url === '/sep/hosts/') {
+          return Promise.resolve(makeResponse(HOSTS));
+        }
+        if (url === '/sep/services/') {
+          return Promise.reject(new ApiError({ kind: 'http', status: 502, message: 'svc boom' }));
+        }
+        return Promise.reject(new Error(`unexpected url ${url}`));
+      });
+
+      const client = makeClient();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer
+            sections={taskSections()}
+            onSubmit={vi.fn()}
+            defaultValues={{ service_id: 7, hostname: 'node-a' }}
+          />
+        </Wrapper>,
+      );
+
+      await waitForServicesFetch();
+      expectNoMismatchWarning();
+    });
+
+    it('is silent when the resolved service carries no node address', async () => {
+      mockHostsAndServices([
+        {
+          ...SERVICE_ON_NODE_B,
+          node: { name: 'node-b', address: '', type: 'generic' },
+        },
+      ]);
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer sections={taskSections()} onSubmit={vi.fn()} />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+
+      await selectServiceAndHost(user, 'Display A');
+
+      expectNoMismatchWarning();
+    });
+
+    it('is silent when the selected host is a free-typed custom value', async () => {
+      mockHostsAndServices();
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer
+            sections={taskSections({ allow_custom: true })}
+            onSubmit={vi.fn()}
+          />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+
+      await user.click(screen.getByLabelText(/^Database Service\b/));
+      await user.click(await screen.findByRole('option', { name: 'mysql-svc (mysql)' }));
+      await user.type(screen.getByLabelText(/^Execution Host\b/), 'custom-executor');
+
+      expectNoMismatchWarning();
+    });
+
+    it('is silent while the hosts query is loading', async () => {
+      let resolveHosts!: (value: unknown) => void;
+      mocked.get.mockImplementation((url: string) => {
+        if (url === '/sep/hosts/') {
+          return new Promise((resolve) => {
+            resolveHosts = resolve;
+          });
+        }
+        if (url === '/sep/services/') {
+          return Promise.resolve({
+            data: {
+              items: [SERVICE_ON_NODE_B],
+              total: 1,
+              offset: 0,
+              limit: 200,
+            },
+          });
+        }
+        return Promise.reject(new Error(`unexpected url ${url}`));
+      });
+
+      const client = makeClient();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer
+            sections={taskSections()}
+            onSubmit={vi.fn()}
+            defaultValues={{ service_id: 7, hostname: 'node-a' }}
+          />
+        </Wrapper>,
+      );
+
+      await waitForServicesFetch();
+      expectNoMismatchWarning();
+
+      resolveHosts(makeResponse(HOSTS));
+      await expectMismatchWarning();
+    });
+
+    it('is silent when the hosts query errored', async () => {
+      mocked.get.mockImplementation((url: string) => {
+        if (url === '/sep/hosts/') {
+          return Promise.reject(new ApiError({ kind: 'http', status: 502, message: 'host boom' }));
+        }
+        if (url === '/sep/services/') {
+          return Promise.resolve({
+            data: {
+              items: [SERVICE_ON_NODE_B],
+              total: 1,
+              offset: 0,
+              limit: 200,
+            },
+          });
+        }
+        return Promise.reject(new Error(`unexpected url ${url}`));
+      });
+
+      const client = makeClient();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer
+            sections={taskSections()}
+            onSubmit={vi.fn()}
+            defaultValues={{ service_id: 7, hostname: 'node-a' }}
+          />
+        </Wrapper>,
+      );
+
+      await waitForServicesFetch();
+      expectNoMismatchWarning();
+    });
+
+    it('defers to a field validation error over the mismatch warning', async () => {
+      mockHostsAndServices();
+      function Probe() {
+        const methods = useForm({
+          defaultValues: {
+            service_id: 7,
+            hostname: { id: 'node-a', name: 'Display A', address: '10.0.0.1' },
+          },
+        });
+        useEffect(() => {
+          methods.setError('hostname', { type: 'manual', message: 'Pick a valid host' });
+        }, [methods]);
+        return (
+          <FormProvider {...methods}>
+            <HostSelector
+              name="hostname"
+              label="Execution Host"
+              targetService="service_id"
+              serviceTypes={['mysql']}
+            />
+          </FormProvider>
+        );
+      }
+
+      const client = makeClient();
+      render(
+        <Wrapper client={client}>
+          <Probe />
+        </Wrapper>,
+      );
+
+      await waitForServicesFetch();
+      expect(screen.getByText('Pick a valid host')).toBeInTheDocument();
+      expectNoMismatchWarning();
+    });
+
+    it('does not block submission when a mismatch warning is visible', async () => {
+      mockHostsAndServices();
+      const onSubmit = vi.fn();
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer sections={taskSections()} onSubmit={onSubmit} />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+
+      await selectServiceAndHost(user, 'Display A');
+      await expectMismatchWarning();
+
+      await user.click(screen.getByRole('button', { name: /Run/ }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ hostname: 'node-a', service_id: 7 }),
+      );
+    });
+
+    it('is silent in multiple mode even when targetService is set', async () => {
+      mockHostsAndServices();
+      function MultiProbe() {
+        const methods = useForm({
+          defaultValues: { service_id: 7, hosts: ['node-a'] },
+        });
+        return (
+          <FormProvider {...methods}>
+            <HostSelector
+              name="hosts"
+              label="Hosts"
+              multiple
+              targetService="service_id"
+              serviceTypes={['mysql']}
+            />
+          </FormProvider>
+        );
+      }
+
+      const client = makeClient();
+      render(
+        <Wrapper client={client}>
+          <MultiProbe />
+        </Wrapper>,
+      );
+
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+      expectNoMismatchWarning();
+    });
+
+    it('still auto-selects on cascade when target_service is declared on the schema', async () => {
+      mockHostsAndServices();
+      const onSubmit = vi.fn();
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer
+            sections={taskSections({ depends_on: 'service_id' })}
+            onSubmit={onSubmit}
+          />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+
+      await user.click(screen.getByLabelText(/^Database Service\b/));
+      await user.click(await screen.findByRole('option', { name: 'mysql-svc (mysql)' }));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/^Execution Host\b/)).toHaveValue('Display B');
+      });
+      expectNoMismatchWarning();
+
+      await user.click(screen.getByRole('button', { name: /Run/ }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ hostname: 'node-b', service_id: 7 }),
+      );
     });
   });
 });
