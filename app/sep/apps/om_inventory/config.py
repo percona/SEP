@@ -74,7 +74,7 @@ class OmInventorySettings(BaseYamlSettings):
     :param MAX_CONCURRENT_PROBES: Ceiling on probe tasks in flight at once. Every
         dispatch is a Nomad job, and a real estate has far more hosts than this
         workspace's sandbox.
-    :param RUN_RETENTION: How many runs to keep. Each carries its whole fact set, so
+    :param RUN_RETENTION: How many runs to keep. Each carries a per-host receipt, so
         this bounds the table rather than an operator having to.
     :param STALE_RUN_AFTER: How long a run may stay ``running`` before the trigger
         endpoint concludes its worker is gone. Must comfortably exceed the slowest

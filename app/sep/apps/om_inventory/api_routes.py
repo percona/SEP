@@ -78,23 +78,6 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=om_inventory_schema)
 
 
-class ProbeFact(BaseModel):
-    """One fact about one service, as the probe saw it.
-
-    :param service_id: **PMM's** service UUID. The consumer joins on this; SEP's own
-        inventory id would mean nothing on the other side.
-    :param field: The document field this sets, e.g. ``installed_version``.
-    :param value: The observed value.
-    :param observed_at: When the probe ran. Carried per fact rather than per response
-        so a consumer merging several sources can age them against each other.
-    """
-
-    service_id: str
-    field: str
-    value: Any
-    observed_at: datetime
-
-
 class ProbeCounts(BaseModel):
     """Count what one sweep reached.
 
@@ -131,7 +114,6 @@ class ProbeRunResponse(BaseModel):
     :param started_at: When it began.
     :param finished_at: When it reached a terminal status; ``None`` while running.
     :param counts: What it reached.
-    :param facts_collected: How many facts it stored.
     :param scope: The hosts it was asked to refresh, or ``None`` for the whole
         estate. Without it the counters cannot be read: "9 of 13 answered" means
         something different when the run was only ever asked about one host.
@@ -143,7 +125,6 @@ class ProbeRunResponse(BaseModel):
     started_at: datetime
     finished_at: datetime | None = None
     counts: ProbeCounts
-    facts_collected: int = 0
     scope: list[str] | None = None
     error: str | None = None
 
@@ -184,6 +165,8 @@ class ProbeNode(BaseModel):
         whether its services did: a host with no database answers perfectly well and
         has no services at all.
     :param duration_seconds: The host's wall-clock, dispatch to collected output.
+    :param task_history_id: The dispatch's task history id, so a reader can open the
+        probe's raw output. ``None`` when the dispatch never got one back.
     :param error: The host-level failure, when its probe failed.
     :param services: The services on it, empty when there are none.
     """
@@ -194,6 +177,7 @@ class ProbeNode(BaseModel):
     resolution: str
     answered: bool = False
     duration_seconds: float | None = None
+    task_history_id: int | None = None
     error: str | None = None
     services: list[ProbeNodeService] = Field(default_factory=list)
 
@@ -201,17 +185,14 @@ class ProbeNode(BaseModel):
 class ProbeRunDetail(ProbeRunResponse):
     """One sweep, with everything it recorded.
 
-    Kept apart from the list shape on purpose: a sweep's facts run to a few hundred
+    Kept apart from the list shape on purpose: a sweep's nodes run to a few hundred
     records, so returning them for every row of a 25-run history would make the list
     an order of magnitude larger to serve a page that shows one run at a time.
 
-    :param nodes: What the sweep saw per service.
-    :param facts: The facts it collected — every field the probe reads, including the
-        ones no consumer maps today.
+    :param nodes: What the sweep attempted per host.
     """
 
     nodes: list[ProbeNode] = Field(default_factory=list)
-    facts: list[ProbeFact] = Field(default_factory=list)
 
 
 class TriggerRequest(BaseModel):
@@ -408,7 +389,6 @@ def _run_response(run: ProbeRun) -> ProbeRunResponse:
         started_at=run.started_at,
         finished_at=run.finished_at,
         counts=_counts(run),
-        facts_collected=len(run.facts or []),
         scope=run.scope,
         error=run.error,
     )
@@ -581,7 +561,7 @@ async def list_runs(
 
 @router.get("/runs/{run_id}", response_model=ProbeRunDetail)
 async def get_probe_run(run_id: UUID, session: SessionDep) -> ProbeRunDetail:
-    """Return one sweep, with its per-service records and its facts.
+    """Return one sweep, with its per-host receipt.
 
     :param run_id: The sweep's id.
     :param session: The database session.
@@ -596,7 +576,6 @@ async def get_probe_run(run_id: UUID, session: SessionDep) -> ProbeRunDetail:
         # Runs recorded before `nodes` existed have none, and answer with an empty
         # list rather than a 500: an old sweep is still worth its counters.
         nodes=[ProbeNode(**node) for node in (run.nodes or [])],
-        facts=[ProbeFact(**fact) for fact in (run.facts or [])],
     )
 
 

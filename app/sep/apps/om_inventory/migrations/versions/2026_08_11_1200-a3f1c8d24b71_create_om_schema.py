@@ -224,14 +224,6 @@ def upgrade() -> None:
             sa.Column("hosts_probeable", sa.Integer(), nullable=False),
             sa.Column("hosts_answered", sa.Integer(), nullable=False),
             sa.Column(
-                "facts",
-                postgresql.JSONB(astext_type=sa.Text()).with_variant(
-                    sa.JSON(), "sqlite"
-                ),
-                nullable=False,
-                server_default="[]",
-            ),
-            sa.Column(
                 "nodes",
                 postgresql.JSONB(astext_type=sa.Text()).with_variant(
                     sa.JSON(), "sqlite"

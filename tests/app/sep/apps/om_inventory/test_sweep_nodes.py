@@ -13,11 +13,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Test the per-service records a sweep writes alongside its facts.
+"""Test the per-host receipt a sweep writes.
 
-The counters answer "5 of 14 answered"; these records answer "which five, on which
-host, and why did that one take a minute". They are the only place a sweep says where
-it probed, so what they claim has to survive the cases that make them interesting: a
+The counters answer "5 of 14 answered"; the receipt answers "which five, on which
+host, and why did that one take a minute". It is the only place a sweep says where
+it probed, so what it claims has to survive the cases that make it interesting: a
 service with no executor, a host whose probe failed, and a service PMM does not know.
 """
 
@@ -46,6 +46,8 @@ TWO_SERVICES = 2
 FAILED_HOST_SECONDS = 61.0
 #: One dispatch's, shared by every service that host served.
 SHARED_HOST_SECONDS = 8.25
+#: A dispatched host's task history id, as the dispatcher would have returned it.
+TASK_HISTORY_ID = 4711
 #: One refused connection then an answer: the cold start this workspace measured.
 RETRIED_ONCE = 2
 
@@ -231,18 +233,36 @@ async def test_a_host_with_no_database_is_in_the_receipt() -> None:
 
 
 @pytest.mark.asyncio
-async def test_every_field_the_probe_read_is_kept() -> None:
-    """Collect the fields no consumer maps, not only the three OM renders."""
+async def test_a_dispatched_host_s_receipt_carries_its_task_history_id() -> None:
+    """The pointer F8's follow-up needs to stop an abandoned run's allocations.
+
+    The receipt stays outcomes-only, but the task history id is how a reader still
+    reaches the raw output of an attempt the receipt itself does not keep.
+    """
     outcome = await run_sweep(
-        [mapped("svc-a", "node00", NodeResolution.NAME)],
-        {"node00": HostProbeResult(executor_host="node00", records={"svc-a": RECORD})},
+        [],
+        {
+            "node00": HostProbeResult(
+                executor_host="node00",
+                host_record={"os": "Ubuntu 24.04"},
+                task_history_id=TASK_HISTORY_ID,
+            )
+        },
     )
 
-    collected = {fact["field"] for fact in outcome.facts}
-    # The three OM's document carries...
-    assert {"installed_version", "config_path", "argv"} <= collected
-    # ...and the ones it does not, which is the reason to keep the run's own copy.
-    assert {"storage_engine", "os", "kernel"} <= collected
+    assert outcome.nodes[0]["task_history_id"] == TASK_HISTORY_ID
+
+
+@pytest.mark.asyncio
+async def test_a_host_never_dispatched_to_has_no_task_history_id() -> None:
+    """An orphan was never sent anywhere, so there is no run to point at."""
+    outcome = await run_sweep(
+        [mapped("svc-b", None, NodeResolution.ORPHANED)],
+        {},
+        hosts=[host("node00", orphaned=True)],
+    )
+
+    assert outcome.nodes[0]["task_history_id"] is None
 
 
 @pytest.mark.asyncio
@@ -285,7 +305,7 @@ async def test_a_failed_host_carries_its_error_and_its_time() -> None:
 
 @pytest.mark.asyncio
 async def test_a_service_pmm_does_not_know_is_still_listed() -> None:
-    """Record a service with no PMM id, which can contribute no joinable facts."""
+    """Record a service with no PMM id, which the estate could never key a row on."""
     outcome = await run_sweep(
         [mapped("svc-d", "node00", NodeResolution.NAME, external_id=None)],
         {
@@ -297,7 +317,6 @@ async def test_a_service_pmm_does_not_know_is_still_listed() -> None:
         },
     )
 
-    assert outcome.facts == []
     service = outcome.nodes[0]["services"][0]
     assert service["service_id"] is None
     assert service["service_name"] == "svc-d"

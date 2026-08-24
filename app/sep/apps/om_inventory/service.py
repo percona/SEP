@@ -80,27 +80,6 @@ from app.sep.db import get_async_session_maker
 
 logger = logging.getLogger(__name__)
 
-#: The fields the probe contributes, mapped out of one probe record.
-#:
-#: ``installed_version`` is the one this app exists for. The rest divide in two: facts
-#: nothing else has either (``config_path``, ``argv``, the OS pair) and fallbacks the
-#: consumer's precedence table puts *behind* metrics (``version``, ``state``), which
-#: therefore surface only where the exporter had nothing to say about a service.
-PROBE_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("installed_version", ("binary_version",)),
-    ("version", ("database", "db_version")),
-    ("git_version", ("database", "git_version")),
-    ("storage_engine", ("database", "storage_engine")),
-    ("replication_set", ("database", "set_name")),
-    ("config_path", ("process", "config_path")),
-    ("argv", ("process", "argv")),
-    ("server_process", ("process", "program")),
-    ("server_running", ("process", "running")),
-    ("uptime_seconds", ("process", "uptime_sec")),
-    ("os", ("system", "os_name")),
-    ("kernel", ("system", "kernel")),
-)
-
 
 async def _build_clients() -> tuple[RemoteAPI, RemoteAPI]:
     """Construct the inventory and tasks API clients outside request context.
@@ -135,42 +114,6 @@ def _dig(record: dict[str, Any], path: tuple[str, ...]) -> Any:
             return None
         node = node.get(key)
     return node
-
-
-def build_facts(
-    service: InventoryService, record: dict[str, Any], observed_at: str
-) -> list[dict[str, Any]]:
-    """Turn one probe record into facts the consumer can merge.
-
-    Keyed by **PMM's** service UUID, not SEP's inventory id. That translation is the
-    whole reason this function exists rather than the caller storing records: the
-    consumer joins facts against its own services table, where SEP's integer key means
-    nothing. A service inventory holds no ``external_id`` for contributes no facts --
-    they would be unjoinable, and storing unjoinable facts only makes the run look
-    more productive than it was.
-
-    :param service: The inventory service the record is about.
-    :param record: One probe record.
-    :param observed_at: When the probe ran, ISO 8601.
-    :return: The facts, possibly empty.
-    """
-    if not service.external_id:
-        return []
-
-    facts = []
-    for field, path in PROBE_FIELDS:
-        value = _dig(record, path)
-        if value is None or value in ("", []):
-            continue
-        facts.append(
-            {
-                "service_id": service.external_id,
-                "field": field,
-                "value": value,
-                "observed_at": observed_at,
-            }
-        )
-    return facts
 
 
 #: How a service's role is read off its probe record.
@@ -320,15 +263,14 @@ def build_document(
 class SweepOutcome:
     """Carry everything one sweep produced.
 
-    A dataclass rather than the tuple this used to return: the counters, the facts
-    and now the per-service records are three different things, and positional
-    unpacking of six values at the call site said which was which only by convention.
+    A dataclass rather than the tuple this used to return: the counters and the
+    per-service records are different things, and positional unpacking at the call
+    site said which was which only by convention.
 
     :param total: Services inventory reported.
     :param resolved: ...of which mapped to a live executor host.
     :param orphaned: ...of which did not.
     :param answered: Services whose host returned a usable record.
-    :param facts: The collected facts.
     :param nodes: One record per mapped service; see :class:`ProbeRun`.
     :param hosts: The hosts in scope this sweep, whether or not they carry a service.
     :param host_documents: The ``observed`` document per host that answered, keyed by
@@ -363,7 +305,6 @@ class SweepOutcome:
     resolved: int = 0
     orphaned: int = 0
     answered: int = 0
-    facts: list[dict[str, Any]] = dc_field(default_factory=list)
     nodes: list[dict[str, Any]] = dc_field(default_factory=list)
     hosts: list[InventoryHost] = dc_field(default_factory=list)
     host_documents: dict[str, dict[str, Any]] = dc_field(default_factory=dict)
@@ -513,9 +454,6 @@ async def _sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOu
     for entry in mapped:
         host_result = host_results.get(entry.executor_host or "")
         record = _record_for(entry, host_results)
-        service_facts = (
-            build_facts(entry.service, record, observed_at) if record else []
-        )
 
         if entry.resolution == NodeResolution.ORPHANED:
             outcome.orphaned += 1
@@ -523,7 +461,6 @@ async def _sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOu
             outcome.resolved += 1
             if record:
                 outcome.answered += 1
-                outcome.facts.extend(service_facts)
 
         _record_entity(outcome, entry, record, host_result, node_ids, observed_at)
 
@@ -549,6 +486,13 @@ def _build_receipt(
     failure; its services carry only what is theirs. That is also why the duration
     used to be repeated identically across a host's services, which read as several
     measurements when it was one.
+
+    Outcomes only, deliberately: what the probe *found* belongs to the estate, where
+    it is upserted and stays current, and carrying it here too would be a second copy
+    that goes stale the moment the next sweep runs. ``task_history_id`` is the
+    exception that proves it -- not a finding, but a pointer to where the raw output
+    of this attempt can still be read, in the Nomad task log the receipt itself never
+    holds.
 
     :param outcome: The sweep in progress.
     :param mapped: The services, each with the executor host it resolved to.
@@ -589,6 +533,11 @@ def _build_receipt(
                 # perfectly well and have no services at all.
                 "answered": bool(result and result.host_record is not None),
                 "duration_seconds": result.duration_seconds if result else None,
+                # The dispatch's own task history id, so a reader can open the
+                # probe's raw output -- the receipt keeps outcomes only, and this is
+                # how it stays reachable rather than gone. ``None`` when the dispatch
+                # never got one back (see ``HostProbeResult.task_history_id``).
+                "task_history_id": result.task_history_id if result else None,
                 "error": (result.error if result else None)
                 or outcome.host_errors.get(host.node_id),
                 "services": by_node.get(host.node_id, []),
@@ -753,7 +702,6 @@ async def _finalise(
     finished.hosts_total = len(outcome.hosts)
     finished.hosts_probeable = sum(1 for host in outcome.hosts if host.has_executor)
     finished.hosts_answered = len(outcome.host_documents)
-    finished.facts = outcome.facts
     finished.nodes = outcome.nodes
     return await ProbeRunManager.save(session, finished)
 
@@ -872,7 +820,7 @@ async def _fail_run(run_id: UUID, error: str) -> None:
 async def run_probe(
     execution_id: UUID | None = None, node_ids: list[str] | None = None
 ) -> UUID:
-    """Run one probe sweep and store its facts.
+    """Run one probe sweep and write what it found into the estate.
 
     The run row is created before the work starts so a caller can be answered with an
     id immediately, and only this function ever writes its terminal status.
@@ -936,12 +884,11 @@ async def run_probe(
     status = _terminal_status(outcome)
 
     logger.info(
-        "OM inventory: sweep %s %s -- %d service(s), %d resolved, %d answered, %d fact(s)",
+        "OM inventory: sweep %s %s -- %d service(s), %d resolved, %d answered",
         run_id,
         status,
         outcome.total,
         outcome.resolved,
         outcome.answered,
-        len(outcome.facts),
     )
     return run_id
