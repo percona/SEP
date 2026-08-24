@@ -22,8 +22,8 @@ variants no longer exist. `main`'s `image` target builds it with
 Repin to a newer one by picking a tag published from `main` — the tag list on
 Docker Hub is ordered by publish date.
 
-Two properties of the pinned image are load-bearing, and both are worth checking
-on the **artifact** rather than on the commit that built it:
+Three properties of the pinned image are load-bearing, and all three are worth
+checking on the **artifact** rather than on the commit that built it:
 
 ```bash
 TAG=<the tag you are pinning>
@@ -31,6 +31,10 @@ TAG=<the tag you are pinning>
 # It must read secrets from a directory (SECRETS_DIR); expect a non-zero count.
 docker run --rm --entrypoint sh docker.io/percona/percona-sep:$TAG \
   -c 'grep -c SECRETS_DIR /home/sep/app/settings-env.sh'
+
+# It must carry the Grafana token mint; expect the helper and a 0700 state dir.
+docker run --rm --entrypoint sh docker.io/percona/percona-sep:$TAG \
+  -c 'ls /home/sep/app/grafana_service_account.py; ls -ld /home/sep/state'
 
 # It must carry a HEALTHCHECK; expect a Test naming healthcheck.sh.
 skopeo inspect --config --raw docker://docker.io/percona/percona-sep:$TAG \
@@ -43,6 +47,11 @@ tag including ones that carry the instruction. Only the raw config blob answers
 the question. Every side-car recipe builds in docker format for the same reason:
 OCI discards the instruction. The 150 s start period keeps the side-car out of
 `unhealthy` while PMM provisioning and SEP migrations finish.
+
+The mint is the property a backwards repin loses most quietly. An image without
+it satisfies the other two checks, comes up healthy, and mounts the `sep-state`
+volume over a directory nothing ever writes to — the only symptom is that
+Grafana-backed sign-in and the PMM syncer are inert, with nothing logged.
 
 The pmm-server pin is subject to its own constraint — see
 [Caveats](#caveats).
@@ -57,6 +66,17 @@ The pmm-server pin is subject to its own constraint — see
 git clone -b pmm git@github.com:percona/SEP.git  # already cloned: git checkout pmm && git pull
 cd SEP/sidecar/pmm-fb
 
+docker compose up -d                          # pmm-server + sep-sidecar
+```
+
+That is the whole prerequisite list. PMM publishes the four secrets SEP reads
+from disk and the side-car mints its own Grafana token, so nothing has to be
+chosen or seeded in advance.
+
+`./bootstrap.sh` is needed **only** for the `mysql` profile, whose three
+test-fixture passwords are the only thing the generated `.env` still holds:
+
+```bash
 ./bootstrap.sh                                # generate .env
 docker compose --profile mysql up -d --build  # or: podman compose ...
 ```
@@ -90,9 +110,14 @@ dataset` before expecting a backup to have data to copy. Then:
   that is the embedded topology working, not a routing fault.
 - SEP APIs directly: http://127.0.0.1:9000-9002 (sep / inventory / tasks)
 
-There is no token-minting step. PMM mints the Grafana service-account token
-itself and publishes it to the side-car, so Grafana-backed sign-in, the PMM
-syncer and task-lifecycle PMM annotations all work on a first boot.
+There is no manual token-minting step. The side-car obtains its own Grafana
+service-account token at container start when no token reaches it through
+`SECRETS_DIR`, so Grafana-backed sign-in, the PMM syncer and task-lifecycle PMM
+annotations all work on a first boot. It persists that token in the `sep-state`
+volume, so a recreate reuses it rather than minting a second one. A PMM build
+that publishes the two Grafana token names into the secrets directory still
+outranks the mint, which then does nothing — the side-car resolves each
+canonical name from its own file first.
 
 To probe the API by hand, exchange your PMM browser session for a short-lived
 SEP bearer rather than looking for a static token — an unauthenticated request
@@ -111,11 +136,15 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
 
 - `bootstrap.sh` generates the gitignored `.env`, which now holds only the three
   `sep-mysql` passwords — test-fixture credentials for the `mysql` profile, not
-  anything the pair needs. PMM generates every SEP secret itself, including the
-  PostgreSQL role's password. Nothing secret is committed; re-running keeps an
-  existing `.env` and appends any slot it predates.
-- **PMM owns every SEP deployment secret.** With `PMM_ENABLE_SEP=1` it writes
-  four files into the `pmm-sep` volume, which pmm-server mounts at
+  anything the pair needs, so a bring-up without that profile can skip it
+  entirely. `sep-mysql`'s entrypoint refuses to start without them; `compose.yaml`
+  deliberately does not, because Compose interpolates every service at parse time
+  regardless of the active profile, and a guard there would make the script a
+  prerequisite of every bring-up. PMM generates the secrets it publishes itself,
+  including the PostgreSQL role's password. Nothing secret is committed;
+  re-running keeps an existing `.env` and appends any slot it predates.
+- **PMM owns the four secrets SEP reads from disk.** With `PMM_ENABLE_SEP=1` it
+  writes four files into the `pmm-sep` volume, which pmm-server mounts at
   `/srv/sep` and the side-car mounts read-only at `/run/secrets/sep`.
   `SECRETS_DIR` points SEP at that directory and it reads each file as the
   canonical setting the filename names:
@@ -129,6 +158,11 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   `docker inspect` or in the process environment. `SEP_NOMAD_ENDPOINT` is the
   one credential that does: PMM's stock `admin:admin`, a published default
   rather than a provisioned secret.
+- **The Grafana service-account token is the side-car's own.** It is the one SEP
+  credential this pin does not get from PMM: the side-car mints it against
+  Grafana at start and persists it in the `sep-state` volume. A PMM build that
+  publishes the two canonical token names into `SECRETS_DIR` still outranks the
+  mint, which is what makes the two owners compatible rather than competing.
 - **`sep-sidecar` waits on `condition: service_healthy`** because SEP builds its
   settings once, at process start, and never re-reads them: a side-car released
   before the files exist comes up with those settings permanently unset. Health
@@ -175,15 +209,19 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
 
 ## Caveats
 
-- **The pmm-server pin must carry the SEP readiness gate** (PMM-15331, first in
-  `PR-4500-882b6ba`), which widens the start period to 720 s and holds the
-  container unhealthy until SEP provisioning completes. Against an older pin,
-  `condition: service_healthy` stops being a gate and becomes a bring-up
-  failure: the old 25 s start period flips pmm-server to `unhealthy` at ~37 s
-  while a cold start needs ~90 s to first pass `readyz`, and compose aborts the
-  dependent. If you ever repin backwards, revert `sep-sidecar`'s condition to
-  `service_started` in the same edit.
-- **`PMM_ENABLE_SEP` unset takes SEP down**, it does not degrade it. All six
+- **pmm-server's start period is set by this compose file, not by the image.**
+  The image ships 25 s with 3 retries at 4 s, so it is marked `unhealthy` around
+  37 s while a cold start needs appreciably longer to first pass `readyz` — and
+  because `sep-sidecar` depends on `service_healthy`, compose aborts the
+  dependent instead of waiting. A build-side gate (PMM-15331) once widened this,
+  but the PR was closed unmerged, so `compose.yaml` sets a 300 s start period of
+  its own. That is the only healthcheck field it sets — Docker merges the rest
+  field by field, so the probe and the other timings keep tracking whatever the
+  pinned image ships. Keep that override whenever you repin: dropping it
+  reintroduces the aborted bring-up, and switching `sep-sidecar` to
+  `service_started` instead trades it for a side-car that exits on a missing
+  `SECRET_KEY` when it wins the race.
+- **`PMM_ENABLE_SEP` unset takes SEP down**, it does not degrade it. All four
   files are removed on pmm-server's next start, and the side-car exits 1 with a
   single actionable `SECRET_KEY is required` rather than coming up
   half-configured. A side-car already running is unaffected until it restarts,
