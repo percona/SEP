@@ -32,7 +32,7 @@ from app.sep.clients.pmm import ContactPoint, Folder, PMMRemoteAPI
 
 # ``get_pmm_api`` / ``PMMAPIDep`` / ``require_pmm_api`` / ``RequiredPMMAPIDep`` now
 # live in ``app.sep.deps`` alongside the sibling Inventory / Tasks client deps;
-# they are re-exported here for existing importers (routes, celery, tests).
+# they are re-exported here for existing importers (routes, tests).
 from app.sep.deps import (
     get_pmm_api,  # noqa: F401 -- re-exported for existing importers
     PMMAPIDep,
