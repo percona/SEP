@@ -16,18 +16,31 @@
  */
 
 import { Route, Routes } from 'react-router';
+import { DeliverySetupGate } from './DeliverySetupGate';
 import { IncidentListPage } from './IncidentListPage';
 import { IncidentWorkspacePage } from './IncidentWorkspacePage';
+
+interface AtwAppProps {
+  /** Whether the current user has admin privileges. Pass it from the shell's auth context. */
+  isAdmin?: boolean;
+}
 
 /**
  * ATW app router. The shell mounts this at ``atw/*``; the incident list is the
  * index route and an incident opens its workspace at ``:incidentId``.
+ *
+ * Every route ends in an upload to a ServiceNow case, so the whole router sits
+ * behind {@link DeliverySetupGate}: the gate belongs to the app rather than to
+ * the shell, which keeps the shell free of app-specific settings knowledge and
+ * lets the gate travel with this package.
  */
-export function AtwApp() {
+export function AtwApp({ isAdmin = false }: AtwAppProps) {
   return (
-    <Routes>
-      <Route index element={<IncidentListPage />} />
-      <Route path=":incidentId" element={<IncidentWorkspacePage />} />
-    </Routes>
+    <DeliverySetupGate isAdmin={isAdmin}>
+      <Routes>
+        <Route index element={<IncidentListPage />} />
+        <Route path=":incidentId" element={<IncidentWorkspacePage />} />
+      </Routes>
+    </DeliverySetupGate>
   );
 }

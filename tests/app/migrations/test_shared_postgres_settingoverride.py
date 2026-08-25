@@ -297,7 +297,7 @@ def test_advisory_lock_is_noop_off_postgres():
 
 @pytest.fixture
 def postgres_sync_url():
-    """Yield a sync (``psycopg2``) URL to the real-PostgreSQL test database.
+    """Return a sync (``psycopg2``) URL to the real-PostgreSQL test database.
 
     Skip when ``$SEP_TEST_POSTGRES_DSN`` is unset (local runs without
     PostgreSQL); the dedicated ``test_postgres`` CI job supplies it.

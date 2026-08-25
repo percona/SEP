@@ -15,11 +15,17 @@
 
 """Define tests for RemoteAPI request-logging helpers and the upload primitive."""
 
+import asyncio
+
 import pytest
 from aioresponses import aioresponses
 from fastapi import HTTPException, status
 
-from app.core.exceptions import HTTPBadGatewayException, HTTPConflictException
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPConflictException,
+    HTTPNotFoundException,
+)
 from app.core.requests import RemoteAPI
 from app.core.requests.remote_api import (
     _REDACTED_VALUE,
@@ -232,6 +238,72 @@ class TestUpload:
                 with pytest.raises(HTTPBadGatewayException):
                     await remote_api.upload("upload", files=_one_file())
 
+    async def test_carries_upstream_not_found_detail(self, remote_api):
+        """Carry an upstream 404's body ``detail`` onto ``HTTPNotFoundException``.
+
+        Sub-app routes discriminate two 404 conditions by ``detail`` alone, so a
+        proxy route can only relay that distinction if the upstream string survives
+        the mapping rather than collapsing to the exception's default.
+        """
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_404_NOT_FOUND,
+                payload={
+                    "detail": "System observation not collected yet for this node"
+                },
+            )
+            async with remote_api:
+                with pytest.raises(HTTPNotFoundException) as exc_info:
+                    await remote_api.upload("upload", files=_one_file())
+
+        assert (
+            exc_info.value.detail
+            == "System observation not collected yet for this node"
+        )
+
+    async def test_non_json_not_found_stays_unmapped(self, remote_api):
+        """Leave a non-JSON 404 as a bare ``HTTPException``.
+
+        A 404 with a non-JSON body comes from proxy or gateway infrastructure, not
+        from an app route answering "this resource is absent". Mapping it would let
+        a caller narrowing to ``HTTPNotFoundException`` to read an uncollected
+        observation treat an infrastructure failure as a real absence.
+        """
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_404_NOT_FOUND,
+                body="<html>404 not found</html>",
+                content_type="text/html",
+            )
+            async with remote_api:
+                with pytest.raises(HTTPException) as exc_info:
+                    await remote_api.upload("upload", files=_one_file())
+
+        assert not isinstance(exc_info.value, HTTPNotFoundException)
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+        assert exc_info.value.headers.get(UPSTREAM_NON_JSON_HEADER) == "1"
+
+    async def test_not_found_without_detail_key_falls_back(self, remote_api):
+        """Fall back to the generic detail for a JSON 404 carrying no ``detail``.
+
+        Routes that discriminate 404 conditions by ``detail`` must not read the
+        fallback as one of their own strings, so pin what a detail-less upstream
+        body produces.
+        """
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_404_NOT_FOUND,
+                payload={"message": "gone"},
+            )
+            async with remote_api:
+                with pytest.raises(HTTPNotFoundException) as exc_info:
+                    await remote_api.upload("upload", files=_one_file())
+
+        assert exc_info.value.detail == "An unexpected error occurred on the server."
+
     async def test_non_json_success_body_returns_none(self, remote_api):
         """Return ``None`` for a 2xx response whose body is not JSON."""
         with aioresponses() as mock:
@@ -275,3 +347,126 @@ class TestUpload:
                     await remote_api.upload("upload", files=_one_file())
 
         assert exc_info.value.detail == "An unexpected error occurred on the server."
+
+
+class TestDrainOnRebind:
+    """Cover the in-flight accounting behind ``hold`` and ``close_when_idle``."""
+
+    pytestmark = pytest.mark.asyncio
+
+    async def test_idle_client_closes_immediately(self, remote_api):
+        """Close synchronously when no consumer holds the client."""
+        await remote_api.open()
+
+        await remote_api.close_when_idle()
+
+        assert remote_api._session is None
+
+    async def test_active_hold_defers_the_close(self, remote_api):
+        """Keep the session open until the holder releases it."""
+        await remote_api.open()
+
+        async with remote_api.hold():
+            await remote_api.close_when_idle()
+            assert remote_api._session is not None
+
+        assert remote_api._session is None
+
+    async def test_nested_holds_close_once_at_zero(self, remote_api):
+        """Close on the outermost release, not on an inner one."""
+        await remote_api.open()
+
+        async with remote_api.hold():
+            async with remote_api.hold():
+                await remote_api.close_when_idle()
+            assert remote_api._session is not None
+
+        assert remote_api._session is None
+
+    async def test_request_takes_its_own_hold(self, remote_api):
+        """Keep the session open when a rebind lands mid-call with no outer hold."""
+        with aioresponses() as mock:
+            mock.post(_UPLOAD_URL, status=status.HTTP_200_OK, payload={"ok": True})
+            await remote_api.open()
+            async with remote_api._request("POST", "upload"):
+                await remote_api.close_when_idle()
+                assert remote_api._session is not None
+
+        assert remote_api._session is None
+
+    async def test_release_on_exception_still_closes(self, remote_api):
+        """Perform the deferred close even when the held block raises."""
+        await remote_api.open()
+
+        async def consumer() -> None:
+            async with remote_api.hold():
+                await remote_api.close_when_idle()
+                raise RuntimeError("consumer blew up")
+
+        with pytest.raises(RuntimeError, match="consumer blew up"):
+            await consumer()
+
+        assert remote_api._session is None
+
+    async def test_release_on_cancellation_still_closes(self, remote_api):
+        """Perform the deferred close when the consuming task is cancelled."""
+        await remote_api.open()
+        held = asyncio.Event()
+
+        async def consumer() -> None:
+            async with remote_api.hold():
+                held.set()
+                await asyncio.Event().wait()
+
+        task = asyncio.create_task(consumer())
+        await asyncio.wait_for(held.wait(), timeout=5)
+        await remote_api.close_when_idle()
+        assert remote_api._session is not None
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert remote_api._session is None
+
+    async def test_hold_alone_never_closes(self, remote_api):
+        """Leave the session open when no rebind asked for a close."""
+        await remote_api.open()
+
+        async with remote_api.hold():
+            pass
+
+        assert remote_api._session is not None
+        await remote_api.close()
+
+    async def test_repeated_close_when_idle_closes_once(self, remote_api):
+        """Treat a second rebind before the first drains as a no-op."""
+        await remote_api.open()
+
+        async with remote_api.hold():
+            await remote_api.close_when_idle()
+            await remote_api.close_when_idle()
+            assert remote_api._session is not None
+
+        assert remote_api._session is None
+
+    async def test_flag_is_cleared_after_the_deferred_close(self, remote_api):
+        """Leave a reopened client unaffected by the drain that already fired."""
+        await remote_api.open()
+        async with remote_api.hold():
+            await remote_api.close_when_idle()
+
+        await remote_api.open()
+        async with remote_api.hold():
+            pass
+
+        assert remote_api._session is not None
+        await remote_api.close()
+
+    async def test_close_still_closes_unconditionally(self, remote_api):
+        """Keep ``close`` immediate so ``close_all`` and shutdown are unchanged."""
+        await remote_api.open()
+
+        async with remote_api.hold():
+            await remote_api.close()
+            assert remote_api._session is None

@@ -1362,24 +1362,29 @@ def preserve_patch_credential_url_value(
     :class:`~pydantic.SecretStr` / :class:`~pydantic.SecretBytes` JSON masks
     (:data:`SECRET_STR_MASK`). Non-mask submissions are left unchanged.
 
+    Routing is decided by the payload shape before
+    :func:`is_credential_url_field` is consulted. That predicate descends into
+    nested models, so it answers "does this subtree carry a credential URL",
+    not "is this field itself one". A model-typed field holding a
+    credential-URL leaf answers ``True`` to the first question while needing
+    the model-payload walk, not the scalar restore.
+
     :param field_info: The Pydantic field metadata for the target attribute.
     :param current: The effective stored value (model, mapping, or secret wrapper).
     :param incoming: The value submitted in the PATCH body.
     :return: ``incoming`` with any masked credentials restored from ``current``.
     """
-    if is_credential_url_field(field_info):
-        if isinstance(incoming, str) and current is not None:
-            value = preserve_credential_url_password(str(current), incoming)
-        else:
-            value = incoming
+    parent_cls = annotation_pydantic_class(field_info.annotation)
+    if parent_cls is not None and isinstance(incoming, Mapping):
+        value = preserve_credential_urls_in_model_payload(parent_cls, current, incoming)
+    elif (
+        is_credential_url_field(field_info)
+        and isinstance(incoming, str)
+        and current is not None
+    ):
+        value = preserve_credential_url_password(str(current), incoming)
     else:
-        parent_cls = annotation_pydantic_class(field_info.annotation)
-        if parent_cls and isinstance(incoming, Mapping):
-            value = preserve_credential_urls_in_model_payload(
-                parent_cls, current, incoming
-            )
-        else:
-            value = incoming
+        value = incoming
     return preserve_patch_secret_value(field_info, current, value)
 
 

@@ -29,8 +29,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
+from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.alerts.config import alert_settings
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.config import PMMSettings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
 from app.core.settings_override.api import build_settings_router
@@ -148,6 +150,7 @@ def api_admin_client_fixture(
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_tasks_api] = lambda: _mock_tasks_api()
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
@@ -161,6 +164,7 @@ def api_non_admin_client_fixture(
     sep_app.dependency_overrides[get_current_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_tasks_api] = lambda: _mock_tasks_api()
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
@@ -231,7 +235,7 @@ def _find_setting(
 def reduced_activation_client_fixture(
     override_session: AsyncSession,
 ) -> Iterator[TestClient]:
-    """Yield a settings router built as if the alerts app were never activated.
+    """Return a settings router built as if the alerts app were never activated.
 
     Reloading ``app.sep.main`` cannot reach this surface: ``settings.py`` captures
     the app-owned classes and builds ``router`` at module import, and
@@ -1026,6 +1030,51 @@ class TestSepSettingsPatch:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.usefixtures("delivery_skeleton")
+    async def test_delivery_inputs_masked_endpoint_preserves_stored_password(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Restore the stored endpoint password on a masked whole-object resubmit.
+
+        A materializer-backed field takes the model-payload branch of
+        ``preserve_patch_credential_url_value``, a third call shape beside the
+        top-level and nested-leaf legs. Now that the shared type rejects the
+        mask, preserve running before validation is what keeps this round-trip
+        a 200 rather than a 422.
+        """
+        endpoint = "https://sn-user:sn-secret@snow.example.com/"
+        stored = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={
+                _DELIVERY_INPUTS_KEY: {
+                    "endpoint": endpoint,
+                    "secrets": _DELIVERY_INPUTS_SECRETS,
+                }
+            },
+        )
+        assert stored.status_code == status.HTTP_200_OK
+
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={
+                _DELIVERY_INPUTS_KEY: {
+                    "endpoint": "https://sn-user:****@snow.example.com/",
+                    "secrets": dict.fromkeys(_DELIVERY_INPUTS_SECRETS, SECRET_STR_MASK),
+                }
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=_DELIVERY_INPUTS_KEY,
+        )
+        assert "sn-secret" in rows[0].value["endpoint"]
+        assert "****" not in rows[0].value["endpoint"]
 
     @pytest.mark.usefixtures("delivery_skeleton")
     async def test_delivery_inputs_row_that_stops_matching_the_plan_survives(
@@ -1849,7 +1898,12 @@ class TestSepSettingsCredentialUrlWriteback:
     async def test_patch_redacted_inventory_endpoint_preserves_password(
         self, api_admin_client: TestClient
     ) -> None:
-        """Keep the real password when saving an unchanged redacted ``INVENTORY_ENDPOINT``."""
+        """Keep the real password when saving an unchanged redacted ``INVENTORY_ENDPOINT``.
+
+        Preserve runs before validation: a masked resubmit is swapped for the
+        stored password first, so the shared mask-rejecting validator never
+        sees the display value and the round-trip succeeds.
+        """
         full_url = "http://inv-user:inv-secret@inventory.internal:8080"
         redacted_url = "http://inv-user:****@inventory.internal:8080"
         try:
@@ -1863,6 +1917,80 @@ class TestSepSettingsCredentialUrlWriteback:
             assert "****" not in str(sep_settings.INVENTORY_ENDPOINT)
         finally:
             sep_settings._set_snapshot({})
+
+    async def test_patch_masked_endpoint_without_stored_password_is_rejected(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Reject a masked endpoint when there is no stored password to restore.
+
+        The YAML/env baseline has no userinfo password, so preserve leaves the
+        mask intact and the shared type validator fails the PATCH with 422.
+        """
+        redacted_url = "http://inv-user:****@inventory.internal:8080"
+        try:
+            sep_settings._set_snapshot({})
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/SEPSettings",
+                json={"INVENTORY_ENDPOINT": redacted_url},
+            )
+            assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+            assert "cannot be stored" in response.text
+        finally:
+            sep_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+class TestSettingsNestedCredentialUrlWriteback:
+    """Pin preserve-then-validate on the nested ``PMM__ENDPOINT`` PATCH path.
+
+    ``Settings.PMM`` is a hot nested parent and ``PMMSettings.endpoint`` is a
+    ``StrCredentialHttpUrl``, so ``PMM__ENDPOINT`` goes through
+    ``_validate_nested_key`` rather than the top-level ``_validate_patch_body``
+    leg covered by :class:`TestSepSettingsCredentialUrlWriteback`.
+    """
+
+    async def test_patch_redacted_pmm_endpoint_preserves_password(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Keep the real password when saving an unchanged redacted ``PMM__ENDPOINT``.
+
+        Preserve runs before validation on the nested leaf: a masked resubmit
+        is swapped for the stored password first, so the shared mask-rejecting
+        validator never sees the display value and the round-trip succeeds.
+        """
+        full_url = "https://pmm-user:pmm-secret@pmm.example.com:8443"
+        redacted_url = "https://pmm-user:****@pmm.example.com:8443"
+        try:
+            settings._set_snapshot({"PMM": PMMSettings(endpoint=full_url)})
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/Settings",
+                json={"PMM__ENDPOINT": redacted_url},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            assert "pmm-secret" in str(settings.PMM.endpoint)
+            assert "****" not in str(settings.PMM.endpoint)
+        finally:
+            settings._set_snapshot({})
+
+    async def test_patch_masked_pmm_endpoint_without_stored_password_is_rejected(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Reject a masked ``PMM__ENDPOINT`` when there is no stored password.
+
+        The YAML/env baseline has no userinfo password, so preserve leaves the
+        mask intact and the shared type validator fails the PATCH with 422.
+        """
+        redacted_url = "https://pmm-user:****@pmm.example.com:8443"
+        try:
+            settings._set_snapshot({})
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/Settings",
+                json={"PMM__ENDPOINT": redacted_url},
+            )
+            assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+            assert "cannot be stored" in response.text
+        finally:
+            settings._set_snapshot({})
 
 
 @pytest.mark.asyncio

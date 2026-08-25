@@ -22,7 +22,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, FastAPI, Request, status
 
 from app import __summary__, __version__
-from app.api.deps import IsAuthenticatedDep
+from app.api.deps import IsAuthenticatedDep, RequireMinimumRoleForUnsafeMethods
 from app.core.config import create_app, default_lifespan, settings
 from app.core.health import build_health_router
 from app.core.settings_override.lifecycle import (
@@ -107,6 +107,7 @@ inventory_app = create_app(
     schemas.router,
     tables.router,
     settings_router,
+    dependencies=[RequireMinimumRoleForUnsafeMethods],
     lifespan=lifespan,
     backend_cors_origins=inventory_settings.BACKEND_CORS_ORIGINS,
     allowed_hosts=inventory_settings.ALLOWED_HOSTS,

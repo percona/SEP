@@ -11,7 +11,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { FormSection } from '@sep/api';
 
-import { flattenSectionFields, flattenSectionItem, isOneOfGroup } from './flattenSectionFields';
+import {
+  flattenSectionFields,
+  flattenSectionItem,
+  isOneOfGroup,
+  buildFieldLabelMap,
+} from './flattenSectionFields';
 
 const ONE_OF_SECTION: FormSection[] = [
   {
@@ -67,5 +72,28 @@ describe('flattenSectionFields', () => {
     expect(flattenSectionItem(sections[0].fields[0])).toEqual([
       { type: 'string', name: 'title', label: 'Title' },
     ]);
+  });
+});
+
+describe('buildFieldLabelMap', () => {
+  it('maps each flattened field path to its label, falling back to the name', () => {
+    const sections: FormSection[] = [
+      {
+        title: 'T',
+        fields: [
+          { type: 'string', name: 'task_name', label: 'Task Name' },
+          { type: 'integer', name: 'limit', label: '' },
+        ],
+      },
+    ];
+    const labels = buildFieldLabelMap(sections);
+    expect(labels.get('task_name')).toBe('Task Name');
+    expect(labels.get('limit')).toBe('limit');
+  });
+
+  it('includes one-of branch leaf paths', () => {
+    const labels = buildFieldLabelMap(ONE_OF_SECTION);
+    expect(labels.get('source.source_db_id')).toBe('Schema');
+    expect(labels.get('source.source_query')).toBe('Query');
   });
 });

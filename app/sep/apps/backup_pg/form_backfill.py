@@ -29,7 +29,7 @@ from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_
 from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 
 if TYPE_CHECKING:
-    from app.sep.apps.framework.form_backfill import FormBackfillContext
+    from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
     from app.tasks.models import Task
 
 __all__ = ["FORM_BACKFILL_ENTRIES", "reconstruct_backup_pg_form"]

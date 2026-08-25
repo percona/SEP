@@ -35,6 +35,10 @@ from tests.app.factories import (
 OFFSET_BEYOND_TOTAL = 999
 LIST_QUERY_MATCH_TOTAL = 2
 
+# Pinned verbatim rather than imported from app.inventory.constants: the wording is
+# part of the API contract, so an edit to the constant must fail the test.
+UNCOLLECTED_SERVICE_DETAIL = "System observation not collected yet for this service"
+
 
 class TestListServices:
     """Test GET /services/ endpoint."""
@@ -608,16 +612,62 @@ class TestRetrieveServiceSystemObservation:
     def test_retrieve_service_system_observation_404_when_no_observation(
         self, test_client: TestClient, service: Service
     ) -> None:
-        """Return 404 when service exists but no observation has been collected yet."""
+        """Return 404 with the uncollected detail when the service has no observation."""
         response = test_client.get(f"/services/{service.id}/system-observation")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == UNCOLLECTED_SERVICE_DETAIL
 
     def test_retrieve_service_system_observation_404_when_service_not_found(
         self, test_client: TestClient
     ) -> None:
-        """Return 404 when the service ID does not exist."""
+        """Return 404 with the default detail when the service ID does not exist."""
         response = test_client.get("/services/99999/system-observation")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == "Not Found"
+
+    def test_retrieve_service_system_observation_404_for_another_services_observation(
+        self,
+        test_client: TestClient,
+        node: Node,
+        service: Service,
+        service_observation: ServiceSystemObservation,
+    ) -> None:
+        """Keep one service's observation from surfacing when reading a sibling."""
+        other = test_client.post(
+            f"/nodes/{node.id}/services/",
+            json=ServiceWriteFactory.build().model_dump(mode="json"),
+        )
+        assert other.status_code == status.HTTP_201_CREATED
+        other_service_id = other.json()["id"]
+        assert other_service_id != service.id
+
+        response = test_client.get(f"/services/{other_service_id}/system-observation")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == UNCOLLECTED_SERVICE_DETAIL
+
+    def test_retrieve_service_system_observation_after_upsert_returns_200(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Leave the uncollected state once the syncer writes an observation.
+
+        The uncollected 404 must be a transient state, not a sticky one: the same
+        GET that reported it has to answer 200 after a PUT lands.
+        """
+        before = test_client.get(f"/services/{service.id}/system-observation")
+        assert before.status_code == status.HTTP_404_NOT_FOUND
+        assert before.json()["detail"] == UNCOLLECTED_SERVICE_DETAIL
+
+        payload = ServiceSystemObservationWriteFactory.build()
+        upsert = test_client.put(
+            f"/services/{service.id}/system-observation",
+            json=payload.model_dump(mode="json"),
+        )
+        assert upsert.status_code == status.HTTP_200_OK
+
+        after = test_client.get(f"/services/{service.id}/system-observation")
+        assert after.status_code == status.HTTP_200_OK
+        assert after.json()["service_id"] == service.id
+        assert after.json()["db_engine_version"] == payload.db_engine_version
 
 
 class TestUpsertServiceSystemObservation:

@@ -27,7 +27,11 @@ from app.core.auth.exceptions import (
     HTTPForbiddenException,
     HTTPUnauthorizedException,
 )
-from app.core.auth.models import OAuthToken, SessionExchangeTokenResponse
+from app.core.auth.models import (
+    OAuthToken,
+    SessionExchangeTokenResponse,
+    UserRole,
+)
 from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.exceptions import (
     HTTPConflictException,
@@ -59,7 +63,6 @@ from app.sep.deps import (
     get_tasks_api,
     get_toggleable_app_key,
     get_username_mapping,
-    is_bearer_authenticated,
     PROTECTED_APP_KEYS,
     protected_task_guard,
     reject_if_protected,
@@ -68,6 +71,7 @@ from app.sep.deps import (
     require_pmm_api,
     resolve_ambient_exchange_token,
     resolve_ambient_session_token,
+    resolve_pmm_api,
 )
 from app.sep.inventory import CreatedNode, CreatedSchema
 from app.sep.models import AppLifecycleEnum, AppState, SyncInventoryEntityTypeEnum
@@ -75,6 +79,7 @@ from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
 )
+from tests.app.conftest import make_request
 from tests.app.factories import (
     CasdoorUserFactory,
     CreatedNodeFactory,
@@ -87,29 +92,6 @@ PENDING_HISTORY_ID = 10
 RUNNING_HISTORY_ID = 11
 SUCCESS_HISTORY_ID = 12
 EXPECTED_NODE_COUNT = 5
-
-
-def _make_request(method: str = "GET", authorization: str | None = None) -> Request:
-    """Build a minimal Request for testing.
-
-    :param method: HTTP method to set on the request scope.
-    :type method: str
-    :param authorization: Value for the ``Authorization`` header, if any.
-    :type authorization: str | None
-    """
-    headers = []
-    if authorization is not None:
-        headers.append((b"authorization", authorization.encode()))
-    scope = {
-        "type": "http",
-        "headers": headers,
-        "method": method,
-        "client": ("127.0.0.1", "80"),
-        "path": "/",
-        "app": MagicMock(),
-        "router": MagicMock(),
-    }
-    return Request(scope)
 
 
 class TestResolveAmbientSessionToken:
@@ -258,7 +240,7 @@ class TestGetBaseUrl:
 
     def test_returns_setting_when_configured(self) -> None:
         """Assert BASE_URL from settings is returned when set."""
-        request = _make_request()
+        request = make_request()
         with patch("app.sep.deps.settings") as mock_settings:
             mock_settings.BASE_URL = "https://example.com"
             result = get_base_url(request)
@@ -289,7 +271,7 @@ class TestGetCurrentUser:
     @pytest.mark.asyncio
     async def test_valid_bearer_returns_user(self) -> None:
         """Assert a valid Bearer token resolves through the API dependency."""
-        request = _make_request(authorization="Bearer bearer-token")
+        request = make_request(authorization="Bearer bearer-token")
         active_user = CasdoorUserFactory.build(is_forbidden=False)
         with (
             patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="bearer-token")),
@@ -315,7 +297,7 @@ class TestGetCurrentUser:
             ),
             pytest.raises(HTTPUnauthorizedException),
         ):
-            await get_current_user(_make_request())
+            await get_current_user(make_request())
 
     @pytest.mark.asyncio
     async def test_session_cookie_alone_raises_unauthorized(self) -> None:
@@ -335,7 +317,7 @@ class TestGetCurrentUser:
     @pytest.mark.asyncio
     async def test_invalid_bearer_raises_unauthorized(self) -> None:
         """Assert an invalid Bearer token propagates ``HTTPUnauthorizedException``."""
-        request = _make_request(authorization="Bearer bad-token")
+        request = make_request(authorization="Bearer bad-token")
         with (
             patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="bad-token")),
             patch(
@@ -349,7 +331,7 @@ class TestGetCurrentUser:
     @pytest.mark.asyncio
     async def test_inactive_user_via_bearer_raises_forbidden(self) -> None:
         """Assert an inactive user resolved from a valid Bearer raises 403."""
-        request = _make_request(authorization="Bearer bearer-token")
+        request = make_request(authorization="Bearer bearer-token")
         with (
             patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="bearer-token")),
             patch(
@@ -367,14 +349,14 @@ class TestGetApiAuthenticatedAdmin:
     @pytest.mark.asyncio
     async def test_admin_returns_user(self) -> None:
         """Assert an admin user is returned unchanged."""
-        admin_user = CasdoorUserFactory.build(is_admin=True)
+        admin_user = CasdoorUserFactory.build(role=UserRole.ADMIN)
         result = await get_api_authenticated_admin(admin_user)
         assert result is admin_user
 
     @pytest.mark.asyncio
     async def test_non_admin_raises_forbidden(self) -> None:
         """Assert an authenticated non-admin gets 403 (not 401)."""
-        regular_user = CasdoorUserFactory.build(is_admin=False)
+        regular_user = CasdoorUserFactory.build(role=UserRole.VIEWER)
         with pytest.raises(HTTPForbiddenException):
             await get_api_authenticated_admin(regular_user)
 
@@ -469,8 +451,8 @@ class TestGetTasksApi:
         mock_client.auth.assert_called_once_with("test-token")
 
 
-class TestGetPmmApi:
-    """Test the ``get_pmm_api`` dependency."""
+class TestResolvePmmApi:
+    """Cover the ``resolve_pmm_api`` resolver."""
 
     @pytest.mark.asyncio
     async def test_returns_none_when_endpoint_not_configured(self):
@@ -478,7 +460,7 @@ class TestGetPmmApi:
         with patch("app.sep.deps.settings") as mock_settings:
             mock_settings.PMM.endpoint = None
             mock_settings.PMM.api_key = None
-            result = await get_pmm_api()
+            result = await resolve_pmm_api()
         assert result is None
 
     @pytest.mark.asyncio
@@ -487,7 +469,7 @@ class TestGetPmmApi:
         with patch("app.sep.deps.settings") as mock_settings:
             mock_settings.PMM.endpoint = "https://pmm.example.com"
             mock_settings.PMM.api_key = None
-            result = await get_pmm_api()
+            result = await resolve_pmm_api()
         assert result is None
 
     @pytest.mark.asyncio
@@ -500,7 +482,7 @@ class TestGetPmmApi:
             mock_settings.PMM.verify_ssl = True
             mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
             mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
-            result = await get_pmm_api()
+            result = await resolve_pmm_api()
         assert result is mock_client
         mock_settings.get_remote_api.assert_awaited_once_with(
             PMMRemoteAPI,
@@ -520,7 +502,7 @@ class TestGetPmmApi:
             mock_settings.PMM.verify_ssl = False
             mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
             mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
-            result = await get_pmm_api()
+            result = await resolve_pmm_api()
         assert result is mock_client
         mock_settings.get_remote_api.assert_awaited_once_with(
             PMMRemoteAPI,
@@ -529,6 +511,40 @@ class TestGetPmmApi:
             verify_ssl=False,
             ssl_cafile="/etc/ssl/ca.pem",
         )
+
+
+class TestGetPmmApi:
+    """Cover the ``get_pmm_api`` request-scoped dependency."""
+
+    @pytest.mark.asyncio
+    async def test_holds_the_client_for_the_request(self) -> None:
+        """Keep a retired PMM client open until the dependency's hold releases."""
+        client = await PMMRemoteAPI(
+            endpoint="https://pmm.example.com", api_key="secret-key"
+        ).open()
+
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = "secret-key"
+            mock_settings.PMM.verify_ssl = True
+            mock_settings.SSL_CAFILE = None
+            mock_settings.get_remote_api = AsyncMock(return_value=client)
+            async for held in get_pmm_api():
+                assert held is client
+                await client.close_when_idle()
+                assert client._session is not None
+
+        assert client._session is None
+
+    @pytest.mark.asyncio
+    async def test_yields_none_when_pmm_is_not_configured(self) -> None:
+        """Yield ``None`` without reaching for a hold on a client that is absent."""
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = None
+            mock_settings.PMM.api_key = None
+            results = [held async for held in get_pmm_api()]
+
+        assert results == [None]
 
 
 class TestRequirePmmApi:
@@ -994,14 +1010,14 @@ class TestRequireBearerForUnsafeMethods:
     @pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS"])
     async def test_safe_methods_pass_without_bearer(self, method: str) -> None:
         """Safe HTTP methods do not require a Bearer header."""
-        request = _make_request(method=method)
+        request = make_request(method=method)
         assert await require_bearer_for_unsafe_methods(request) is None
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
     async def test_unsafe_methods_without_bearer_raise_401(self, method: str) -> None:
         """Mutating methods without an Authorization header raise 401."""
-        request = _make_request(method=method)
+        request = make_request(method=method)
         with pytest.raises(HTTPUnauthorizedException) as exc_info:
             await require_bearer_for_unsafe_methods(request)
         assert "Bearer" in exc_info.value.detail
@@ -1010,33 +1026,33 @@ class TestRequireBearerForUnsafeMethods:
     @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
     async def test_unsafe_methods_with_bearer_pass(self, method: str) -> None:
         """Mutating methods with a Bearer header pass through."""
-        request = _make_request(method=method, authorization="Bearer abc")
+        request = make_request(method=method, authorization="Bearer abc")
         assert await require_bearer_for_unsafe_methods(request) is None
 
     @pytest.mark.asyncio
     async def test_lowercase_bearer_scheme_passes(self) -> None:
         """Bearer detection is case-insensitive (existing helper contract)."""
-        request = _make_request(method="POST", authorization="bearer abc")
+        request = make_request(method="POST", authorization="bearer abc")
         assert await require_bearer_for_unsafe_methods(request) is None
 
     @pytest.mark.asyncio
     async def test_basic_scheme_raises(self) -> None:
         """Non-Bearer Authorization schemes still raise 401 on mutating methods."""
-        request = _make_request(method="POST", authorization="Basic abc")
+        request = make_request(method="POST", authorization="Basic abc")
         with pytest.raises(HTTPUnauthorizedException):
             await require_bearer_for_unsafe_methods(request)
 
     @pytest.mark.asyncio
     async def test_bearer_without_trailing_space_raises(self) -> None:
         """The helper requires ``Bearer `` (trailing space) to match."""
-        request = _make_request(method="POST", authorization="Bearer")
+        request = make_request(method="POST", authorization="Bearer")
         with pytest.raises(HTTPUnauthorizedException):
             await require_bearer_for_unsafe_methods(request)
 
     @pytest.mark.asyncio
     async def test_empty_authorization_header_raises(self) -> None:
         """An empty Authorization header is not a valid Bearer credential."""
-        request = _make_request(method="POST", authorization="")
+        request = make_request(method="POST", authorization="")
         with pytest.raises(HTTPUnauthorizedException):
             await require_bearer_for_unsafe_methods(request)
 
@@ -1047,19 +1063,19 @@ class TestRequireBearerForUnsafeMethods:
         Token validation happens downstream in ``get_current_user``; the gate
         is intentionally a routing signal, not an auth check.
         """
-        request = _make_request(method="POST", authorization="Bearer ")
+        request = make_request(method="POST", authorization="Bearer ")
         assert await require_bearer_for_unsafe_methods(request) is None
 
     @pytest.mark.asyncio
     async def test_safe_method_with_invalid_authorization_still_passes(self) -> None:
         """Safe methods bypass the gate regardless of Authorization contents."""
-        request = _make_request(method="GET", authorization="garbage")
+        request = make_request(method="GET", authorization="garbage")
         assert await require_bearer_for_unsafe_methods(request) is None
 
     @pytest.mark.asyncio
     async def test_lowercase_method_treated_as_unsafe(self) -> None:
         """Method matching is case-sensitive; ``post`` is not in the safe set."""
-        request = _make_request(method="post")
+        request = make_request(method="post")
         with pytest.raises(HTTPUnauthorizedException):
             await require_bearer_for_unsafe_methods(request)
 
@@ -1072,7 +1088,7 @@ class TestRequireBearerForUnsafeMethods:
         ASGI servers can route obscure verbs and a permissive deny-list would
         leak protocol-level metadata under cookie-only credentials.
         """
-        request = _make_request(method=method)
+        request = make_request(method=method)
         with pytest.raises(HTTPUnauthorizedException) as exc_info:
             await require_bearer_for_unsafe_methods(request)
         assert exc_info.value.detail == BEARER_REQUIRED_DETAIL
@@ -1084,7 +1100,7 @@ class TestRequireBearerForUnsafeMethods:
         ASGI guarantees a non-empty method, but the gate must not silently
         accept an empty string if a future helper path bypasses Starlette.
         """
-        request = _make_request(method="")
+        request = make_request(method="")
         with pytest.raises(HTTPUnauthorizedException):
             await require_bearer_for_unsafe_methods(request)
 
@@ -1094,7 +1110,7 @@ class TestMakeRequestHelper:
 
     def test_default_method_is_get(self) -> None:
         """Calls without ``method`` produce a GET request (existing call-site contract)."""
-        assert _make_request().method == "GET"
+        assert make_request().method == "GET"
 
     @pytest.mark.parametrize(
         "method",
@@ -1102,16 +1118,16 @@ class TestMakeRequestHelper:
     )
     def test_explicit_method_set(self, method: str) -> None:
         """Explicit ``method`` flows through to ``request.method`` verbatim."""
-        assert _make_request(method=method).method == method
+        assert make_request(method=method).method == method
 
     def test_authorization_header_omitted_when_none(self) -> None:
         """``authorization=None`` produces a request without an Authorization header."""
-        assert "authorization" not in _make_request().headers
+        assert "authorization" not in make_request().headers
 
     def test_authorization_header_set_when_provided(self) -> None:
         """``authorization`` value is written verbatim into the header."""
         assert (
-            _make_request(authorization="Bearer abc").headers["authorization"]
+            make_request(authorization="Bearer abc").headers["authorization"]
             == "Bearer abc"
         )
 
@@ -1121,86 +1137,21 @@ class TestMakeRequestHelper:
         Several existing call sites rely on this boundary to exercise the empty-token
         rejection path; pin it explicitly.
         """
-        assert _make_request(authorization="").headers["authorization"] == ""
+        assert make_request(authorization="").headers["authorization"] == ""
 
 
-class TestBearerHeaderEdgeCases:
-    """Cover header-parsing edges for ``is_bearer_authenticated`` and the gates that wrap it.
+class TestBearerGateGuardsAgainstConfusables:
+    """Cover the gate's propagation of ``is_bearer_authenticated``'s rejections.
 
-    These tests pin the *current* permissive-prefix contract: the gate is a
-    routing signal, not a credential check. Any future tightening (token shape,
-    DoS bounds) should fail these tests visibly so it can't slip in silently.
+    The predicate's own header-parsing edges live beside it in
+    ``tests/app/core/test_security.py``; this class covers only the gate that
+    wraps it.
     """
-
-    def test_tab_separator_does_not_match(self) -> None:
-        r"""``Bearer\ttoken`` does not match; the prefix requires a literal space."""
-        request = _make_request(authorization="Bearer\ttoken")
-        assert is_bearer_authenticated(request) is False
-
-    def test_double_space_after_bearer_matches(self) -> None:
-        """``Bearer  token`` (two spaces) still satisfies the prefix check.
-
-        Documents the lenient prefix contract: anything after ``Bearer `` is the
-        token payload — downstream validators (``oauth2_scheme``,
-        ``get_current_user_api``) are responsible for token shape.
-        """
-        request = _make_request(authorization="Bearer  token")
-        assert is_bearer_authenticated(request) is True
-
-    def test_leading_whitespace_in_header_does_not_match(self) -> None:
-        """`` Bearer token`` (leading space) is not a Bearer credential.
-
-        Starlette does not strip leading whitespace from header values; the
-        gate's ``startswith`` check is byte-faithful, so a leading space rejects.
-        """
-        request = _make_request(authorization=" Bearer token")
-        assert is_bearer_authenticated(request) is False
-
-    def test_mixed_case_scheme_matches(self) -> None:
-        """The scheme match is case-insensitive (``BeArEr token`` is valid)."""
-        request = _make_request(authorization="BeArEr token")
-        assert is_bearer_authenticated(request) is True
-
-    def test_very_long_header_does_not_crash(self) -> None:
-        """A 64 KiB Authorization header is parsed without raising or hanging.
-
-        DoS sanity check: the gate is a single ``str.startswith`` — adding token
-        length validation later would need a different shape, so a regression
-        introducing a quadratic scan would fail here.
-        """
-        long_token = "a" * (64 * 1024)
-        request = _make_request(authorization=f"Bearer {long_token}")
-        assert is_bearer_authenticated(request) is True
-
-    def test_null_byte_in_token_passes_gate(self) -> None:
-        r"""``Bearer \x00abc`` passes the gate; null-byte filtering is a downstream concern.
-
-        Pinning permissive behaviour: the routing-signal gate is intentionally
-        thin, so any future "block control characters" change is visible here
-        rather than a silent behaviour shift.
-        """
-        request = _make_request(authorization="Bearer \x00abc")
-        assert is_bearer_authenticated(request) is True
-
-    def test_unicode_nbsp_separator_does_not_match(self) -> None:
-        r"""``Bearer<NBSP>token`` does not match the ASCII prefix.
-
-        Prevents a unicode-confusable bypass: a client crafting
-        ``Bearer<NBSP>...`` cannot trick the gate into accepting a request that
-        Starlette will then route to the safe codepath.
-        """
-        request = _make_request(authorization="Bearer\u00a0token")
-        assert is_bearer_authenticated(request) is False
-
-    def test_only_scheme_no_separator_does_not_match(self) -> None:
-        """``Bearer`` alone (no trailing space) is not a Bearer credential."""
-        request = _make_request(authorization="Bearer")
-        assert is_bearer_authenticated(request) is False
 
     @pytest.mark.asyncio
     async def test_unsafe_methods_gate_propagates_nbsp_rejection(self) -> None:
         """End-to-end: NBSP-spoofed header on POST still 401s through the gate."""
-        request = _make_request(method="POST", authorization="Bearer\u00a0token")
+        request = make_request(method="POST", authorization="Bearer\u00a0token")
         with pytest.raises(HTTPUnauthorizedException) as exc_info:
             await require_bearer_for_unsafe_methods(request)
         assert exc_info.value.detail == BEARER_REQUIRED_DETAIL

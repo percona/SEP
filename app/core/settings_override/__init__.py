@@ -28,6 +28,7 @@ __all__ = [
     "SettingClassEnum",
     "SettingOverride",
     "SettingsOverrideManager",
+    "SnapshotChange",
     "build_snapshot",
     "coerce_field_value",
     "coerce_nested_field_value",
@@ -61,6 +62,7 @@ from app.core.settings_override.lifecycle import (
     refresh_all,
     RefreshCallback,
     settings_override_refresher,
+    SnapshotChange,
     start_refresh_task,
 )
 from app.core.settings_override.manager import SettingsOverrideManager

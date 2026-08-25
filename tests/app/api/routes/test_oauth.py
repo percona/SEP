@@ -30,6 +30,7 @@ from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.auth.utils import get_user_model
 from app.main import app
 from app.sep.config import sep_settings
+from tests.app.conftest import make_roleless_grafana_assertion
 
 User = get_user_model()
 
@@ -603,6 +604,23 @@ def test_grafana_spa_login_then_refresh(
     assert refreshed.json()["access_token"]
 
 
+def test_grafana_spa_refresh_refuses_a_cookie_minted_before_the_role_claim(
+    test_client, grafana_mock, mocker
+):
+    """Assert a refresh cookie predating the role claim ends the SPA session.
+
+    The standalone SPA holds its access token in memory and its refresh
+    credential in the cookie; both predate the claim across the upgrade, so the
+    session ends loudly and the re-login reads the true org role from Grafana.
+    """
+    mocker.patch("app.api.routes.oauth.User", GrafanaUser)
+    test_client.cookies.set("refreshToken", make_roleless_grafana_assertion("refresh"))
+
+    response = test_client.post("/api/oauth/refresh")
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
 EXCHANGE_PATH = "/api/oauth/session/exchange"
 
 
@@ -700,6 +718,16 @@ class TestSpaSessionExchange:
 
         assert gated.status_code == status.HTTP_401_UNAUTHORIZED
 
+    def test_a_bearer_minted_before_the_role_claim_is_refused(self, test_client):
+        """Assert a legacy bearer is denied at the API boundary, not a 500."""
+        legacy = make_roleless_grafana_assertion("access")
+
+        gated = test_client.get(
+            "/api/config/alerts", headers={"Authorization": f"Bearer {legacy}"}
+        )
+
+        assert gated.status_code == status.HTTP_401_UNAUTHORIZED
+
     @pytest.mark.parametrize("role", ["Editor", "Viewer"])
     def test_non_admin_role_is_refused_by_an_admin_gated_endpoint(
         self, test_client, grafana_mock, grafana_user_orgs, role
@@ -758,3 +786,36 @@ def test_spa_session_login_contract_survives_the_extraction(
     assert len(refresh_headers) == 1
     assert "HttpOnly" in refresh_headers[0]
     assert "Path=/api/oauth" in refresh_headers[0]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/oauth/token",
+        "/api/oauth/login",
+        "/api/oauth/session",
+        "/api/oauth/session/exchange",
+        "/api/oauth/refresh",
+        "/api/oauth/logout",
+    ],
+)
+def test_oauth_routes_stay_outside_the_unsafe_method_admin_gate(
+    test_client, casdoor_mock, path
+):
+    """Assert the identity tree keeps its own authentication semantics.
+
+    These routes are included beside ``api_router`` rather than through it, so
+    the admin gate never reaches them — a caller with no prior SEP identity has
+    to be able to mint one, and ``logout`` stays bearer-authenticated by its own
+    ``CurrentUser``. Only the absence of a 403 is asserted; each route's own
+    status is pinned by the tests above.
+
+    The request carries a credential resolving to a non-admin, which is the only
+    input that makes the gate answer 403. A credential-less request answers 401
+    whether or not the gate is attached, so it could not falsify the claim.
+    """
+    response = test_client.post(
+        path, headers={"Authorization": "Bearer non-admin-token"}
+    )
+
+    assert response.status_code != status.HTTP_403_FORBIDDEN

@@ -21,6 +21,7 @@ import pytest
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
+from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import (
     HTTPBadGatewayException,
@@ -60,6 +61,7 @@ def admin_client(admin_user: CasdoorUser) -> TestClient:
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_api_authenticated_admin] = lambda: admin_user
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 
@@ -286,6 +288,30 @@ class TestConnectivityCheckEndpoint:
             admin_client.post(ENDPOINT, json=ALL_TARGETS).json()
         )
 
+        assert results["pmm"]["reachable"] is False
+        assert "not configured" in results["pmm"]["detail"].lower()
+
+    def test_resolves_the_real_pmm_dependency_over_real_http(
+        self,
+        admin_client: TestClient,
+        mock_inventory_api_dep: AsyncMock,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Resolve ``get_pmm_api`` through FastAPI itself, with no override.
+
+        Every other case here replaces the dependency wholesale, which bypasses
+        FastAPI's own resolution of it, so nothing else would notice the
+        request-scoped ``yield`` form failing at the framework level. PMM is
+        unconfigured under the test settings, so the real resolver yields
+        ``None`` and the probe reports not-configured.
+        """
+        mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
+        mock_task_api_dep.get.return_value = {}
+
+        response = admin_client.post(ENDPOINT, json=ALL_TARGETS)
+
+        assert response.status_code == status.HTTP_200_OK
+        results = _results_by_service(response.json())
         assert results["pmm"]["reachable"] is False
         assert "not configured" in results["pmm"]["detail"].lower()
 

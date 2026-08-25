@@ -75,7 +75,7 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
 def app_owned_client_fixture(
     override_session: AsyncSession,
 ) -> Iterator[TestClient]:
-    """Yield a TestClient wired with one core class and one app-owned class."""
+    """Return a TestClient wired with one core class and one app-owned class."""
     session_holder = {"session": override_session}
 
     async def get_session() -> AsyncSession:
@@ -117,7 +117,7 @@ def app_owned_client_fixture(
 def core_only_client_fixture(
     override_session: AsyncSession,
 ) -> Iterator[TestClient]:
-    """Yield a Tasks-style router with no app-owned wiring."""
+    """Return a Tasks-style router with no app-owned wiring."""
     session_holder = {"session": override_session}
 
     async def get_session() -> AsyncSession:

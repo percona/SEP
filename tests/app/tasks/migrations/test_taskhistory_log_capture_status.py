@@ -30,13 +30,23 @@ from app.tasks.models import LogCaptureStatusEnum, TaskHistoryLogState
 REPO_ROOT = Path(__file__).resolve().parents[4]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 
-# The head immediately before capture_status is added.
+# The head immediately before capture_status is added. Cursor columns still
+# use the pre-rename names ``nomad_offset`` / ``allocation_epoch``.
 _PRE_CAPTURE_STATUS_REVISION = "e2f3a4b5c6d7"
+
+_INSERT_STATE_ROW_PRE_RENAME = (
+    "INSERT INTO taskhistory_log_state "
+    "(created_at, task_history_id, source, stream, persisted_offset, "
+    "producer_offset, nomad_offset, allocation_epoch, staging, "
+    "staging_updated_at, version) "
+    "VALUES ('2026-01-01 00:00:00', ?, ?, 'STDOUT', 0, ?, 0, 0, X'', "
+    "'2026-01-01 00:00:00', 0)"
+)
 
 _INSERT_STATE_ROW = (
     "INSERT INTO taskhistory_log_state "
     "(created_at, task_history_id, source, stream, persisted_offset, "
-    "producer_offset, nomad_offset, allocation_epoch, staging, "
+    "producer_offset, producer_fetch_offset, producer_epoch, staging, "
     "staging_updated_at, version) "
     "VALUES ('2026-01-01 00:00:00', ?, ?, 'STDOUT', 0, ?, 0, 0, X'', "
     "'2026-01-01 00:00:00', 0)"
@@ -52,7 +62,7 @@ _DRAINED_PRODUCER_OFFSET = 4096
 
 @pytest.fixture
 def tasks_alembic_config(tmp_path, monkeypatch):
-    """Yield an Alembic ``Config`` and sync URL pointing at a temp SQLite file."""
+    """Return an Alembic ``Config`` and sync URL pointing at a temp SQLite file."""
     db_path = tmp_path / "test_tasks.sqlite"
     sync_url = f"sqlite:///{db_path}"
 
@@ -78,10 +88,12 @@ def test_pre_existing_rows_are_classified_unknown(tasks_alembic_config):
     try:
         with engine.begin() as conn:
             conn.exec_driver_sql(
-                _INSERT_STATE_ROW, (1, "run-script", _STRANDED_PRODUCER_OFFSET)
+                _INSERT_STATE_ROW_PRE_RENAME,
+                (1, "run-script", _STRANDED_PRODUCER_OFFSET),
             )
             conn.exec_driver_sql(
-                _INSERT_STATE_ROW, (2, "clean-up", _DRAINED_PRODUCER_OFFSET)
+                _INSERT_STATE_ROW_PRE_RENAME,
+                (2, "clean-up", _DRAINED_PRODUCER_OFFSET),
             )
     finally:
         engine.dispose()
@@ -159,7 +171,8 @@ def test_downgrade_drops_the_column(tasks_alembic_config):
                 ).all()
             }
             conn.exec_driver_sql(
-                _INSERT_STATE_ROW, (1, "run-script", _DRAINED_PRODUCER_OFFSET)
+                _INSERT_STATE_ROW_PRE_RENAME,
+                (1, "run-script", _DRAINED_PRODUCER_OFFSET),
             )
     finally:
         engine.dispose()

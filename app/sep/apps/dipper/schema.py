@@ -19,6 +19,11 @@ from typing import cast
 from urllib.parse import urlencode
 
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.field_names import (
+    EXECUTOR_HOST_FIELD_NAME,
+    SCRIPT_PREVIEW_FIELD_NAME,
+    SUDO_FIELD_NAME,
+)
 from app.sep.apps.framework.schema import (
     AnyField,
     AppSchema,
@@ -32,14 +37,11 @@ from app.sep.apps.framework.schema import (
     DetailSection,
     DetailView,
     EXECUTION_HOST_LABEL,
-    EXECUTOR_HOST_FIELD_NAME,
     FormSection,
     HostField,
     ListView,
-    SCRIPT_PREVIEW_FIELD_NAME,
     ScriptPreviewField,
     ServiceField,
-    SUDO_FIELD_NAME,
 )
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippet

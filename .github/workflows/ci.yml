@@ -67,6 +67,9 @@ jobs:
           filters: |
             python:
               - '**/**.py'
+              # Nomad payloads are extensionless, so they match no *.py glob and
+              # would otherwise skip the pytest tier that guards their invariants.
+              - 'app/sep/apps/**/*payload'
               - 'pyproject.toml'
               - 'alembic.ini'
               - 'poetry.lock'

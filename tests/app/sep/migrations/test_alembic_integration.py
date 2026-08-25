@@ -21,16 +21,22 @@ temporary SQLite database using the real ``env.py``, ``_discovery.py``,
 any misconfigured ``version_locations`` or plugin-discovery regression.
 """
 
+import io
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+from logging.config import dictConfig, fileConfig
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.util import CommandError
+from rich.logging import RichHandler
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.exc import IntegrityError
 
+from app.core.config import LOGGING_CONFIG
 from app.core.db.utils import check_constraint_name
 from app.sep.apps.alerts.models import AlertBackup
 
@@ -47,6 +53,95 @@ _SEP_PRE_LIFECYCLE_REVISION = "64f10ead74f6"
 _SEP_LIFECYCLE_REVISION = "a7c4e9f1b2d3"
 
 _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
+
+_SKIP_NOTICE = (
+    "Skipping 2 revision(s) recorded in alembic_version_sep with no migration "
+    "script: a1b2c3d4e5f6, 9f8e7d6c5b4a. Configured version_locations absent "
+    "from disk: app/sep/apps/alerts/migrations/versions, "
+    "app/sep/apps/dipper/migrations/versions."
+)
+_SKEW_NOTICE = (
+    "1 revision(s) recorded in alembic_version_sep do not resolve "
+    f"({UNKNOWN_REVISION}) while every configured version_locations entry is "
+    "present on disk. That is version skew or a squashed revision, not a "
+    "stripped app, so they are left in place for Alembic to reject."
+)
+
+
+@contextmanager
+def _app_then_alembic_logging(stream: io.StringIO) -> Iterator[logging.Logger]:
+    """Install app Rich logging, then alembic fileConfig, redirect console to ``stream``.
+
+    Reproduces the real order: settings-driven ``dictConfig`` runs during env
+    imports, then ``fileConfig(..., disable_existing_loggers=False)`` runs in
+    ``env.py``. Redirect the alembic console handler stream so assertions see
+    rendered bytes, not ``caplog`` records. Restore ``LOGGING_CONFIG`` on exit so
+    handlers/levels do not leak into later tests.
+    """
+    try:
+        dictConfig(LOGGING_CONFIG)
+        fileConfig(str(ALEMBIC_INI), disable_existing_loggers=False)
+        root = logging.getLogger()
+        for handler in root.handlers:
+            if isinstance(handler, logging.StreamHandler) and not isinstance(
+                handler, RichHandler
+            ):
+                handler.setStream(stream)
+        app_logger = logging.getLogger("app")
+        for handler in app_logger.handlers:
+            if isinstance(handler, logging.StreamHandler):
+                handler.setStream(stream)
+        yield logging.getLogger(_ORPHAN_HEADS_LOGGER)
+    finally:
+        dictConfig(LOGGING_CONFIG)
+
+
+def test_app_logger_after_alembic_fileconfig_uses_console_not_rich():
+    """Assert alembic fileConfig replaces RichHandler with the console StreamHandler."""
+    stream = io.StringIO()
+    with _app_then_alembic_logging(stream):
+        app_logger = logging.getLogger("app")
+        assert not app_logger.propagate
+        assert app_logger.handlers, "app logger must keep an explicit handler"
+        assert not any(isinstance(h, RichHandler) for h in app_logger.handlers)
+        assert any(isinstance(h, logging.StreamHandler) for h in app_logger.handlers)
+
+
+def test_orphan_skip_warning_renders_as_single_greppable_line():
+    """Skip notice stays one line with every revision id and path greppable."""
+    stream = io.StringIO()
+    with _app_then_alembic_logging(stream) as logger:
+        logger.warning(_SKIP_NOTICE)
+    output = stream.getvalue()
+    matching = [line for line in output.splitlines() if "a1b2c3d4e5f6" in line]
+    assert len(matching) == 1, output
+    line = matching[0]
+    assert "\n" not in line
+    for token in (
+        "a1b2c3d4e5f6",
+        "9f8e7d6c5b4a",
+        "app/sep/apps/alerts/migrations/versions",
+        "app/sep/apps/dipper/migrations/versions",
+        "app.sep.migrations._orphan_heads",
+    ):
+        assert token in line, (token, line)
+    # generic formatter: levelname truncated to 5 chars
+    assert "WARNI" in line
+
+
+def test_version_skew_error_renders_as_single_greppable_line():
+    """Render the version-skew ERROR as one greppable console line."""
+    stream = io.StringIO()
+    with _app_then_alembic_logging(stream) as logger:
+        logger.error(_SKEW_NOTICE)
+    output = stream.getvalue()
+    matching = [line for line in output.splitlines() if UNKNOWN_REVISION in line]
+    assert len(matching) == 1, output
+    line = matching[0]
+    assert UNKNOWN_REVISION in line
+    assert "present on disk" in line
+    assert "app.sep.migrations._orphan_heads" in line
+    assert "ERROR" in line
 
 
 def _insert_override(conn, setting_class: str) -> None:
@@ -175,24 +270,24 @@ def test_upgrade_preserves_the_unresolvable_row(
 
 
 def test_upgrade_logs_every_skipped_revision_id(
-    sep_alembic_config, sep_alembic_config_stripped_alerts, caplog
+    sep_alembic_config, sep_alembic_config_stripped_alerts, capsys
 ):
     """Name each skipped revision, and the absent location, in one warning."""
     full_cfg, _ = sep_alembic_config
     stripped_cfg, _, absent_path = sep_alembic_config_stripped_alerts
     command.upgrade(full_cfg, "heads")
+    capsys.readouterr()
 
-    with caplog.at_level(logging.WARNING, logger=_ORPHAN_HEADS_LOGGER):
-        command.upgrade(stripped_cfg, "heads")
-
-    records = [
-        record
-        for record in caplog.records
-        if record.name == _ORPHAN_HEADS_LOGGER and record.levelno == logging.WARNING
+    command.upgrade(stripped_cfg, "heads")
+    err = capsys.readouterr().err
+    matching = [
+        line
+        for line in err.splitlines()
+        if _ORPHAN_HEADS_LOGGER in line and "Skipping" in line
     ]
-    assert len(records) == 1
-    assert ALERTS_HEAD in records[0].getMessage()
-    assert absent_path in records[0].getMessage()
+    assert len(matching) == 1, err
+    assert ALERTS_HEAD in matching[0]
+    assert absent_path in matching[0]
 
 
 def test_upgrade_applies_another_branch_while_preserving_the_orphan_row(
@@ -255,17 +350,17 @@ def test_returning_app_resumes_from_the_preserved_row(
     assert ALERTS_HEAD in _get_stamped_revisions(sync_url)
 
 
-def test_fresh_db_with_every_branch_present_logs_nothing(sep_alembic_config, caplog):
+def test_fresh_db_with_every_branch_present_logs_nothing(sep_alembic_config, capsys):
     """Leave a full-image upgrade on its existing code path, silently."""
     cfg, sync_url = sep_alembic_config
 
-    with caplog.at_level(logging.WARNING, logger=_ORPHAN_HEADS_LOGGER):
-        command.upgrade(cfg, "heads")
+    command.upgrade(cfg, "heads")
+    err = capsys.readouterr().err
 
     table_names = _get_table_names(sync_url)
     assert "alert_backup" in table_names
     assert "snippet" in table_names
-    assert [r for r in caplog.records if r.name == _ORPHAN_HEADS_LOGGER] == []
+    assert not any(_ORPHAN_HEADS_LOGGER in line for line in err.splitlines())
 
 
 def test_fresh_db_with_a_stripped_config_materializes_present_branches_only(
@@ -293,48 +388,47 @@ def test_unknown_revision_is_not_skipped_when_every_location_is_present(
         command.upgrade(cfg, "heads")
 
 
-def test_refusal_to_skip_is_explained_before_alembic_raises(sep_alembic_config, caplog):
+def test_refusal_to_skip_is_explained_before_alembic_raises(sep_alembic_config, capsys):
     """Log an error naming the unresolved id and why it was left in place."""
     cfg, sync_url = sep_alembic_config
     command.upgrade(cfg, "heads")
     _stamp_extra_revision(sync_url, UNKNOWN_REVISION)
+    capsys.readouterr()
 
-    with (
-        caplog.at_level(logging.ERROR, logger=_ORPHAN_HEADS_LOGGER),
-        pytest.raises(CommandError),
-    ):
+    with pytest.raises(CommandError):
         command.upgrade(cfg, "heads")
 
-    records = [
-        record
-        for record in caplog.records
-        if record.name == _ORPHAN_HEADS_LOGGER and record.levelno == logging.ERROR
+    err = capsys.readouterr().err
+    matching = [
+        line
+        for line in err.splitlines()
+        if _ORPHAN_HEADS_LOGGER in line and UNKNOWN_REVISION in line
     ]
-    assert len(records) == 1
-    assert UNKNOWN_REVISION in records[0].getMessage()
-    assert "present on disk" in records[0].getMessage()
+    assert len(matching) == 1, err
+    assert "present on disk" in matching[0]
+    assert "ERROR" in matching[0]
 
 
 def test_a_stripped_app_and_version_skew_are_skipped_together(
-    sep_alembic_config, sep_alembic_config_stripped_alerts, caplog
+    sep_alembic_config, sep_alembic_config_stripped_alerts, capsys
 ):
     """Skip both orphan kinds once a configured location is missing, naming each."""
     full_cfg, sync_url = sep_alembic_config
     stripped_cfg, _, _ = sep_alembic_config_stripped_alerts
     command.upgrade(full_cfg, "heads")
     _stamp_extra_revision(sync_url, UNKNOWN_REVISION)
+    capsys.readouterr()
 
-    with caplog.at_level(logging.WARNING, logger=_ORPHAN_HEADS_LOGGER):
-        command.upgrade(stripped_cfg, "heads")
-
-    records = [
-        record
-        for record in caplog.records
-        if record.name == _ORPHAN_HEADS_LOGGER and record.levelno == logging.WARNING
+    command.upgrade(stripped_cfg, "heads")
+    err = capsys.readouterr().err
+    matching = [
+        line
+        for line in err.splitlines()
+        if _ORPHAN_HEADS_LOGGER in line and "Skipping" in line
     ]
-    assert len(records) == 1
-    assert ALERTS_HEAD in records[0].getMessage()
-    assert UNKNOWN_REVISION in records[0].getMessage()
+    assert len(matching) == 1, err
+    assert ALERTS_HEAD in matching[0]
+    assert UNKNOWN_REVISION in matching[0]
     stamped = _get_stamped_revisions(sync_url)
     assert {ALERTS_HEAD, UNKNOWN_REVISION} <= stamped
 
