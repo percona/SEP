@@ -15,17 +15,25 @@
 
 """Define tests for the app.sep.crud module."""
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
 from app.core.exceptions import HTTPConflictException
-from app.sep.crud import AppStateManager, SyncInstanceManager, SyncItemManager
+from app.core.utils.date_time import utc_now
+from app.sep.crud import (
+    AppStateManager,
+    SyncEntityAbsenceManager,
+    SyncInstanceManager,
+    SyncItemManager,
+)
 from app.sep.models import (
     AppLifecycleEnum,
     AppState,
     SyncInstance,
+    SyncInstanceWrite,
     SyncInventoryEntityTypeEnum,
     SyncItem,
     SyncItemWrite,
@@ -35,6 +43,8 @@ from app.sep.sync.exceptions import (
     SyncInstanceAlreadyInProgressError,
     SyncItemAlreadyInProgressError,
 )
+
+_NO_AGE = timedelta()
 
 
 def _build_sync_item(
@@ -482,3 +492,274 @@ class TestAppStateManager:
         """Every illegal edge raises ``HTTPConflictException`` (HTTP 409)."""
         with pytest.raises(HTTPConflictException):
             AppStateManager.assert_transition_allowed(current, target)
+
+
+# ---------------------------------------------------------------------------
+# SyncInstanceManager stale-run reclaim
+# ---------------------------------------------------------------------------
+
+
+async def _seed_run(
+    session,
+    *,
+    syncer: str = "test-syncer",
+    item_status: SyncStatusEnum = SyncStatusEnum.RUNNING,
+    age: timedelta = _NO_AGE,
+    instance_status: SyncStatusEnum = SyncStatusEnum.RUNNING,
+) -> SyncInstance:
+    """Persist a SyncInstance carrying one item aged ``age`` into the past."""
+    instance = await SyncInstanceManager.save(
+        session,
+        SyncInstance(syncer=syncer, status=instance_status),
+    )
+    await SyncItemManager.save(
+        session,
+        SyncItem(
+            entity_id=1,
+            entity_type=SyncInventoryEntityTypeEnum.NODE,
+            status=item_status,
+            sync_instance_id=instance.id,
+            created_at=utc_now() - age,
+            updated_at=utc_now() - age,
+        ),
+    )
+    return instance
+
+
+class TestSyncInstanceManagerStaleReclaim:
+    """Test the age-based stale-run reclaim on ``SyncInstanceManager.create``."""
+
+    @pytest.mark.asyncio
+    async def test_create_refuses_live_concurrent_run(self, session) -> None:
+        """A run whose items are newer than ``stale_after`` still refuses."""
+        await _seed_run(session, age=timedelta(minutes=1))
+
+        with pytest.raises(SyncInstanceAlreadyInProgressError):
+            await SyncInstanceManager.create(
+                session,
+                SyncInstanceWrite(syncer="test-syncer"),
+                stale_after=timedelta(hours=1),
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_does_not_reclaim_paused_live_run(self, session) -> None:
+        """A run blocked mid-fetch, its items untouched but recent, still refuses."""
+        await _seed_run(
+            session, item_status=SyncStatusEnum.PENDING, age=timedelta(minutes=30)
+        )
+
+        with pytest.raises(SyncInstanceAlreadyInProgressError):
+            await SyncInstanceManager.create(
+                session,
+                SyncInstanceWrite(syncer="test-syncer"),
+                stale_after=timedelta(hours=1),
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_reclaims_stale_run_and_proceeds(self, session) -> None:
+        """A run whose newest item activity predates ``stale_after`` is reclaimed."""
+        stale = await _seed_run(session, age=timedelta(hours=3))
+
+        created = await SyncInstanceManager.create(
+            session,
+            SyncInstanceWrite(syncer="test-syncer"),
+            stale_after=timedelta(hours=1),
+        )
+
+        assert created.id != stale.id
+        items = await SyncItemManager.list(session, sync_instance_id=stale.id)
+        assert [item.status for item in items] == [SyncStatusEnum.FAILED]
+        reclaimed = await SyncInstanceManager.first(session, id=stale.id)
+        assert reclaimed.status == SyncStatusEnum.FAILED
+
+    @pytest.mark.asyncio
+    async def test_reclaim_leaves_snapshot_complete_null(self, session) -> None:
+        """A reclaimed partial apply never counts as a complete generation."""
+        stale = await _seed_run(session, age=timedelta(hours=3))
+
+        await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        reclaimed = await SyncInstanceManager.first(session, id=stale.id)
+        assert reclaimed.snapshot_complete is None
+
+    @pytest.mark.asyncio
+    async def test_create_without_stale_after_never_reclaims(self, session) -> None:
+        """Omitting ``stale_after`` preserves the pre-existing refusal behaviour."""
+        await _seed_run(session, age=timedelta(days=7))
+
+        with pytest.raises(SyncInstanceAlreadyInProgressError):
+            await SyncInstanceManager.create(
+                session, SyncInstanceWrite(syncer="test-syncer")
+            )
+
+    @pytest.mark.asyncio
+    async def test_reclaim_is_idempotent_under_repeat(self, session) -> None:
+        """A second reclaimer's conditional update matches no rows."""
+        stale = await _seed_run(session, age=timedelta(hours=3))
+
+        first_pass = await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+        second_pass = await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        assert first_pass == [stale.id]
+        assert second_pass == []
+
+    @pytest.mark.asyncio
+    async def test_reclaim_ignores_other_syncers(self, session) -> None:
+        """A stale run belonging to another syncer is left untouched."""
+        other = await _seed_run(session, syncer="other-syncer", age=timedelta(hours=3))
+
+        reclaimed = await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        assert reclaimed == []
+        untouched = await SyncInstanceManager.first(session, id=other.id)
+        assert untouched.status == SyncStatusEnum.RUNNING
+
+
+# ---------------------------------------------------------------------------
+# SyncInstanceManager.finalize_run / is_still_owned
+# ---------------------------------------------------------------------------
+
+
+class TestSyncInstanceManagerFinalizeRun:
+    """Test the run-level status rollup written at ``__aexit__``."""
+
+    @pytest.mark.asyncio
+    async def test_finalize_run_success(self, session) -> None:
+        """An all-success run rolls up to ``SUCCESS`` and records completeness."""
+        instance = await _seed_run(session, item_status=SyncStatusEnum.SUCCESS)
+
+        await SyncInstanceManager.finalize_run(
+            session, instance.id, failed=False, snapshot_complete=True
+        )
+
+        finalized = await SyncInstanceManager.first(session, id=instance.id)
+        assert finalized.status == SyncStatusEnum.SUCCESS
+        assert finalized.snapshot_complete is True
+
+    @pytest.mark.asyncio
+    async def test_finalize_run_failed_item(self, session) -> None:
+        """Any failed item drags the run-level rollup to ``FAILED``."""
+        instance = await _seed_run(session, item_status=SyncStatusEnum.FAILED)
+
+        await SyncInstanceManager.finalize_run(
+            session, instance.id, failed=False, snapshot_complete=True
+        )
+
+        finalized = await SyncInstanceManager.first(session, id=instance.id)
+        assert finalized.status == SyncStatusEnum.FAILED
+
+    @pytest.mark.asyncio
+    async def test_finalize_run_propagates_raised_exception(self, session) -> None:
+        """``failed=True`` (an exception left ``__aexit__``) rolls up to ``FAILED``."""
+        instance = await _seed_run(session, item_status=SyncStatusEnum.SUCCESS)
+
+        await SyncInstanceManager.finalize_run(
+            session, instance.id, failed=True, snapshot_complete=False
+        )
+
+        finalized = await SyncInstanceManager.first(session, id=instance.id)
+        assert finalized.status == SyncStatusEnum.FAILED
+
+    @pytest.mark.asyncio
+    async def test_finalize_run_leaves_reclaimed_instance_alone(self, session) -> None:
+        """A falsely-reclaimed worker cannot overwrite the ``FAILED`` verdict."""
+        instance = await _seed_run(
+            session,
+            item_status=SyncStatusEnum.SUCCESS,
+            instance_status=SyncStatusEnum.FAILED,
+        )
+
+        await SyncInstanceManager.finalize_run(
+            session, instance.id, failed=False, snapshot_complete=True
+        )
+
+        finalized = await SyncInstanceManager.first(session, id=instance.id)
+        assert finalized.status == SyncStatusEnum.FAILED
+        assert finalized.snapshot_complete is None
+
+    @pytest.mark.asyncio
+    async def test_is_still_owned_tracks_the_persisted_status(self, session) -> None:
+        """The fence reads the row, not the caller's in-memory copy."""
+        instance = await _seed_run(session, age=timedelta(hours=3))
+
+        assert await SyncInstanceManager.is_still_owned(session, instance.id) is True
+
+        await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        assert await SyncInstanceManager.is_still_owned(session, instance.id) is False
+
+
+# ---------------------------------------------------------------------------
+# SyncEntityAbsenceManager
+# ---------------------------------------------------------------------------
+
+
+class TestSyncEntityAbsenceManager:
+    """Test the missing-grace ledger."""
+
+    @pytest.mark.asyncio
+    async def test_record_missing_increments_and_clear_deletes(self, session) -> None:
+        """Consecutive absences accumulate; a reappearance drops the row."""
+        first = await SyncEntityAbsenceManager.record_missing(
+            session, "pmm", SyncInventoryEntityTypeEnum.NODE, 7
+        )
+        second = await SyncEntityAbsenceManager.record_missing(
+            session, "pmm", SyncInventoryEntityTypeEnum.NODE, 7
+        )
+
+        assert (first, second) == (1, 2)
+
+        await SyncEntityAbsenceManager.clear(
+            session, "pmm", SyncInventoryEntityTypeEnum.NODE, 7
+        )
+
+        assert await SyncEntityAbsenceManager.list(session) == []
+
+    @pytest.mark.asyncio
+    async def test_clear_without_ids_is_a_noop(self, session) -> None:
+        """Clearing an empty id tuple must not delete the whole ledger."""
+        await SyncEntityAbsenceManager.record_missing(
+            session, "pmm", SyncInventoryEntityTypeEnum.NODE, 7
+        )
+
+        await SyncEntityAbsenceManager.clear(
+            session, "pmm", SyncInventoryEntityTypeEnum.NODE
+        )
+
+        assert len(await SyncEntityAbsenceManager.list(session)) == 1
+
+    @pytest.mark.asyncio
+    async def test_clear_does_not_cross_entity_type_or_syncer(self, session) -> None:
+        """``entity_id`` collides across types and syncers, so the key is all three."""
+        await SyncEntityAbsenceManager.record_missing(
+            session, "pmm", SyncInventoryEntityTypeEnum.NODE, 7
+        )
+        await SyncEntityAbsenceManager.record_missing(
+            session, "pmm", SyncInventoryEntityTypeEnum.SERVICE, 7
+        )
+        await SyncEntityAbsenceManager.record_missing(
+            session, "mysql", SyncInventoryEntityTypeEnum.NODE, 7
+        )
+
+        await SyncEntityAbsenceManager.clear(
+            session, "pmm", SyncInventoryEntityTypeEnum.NODE, 7
+        )
+
+        survivors = {
+            (row.syncer, row.entity_type)
+            for row in await SyncEntityAbsenceManager.list(session)
+        }
+        assert survivors == {
+            ("pmm", SyncInventoryEntityTypeEnum.SERVICE),
+            ("mysql", SyncInventoryEntityTypeEnum.NODE),
+        }

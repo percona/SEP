@@ -31,6 +31,7 @@ from app.core.exceptions import (
 from app.core.security import require_internal_token
 from app.core.utils import import_var
 from app.inventory.config import inventory_settings
+from app.sep.apps.inventory.models import SyncRunSummary
 from app.sep.config import sep_settings, SyncOptions
 from app.sep.deps import InventoryClient, TasksClient
 from app.sep.sync.models import BaseSyncer
@@ -67,9 +68,12 @@ class InventorySyncStatusResponse(BaseModel):
     :param is_running: ``True`` when an inventory-wide sync is currently
         in progress; ``False`` otherwise.
     :type is_running: bool
+    :param last_runs: The most recently recorded synchronization runs, newest first.
+    :type last_runs: list[SyncRunSummary]
     """
 
     is_running: bool
+    last_runs: list[SyncRunSummary] = []
 
 
 class AvailableSyncer(BaseModel):

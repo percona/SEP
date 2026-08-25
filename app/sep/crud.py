@@ -15,19 +15,26 @@
 
 """Define database operations for SEP."""
 
+import logging
 from collections.abc import Collection
+from datetime import timedelta
 from typing import Any
 
+from pydantic import UUID4
+from sqlalchemy import func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
 from app.core.exceptions import HTTPConflictException
+from app.core.utils.date_time import utc_now
 from app.sep.models import (
     AppLifecycleEnum,
     AppRunningTask,
     AppState,
     SEPPluginPeriodicTask,
+    SyncEntityAbsence,
+    SyncEntityAbsenceWrite,
     SyncInstance,
     SyncInstanceWrite,
     SyncInventoryEntityTypeEnum,
@@ -39,6 +46,8 @@ from app.sep.sync.exceptions import (
     SyncInstanceAlreadyInProgressError,
     SyncItemAlreadyInProgressError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class SyncItemManager(BaseSQLModelManager):
@@ -208,6 +217,8 @@ class SyncInstanceManager(BaseSQLModelManager):
         cls,
         session: AsyncSession,
         instance_create: SyncInstanceWrite,
+        *,
+        stale_after: timedelta | None = None,
         **extra_fields: Any,
     ) -> SyncInstance:
         """Create and save a new SyncInstance in the database.
@@ -217,29 +228,205 @@ class SyncInstanceManager(BaseSQLModelManager):
         it raises a `SyncInstanceAlreadyInProgressError`. Otherwise, it creates and
         saves the new `SyncInstance`.
 
+        When `stale_after` is supplied, an in-progress conflict is first re-examined
+        for abandoned runs: items left behind by a killed worker would otherwise
+        block the syncer permanently, since the hanging-item sweep only runs on a
+        graceful exit.
+
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
         :type session: AsyncSession
         :param instance_create: The data used to create the new SyncInstance.
         :type instance_create: SyncInstanceWrite
+        :param stale_after: The age beyond which an idle in-progress run is presumed
+            abandoned and reclaimed. Defaults to `None`, which never reclaims.
+        :type stale_after: timedelta | None
         :param extra_fields: Additional fields to be set on the SyncInstance.
         :type extra_fields: Any
         :return: The newly created and saved SyncInstance.
         :rtype: SyncInstance
         :raises SyncInstanceAlreadyInProgressError: If a SyncInstance with the same
-            `syncer` is already in progress.
+            `syncer` is already in progress and could not be reclaimed as stale.
+        """
+        syncs_in_progress = await cls._items_in_progress(
+            session, instance_create.syncer
+        )
+        if syncs_in_progress and stale_after is not None:
+            await cls.reclaim_stale_runs(session, instance_create.syncer, stale_after)
+            syncs_in_progress = await cls._items_in_progress(
+                session,
+                instance_create.syncer,
+            )
+        if syncs_in_progress:
+            raise SyncInstanceAlreadyInProgressError(syncs_in_progress)
+        return await super().create(session, instance_create, **extra_fields)
+
+    @classmethod
+    async def _items_in_progress(
+        cls,
+        session: AsyncSession,
+        syncer: str,
+    ) -> list[SyncItem]:
+        """Return the non-terminal SyncItems belonging to a syncer's runs.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param syncer: The name of the synchronizer to inspect.
+        :type syncer: str
+        :return: The `PENDING` or `RUNNING` items across that syncer's instances.
+        :rtype: list[SyncItem]
         """
         query = select(SyncItem).join(SyncInstance)
         query = cls._filter_query(
             query,
-            col(SyncInstance.syncer) == instance_create.syncer,
+            col(SyncInstance.syncer) == syncer,
             col(SyncItem.status).in_([SyncStatusEnum.PENDING, SyncStatusEnum.RUNNING]),
         )
         result = await cls._exec(session, query)
-        syncs_in_progress = list(result.all())
-        if syncs_in_progress:
-            raise SyncInstanceAlreadyInProgressError(syncs_in_progress)
-        return await super().create(session, instance_create, **extra_fields)
+        return list(result.all())
+
+    @classmethod
+    async def reclaim_stale_runs(
+        cls,
+        session: AsyncSession,
+        syncer: str,
+        stale_after: timedelta,
+    ) -> list[UUID4]:
+        """Fail the runs of a syncer whose items stopped progressing long ago.
+
+        A run is stale when the newest activity across **all** of its items predates
+        `stale_after`, so a run still making progress is never reclaimed. The item
+        flip is a single conditional statement, so a second reclaimer arriving
+        concurrently matches no rows rather than reclaiming twice.
+
+        `snapshot_complete` is deliberately left untouched: a partially applied run
+        must never be counted as a complete generation.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param syncer: The name of the synchronizer whose runs should be inspected.
+        :type syncer: str
+        :param stale_after: The age beyond which an idle run is presumed abandoned.
+            Must exceed the longest expected runtime of a sync.
+        :type stale_after: timedelta
+        :return: The IDs of the reclaimed `SyncInstance` records.
+        :rtype: list[UUID4]
+        """
+        in_progress = (
+            select(col(SyncItem.sync_instance_id))
+            .join(SyncInstance)
+            .where(
+                col(SyncInstance.syncer) == syncer,
+                col(SyncItem.status).in_(
+                    [SyncStatusEnum.PENDING, SyncStatusEnum.RUNNING],
+                ),
+            )
+        )
+        last_activity = func.max(
+            func.coalesce(col(SyncItem.updated_at), col(SyncItem.created_at)),
+        )
+        query = (
+            select(col(SyncItem.sync_instance_id))
+            .where(col(SyncItem.sync_instance_id).in_(in_progress))
+            .group_by(col(SyncItem.sync_instance_id))
+            .having(last_activity < utc_now() - stale_after)
+        )
+        result = await cls._exec(session, query)
+        stale_instance_ids = list(result.all())
+        if not stale_instance_ids:
+            return []
+        logger.warning(
+            "Reclaiming %d stale %s run(s): %s",
+            len(stale_instance_ids),
+            syncer,
+            stale_instance_ids,
+        )
+        await SyncItemManager.update_where(
+            session,
+            {"status": SyncStatusEnum.FAILED},
+            col(SyncItem.status).in_([SyncStatusEnum.PENDING, SyncStatusEnum.RUNNING]),
+            col(SyncItem.sync_instance_id).in_(stale_instance_ids),
+        )
+        await cls.update_where(
+            session,
+            {"status": SyncStatusEnum.FAILED},
+            col(SyncInstance.id).in_(stale_instance_ids),
+        )
+        return stale_instance_ids
+
+    @classmethod
+    async def is_still_owned(
+        cls,
+        session: AsyncSession,
+        instance_id: UUID4,
+    ) -> bool:
+        """Check whether a run still owns its SyncInstance.
+
+        This is the fencing read a run performs before any destructive action, so it
+        queries the `status` column directly rather than reading it off an ORM
+        instance loaded earlier in the run, whose in-memory value would not reflect
+        a reclaim committed by another worker.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param instance_id: The ID of the `SyncInstance` to check.
+        :type instance_id: UUID4
+        :return: `True` while the instance is still `RUNNING`, otherwise `False`.
+        :rtype: bool
+        """
+        query = select(col(SyncInstance.status)).where(
+            col(SyncInstance.id) == instance_id,
+        )
+        result = await cls._exec(session, query)
+        return result.first() == SyncStatusEnum.RUNNING
+
+    @classmethod
+    async def finalize_run(
+        cls,
+        session: AsyncSession,
+        instance_id: UUID4,
+        *,
+        failed: bool,
+        snapshot_complete: bool | None,
+    ) -> None:
+        """Write the run-level verdict for a finishing SyncInstance.
+
+        The transition is guarded on the instance still being `RUNNING`, so a run
+        that was reclaimed while it worked cannot overwrite the `FAILED` verdict
+        (nor the `NULL` `snapshot_complete`) the reclaim recorded.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param instance_id: The ID of the `SyncInstance` being finalized.
+        :type instance_id: UUID4
+        :param failed: Whether an exception left the synchronization.
+        :type failed: bool
+        :param snapshot_complete: Whether the run observed a complete generation, or
+            `None` when the syncer does not produce one.
+        :type snapshot_complete: bool | None
+        """
+        if not failed:
+            failed = (
+                await SyncItemManager.first(
+                    session,
+                    sync_instance_id=instance_id,
+                    status=SyncStatusEnum.FAILED,
+                )
+                is not None
+            )
+        await cls.update_where(
+            session,
+            {
+                "status": SyncStatusEnum.FAILED if failed else SyncStatusEnum.SUCCESS,
+                "snapshot_complete": snapshot_complete,
+            },
+            col(SyncInstance.id) == instance_id,
+            col(SyncInstance.status) == SyncStatusEnum.RUNNING,
+        )
 
     @classmethod
     async def finish_hanging_items(
@@ -271,6 +458,86 @@ class SyncInstanceManager(BaseSQLModelManager):
             item.status = SyncStatusEnum.FAILED
         await SyncItemManager.save_batch(session, *hanging_items)
         return hanging_items
+
+
+class SyncEntityAbsenceManager(BaseSQLModelManager):
+    """Manage the missing-grace ledger backing deferred entity retirement.
+
+    :ivar Model: The SQLModel class this manager is responsible for
+        (`SyncEntityAbsence`).
+    :vartype Model: type[SyncEntityAbsence]
+    """
+
+    Model = SyncEntityAbsence
+
+    @classmethod
+    async def record_missing(
+        cls,
+        session: AsyncSession,
+        syncer: str,
+        entity_type: SyncInventoryEntityTypeEnum,
+        entity_id: int,
+    ) -> int:
+        """Count one more complete generation that did not include an entity.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param syncer: The name of the synchronizer that observed the absence.
+        :type syncer: str
+        :param entity_type: The type of the absent inventory entity.
+        :type entity_type: SyncInventoryEntityTypeEnum
+        :param entity_id: The local identifier of the absent inventory entity.
+        :type entity_id: int
+        :return: The number of consecutive complete generations reporting the entity
+            absent, including this one.
+        :rtype: int
+        :raises HTTPBadRequestException: If the ledger insert hits a database error.
+        """
+        absence, _ = await cls.get_or_create(
+            session,
+            SyncEntityAbsenceWrite(
+                syncer=syncer,
+                entity_type=entity_type,
+                entity_id=entity_id,
+            ),
+        )
+        absence.missing_generations += 1
+        await cls.save(session, absence)
+        return absence.missing_generations
+
+    @classmethod
+    async def clear(
+        cls,
+        session: AsyncSession,
+        syncer: str,
+        entity_type: SyncInventoryEntityTypeEnum,
+        *entity_ids: int,
+    ) -> None:
+        """Drop the ledger rows for entities that are present again.
+
+        `entity_id` is only unique within an entity type and a syncer -- a node and a
+        service are numbered from separate sequences and collide freely -- so the
+        delete carries the full unique key rather than the IDs alone.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :type session: AsyncSession
+        :param syncer: The name of the synchronizer that observed the entities.
+        :type syncer: str
+        :param entity_type: The type of the inventory entities.
+        :type entity_type: SyncInventoryEntityTypeEnum
+        :param entity_ids: The local identifiers whose ledger rows should be dropped.
+        :type entity_ids: int
+        """
+        if not entity_ids:
+            return
+        await cls.delete_where(
+            session,
+            col(SyncEntityAbsence.entity_id).in_(entity_ids),
+            syncer=syncer,
+            entity_type=entity_type,
+        )
 
 
 _ALLOWED_TRANSITIONS: dict[AppLifecycleEnum, frozenset[AppLifecycleEnum]] = {

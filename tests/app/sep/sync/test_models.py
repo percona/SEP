@@ -16,6 +16,7 @@
 """Define tests for the app.sep.sync.model module."""
 
 import uuid
+from datetime import timedelta
 from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,6 +24,7 @@ import aiohttp
 import pytest
 from fastapi import HTTPException, status
 from pydantic import PrivateAttr
+from pydantic import ValidationError as PydanticValidationError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -267,6 +269,10 @@ async def test_aenter_initializes_session(mock_remote_api, mocker):
     mocker.patch(
         "app.sep.sync.models.SyncInstanceManager.finish_hanging_items",
         mock_finish_hanging_items,
+    )
+    mocker.patch(
+        "app.sep.sync.models.SyncInstanceManager.finalize_run",
+        new_callable=AsyncMock,
     )
 
     mock_create_sync_instance = AsyncMock()
@@ -907,3 +913,162 @@ async def test_wait_for_task_output_persistent_error_times_out(
 
     with pytest.raises(TimeoutError):
         await task_syncer.wait_for_task_output(task_name="syncing", stdout_step="step")
+
+
+# ---------------------------------------------------------------------------
+# Run-level state and stale-run reclaim plumbing
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def lifecycle_syncer_cls() -> type[BaseSyncer]:
+    """Return a minimal concrete syncer usable as an async context manager."""
+
+    class LifecycleSyncer(BaseSyncer):
+        SYNC_TO_LIMIT: ClassVar = SyncInventoryEntityTypeEnum.SERVICE
+
+    return LifecycleSyncer
+
+
+@pytest.fixture
+def lifecycle_mocks(mocker) -> dict[str, AsyncMock]:
+    """Patch the SyncInstance lifecycle collaborators around a mocked session."""
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.__aexit__.return_value = None
+    mocker.patch(
+        "app.sep.sync.models.get_async_session_maker",
+        return_value=MagicMock(return_value=mock_session),
+    )
+    return {
+        "session": mock_session,
+        "create": mocker.patch.object(
+            SyncInstanceManager, "create", new_callable=AsyncMock
+        ),
+        "finish_hanging_items": mocker.patch.object(
+            SyncInstanceManager, "finish_hanging_items", new_callable=AsyncMock
+        ),
+        "finalize_run": mocker.patch.object(
+            SyncInstanceManager, "finalize_run", new_callable=AsyncMock
+        ),
+    }
+
+
+@pytest.mark.asyncio
+async def test_aenter_passes_stale_run_after(
+    mock_remote_api, lifecycle_syncer_cls, lifecycle_mocks
+):
+    """``__aenter__`` opts the run into age-based stale reclaim."""
+    syncer = lifecycle_syncer_cls(inventory_api=mock_remote_api)
+
+    async with syncer:
+        pass
+
+    assert (
+        lifecycle_mocks["create"].await_args.kwargs["stale_after"]
+        == syncer.stale_run_after
+    )
+
+
+@pytest.mark.asyncio
+async def test_aenter_marks_the_run_running(
+    mock_remote_api, lifecycle_syncer_cls, lifecycle_mocks
+):
+    """A live run is visible as ``RUNNING`` so the fencing read can trip."""
+    syncer = lifecycle_syncer_cls(inventory_api=mock_remote_api)
+
+    async with syncer:
+        pass
+
+    assert lifecycle_mocks["create"].await_args.kwargs["status"] == (
+        SyncStatusEnum.RUNNING
+    )
+
+
+@pytest.mark.asyncio
+async def test_aexit_finalizes_run_after_sweeping_hanging_items(
+    mock_remote_api, lifecycle_syncer_cls, lifecycle_mocks, mocker
+):
+    """The rollup must read item statuses the hanging-item sweep already wrote."""
+    order = mocker.Mock()
+    lifecycle_mocks["finish_hanging_items"].side_effect = lambda *_args, **_kwargs: (
+        order("sweep")
+    )
+    lifecycle_mocks["finalize_run"].side_effect = lambda *_args, **_kwargs: (
+        order("finalize")
+    )
+    syncer = lifecycle_syncer_cls(inventory_api=mock_remote_api)
+
+    async with syncer:
+        pass
+
+    assert [call.args[0] for call in order.call_args_list] == ["sweep", "finalize"]
+    assert lifecycle_mocks["finalize_run"].await_args.kwargs == {
+        "failed": False,
+        "snapshot_complete": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_aexit_reports_failure_when_an_exception_propagates(
+    mock_remote_api, lifecycle_syncer_cls, lifecycle_mocks
+):
+    """An exception leaving the run rolls the run-level status up to failed."""
+    syncer = lifecycle_syncer_cls(inventory_api=mock_remote_api)
+
+    with pytest.raises(RuntimeError):
+        async with syncer:
+            raise RuntimeError("apply blew up")
+
+    assert lifecycle_mocks["finalize_run"].await_args.kwargs["failed"] is True
+
+
+@pytest.mark.asyncio
+async def test_aexit_persists_the_generation_completeness_verdict(
+    mock_remote_api, lifecycle_syncer_cls, lifecycle_mocks
+):
+    """Whatever the fetch concluded about completeness reaches the run row."""
+    syncer = lifecycle_syncer_cls(inventory_api=mock_remote_api)
+
+    async with syncer:
+        syncer._snapshot_complete = False
+
+    assert lifecycle_mocks["finalize_run"].await_args.kwargs["snapshot_complete"] is (
+        False
+    )
+
+
+@pytest.mark.parametrize("stale_run_after", [timedelta(0), timedelta(seconds=-1)])
+def test_syncer_rejects_non_positive_stale_run_after(
+    mock_remote_api, lifecycle_syncer_cls, stale_run_after
+):
+    """A non-positive threshold makes every in-progress run instantly reclaimable."""
+    with pytest.raises(PydanticValidationError):
+        lifecycle_syncer_cls(
+            inventory_api=mock_remote_api, stale_run_after=stale_run_after
+        )
+
+
+@pytest.mark.asyncio
+async def test_hold_entity_closes_the_sync_item(
+    session: AsyncSession, created_node, mock_remote_api
+):
+    """A held entity's SyncItem reaches SUCCESS instead of hanging at PENDING."""
+    sync_instance = await _create_sync_instance(session, StubTestSyncer)
+    syncer = _build_syncer(
+        StubTestSyncer,
+        session,
+        inventory_api=mock_remote_api,
+        sync_instance=sync_instance,
+    )
+    created_node.services = []
+
+    await syncer.hold_entity(SyncInventoryEntityTypeEnum.NODE, created_node)
+
+    held = await SyncItemManager.first(
+        session,
+        entity_id=created_node.id,
+        entity_type=SyncInventoryEntityTypeEnum.NODE,
+        sync_instance_id=sync_instance.id,
+    )
+    assert held.status == SyncStatusEnum.SUCCESS

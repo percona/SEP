@@ -38,15 +38,20 @@ from app.sep.apps.inventory.deps import (
     get_syncers,
     INVENTORY_PLUGIN_ENTITY_NAMES,
 )
-from app.sep.crud import SyncItemManager
+from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
     get_created_service,
     get_current_user,
+    get_session,
     get_tasks_api,
 )
 from app.sep.main import sep_app
-from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.models import (
+    SyncInstance,
+    SyncInventoryEntityTypeEnum,
+    SyncStatusEnum,
+)
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
 from tests.app.sep.apps.inventory.conftest import no_syncers, PMM_STUB_NAME
 
@@ -776,10 +781,43 @@ class TestInventorySyncStatus:
         )
         response = test_client.get("/api/apps/inventory/sync/status/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"is_running": False}
+        assert response.json()["is_running"] is False
         # Regression guard: this endpoint reports INVENTORY status, not
         # NODE/SERVICE/SCHEMA — copy-paste bugs would change the enum.
         assert spy.await_args.args[1] == SyncInventoryEntityTypeEnum.INVENTORY
+
+    def test_returns_no_runs_when_none_recorded(self, test_client, mocker):
+        """``last_runs`` is an empty list before any sync has ever run."""
+        mocker.patch.object(
+            SyncItemManager, "sync_is_running", new=AsyncMock(return_value=False)
+        )
+        response = test_client.get("/api/apps/inventory/sync/status/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["last_runs"] == []
+
+    @pytest.mark.asyncio
+    async def test_returns_last_runs(self, async_test_client, session, mocker):
+        """Recorded runs surface with their status and completeness verdict."""
+        mocker.patch.object(
+            SyncItemManager, "sync_is_running", new=AsyncMock(return_value=False)
+        )
+        sep_app.dependency_overrides[get_session] = lambda: session
+        await SyncInstanceManager.save(
+            session,
+            SyncInstance(
+                syncer=PMM_STUB_NAME,
+                status=SyncStatusEnum.SUCCESS,
+                snapshot_complete=True,
+            ),
+        )
+
+        response = await async_test_client.get("/api/apps/inventory/sync/status/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [
+            (run["syncer"], run["status"], run["snapshot_complete"])
+            for run in response.json()["last_runs"]
+        ] == [(PMM_STUB_NAME, SyncStatusEnum.SUCCESS.value, True)]
 
     def test_returns_true_when_running(self, test_client, mocker):
         """Returns ``{"is_running": true}`` when ``SyncItemManager`` reports active."""
@@ -788,7 +826,7 @@ class TestInventorySyncStatus:
         )
         response = test_client.get("/api/apps/inventory/sync/status/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"is_running": True}
+        assert response.json()["is_running"] is True
 
     def test_requires_authentication(self, unauthenticated_client):
         """Without API auth the status endpoint returns 401."""

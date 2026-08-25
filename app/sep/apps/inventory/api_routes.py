@@ -45,6 +45,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Body, Request, Response, status
+from sqlmodel import col
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.pagination import (
@@ -79,10 +80,11 @@ from app.sep.apps.inventory.list_query import (
 from app.sep.apps.inventory.models import (
     INVENTORY_SYNC_TASK_NAME,
     PluginTaskResponse,
+    SyncRunSummary,
 )
 from app.sep.apps.inventory.schema import inventory_schema
 from app.sep.apps.inventory.sync import run_inventory_sync
-from app.sep.crud import SyncItemManager
+from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.deps import (
     CreatedServiceDep,
     InventoryAPI,
@@ -90,7 +92,7 @@ from app.sep.deps import (
     SessionDep,
     TaskAPI,
 )
-from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.models import SyncInstance, SyncInventoryEntityTypeEnum
 from app.tasks.connectivity.models import ConnectivityCheckResponse
 
 router = APIRouter()
@@ -99,6 +101,7 @@ schema_endpoint(router=router, plugin_schema=inventory_schema)
 # Module-level singleton avoids the B008 lint warning about function calls in
 # argument defaults; the optional-body semantics are unchanged.
 _OPTIONAL_TRIGGER_BODY = Body(default=None)
+_SYNC_RUN_HISTORY_LIMIT = 10
 
 
 @router.post("/sync/", status_code=status.HTTP_202_ACCEPTED, response_class=Response)
@@ -147,7 +150,7 @@ async def inventory_sync_trigger(
 
 @router.get("/sync/status/")
 async def inventory_sync_status(session: SessionDep) -> InventorySyncStatusResponse:
-    """Return whether an inventory-wide sync is currently running.
+    """Return whether an inventory-wide sync is running, plus recent run outcomes.
 
     Replaces the server-rendered ``sync_is_running`` template variable
     used by the Jinja2 inventory page so the React control can poll the
@@ -155,14 +158,31 @@ async def inventory_sync_status(session: SessionDep) -> InventorySyncStatusRespo
 
     :param session: SQLModel async session.
     :type session: SessionDep
-    :return: ``{"is_running": <bool>}``.
+    :return: The running flag and the most recent runs, newest first.
     :rtype: InventorySyncStatusResponse
     """
     is_running = await SyncItemManager.sync_is_running(
         session,
         SyncInventoryEntityTypeEnum.INVENTORY,
     )
-    return InventorySyncStatusResponse(is_running=is_running)
+    runs = await SyncInstanceManager.list(
+        session,
+        order_by=[col(SyncInstance.created_at).desc()],
+        limit=_SYNC_RUN_HISTORY_LIMIT,
+    )
+    return InventorySyncStatusResponse(
+        is_running=is_running,
+        last_runs=[
+            SyncRunSummary(
+                syncer=run.syncer,
+                started_at=run.created_at,
+                finished_at=run.updated_at,
+                status=run.status,
+                snapshot_complete=run.snapshot_complete,
+            )
+            for run in runs
+        ],
+    )
 
 
 @router.get("/")

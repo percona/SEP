@@ -180,6 +180,61 @@ class PMMService(Service):
 PMMService.model_rebuild(_types_namespace={"Schema": Schema})
 
 
+class PMMFetchDiagnostics(BaseModel):
+    """Record what a PMM inventory fetch could not represent faithfully.
+
+    An inventory fetch reads the service list and the node list as two separate
+    calls and joins them, and it drops whatever fails validation. Neither loss is
+    visible in the resulting node list, so a caller cannot tell a genuinely empty
+    estate from a half-read one without this record.
+
+    :param invalid_nodes: The number of nodes dropped by validation.
+    :type invalid_nodes: int
+    :param invalid_services: The number of services dropped by validation.
+    :type invalid_services: int
+    :param orphan_service_node_ids: Node IDs referenced by fetched services but
+        absent from the node list, which means the two lists disagree.
+    :type orphan_service_node_ids: list[str]
+    :param filtered_node_ids: The IDs of nodes excluded by the caller's filter.
+    :type filtered_node_ids: set[str]
+    :param filtered_service_ids: The IDs of services excluded by the caller's filter.
+    :type filtered_service_ids: set[str]
+    """
+
+    invalid_nodes: int = 0
+    invalid_services: int = 0
+    orphan_service_node_ids: list[str] = []
+    filtered_node_ids: set[str] = set()
+    filtered_service_ids: set[str] = set()
+
+    @property
+    def is_complete(self) -> bool:
+        """Return whether the fetch represented the remote inventory faithfully.
+
+        Filtered entities do not count against completeness: an exclusion is an
+        intentional operator choice, not a failure to read.
+
+        :return: `True` when nothing was dropped and the two lists agree.
+        :rtype: bool
+        """
+        return not (
+            self.invalid_nodes or self.invalid_services or self.orphan_service_node_ids
+        )
+
+
+class PMMInventorySnapshot(BaseModel):
+    """Pair a fetched PMM node list with the diagnostics describing the fetch.
+
+    :param nodes: The nodes fetched from PMM, with their services attached.
+    :type nodes: list[Node]
+    :param diagnostics: What the fetch could not represent faithfully.
+    :type diagnostics: PMMFetchDiagnostics
+    """
+
+    nodes: list[Node]
+    diagnostics: PMMFetchDiagnostics
+
+
 class PMMRemoteAPI(RemoteAPI):
     """Handle remote API interactions specific to PMM.
 
@@ -416,6 +471,7 @@ class PMMRemoteAPI(RemoteAPI):
         *,
         skip_failed: bool = True,
         filter_: Callable[[dict[str, Any]], bool] | None = None,
+        diagnostics: PMMFetchDiagnostics | None = None,
     ) -> list[PMMService]:
         """Fetch services from the PMM API.
 
@@ -438,6 +494,9 @@ class PMMRemoteAPI(RemoteAPI):
             the service should be included, False if it should be filtered out.
             Defaults to None.
         :type filter_: Callable[[dict[str, Any]], bool] | None
+        :param diagnostics: Optional record to accumulate what this fetch could not
+            represent faithfully. Defaults to None, which records nothing.
+        :type diagnostics: PMMFetchDiagnostics | None
         :return: A list of PMMService instances retrieved from the API.
         :rtype: list[PMMService]
         :raises ValidationError: If a service fails validation and `skip_failed` is
@@ -462,6 +521,8 @@ class PMMRemoteAPI(RemoteAPI):
                         "Skipping service %s due to filter",
                         service.get("service_id"),
                     )
+                    if diagnostics is not None:
+                        diagnostics.filtered_service_ids.add(service.get("service_id"))
                     continue
                 try:
                     services.append(
@@ -469,6 +530,8 @@ class PMMRemoteAPI(RemoteAPI):
                     )
                 except ValidationError:
                     if skip_failed:
+                        if diagnostics is not None:
+                            diagnostics.invalid_services += 1
                         self.logger.exception(
                             "Validation Error: Skipping service of type %s with data %s",
                             services_type,
@@ -862,6 +925,7 @@ class PMMRemoteAPI(RemoteAPI):
         *,
         skip_failed: bool = True,
         filter_: Callable[[dict[str, Any]], bool] | None = None,
+        diagnostics: PMMFetchDiagnostics | None = None,
     ) -> defaultdict[NonEmptyStr, list[PMMService]]:
         """Fetch and group services by node ID from the PMM API.
 
@@ -875,15 +939,105 @@ class PMMRemoteAPI(RemoteAPI):
             the service should be included, False if it should be filtered out.
             Defaults to None.
         :type filter_: Callable[[dict[str, Any]], bool] | None
+        :param diagnostics: Optional record to accumulate what this fetch could not
+            represent faithfully. Defaults to None, which records nothing.
+        :type diagnostics: PMMFetchDiagnostics | None
         :return: A defaultdict mapping node IDs to lists of PMMService instances.
         :rtype: defaultdict[NonEmptyStr, list[PMMService]]
         """
         services_by_node_id = defaultdict(list)
         for service in await self.get_services(
-            skip_failed=skip_failed, filter_=filter_
+            skip_failed=skip_failed,
+            filter_=filter_,
+            diagnostics=diagnostics,
         ):
             services_by_node_id[service.node_id].append(service)
         return services_by_node_id
+
+    async def get_inventory_snapshot(
+        self,
+        node_type: str = "",
+        *,
+        skip_failed: bool = True,
+        filter_: Callable[[dict[str, Any]], bool] | None = None,
+    ) -> PMMInventorySnapshot:
+        """Fetch nodes from the PMM API together with fetch-completeness diagnostics.
+
+        Orphan detection runs against the **raw** node IDs, collected before the
+        filter and before `Node` construction: an intentionally excluded node would
+        otherwise make its own services look orphaned, and no generation would ever
+        be complete.
+
+        Only one direction of cross-list disagreement is detectable. A node present
+        in the node list but missing from the service map is indistinguishable from a
+        node that genuinely runs no services, so it is not reported.
+
+        :param node_type: The type of nodes to retrieve (e.g., "generic"). Defaults to
+            an empty string, meaning the field won't be used as a filter.
+        :type node_type: str
+        :param skip_failed: Whether to skip nodes that fail validation. Defaults to
+            True.
+        :type skip_failed: bool
+        :param filter_: Optional callable that takes a node or service dict and returns
+            True if the item should be included, False if it should be filtered out.
+            Used to filter nodes and, when loading services, each service.
+            Defaults to None.
+        :type filter_: Callable[[dict[str, Any]], bool] | None
+        :return: The fetched nodes paired with the diagnostics for this fetch.
+        :rtype: PMMInventorySnapshot
+        :raises ValidationError: If a node fails validation and `skip_failed` is False.
+        """
+        diagnostics = PMMFetchDiagnostics()
+        services_by_node_id = await self.get_services_by_node_external_id(
+            skip_failed=skip_failed,
+            filter_=filter_,
+            diagnostics=diagnostics,
+        )
+        params = remove_falsy_values_from_dict({"node_type": node_type})
+        if await self.is_older_than_v3():
+            nodes_data = await self.post(
+                "/v1/inventory/Nodes/List",
+                json=params,
+            )
+        else:
+            nodes_data = await self.get("/v1/inventory/nodes", params=params)
+
+        nodes = []
+        fetched_node_ids = set()
+        for nodes_type, node_list in nodes_data.items():
+            for node in node_list:
+                fetched_node_ids.add(node.get("node_id"))
+                if filter_ is not None and not filter_(node):
+                    self.logger.debug(
+                        "Skipping node %s due to filter",
+                        node.get("node_id"),
+                    )
+                    diagnostics.filtered_node_ids.add(node.get("node_id"))
+                    continue
+                try:
+                    nodes.append(
+                        Node(
+                            **node,
+                            source=SourceEnum.PMM,
+                            type=nodes_type,
+                            services=services_by_node_id[node["node_id"]],
+                        )
+                    )
+                except ValidationError:
+                    if not skip_failed:
+                        raise
+                    diagnostics.invalid_nodes += 1
+                    self.logger.exception(
+                        "Failed to validate node of type %s with data: %s",
+                        nodes_type,
+                        node,
+                    )
+        diagnostics.orphan_service_node_ids = [
+            node_id
+            for node_id in services_by_node_id
+            if node_id not in fetched_node_ids
+        ]
+        return PMMInventorySnapshot(nodes=nodes, diagnostics=diagnostics)
 
     async def get_nodes(
         self,
@@ -912,45 +1066,12 @@ class PMMRemoteAPI(RemoteAPI):
         :rtype: list[Node]
         :raises ValidationError: If a node fails validation and `skip_failed` is False.
         """
-        services_by_node_id = await self.get_services_by_node_external_id(
-            skip_failed=skip_failed, filter_=filter_
+        snapshot = await self.get_inventory_snapshot(
+            node_type,
+            skip_failed=skip_failed,
+            filter_=filter_,
         )
-        params = remove_falsy_values_from_dict({"node_type": node_type})
-        if await self.is_older_than_v3():
-            nodes_data = await self.post(
-                "/v1/inventory/Nodes/List",
-                json=params,
-            )
-        else:
-            nodes_data = await self.get("/v1/inventory/nodes", params=params)
-
-        nodes = []
-        for nodes_type, node_list in nodes_data.items():
-            for node in node_list:
-                if filter_ is not None and not filter_(node):
-                    self.logger.debug(
-                        "Skipping node %s due to filter",
-                        node.get("node_id"),
-                    )
-                    continue
-                try:
-                    nodes.append(
-                        Node(
-                            **node,
-                            source=SourceEnum.PMM,
-                            type=nodes_type,
-                            services=services_by_node_id[node["node_id"]],
-                        )
-                    )
-                except ValidationError:
-                    if not skip_failed:
-                        raise
-                    self.logger.exception(
-                        "Failed to validate node of type %s with data: %s",
-                        nodes_type,
-                        node,
-                    )
-        return nodes
+        return snapshot.nodes
 
     async def get_advisor_checks(self) -> list[dict[str, Any]]:
         """List all advisor checks (enabled and disabled).

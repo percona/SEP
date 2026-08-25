@@ -21,8 +21,32 @@ from pydantic import BaseModel, model_validator
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
+from app.sep.models import SyncStatusEnum
 from app.sep.utils.forms import parse_crontab_form_fields, parse_interval_form_fields
 from app.tasks.models import INVENTORY_SYNC_TASK_NAME
+
+
+class SyncRunSummary(BaseModel):
+    """Summarize one recorded synchronization run for the sync-status endpoint.
+
+    :param syncer: The fully qualified name of the synchronizer that ran.
+    :type syncer: str
+    :param started_at: When the run was recorded.
+    :type started_at: UTCDatetime
+    :param finished_at: When the run last changed, or `None` while it is open.
+    :type finished_at: UTCDatetime | None
+    :param status: The run-level outcome.
+    :type status: SyncStatusEnum
+    :param snapshot_complete: Whether the run observed a complete generation of the
+        remote inventory, or `None` when the syncer does not produce one.
+    :type snapshot_complete: bool | None
+    """
+
+    syncer: str
+    started_at: UTCDatetime
+    finished_at: UTCDatetime | None
+    status: SyncStatusEnum
+    snapshot_complete: bool | None
 
 
 class PluginTaskResponse(BaseModel):
