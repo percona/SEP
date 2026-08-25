@@ -16,7 +16,7 @@
 """Define the Grafana user and token-payload models."""
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from enum import StrEnum
 from typing import Any, cast, Final, NoReturn, NotRequired, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -283,7 +283,7 @@ class GrafanaUser(BaseUser):
 
     @classmethod
     def _from_grafana_record(
-        cls, record: _GrafanaUserRecord, orgs: list[dict[str, Any]]
+        cls, record: _GrafanaUserRecord, orgs: Iterable[Mapping[str, Any]]
     ) -> Self:
         """Build a user from a Grafana ``/api/user`` or user-lookup record.
 
@@ -297,8 +297,9 @@ class GrafanaUser(BaseUser):
 
         :param record: A Grafana record carrying ``id``, ``login``, ``email``,
             and ``isGrafanaAdmin``.
-        :param orgs: The user's org memberships, flattened to their highest
-            role.
+        :param orgs: The memberships to rank, flattened to their highest role.
+            They may be every org the user belongs to or only the ones a single
+            org's listing proves.
         :return: The mapped ``GrafanaUser``.
         """
         if record.get("isGrafanaAdmin"):
@@ -483,18 +484,27 @@ class GrafanaUser(BaseUser):
         unambiguous here.
 
         The lookup endpoint carries the server-admin flag but no org memberships,
-        so its role is either ``SUPER_ADMIN`` or the lowest role, unlike the login
-        flow, which also ranks org memberships. The fallback sees no server-admin
-        flag at all, so it reports the org role and never reaches ``SUPER_ADMIN``
-        -- the same limitation :meth:`get_users` carries -- and inherits that
-        call's cache, which can answer both stale and after the upstream has begun
-        refusing.
+        so the target's membership is read from the org-users listing -- the same
+        source :meth:`get_users` reads, so an org role reported there is reported
+        here too. A server admin still outranks that listing, which carries no
+        server-admin flag of its own, so its rows go unread. The listing is scoped
+        to the service account's own org, so a target whose only membership is in
+        another org is absent from it and ranks lowest.
+
+        The numeric id keys the match on this path: it is the identifier both
+        shapes agree on, while a login can differ in case or be given as an email.
+        The fallback has no lookup record to key on, so it matches on the login or
+        email instead, and reports the org role with no server-admin flag to
+        outrank it -- the same limitation :meth:`get_users` carries. Both paths
+        read the listing through :meth:`_org_user_records`, so they inherit its
+        cache, which can answer both stale and after the lookup has begun refusing.
 
         :param username: The login or email to look up.
         :return: The mapped ``GrafanaUser``.
         :raises HTTPException: Whatever the lookup endpoint raised, for every
-            status other than 403, or whatever the org-users listing raised once
-            the fallback took over.
+            status other than 403, or whatever the org-users listing raised, on
+            either path -- so a role is never reported from membership data that
+            could not be read.
         :raises HTTPNotFoundException: If the org-scoped fallback holds no such
             user.
         :raises GrafanaException: If the org-users listing breaks the record
@@ -508,7 +518,14 @@ class GrafanaUser(BaseUser):
             if exc.status_code != status.HTTP_403_FORBIDDEN:
                 raise
             return await cls._get_user_from_org_listing(username)
-        return cls._from_grafana_record(record, [])
+        if record.get("isGrafanaAdmin"):
+            return cls._from_grafana_record(record, [])
+        orgs = [
+            row
+            for row in await cls._org_user_records()
+            if row["userId"] == record["id"]
+        ]
+        return cls._from_grafana_record(record, orgs)
 
     @classmethod
     async def _org_user_records(cls) -> list[_GrafanaOrgUserRecord]:

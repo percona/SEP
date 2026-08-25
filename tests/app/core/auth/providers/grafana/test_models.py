@@ -17,6 +17,7 @@
 
 import logging
 from datetime import timedelta
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -390,23 +391,18 @@ class TestGrafanaRoleDerivation:
 
         assert GrafanaUser._from_org_user_record(record).role is UserRole.NONE
 
-    @pytest.mark.parametrize(
-        ("is_server_admin", "expected_role"),
-        [(True, UserRole.SUPER_ADMIN), (False, UserRole.NONE)],
-    )
-    @pytest.mark.asyncio
-    async def test_get_user_decides_on_the_server_admin_flag_alone(
-        self, grafana_mock, grafana_user_record, is_server_admin, expected_role
-    ):
-        """Verify the lookup path carries no orgs, so the flag alone ranks."""
-        grafana_mock.lookup_user.return_value = {
-            **grafana_user_record,
-            "isGrafanaAdmin": is_server_admin,
-        }
 
-        user = await GrafanaUser.get_user(grafana_user_record["login"])
+def _org_row_for(
+    record: dict[str, Any], role: str = "Viewer", **overrides: Any
+) -> dict[str, Any]:
+    """Return an ``/api/org/users`` row belonging to ``record``'s user.
 
-        assert user.role is expected_role
+    :param record: The looked-up user record the row must belong to.
+    :param role: The Grafana org role the row grants.
+    :param overrides: Row keys to override.
+    :return: The org-users row.
+    """
+    return {"userId": record["id"], "login": record["login"], "role": role, **overrides}
 
 
 class TestGrafanaUserLookup:
@@ -442,6 +438,153 @@ class TestGrafanaUserLookup:
         with pytest.raises(GrafanaException) as exc_info:
             await GrafanaUser.get_users()
         assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
+
+    @pytest.mark.parametrize(
+        ("org_role", "expected_role", "expected_admin"),
+        [
+            ("Admin", UserRole.ADMIN, True),
+            ("Editor", UserRole.EDITOR, False),
+            ("Viewer", UserRole.VIEWER, False),
+            ("None", UserRole.NONE, False),
+            ("Bogus", UserRole.NONE, False),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_get_user_resolves_the_org_role(
+        self,
+        grafana_mock,
+        grafana_user_record,
+        org_role,
+        expected_role,
+        expected_admin,
+    ):
+        """Verify a non-server-admin target ranks by its own org membership."""
+        grafana_mock.get_org_users.return_value = [
+            _org_row_for(grafana_user_record, org_role)
+        ]
+
+        user = await GrafanaUser.get_user(grafana_user_record["login"])
+
+        assert user.role is expected_role
+        assert user.is_admin is expected_admin
+
+    @pytest.mark.asyncio
+    async def test_get_user_org_row_without_a_role_is_lowest(
+        self, grafana_mock, grafana_user_record
+    ):
+        """Verify a matched row carrying no role fails closed."""
+        row = _org_row_for(grafana_user_record)
+        grafana_mock.get_org_users.return_value = [
+            {k: v for k, v in row.items() if k != "role"}
+        ]
+
+        user = await GrafanaUser.get_user(grafana_user_record["login"])
+
+        assert user.role is UserRole.NONE
+
+    @pytest.mark.parametrize("org_role", ["Viewer", "Admin"])
+    @pytest.mark.asyncio
+    async def test_get_user_never_downgrades_a_server_admin(
+        self, grafana_mock, grafana_user_record, org_role
+    ):
+        """Verify the server-admin flag ranks highest without reading orgs."""
+        grafana_mock.lookup_user.return_value = {
+            **grafana_user_record,
+            "isGrafanaAdmin": True,
+        }
+        grafana_mock.get_org_users.return_value = [
+            _org_row_for(grafana_user_record, org_role)
+        ]
+
+        user = await GrafanaUser.get_user(grafana_user_record["login"])
+
+        assert user.role is UserRole.SUPER_ADMIN
+        grafana_mock.get_org_users.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_get_user_ignores_another_users_membership(
+        self, grafana_mock, grafana_user_record
+    ):
+        """Verify a stranger's row grants the target nothing."""
+        grafana_mock.get_org_users.return_value = [
+            {
+                "userId": grafana_user_record["id"] + 1,
+                "login": f"other-{grafana_user_record['login']}",
+                "role": "Admin",
+            }
+        ]
+
+        user = await GrafanaUser.get_user(grafana_user_record["login"])
+
+        assert user.role is UserRole.NONE
+        assert user.is_admin is False
+
+    @pytest.mark.asyncio
+    async def test_get_user_absent_from_an_empty_listing_is_lowest(
+        self, grafana_mock, grafana_user_record
+    ):
+        """Verify an empty org-users listing leaves the target at the lowest role."""
+        grafana_mock.get_org_users.return_value = []
+
+        user = await GrafanaUser.get_user(grafana_user_record["login"])
+
+        assert user.role is UserRole.NONE
+
+    @pytest.mark.asyncio
+    async def test_get_user_matches_on_the_numeric_id_not_the_login(
+        self, grafana_mock, grafana_user_record
+    ):
+        """Verify a differently-cased login in either payload still matches."""
+        grafana_mock.get_org_users.return_value = [
+            _org_row_for(
+                grafana_user_record,
+                "Editor",
+                login=grafana_user_record["login"].upper(),
+            )
+        ]
+
+        user = await GrafanaUser.get_user(grafana_user_record["login"])
+
+        assert user.role is UserRole.EDITOR
+
+    @pytest.mark.asyncio
+    async def test_get_user_org_row_missing_a_user_id_fails_closed(
+        self, grafana_mock, grafana_user_record
+    ):
+        """Verify a row missing ``userId`` raises rather than downgrading."""
+        grafana_mock.get_org_users.return_value = [
+            {"login": grafana_user_record["login"], "role": "Admin"}
+        ]
+
+        with pytest.raises(KeyError):
+            await GrafanaUser.get_user(grafana_user_record["login"])
+
+    @pytest.mark.asyncio
+    async def test_get_user_propagates_an_org_listing_failure(
+        self, grafana_mock, grafana_user_record
+    ):
+        """Verify an unreachable listing fails loudly instead of under-reporting."""
+        grafana_mock.get_org_users.side_effect = GrafanaException(
+            detail="Cannot connect to Grafana"
+        )
+
+        with pytest.raises(GrafanaException):
+            await GrafanaUser.get_user(grafana_user_record["login"])
+
+    @pytest.mark.asyncio
+    async def test_get_user_agrees_with_get_users(
+        self, grafana_mock, grafana_user_record
+    ):
+        """Verify both read paths report the same role for the same user."""
+        grafana_mock.get_org_users.return_value = [
+            _org_row_for(grafana_user_record, "Editor")
+        ]
+
+        looked_up = await GrafanaUser.get_user(grafana_user_record["login"])
+        listed = await GrafanaUser.get_users()
+
+        assert looked_up.role is listed[0].role
+        assert looked_up.id == listed[0].id
 
 
 class TestGrafanaUserEdgeCases:
@@ -742,15 +885,20 @@ class TestGrafanaOrgScopedUserLookup:
         )
 
     @pytest.mark.asyncio
-    async def test_server_admin_scope_never_reads_the_org_listing(
-        self, grafana_mock, grafana_user_record
+    async def test_server_admin_scope_resolves_from_the_lookup_record(
+        self, grafana_mock, grafana_user_record, grafana_org_users
     ):
-        """Verify a successful lookup costs exactly one call and no fallback."""
+        """Verify a successful lookup identifies the user from its own record.
+
+        The listing carries a row under the same login but a different user, so
+        an identity resolved through the fallback would name that row's email.
+        """
         user = await GrafanaUser.get_user(grafana_user_record["login"])
 
-        assert user.username == grafana_user_record["login"]
+        assert (
+            user.email == grafana_user_record["email"] != grafana_org_users[0]["email"]
+        )
         grafana_mock.lookup_user.assert_awaited_once_with(grafana_user_record["login"])
-        grafana_mock.get_org_users.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_org_scope_resolves_through_the_org_listing(
