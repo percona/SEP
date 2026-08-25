@@ -121,7 +121,7 @@ def _make_remote_api_rebinder(
 
     The returned callback handles both deployment shapes. Under standalone
     ``sep_lifespan`` the client lives in ``app.state.<name>``: it is rebuilt on
-    the new endpoint and the old one closed. Under the combined ``app.main:app``
+    the new endpoint and the old one retired. Under the combined ``app.main:app``
     no ``app.state`` client exists -- ``get_*_client`` falls back to the
     registry-cached ``get_remote_api`` per request, which already key-misses to
     the new HOT endpoint, so the callback evicts the ordered de-duplicated set
@@ -129,6 +129,11 @@ def _make_remote_api_rebinder(
     same-endpoint credential/SSL changes). When ``key`` is absent from
     ``change.previous`` (override created), :func:`previous_or_base` supplies
     the YAML/env value from the proxy's wrapped instance.
+
+    Both shapes retire the outgoing client rather than closing it outright: the
+    swap and the eviction stop it being handed to new work, and it closes once
+    the consumers still holding it (an open log stream, a running download)
+    release.
 
     :param app: The FastAPI application whose ``state`` holds the client.
     :param name: The ``app.state`` attribute name (``inventory_api`` /
@@ -156,7 +161,7 @@ def _make_remote_api_rebinder(
             logger.exception("Failed to rebind %s; keeping previous client", name)
             return
         setattr(app.state, name, new_api)
-        await old.__aexit__(None, None, None)
+        await old.close_when_idle()
 
     return _rebind
 

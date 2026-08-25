@@ -106,15 +106,30 @@ export function AppListPage({
   const multi = Boolean(schema.entities?.length && entityName && entitySchema);
 
   const paginationScope = `${pluginName}:${entityName ?? ''}`;
-  const [listPage, setListPage] = useState({
+  // `list_view` is optional on the top-level schema, and an unresolved entity
+  // route (unknown `entityName` on an entity schema) falls back to it, so it can
+  // be absent here — guarded below once every hook has run.
+  const listView = multi ? entitySchema!.list_view : schema.list_view;
+  const serverSideQuery = Boolean(listView?.server_side_query);
+
+  const [listPage, setListPage] = useState<{
+    scope: string;
+    offset: number;
+    limit: number;
+    sort: string | undefined;
+    search: string | undefined;
+  }>({
     scope: paginationScope,
     offset: DEFAULT_APP_LIST_OFFSET,
     limit: DEFAULT_APP_LIST_LIMIT,
+    sort: undefined,
+    search: undefined,
   });
 
   // Derive the active page from scope so a tab change uses offset 0 on the
   // same render (a post-paint useEffect would still fire one stale-offset
   // request and flash an empty page when the new entity has fewer rows).
+  // Sort/search reset with the scope so the new entity's default_sort applies.
   const activeListPage =
     listPage.scope === paginationScope
       ? listPage
@@ -122,15 +137,26 @@ export function AppListPage({
           scope: paginationScope,
           offset: DEFAULT_APP_LIST_OFFSET,
           limit: DEFAULT_APP_LIST_LIMIT,
+          sort: undefined,
+          search: undefined,
         };
 
   if (listPage.scope !== paginationScope) {
     setListPage(activeListPage);
   }
 
+  const effectiveSort = serverSideQuery
+    ? (activeListPage.sort ?? listView?.default_sort ?? undefined)
+    : undefined;
+  const effectiveSearch = serverSideQuery ? activeListPage.search : undefined;
+
   const listQueryOptions = {
     offset: activeListPage.offset,
     limit: activeListPage.limit,
+    ...(serverSideQuery && {
+      sort: effectiveSort,
+      search: effectiveSearch,
+    }),
   };
 
   const singleQuery = useAppTasks(pluginName, mockTasks, {
@@ -158,10 +184,6 @@ export function AppListPage({
         : rows.filter((row) => RUNNING_STATUSES.has(row.status as TaskHistoryStatus)).length,
     [multi, rows],
   );
-  // `list_view` is optional on the top-level schema, and an unresolved entity
-  // route (unknown `entityName` on an entity schema) falls back to it, so it can
-  // be absent here — guarded below once every hook has run.
-  const listView = multi ? entitySchema!.list_view : schema.list_view;
   const title = multi ? entitySchema!.display_name : schema.display_name;
   const description = multi ? entitySchema?.description : schema.description;
 
@@ -311,7 +333,34 @@ export function AppListPage({
                 offset: listPagination.offset,
                 limit: listPagination.limit,
                 onChange: ({ offset, limit }) =>
-                  setListPage({ scope: paginationScope, offset, limit }),
+                  setListPage((prev) => ({
+                    ...prev,
+                    scope: paginationScope,
+                    offset,
+                    limit,
+                  })),
+              }
+            : null
+        }
+        serverQuery={
+          serverSideQuery && listPagination
+            ? {
+                sort: effectiveSort,
+                search: effectiveSearch,
+                onSortChange: (sort) =>
+                  setListPage((prev) => ({
+                    ...prev,
+                    scope: paginationScope,
+                    offset: DEFAULT_APP_LIST_OFFSET,
+                    sort,
+                  })),
+                onSearchChange: (search) =>
+                  setListPage((prev) => ({
+                    ...prev,
+                    scope: paginationScope,
+                    offset: DEFAULT_APP_LIST_OFFSET,
+                    search,
+                  })),
               }
             : null
         }

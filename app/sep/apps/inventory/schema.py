@@ -82,6 +82,7 @@ _nodes_entity = AppEntitySchema(
             ),
         ],
         default_sort="-created_at",
+        server_side_query=True,
     ),
 )
 
@@ -131,6 +132,7 @@ _services_entity = AppEntitySchema(
             ),
         ],
         default_sort="-name",
+        server_side_query=True,
     ),
 )
 
@@ -161,6 +163,7 @@ _schemas_entity = AppEntitySchema(
             ),
         ],
         default_sort="-created_at",
+        server_side_query=True,
     ),
 )
 
@@ -202,6 +205,7 @@ _tables_entity = AppEntitySchema(
             ),
         ],
         default_sort="-created_at",
+        server_side_query=True,
     ),
     detail_highlights={
         "create": DetailHighlightLanguage.SQL,
