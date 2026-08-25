@@ -74,9 +74,8 @@ def upgrade() -> None:
     op.create_index(op.f('ix_syncentityabsence_entity_type'), 'syncentityabsence', ['entity_type'], unique=False)
     op.create_index(op.f('ix_syncentityabsence_syncer'), 'syncentityabsence', ['syncer'], unique=False)
     # The server default backfills rows that predate the column; it is dropped
-    # immediately afterwards so the model's Python-side default stays the only
-    # source of the value. SQLite (tests, local dev) has no DROP DEFAULT, and
-    # leaving the default in place there is harmless.
+    # once the backfill below has run, so the model's Python-side default stays
+    # the only source of the value.
     op.add_column(
         'syncinstance',
         sa.Column('status', sync_status_enum, nullable=False, server_default='PENDING'),
@@ -104,8 +103,13 @@ def upgrade() -> None:
           )
         """
     )
-    if op.get_bind().dialect.name != 'sqlite':
-        op.alter_column('syncinstance', 'status', server_default=None)
+    with op.batch_alter_table('syncinstance') as batch_op:
+        batch_op.alter_column(
+            'status',
+            existing_type=sync_status_enum,
+            existing_nullable=False,
+            server_default=None,
+        )
     op.add_column('syncinstance', sa.Column('snapshot_complete', sa.Boolean(), nullable=True))
     op.create_index(op.f('ix_syncinstance_snapshot_complete'), 'syncinstance', ['snapshot_complete'], unique=False)
     op.create_index(op.f('ix_syncinstance_status'), 'syncinstance', ['status'], unique=False)

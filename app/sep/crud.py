@@ -284,6 +284,9 @@ class SyncInstanceManager(BaseSQLModelManager):
         session: AsyncSession,
         syncer: str,
         stale_after: timedelta,
+        # pagination-ok: one syncer's abandoned runs. A run refuses to start while
+        # another is in progress, so at most one leaks per worker death and every
+        # reclaim clears the whole backlog.
     ) -> list[UUID4]:
         """Fail the runs of a syncer whose items stopped progressing long ago.
 
