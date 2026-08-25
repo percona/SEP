@@ -148,8 +148,8 @@ class TestRetrieveUnderAnOrgScopedGrafanaAccount:
 
     Requests run against an app mounting the real route function under a
     Grafana-shaped response model. The application under test binds that model at
-    import to the configured provider's, which requires ``owner`` -- a field a
-    Grafana record does not carry -- so a Grafana user cannot pass validation on
+    import to the configured provider's, which requires ``owner``, a field a
+    Grafana record does not carry, so a Grafana user cannot pass validation on
     the route as mounted there.
     """
 
