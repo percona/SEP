@@ -22,7 +22,12 @@ from fastapi import FastAPI
 from pydantic import ValidationError
 
 from app.tasks.config import tasks_settings
-from app.tasks.deps import get_executor, get_request_executor
+from app.tasks.deps import (
+    get_executor,
+    get_request_executor,
+    resolve_request_executor,
+)
+from app.tasks.execution.executors.celery.models import CeleryExecutor
 from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.execution.nomad_lifecycle import (
     NomadLifecycle,
@@ -102,6 +107,16 @@ async def test_aenter_enters_effective_config_and_publishes_holder() -> None:
 
 
 @pytest.mark.asyncio
+async def test_aenter_leaves_the_settings_executor_unentered() -> None:
+    """``__aenter__`` enters a private executor, never the shared settings value."""
+    _override_nomad(_NOMAD_A)
+    settings_executor = tasks_settings.NOMAD
+    async with NomadLifecycle(FastAPI()) as holder:
+        assert holder.current is not settings_executor
+        assert settings_executor._session is None
+
+
+@pytest.mark.asyncio
 async def test_reconcile_is_noop_when_config_unchanged() -> None:
     """``reconcile`` keeps the same executor when the config is unchanged."""
     _override_nomad(_NOMAD_A)
@@ -122,6 +137,30 @@ async def test_reconcile_swaps_and_drains_on_change() -> None:
         assert holder.current is not old
         assert str(holder.current.endpoint).startswith("https://nomad-b.example.org")
         assert old._session is None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_opens_a_fresh_session_for_a_copied_override() -> None:
+    """Open a new session when the override is a ``model_copy`` of the entered executor.
+
+    The snapshot builder merges nested leaves with ``model_copy``, which carries
+    the source's private attributes over, its aiohttp session included, so the
+    first override after startup arrives holding the very session the rebind is
+    about to close.
+    """
+    _override_nomad(_NOMAD_A)
+    async with NomadLifecycle(FastAPI()) as holder:
+        startup = holder.current
+        tasks_settings._set_snapshot(
+            {"NOMAD": startup.model_copy(update={"log_socket_read_timeout": 13})}
+        )
+
+        await holder.reconcile()
+
+        assert holder.current is not startup
+        assert startup._session is None
+        assert holder.current._session is not None
+        assert not holder.current._session.closed
 
 
 @pytest.mark.asyncio
@@ -153,29 +192,61 @@ def test_get_executor_returns_snapshot_executor_under_override() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_request_executor_returns_holder_current() -> None:
+async def test_resolve_request_executor_returns_holder_current() -> None:
     """A request-scoped NOMAD read returns the holder's live entered executor."""
     _override_nomad(_NOMAD_A)
     async with NomadLifecycle(FastAPI()) as holder:
         request = SimpleNamespace(
             app=SimpleNamespace(state=SimpleNamespace(nomad_lifecycle=holder))
         )
-        result = get_request_executor(request, TaskBackendEnum.NOMAD)
+        result = resolve_request_executor(request, TaskBackendEnum.NOMAD)
         assert result is holder.current
 
 
-def test_get_request_executor_falls_back_without_holder() -> None:
+def test_resolve_request_executor_falls_back_without_holder() -> None:
     """Without a holder, the request-scoped read falls back to request-less."""
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
-    result = get_request_executor(request, TaskBackendEnum.NOMAD)
+    result = resolve_request_executor(request, TaskBackendEnum.NOMAD)
     assert result is tasks_settings.NOMAD
 
 
-def test_get_request_executor_falls_back_when_holder_not_started() -> None:
+def test_resolve_request_executor_falls_back_when_holder_not_started() -> None:
     """A holder present but never entered falls back to the request-less read."""
     holder = NomadLifecycle(FastAPI())  # never entered -> ``current`` raises
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(nomad_lifecycle=holder))
     )
-    result = get_request_executor(request, TaskBackendEnum.NOMAD)
+    result = resolve_request_executor(request, TaskBackendEnum.NOMAD)
     assert result is tasks_settings.NOMAD
+
+
+@pytest.mark.asyncio
+async def test_reconcile_defers_the_old_close_while_a_consumer_holds() -> None:
+    """Keep a held executor alive through the reconcile, closing once released."""
+    _override_nomad(_NOMAD_A)
+    async with NomadLifecycle(FastAPI()) as holder:
+        old = holder.current
+
+        async with old.hold():
+            _override_nomad(_NOMAD_B)
+            await holder.reconcile()
+
+            assert holder.current is not old
+            assert old._session is not None
+
+        assert old._session is None
+
+
+@pytest.mark.asyncio
+async def test_get_request_executor_yields_a_celery_executor_unheld() -> None:
+    """Yield a ``CeleryExecutor`` unheld, since it owns no session."""
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
+
+    yielded = [
+        executor
+        async for executor in get_request_executor(request, TaskBackendEnum.CELERY)
+    ]
+
+    assert len(yielded) == 1
+    assert isinstance(yielded[0], CeleryExecutor)
+    assert not hasattr(yielded[0], "hold")  # the nullcontext branch, not a hold

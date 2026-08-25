@@ -513,7 +513,7 @@ class TestCeleryExecutorSyncTaskHistory:
 
 
 class TestCeleryExecutorStopTask:
-    """Test CeleryExecutor._stop_task."""
+    """Test stopping a Celery task."""
 
     @pytest.mark.asyncio
     async def test_stop_is_noop(self, executor) -> None:
@@ -526,6 +526,25 @@ class TestCeleryExecutorStopTask:
             status=TaskHistoryStatusEnum.RUNNING,
         )
         await executor._stop_task(queue_item)
+
+    @pytest.mark.asyncio
+    async def test_stop_reaches_stopped_status(
+        self, executor: CeleryExecutor, session, celery_queue_item: TaskHistory
+    ) -> None:
+        """Assert stopping a running row terminates it.
+
+        A Celery sync reports no new backend state, so the stop is the only
+        thing that can move the row out of RUNNING.
+        """
+        celery_queue_item.status = TaskHistoryStatusEnum.RUNNING
+        celery_queue_item.task.alert_on_fail = False
+
+        with patch("app.tasks.execution.models.schedule_annotation") as mock_schedule:
+            result = await executor.stop_task(session, celery_queue_item)
+
+        assert result.status == TaskHistoryStatusEnum.STOPPED
+        assert result.finished_at is not None
+        mock_schedule.assert_called_once_with(result, "STOPPED")
 
 
 class TestCeleryExecutorStreamLogs:
