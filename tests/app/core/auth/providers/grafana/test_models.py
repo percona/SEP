@@ -32,6 +32,7 @@ from app.core.auth.models import (
     UserRole,
 )
 from app.core.auth.providers.grafana.models import (
+    _find_org_user,
     _TOKEN_SERIALIZER,
     _TokenType,
     GrafanaTokenPayload,
@@ -551,13 +552,15 @@ class TestGrafanaUserLookup:
     async def test_get_user_org_row_missing_a_user_id_fails_closed(
         self, grafana_mock, grafana_user_record
     ):
-        """Verify a row missing ``userId`` raises rather than downgrading."""
+        """Verify a row missing ``userId`` reads as upstream, not as a downgrade."""
         grafana_mock.get_org_users.return_value = [
             {"login": grafana_user_record["login"], "role": "Admin"}
         ]
 
-        with pytest.raises(KeyError):
+        with pytest.raises(GrafanaException) as exc_info:
             await GrafanaUser.get_user(grafana_user_record["login"])
+
+        assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
 
     @pytest.mark.asyncio
     async def test_get_user_propagates_an_org_listing_failure(
@@ -1064,18 +1067,16 @@ class TestGrafanaOrgScopedUserLookup:
         with pytest.raises(HTTPNotFoundException):
             await GrafanaUser.get_user("nobody")
 
-    @pytest.mark.asyncio
-    async def test_org_scope_does_not_match_a_row_without_an_email(
-        self, grafana_mock, grafana_org_users
-    ):
-        """Verify an absent email is skipped rather than compared as empty."""
-        self._refuse_lookup(grafana_mock)
-        grafana_mock.get_org_users.return_value = [
-            {k: v for k, v in grafana_org_users[0].items() if k != "email"}
-        ]
+    def test_a_row_without_an_email_is_not_matched(self, grafana_org_users):
+        """Verify an absent email is skipped rather than compared as empty.
 
-        with pytest.raises(HTTPNotFoundException):
-            await GrafanaUser.get_user("")
+        The match is exercised directly: its parameter is a plain ``str``, while
+        every caller declares ``NonEmptyStr``, so a blank input is a value only
+        this contract admits.
+        """
+        row = {k: v for k, v in grafana_org_users[0].items() if k != "email"}
+
+        assert _find_org_user([row], "") is None
 
     @pytest.mark.parametrize(
         "error",
@@ -1144,6 +1145,8 @@ class TestGrafanaOrgScopedUserLookup:
             [{"userId": 1, "role": "Viewer"}],
             [{"userId": 1, "login": 7, "role": "Viewer"}],
             [{"userId": 1, "login": "bob", "email": 9, "role": "Viewer"}],
+            [{"login": "bob", "email": "bob@example.com", "role": "Viewer"}],
+            [{"userId": 1, "login": "bob", "role": ["Admin"]}],
         ],
     )
     @pytest.mark.asyncio

@@ -291,9 +291,10 @@ class GrafanaUser(BaseUser):
         from it so a username change does not change the identity.
 
         The server-admin flag outranks every org membership; without it the
-        user holds the highest role any of their orgs grants. A membership
-        naming a role Grafana does not define, or carrying none at all, ranks
-        lowest, so an unreadable membership grants no more than it proves.
+        user holds the highest role any of their orgs grants. Roles rank through
+        :func:`_rank_org_role`, so a membership carrying no role ranks lowest
+        silently and one naming a role Grafana does not define ranks lowest and
+        is logged -- an unreadable membership grants no more than it proves.
 
         :param record: A Grafana record carrying ``id``, ``login``, ``email``,
             and ``isGrafanaAdmin``.
@@ -535,19 +536,27 @@ class GrafanaUser(BaseUser):
         Grafana never promised surfaces as an upstream failure instead of
         escaping from inside the mapping as an unhandled key or attribute error.
 
-        A null ``email`` passes: the mapper already reads that field as an
-        optional string, so refusing it would reject a listing the provider has
-        always been able to map.
+        Every field either mapper reads is checked, not only the ones the match
+        compares: a row without ``userId`` or with an unhashable ``role`` passes
+        a narrower gate and then crashes inside the mapping instead.
+
+        A null ``email`` or ``role`` passes: the mappers already read those
+        fields as optional, so refusing them would reject a listing the provider
+        has always been able to map.
 
         :return: The listing rows.
+        :raises HTTPException: Whatever the org-users listing raised.
         :raises GrafanaException: If the payload is not a list of records each
-            carrying a string ``login`` and, where present, a string ``email``.
+            carrying an integer ``userId`` and a string ``login``, with
+            ``email`` and ``role`` either a string or absent.
         """
         payload = await _active_grafana_sdk().get_org_users()
         if not isinstance(payload, list) or not all(
             isinstance(row, Mapping)
+            and isinstance(row.get("userId"), int)
             and isinstance(row.get("login"), str)
-            and isinstance(row.get("email") or "", str)
+            and isinstance(row.get("email"), str | None)
+            and isinstance(row.get("role"), str | None)
             for row in payload
         ):
             raise GrafanaException(detail="Grafana returned an unreadable user list.")
@@ -565,6 +574,7 @@ class GrafanaUser(BaseUser):
 
         :param username: The login or email to resolve.
         :return: The mapped ``GrafanaUser``.
+        :raises HTTPException: Whatever the org-users listing raised.
         :raises HTTPNotFoundException: If no org user matches ``username``.
         :raises GrafanaException: If the listing breaks the record contract.
         """
@@ -582,6 +592,7 @@ class GrafanaUser(BaseUser):
         ``SUPER_ADMIN``.
 
         :return: The mapped ``GrafanaUser`` instances.
+        :raises HTTPException: Whatever the org-users listing raised.
         :raises GrafanaException: If the listing breaks the record contract.
         """
         return [
