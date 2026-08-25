@@ -10,18 +10,7 @@ FROM localhost/sep:builder AS builder
 
 # Consolidated SEP side-car: the five SEP services plus a bundled Valkey broker
 # under one supervisord. No frontend SPA — the UI is served by PMM.
-FROM docker.io/library/python:3.11.14-slim
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        g++ \
-        libpango-1.0-0 \
-        libpangoft2-1.0-0 \
-        fontconfig \
-        fonts-dejavu \
-        shared-mime-info && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+FROM docker.io/library/python:3.11.16-slim
 
 RUN groupadd --gid 1001 sep && \
     useradd --gid sep --shell /usr/sbin/nologin --home-dir /home/sep --uid 1001 --create-home sep
@@ -31,14 +20,27 @@ ENV APP_HOME=$HOME/app
 RUN install -d -o 1001 -g 1001 -m 0750 $APP_HOME
 WORKDIR $APP_HOME
 
-# netcat backs the migration wait-loops in supervisord.conf
+# SEP-owned writable state, owner-only: the minted Grafana token lives here. See
+# sidecar/README.md for why a deployment mounts a volume over it.
+RUN install -d -o 1001 -g 1001 -m 0700 $HOME/state
+
+# netcat backs the migration wait-loops in supervisord.conf. The upgrade is
+# paired with the base pin rather than trusted to it: the pinned tag still
+# ships util-linux 2.41-5, whose fix Debian published as 2.41.5-0+deb13u1
+# after the tag was cut.
+#
+# No rendering libraries are installed. libpango-1.0-0, libpangoft2-1.0-0,
+# fontconfig, fonts-dejavu and shared-mime-info must return if `report` is
+# ever added to sidecar/settings.yaml's SEP.APPS: app/sep/apps/report/service.py
+# imports weasyprint at module scope, and this image strips that package
+# instead of backing it.
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends netcat-openbsd && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/src/sep/wheels /wheels
 COPY --from=builder /usr/src/sep/requirements.txt .
-RUN pip install --no-cache-dir wheel
 RUN pip install --no-cache-dir /wheels/*
 
 # Bundled Valkey broker: the server, plus the cli the healthcheck pings
@@ -56,6 +58,12 @@ COPY --chown=0:1001 --chmod=550 ./sidecar/healthcheck.sh ./healthcheck.sh
 COPY --chown=0:1001 --chmod=550 ./sidecar/entrypoint.sh ./entrypoint.sh
 # Sourced by entrypoint.sh, never executed, hence 440 rather than 550
 COPY --chown=0:1001 --chmod=440 ./sidecar/settings-env.sh ./settings-env.sh
+# Run through the interpreter and never executed directly -- grafana_service_account.py
+# by entrypoint.sh, wait_for_api.py by supervisord's celery-beat command -- so 440
+# for the same reason. Copied explicitly because bundle.tgz carries app/ and
+# snippets/ only -- no sidecar/ helper reaches the runtime image on its own.
+COPY --chown=0:1001 --chmod=440 ./sidecar/grafana_service_account.py ./grafana_service_account.py
+COPY --chown=0:1001 --chmod=440 ./sidecar/wait_for_api.py ./wait_for_api.py
 
 ADD --chown=0:1001 --chmod=440 bundle.tgz $APP_HOME
 

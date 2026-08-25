@@ -21,6 +21,7 @@ import logging
 from base64 import b64encode
 from binascii import b2a_base64
 from collections import defaultdict
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime, UTC
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -68,6 +69,7 @@ from app.tasks.execution.executors.nomad.models import (
 )
 from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.execution.utils import gzip_compress, minify_file_content
+from app.tasks.logs.line_split import WithheldLineBuffer
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     ExecutionEvent,
@@ -115,6 +117,9 @@ MULTIBYTE_WITHHELD_BYTES = 6  # raw byte length of the withheld "€uro"
 NEWLINELESS_TAIL_FRAME_EOF_OFFSET = 21  # raw EOF of "card=4111111111111111"
 # Ceiling low enough that the 21-byte newline-less card line forces a flush.
 FORCED_FLUSH_CEILING_BYTES = 10
+CARD_LINE_WITH_TAIL_EOF_OFFSET = 26  # raw EOF of the card line plus a trailing "tail"
+CARD_LINE_TAIL_WITHHELD_BYTES = 4  # raw byte length of the withheld "tail"
+RECONNECT_RESUME_FRAME_EOF_OFFSET = 19  # raw EOF of the frame after a reconnect
 NOMAD_MODELS_LOGGER = "app.tasks.execution.executors.nomad.models"
 
 
@@ -1295,6 +1300,61 @@ class TestStopTask:
         refetched = await TaskHistoryManager.get_or_404(session, id=result_id)
         assert refetched.status == TaskHistoryStatusEnum.STOPPED
         assert refetched.finished_at is not None
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    @patch("app.tasks.execution.models.schedule_annotation")
+    async def test_stop_task_keeps_a_payload_failure(
+        self,
+        mock_annotation: MagicMock,
+        mock_nomad_cls: MagicMock,
+        session: AsyncSession,
+        created_task_with_history: TaskHistory,
+    ):
+        """Assert a stop landing on an already-failed run records the failure.
+
+        A stop request can reach a row whose payload has already exited
+        non-zero, because the row stays RUNNING until the next sync.
+        """
+        exited_at_ns = 1_700_000_000_000_000_000
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "ClientStatus": NomadAllocStatusEnum.FAILED,
+            "ModifyTime": exited_at_ns,
+            "TaskStates": {NomadStep.RUN_SCRIPT: {"State": "dead", "Events": []}},
+        }
+        mock_backend.job.get_job.return_value = {
+            "ID": "job-1",
+            "Status": "dead",
+            "Stop": True,
+        }
+
+        queue_item = created_task_with_history
+        queue_item.task.alert_on_fail = False
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        queue_item.execution_request.tracking = {
+            "allocation_id": "alloc-1",
+            "evaluation_id": "eval-1",
+            "job_id": "job-1",
+        }
+
+        result = await _build_executor().stop_task(session, queue_item)
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
+        exited_at = datetime.fromtimestamp(exited_at_ns / 10**9, UTC)
+        # SQLite returns the value tz-naive, so compare without tzinfo.
+        assert result.finished_at.replace(tzinfo=None) == exited_at.replace(tzinfo=None)
+        mock_backend.job.deregister_job.assert_called_once_with("job-1")
+        mock_annotation.assert_called_once_with(result, "FAILED")
+
+        result_id = result.id
+        await session.rollback()
+        refetched = await TaskHistoryManager.get_or_404(session, id=result_id)
+        assert refetched.status == TaskHistoryStatusEnum.FAILED
 
 
 class TestSyncTaskHistory:
@@ -2738,25 +2798,33 @@ class TestNomadLogStreaming:
     """Regression tests for Nomad HTTP log streaming helpers."""
 
     @staticmethod
-    def _alloc_for_logs():
+    def _alloc_for_logs(step: str = "step1") -> dict[str, Any]:
+        """Build a running allocation whose only task state is ``step``.
+
+        :param step: The Nomad task name to mark running.
+        :return: The allocation payload the log-stream helpers read.
+        """
         return {
             "ID": "alloc-stream",
             "JobID": "job-1",
             "EvalID": "eval-1",
             "TaskStates": {
-                "step1": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"},
+                step: {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"},
             },
         }
 
     @staticmethod
-    def _alloc_for_logs_step2():
+    def _log_stream_params(step: str) -> dict[str, Any]:
+        """Build the follow-mode log-stream query params for ``step``.
+
+        :param step: The Nomad task name to stream.
+        :return: The query params the executor mutates as the cursor advances.
+        """
         return {
-            "ID": "alloc-stream",
-            "JobID": "job-1",
-            "EvalID": "eval-1",
-            "TaskStates": {
-                "step2": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"},
-            },
+            "task": step,
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
         }
 
     @staticmethod
@@ -2805,12 +2873,7 @@ class TestNomadLogStreaming:
                 "step1": {"StartedAt": None, "State": "pending"},
             },
         }
-        params = {
-            "task": "step1",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        params = self._log_stream_params("step1")
         queue = asyncio.Queue()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
@@ -2822,7 +2885,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         assert state == "running"
@@ -2909,12 +2972,7 @@ class TestNomadLogStreaming:
 
         executor = _build_executor()
         alloc = self._alloc_for_logs()
-        params = {
-            "task": "step1",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        params = self._log_stream_params("step1")
         queue = asyncio.Queue()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
@@ -2926,7 +2984,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         assert state == _NOMAD_LOG_STREAM_CLIENT_ERROR
@@ -2941,23 +2999,11 @@ class TestNomadLogStreaming:
             raise TimeoutError
             yield (b"", None)  # pragma: no cover
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = iter_chunks
-
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(iter_chunks)
 
         executor = _build_executor()
         alloc = self._alloc_for_logs()
-        params = {
-            "task": "step1",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        params = self._log_stream_params("step1")
         queue = asyncio.Queue()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
@@ -2969,7 +3015,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         assert state == _NOMAD_LOG_STREAM_SOCK_TIMEOUT
@@ -2984,23 +3030,11 @@ class TestNomadLogStreaming:
             self._nomad_log_frame(msg="line-two", offset=MULTI_CHUNK_LOG_SECOND_OFFSET),
         ]
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor()
-        alloc = self._alloc_for_logs_step2()
-        params = {
-            "task": "step2",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        alloc = self._alloc_for_logs("step2")
+        params = self._log_stream_params("step2")
         queue = asyncio.Queue()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
@@ -3012,7 +3046,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3045,29 +3079,11 @@ class TestNomadLogStreaming:
             ),
             self._nomad_log_frame(msg="11111111\n", offset=SPLIT_TOKEN_LINE_EOF_OFFSET),
         ]
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor()
-        alloc = {
-            "ID": "alloc-stream",
-            "JobID": "job-1",
-            "EvalID": "eval-1",
-            "TaskStates": {
-                "run-script": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"}
-            },
-        }
-        params = {
-            "task": "run-script",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        alloc = self._alloc_for_logs("run-script")
+        params = self._log_stream_params("run-script")
         queue = asyncio.Queue()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
@@ -3079,7 +3095,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities={PIIEntity.CREDIT_CARD},
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3099,31 +3115,13 @@ class TestNomadLogStreaming:
                 msg="ok\ncard=41", offset=WITHHELD_PARTIAL_FRAME_EOF_OFFSET
             )
         ]
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor()
-        alloc = {
-            "ID": "alloc-stream",
-            "JobID": "job-1",
-            "EvalID": "eval-1",
-            "TaskStates": {
-                "run-script": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"}
-            },
-        }
-        params = {
-            "task": "run-script",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        alloc = self._alloc_for_logs("run-script")
+        params = self._log_stream_params("run-script")
         queue = asyncio.Queue()
-        pending = bytearray()
+        pending = WithheldLineBuffer()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
             await executor._consume_nomad_log_stream(
@@ -3141,7 +3139,7 @@ class TestNomadLogStreaming:
         assert [log.msg for log in logs] == ["ok\n"]
         # raw EOF (12) minus the 7 withheld bytes of "card=41"
         assert logs[0].offset == WITHHELD_PARTIAL_RESUME_OFFSET
-        assert bytes(pending) == b"card=41"  # carried for the next frame
+        assert pending.drain() == b"card=41"
         assert (
             params["offset"] == WITHHELD_PARTIAL_FRAME_EOF_OFFSET
         )  # raw resume cursor
@@ -3164,33 +3162,15 @@ class TestNomadLogStreaming:
                 offset=NEWLINELESS_TAIL_FRAME_EOF_OFFSET,
             )
         ]
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor(
             log_anonymization_max_withheld_bytes=FORCED_FLUSH_CEILING_BYTES
         )
-        alloc = {
-            "ID": "alloc-stream",
-            "JobID": "job-1",
-            "EvalID": "eval-1",
-            "TaskStates": {
-                "run-script": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"}
-            },
-        }
-        params = {
-            "task": "run-script",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        alloc = self._alloc_for_logs("run-script")
+        params = self._log_stream_params("run-script")
         queue = asyncio.Queue()
-        pending = bytearray()
+        pending = WithheldLineBuffer()
 
         with (
             patch.object(executor, "_request", return_value=mock_ctx),
@@ -3211,7 +3191,7 @@ class TestNomadLogStreaming:
         assert [log.msg for log in logs] == ["card=[REDACTED]"]
         assert "4111" not in logs[0].msg
         assert logs[0].offset == NEWLINELESS_TAIL_FRAME_EOF_OFFSET
-        assert bytes(pending) == b""
+        assert not pending
         assert any(
             "Forced anonymization flush" in record.message
             and "alloc-stream" in record.message
@@ -3235,13 +3215,7 @@ class TestNomadLogStreaming:
             )
             raise TimeoutError
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = iter_chunks
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(iter_chunks)
 
         executor = _build_executor()
         queue = asyncio.Queue()
@@ -3272,23 +3246,11 @@ class TestNomadLogStreaming:
         assert b"}" not in full[:split_at]
         chunks = [full[:split_at], full[split_at:]]
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor()
-        alloc = self._alloc_for_logs_step2()
-        params = {
-            "task": "step2",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        alloc = self._alloc_for_logs("step2")
+        params = self._log_stream_params("step2")
         queue = asyncio.Queue()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
@@ -3300,7 +3262,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3323,23 +3285,11 @@ class TestNomadLogStreaming:
             self._nomad_log_frame(msg=None, offset=EMPTY_DATA_FRAME_OFFSET_ONLY),
         ]
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor()
-        alloc = self._alloc_for_logs_step2()
-        params = {
-            "task": "step2",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        alloc = self._alloc_for_logs("step2")
+        params = self._log_stream_params("step2")
         queue = asyncio.Queue()
 
         with (
@@ -3356,7 +3306,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3378,19 +3328,12 @@ class TestNomadLogStreaming:
             self._nomad_log_frame(msg=None, offset=offset) for offset in empty_offsets
         ]
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor(
             log_socket_read_timeout=RECHECK_LOG_SOCKET_READ_TIMEOUT
         )
-        alloc = self._alloc_for_logs_step2()
+        alloc = self._alloc_for_logs("step2")
         refreshed_alloc = {
             **alloc,
             "TaskStates": {
@@ -3400,12 +3343,7 @@ class TestNomadLogStreaming:
                 },
             },
         }
-        params = {
-            "task": "step2",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        params = self._log_stream_params("step2")
         queue = asyncio.Queue()
 
         with (
@@ -3424,7 +3362,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3453,12 +3391,7 @@ class TestNomadLogStreaming:
         mock_ctx = AsyncMock()
         mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
         mock_ctx.__aexit__ = AsyncMock(return_value=False)
-        params = {
-            "task": "step1",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        params = TestNomadLogStreaming._log_stream_params("step1")
 
         with patch.object(executor, "_request", return_value=mock_ctx):
             return await executor._consume_nomad_log_stream(
@@ -3469,7 +3402,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
     @pytest.mark.asyncio
@@ -3533,26 +3466,14 @@ class TestNomadLogStreaming:
             self._nomad_log_frame(msg=None, offset=offset) for offset in empty_offsets
         ]
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor(
             log_socket_read_timeout=RECHECK_LOG_SOCKET_READ_TIMEOUT
         )
-        alloc = self._alloc_for_logs_step2()
+        alloc = self._alloc_for_logs("step2")
         refreshed_alloc = {"ID": "alloc-rescheduled", "JobID": "job-1", "EvalID": "e-2"}
-        params = {
-            "task": "step2",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        params = self._log_stream_params("step2")
 
         with (
             patch.object(executor, "_request", return_value=mock_ctx),
@@ -3568,7 +3489,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         assert state != "running"
@@ -3654,6 +3575,207 @@ class TestNomadLogStreaming:
             emitted = [log async for log in executor.stream_logs(queue_item)]
 
         assert emitted == [None]
+
+    @staticmethod
+    def _frames_with_running_offsets(payloads: list[str]) -> list[bytes]:
+        """Build framed payloads carrying the raw EOF offset each one reaches.
+
+        :param payloads: The frame payloads, in arrival order.
+        :return: The encoded Nomad log frames.
+        """
+        frames = []
+        offset = 0
+        for payload in payloads:
+            offset += len(payload.encode())
+            frames.append(
+                TestNomadLogStreaming._nomad_log_frame(msg=payload, offset=offset)
+            )
+        return frames
+
+    @staticmethod
+    def _stream_response(
+        iter_chunks: Callable[[], AsyncIterator[tuple[bytes, bool | None]]],
+    ) -> AsyncMock:
+        """Build a 200 log-stream response whose body iterates ``iter_chunks``.
+
+        :param iter_chunks: The zero-argument async generator function the
+            response's ``content.iter_chunks`` becomes.
+        :return: An async context manager standing in for ``_request``.
+        """
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = iter_chunks
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        return mock_ctx
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    async def test_consume_stream_completion_frame_releases_the_whole_run(
+        self, mock_anonymize
+    ):
+        """Assert a terminator-free run is emitted whole by the frame that ends it.
+
+        Each frame searches only its own bytes, so the frame carrying the
+        terminator must still release everything the earlier frames withheld.
+        """
+        mock_anonymize.side_effect = _redact_card_token
+        chunks = self._frames_with_running_offsets(
+            ["card=41", "111111", "111111", "11\ntail"]
+        )
+        executor = _build_executor()
+        params = self._log_stream_params("run-script")
+        queue = asyncio.Queue()
+        pending = WithheldLineBuffer()
+
+        with patch.object(
+            executor,
+            "_request",
+            return_value=self._stream_response(self._make_iter_chunks(chunks)),
+        ):
+            await executor._consume_nomad_log_stream(
+                alloc=self._alloc_for_logs("run-script"),
+                step="run-script",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities={PIIEntity.CREDIT_CARD},
+                pending=pending,
+            )
+
+        logs = await self._drain_task_logs(queue)
+        assert [log.msg for log in logs] == ["card=[REDACTED]\n"]
+        assert (
+            logs[0].offset
+            == CARD_LINE_WITH_TAIL_EOF_OFFSET - CARD_LINE_TAIL_WITHHELD_BYTES
+        )
+        assert pending.drain() == b"tail"
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    async def test_consume_stream_withheld_remainder_survives_a_reconnect(
+        self, mock_anonymize
+    ):
+        """Assert a remainder withheld by one request is completed by the next.
+
+        The buffer outlives a single HTTP request, so a reconnect resumes
+        mid-line and the frame carrying the terminator must release exactly the
+        carried remainder plus the new bytes.
+        """
+        mock_anonymize.side_effect = _redact_card_token
+        first_stream = self._frames_with_running_offsets(["card=41", "111111"])
+        params = self._log_stream_params("run-script")
+        executor = _build_executor()
+        queue = asyncio.Queue()
+        pending = WithheldLineBuffer()
+        responses = [
+            self._stream_response(self._make_iter_chunks(first_stream)),
+            self._stream_response(
+                self._make_iter_chunks(
+                    [
+                        self._nomad_log_frame(
+                            msg="111111", offset=RECONNECT_RESUME_FRAME_EOF_OFFSET
+                        ),
+                        self._nomad_log_frame(
+                            msg="11\n", offset=SPLIT_TOKEN_LINE_EOF_OFFSET
+                        ),
+                    ]
+                )
+            ),
+        ]
+
+        with patch.object(executor, "_request", side_effect=responses):
+            for _ in responses:
+                await executor._consume_nomad_log_stream(
+                    alloc=self._alloc_for_logs("run-script"),
+                    step="run-script",
+                    log_type=TaskLogType.STDOUT,
+                    queue=queue,
+                    params=params,
+                    client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                    anonymize_entities={PIIEntity.CREDIT_CARD},
+                    pending=pending,
+                )
+
+        logs = await self._drain_task_logs(queue)
+        assert [log.msg for log in logs] == ["card=[REDACTED]\n"]
+        assert logs[0].offset == SPLIT_TOKEN_LINE_EOF_OFFSET
+        assert not pending
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    async def test_consume_stream_leaves_no_terminator_withheld(self, mock_anonymize):
+        """Assert every frame releases the lines it completed and withholds no more.
+
+        A terminator left in the buffer would silently stall a line that was
+        already complete until the ceiling flushed it.
+        """
+        mock_anonymize.side_effect = _redact_card_token
+        chunks = self._frames_with_running_offsets(["a\nb", "c\nd", "e"])
+        executor = _build_executor()
+        params = self._log_stream_params("run-script")
+        queue = asyncio.Queue()
+        pending = WithheldLineBuffer()
+
+        with patch.object(
+            executor,
+            "_request",
+            return_value=self._stream_response(self._make_iter_chunks(chunks)),
+        ):
+            await executor._consume_nomad_log_stream(
+                alloc=self._alloc_for_logs("run-script"),
+                step="run-script",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities={PIIEntity.CREDIT_CARD},
+                pending=pending,
+            )
+
+        logs = await self._drain_task_logs(queue)
+        assert [(log.msg, log.offset) for log in logs] == [("a\n", 2), ("bc\n", 5)]
+        withheld = pending.drain()
+        assert withheld == b"de"
+        assert b"\n" not in withheld
+        assert b"\r" not in withheld
+
+    @pytest.mark.asyncio
+    async def test_consume_stream_unanonymized_step_withholds_nothing(self):
+        """Assert a step outside the anonymized set emits each frame untouched.
+
+        Requested entities do not make a step eligible, so a partial line must
+        reach the queue whole, with the raw offset and nothing withheld.
+        """
+        payload = "partial-no-terminator"
+        chunks = self._frames_with_running_offsets([payload])
+        executor = _build_executor()
+        params = self._log_stream_params(NomadStep.PREPARE_ENV)
+        queue = asyncio.Queue()
+        pending = WithheldLineBuffer()
+
+        with patch.object(
+            executor,
+            "_request",
+            return_value=self._stream_response(self._make_iter_chunks(chunks)),
+        ):
+            await executor._consume_nomad_log_stream(
+                alloc=self._alloc_for_logs(NomadStep.PREPARE_ENV),
+                step=NomadStep.PREPARE_ENV,
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities={PIIEntity.CREDIT_CARD},
+                pending=pending,
+            )
+
+        logs = await self._drain_task_logs(queue)
+        assert [(log.msg, log.offset) for log in logs] == [(payload, len(payload))]
+        assert not pending
 
 
 class TestListFiles:
@@ -4681,8 +4803,8 @@ class TestPersistNomadTaskLogsCursorDurability:
             new_bytes=b"old",
             force_flush=True,
             producer_offset_after=SEED_OFFSET,
-            nomad_offset_after=SEED_OFFSET,
-            allocation_epoch=SUPERSEDED_ALLOCATION_EPOCH,
+            producer_fetch_offset_after=SEED_OFFSET,
+            producer_epoch=SUPERSEDED_ALLOCATION_EPOCH,
         )
 
         offsets = await NomadExecutor._build_initial_log_offsets(
@@ -4705,8 +4827,8 @@ class TestPersistNomadTaskLogsCursorDurability:
             new_bytes=b"cur",
             force_flush=True,
             producer_offset_after=SEED_OFFSET,
-            nomad_offset_after=SEED_OFFSET,
-            allocation_epoch=CURRENT_ALLOCATION_EPOCH,
+            producer_fetch_offset_after=SEED_OFFSET,
+            producer_epoch=CURRENT_ALLOCATION_EPOCH,
         )
 
         offsets = await NomadExecutor._build_initial_log_offsets(
@@ -4720,7 +4842,7 @@ class TestPersistNomadTaskLogsCursorDurability:
     async def test_build_initial_log_offsets_seeds_legacy_epoch_zero_row(
         self, session, created_task_with_history
     ):
-        """Assert a legacy ``allocation_epoch == 0`` row is trusted for seeding."""
+        """Assert a legacy ``producer_epoch == 0`` row is trusted for seeding."""
         history = created_task_with_history
         await TaskHistoryLogWriter.append(
             session,

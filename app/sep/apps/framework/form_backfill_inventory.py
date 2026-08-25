@@ -35,8 +35,6 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from app.sep.apps.framework.form_backfill import FormBackfillContext
-
 
 __all__ = [
     "SchemaIdLookup",
@@ -339,8 +337,14 @@ def meta_service_hints(
     return resolved_host, resolved_port, service_name
 
 
+class _ServiceLookupCarrier(Protocol):
+    """Describe the single context attribute service resolution reads."""
+
+    service_lookup: ServiceIdLookup | None
+
+
 def resolve_service_from_meta(
-    ctx: FormBackfillContext,
+    ctx: _ServiceLookupCarrier,
     meta: Mapping[str, Any],
     service_type: ServiceTypeEnum,
     *,
@@ -353,7 +357,7 @@ def resolve_service_from_meta(
     the legacy form reconstructors share. Returns ``None`` when the run has no
     service lookup or the hints do not resolve to a unique inventory service.
 
-    :param ctx: Shared backfill context carrying the inventory lookup table.
+    :param ctx: An object carrying ``service_lookup``, typically the backfill context.
     :param meta: The task ``data['meta']`` mapping.
     :param service_type: The inventory service type to match.
     :param host: An explicit host override from task YAML/config parsing.

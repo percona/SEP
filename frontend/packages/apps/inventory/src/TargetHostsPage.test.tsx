@@ -62,6 +62,15 @@ describe('TargetHostsPage', () => {
     expect(screen.getByText('Address')).toBeInTheDocument();
   });
 
+  it('stays client-side: no server search box without pagination or capability', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: HOSTS } as never);
+
+    renderPage(<TargetHostsPage />);
+
+    await screen.findByText('db-mysql-prod-01');
+    expect(screen.queryByPlaceholderText(/search/i)).toBeNull();
+  });
+
   it('shows a loading indicator while the hosts query is in flight', () => {
     // Never-resolving promise keeps the query pending so `isLoading` stays true.
     vi.spyOn(apiClient, 'get').mockReturnValue(new Promise(() => {}) as never);

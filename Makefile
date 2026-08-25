@@ -196,6 +196,15 @@ regen-pbm-payloads: venv
 regen-pbm-payloads-check: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/gen_pbm_payloads.py --check
 
+regen-xtrabackup-variants: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/gen_xtrabackup_payload_variants.py
+
+regen-xtrabackup-variants-check: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/gen_xtrabackup_payload_variants.py --check
+
+smoke-xtrabackup-variants: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/smoke_xtrabackup_variants.py $(ARGS)
+
 check-nomad-payload-size: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/check_nomad_payload_size.py $(ARGS)
 
@@ -348,4 +357,4 @@ lint-pipelines:
 	done; \
 	if [ "$${failures}" -ne 0 ]; then exit 1; fi
 
-.PHONY: venv build pack builder image format ruff typecheck lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check check-nomad-payload-size release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image format ruff typecheck lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check
