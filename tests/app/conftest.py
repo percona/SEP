@@ -147,12 +147,12 @@ class HealthProbeServer:
                 self.end_headers()
 
             def log_message(self, *args: Any, **kwargs: Any) -> None:
-                """Silence the handler's stderr access log."""
+                """Suppress the handler's stderr access log."""
 
         return Handler
 
     def start(self) -> None:
-        """Begin serving on the reserved port."""
+        """Start serving on the reserved port."""
         for _ in range(5):
             try:
                 self._server = HTTPServer(

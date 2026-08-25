@@ -285,7 +285,7 @@ class TestResolveProbeHostHeader:
         assert _resolve_probe_host_header("127.0.0.1", allowed) == "127.0.0.1"
 
     def test_disjoint_allow_list_borrows_an_allowed_hostname(self) -> None:
-        """Borrow a configured hostname when the allow-list excludes loopback.
+        """Use a configured hostname when the allow-list excludes loopback.
 
         A hardened deployment sets ``ALLOWED_HOSTS`` to its public names, so a
         ``Host: 127.0.0.1`` probe would be answered ``400`` for the whole
@@ -429,7 +429,7 @@ class TestWaitForApiReady:
     def test_returns_false_and_logs_the_last_outcome_on_timeout(
         self, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Give up at the deadline, naming the last observed outcome.
+        """Stop at the deadline, naming the last observed outcome.
 
         The gate is best-effort: the caller starts beat anyway, so the log line is
         the only thing that makes a permanently unready API actionable. Real
@@ -464,7 +464,7 @@ class TestWaitForApiReady:
     def test_zero_timeout_still_probes_once(
         self, mocker: MockerFixture, no_sleep: MagicMock
     ) -> None:
-        """Probe once even with no time budget, so a live API is not missed."""
+        """Make one attempt even with no time budget, so a live API is not missed."""
         factory = _patch_connection(mocker, [status.HTTP_200_OK])
 
         assert wait_for_api_ready("127.0.0.1", 8000, timeout=0.0) is True
@@ -510,7 +510,7 @@ class TestWaitForApiReady:
     def test_attempt_timeout_is_capped_by_the_remaining_budget(
         self, mocker: MockerFixture, no_sleep: MagicMock
     ) -> None:
-        """Shrink each attempt to the time left, so the total cannot overshoot.
+        """Trim each attempt to the time left, so the total cannot overshoot.
 
         A generous ``request_timeout`` against a listener that accepts and never
         answers would otherwise let one attempt run past the whole deadline.
@@ -606,7 +606,7 @@ class TestWaitForApiReady:
         no_sleep: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Announce the wait at ``WARNING`` so a default install sees it.
+        """Log the wait at ``WARNING`` so a default install sees it.
 
         ``LOGGING`` defaults to ``WARNING``, and this line is the only account of
         why beat has not started yet; at ``INFO`` an operator would watch beat
@@ -720,7 +720,7 @@ class TestWaitForApiReadyAgainstARealSocket:
     def test_a_wrong_host_header_never_opens_the_gate(
         self, health_probe_server: HealthProbeServer
     ) -> None:
-        """Time out rather than opening on the 400 a host rejection produces."""
+        """Treat the 400 a host rejection produces as not ready, timing out instead."""
         health_probe_server.required_host = "sep.example.com"
         health_probe_server.start()
 
@@ -795,7 +795,7 @@ class TestWaitForApiReadyAgainstARealSocket:
         monkeypatch: pytest.MonkeyPatch,
         proxy_variable: str,
     ) -> None:
-        """Reach the local listener even with a proxy set in the environment.
+        """Ignore a proxy set in the environment and dial the local listener.
 
         A container that exports a proxy for outbound traffic must not have its
         own readiness probe routed through it: the gate would never open, and
@@ -855,8 +855,10 @@ class TestHealthProbeServerFixture:
         A leaked listener would make a later test's "nothing is listening" leg
         pass or fail depending on which port the OS handed out.
         """
+        thread_count_before_serving = threading.active_count()
         health_probe_server.start()
         thread_count_while_serving = threading.active_count()
+        assert thread_count_while_serving > thread_count_before_serving
         assert wait_for_api_ready(
             "127.0.0.1", health_probe_server.port, timeout=5.0, interval=0.05
         )

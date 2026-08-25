@@ -203,7 +203,7 @@ class TestCeleryBeatReadinessGate:
         assert beat_cls.call_args.kwargs["scheduler"] == "sqlalchemy"
 
     def test_gate_targets_the_configured_listener(self, mocker: MockerFixture) -> None:
-        """Probe the host, port and allow-list the API is actually started with.
+        """Pass the gate the host, port and allow-list the API is actually started with.
 
         The readiness budget is read from settings too: a deployment whose startup
         runs long has no other way to raise it, and exhausting it starts beat
@@ -312,12 +312,17 @@ class TestCeleryBeatReadinessGate:
 
 
 class TestCeleryBeatReadinessGateOverARealSocket:
-    """Pin the startup ordering the fix turns on against a real listener."""
+    """Pin the startup ordering the fix turns on against a real listener.
 
-    #: A test-sized stand-in for the production readiness budget.
+    :cvar GATE_TIMEOUT: A test-sized stand-in for the production readiness
+        budget.
+    :cvar GATE_INTERVAL: The poll interval the shortened gate runs on.
+    :cvar SERVER_START_DELAY: Long enough that the port is still refusing on
+        the gate's first attempt.
+    """
+
     GATE_TIMEOUT = 15.0
     GATE_INTERVAL = 0.05
-    #: Long enough that the port is still refusing on the gate's first attempt.
     SERVER_START_DELAY = 0.3
 
     @pytest.fixture(name="stub_logging_config", autouse=True)
@@ -329,7 +334,7 @@ class TestCeleryBeatReadinessGateOverARealSocket:
     def gate_targets_the_probe_server_fixture(
         self, mocker: MockerFixture, health_probe_server: HealthProbeServer
     ) -> None:
-        """Aim the real gate at the probe server on a shortened deadline.
+        """Point the real gate at the probe server on a shortened deadline.
 
         The gate is left unpatched because it is the thing under test; shortening
         it through ``SEPSettings`` instead of a wrapper means these tests also
@@ -353,7 +358,7 @@ class TestCeleryBeatReadinessGateOverARealSocket:
     def _starts_listening_mid_wait(
         self, health_probe_server: HealthProbeServer
     ) -> Iterator[None]:
-        """Bring the probe server up part-way through the block's wait."""
+        """Start the probe server part-way through the block's wait."""
         delayed_start = threading.Timer(
             self.SERVER_START_DELAY, health_probe_server.start
         )
