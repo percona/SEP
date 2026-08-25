@@ -545,9 +545,7 @@ def test_setting_class_check_is_dropped_after_upgrade(sep_alembic_config):
         engine.dispose()
 
 
-def test_setting_class_check_downgrade_deletes_unknown_rows(
-    sep_alembic_config, capsys
-):
+def test_setting_class_check_downgrade_deletes_unknown_rows(sep_alembic_config, capsys):
     """Downgrade deletes out-of-list rows, logs the count, and restores the CHECK."""
     cfg, sync_url = sep_alembic_config
     command.upgrade(cfg, "heads")
