@@ -1306,6 +1306,48 @@ class TestInventoryGenerationGating:
         assert await _absence_rows(session) == []
 
     @pytest.mark.asyncio
+    async def test_filtered_service_is_held_not_counted(
+        self, node_with_services, owned_pmmsyncer, session, mocker
+    ):
+        """Hold a service newly labelled ``sep_sync: disabled`` indefinitely.
+
+        The node and service filter paths are separate code, so the node-level
+        guarantee does not carry over on its own.
+        """
+        delete_service = mocker.patch(
+            "app.sep.sync.syncers.pmm.PMMSyncer.delete_service", new_callable=AsyncMock
+        )
+        node_with_services.source = SourceEnum.PMM
+        for index, service in enumerate(node_with_services.services, start=1):
+            service.external_id = f"pmm-service-{index}"
+        excluded = {service.external_id for service in node_with_services.services}
+        owned_pmmsyncer.inventory_api.get.side_effect = [
+            _local_nodes_payload(node_with_services)
+        ]
+        owned_pmmsyncer.inventory_api.put.return_value = node_with_services.model_dump()
+        owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(
+            return_value=_snapshot(
+                _remote_node(node_with_services), filtered_service_ids=excluded
+            )
+        )
+
+        await owned_pmmsyncer.perform_inventory_sync()
+        await owned_pmmsyncer.perform_inventory_sync()
+
+        delete_service.assert_not_awaited()
+        assert await _absence_rows(session, SyncInventoryEntityTypeEnum.SERVICE) == []
+        # The services really did reach the retire path and were held there.
+        held = await SyncItemManager.list(
+            session,
+            entity_type=SyncInventoryEntityTypeEnum.SERVICE,
+            sync_instance_id=owned_pmmsyncer.sync_instance.id,
+        )
+        assert {item.entity_id for item in held} == {
+            service.id for service in node_with_services.services
+        }
+        assert {item.status for item in held} == {SyncStatusEnum.SUCCESS}
+
+    @pytest.mark.asyncio
     async def test_reclaimed_run_aborts_retire_phase(
         self, local_node, owned_pmmsyncer, session, delete_node
     ):
