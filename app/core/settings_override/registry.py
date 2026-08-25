@@ -1168,8 +1168,9 @@ def _stored_key_matches_override_key(
     inherited MySQL's ``utf8mb4_0900_ai_ci`` collation, so moving the filter
     into Python must not drop a mixed-case top-level row that DELETE/PATCH
     used to find. Snapshot application still ignores unknown casing via
-    :func:`app.core.settings_override.cache._apply_top_level_row`; this match
-    only keeps write paths able to clear or update those inert rows.
+    :func:`app.core.settings_override.cache._apply_top_level_row`; DELETE
+    removes those inert rows, and PATCH heals their stored key to the
+    canonical spelling so the next snapshot can read them.
 
     :param settings_cls: The Pydantic settings class the rows belong to.
     :param stored_key: The key column value from an override row.

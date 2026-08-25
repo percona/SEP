@@ -1298,11 +1298,15 @@ async def _persist_overrides(
     """Insert or update each ``(setting_class, key)`` row in a single transaction.
 
     Existing rows (resolved by canonicalizing the stored key) have ``value``
-    and ``is_active`` updated; missing rows are inserted fresh. When several
-    rows canonicalize to the same key, every matching row is updated so
-    whichever one the snapshot loader picks as winner yields the same value.
-    Stored keys are left as-is. The transaction is committed once at the end
-    so a failure on any single row rolls back the entire batch.
+    and ``is_active`` updated and their stored key healed to the canonical
+    spelling; missing rows are inserted fresh. When several rows resolve to
+    the same key, one survivor is kept (preferring an already-canonical row)
+    and the rest are dropped so the unique index stays satisfied after the
+    rename. Healing matters for top-level keys: the snapshot loader looks up
+    ``model_fields`` by exact key, so leaving a mixed-case spelling would
+    accept the PATCH while never applying the override. The transaction is
+    committed once at the end so a failure on any single row rolls back the
+    entire batch.
 
     Concurrent PATCHes against the same key would otherwise race: both
     requests can observe no matching row between their lookup and the
@@ -1344,8 +1348,8 @@ async def _stage_and_commit_overrides(
     """Stage every matching (setting_class, key) row and commit the batch.
 
     Resolves existing rows by canonicalizing each stored key. A missing key
-    is inserted; every row that already canonicalizes to ``key`` is updated
-    in place.
+    is inserted; a matching set collapses to one row under the canonical
+    ``key`` with the new value.
 
     :param session: The sub-app's database session.
     :param setting_class: The settings class the rows belong to.
@@ -1369,8 +1373,18 @@ async def _stage_and_commit_overrides(
                     is_active=True,
                 )
             )
+            continue
+        # Prefer a row that already stores the canonical spelling so renaming
+        # a legacy sibling does not collide with it on the unique index.
+        keep = next((row for row in existing_rows if row.key == key), existing_rows[0])
         for row in existing_rows:
-            row.value = stored_value
-            row.is_active = True
-            session.add(row)
+            if row is keep:
+                continue
+            # Delete in-session (do not use Manager.delete_where): that path
+            # commits, and extras must share this batch's single transaction.
+            await session.delete(row)
+        keep.key = key
+        keep.value = stored_value
+        keep.is_active = True
+        session.add(keep)
     await session.commit()

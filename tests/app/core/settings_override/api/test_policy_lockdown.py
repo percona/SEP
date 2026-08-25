@@ -630,7 +630,7 @@ class TestLegacyCasedOverrideRows:
         client: TestClient,
         override_session: AsyncSession,
     ) -> None:
-        """Assert PATCH of the canonical key updates the legacy row in place."""
+        """Assert PATCH heals a legacy nested key to the canonical spelling."""
         await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.SETTINGS,
@@ -645,7 +645,7 @@ class TestLegacyCasedOverrideRows:
             override_session, setting_class=SettingClassEnum.SETTINGS
         )
         assert len(rows) == 1
-        assert rows[0].key == self._LEGACY_PMM
+        assert rows[0].key == self._CANONICAL_PMM
         assert rows[0].value == new_value
         assert rows[0].is_active is True
 
@@ -655,7 +655,7 @@ class TestLegacyCasedOverrideRows:
         client: TestClient,
         override_session: AsyncSession,
     ) -> None:
-        """Assert PATCH of the canonical key updates every matching stored row."""
+        """Assert PATCH collapses duplicate case-variants to one canonical row."""
         await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.SETTINGS,
@@ -676,9 +676,10 @@ class TestLegacyCasedOverrideRows:
         rows = await SettingsOverrideManager.list(
             override_session, setting_class=SettingClassEnum.SETTINGS
         )
-        assert {row.key for row in rows} == {self._LEGACY_PMM, self._CANONICAL_PMM}
-        assert {row.value for row in rows} == {new_value}
-        assert all(row.is_active for row in rows)
+        assert len(rows) == 1
+        assert rows[0].key == self._CANONICAL_PMM
+        assert rows[0].value == new_value
+        assert rows[0].is_active is True
 
     @pytest.mark.asyncio
     async def test_patch_updates_legacy_top_level_row_instead_of_duplicating(
@@ -686,7 +687,11 @@ class TestLegacyCasedOverrideRows:
         client: TestClient,
         override_session: AsyncSession,
     ) -> None:
-        """Assert PATCH of a top-level key updates a mixed-case row in place."""
+        """Assert PATCH heals a mixed-case top-level row so the snapshot can read it.
+
+        Leaving the legacy spelling would update a row ``_apply_top_level_row``
+        never looks up, yielding a 200 that silently discards the override.
+        """
         await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.SEP_SETTINGS,
@@ -697,10 +702,18 @@ class TestLegacyCasedOverrideRows:
         new_value = "https://inventory.example.com/"
         response = client.patch(SEP_URL, json={self._CANONICAL_TOP: new_value})
         assert response.status_code == status.HTTP_200_OK
+        applied = response.json()[0]
+        assert applied["key"] == self._CANONICAL_TOP
+        assert applied["value"] == new_value
+        assert applied["has_override"] is True
         rows = await SettingsOverrideManager.list(
             override_session, setting_class=SettingClassEnum.SEP_SETTINGS
         )
         assert len(rows) == 1
-        assert rows[0].key == self._LEGACY_TOP
+        assert rows[0].key == self._CANONICAL_TOP
         assert rows[0].value == new_value
         assert rows[0].is_active is True
+        detail = client.get(f"{SEP_URL}/{self._CANONICAL_TOP}")
+        assert detail.status_code == status.HTTP_200_OK
+        assert detail.json()["has_override"] is True
+        assert detail.json()["value"] == new_value
