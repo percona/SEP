@@ -278,12 +278,14 @@ class TestTypeAdapterCache:
         assert all(a.validate_python({"name": "a"}).name == "a" for a in adapters)
         assert _type_adapter.cache_info().currsize == 1
 
-    def test_raises_type_error_for_an_unhashable_type(self):
-        """Raise TypeError when the type itself cannot key the cache."""
+    def test_validates_an_unhashable_type_without_caching(self):
+        """Validate a type expression that cannot key the cache, uncached."""
         alias = Annotated[int, _UnhashableMetadata([1])]
+        first, second = "1", "2"
 
-        with pytest.raises(TypeError, match="unhashable"):
-            run_pydantic_type_validator(alias, 1)
+        assert run_pydantic_type_validator(alias, first) == int(first)
+        assert run_pydantic_type_validator(alias, second) == int(second)
+        assert _type_adapter.cache_info().currsize == 0
 
 
 class TestProductionCacheKeys:
@@ -293,8 +295,9 @@ class TestProductionCacheKeys:
         """Keep every type listed here usable as a cache key.
 
         Four are ``Annotated`` aliases that hash only because their pydantic
-        metadata is frozen; an unfrozen metadata dataclass added to one of them
-        would turn its call site into a TypeError at import time. The list is
+        metadata is frozen. An unfrozen metadata dataclass added to one of them
+        still validates, but silently drops that call site back to rebuilding
+        its adapter per call, so the loss shows up here instead. The list is
         maintained by hand, so a new call site must be added to it.
         """
         call_site_types = {

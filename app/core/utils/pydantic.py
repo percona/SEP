@@ -45,7 +45,7 @@ V = TypeVar("V")
 T = TypeVar("T", bound=BaseModel)
 
 #: Anything Pydantic accepts as a type: a class, a parameterized generic
-#: (``set[PIIEntity]``), or an ``Annotated`` alias. Only the first is a
+#: (``set[int]``), or an ``Annotated`` alias. Only the first is a
 #: ``type`` instance, so the narrower ``type[V]`` would exclude real inputs.
 _TypeExpression: TypeAlias = Any
 
@@ -187,6 +187,25 @@ def _type_adapter(validate_class: _TypeExpression) -> TypeAdapter[Any]:
     return TypeAdapter(validate_class)
 
 
+def _adapter_for(validate_class: _TypeExpression) -> TypeAdapter[Any]:
+    """Return the memoized adapter for ``validate_class``, or a fresh one.
+
+    An unhashable type expression cannot key the cache, so it bypasses it and
+    pays a rebuild per call rather than failing. Hashability is probed directly
+    instead of catching ``TypeError`` from the cached call, which would also
+    swallow the ``TypeError`` an unsupported type expression raises while its
+    schema is built.
+
+    :param validate_class: The type expression to adapt.
+    :return: An adapter for ``validate_class``, memoized when it can be.
+    """
+    try:
+        hash(validate_class)
+    except TypeError:
+        return TypeAdapter(validate_class)
+    return _type_adapter(validate_class)
+
+
 def run_pydantic_type_validator(validate_class: type[V], obj: Any) -> V:
     """Perform Pydantic validation for the specified type with the specified object.
 
@@ -196,9 +215,8 @@ def run_pydantic_type_validator(validate_class: type[V], obj: Any) -> V:
     :param obj: The Python object to validate.
     :return: The validated object.
     :raises ValidationError: If ``obj`` does not satisfy ``validate_class``.
-    :raises TypeError: If ``validate_class`` is not hashable.
     """
-    return _type_adapter(validate_class).validate_python(obj)
+    return _adapter_for(validate_class).validate_python(obj)
 
 
 def extract_model_from_instance(instance: BaseModel, model_cls: type[T]) -> T:
