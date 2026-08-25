@@ -54,7 +54,8 @@ const MOCK_USER = {
   firstName: 'Smoke',
   lastName: 'Test',
   // Admin: the app pages under test render their create / execute / delete
-  // controls only for a session that may mutate (SEP-1844).
+  // Admin: the app pages under test render their create / execute / delete
+  // controls only for a session that may mutate.
   isAdmin: true,
 };
 

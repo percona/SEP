@@ -471,7 +471,7 @@ function ExecutionRow({
           alignItems="center"
           sx={{ width: '100%', pr: 1, flexWrap: 'wrap' }}
         >
-          {/* Selection exists only to feed the send action, so both go together. */}
+          {canMutate && (
           {canMutate && (
             <Tooltip title={selectable ? '' : 'Only finished executions can be sent.'}>
               <span>
