@@ -70,7 +70,7 @@ def test_derivation_matches_historical_member_name(
 
 
 def test_classvar_override_pins_the_storage_token() -> None:
-    """A class declaring ``__setting_class_token__`` stores that token instead."""
+    """Store the pinned token when a class declares ``__setting_class_token__``."""
 
     class CustomTokenSettings(BaseYamlSettings):
         __setting_class_token__: ClassVar[str] = "CUSTOM_TOKEN"
@@ -83,7 +83,7 @@ def test_every_reachable_settings_class_pins_its_token() -> None:
     """Fail when a settings class is added without pinning its storage token.
 
     ``_HISTORICAL_TOKENS`` cannot fail for a class it was never told about, so
-    a class added after the pins were written would be free to be renamed --
+    a class added after the pins were written would be free to be renamed,
     orphaning its override rows, which is the failure the pins exist to catch.
     App-owned classes are collected from every app that ships the declaration
     module, not from the activation list, so an inactive app is still covered.

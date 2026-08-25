@@ -89,7 +89,7 @@ class TestAlertsSettingsProxy:
         assert alerts_settings.BACKUP_RETENTION == DEFAULT_BACKUP_RETENTION
 
     def test_proxy_uses_class_name_identifier(self) -> None:
-        """The proxy is keyed by the Pydantic class ``__name__``, not an enum member."""
+        """Bind the proxy to the Pydantic class ``__name__``, not an enum member."""
         assert alerts_settings._setting_class == AlertsSettings.__name__
         assert AlertsSettings.__name__ != SettingClassEnum.ALERT_SETTINGS
 

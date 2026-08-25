@@ -40,15 +40,10 @@ async def build_settings_class_values(
     admins see in the settings UI.
 
     :param session: The sub-app's database session.
-    :type session: AsyncSession
     :param setting_class: The settings class identifier (Pydantic class ``__name__``).
-    :type setting_class: str
     :param settings_cls: The Pydantic settings class to introspect.
-    :type settings_cls: type[BaseYamlSettings]
     :param proxy: The proxy whose attribute access yields current values.
-    :type proxy: OverridableSettingsProxy
     :return: Dumped values keyed by the canonical LIST field name.
-    :rtype: dict[str, Any]
     """
     responses = await collect_class_setting_responses(
         session=session,

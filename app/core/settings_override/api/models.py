@@ -127,27 +127,21 @@ class SettingClassAppMetadata(BaseModel):
 
 
 class SettingClassGroup(BaseModel):
-    """One settings-class group in the LIST response.
+    """Group one settings class's fields for the LIST response.
 
     :param setting_class: The Pydantic class ``__name__`` this group represents.
-    :type setting_class: str
     :param settings: The fields declared on the settings class, with their
         current values and metadata.
-    :type settings: list[SettingResponse]
     :param is_app_owned: Whether this group belongs to a SEP app under
         ``app/sep/apps/`` rather than core SEP wiring.
-    :type is_app_owned: bool
     :param app_id: The owning app's registry key when ``is_app_owned`` is
         ``True``; ``None`` for core groups.
-    :type app_id: str | None
     :param app_display_name: The owning app's human-facing label when
         ``is_app_owned`` is ``True``; ``None`` for core groups.
-    :type app_display_name: str | None
     :param app_enabled: Whether the owning app is currently enabled when
         ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled
         apps remain listed so the frontend can hide them without a second
         lookup.
-    :type app_enabled: bool | None
     """
 
     setting_class: str

@@ -1406,7 +1406,7 @@ class TestSepSettingsDelete:
 
 @pytest.mark.asyncio
 class TestSepSettingsAppOwnedAlerts:
-    """Round-trip the app-owned ``AlertsSettings`` class by its ``__name__``."""
+    """Resolve the app-owned ``AlertsSettings`` class by its ``__name__``."""
 
     async def test_get_alerts_setting(self, api_admin_client: TestClient) -> None:
         """Return one field from ``GET /settings/AlertsSettings/{key}``."""

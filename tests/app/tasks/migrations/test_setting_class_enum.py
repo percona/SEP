@@ -58,7 +58,7 @@ def _insert_override(conn, setting_class: str) -> None:
 
 
 def test_setting_class_accepts_unregistered_token_after_upgrade(tasks_alembic_config):
-    """After ``upgrade heads``, a token that was never in the CHECK is accepted."""
+    """Accept a token never listed in the CHECK once ``upgrade heads`` has run."""
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, "heads")
 
@@ -77,7 +77,7 @@ def test_setting_class_accepts_unregistered_token_after_upgrade(tasks_alembic_co
 
 
 def test_setting_class_check_rejects_unlisted_token_before_drop(tasks_alembic_config):
-    """At the pre-enum revision, a SETTINGS row still violates the CHECK constraint."""
+    """Reject a SETTINGS row at the pre-enum revision, whose CHECK excludes it."""
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, _TASKS_PRE_ENUM_REVISION)
 
@@ -90,7 +90,7 @@ def test_setting_class_check_rejects_unlisted_token_before_drop(tasks_alembic_co
 
 
 def test_setting_class_check_is_dropped_after_upgrade(tasks_alembic_config):
-    """After ``upgrade heads``, ``setting_class`` is an unconstrained string."""
+    """Leave ``setting_class`` an unconstrained string after ``upgrade heads``."""
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, "heads")
 
@@ -114,7 +114,7 @@ def test_setting_class_check_is_dropped_after_upgrade(tasks_alembic_config):
 def test_setting_class_check_downgrade_deletes_unknown_rows(
     tasks_alembic_config, capsys
 ):
-    """Downgrade deletes out-of-list rows, logs the count, and restores the CHECK."""
+    """Delete out-of-list rows on downgrade, log the count, and restore the CHECK."""
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, "heads")
 

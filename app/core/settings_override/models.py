@@ -44,7 +44,7 @@ def setting_class_token(settings_cls: type["BaseYamlSettings"]) -> str:
 
     The token is the SCREAMING_SNAKE form of the class ``__name__``, derived by
     an acronym-aware CamelCase split so ``SEPSettings`` stores as
-    ``SEP_SETTINGS`` -- the spelling every existing override row already uses.
+    ``SEP_SETTINGS``, the spelling every existing override row already uses.
     A class may pin a different token by declaring ``__setting_class_token__``,
     the same escape hatch shape as SQLAlchemy's ``__tablename__``.
 
@@ -132,14 +132,10 @@ class SettingOverride(BaseSQLModel, table=True):
 
     :param setting_class: The storage token of the wrapped settings class
         (the SCREAMING_SNAKE form derived by :func:`setting_class_token`).
-    :type setting_class: str
     :param key: The field name on the target settings class to override.
-    :type key: str
     :param value: The JSON-encoded raw value to apply at runtime.
-    :type value: JsonValue
     :param is_active: Whether this override row should be considered by the
         cache loader. Inactive rows are skipped.
-    :type is_active: bool
     """
 
     __table_args__ = (

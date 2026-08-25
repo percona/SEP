@@ -90,7 +90,7 @@ def test_class_property_reflects_wrapped_class(
 
 
 def test_setting_class_stored(proxy: OverridableSettingsProxy[_Sample]) -> None:
-    """The proxy stores the class ``__name__`` identifier passed at construction."""
+    """Store the class ``__name__`` identifier passed at construction."""
     assert proxy._setting_class == "SEPSettings"
 
 

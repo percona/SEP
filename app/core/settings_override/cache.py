@@ -77,23 +77,19 @@ async def build_snapshot(
     affecting their siblings.
 
     The storage token used to filter override rows is derived from
-    ``settings_cls`` via :func:`setting_class_token` -- the SCREAMING_SNAKE
+    ``settings_cls`` via :func:`setting_class_token`: the SCREAMING_SNAKE
     form of the Pydantic class ``__name__``, matching the spelling already
     stored in ``settingoverride.setting_class``.
 
     :param session: The async SQLModel session used to query overrides. Must
         be bound to the engine of the service that owns ``settings_cls``.
-    :type session: AsyncSession
     :param settings_cls: The Pydantic settings class being snapshotted.
-    :type settings_cls: type[BaseYamlSettings]
     :param base_settings: The resolved (YAML/env) settings instance whose
         nested-parent attributes seed each merged copy, so leaves with no
         override row fall back to their YAML/env values. When ``None``, parent
         bases are taken from each field's declared default -- sufficient for
         direct callers that only exercise top-level rows.
-    :type base_settings: BaseModel | None
     :return: An immutable mapping of field name to coerced typed value.
-    :rtype: MappingProxyType[str, Any]
     :raises sqlalchemy.exc.SQLAlchemyError: If the database query fails
         (connection lost, schema mismatch, transaction aborted, ...). This
         family is not caught here; the caller is expected to log-and-skip
@@ -133,13 +129,9 @@ def _apply_top_level_row(
     """Coerce and store one whole-field override row into ``snapshot``.
 
     :param snapshot: The in-progress snapshot mapping, mutated in place.
-    :type snapshot: dict[str, Any]
     :param settings_cls: The Pydantic settings class being snapshotted.
-    :type settings_cls: type[BaseYamlSettings]
     :param setting_class: The class identifier, for log messages.
-    :type setting_class: str
     :param row: The override row to apply.
-    :type row: SettingOverride
     """
     field_info = settings_cls.model_fields.get(row.key)
     if field_info is None:
@@ -184,18 +176,12 @@ def _apply_nested_group(
     """Merge every nested-override row sharing ``prefix`` into one parent copy.
 
     :param snapshot: The in-progress snapshot mapping, mutated in place.
-    :type snapshot: dict[str, Any]
     :param settings_cls: The Pydantic settings class being snapshotted.
-    :type settings_cls: type[BaseYamlSettings]
     :param setting_class: The class identifier, for log messages.
-    :type setting_class: str
     :param prefix: The shared top-level field name for this group.
-    :type prefix: str
     :param group: The nested rows whose key starts with ``prefix__``.
-    :type group: list[SettingOverride]
     :param base_settings: The resolved settings instance seeding the parent
         base value, or ``None`` to fall back to the field default.
-    :type base_settings: BaseModel | None
     """
     resolved_parent = _resolve_field_in_model(settings_cls, prefix)
     if resolved_parent is None:
@@ -285,16 +271,11 @@ def _parent_base_value(
 
     :param snapshot: The in-progress snapshot mapping; consulted for a
         whole-object override already stored under ``prefix``.
-    :type snapshot: dict[str, Any]
     :param field_info: The parent field's metadata.
-    :type field_info: FieldInfo
     :param prefix: The parent field name.
-    :type prefix: str
     :param base_settings: The resolved settings instance, or ``None``.
-    :type base_settings: BaseModel | None
     :return: The base parent model, or ``None`` when the parent is unset and
         must be instantiated from the nested leaves alone.
-    :rtype: BaseModel | None
     """
     stored = snapshot.get(prefix)
     if isinstance(stored, BaseModel):

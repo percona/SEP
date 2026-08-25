@@ -41,10 +41,8 @@ class OverridableSettingsProxy(LazyProxy[T]):
 
     :param factory: Zero-argument callable that produces the real settings
         instance on first access.
-    :type factory: Callable[[], T]
     :param setting_class: The class identifier used to load this proxy's
         snapshot from the override table.
-    :type setting_class: str
     """
 
     __slots__ = ("_setting_class", "_snapshot")

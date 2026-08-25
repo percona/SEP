@@ -86,16 +86,12 @@ ClassEntry = tuple[str, type[BaseYamlSettings], OverridableSettingsProxy]
 
 @dataclass(frozen=True, slots=True)
 class AppOwnedClassEntry:
-    """One app-owned settings class exposed on the SEP settings router.
+    """Expose one app-owned settings class on the SEP settings router.
 
     :param setting_class: The Pydantic class ``__name__`` of the settings class.
-    :type setting_class: str
     :param settings_cls: The Pydantic settings model class.
-    :type settings_cls: type[BaseYamlSettings]
     :param proxy: The live override proxy for the class.
-    :type proxy: OverridableSettingsProxy
     :param app_key: The owning app's registry key.
-    :type app_key: str
     """
 
     setting_class: str
