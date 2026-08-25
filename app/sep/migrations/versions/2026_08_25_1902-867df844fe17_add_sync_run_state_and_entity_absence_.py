@@ -16,7 +16,7 @@
 """add sync run state and entity absence ledger
 
 Revision ID: 867df844fe17
-Revises: d1e2f3a4b5c6
+Revises: 74720aeda25b
 Create Date: 2026-08-25 19:02:13.519957
 
 """
@@ -30,7 +30,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = '867df844fe17'
-down_revision: Union[str, None] = 'd1e2f3a4b5c6'
+down_revision: Union[str, None] = '74720aeda25b'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
