@@ -90,6 +90,7 @@ __all__ = [
     "derive_execute_route",
     "derive_script_routes",
     "make_list_filter_dep",
+    "resolve_response_model",
     "schema_endpoint",
 ]
 
@@ -160,7 +161,7 @@ def schema_endpoint(router: APIRouter, plugin_schema: AppSchema) -> None:
         return plugin_schema
 
 
-def _resolve_response_model(
+def resolve_response_model(
     provider: Callable[..., BaseModel],
     *,
     helper: str,
@@ -364,7 +365,7 @@ def capabilities_endpoint(
             "Calling an async function from the sync handler would return a "
             "coroutine object that response_model serialisation cannot handle."
         )
-    response_model = _resolve_response_model(
+    response_model = resolve_response_model(
         capabilities_provider,
         helper="capabilities_endpoint",
         param="capabilities_provider",
@@ -505,7 +506,7 @@ def _resolve_create_response_model(
         ``create_response_builder``'s model omits a ``connectivity_warning`` field.
     """
     if create_response_builder is not None:
-        model = _resolve_response_model(
+        model = resolve_response_model(
             create_response_builder,
             helper="derive_crud_routes",
             param="create_response_builder",
@@ -947,7 +948,7 @@ def _resolve_detail_target(
     if detail_response_model is not None:
         model = detail_response_model
     elif detail_response_builder is not None:
-        model = _resolve_response_model(
+        model = resolve_response_model(
             detail_response_builder,
             helper="derive_crud_routes",
             param="detail_response_builder",
@@ -1241,7 +1242,7 @@ def derive_crud_routes(
         create_response_builder=create_response_builder,
     )
 
-    list_detail_model = _resolve_response_model(
+    list_detail_model = resolve_response_model(
         response_builder, helper="derive_crud_routes", param="response_builder"
     )
     detail_builder, detail_model = _resolve_detail_target(
