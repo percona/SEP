@@ -35,18 +35,14 @@ from app.core.settings_override.cache import (
     build_snapshot,
 )
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import MaterializerPurpose
 from app.sep.config import CookieOptions, SEPSettings
 from app.tasks.config import PreExecutionCheckMode, TasksSettings
 from app.tasks.execution.executors.nomad import NomadExecutor
+from tests.app.core.settings_override.conftest import insert_override_row
 
 _NOMAD_OVERRIDE_TIMEOUT = 30
-
-
-async def _insert(session: AsyncSession, **kwargs: object) -> None:
-    """Insert a setting override row via the manager."""
-    await SettingsOverrideManager.create(session, SettingOverride(**kwargs))
 
 
 @pytest.mark.asyncio
@@ -59,7 +55,7 @@ async def test_empty_table_yields_empty_snapshot(session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_active_hot_row_appears_in_snapshot(session: AsyncSession) -> None:
     """Active rows whose key is HOT are surfaced through the snapshot."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="CONNECTIVITY_CHECK_DEFAULT",
@@ -73,7 +69,7 @@ async def test_active_hot_row_appears_in_snapshot(session: AsyncSession) -> None
 @pytest.mark.asyncio
 async def test_inactive_rows_skipped(session: AsyncSession) -> None:
     """Rows with ``is_active=False`` do not enter the snapshot."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="CONNECTIVITY_CHECK_DEFAULT",
@@ -90,7 +86,7 @@ async def test_non_hot_field_skipped_with_warning(
 ) -> None:
     """A row for a NOT_OVERRIDABLE field is skipped and a warning is logged."""
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="PROXY_HEADERS",
@@ -108,7 +104,7 @@ async def test_unknown_field_skipped_with_warning(
 ) -> None:
     """A row for a field that does not exist on the model is skipped."""
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="DOES_NOT_EXIST",
@@ -124,7 +120,7 @@ async def test_unknown_field_skipped_with_warning(
 async def test_coerces_int_for_positive_int_field(session: AsyncSession) -> None:
     """A JSON int round-trips to ``PositiveInt`` for ``ARTIFACT_DOWNLOAD_TTL``."""
     override_ttl = 120
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="ARTIFACT_DOWNLOAD_TTL",
@@ -139,7 +135,7 @@ async def test_coerces_strenum_for_pre_execution_check(
     session: AsyncSession,
 ) -> None:
     """A JSON string is coerced into the StrEnum ``PreExecutionCheckMode``."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="PRE_EXECUTION_CONNECTIVITY_CHECK",
@@ -155,7 +151,7 @@ async def test_coercion_failure_skipped_and_logged(
 ) -> None:
     """A row whose value fails Pydantic coercion is dropped with a warning."""
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="ARTIFACT_DOWNLOAD_TTL",
@@ -172,7 +168,7 @@ async def test_dict_for_scalar_field_skipped(
 ) -> None:
     """A JSON object override for a scalar field is dropped (nested overrides out of scope)."""
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="CONNECTIVITY_CHECK_DEFAULT",
@@ -195,7 +191,7 @@ async def test_positive_int_constraint_rejects_zero(
     expire immediately. The cache preserves the constraint and rejects.
     """
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="ARTIFACT_DOWNLOAD_TTL",
@@ -212,7 +208,7 @@ async def test_positive_int_constraint_rejects_negative(
 ) -> None:
     """Negative integers are rejected for ``PositiveInt`` fields."""
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="STALENESS_THRESHOLD_SECONDS",
@@ -226,13 +222,13 @@ async def test_positive_int_constraint_rejects_negative(
 @pytest.mark.asyncio
 async def test_other_entries_remain_after_failure(session: AsyncSession) -> None:
     """A single coercion failure does not drop other valid entries."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="ARTIFACT_DOWNLOAD_TTL",
         value="not-a-number",
     )
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="CONNECTIVITY_CHECK_DEFAULT",
@@ -245,7 +241,7 @@ async def test_other_entries_remain_after_failure(session: AsyncSession) -> None
 @pytest.mark.asyncio
 async def test_providers_materialized_via_owning_model(session: AsyncSession) -> None:
     """``PROVIDERS`` snapshots a ``set`` of providers built by the before-validator."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.ALERT_SETTINGS,
         key="PROVIDERS",
@@ -263,7 +259,7 @@ async def test_invalid_providers_value_logged_and_skipped(
 ) -> None:
     """A before-validator ``ValueError`` is caught, logged, and the row skipped."""
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.ALERT_SETTINGS,
         key="PROVIDERS",
@@ -277,7 +273,7 @@ async def test_invalid_providers_value_logged_and_skipped(
 @pytest.mark.asyncio
 async def test_footer_template_materialized_to_template(session: AsyncSession) -> None:
     """``FOOTER_TEMPLATE`` snapshots a ``Template`` without crashing the build."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="FOOTER_TEMPLATE",
@@ -299,7 +295,7 @@ async def test_snapshot_build_materializes_with_the_snapshot_purpose(
     able to treat a mismatch as drift here and as a client error on PATCH.
     """
     materialize = mocker.spy(cache, "materialize_override_value")
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="FOOTER_TEMPLATE",
@@ -317,7 +313,7 @@ async def test_invalid_footer_template_value_logged_and_skipped(
 ) -> None:
     """A non-string ``FOOTER_TEMPLATE`` override is caught, logged, and skipped."""
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="FOOTER_TEMPLATE",
@@ -335,7 +331,7 @@ async def test_nomad_per_leaf_override_merged_as_executor(
     """Snapshot a per-leaf ``NOMAD`` override as a merged ``NomadExecutor``."""
     nomad = NomadExecutor(endpoint="http://nomad.example:4646")
     base = SimpleNamespace(NOMAD=nomad)
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="NOMAD__TIMEOUT",
@@ -356,7 +352,7 @@ async def test_nested_override_appears_as_model_copy_under_top_level_key(
     session: AsyncSession,
 ) -> None:
     """A nested row merges into a copy stored under the top-level key."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="SESSION_REFRESH__MAX_AGE",
@@ -379,7 +375,7 @@ async def test_nested_override_merges_onto_base_settings_value(
 ) -> None:
     """Leaves with no override row fall back to the YAML/env base value (AC #3)."""
     base = SimpleNamespace(SESSION_REFRESH=CookieOptions(SAMESITE="strict"))
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="SESSION_REFRESH__MAX_AGE",
@@ -403,13 +399,13 @@ async def test_mixed_case_sibling_rows_merge_into_one_parent(
     prefix so two spellings of the same parent merge together instead of one
     group clobbering the other's ``snapshot[parent]`` write.
     """
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="session_refresh__max_age",
         value=3600,
     )
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="SESSION_REFRESH__SAMESITE",
@@ -433,13 +429,13 @@ async def test_duplicate_canonical_leaf_keeps_newest_row(
     the first-seen value -- the newest row wins deterministically rather than an
     older row clobbering it.
     """
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="session_refresh__max_age",
         value=3600,
     )
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="SESSION_REFRESH__MAX_AGE",
@@ -455,7 +451,7 @@ async def test_nested_override_falls_back_when_parent_not_overridable(
 ) -> None:
     """A nested row under a non-overridable parent is skipped and warned."""
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="DATABASE__NAME",
@@ -472,13 +468,13 @@ async def test_multi_level_nested_instantiates_none_intermediate(
 ) -> None:
     """A multi-level path through a ``None`` intermediate instantiates it from leaves."""
     max_age = 31536000
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE",
         value=max_age,
     )
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__INCLUDE_SUB_DOMAINS",
@@ -498,7 +494,7 @@ async def test_multi_level_missing_required_leaf_skips_group(
     """Instantiating a ``None`` intermediate without its required leaf is skipped."""
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
     # ``max_age`` is required on StrictTransportSecurityOptions; omit it.
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__INCLUDE_SUB_DOMAINS",
@@ -515,7 +511,7 @@ async def test_unknown_nested_leaf_skipped_with_warning(
 ) -> None:
     """An unknown nested leaf is skipped; the parent is not stored if it was the only row."""
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="SESSION_REFRESH__BOGUS_FIELD",
@@ -533,13 +529,13 @@ async def test_nested_coercion_failure_skips_only_failing_leaf(
     session: AsyncSession,
 ) -> None:
     """One bad nested leaf is dropped while a sibling leaf still merges."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="SESSION_REFRESH__MAX_AGE",
         value="not-a-number",
     )
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="SESSION_REFRESH__SAMESITE",
@@ -558,13 +554,13 @@ async def test_top_level_row_targeting_nested_only_parent_is_skipped(
 ) -> None:
     """A whole-parent row on a NESTED_ONLY parent is dropped; nested rows still merge."""
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="SESSION_REFRESH",
         value={"MAX_AGE": 10, "SAMESITE": "none"},
     )
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="SESSION_REFRESH__MAX_AGE",
@@ -586,7 +582,7 @@ async def test_top_level_nomad_row_targeting_nested_only_parent_is_skipped(
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
     nomad = NomadExecutor(endpoint="http://nomad.example:4646")
     base = SimpleNamespace(NOMAD=nomad)
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="NOMAD",
@@ -595,7 +591,7 @@ async def test_top_level_nomad_row_targeting_nested_only_parent_is_skipped(
             "timeout": 99,
         },
     )
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="NOMAD__TIMEOUT",
@@ -614,7 +610,7 @@ async def test_security_headers_uppercase_key_resolves_to_lowercase_attribute(
     session: AsyncSession,
 ) -> None:
     """An uppercase nested key resolves to the lowercase case-insensitive attribute."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="SECURITY_HEADERS__X_FRAME_OPTIONS_DENY",
@@ -629,7 +625,7 @@ async def test_security_headers_lowercase_key_also_resolves(
     session: AsyncSession,
 ) -> None:
     """A lowercase nested key resolves to the same case-insensitive attribute."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="security_headers__x_frame_options_deny",
@@ -649,7 +645,7 @@ async def test_cached_property_cleared_on_merged_copy(
     assert nomad.backend is not None  # populate the cached_property memo
     assert "backend" in nomad.__dict__
     base = SimpleNamespace(NOMAD=nomad)
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="NOMAD__TIMEOUT",
@@ -664,7 +660,7 @@ async def test_cached_property_cleared_on_merged_copy(
 @pytest.mark.asyncio
 async def test_snapshot_refresh_replaces_merged_copy(session: AsyncSession) -> None:
     """Deleting the only nested row drops the merged parent on the next build."""
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.SEP_SETTINGS,
         key="SESSION_REFRESH__MAX_AGE",
@@ -735,13 +731,13 @@ async def test_whole_child_and_leaf_override_layer_together(
 ) -> None:
     """A whole-child override and a deeper leaf override of it both apply."""
     max_age = 100
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY",
         value={"max_age": max_age, "preload": True},
     )
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__INCLUDE_SUB_DOMAINS",
@@ -768,7 +764,7 @@ async def test_inherited_cached_property_cleared_on_merged_copy(
     assert nomad.logger is not None  # populate the inherited cached_property
     assert "logger" in nomad.__dict__
     base = SimpleNamespace(NOMAD=nomad)
-    await _insert(
+    await insert_override_row(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
         key="NOMAD__LOGGER_NAME",
