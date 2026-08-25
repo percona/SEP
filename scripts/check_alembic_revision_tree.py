@@ -125,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         trees = inspect_revision_trees(args.ini)
     except (ValueError, OSError) as exc:
-        print(f"{args.ini}: {exc}", file=sys.stderr)
+        print(exc, file=sys.stderr)
         return 1
     failed = [tree for tree in trees if tree.is_forked]
     if not failed:
