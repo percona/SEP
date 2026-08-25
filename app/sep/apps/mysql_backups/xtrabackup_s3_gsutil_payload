@@ -714,8 +714,6 @@ class DirectoryEncryptor:
         else:
             self._set_default_config()
 
-        gpg_bin = self.config.get("gpg bin", "/usr/bin/gpg")
-
     def _set_default_config(self) -> None:
         """Set default configuration values."""
         self.config = {
@@ -2752,9 +2750,18 @@ class Xtrabackup(Backup):
 
         self.logger.info('OK Checksummed %d InnoDB files.', count)
 
-    @staticmethod
-    def _is_good_base_backup(path):
-        """Check if the base backup is good for incrementals, specially not fully prepared or encrypted."""
+    def _is_good_base_backup(self, path: str) -> bool:
+        """Return whether the base backup can seed an incremental run.
+
+        A fully prepared base cannot, and under ``fast_restore`` neither can an
+        encrypted one: that method copies the base and feeds it to ``--prepare``,
+        which needs real InnoDB files rather than their encrypted renames.
+        ``less_space`` never feeds the base's InnoDB files to anything -- it reads
+        only the plaintext checkpoints for an LSN -- so it tolerates one.
+
+        :param path: Base backup directory.
+        :return: True if the base can seed an incremental, False otherwise.
+        """
         chk_file = os.path.join(path, 'xtrabackup_checkpoints')
         if not os.path.isfile(chk_file):
             return False
@@ -2764,7 +2771,27 @@ class Xtrabackup(Backup):
             if row == 'backup_type = full-prepared':
                 return False
 
-        return True
+        if self.incremental_method != 'fast_restore':
+            return True
+
+        return not self._is_encrypted_base(path)
+
+    def _is_encrypted_base(self, path: str) -> bool:
+        """Return whether the base backup holds any encrypted file.
+
+        Detection cannot rely on the job's own encryption settings: a base encrypted
+        by an earlier run stays encrypted after those settings are turned off. Nor can
+        it require the whole directory to be encrypted, the way ``is_encrypted_dir``
+        does -- an encryption pass that dies part-way leaves a mixed base behind after
+        the backup has already been moved into the retained directory, and one renamed
+        table is enough to break ``--prepare``. The renames both formats leave are the
+        whole answer, so no file is opened and no ``gpg`` process is spawned: a host
+        that only ever encrypted with xbcrypt has no reason to have that binary.
+
+        :param path: Base backup directory.
+        :return: True if any file in the base is encrypted, False otherwise.
+        """
+        return any(p.suffix in ('.xbcrypt', '.gpg') for p in Path(path).rglob('*'))
 
     def _is_track_changed_pages(self):
         """Returns true if innodb_track_changed_pages is enabled."""
@@ -2799,29 +2826,26 @@ class Xtrabackup(Backup):
         return to_lsn
 
     @staticmethod
-    def _is_compressed_backup(backup_path, strict_mode=False):
-        """Check if the backup is compressed."""
-        checkpoint = os.path.join(backup_path, 'xtrabackup_checkpoints')
-        for ipath in (
-                'ibdata1.qp.xbcrypt',
-                'ibdata1.zst.xbcrypt',
-                'ibdata1.lz4.xbcrypt',
-                'ibdata1.qp.xbcrypt.gpg',
-                'ibdata1.zst.xbcrypt.gpg',
-                'ibdata1.lz4.xbcrypt.gpg',
-                'ibdata1.qp.gpg',
-                'ibdata1.zst.gpg',
-                'ibdata1.lz4.gpg',
-                'ibdata1.qp',
-                'ibdata1.zst',
-                'ibdata1.lz4',
-        ):
-            ibdata = os.path.join(backup_path, ipath)
-            if os.path.exists(checkpoint) and os.path.exists(ibdata):
+    def _is_compressed_backup(backup_path: str) -> bool:
+        """Return whether the base backup can be merged as uncompressed plaintext.
+
+        Only the plaintext compression suffixes are probed, because an encrypted
+        base is already rejected by :meth:`_is_good_base_backup` before this runs.
+        The closing fallback is wider than compression by design: any base whose
+        ``ibdata1`` is missing or renamed cannot be merged as it stands, whatever
+        did the renaming.
+
+        :param backup_path: Base backup directory.
+        :return: True if the base cannot be merged without unpacking it first.
+        """
+        if not os.path.exists(os.path.join(backup_path, 'xtrabackup_checkpoints')):
+            return False
+
+        for comp in ('qp', 'zst', 'lz4'):
+            if os.path.exists(os.path.join(backup_path, 'ibdata1.%s' % (comp,))):
                 return True
-        if strict_mode and not os.path.exists(checkpoint):
-            raise BackupError('Unable to locate xtrabackup_checkpoints in {}'.format(backup_path))
-        return os.path.exists(checkpoint) and not os.path.exists(os.path.join(backup_path, 'ibdata1'))
+
+        return not os.path.exists(os.path.join(backup_path, 'ibdata1'))
 
     def _is_ongoing_incremental_cycle(self, path, cycle):
         """Check if the current incremental cycle is ongoing for the given path name.

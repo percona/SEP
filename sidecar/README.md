@@ -19,6 +19,7 @@ the app packages the settings profile activates — see [App set](#app-set).
 | `Containerfile.sidecar` | Final stage; ships the backend only, with no frontend-builder stage, and reuses the shared `sep:builder` wheel image. |
 | `entrypoint.sh` | PID 1. Mints the broker credential for the container run, resolves SEP's Grafana service-account token, then hands off to `supervisord`. |
 | `supervisord.conf` | Runs `valkey`, three `migrate-*` one-shots, the `sep`/`inventory`/`tasks` APIs, and the Celery worker and beat. |
+| `wait_for_api.py` | Run by `supervisord` ahead of the beat command; holds beat until the three APIs answer `/health`, then starts it whatever the outcome. |
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables, leaving unexported any name a file under `SECRETS_DIR` already supplies. |
 | `grafana_service_account.py` | Run by `entrypoint.sh` before `supervisord`; resolves SEP's Grafana service-account token, minting one when no source supplies it. |

@@ -2878,7 +2878,7 @@ export interface paths {
     post?: never;
     /**
      * Delete Setting
-     * @description Revert one override row to the field's declared default.
+     * @description Revert override row(s) for one field to the field's declared default.
      *
      *     For a remote class the DELETE is forwarded to the owning sub-app, which
      *     owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
@@ -2890,7 +2890,10 @@ export interface paths {
      *     override row in the first place and the operator's intent is
      *     unsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld
      *     may still carry a row written before the restriction applied, so that
-     *     row is deleted normally and only the no-row case answers 409.
+     *     row is deleted normally (found by canonicalizing the stored key, so a
+     *     legacy non-canonical casing is still seen) and only the no-row case
+     *     answers 409. When several rows canonicalize to the same key, all of
+     *     them are removed.
      *
      *     After republishing the snapshot, fires the rebind callbacks for the
      *     reverted key so a HOT target rebinds to its restored value without
@@ -15164,9 +15167,7 @@ export interface operations {
   };
   tasks_list_task_execution_events_execution_events__task_history_id__get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -15197,9 +15198,7 @@ export interface operations {
   };
   tasks_list_task_history_files_files__task_history_id__get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -15232,9 +15231,7 @@ export interface operations {
   };
   tasks_download_task_history_file_files__task_history_id__download_get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -15265,9 +15262,7 @@ export interface operations {
   };
   tasks_task_logs_event_stream_stream_logs__task_history_id__get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -15298,9 +15293,7 @@ export interface operations {
   };
   tasks_task_execution_events_stream_stream_logs__task_history_id__execution_events_get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
