@@ -21,17 +21,37 @@ without overriding the executor dependency -- so FastAPI's resolution of the
 route is verified at the framework level, not just in unit tests.
 """
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from aioresponses import aioresponses, CallbackResult
 from fastapi import status
 from fastapi.testclient import TestClient
+from pytest_mock import MockerFixture
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.main import app as combined_app
+from app.tasks.config import tasks_settings
+from app.tasks.crud import TaskHistoryManager
+from app.tasks.deps import get_session
+from app.tasks.execution.executors.nomad import NomadExecutor
+from app.tasks.execution.nomad_lifecycle import NomadLifecycle
 from app.tasks.main import tasks_app
+from app.tasks.models import TaskHistory
+from tests.app.asgi_stream import asgi_stream
+
+
+def _nomad_executor(endpoint: str) -> NomadExecutor:
+    """Build an un-entered ``NomadExecutor`` pointed at ``endpoint``.
+
+    :param endpoint: The Nomad endpoint the executor should talk to.
+    :return: The executor, ready to be published as a ``NOMAD`` override.
+    """
+    return NomadExecutor.model_validate({"endpoint": endpoint})
 
 
 @pytest.fixture
@@ -76,3 +96,94 @@ def test_combined_app_resolves_holder_on_mounted_tasks_state(
         tasks_app.dependency_overrides = {}
         if hasattr(tasks_app.state, "nomad_lifecycle"):
             delattr(tasks_app.state, "nomad_lifecycle")
+
+
+NOMAD_ENDPOINT = "http://nomad-drain.example.org"
+_ALLOCATION = {"ID": "alloc-1"}
+
+
+@pytest.mark.asyncio
+async def test_file_stream_survives_a_reconcile_mid_transfer(
+    mocker: MockerFixture,
+    regular_user: CasdoorUser,
+    session: AsyncSession,
+    created_task_with_history: TaskHistory,
+) -> None:
+    """Deliver a full file transfer whose executor was retired by a live NOMAD change.
+
+    Runs without a ``get_request_executor`` override, so the request-scoped hold
+    is what is exercised. The reconcile is fired while the executor is inside its
+    ``stat`` call, before the transfer's second call (the ``readat``) is issued:
+    without the request-scoped hold the count would reach zero when ``stat``
+    returns and the deferred close would fire before ``readat``.
+    """
+    release = asyncio.Event()
+    stat_started = asyncio.Event()
+    history_id = created_task_with_history.id
+    payload = b"payload"
+
+    async def held_stat(_url, **_kwargs):
+        stat_started.set()
+        await release.wait()
+        return CallbackResult(
+            status=status.HTTP_200_OK, payload={"Size": len(payload), "IsDir": False}
+        )
+
+    # The allocation lookup rides the synchronous python-nomad SDK, which
+    # ``aioresponses`` cannot intercept; stub it at the same seam the executor's
+    # own tests use.
+    mock_backend = MagicMock()
+    mocker.patch(
+        "app.tasks.execution.executors.nomad.models.Nomad",
+        return_value=mock_backend,
+    )
+    mock_backend.allocation.get_allocation.return_value = _ALLOCATION
+    created_task_with_history.execution_request = (
+        created_task_with_history.execution_request.model_copy(
+            update={"tracking": {"allocation_id": _ALLOCATION["ID"]}}
+        )
+    )
+    created_task_with_history.anonymize_mask = 0
+    await TaskHistoryManager.save(session, created_task_with_history)
+    tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
+    tasks_app.dependency_overrides[get_session] = lambda: session
+    tasks_settings._set_snapshot({"NOMAD": _nomad_executor(NOMAD_ENDPOINT)})
+
+    try:
+        async with NomadLifecycle(tasks_app) as holder:
+            old = holder.current
+            with aioresponses() as nomad:
+                nomad.get(
+                    f"{NOMAD_ENDPOINT}/v1/client/fs/stat/alloc-1?path=/output/out.txt",
+                    callback=held_stat,
+                )
+                nomad.get(
+                    f"{NOMAD_ENDPOINT}/v1/client/fs/readat/alloc-1"
+                    f"?path=/output/out.txt&limit=1048576&offset=0",
+                    status=status.HTTP_200_OK,
+                    body=payload,
+                )
+
+                async with asgi_stream(
+                    tasks_app,
+                    f"/history/{history_id}/file/",
+                    query_string=b"path=out.txt",
+                ) as response:
+                    assert response.status_code == status.HTTP_200_OK
+                    await asyncio.wait_for(stat_started.wait(), timeout=10)
+
+                    tasks_settings._set_snapshot(
+                        {"NOMAD": _nomad_executor("http://nomad-new.example.org")}
+                    )
+                    await holder.reconcile()
+                    assert holder.current is not old
+                    assert old._session is not None
+
+                    release.set()
+                    body = await response.drain()
+    finally:
+        tasks_app.dependency_overrides = {}
+        tasks_settings._set_snapshot({})
+
+    assert body == payload
+    assert old._session is None

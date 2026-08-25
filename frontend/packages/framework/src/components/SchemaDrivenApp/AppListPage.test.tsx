@@ -242,6 +242,146 @@ describe('AppListPage — list pagination', () => {
   });
 });
 
+describe('AppListPage — server-side query', () => {
+  const serverSchema: AppSchema = {
+    name: 'inventory',
+    display_name: 'Inventory',
+    entities: [
+      {
+        name: 'nodes',
+        display_name: 'Nodes',
+        forms: [],
+        list_view: {
+          columns: [{ key: 'name', label: 'Name', sortable: true }],
+          default_sort: '-created_at',
+          server_side_query: true,
+        },
+      },
+    ],
+  };
+
+  function renderServerPage() {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/inventory/:entityName',
+          element: <AppListPage schema={serverSchema} pluginName="inventory" />,
+        },
+      ],
+      { initialEntries: ['/inventory/nodes'] },
+    );
+    return render(
+      <SnackbarProvider>
+        <RouterProvider router={router} />
+      </SnackbarProvider>,
+    );
+  }
+
+  beforeEach(() => {
+    useAppEntityListMock.mockReturnValue({
+      data: {
+        items: [{ id: 1, name: 'node-a' }],
+        pagination: { total: 120, offset: 0, limit: 50 },
+      },
+      isLoading: false,
+    });
+  });
+
+  it('seeds the list query with the schema default_sort when capability is on', () => {
+    renderServerPage();
+
+    expect(useAppEntityListMock).toHaveBeenCalledWith('inventory', 'nodes', undefined, {
+      enabled: true,
+      offset: 0,
+      limit: 50,
+      sort: '-created_at',
+      search: undefined,
+    });
+    expect(schemaListViewMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serverQuery: expect.objectContaining({
+          sort: '-created_at',
+        }),
+      }),
+    );
+  });
+
+  it('refetches from offset 0 when sort changes', () => {
+    renderServerPage();
+
+    const pagination = schemaListViewMock.mock.calls.at(-1)?.[0]?.pagination;
+    act(() => {
+      pagination.onChange({ offset: 50, limit: 50 });
+    });
+    useAppEntityListMock.mockClear();
+
+    const serverQuery = schemaListViewMock.mock.calls.at(-1)?.[0]?.serverQuery;
+    act(() => {
+      serverQuery.onSortChange('name');
+    });
+
+    expect(useAppEntityListMock).toHaveBeenCalledWith('inventory', 'nodes', undefined, {
+      enabled: true,
+      offset: 0,
+      limit: 50,
+      sort: 'name',
+      search: undefined,
+    });
+  });
+
+  it('refetches from offset 0 when search changes', () => {
+    renderServerPage();
+
+    const pagination = schemaListViewMock.mock.calls.at(-1)?.[0]?.pagination;
+    act(() => {
+      pagination.onChange({ offset: 50, limit: 50 });
+    });
+    useAppEntityListMock.mockClear();
+
+    const serverQuery = schemaListViewMock.mock.calls.at(-1)?.[0]?.serverQuery;
+    act(() => {
+      serverQuery.onSearchChange('db1');
+    });
+
+    expect(useAppEntityListMock).toHaveBeenCalledWith('inventory', 'nodes', undefined, {
+      enabled: true,
+      offset: 0,
+      limit: 50,
+      sort: '-created_at',
+      search: 'db1',
+    });
+  });
+
+  it('does not pass serverQuery when the capability is off', () => {
+    renderPage();
+
+    expect(schemaListViewMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serverQuery: null,
+      }),
+    );
+  });
+
+  it('does not send sort/search for SchemaDrivenApp lists without the capability', () => {
+    // Alters / backup_* / other AppListPage consumers omit ``server_side_query``;
+    // their list fetches must stay offset/limit-only so client MRT sorting wins.
+    renderPage();
+
+    expect(useAppTasksMock).toHaveBeenCalledWith(
+      'sched',
+      undefined,
+      expect.objectContaining({
+        enabled: true,
+        offset: 0,
+        limit: 50,
+      }),
+    );
+    const options = useAppTasksMock.mock.calls.at(-1)?.[2] as Record<string, unknown>;
+    expect(options).not.toHaveProperty('sort');
+    expect(options).not.toHaveProperty('search');
+  });
+});
+
 describe('AppListPage — "Currently running" affordance', () => {
   it('shows the count of running/pending tasks when at least one is running', () => {
     setTaskRows([

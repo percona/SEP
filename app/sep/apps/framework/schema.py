@@ -916,6 +916,17 @@ class ListView(SchemaBaseModel):
         ``"-lastRun"``). The unprefixed key must match one of the declared
         column keys. Defaults to ``None``.
     :type default_sort: NonEmptyStr | None
+    :param server_side_query: Opt-in capability flag declaring that the list
+        endpoint honors whole-result-set sort and search via server query
+        params. When ``True`` and the list is also server-paginated, the React
+        list view enables manual sorting and filtering and drives them through
+        those params instead of sorting the loaded page; a capability-on list
+        rendered without pagination stays client-side.
+        Typed ``bool | None`` so the discovery endpoint's
+        ``exclude_none`` posture drops it from the wire until a plugin opts
+        in, keeping the addition byte-compatible with existing schemas.
+        Defaults to ``None``.
+    :type server_side_query: bool | None
     :param overview_hidden_fields: Additional task-level keys to suppress
         from the auto-rendered "extras" loop on the plugin detail Overview
         tab. The framework always hides a baseline set of internal fields
@@ -927,6 +938,7 @@ class ListView(SchemaBaseModel):
 
     columns: list[Column]
     default_sort: NonEmptyStr | None = None
+    server_side_query: bool | None = None
     overview_hidden_fields: list[StrippedNonEmptyStr] = Field(default_factory=list)
 
     @model_validator(mode="after")

@@ -13,7 +13,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Guard the import boundary between every module and the activatable apps.
+"""Guard the import boundaries the ``app/`` tree depends on.
+
+Guards the boundary between every module and the activatable apps, and
+the form-backfill contract against its orchestrator.
 
 The PMM-embedded side-car image strips non-activated packages from
 ``app/sep/apps/``, so a module that ships in the image must hold no import-time
@@ -43,6 +46,12 @@ Two limitations are deliberate, so the guard is not mistaken for a total one:
   imports an app package is out of scope. Resolving it needs a whole-tree
   function index plus import-alias resolution, and carries false-positive risk
   the intra-module form does not.
+
+A second walker, :func:`_declared_imports`, counts every import including
+``TYPE_CHECKING`` blocks. It pins two form-backfill edges the import-time
+rule cannot see: nothing under ``app/sep/apps/`` may import the
+``form_backfill`` orchestrator, and ``form_backfill_inventory`` may not
+import ``form_backfill_registry``.
 """
 
 import ast
@@ -61,6 +70,10 @@ INFRASTRUCTURE_PACKAGES = frozenset({"framework", "shared"})
 DYNAMIC_IMPORT_CALLEES = frozenset({"import_module", "import_var"})
 
 DYNAMIC_IMPORT_TARGET_KEYWORDS = frozenset({"name", "path"})
+
+FORM_BACKFILL_ORCHESTRATOR = "app.sep.apps.framework.form_backfill"
+
+FORM_BACKFILL_REGISTRY = "app.sep.apps.framework.form_backfill_registry"
 
 
 def _app_package_names(apps_root: Path) -> set[str]:
@@ -275,6 +288,30 @@ def _import_time_imports(node: ast.AST, package: str) -> Iterator[tuple[str, int
             yield from _import_time_imports(functions[name], package)
         return
     yield from _descend_import_time_nodes(node, package)
+
+
+def _declared_imports(tree: ast.AST, package: str) -> Iterator[tuple[str, int]]:
+    """Yield every import ``tree`` declares, including ``TYPE_CHECKING`` and function bodies.
+
+    :param tree: The parsed module.
+    :param package: The dotted package the importing module belongs to.
+    :return: An iterator of dotted module paths with their line numbers.
+    """
+    for node in ast.walk(tree):
+        yield from _direct_import_edges(node, package)
+
+
+def _imports_target(imported: str, target: str) -> bool:
+    """Report whether ``imported`` is ``target`` or a submodule of it.
+
+    The trailing-dot prefix is required so ``form_backfill`` does not match
+    ``form_backfill_registry`` or ``form_backfill_inventory``.
+
+    :param imported: The dotted path an import edge resolves.
+    :param target: The module that must not be reached.
+    :return: Whether the edge reaches ``target``.
+    """
+    return imported == target or imported.startswith(f"{target}.")
 
 
 def _is_type_checking_guard(node: ast.AST) -> bool:
@@ -668,3 +705,115 @@ def test_infrastructure_packages_are_not_treated_as_app_packages(name: str) -> N
     """Omit ``framework`` and ``shared`` from the app package set."""
     assert (APPS_ROOT / name).is_dir()
     assert name not in _app_package_names(APPS_ROOT)
+
+
+@pytest.mark.parametrize(
+    ("imported", "target"),
+    [
+        pytest.param(
+            "app.sep.apps.framework.form_backfill",
+            FORM_BACKFILL_ORCHESTRATOR,
+            id="exact-orchestrator",
+        ),
+        pytest.param(
+            "app.sep.apps.framework.form_backfill.FormBackfillContext",
+            FORM_BACKFILL_ORCHESTRATOR,
+            id="orchestrator-alias",
+        ),
+        pytest.param(
+            "app.sep.apps.framework.form_backfill_registry.FormBackfillEntry",
+            FORM_BACKFILL_REGISTRY,
+            id="registry-alias",
+        ),
+    ],
+)
+def test_imports_target_matches_at_a_module_boundary(
+    imported: str, target: str
+) -> None:
+    """Match a module at a dotted boundary, including a ``from`` alias."""
+    assert _imports_target(imported, target)
+
+
+@pytest.mark.parametrize(
+    "imported",
+    [
+        pytest.param(
+            "app.sep.apps.framework.form_backfill_registry",
+            id="registry",
+        ),
+        pytest.param(
+            "app.sep.apps.framework.form_backfill_inventory",
+            id="inventory",
+        ),
+    ],
+)
+def test_imports_target_rejects_a_shared_name_prefix(imported: str) -> None:
+    """Refuse a prefix match against ``form_backfill_registry`` or ``_inventory``."""
+    assert not _imports_target(imported, FORM_BACKFILL_ORCHESTRATOR)
+
+
+def test_declared_imports_count_type_checking_guards() -> None:
+    """Surface an import written inside ``if TYPE_CHECKING:``.
+
+    Without this, the orchestrator and inventory guards would pass vacuously
+    if :func:`_declared_imports` ever started skipping the same branch
+    :func:`_import_time_imports` skips.
+    """
+    source = (
+        "if TYPE_CHECKING:\n"
+        "    from app.sep.apps.framework.form_backfill import FormBackfillContext\n"
+    )
+    tree = ast.parse(source)
+    declared = {module for module, _ in _declared_imports(tree, "app.sep")}
+    import_time = {module for module, _ in _import_time_imports(tree, "app.sep")}
+    assert FORM_BACKFILL_ORCHESTRATOR in declared
+    assert FORM_BACKFILL_ORCHESTRATOR not in import_time
+
+
+def test_no_apps_module_imports_the_form_backfill_orchestrator() -> None:
+    """Reject any import of the orchestrator from under ``app/sep/apps/``.
+
+    The orchestrator is a one-shot ``python -m`` entry point. Counting
+    ``TYPE_CHECKING`` imports is the point: an annotation-only edge is invisible
+    to :func:`_import_time_imports` yet still couples the contract to its
+    consumer.
+    """
+    orchestrator_path = APPS_ROOT / "framework" / "form_backfill.py"
+    found: list[str] = []
+    seen: set[tuple[Path, int]] = set()
+    for path in sorted(APPS_ROOT.rglob("*.py")):
+        if path == orchestrator_path:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for module, lineno in _declared_imports(tree, package_of(path, BASE_DIR)):
+            if not _imports_target(module, FORM_BACKFILL_ORCHESTRATOR):
+                continue
+            if (path, lineno) in seen:
+                continue
+            seen.add((path, lineno))
+            found.append(f"{path.relative_to(BASE_DIR)}:{lineno} -> {module}")
+    assert not found, (
+        "no module under app/sep/apps/ may import"
+        f" {FORM_BACKFILL_ORCHESTRATOR} (runtime or TYPE_CHECKING):\n"
+        + "\n".join(found)
+    )
+
+
+def test_form_backfill_inventory_does_not_import_the_registry() -> None:
+    """Reject any edge from inventory into the registry, including ``TYPE_CHECKING``.
+
+    ``FormBackfillContext`` lives in ``form_backfill_registry``, so an inventory
+    edge into the registry would reintroduce the ``TYPE_CHECKING`` cycle this
+    guard exists to prevent.
+    """
+    path = APPS_ROOT / "framework" / "form_backfill_inventory.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    reached = [
+        f"{path.relative_to(BASE_DIR)}:{lineno} -> {module}"
+        for module, lineno in _declared_imports(tree, package_of(path, BASE_DIR))
+        if _imports_target(module, FORM_BACKFILL_REGISTRY)
+    ]
+    assert not reached, (
+        "form_backfill_inventory.py may not import form_backfill_registry.py:\n"
+        + "\n".join(reached)
+    )

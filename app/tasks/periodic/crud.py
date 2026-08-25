@@ -16,16 +16,18 @@
 """Define database operations for periodic tasks in the Tasks app."""
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 from sqlalchemy.sql._typing import _ColumnExpressionArgument, ColumnExpressionArgument
 from sqlalchemy_celery_beat import PeriodicTask
+from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.sql._expression_select_cls import Select, SelectOfScalar
 
 from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.config import settings
+from app.core.db.crud import ColumnExpressionOrStrLabelArgument
 from app.core.db.utils import func_json_extract
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,21 @@ class PeriodicTaskManager(BasePeriodicTaskManager):
     :ivar Model: The SQLAlchemy class this manager is responsible for (`PeriodicTask`).
     :vartype Model: type[PeriodicTask]
     """
+
+    @classmethod
+    def _get_ordering(cls) -> Iterable[ColumnExpressionOrStrLabelArgument] | None:
+        """Return the primary-key ordering that offset pagination depends on.
+
+        This method overrides ``BaseManager._get_ordering()``, which offers a
+        ``created_at``-descending fallback only to ``BaseSQLModel`` models.
+        ``PeriodicTask`` is a ``sqlalchemy_celery_beat`` model, so the base
+        implementation returns ``None`` and leaves SELECTs unordered, making
+        offset pagination undefined. The primary key is unique, so ordering by it
+        alone is total and needs no tie-breaker.
+
+        :return: The default ordering for every query this manager issues.
+        """
+        return [col(PeriodicTask.id)]
 
     @classmethod
     def _filter_query(

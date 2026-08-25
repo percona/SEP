@@ -33,10 +33,27 @@ from app.sep.apps.mysql_backups.forms import (
     BackupConfigAll,
     BackupConfigServer,
     BackupCreate,
+    UploadProvider,
 )
 from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.payload_variants import variant_name
 
-_BASE_REQUIREMENTS = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
+_BASE_REQUIREMENTS = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
+
+
+def _xtrabackup_payload_name(upload: list[UploadProvider]) -> str:
+    """Return the xtrabackup payload variant carrying exactly the selected providers.
+
+    The canonical payload ships all three upload-provider classes and sits within a
+    few bytes of the 16 KiB Nomad dispatch limit, so every other selection gets a
+    generated variant with the unreachable providers omitted. Keyed on the set of
+    providers, so the form's ordering does not change the dispatched payload.
+
+    :param upload: The upload providers the form selected (possibly empty).
+    :return: The payload filename beside this module.
+    """
+    selected = set(upload)
+    return variant_name(tuple(p.value for p in UploadProvider if p in selected))
 
 
 def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPythonSpec:
@@ -45,9 +62,12 @@ def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPyth
     Select the per-``backup_type`` server-config host (XtraBackup → ``localhost``;
     Binlog → the alternative host or the service address; Mydumper → the service
     address), serialise the ``BackupConfig`` to the YAML ``config``, and select the
-    ``file://`` payload and pip requirements by ``backup_type``. The framework's
-    ``assemble_envelope`` fills ``target`` (the executor ``HostRef``),
-    ``_service_name``, and the connectivity keys around this spec.
+    ``file://`` payload and pip requirements by ``backup_type``. XtraBackup is keyed
+    on ``form.upload`` as well: the dispatched payload is the variant carrying
+    exactly the selected providers, and ``boto3`` is requested only when that
+    variant can reach S3. The framework's ``assemble_envelope`` fills ``target``
+    (the executor ``HostRef``), ``_service_name``, and the connectivity keys around
+    this spec.
 
     :param form: The validated create form (a ``BackupCreate``).
     :param resolved: The entities resolved from the form's reference fields; its
@@ -100,12 +120,17 @@ def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPyth
     requirements = _BASE_REQUIREMENTS
     if form.backup_type == BackupType.MYDUMPER:
         payload_name = "mydumper_payload"
-        requirements += "\nfilelock"
+        requirements += "\nboto3\nfilelock"
     elif form.backup_type == BackupType.XTRABACKUP:
-        payload_name = "xtrabackup_payload"
+        payload_name = _xtrabackup_payload_name(form.upload)
+        # Only the variants carrying the S3 provider import boto3; asking for it
+        # anyway would make the task install a dependency it never loads.
+        if UploadProvider.S3 in form.upload:
+            requirements += "\nboto3"
         requirements += "\nfilelock"
     elif form.backup_type == BackupType.BINLOG:
         payload_name = "binlog_payload"
+        requirements += "\nboto3"
     else:
         raise ValueError(f"Invalid Backup Type {form.backup_type}")
     return RunPythonSpec(

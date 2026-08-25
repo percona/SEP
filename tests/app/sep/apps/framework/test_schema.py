@@ -728,6 +728,25 @@ def test_list_view_accepts_missing_default_sort():
     assert view.default_sort is None
 
 
+def test_list_view_server_side_query_defaults_to_none():
+    """Leave ``server_side_query`` unset so exclude_none keeps it off the wire."""
+    view = ListView(columns=[Column(key="id", label="ID")])
+    assert view.server_side_query is None
+    dumped = view.model_dump(mode="json", exclude_none=True)
+    assert "server_side_query" not in dumped
+
+
+def test_list_view_accepts_server_side_query_true():
+    """Accept an opt-in ``server_side_query=True`` and keep it on the wire."""
+    view = ListView(
+        columns=[Column(key="id", label="ID")],
+        server_side_query=True,
+    )
+    assert view.server_side_query is True
+    dumped = view.model_dump(mode="json", exclude_none=True)
+    assert dumped["server_side_query"] is True
+
+
 def test_list_view_rejects_descending_prefix_for_unknown_column():
     """Reject a ``-``-prefixed ``default_sort`` that references a missing column."""
     with pytest.raises(ValidationError, match="references unknown column key"):
