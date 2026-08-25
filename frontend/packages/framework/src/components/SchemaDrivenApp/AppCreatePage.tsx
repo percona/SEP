@@ -144,6 +144,8 @@ export function AppCreatePage({
         loading: create.isPending,
         capabilities,
         renderField,
+        submitError,
+        fieldErrors,
       }) ?? (
         <SchemaFormRenderer
           sections={sections}
