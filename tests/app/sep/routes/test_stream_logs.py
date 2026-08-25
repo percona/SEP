@@ -15,23 +15,34 @@
 
 """Define tests for the app.sep.routes.stream_logs module."""
 
+import asyncio
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from aioresponses import aioresponses, CallbackResult
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.status import HTTP_200_OK, HTTP_503_SERVICE_UNAVAILABLE
 
+from app.core.config import settings
 from app.core.requests import RemoteAPI
+from app.core.settings_override.lifecycle import SnapshotChange
+from app.core.settings_override.models import SettingClassEnum
+from app.sep.config import sep_settings
 from app.sep.deps import (
     get_current_user,
     get_task_history,
     get_tasks_client,
 )
-from app.sep.main import sep_app
+from app.sep.main import sep_app, sep_overrides_lifespan
 from app.tasks.models import TaskHistoryStatusEnum
+from tests.app.asgi_stream import asgi_stream
+from tests.app.sep.routes.conftest import (
+    resolve_registry_tasks_client,
+    TASKS_ENDPOINT,
+)
 
 
 async def mock_stream_logs_generator(log_lines):
@@ -297,3 +308,247 @@ def test_execution_events_stream_emits_sep_error_on_upstream_error(
     streamed_content = response.content.decode("utf-8")
     assert "event: sep-error" in streamed_content
     assert str(HTTP_503_SERVICE_UNAVAILABLE) in streamed_content
+
+
+NEW_TASKS_ENDPOINT = "http://tasks-rebound.example.org"
+
+
+async def _tasks_endpoint_rebinder():
+    """Point ``TASKS_ENDPOINT`` at a new host and return the registered rebind callback.
+
+    Reads the callback out of ``sep_app.state.override_callbacks`` rather than
+    building one, so the test exercises the wiring the settings-API handler
+    fires and fails if the ``TASKS_ENDPOINT`` key stops being registered.
+
+    :return: The callback ``app.sep.main`` wires to a ``TASKS_ENDPOINT`` change.
+    """
+    sep_settings._set_snapshot({"TASKS_ENDPOINT": NEW_TASKS_ENDPOINT})
+    async with sep_overrides_lifespan(sep_app):
+        callbacks = sep_app.state.override_callbacks
+    return callbacks[(SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT")]
+
+
+@pytest.mark.usefixtures("real_client_route_overrides")
+class TestStreamsSurviveARebind:
+    """Cover the SSE routes against a rebind fired while the response is open.
+
+    These run without a ``get_tasks_client`` override, so the request-scoped
+    hold the dependency takes is part of what is exercised, and are driven with
+    :func:`tests.app.asgi_stream.asgi_stream` because both HTTP test clients
+    buffer the whole response before returning it.
+    """
+
+    pytestmark = pytest.mark.asyncio
+
+    async def test_log_stream_survives_an_app_state_rebind(self, task_history_response):
+        """Deliver the post-stream ``finish`` event on the retired client.
+
+        The ``finish`` event comes from a second call the generator makes *after*
+        the log stream completed, so its arrival is what proves the accounting
+        unit is the consumer's hold and not the individual HTTP call.
+        """
+        release = asyncio.Event()
+        history_id = task_history_response.id
+        old = await RemoteAPI(endpoint=TASKS_ENDPOINT).open()
+        sep_app.state.tasks_api = old
+        rebind = await _tasks_endpoint_rebinder()
+
+        async def held_logs(_url, **_kwargs):
+            await release.wait()
+            return CallbackResult(status=HTTP_200_OK, body=b'{"msg": "log line 1"}\n')
+
+        try:
+            with aioresponses() as upstream:
+                upstream.get(
+                    f"{TASKS_ENDPOINT}/history/{history_id}/logs/", callback=held_logs
+                )
+                upstream.post(
+                    f"{TASKS_ENDPOINT}/history/{history_id}/sync/",
+                    payload=task_history_response.model_dump(mode="json"),
+                )
+
+                async with asgi_stream(
+                    sep_app, f"/stream-logs/{history_id}"
+                ) as response:
+                    assert response.status_code == HTTP_200_OK
+
+                    await rebind(SnapshotChange({}, {}))
+                    assert sep_app.state.tasks_api is not old
+                    assert old._session is not None
+
+                    release.set()
+                    body = (await response.drain()).decode()
+        finally:
+            new = sep_app.state.tasks_api
+            del sep_app.state.tasks_api
+            await new.close()
+            if (
+                old._session is not None
+            ):  # only on an early failure; the drain closes it
+                await old.close()
+            sep_settings._set_snapshot({})
+
+        assert "log line 1" in body
+        assert "event: finish" in body
+        assert old._session is None
+
+    async def test_log_stream_survives_a_registry_eviction(self, task_history_response):
+        """Cover the mounted shape, where the client comes from the registry."""
+        release = asyncio.Event()
+        history_id = task_history_response.id
+        sep_settings._set_snapshot({"TASKS_ENDPOINT": TASKS_ENDPOINT})
+        client = await resolve_registry_tasks_client()
+
+        async def held_logs(_url, **_kwargs):
+            await release.wait()
+            return CallbackResult(status=HTTP_200_OK, body=b'{"msg": "log line 1"}\n')
+
+        try:
+            with aioresponses() as upstream:
+                upstream.get(
+                    f"{TASKS_ENDPOINT}/history/{history_id}/logs/", callback=held_logs
+                )
+                upstream.post(
+                    f"{TASKS_ENDPOINT}/history/{history_id}/sync/",
+                    payload=task_history_response.model_dump(mode="json"),
+                )
+
+                async with asgi_stream(
+                    sep_app, f"/stream-logs/{history_id}"
+                ) as response:
+                    assert response.status_code == HTTP_200_OK
+
+                    await settings.invalidate_client(TASKS_ENDPOINT)
+                    assert client._session is not None
+
+                    release.set()
+                    body = (await response.drain()).decode()
+        finally:
+            await settings.invalidate_client(TASKS_ENDPOINT)
+            sep_settings._set_snapshot({})
+
+        assert "event: finish" in body
+        assert client._session is None
+
+    async def test_execution_events_stream_survives_a_rebind_between_polls(
+        self, task_history_response
+    ):
+        """Keep polling on the retired client after a rebind lands between polls.
+
+        Between two polls the per-call hold is already released, so the
+        request-scoped one is the only thing keeping the client alive here.
+        """
+        first_poll_done = asyncio.Event()
+        history_id = task_history_response.id
+        old = await RemoteAPI(endpoint=TASKS_ENDPOINT).open()
+        sep_app.state.tasks_api = old
+        rebind = await _tasks_endpoint_rebinder()
+
+        finished = task_history_response.model_dump(mode="json")
+        running = finished | {"status": TaskHistoryStatusEnum.RUNNING.value}
+
+        async def first_poll(_url, **_kwargs):
+            first_poll_done.set()
+            return CallbackResult(status=HTTP_200_OK, payload=running)
+
+        try:
+            with aioresponses() as upstream:
+                upstream.get(
+                    f"{TASKS_ENDPOINT}/history/{history_id}/events",
+                    payload=[],
+                    repeat=True,
+                )
+                upstream.get(
+                    f"{TASKS_ENDPOINT}/history/{history_id}", callback=first_poll
+                )
+                upstream.get(f"{TASKS_ENDPOINT}/history/{history_id}", payload=finished)
+
+                async with asgi_stream(
+                    sep_app, f"/stream-logs/{history_id}/execution-events"
+                ) as response:
+                    await asyncio.wait_for(first_poll_done.wait(), timeout=10)
+
+                    await rebind(SnapshotChange({}, {}))
+                    assert old._session is not None
+
+                    body = (await response.drain()).decode()
+        finally:
+            new = sep_app.state.tasks_api
+            del sep_app.state.tasks_api
+            await new.close()
+            if (
+                old._session is not None
+            ):  # only on an early failure; the drain closes it
+                await old.close()
+            sep_settings._set_snapshot({})
+
+        assert "event: finish" in body
+        assert TaskHistoryStatusEnum.SUCCESS.value in body
+        assert old._session is None
+
+
+@pytest.mark.usefixtures("real_client_route_overrides")
+class TestRequestsArrivingAfterARebind:
+    """Cover the persistent post-rebind 500 the ticket left out of scope.
+
+    The report saw ``/history/{id}/files/`` answering 500 with ``Session is
+    closed`` for the rest of the process's life *after* a rebind. Neither close
+    site can produce that, since each stops handing the outgoing client out
+    before closing it, so these pin that property rather than the in-flight one.
+    """
+
+    pytestmark = pytest.mark.asyncio
+
+    async def test_app_state_shape_serves_the_new_client(
+        self, task_history_response
+    ) -> None:
+        """Answer a post-rebind request from the rebuilt ``app.state`` client."""
+        history_id = task_history_response.id
+        old = await RemoteAPI(endpoint=TASKS_ENDPOINT).open()
+        sep_app.state.tasks_api = old
+        rebind = await _tasks_endpoint_rebinder()
+
+        try:
+            await rebind(SnapshotChange({}, {}))
+            assert old._session is None  # nothing held it, so it closed at once
+
+            with aioresponses() as upstream:
+                upstream.get(
+                    f"{NEW_TASKS_ENDPOINT}/history/{history_id}/files/",
+                    payload={},
+                )
+                async with asgi_stream(sep_app, f"/files/{history_id}") as response:
+                    await response.drain()
+        finally:
+            new = sep_app.state.tasks_api
+            del sep_app.state.tasks_api
+            await new.close()
+            sep_settings._set_snapshot({})
+
+        assert response.status_code == HTTP_200_OK
+
+    async def test_registry_shape_rebuilds_the_evicted_client(
+        self, task_history_response
+    ) -> None:
+        """Answer a post-eviction request from a freshly built registry client."""
+        history_id = task_history_response.id
+        sep_settings._set_snapshot({"TASKS_ENDPOINT": TASKS_ENDPOINT})
+        stale = await resolve_registry_tasks_client()
+
+        try:
+            await settings.invalidate_client(TASKS_ENDPOINT)
+            assert stale._session is None
+
+            with aioresponses() as upstream:
+                upstream.get(
+                    f"{TASKS_ENDPOINT}/history/{history_id}/files/", payload={}
+                )
+                async with asgi_stream(sep_app, f"/files/{history_id}") as response:
+                    await response.drain()
+
+            assert await resolve_registry_tasks_client() is not stale
+        finally:
+            await settings.invalidate_client(TASKS_ENDPOINT)
+            sep_settings._set_snapshot({})
+
+        assert response.status_code == HTTP_200_OK

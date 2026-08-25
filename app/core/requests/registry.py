@@ -116,7 +116,7 @@ class ClientRegistry:
             return client
 
     async def invalidate(self, endpoint: str) -> None:
-        """Close and evict every cached client served from ``endpoint``.
+        """Evict every cached client served from ``endpoint`` and close it when idle.
 
         Removes the matching clients from the cache before closing them, so a
         subsequent :meth:`get` for the same configuration reconstructs a fresh
@@ -124,10 +124,15 @@ class ClientRegistry:
         DB-backed settings override changes at runtime. A no-op when the
         registry is closed or when no cached client serves ``endpoint``.
 
+        Eviction is immediate; the close is not. A client with consumers still
+        in flight stays open until its last one releases, so an SSE stream or a
+        file download that resolved it survives the rebind. This method
+        therefore does not guarantee the client is closed by the time it
+        returns, only that no new work is handed it.
+
         :param endpoint: The endpoint URL whose cached clients to evict.
             Compared trailing-slash-insensitively against each client's
             ``endpoint``.
-        :type endpoint: str
         """
         normalized = endpoint.rstrip("/")
         async with self._close_lock:
@@ -145,7 +150,8 @@ class ClientRegistry:
         if not matching:
             return
         results = await asyncio.gather(
-            *(client.close() for _key, client in matching), return_exceptions=True
+            *(client.close_when_idle() for _key, client in matching),
+            return_exceptions=True,
         )
         for (_key, client), result in zip(matching, results, strict=False):
             if isinstance(result, Exception):

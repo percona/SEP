@@ -85,32 +85,40 @@ async def download_task_history_file(
             attachment = f"{filename}.tar.gz" if is_dir else filename
             headers["Content-Disposition"] = f'attachment; filename="{attachment}"'
 
-        return StreamingResponse(
-            task_history_file_stream(tasks_api, task_history.id, request),
-            media_type="application/octet-stream",
-            headers=headers,
-        )
+    return StreamingResponse(
+        task_history_file_stream(
+            tasks_client, task_history.id, request, user.access_token
+        ),
+        media_type="application/octet-stream",
+        headers=headers,
+    )
 
 
 async def task_history_file_stream(
-    tasks_api: TaskAPI, task_history_id: int, request: Request
+    tasks_client: TasksClient,
+    task_history_id: int,
+    request: Request,
+    access_token: str,
 ) -> AsyncGenerator[bytes, None]:
     """Stream a task history's archived file content as raw bytes.
 
     Yields the file payload chunk-by-chunk from ``/history/{id}/file/`` without
     any line buffering, so binary, gzip, and tar payloads pass through intact.
 
-    :param tasks_api: The Tasks API client to use for streaming the file.
-    :type tasks_api: TaskAPI
+    The payload request is authenticated as the user named by ``access_token``,
+    under a context this body enters itself rather than inheriting from the
+    route.
+
+    :param tasks_client: The Tasks API client to use for streaming the file.
     :param task_history_id: The ID of the task history whose file is to be streamed.
-    :type task_history_id: int
     :param request: The incoming HTTP request.
-    :type request: Request
-    :yield: Raw byte chunks of the file payload (binary-safe).
-    :rtype: AsyncGenerator[bytes, None]
+    :param access_token: Bearer token authenticating the download as the viewing
+        user.
+    :return: Raw byte chunks of the file payload (binary-safe).
     """
-    async for chunk in tasks_api.stream_chunks(
-        f"/history/{task_history_id}/file/",
-        params=request.query_params,
-    ):
-        yield chunk
+    with tasks_client.auth(access_token) as tasks_api:
+        async for chunk in tasks_api.stream_chunks(
+            f"/history/{task_history_id}/file/",
+            params=request.query_params,
+        ):
+            yield chunk
