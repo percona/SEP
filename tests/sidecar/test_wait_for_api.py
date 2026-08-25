@@ -15,6 +15,7 @@
 """Cover the side-car's readiness gate in front of Celery beat."""
 
 import logging
+from collections.abc import Iterator
 from configparser import RawConfigParser
 from dataclasses import dataclass, field
 from typing import Any
@@ -53,6 +54,58 @@ class Probe:
     port: int
     allowed_hosts: list[str]
     timeout: float
+
+
+class _RecordCollector(logging.Handler):
+    """Keep every record the gate emits, in order."""
+
+    def __init__(self) -> None:
+        """Start with no records and no level of its own."""
+        super().__init__(level=logging.NOTSET)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Store the record instead of formatting it anywhere.
+
+        :param record: The record the gate's logger produced.
+        """
+        self.records.append(record)
+
+    @property
+    def text(self) -> str:
+        """Return every captured message joined by newlines.
+
+        :return: The rendered messages, in emission order.
+        """
+        return "\n".join(record.getMessage() for record in self.records)
+
+
+@pytest.fixture(name="gate_logs")
+def gate_logs_fixture() -> Iterator[_RecordCollector]:
+    """Capture the gate's records off its own logger rather than off the root.
+
+    ``caplog`` listens on the root logger, so a sibling module that re-applies
+    ``dictConfig`` mid-suite can leave these assertions with nothing to read,
+    depending on the order the run hands tests out. Listening on the gate's own
+    logger, with the global level guards lifted, makes them order-independent.
+
+    :return: The handler holding every record the gate emitted.
+    """
+    collector = _RecordCollector()
+    logger = helper.logger
+    previous_level, previous_disabled = logger.level, logger.disabled
+    previous_global_disable = logging.root.manager.disable
+    logger.addHandler(collector)
+    logger.setLevel(logging.DEBUG)
+    logger.disabled = False
+    logging.disable(logging.NOTSET)
+    try:
+        yield collector
+    finally:
+        logging.disable(previous_global_disable)
+        logger.removeHandler(collector)
+        logger.setLevel(previous_level)
+        logger.disabled = previous_disabled
 
 
 @pytest.fixture
@@ -211,7 +264,7 @@ def test_the_services_share_one_budget(gate):
     ]
 
 
-def test_an_exhausted_budget_skips_the_rest(gate, caplog):
+def test_an_exhausted_budget_skips_the_rest(gate, gate_logs):
     """Report every listener beat did not wait for instead of stopping at the first."""
     services = (
         ("sep", StubService(UVICORN_PORT=9000)),
@@ -219,16 +272,15 @@ def test_an_exhausted_budget_skips_the_rest(gate, caplog):
         ("tasks", StubService(UVICORN_PORT=9002)),
     )
 
-    with caplog.at_level(logging.ERROR, logger=helper.logger.name):
-        ready, probes = gate(services, elapsed=sep_settings.API_READINESS_TIMEOUT + 1.0)
+    ready, probes = gate(services, elapsed=sep_settings.API_READINESS_TIMEOUT + 1.0)
 
     assert not ready
     assert [probe.port for probe in probes] == [9000]
-    assert "inventory" in caplog.text
-    assert "tasks" in caplog.text
+    assert "inventory" in gate_logs.text
+    assert "tasks" in gate_logs.text
 
 
-def test_a_tls_service_is_skipped_not_probed(gate, caplog):
+def test_a_tls_service_is_skipped_not_probed(gate, gate_logs):
     """Skip a TLS listener rather than burn the budget on handshake failures.
 
     The probe speaks plain HTTP, so a TLS listener can never answer it with 200;
@@ -239,12 +291,11 @@ def test_a_tls_service_is_skipped_not_probed(gate, caplog):
         ("inventory", StubService(UVICORN_PORT=9001)),
     )
 
-    with caplog.at_level(logging.WARNING, logger=helper.logger.name):
-        ready, probes = gate(services)
+    ready, probes = gate(services)
 
     assert not ready
     assert [probe.port for probe in probes] == [9001]
-    assert "TLS" in caplog.text
+    assert "TLS" in gate_logs.text
 
 
 def test_a_failed_probe_is_reported_without_stopping_the_rest(gate):
@@ -261,23 +312,21 @@ def test_a_failed_probe_is_reported_without_stopping_the_rest(gate):
     assert [probe.port for probe in probes] == [9000, 9001, 9002]
 
 
-def test_main_logs_the_degradation_and_returns(monkeypatch, caplog):
+def test_main_logs_the_degradation_and_returns(monkeypatch, gate_logs):
     """Return normally on a degraded gate: the shell goes on to exec beat."""
     monkeypatch.setattr("logging.config.dictConfig", lambda _: None)
     monkeypatch.setattr(helper, "wait_for_apis", lambda: False)
 
-    with caplog.at_level(logging.ERROR, logger=helper.logger.name):
-        helper.main()
+    helper.main()
 
-    assert "without every HTTP API confirmed ready" in caplog.text
+    assert "without every HTTP API confirmed ready" in gate_logs.text
 
 
-def test_main_is_quiet_when_every_api_is_ready(monkeypatch, caplog):
+def test_main_is_quiet_when_every_api_is_ready(monkeypatch, gate_logs):
     """Leave no ERROR behind on the ordinary start."""
     monkeypatch.setattr("logging.config.dictConfig", lambda _: None)
     monkeypatch.setattr(helper, "wait_for_apis", lambda: True)
 
-    with caplog.at_level(logging.ERROR, logger=helper.logger.name):
-        helper.main()
+    helper.main()
 
-    assert not caplog.records
+    assert not gate_logs.records
