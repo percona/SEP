@@ -48,9 +48,7 @@ def setting_class_token(settings_cls: type["BaseYamlSettings"]) -> str:
     the same escape hatch shape as SQLAlchemy's ``__tablename__``.
 
     :param settings_cls: The settings class whose override rows are stored.
-    :type settings_cls: type[BaseYamlSettings]
     :return: The token written to ``settingoverride.setting_class``.
-    :rtype: str
     """
     override = getattr(settings_cls, "__setting_class_token__", None)
     if isinstance(override, str) and override:
@@ -89,7 +87,7 @@ class SettingClassEnum(StrEnum):
 
 
 class _SettingClassString(TypeDecorator):
-    """VARCHAR storage that binds ``SettingClassEnum`` members as their names.
+    """Store the settings-class token as VARCHAR, binding enum members by name.
 
     SQLAlchemy's ``Enum`` type persisted members by *name* (``SEP_SETTINGS``).
     A bare ``String`` would bind the *value* (``SEPSettings``) and orphan

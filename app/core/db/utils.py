@@ -399,9 +399,8 @@ def check_constraint_name(
 ) -> str | None:
     """Return the name of the CHECK constraint on ``column_name``, if any.
 
-    Used by the SEP-1825 constraint-drop migrations so a second track on a
-    shared PostgreSQL database can no-op once the first track has already
-    dropped ``settingoverride.setting_class``'s CHECK.
+    Lets a second track on a shared PostgreSQL database no-op once another
+    track has already dropped ``settingoverride.setting_class``'s CHECK.
 
     Raises when more than one CHECK mentions ``column_name`` so a schema
     drift fails fast instead of returning an arbitrary inspector-ordered
@@ -436,13 +435,13 @@ def check_constraint_lists_members(
 ) -> bool:
     """Return ``True`` when the CHECK constraint on ``column_name`` lists every member.
 
-    Until SEP-1825 dropped it, the ``setting_class`` column used
-    ``native_enum=False``, so its allowed values lived in a ``CHECK`` constraint
-    rather than a PostgreSQL ``TYPE``. This reflects the constraint text
-    cross-dialect via ``sqlalchemy.inspect`` and tests membership by matching
-    each value as a single-quoted SQL string literal, so ``"SETTINGS"`` does not
-    spuriously match ``"SEP_SETTINGS"``. Historical enum-extension migrations
-    and the SEP-1825 downgrade still consult this helper.
+    The ``setting_class`` column's allowed values lived in a ``CHECK``
+    constraint rather than a PostgreSQL ``TYPE``, because the column used
+    ``native_enum=False``. This reflects the constraint text cross-dialect via
+    ``sqlalchemy.inspect`` and tests membership by matching each value as a
+    single-quoted SQL string literal, so ``"SETTINGS"`` does not spuriously
+    match ``"SEP_SETTINGS"``. Historical enum-extension migrations and the
+    CHECK-restoring downgrade still consult this helper.
 
     Returns ``False`` when the table does not exist. ``get_check_constraints``
     raises ``NoSuchTableError`` for a missing table, and a missing table means

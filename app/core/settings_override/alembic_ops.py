@@ -70,7 +70,7 @@ def upgrade_drop_setting_class_check() -> None:
 
 
 def downgrade_restore_setting_class_check() -> None:
-    """Re-add the pre-SEP-1825 CHECK, deleting rows that would violate it.
+    """Restore the legacy CHECK, deleting rows that would violate it.
 
     Deletes every ``settingoverride`` row whose ``setting_class`` is not in
     :data:`SETTING_CLASS_CHECK_MEMBERS_PRE_SEP_1825` and logs how many rows

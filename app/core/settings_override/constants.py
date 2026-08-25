@@ -21,8 +21,8 @@
 SETTINGOVERRIDE_MIGRATION_LOCK_KEY = 0x5E770438
 
 #: Member list the ``settingoverride.setting_class`` CHECK enumerated immediately
-#: before SEP-1825 dropped it. Downgrades re-add this exact list and delete rows
-#: naming a class outside it.
+#: before the drop migration widened the column. Downgrades re-add this exact
+#: list and delete rows naming a class outside it.
 SETTING_CLASS_CHECK_MEMBERS_PRE_SEP_1825 = (
     "SEP_SETTINGS",
     "TASKS_SETTINGS",
@@ -31,6 +31,6 @@ SETTING_CLASS_CHECK_MEMBERS_PRE_SEP_1825 = (
     "ALERT_SETTINGS",
     "ANONYMIZER_SETTINGS",
     "ALERTS_SETTINGS",
-    "HEALTH_REPORT_SETTINGS",
     "INVENTORY_SETTINGS",
+    "HEALTH_REPORT_SETTINGS",
 )
