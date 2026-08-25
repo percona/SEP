@@ -275,9 +275,11 @@ class TestCheckConstraintName:
         )
         metadata.create_all(engine)
         try:
-            with engine.connect() as conn:
-                with pytest.raises(RuntimeError, match="at most one CHECK"):
-                    check_constraint_name(conn, "settingoverride", "setting_class")
+            with (
+                engine.connect() as conn,
+                pytest.raises(RuntimeError, match="at most one CHECK"),
+            ):
+                check_constraint_name(conn, "settingoverride", "setting_class")
         finally:
             engine.dispose()
 
