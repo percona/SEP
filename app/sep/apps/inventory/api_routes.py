@@ -72,6 +72,10 @@ from app.sep.apps.inventory.deps import (
     SYSTEM_OBSERVATION_SEGMENT,
     unwrap_inventory_plugin_list_payload,
 )
+from app.sep.apps.inventory.list_query import (
+    InventoryListQueryDep,
+    list_query_upstream_params,
+)
 from app.sep.apps.inventory.models import (
     INVENTORY_SYNC_TASK_NAME,
     PluginTaskResponse,
@@ -195,6 +199,7 @@ async def inventory_list_entity(
     entity: str,
     inventory_api: InventoryAPI,
     pagination: PaginationDep,
+    list_query: InventoryListQueryDep,
 ) -> PaginatedResponse[Any]:
     """List inventory nodes, services, schemas, or tables.
 
@@ -202,12 +207,18 @@ async def inventory_list_entity(
     :param entity: Inventory entity type (nodes, services, schemas, tables).
     :param inventory_api: Async client for the Inventory sub-app.
     :param pagination: Validated offset/limit forwarded to the upstream call.
+    :param list_query: Allowlist-vetted sort/search for this entity.
     :return: A paginated envelope echoing the requested window.
     """
     entity = require_inventory_plugin_entity(entity)
     params = inventory_plugin_query_params(request)
     params["offset"] = pagination.offset
     params["limit"] = pagination.limit
+    # Drop raw sort/search before merging the validated adapter output so a
+    # blank or omitted search cannot leak through from the query string.
+    params.pop("sort", None)
+    params.pop("search", None)
+    params.update(list_query_upstream_params(list_query))
     data = await inventory_api.get(inventory_service_list_path(entity), params=params)
     items = unwrap_inventory_plugin_list_payload(data)
     envelope = data if isinstance(data, dict) else {}

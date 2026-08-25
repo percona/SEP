@@ -29,6 +29,7 @@ export {
   useDeleteAppEntity,
   useDeleteAppTask,
   normalizeAppListResponse,
+  fetchAllAppListPages,
   DEFAULT_APP_LIST_OFFSET,
   DEFAULT_APP_LIST_LIMIT,
   RUNNING_STATUSES,

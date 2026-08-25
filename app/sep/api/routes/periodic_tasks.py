@@ -27,6 +27,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, status
 
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.core.utils.fields import ArbitraryMapping
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
 from app.sep.api.proxy import reraise_upstream_tasks_errors
@@ -36,20 +38,27 @@ router = APIRouter()
 
 
 @router.get("/", responses=UPSTREAM_TASKS_502_RESPONSE)
-async def list_periodic_tasks(tasks_api: TaskAPI) -> list[ArbitraryMapping]:
-    """Return the upstream periodic-task list through the SEP gateway.
+async def list_periodic_tasks(
+    tasks_api: TaskAPI,
+    pagination: PaginationDep,
+) -> PaginatedResponse[ArbitraryMapping]:
+    """Return the upstream periodic-task page through the SEP gateway.
 
-    :param tasks_api: The Tasks API client used to fetch the upstream list.
-    :return: The upstream periodic-task list, or ``[]`` when the upstream
-        payload is not a list.
+    :param tasks_api: The Tasks API client used to fetch the upstream page.
+    :param pagination: Validated offset/limit forwarded to the upstream list.
+    :return: The upstream paginated envelope, or an empty envelope echoing the
+        requested window when the upstream payload is not a dict.
     :raises HTTPException: Re-raised unchanged for an upstream client error
         (status < 500).
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
         or a connection-level ``OSError``.
     """
+    params = {"offset": pagination.offset, "limit": pagination.limit}
     with reraise_upstream_tasks_errors():
-        result = await tasks_api.get("/periodic/")
-    return result if isinstance(result, list) else []
+        payload = await tasks_api.get("/periodic/", params=params)
+    if not isinstance(payload, dict):
+        return PaginatedResponse[ArbitraryMapping].from_pagination([], 0, pagination)
+    return PaginatedResponse[ArbitraryMapping].model_validate(payload)
 
 
 @router.post(
