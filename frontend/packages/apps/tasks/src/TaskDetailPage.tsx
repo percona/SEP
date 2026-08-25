@@ -223,6 +223,10 @@ export function TaskDetailPage() {
               onViewLogs={setLogsEntry}
               onStopTask={handleStopTask}
               isStopping={stop.isPending}
+              // Not this table's job: the ActionErrorAlert above reports the
+              // shared stop mutation once for both tables. Passing the error
+              // here too would render the same refusal three times.
+              actionError={null}
             />
           </Box>
 
@@ -247,6 +251,8 @@ export function TaskDetailPage() {
             onViewLogs={setLogsEntry}
             onStopTask={handleStopTask}
             isStopping={stop.isPending}
+            // Reported by the shared ActionErrorAlert above, as for the Running table.
+            actionError={null}
             onChainItemClick={(chainTaskName) => {
               navigate(`../${encodeURIComponent(chainTaskName)}`);
             }}
