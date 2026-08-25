@@ -311,6 +311,7 @@ skip-magic-trailing-comma = false
 line-ending = "lf"
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 asyncio_default_fixture_loop_scope = "function"
 # Guardrail: fail a runaway per-test setup/call/teardown instead of blocking the
 # whole run forever. Uses thread method so xdist workers stay compatible.
