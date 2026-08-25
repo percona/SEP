@@ -16,7 +16,7 @@
 """Define models for the Backups plugin."""
 
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from annotated_types import Ge
 from pydantic import (
@@ -75,7 +75,14 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     pgbackrest_datadir: NonEmptyStr | EmptyStrToNone = None
     pgbackrest_retention_full: int | EmptyStrToNone = None
     pgbackrest_retention_archive: int | EmptyStrToNone = None
-    pgbackrest_incremental_cycle: int | str | EmptyStrToNone = None
+    # Spelled out on three surfaces: this union, BackupPgForm's union, and its Choices
+    # labels (the standalone payload carries a fourth, since it runs on the DB host).
+    # A StrEnum would collapse the unions but republish the field as a named OpenAPI
+    # component rather than an inline enum, and the weekday labels would still need
+    # Choices; the vocabulary parity tests fail on a partial edit meanwhile.
+    pgbackrest_incremental_cycle: (
+        Literal["daily", "weekly", "1", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone
+    ) = None
 
 
 class BackupConfigServer(BaseCaseInsensitiveModel):
@@ -190,8 +197,22 @@ class BackupPgForm(TaskFormModel):
         Ge(0),
         Ui(label="Archive Retention", section="pgBackRest"),
     ] = None
+    # Vocabulary duplicated -- see the note on BackupConfigAll.pgbackrest_incremental_cycle.
     pgbackrest_incremental_cycle: Annotated[
-        str | int | None,
+        Literal["daily", "weekly", "1", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone,
+        Choices(
+            (
+                ("daily", "Daily"),
+                ("weekly", "Weekly (Monday)"),
+                ("1", "Monday"),
+                ("2", "Tuesday"),
+                ("3", "Wednesday"),
+                ("4", "Thursday"),
+                ("5", "Friday"),
+                ("6", "Saturday"),
+                ("7", "Sunday"),
+            )
+        ),
         Ui(
             label="Incremental Cycle",
             section="pgBackRest",
