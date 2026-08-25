@@ -15,11 +15,18 @@
 
 """Define tests for the app.core.utils.pydantic module."""
 
+import threading
+from dataclasses import dataclass
+from typing import Annotated
+
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, StringConstraints, ValidationError
 from pydantic.fields import FieldInfo
 
+from app.core.pagination.models import PaginatedDictPage
+from app.core.utils.fields import FilenameExtension, MimeType, StrAsyncDatabaseUrl
 from app.core.utils.pydantic import (
+    _type_adapter,
     blank_str_values_to_none,
     CustomFieldMetadata,
     extract_model_from_instance,
@@ -27,6 +34,16 @@ from app.core.utils.pydantic import (
     loc_to_dot_sep,
     run_pydantic_type_validator,
 )
+from app.sep.snippets.config import SnippetFilter, SnippetFilterType, SnippetSudoOption
+from app.sep.snippets.models.meta import SnippetMetaParameterType
+from app.tasks.anonymizer.entities import PIIEntity
+
+
+@dataclass(eq=True)
+class _UnhashableMetadata:
+    """Stand in for pydantic metadata a future change forgets to freeze."""
+
+    values: list[int]
 
 
 class TestCustomFieldMetadata:
@@ -150,6 +167,164 @@ class TestRunPydanticTypeValidator:
         """Raise ValidationError for an incompatible value."""
         with pytest.raises(ValidationError):
             run_pydantic_type_validator(int, "not_an_int")
+
+
+class TestTypeAdapterCache:
+    """Test the memoized TypeAdapter factory behind run_pydantic_type_validator."""
+
+    @pytest.fixture(autouse=True)
+    def _isolated_cache(self):
+        """Isolate hit/miss assertions from types other tests already warmed."""
+        _type_adapter.cache_clear()
+        yield
+        _type_adapter.cache_clear()
+
+    def test_builds_adapter_once_per_type(self):
+        """Build the adapter on the first call and reuse it on the next."""
+        run_pydantic_type_validator(int, 1)
+        run_pydantic_type_validator(int, 2)
+
+        info = _type_adapter.cache_info()
+        assert (info.misses, info.hits) == (1, 1)
+
+    def test_returns_the_same_adapter_instance(self):
+        """Return the identical adapter object for repeat calls with one type."""
+        assert _type_adapter(int) is _type_adapter(int)
+
+    def test_keeps_adapters_separate_per_type(self):
+        """Key the cache per type so no type is validated by another's adapter."""
+        integer, boolean = "42", "yes"
+
+        assert run_pydantic_type_validator(int, integer) == int(integer)
+        assert run_pydantic_type_validator(bool, boolean) is True
+
+        info = _type_adapter.cache_info()
+        assert (info.misses, info.hits) == (2, 0)
+
+    def test_reuses_adapter_for_equal_generic_aliases(self):
+        """Hit the cache for a parameterized generic rebuilt as a separate object."""
+        first, second = set[int], set[int]
+        assert first is not second
+
+        assert _type_adapter(first) is _type_adapter(second)
+        assert _type_adapter.cache_info().misses == 1
+
+    def test_reuses_adapter_for_an_annotated_alias(self):
+        """Hit the cache for the Annotated alias shape real call sites pass."""
+        alias = Annotated[str, StringConstraints(to_lower=True)]
+
+        assert run_pydantic_type_validator(alias, "ABC") == "abc"
+        assert run_pydantic_type_validator(alias, "DEF") == "def"
+        assert _type_adapter.cache_info().misses == 1
+
+    def test_accepts_unhashable_objects(self):
+        """Validate unhashable payloads: only the type is a cache key."""
+        assert run_pydantic_type_validator(dict[str, int], {"a": 1}) == {"a": 1}
+        assert run_pydantic_type_validator(list[int], ["1", "2"]) == [1, 2]
+
+    def test_returns_independent_results_per_call(self):
+        """Return a fresh object per call so a shared adapter carries no state."""
+
+        class Item(BaseModel):
+            name: str
+
+        first = run_pydantic_type_validator(Item, {"name": "a"})
+        second = run_pydantic_type_validator(Item, {"name": "b"})
+
+        assert first is not second
+        assert (first.name, second.name) == ("a", "b")
+
+    def test_cached_adapter_survives_a_validation_error(self):
+        """Keep the cached adapter usable after it rejects a value.
+
+        ``CustomFieldMetadata.from_field`` validates every metadata item under
+        ``suppress(ValidationError)``, so rejections outnumber successes there.
+        """
+        with pytest.raises(ValidationError):
+            run_pydantic_type_validator(int, "not_an_int")
+
+        value = 7
+        assert run_pydantic_type_validator(int, value) == value
+
+        with pytest.raises(ValidationError):
+            run_pydantic_type_validator(int, "still_not_an_int")
+
+    def test_converges_on_one_entry_under_concurrent_misses(self):
+        """Leave one cache entry when threads miss on the same cold type.
+
+        ``cache`` does not serialize the build, so a cold race may construct
+        more than one adapter; every adapter must still validate and only one
+        may survive in the cache.
+        """
+
+        class Item(BaseModel):
+            name: str
+
+        thread_count = 2
+        barrier = threading.Barrier(thread_count)
+        adapters = []
+
+        def build():
+            barrier.wait()
+            adapters.append(_type_adapter(Item))
+
+        threads = [threading.Thread(target=build) for _ in range(thread_count)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert len(adapters) == thread_count
+        assert all(a.validate_python({"name": "a"}).name == "a" for a in adapters)
+        assert _type_adapter.cache_info().currsize == 1
+
+    def test_raises_type_error_for_an_unhashable_type(self):
+        """Raise TypeError when the type itself cannot key the cache."""
+        alias = Annotated[int, _UnhashableMetadata([1])]
+
+        with pytest.raises(TypeError, match="unhashable"):
+            run_pydantic_type_validator(alias, 1)
+
+
+class TestProductionCacheKeys:
+    """Test that the known call-site types can key the adapter cache."""
+
+    def test_call_site_types_are_hashable(self):
+        """Keep every type listed here usable as a cache key.
+
+        Four are ``Annotated`` aliases that hash only because their pydantic
+        metadata is frozen; an unfrozen metadata dataclass added to one of them
+        would turn its call site into a TypeError at import time. The list is
+        maintained by hand, so a new call site must be added to it.
+        """
+        call_site_types = {
+            "PaginatedDictPage": PaginatedDictPage,
+            "CustomFieldMetadata": CustomFieldMetadata,
+            "StrAsyncDatabaseUrl": StrAsyncDatabaseUrl,
+            "FilenameExtension": FilenameExtension,
+            "MimeType": MimeType,
+            "SnippetFilter": SnippetFilter,
+            "SnippetFilterType": SnippetFilterType,
+            "SnippetSudoOption": SnippetSudoOption,
+            "set[PIIEntity]": set[PIIEntity],
+        } | {
+            f"SnippetMetaParameterType.{member.name}": member.value
+            for member in SnippetMetaParameterType
+        }
+
+        unhashable = sorted(
+            name for name, key in call_site_types.items() if not _is_hashable(key)
+        )
+        assert unhashable == []
+
+
+def _is_hashable(value: object) -> bool:
+    """Return whether ``value`` can be used as a dict or cache key."""
+    try:
+        hash(value)
+    except TypeError:
+        return False
+    return True
 
 
 class TestExtractModelFromInstance:

@@ -26,14 +26,28 @@ __all__ = [
 
 from collections.abc import Hashable
 from contextlib import suppress
+from functools import cache
 from types import UnionType
-from typing import Any, get_args, get_origin, NamedTuple, TypeVar, Union
+from typing import (
+    Any,
+    get_args,
+    get_origin,
+    NamedTuple,
+    TypeAlias,
+    TypeVar,
+    Union,
+)
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from pydantic.fields import Field, FieldInfo
 
 V = TypeVar("V")
 T = TypeVar("T", bound=BaseModel)
+
+#: Anything Pydantic accepts as a type: a class, a parameterized generic
+#: (``set[PIIEntity]``), or an ``Annotated`` alias. Only the first is a
+#: ``type`` instance, so the narrower ``type[V]`` would exclude real inputs.
+_TypeExpression: TypeAlias = Any
 
 
 class CustomFieldMetadata(NamedTuple):
@@ -153,20 +167,38 @@ def annotation_pydantic_class(annotation: Any) -> type[BaseModel] | None:
     return None
 
 
+@cache
+def _type_adapter(validate_class: _TypeExpression) -> TypeAdapter[Any]:
+    """Return a memoized ``TypeAdapter`` for ``validate_class``.
+
+    Building the adapter, not validating with it, dominates the cost on the
+    paths that validate once per item, so each distinct type builds its adapter
+    once and every later call reuses it. ``validate_class`` is the cache key, so
+    every type reaching this function must stay hashable.
+
+    ``cache`` holds no lock across the build, so threads missing on the same
+    cold key each build an adapter and one wins the entry; the duplicates are
+    equivalent and discarded, costing a spare build at warm-up and nothing
+    after.
+
+    :param validate_class: The type expression to build the adapter for.
+    :return: The memoized adapter for ``validate_class``.
+    """
+    return TypeAdapter(validate_class)
+
+
 def run_pydantic_type_validator(validate_class: type[V], obj: Any) -> V:
     """Perform Pydantic validation for the specified type with the specified object.
 
-    This function validates a Python object against a Pydantic type and returns the
-    validated object.
-
-    :param: validate_class: The class to use for validation.
-    :type validate_class: type[V]
-    :param: obj: The Python object to validate.
-    :type obj: Any
+    :param validate_class: The class to use for validation. Any Pydantic type
+        expression works; ``type[V]`` is declared so callers passing a class get
+        the validated type back.
+    :param obj: The Python object to validate.
     :return: The validated object.
-    :rtype: V
+    :raises ValidationError: If ``obj`` does not satisfy ``validate_class``.
+    :raises TypeError: If ``validate_class`` is not hashable.
     """
-    return TypeAdapter(validate_class).validate_python(obj)
+    return _type_adapter(validate_class).validate_python(obj)
 
 
 def extract_model_from_instance(instance: BaseModel, model_cls: type[T]) -> T:
@@ -176,11 +208,8 @@ def extract_model_from_instance(instance: BaseModel, model_cls: type[T]) -> T:
     in the target model class, then performs validation using Pydantic.
 
     :param instance: The source Pydantic model instance.
-    :type instance: BaseModel
     :param model_cls: The target model class to validate against.
-    :type model_cls: Type[T]
     :return: An instance of the target model with validated and filtered data.
-    :rtype: T
     """
     data = instance.model_dump()
     allowed_keys = model_cls.model_fields.keys()
