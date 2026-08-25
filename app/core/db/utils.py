@@ -29,7 +29,6 @@ from sqlalchemy import (
     inspect,
     JSON,
     literal,
-    String,
     Text,
     text,
     TypeDecorator,
@@ -324,12 +323,6 @@ def compare_type(
         return False
     if isinstance(metadata_type, AutoJSON) and isinstance(inspected_type, JSONB | JSON):
         return False
-    if (
-        isinstance(metadata_type, TypeDecorator)
-        and isinstance(inspected_type, String)
-        and isinstance(metadata_type.impl, String)
-    ):
-        return False if inspected_type.length == metadata_type.impl.length else None
     return None
 
 
@@ -399,8 +392,9 @@ def check_constraint_name(
 ) -> str | None:
     """Return the name of the CHECK constraint on ``column_name``, if any.
 
-    Lets a second track on a shared PostgreSQL database no-op once another
-    track has already dropped ``settingoverride.setting_class``'s CHECK.
+    Lets a migration that adds or drops a column's CHECK constraint detect
+    whether one is already in place and no-op, which is what makes the
+    operation replayable on a database another track has already migrated.
 
     Raises when more than one CHECK mentions ``column_name`` so a schema
     drift fails fast instead of returning an arbitrary inspector-ordered

@@ -20,12 +20,11 @@ from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import Column, Integer, JSON, MetaData, select, String, Table, Text
+from sqlalchemy import Column, Integer, JSON, MetaData, select, Table, Text
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.sql import column
-from sqlalchemy.types import TypeDecorator
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -509,40 +508,6 @@ def test_compare_type_suppresses_diff_for_task_execution_request_json_against_js
         metadata_type=TaskExecutionRequestJSON(),
     )
     assert result is False
-
-
-def test_compare_type_suppresses_diff_for_type_decorator_string():
-    """Treat a ``TypeDecorator`` wrapping ``String(255)`` as equal to inspected VARCHAR."""
-
-    class _Token(TypeDecorator):
-        impl = String(255)
-        cache_ok = True
-
-    result = compare_type(
-        context=MagicMock(),
-        inspected_column=MagicMock(),
-        metadata_column=MagicMock(),
-        inspected_type=String(255),
-        metadata_type=_Token(),
-    )
-    assert result is False
-
-
-def test_compare_type_falls_through_when_type_decorator_length_differs():
-    """Leave a VARCHAR length mismatch for Alembic's default comparison."""
-
-    class _Token(TypeDecorator):
-        impl = String(255)
-        cache_ok = True
-
-    result = compare_type(
-        context=MagicMock(),
-        inspected_column=MagicMock(),
-        metadata_column=MagicMock(),
-        inspected_type=String(22),
-        metadata_type=_Token(),
-    )
-    assert result is None
 
 
 _PROBE_METADATA = MetaData()

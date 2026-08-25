@@ -19,7 +19,7 @@ __all__ = ["SettingClassEnum", "SettingOverride", "setting_class_token"]
 
 import re
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from pydantic import field_validator, JsonValue
 from sqlalchemy import Column, Index, String
@@ -29,6 +29,7 @@ from sqlmodel import Field as SQLField
 
 from app.core.db.models import BaseSQLModel
 from app.core.db.sql_types import AutoJSON
+from app.core.settings_override.constants import SETTING_CLASS_MAX_LENGTH
 
 if TYPE_CHECKING:
     from app.core.config import BaseYamlSettings
@@ -95,18 +96,14 @@ class _SettingClassString(TypeDecorator):
     leftover enum argument while the column itself remains an unconstrained
     string.
 
-    :cvar impl: The underlying SQLAlchemy column type.
-    :vartype impl: type[String]
-    :cvar cache_ok: Allow SQLAlchemy to cache compiled statements using this type.
-    :vartype cache_ok: bool
     """
 
-    impl = String(255)
-    cache_ok = True
+    impl: String = String(SETTING_CLASS_MAX_LENGTH)
+    cache_ok: bool = True
 
     def process_bind_param(
         self,
-        value: object,
+        value: Any,
         dialect: Dialect,  # noqa: ARG002
     ) -> str | None:
         """Persist enum members by name and every other value as a string.
@@ -156,7 +153,7 @@ class SettingOverride(BaseSQLModel, table=True):
 
     setting_class: str = SQLField(
         sa_column=Column(_SettingClassString(), nullable=False),
-        max_length=255,
+        max_length=SETTING_CLASS_MAX_LENGTH,
     )
     key: str = SQLField(index=True, nullable=False, max_length=255)
     value: JsonValue = SQLField(

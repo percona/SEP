@@ -15,17 +15,27 @@
 
 """Pin the ``settingoverride.setting_class`` storage-token derivation."""
 
+from pathlib import Path
 from typing import ClassVar
 
 import pytest
+from alembic.migration import MigrationContext
+from sqlalchemy import Column, VARCHAR
 
 from app.core.alerts.config import AlertSettings
 from app.core.config import BaseYamlSettings, Settings
-from app.core.settings_override.models import setting_class_token
+from app.core.settings_override.constants import SETTING_CLASS_MAX_LENGTH
+from app.core.settings_override.models import (
+    setting_class_token,
+    SettingClassEnum,
+    SettingOverride,
+)
 from app.inventory.config import InventorySettings
+from app.sep import apps
 from app.sep.apps.alerts.config import AlertsSettings
+from app.sep.apps.framework.registry import collect_app_owned_settings_classes
 from app.sep.apps.report.config import HealthReportSettings
-from app.sep.config import SEPSettings
+from app.sep.config import App, SEPSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
@@ -67,3 +77,40 @@ def test_classvar_override_pins_the_storage_token() -> None:
 
     assert setting_class_token(CustomTokenSettings) == "CUSTOM_TOKEN"
     assert setting_class_token(CustomTokenSettings) != "CUSTOM_TOKEN_SETTINGS"
+
+
+def test_every_reachable_settings_class_pins_its_token() -> None:
+    """Fail when a settings class is added without pinning its storage token.
+
+    ``_HISTORICAL_TOKENS`` cannot fail for a class it was never told about, so
+    a class added after the pins were written would be free to be renamed --
+    orphaning its override rows, which is the failure the pins exist to catch.
+    App-owned classes are collected from every app that ships the declaration
+    module, not from the activation list, so an inactive app is still covered.
+    """
+    declaring_apps = [
+        App(module_name=path.parent.name)
+        for path in Path(apps.__file__).parent.glob("*/app_owned_settings.py")
+    ]
+    pinned = {cls.__name__ for cls, _ in _HISTORICAL_TOKENS}
+    reachable = {member.value for member in SettingClassEnum} | {
+        entry.settings_cls.__name__
+        for entry in collect_app_owned_settings_classes(declaring_apps)
+    }
+    assert not reachable - pinned
+
+
+@pytest.mark.parametrize("dialect_name", ["postgresql", "sqlite"])
+def test_column_type_matches_inspected_varchar_by_default(dialect_name: str) -> None:
+    """Leave autogenerate no diff between the column's type and the stored VARCHAR.
+
+    ``_SettingClassString`` is a ``TypeDecorator``; Alembic's default type
+    comparison unwraps it to its ``impl`` before comparing, so no project-level
+    ``compare_type`` branch is needed to keep autogenerate quiet.
+    """
+    impl = MigrationContext.configure(dialect_name=dialect_name).impl
+    verdict = impl.compare_type(
+        Column("setting_class", VARCHAR(SETTING_CLASS_MAX_LENGTH)),
+        Column("setting_class", SettingOverride.__table__.c.setting_class.type),
+    )
+    assert verdict is False

@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Idempotent Alembic helpers shared by the three ``settingoverride`` tracks."""
+"""Provide idempotent Alembic helpers for the three ``settingoverride`` tracks."""
 
 from __future__ import annotations
 
@@ -28,7 +28,8 @@ from app.core.db.utils import (
     table_exists,
 )
 from app.core.settings_override.constants import (
-    SETTING_CLASS_CHECK_MEMBERS_PRE_SEP_1825,
+    SETTING_CLASS_CHECK_MEMBERS_LEGACY,
+    SETTING_CLASS_MAX_LENGTH,
     SETTINGOVERRIDE_MIGRATION_LOCK_KEY,
 )
 
@@ -37,9 +38,9 @@ logger = logging.getLogger(__name__)
 _TABLE = "settingoverride"
 _COLUMN = "setting_class"
 _ENUM_NAME = "settingclassenum"
-_STRING_LENGTH = 255
-_PRE_TICKET_MEMBERS = SETTING_CLASS_CHECK_MEMBERS_PRE_SEP_1825
-_PRE_TICKET_VARCHAR_LENGTH = max(len(member) for member in _PRE_TICKET_MEMBERS)
+_STRING_LENGTH = SETTING_CLASS_MAX_LENGTH
+_LEGACY_MEMBERS = SETTING_CLASS_CHECK_MEMBERS_LEGACY
+_LEGACY_VARCHAR_LENGTH = max(len(member) for member in _LEGACY_MEMBERS)
 
 
 def upgrade_drop_setting_class_check() -> None:
@@ -63,7 +64,7 @@ def upgrade_drop_setting_class_check() -> None:
             batch_op.drop_constraint(name, type_="check")
         batch_op.alter_column(
             _COLUMN,
-            existing_type=sa.String(length=_PRE_TICKET_VARCHAR_LENGTH),
+            existing_type=sa.String(length=_LEGACY_VARCHAR_LENGTH),
             type_=sa.String(length=_STRING_LENGTH),
             existing_nullable=False,
         )
@@ -73,7 +74,7 @@ def downgrade_restore_setting_class_check() -> None:
     """Restore the legacy CHECK, deleting rows that would violate it.
 
     Deletes every ``settingoverride`` row whose ``setting_class`` is not in
-    :data:`SETTING_CLASS_CHECK_MEMBERS_PRE_SEP_1825` and logs how many rows
+    :data:`SETTING_CLASS_CHECK_MEMBERS_LEGACY` and logs how many rows
     it removed. Re-enabling an app after this downgrade will not restore
     those overrides.
     """
@@ -86,12 +87,12 @@ def downgrade_restore_setting_class_check() -> None:
     settingoverride = sa.table(_TABLE, sa.column(_COLUMN))
     result = bind.execute(
         settingoverride.delete().where(
-            settingoverride.c[_COLUMN].notin_(_PRE_TICKET_MEMBERS)
+            settingoverride.c[_COLUMN].notin_(_LEGACY_MEMBERS)
         )
     )
     logger.info(
         "Deleted %s settingoverride row(s) whose setting_class is outside "
-        "the CHECK member list in force before SEP-1825.",
+        "the CHECK member list the restored constraint enumerates.",
         result.rowcount,
     )
     with op.batch_alter_table(_TABLE, schema=None) as batch_op:
@@ -99,7 +100,7 @@ def downgrade_restore_setting_class_check() -> None:
             _COLUMN,
             existing_type=sa.String(length=_STRING_LENGTH),
             type_=sa.Enum(
-                *_PRE_TICKET_MEMBERS,
+                *_LEGACY_MEMBERS,
                 name=_ENUM_NAME,
                 native_enum=False,
                 create_constraint=True,

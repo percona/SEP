@@ -214,6 +214,11 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         callbacks against ``app.state``.
     :return: None
     """
+    # Imported here rather than at module scope: this module is reachable from
+    # the Celery include list, and importing an app's config at import time
+    # pulls the app tree in alongside the ``celery.py`` modules loaded from it.
+    from app.sep.apps.alerts.config import AlertsSettings
+
     callbacks: CallbackRegistry = {
         (
             SettingClassEnum.SEP_SETTINGS,

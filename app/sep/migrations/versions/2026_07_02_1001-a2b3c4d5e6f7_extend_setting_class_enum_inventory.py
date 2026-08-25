@@ -51,7 +51,12 @@ _NEW_MEMBERS = (*_EXISTING_MEMBERS, "INVENTORY_SETTINGS")
 
 
 def upgrade() -> None:
-    """Add ``INVENTORY_SETTINGS`` to the setting_class constraint."""
+    """Add ``INVENTORY_SETTINGS`` to the setting_class constraint.
+
+    Returns early when the CHECK is already absent: on a shared PostgreSQL
+    database another track's drop revision may have removed it, and replaying
+    this older upgrade there must not recreate it.
+    """
     bind = op.get_bind()
     acquire_pg_advisory_xact_lock(bind, SETTINGOVERRIDE_MIGRATION_LOCK_KEY)
     if check_constraint_name(bind, "settingoverride", "setting_class") is None:
