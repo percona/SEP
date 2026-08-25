@@ -971,18 +971,30 @@ async def test_aenter_passes_stale_run_after(
 
 
 @pytest.mark.asyncio
-async def test_aenter_marks_the_run_running(
-    mock_remote_api, lifecycle_syncer_cls, lifecycle_mocks
+async def test_aenter_persists_a_running_instance(
+    session: AsyncSession, mock_remote_api, lifecycle_syncer_cls, mocker
 ):
-    """Mark a live run ``RUNNING`` so the fencing read can trip."""
+    """Persist a live run as ``RUNNING`` so the fencing read can ever pass.
+
+    The fence is what authorises every retirement, so a run persisted as anything
+    else would silently stop the syncer retiring anything at all, with no failed
+    item and no error to notice.
+    """
+    holder = MagicMock()
+    holder.__aenter__ = AsyncMock(return_value=session)
+    holder.__aexit__ = AsyncMock(return_value=None)
+    mocker.patch(
+        "app.sep.sync.models.get_async_session_maker",
+        return_value=MagicMock(return_value=holder),
+    )
     syncer = lifecycle_syncer_cls(inventory_api=mock_remote_api)
 
     async with syncer:
-        pass
+        instance_id = syncer.sync_instance.id
+        assert await SyncInstanceManager.is_still_owned(session, instance_id) is True
 
-    assert lifecycle_mocks["create"].await_args.kwargs["status"] == (
-        SyncStatusEnum.RUNNING
-    )
+    finalized = await SyncInstanceManager.first(session, id=instance_id)
+    assert finalized.status == SyncStatusEnum.SUCCESS
 
 
 @pytest.mark.asyncio

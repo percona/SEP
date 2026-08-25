@@ -496,8 +496,8 @@ class PMMRemoteAPI(RemoteAPI):
                         "Skipping service %s due to filter",
                         service.get("service_id"),
                     )
-                    if diagnostics is not None:
-                        diagnostics.filtered_service_ids.add(service.get("service_id"))
+                    if diagnostics is not None and service.get("service_id"):
+                        diagnostics.filtered_service_ids.add(service["service_id"])
                     continue
                 try:
                     services.append(
@@ -940,6 +940,10 @@ class PMMRemoteAPI(RemoteAPI):
         in the node list but missing from the service map is indistinguishable from a
         node that genuinely runs no services, so it is not reported.
 
+        The diagnostics describe a full-estate fetch. ``node_type`` narrows the node
+        list but not the service list, so every service belonging to an excluded
+        node type is reported as an orphan.
+
         :param node_type: The type of nodes to retrieve (e.g., "generic"). Defaults to
             an empty string, meaning the field won't be used as a filter.
         :param skip_failed: Whether to skip nodes that fail validation. Defaults to
@@ -957,6 +961,9 @@ class PMMRemoteAPI(RemoteAPI):
             filter_=filter_,
             diagnostics=diagnostics,
         )
+        # Snapshot the keys now: the node loop below reads the same defaultdict
+        # through ``__getitem__``, which inserts empty entries as it goes.
+        service_map_node_ids = set(services_by_node_id)
         params = remove_falsy_values_from_dict({"node_type": node_type})
         if await self.is_older_than_v3():
             nodes_data = await self.post(
@@ -970,13 +977,13 @@ class PMMRemoteAPI(RemoteAPI):
         fetched_node_ids: set[str] = set()
         for nodes_type, node_list in nodes_data.items():
             for node in node_list:
-                fetched_node_ids.add(node.get("node_id"))
+                node_id = node.get("node_id")
+                if node_id:
+                    fetched_node_ids.add(node_id)
                 if filter_ is not None and not filter_(node):
-                    self.logger.debug(
-                        "Skipping node %s due to filter",
-                        node.get("node_id"),
-                    )
-                    diagnostics.filtered_node_ids.add(node.get("node_id"))
+                    self.logger.debug("Skipping node %s due to filter", node_id)
+                    if node_id:
+                        diagnostics.filtered_node_ids.add(node_id)
                     continue
                 try:
                     nodes.append(
@@ -998,7 +1005,7 @@ class PMMRemoteAPI(RemoteAPI):
                     )
         diagnostics.orphan_service_node_ids = [
             node_id
-            for node_id in services_by_node_id
+            for node_id in service_map_node_ids
             if node_id not in fetched_node_ids
         ]
         return PMMInventorySnapshot(nodes=nodes, diagnostics=diagnostics)

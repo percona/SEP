@@ -610,6 +610,35 @@ class TestSyncInstanceManagerStaleReclaim:
         assert second_pass == []
 
     @pytest.mark.asyncio
+    async def test_reclaim_fences_the_instance_before_releasing_items(
+        self, session
+    ) -> None:
+        """Mark the run failed before the item flip commits.
+
+        Each statement commits on its own, so releasing the items first would let
+        a reclaimed-but-live worker still read ``RUNNING`` and retire entities.
+        """
+        instance = await _seed_run(session, age=timedelta(hours=3))
+        owned_during_item_flip: list[bool] = []
+
+        original = SyncItemManager.update_where
+
+        async def _record_then_update(*args, **kwargs):
+            owned_during_item_flip.append(
+                await SyncInstanceManager.is_still_owned(session, instance.id)
+            )
+            return await original(*args, **kwargs)
+
+        with patch.object(
+            SyncItemManager, "update_where", side_effect=_record_then_update
+        ):
+            await SyncInstanceManager.reclaim_stale_runs(
+                session, "test-syncer", timedelta(hours=1)
+            )
+
+        assert owned_during_item_flip == [False]
+
+    @pytest.mark.asyncio
     async def test_reclaim_ignores_other_syncers(self, session) -> None:
         """Leave a stale run belonging to another syncer untouched."""
         other = await _seed_run(session, syncer="other-syncer", age=timedelta(hours=3))

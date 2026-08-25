@@ -226,6 +226,7 @@ class PMMSyncer(BaseSyncer):
         :param filtered_external_ids: External IDs excluded by the fetch filter.
         :raises SyncFailError: If holding or retiring an entity fails and
             ``break_on_error`` is set.
+        :raises HTTPBadRequestException: If a ledger write hits a database error.
         """
         for created_entity in absent_entities:
             excluded = created_entity.external_id in filtered_external_ids
@@ -262,6 +263,7 @@ class PMMSyncer(BaseSyncer):
             is set.
         :raises SyncFailError: If synchronizing an entity fails and ``break_on_error``
             is set.
+        :raises HTTPBadRequestException: If a ledger write hits a database error.
         """
         syncable_nodes: dict[str | None, CreatedNode] = {}
         for node in await self.get_inventory_nodes():
@@ -338,6 +340,9 @@ class PMMSyncer(BaseSyncer):
 
         :param created_node: The local node instance to synchronize.
         :param updated_node: The updated node data fetched from the PMM API.
+        :raises SyncFailError: If synchronizing, holding or retiring a service fails
+            and ``break_on_error`` is set.
+        :raises HTTPBadRequestException: If a ledger write hits a database error.
         """
         await self.update_node(created_node, updated_node)
         external_id_to_id: dict[str, int] = {}

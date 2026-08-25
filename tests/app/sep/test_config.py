@@ -18,12 +18,13 @@
 from datetime import timedelta
 from string import Template
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
+from app.core.requests import RemoteAPI
 from app.core.settings_override.registry import (
     chain_is_locked,
     is_advanced_field,
@@ -33,6 +34,7 @@ from app.core.settings_override.registry import (
     MaterializerPurpose,
     SECRET_STR_MASK,
 )
+from app.sep.apps.inventory.deps import get_syncers
 from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import (
     App,
@@ -644,3 +646,37 @@ class TestCredentialUrlMaskRejection:
         monkeypatch.setenv(env_name, self._MASKED_ENDPOINT)
         with pytest.raises(ValidationError, match=field):
             SEPSettings(_env_file=None)
+
+
+class TestSyncerRetirementThresholdsOverConfig:
+    """``SEP.SYNCERS[]`` forwards extra keys verbatim, so the floors must hold there."""
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("missing_grace_generations", 0),
+            ("missing_grace_generations", 1),
+            ("stale_run_after", 0),
+        ],
+    )
+    def test_unsafe_threshold_from_config_is_rejected(
+        self, field, value, mocker: MockerFixture
+    ) -> None:
+        """Reject a threshold that would restore single-absence deletion.
+
+        ``SyncOptions`` carries ``extra="allow"`` and does not validate these keys
+        itself, so syncer construction is the only thing standing between a
+        deployment's settings and a syncer that deletes on first absence.
+        """
+        option = SyncOptions(
+            syncer="app.sep.sync.syncers.pmm.PMMSyncer", **{field: value}
+        )
+        assert getattr(option, field) == value
+        mocker.patch.object(sep_settings, "SYNCERS", [option])
+
+        # ``BaseCaseInsensitiveModel`` reports the field uppercased.
+        with pytest.raises(ValidationError, match=f"(?i){field}"):
+            get_syncers(
+                inventory_api=MagicMock(spec=RemoteAPI),
+                tasks_api=MagicMock(spec=RemoteAPI),
+            )

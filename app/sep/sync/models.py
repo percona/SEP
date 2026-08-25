@@ -202,10 +202,12 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         if self.sync_instance is None:
             self.sync_instance = await SyncInstanceManager.create(
                 self._session,
-                SyncInstanceWrite(syncer=self.get_name()),
+                SyncInstanceWrite(
+                    syncer=self.get_name(),
+                    status=SyncStatusEnum.RUNNING,
+                ),
                 stale_after=self.stale_run_after,
                 id=self.sync_id,
-                status=SyncStatusEnum.RUNNING,
             )
         return self
 

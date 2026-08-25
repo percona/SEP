@@ -81,6 +81,29 @@ def upgrade() -> None:
         'syncinstance',
         sa.Column('status', sync_status_enum, nullable=False, server_default='PENDING'),
     )
+    # Derive a terminal status for runs that predate the column, applying the same
+    # rule finalize_run applies going forward. Without this every historical run
+    # reads back as PENDING, and the sync-status endpoint reports finished runs as
+    # still pending until enough new runs displace them.
+    op.execute(
+        """
+        UPDATE syncinstance SET status = 'FAILED'
+        WHERE id IN (
+            SELECT sync_instance_id FROM syncitem WHERE status = 'FAILED'
+        )
+        """
+    )
+    op.execute(
+        """
+        UPDATE syncinstance SET status = 'SUCCESS'
+        WHERE status = 'PENDING'
+          AND id IN (SELECT sync_instance_id FROM syncitem)
+          AND id NOT IN (
+              SELECT sync_instance_id FROM syncitem
+              WHERE status IN ('PENDING', 'RUNNING', 'FAILED')
+          )
+        """
+    )
     if op.get_bind().dialect.name != 'sqlite':
         op.alter_column('syncinstance', 'status', server_default=None)
     op.add_column('syncinstance', sa.Column('snapshot_complete', sa.Boolean(), nullable=True))
