@@ -32,13 +32,17 @@ from app.sep.apps.mysql_backups.restore.form_backfill import (
 )
 
 if TYPE_CHECKING:
-    from app.sep.apps.framework.form_backfill import FormBackfillContext
+    from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
     from app.tasks.models import Task
 
 __all__ = ["FORM_BACKFILL_ENTRIES", "reconstruct_mysql_backups_form"]
 
 _MYSQL_BACKUPS_FORM_FIELDS = frozenset(BackupCreate.model_fields)
 _UPLOAD_PROVIDER_BY_ALIAS = {provider.name: provider for provider in UploadProvider}
+# Spellings older stored configs use that are not the enum member name. The
+# xtrabackup payload's own upload docstring documents "GS" for Google Cloud
+# Storage, which no member name matches.
+_UPLOAD_PROVIDER_BY_ALIAS["GS"] = UploadProvider.GSUTIL
 _EXPLICIT_FORM_KEYS = frozenset(
     {
         "task_name",
@@ -54,7 +58,16 @@ _PARSE_ONLY_KEYS = frozenset({"name", "host", "port"})
 
 
 def _extract_upload_from_meta(meta: dict[str, Any]) -> list[str]:
-    """Return normalized upload providers from ``SERVER_LIST[0].UPLOAD``."""
+    """Return normalized upload providers from ``SERVER_LIST[0].UPLOAD``.
+
+    A spelling no alias matches is passed through unchanged rather than dropped.
+    Dropping it narrows the reconstructed selection, and the narrowed form
+    dispatches a payload variant that cannot reach the missing provider; passing it
+    through fails the form's own enum validation instead, which is visible.
+
+    :param meta: The stored task meta whose ``config`` holds the server list.
+    :return: The provider values for the form's ``upload`` field.
+    """
     providers: list[str] = []
     config_raw = meta.get("config")
     if isinstance(config_raw, str) and config_raw.strip():
@@ -74,11 +87,11 @@ def _extract_upload_from_meta(meta: dict[str, Any]) -> list[str]:
                         for provider in upload_raw:
                             if not isinstance(provider, str):
                                 continue
-                            member = _UPLOAD_PROVIDER_BY_ALIAS.get(
-                                provider.strip().upper()
+                            stripped = provider.strip()
+                            member = _UPLOAD_PROVIDER_BY_ALIAS.get(stripped.upper())
+                            providers.append(
+                                stripped if member is None else member.value
                             )
-                            if member is not None:
-                                providers.append(member.value)
     return providers
 
 

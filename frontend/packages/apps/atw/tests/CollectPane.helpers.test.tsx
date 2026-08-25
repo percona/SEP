@@ -24,8 +24,9 @@ import {
   mergeSnippetOptions,
   namespaceField,
   snippetMatchesTerm,
+  summarizeBatchOutcome,
 } from '../src/CollectPane';
-import type { AtwSnippetSummary } from '../src/types';
+import type { AtwBatchExecuteResponse, AtwSnippetSummary } from '../src/types';
 
 const snippets: AtwSnippetSummary[] = [
   { name: 'a.sh', title: 'A', description: '' },
@@ -202,6 +203,81 @@ describe('namespaceField', () => {
     if (result.type === 'one_of') {
       expect(result.branches[0].fields[0].name).toBe('overrides.snip1.source.path');
     }
+  });
+});
+
+describe('summarizeBatchOutcome', () => {
+  it('keeps a string error detail', () => {
+    const response: AtwBatchExecuteResponse = {
+      items: [
+        { snippet_filename: 'a.sh', task_name: null, task_history_id: null, error: 'not approved' },
+      ],
+    };
+    const summary = summarizeBatchOutcome(response);
+    expect(summary.message).toContain('a.sh: not approved');
+    expect(summary.message).toContain('Dispatched 0 of 1 snippet.');
+    expect(summary.severity).toBe('error');
+  });
+
+  it('labels validation-list details via the path map, including overrides', () => {
+    const response: AtwBatchExecuteResponse = {
+      items: [
+        {
+          snippet_filename: 'a.sh',
+          task_name: null,
+          task_history_id: null,
+          error: [
+            { loc: ['minutes'], msg: 'Input should be a valid integer', type: 'int_parsing' },
+          ],
+        },
+      ],
+    };
+    const labels = new Map([['overrides.snip0.minutes', 'Minutes']]);
+    const summary = summarizeBatchOutcome(response, labels);
+    expect(summary.message).toContain('a.sh: Minutes: Input should be a valid integer');
+    expect(summary.message).not.toContain('validation failed');
+  });
+
+  it('summarises a mixed batch with dispatch counts', () => {
+    const response: AtwBatchExecuteResponse = {
+      items: [
+        { snippet_filename: 'ok.sh', task_name: 't', task_history_id: 1, error: null },
+        { snippet_filename: 'bad.sh', task_name: null, task_history_id: null, error: 'boom' },
+      ],
+    };
+    const summary = summarizeBatchOutcome(response);
+    expect(summary.message).toContain('Dispatched 1 of 2');
+    expect(summary.message).toContain('bad.sh: boom');
+    expect(summary.severity).toBe('warning');
+  });
+
+  it('acknowledges an all-success batch', () => {
+    const response: AtwBatchExecuteResponse = {
+      items: [
+        { snippet_filename: 'a.sh', task_name: 't', task_history_id: 1, error: null },
+        { snippet_filename: 'b.sh', task_name: 't', task_history_id: 2, error: null },
+      ],
+    };
+    const summary = summarizeBatchOutcome(response);
+    expect(summary.message).toBe('Dispatched 2 of 2 snippets.');
+    expect(summary.severity).toBe('success');
+  });
+
+  it('counts dispatched-but-unrecorded as dispatched and still shows the message', () => {
+    const response: AtwBatchExecuteResponse = {
+      items: [
+        {
+          snippet_filename: 'a.sh',
+          task_name: 't',
+          task_history_id: null,
+          error: 'Dispatched, but the Tasks API returned no task id; not recorded.',
+        },
+      ],
+    };
+    const summary = summarizeBatchOutcome(response);
+    expect(summary.message).toContain('Dispatched 1 of 1 snippet.');
+    expect(summary.message).toContain('Tasks API returned no task id');
+    expect(summary.severity).toBe('warning');
   });
 });
 

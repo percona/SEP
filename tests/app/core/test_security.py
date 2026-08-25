@@ -23,8 +23,10 @@ from app.core.security import (
     crypto_serializer,
     crypto_timestamp_serializer,
     get_internal_token,
+    is_bearer_authenticated,
     require_internal_token,
 )
+from tests.app.conftest import make_request
 
 
 def test_crypto_serializer_basic():
@@ -72,3 +74,78 @@ def test_require_internal_token_raises_when_absent(mocker):
     mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", None)
     with pytest.raises(RuntimeError, match="SEP_INTERNAL_TOKEN must be configured"):
         require_internal_token()
+
+
+class TestBearerHeaderEdgeCases:
+    """Cover header-parsing edges for ``is_bearer_authenticated``.
+
+    These tests pin the *current* permissive-prefix contract: the predicate is a
+    routing signal, not a credential check. Any future tightening (token shape,
+    DoS bounds) should fail these tests visibly so it can't slip in silently.
+    """
+
+    def test_tab_separator_does_not_match(self) -> None:
+        r"""``Bearer\ttoken`` does not match; the prefix requires a literal space."""
+        request = make_request(authorization="Bearer\ttoken")
+        assert is_bearer_authenticated(request) is False
+
+    def test_double_space_after_bearer_matches(self) -> None:
+        """``Bearer  token`` (two spaces) still satisfies the prefix check.
+
+        Documents the lenient prefix contract: anything after ``Bearer `` is the
+        token payload — downstream validators (``oauth2_scheme``,
+        ``get_current_user_api``) are responsible for token shape.
+        """
+        request = make_request(authorization="Bearer  token")
+        assert is_bearer_authenticated(request) is True
+
+    def test_leading_whitespace_in_header_does_not_match(self) -> None:
+        """`` Bearer token`` (leading space) is not a Bearer credential.
+
+        Starlette does not strip leading whitespace from header values; the
+        predicate's ``startswith`` check is byte-faithful, so a leading space
+        rejects.
+        """
+        request = make_request(authorization=" Bearer token")
+        assert is_bearer_authenticated(request) is False
+
+    def test_mixed_case_scheme_matches(self) -> None:
+        """Match the scheme case-insensitively (``BeArEr token`` is valid)."""
+        request = make_request(authorization="BeArEr token")
+        assert is_bearer_authenticated(request) is True
+
+    def test_very_long_header_does_not_crash(self) -> None:
+        """Parse a 64 KiB Authorization header without raising or hanging.
+
+        DoS sanity check: the predicate is a single ``str.startswith`` — adding
+        token length validation later would need a different shape, so a
+        regression introducing a quadratic scan would fail here.
+        """
+        long_token = "a" * (64 * 1024)
+        request = make_request(authorization=f"Bearer {long_token}")
+        assert is_bearer_authenticated(request) is True
+
+    def test_null_byte_in_token_passes_predicate(self) -> None:
+        r"""``Bearer \x00abc`` passes; null-byte filtering is a downstream concern.
+
+        Pinning permissive behaviour: the routing-signal predicate is
+        intentionally thin, so any future "block control characters" change is
+        visible here rather than a silent behaviour shift.
+        """
+        request = make_request(authorization="Bearer \x00abc")
+        assert is_bearer_authenticated(request) is True
+
+    def test_unicode_nbsp_separator_does_not_match(self) -> None:
+        r"""``Bearer<NBSP>token`` does not match the ASCII prefix.
+
+        Prevents a unicode-confusable bypass: a client crafting
+        ``Bearer<NBSP>...`` cannot trick the predicate into accepting a request
+        that Starlette will then route to the safe codepath.
+        """
+        request = make_request(authorization="Bearer\u00a0token")
+        assert is_bearer_authenticated(request) is False
+
+    def test_only_scheme_no_separator_does_not_match(self) -> None:
+        """``Bearer`` alone (no trailing space) is not a Bearer credential."""
+        request = make_request(authorization="Bearer")
+        assert is_bearer_authenticated(request) is False

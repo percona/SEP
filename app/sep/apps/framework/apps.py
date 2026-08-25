@@ -51,6 +51,7 @@ from app.sep.apps.framework.api import (
     derive_crud_routes,
     derive_execute_route,
     derive_script_routes,
+    resolve_response_model,
 )
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.connectivity import CONNECTIVITY_WARNING_FIELD
@@ -64,6 +65,7 @@ from app.sep.apps.framework.form_dsl import (
 from app.sep.apps.framework.responses import (
     BaseTaskResponse,
     build_default_task_response,
+    root_segment,
     serialized_field_names,
     TaskResponseBuilder,
 )
@@ -74,6 +76,7 @@ from app.sep.apps.framework.schema import (
     DerivedTask,
     DetailView,
     ListView,
+    NON_ROW_BOUND_FORMATS,
     RelatedApp,
 )
 from app.sep.apps.framework.script_source import ScriptSource
@@ -278,7 +281,10 @@ class TaskExecutionApp(BaseApp):
     :param create_model: The model-first ``AppFormModel`` subclass whose fields
         drive the derived schema and create form. Mutually exclusive with the
         transitional ``schema=`` passthrough; one of the two is required.
-    :param response_model: The list/detail response model. Defaults to
+    :param response_model: The list/detail response model. When an explicit
+        ``response_builder`` is set, must equal its return type — the derived list
+        route serializes the builder's model, and every ``response_model`` reader
+        (including the ``list_view`` column gate) measures this field. Defaults to
         :class:`~app.sep.apps.framework.responses.BaseTaskResponse`.
     :param views: The presentation bundle (layout, list/detail views, UI
         capabilities). Its ``layout`` is required when ``create_model`` is set.
@@ -497,8 +503,9 @@ class TaskExecutionApp(BaseApp):
 
         :raises ValueError: When the schema source, the create-payload path, the
             connectivity references, the route knobs, the list-query wiring, the
-            response/filter knobs, the list-view columns, or the ``ArgFormat`` markers
-            are inconsistent (see the per-aspect helpers).
+            response/filter knobs, the ``response_model`` / ``response_builder``
+            agreement, the list-view columns, or the ``ArgFormat`` markers are
+            inconsistent (see the per-aspect helpers).
         """
         self._validate_schema_source()
         self._validate_create_path()
@@ -508,6 +515,7 @@ class TaskExecutionApp(BaseApp):
         self._validate_list_suppress()
         self._validate_list_query()
         self._validate_response_knobs()
+        self._validate_response_model_agreement()
         self._validate_view_columns()
         self._validate_arg_formats()
         self._validate_related_apps()
@@ -824,6 +832,36 @@ class TaskExecutionApp(BaseApp):
                 "filter against; set service_type or drop the filter"
             )
 
+    def _validate_response_model_agreement(self) -> None:
+        """Reject a ``response_builder`` whose return type is not ``response_model``.
+
+        The derived list route serializes the builder's return annotation, while
+        ``response_model`` is what every other reader — including the ``list_view``
+        column gate — measures. When an app supplies an explicit builder, the two
+        must agree.
+
+        :raises TypeError: When the explicit builder lacks a valid ``BaseModel``
+            return annotation.
+        :raises ValueError: When the explicit builder's return annotation is not
+            ``response_model``.
+        """
+        if self.response_builder is None or self.script_source is not None:
+            return
+        builder_model = resolve_response_model(
+            self.response_builder,
+            helper="TaskExecutionApp",
+            param="response_builder",
+        )
+        if builder_model is not self.response_model:
+            raise ValueError(
+                "TaskExecutionApp: response_builder returns "
+                f"{builder_model.__name__} but response_model declares "
+                f"{self.response_model.__name__}; the derived list route serializes "
+                "the builder's model, so every response_model reader (the list_view "
+                "column gate among them) measures the wrong object — set "
+                "response_model to the builder's return type"
+            )
+
     def _extra_routes_have_detail(self) -> bool:
         """Return whether ``extra_routes`` register a ``GET`` on the detail path.
 
@@ -962,7 +1000,7 @@ class TaskExecutionApp(BaseApp):
             )
 
     def _validate_view_columns(self) -> None:
-        """Reject a ``list_view`` column key absent from the serialized list row.
+        """Reject a ``list_view`` column key whose root is absent from the serialized row.
 
         Enforce at construction — collecting every unknown column and raising once —
         so a column typo is rejected up front rather than rendering a blank column at
@@ -970,14 +1008,25 @@ class TaskExecutionApp(BaseApp):
         ``response_model.model_dump(by_alias=True)`` emits (see
         :func:`~app.sep.apps.framework.responses.serialized_field_names`), not
         ``model_fields`` alone. ``by_alias=True`` matches the derived list route,
-        which pins ``response_model_by_alias=True``. Keys are compared whole, so a
-        dotted path or a synthetic (``_actions``) key is rejected; no model-first
-        app uses one today. Skip ``schema=`` passthrough apps (no ``create_model``)
-        and model-first apps that declare no ``list_view``; detail-view ``data.*``
-        paths stay free-form and are checked by the conformance suite instead.
+        which pins ``response_model_by_alias=True``.
 
-        :raises ValueError: When a ``views.list_view`` column ``key`` is not present
-            in the serialized ``response_model`` row.
+        Two widenings are applied before comparison:
+
+        * Columns whose ``format`` is in
+          :data:`~app.sep.apps.framework.schema.NON_ROW_BOUND_FORMATS` (for example
+          ``ACTIONS``, ``SCHEDULE``) are exempt — their cells are not derived from the
+          column's own row value.
+        * A dotted column key (for example ``target.service``) is resolved to its root
+          segment (``target``) via
+          :func:`~app.sep.apps.framework.responses.root_segment`; sub-paths are
+          free-form and not validated.
+
+        Skip ``schema=`` passthrough apps (no ``create_model``) and model-first apps
+        that declare no ``list_view``; detail-view ``data.*`` paths stay free-form and
+        are checked by the conformance suite instead.
+
+        :raises ValueError: When a ``list_view`` column key's root segment is not
+            present in the serialized ``response_model`` row.
         """
         if self.create_model is None or self.views.list_view is None:
             return
@@ -985,11 +1034,18 @@ class TaskExecutionApp(BaseApp):
         unknown = [
             column.key
             for column in self.views.list_view.columns
-            if column.key not in response_fields
+            if column.format not in NON_ROW_BOUND_FORMATS
+            and root_segment(column.key) not in response_fields
         ]
         if unknown:
+            roots = ", ".join(
+                f"{k!r} (root: {root_segment(k)!r})"
+                if "." in k or "[" in k
+                else repr(k)
+                for k in unknown
+            )
             raise ValueError(
-                f"TaskExecutionApp: list_view column keys {unknown} are not present "
+                f"TaskExecutionApp: list_view column keys [{roots}] are not present "
                 f"in the serialized {self.response_model.__name__} row"
             )
 

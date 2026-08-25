@@ -65,6 +65,7 @@ from app.sep.apps.framework.schema import (
     AppSchema,
     BoolField,
     Column,
+    ColumnFormat,
     FormSection,
     ListView,
     RelatedApp,
@@ -708,7 +709,7 @@ class TestCreateRoute:
         """Assert the app's ``alert_detail_builder`` is stamped onto the posted task."""
         tasks_api = _make_tasks_api(created_task=_task_dict("new-task"))
         client = _client(
-            _synth_app(alert_detail_builder="pkg.mod:builder"),
+            _synth_app(alert_detail_builder="app.sep.apps.pkg.mod:builder"),
             tasks_api,
             regular_user,
             inventory_api=_make_inventory_api(),
@@ -723,7 +724,10 @@ class TestCreateRoute:
         create_call = next(
             call for call in tasks_api.post.await_args_list if call.args[0] == "/"
         )
-        assert create_call.kwargs["json"]["alert_detail_builder"] == "pkg.mod:builder"
+        assert (
+            create_call.kwargs["json"]["alert_detail_builder"]
+            == "app.sep.apps.pkg.mod:builder"
+        )
 
     def test_create_threads_run_result_recorder(
         self, regular_user: CasdoorUser
@@ -731,7 +735,7 @@ class TestCreateRoute:
         """Assert the app's ``run_result_recorder`` is stamped onto the posted task."""
         tasks_api = _make_tasks_api(created_task=_task_dict("new-task"))
         client = _client(
-            _synth_app(run_result_recorder="pkg.mod:recorder"),
+            _synth_app(run_result_recorder="app.sep.apps.pkg.mod:recorder"),
             tasks_api,
             regular_user,
             inventory_api=_make_inventory_api(),
@@ -746,7 +750,10 @@ class TestCreateRoute:
         create_call = next(
             call for call in tasks_api.post.await_args_list if call.args[0] == "/"
         )
-        assert create_call.kwargs["json"]["run_result_recorder"] == "pkg.mod:recorder"
+        assert (
+            create_call.kwargs["json"]["run_result_recorder"]
+            == "app.sep.apps.pkg.mod:recorder"
+        )
 
     def test_create_response_model_with_context_provider_succeeds(
         self, regular_user: CasdoorUser
@@ -1271,6 +1278,26 @@ class TestDefinitionValidation:
         )
         assert app_def.api_router is not None
 
+    def test_response_builder_return_type_mismatch_raises(self) -> None:
+        """Reject a ``response_builder`` whose return type differs from ``response_model``."""
+        with pytest.raises(ValueError, match="_AltListResponse.*SynthResponse"):
+            _synth_app(response_builder=_alt_list_builder)
+
+    def test_response_builder_matching_return_type_constructs(self) -> None:
+        """Construct cleanly when ``response_builder`` return type matches ``response_model``."""
+        app_def = _synth_app(
+            response_builder=_alt_list_builder, response_model=_AltListResponse
+        )
+        assert app_def.api_router is not None
+
+    def test_response_builder_without_return_annotation_raises_type_error(self) -> None:
+        """Assert an unannotated ``response_builder`` still raises ``TypeError``."""
+        with pytest.raises(TypeError, match="return type annotation"):
+            _synth_app(
+                response_builder=_unannotated_list_builder,
+                response_model=_AltListResponse,
+            )
+
     def test_create_model_with_malformed_arg_format_raises(self) -> None:
         """Reject a ``create_model`` whose ``ArgFormat`` template has an unsupported placeholder."""
         with pytest.raises(ValueError, match="unsupported placeholder"):
@@ -1292,6 +1319,84 @@ class TestDefinitionValidation:
             payload_builder=_passthrough_payload_builder,
             views=bad_views,
         )
+        assert app_def.api_router is not None
+
+    def test_list_view_column_with_actions_format_constructs(self) -> None:
+        """Construct cleanly when a column uses ACTIONS format with a synthetic key."""
+        views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(
+                columns=[
+                    Column(key="name", label="Name"),
+                    Column(
+                        key="_actions", label="Actions", format=ColumnFormat.ACTIONS
+                    ),
+                ]
+            ),
+        )
+        app_def = _synth_app(views=views)
+        assert app_def.api_router is not None
+
+    def test_list_view_column_with_schedule_format_constructs(self) -> None:
+        """Construct cleanly when a column uses SCHEDULE format with a synthetic key."""
+        views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(
+                columns=[
+                    Column(key="name", label="Name"),
+                    Column(
+                        key="_schedule", label="Schedule", format=ColumnFormat.SCHEDULE
+                    ),
+                ]
+            ),
+        )
+        app_def = _synth_app(views=views)
+        assert app_def.api_router is not None
+
+    def test_list_view_dotted_key_with_valid_root_constructs(self) -> None:
+        """Construct cleanly when a dotted column key's root is a serialized field."""
+        views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(
+                columns=[
+                    Column(key="name", label="Name"),
+                    Column(key="status.label", label="Status Label"),
+                ]
+            ),
+        )
+        app_def = _synth_app(views=views)
+        assert app_def.api_router is not None
+
+    def test_list_view_dotted_key_with_invalid_root_raises(self) -> None:
+        """Reject a dotted column key whose root segment is absent from the row."""
+        bad_views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(columns=[Column(key="ghost.service", label="Ghost")]),
+        )
+        with pytest.raises(ValueError, match=r"root: 'ghost'"):
+            _synth_app(views=bad_views)
+
+    def test_list_view_indexed_key_resolves_root(self) -> None:
+        """Reject an indexed dotted key whose root segment is absent from the row."""
+        bad_views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(columns=[Column(key="items[0].name", label="Item")]),
+        )
+        with pytest.raises(ValueError, match=r"root: 'items'"):
+            _synth_app(views=bad_views)
+
+    def test_list_view_indexed_key_with_valid_root_constructs(self) -> None:
+        """Construct cleanly when an indexed column key's root is a serialized field."""
+        views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(
+                columns=[
+                    Column(key="name", label="Name"),
+                    Column(key="name[0].label", label="First Name Label"),
+                ]
+            ),
+        )
+        app_def = _synth_app(views=views)
         assert app_def.api_router is not None
 
 
@@ -1316,6 +1421,16 @@ def _alt_list_builder(
     context: dict | None = None,
 ) -> _AltListResponse:
     """Build the alternate list/detail response, accepting a bound context."""
+    return _AltListResponse(name=task.name)
+
+
+def _unannotated_list_builder(
+    task: Task,
+    *,
+    status: object = None,
+    context: dict | None = None,
+):
+    """Stand in as a response builder with no return annotation."""
     return _AltListResponse(name=task.name)
 
 
@@ -1594,7 +1709,9 @@ class TestResponseAndFilterKnobs:
 
     def test_response_builder_override_drives_list_model(self) -> None:
         """Assert a ``response_builder`` override supplies the list response model."""
-        app_def = _synth_app(response_builder=_alt_list_builder)
+        app_def = _synth_app(
+            response_builder=_alt_list_builder, response_model=_AltListResponse
+        )
         list_route = next(
             route
             for route in app_def.api_router.routes

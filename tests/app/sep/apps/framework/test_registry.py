@@ -226,7 +226,7 @@ class TestCeleryDerivation:
         a synthetic module name would derive ``None``.
         """
         return [
-            App(name="Collect Diagnostic Data", module_name="atw"),
+            App(name="Support diagnostics", module_name="atw"),
             App(name="Checksums", module_name="checksums"),
             App(name="Alerts", module_name="alerts"),
             App(name="Report", module_name="report", celery_module_path=None),
@@ -646,7 +646,7 @@ class TestCollectAppOwnedSettingsClasses:
         assert entry.proxy is health_report_settings
 
     def test_reduced_activation_declares_no_alerts_entry(self) -> None:
-        """Yield no alerts entry under the PMM-embedded activation list."""
+        """Return no alerts entry under the PMM-embedded activation list."""
         entries = collect_app_owned_settings_classes(REDUCED_ACTIVATION)
         assert SettingClassEnum.ALERTS_SETTINGS not in {
             entry.setting_class for entry in entries

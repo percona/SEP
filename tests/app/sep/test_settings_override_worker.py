@@ -16,6 +16,8 @@
 """Tests for the SEP worker's settings-override wiring."""
 
 import asyncio
+import logging
+import logging.config
 from typing import ClassVar
 
 import pytest
@@ -30,7 +32,7 @@ from sqlmodel import SQLModel
 from sqlmodel.pool import StaticPool
 
 from app.core.alerts.config import alert_settings
-from app.core.config import BaseYamlSettings, settings
+from app.core.config import BaseYamlSettings, LogLevel, settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override import lifecycle
 from app.core.settings_override.api.routes import AppOwnedClassEntry
@@ -43,7 +45,7 @@ from app.core.settings_override.worker import SEED_TIMEOUT_FRACTION
 from app.core.utils import json_serializer
 from app.sep import settings_override as sep_worker
 from app.sep.config import sep_settings
-from app.sep.deps import get_pmm_api
+from app.sep.deps import resolve_pmm_api
 from app.sep.settings_override import (
     build_sep_override_proxies,
     republish_sep_settings_snapshot,
@@ -221,9 +223,12 @@ class TestBuildSepOverrideProxies:
 class TestWorkerOverrideCallbacks:
     """Cover the callback subset the worker refresher registers."""
 
-    def test_registry_is_exactly_the_pmm_invalidation(self) -> None:
-        """Pin the disposition: PMM client invalidation, and nothing else."""
-        assert set(WORKER_OVERRIDE_CALLBACKS) == {(SettingClassEnum.SETTINGS, "PMM")}
+    def test_registry_is_pmm_and_logging(self) -> None:
+        """Pin the disposition: PMM invalidation plus LOGGING dictConfig rebind."""
+        assert set(WORKER_OVERRIDE_CALLBACKS) == {
+            (SettingClassEnum.SETTINGS, "PMM"),
+            (SettingClassEnum.SETTINGS, "LOGGING"),
+        }
 
 
 class TestSepWorkerHandlers:
@@ -338,7 +343,7 @@ class TestWorkerPmmClientInvalidation:
     async def test_api_key_only_override_evicts_the_cached_client(
         self, override_session_maker: async_sessionmaker
     ) -> None:
-        """Hand a fresh client with the new key to the next ``get_pmm_api()``.
+        """Hand a fresh client with the new key to the next ``resolve_pmm_api()``.
 
         ``ClientRegistry.IMMUTABLE_KEYS`` excludes ``api_key``, so republishing
         the ``PMM`` snapshot alone leaves the stale client cached; only the
@@ -352,7 +357,7 @@ class TestWorkerPmmClientInvalidation:
             value={"endpoint": PMM_ENDPOINT, "api_key": "old-key"},
         )
         await refresh_all(lambda: override_session_maker, proxies)
-        stale = await get_pmm_api()
+        stale = await resolve_pmm_api()
         try:
             await _upsert_override(
                 override_session_maker,
@@ -365,7 +370,7 @@ class TestWorkerPmmClientInvalidation:
                 lambda: override_session_maker, proxies, WORKER_OVERRIDE_CALLBACKS
             )
 
-            fresh = await get_pmm_api()
+            fresh = await resolve_pmm_api()
             assert fresh is not stale
             assert fresh.api_key == SecretStr("new-key")
         finally:
@@ -390,7 +395,7 @@ class TestWorkerPmmClientInvalidation:
             value={"endpoint": PMM_ENDPOINT, "api_key": "old-key"},
         )
         await refresh_all(lambda: override_session_maker, proxies)
-        stale = await get_pmm_api()
+        stale = await resolve_pmm_api()
         try:
             await _upsert_override(
                 override_session_maker,
@@ -402,7 +407,7 @@ class TestWorkerPmmClientInvalidation:
             await refresh_all(lambda: override_session_maker, proxies)
 
             assert settings.PMM.api_key == SecretStr("new-key")
-            assert await get_pmm_api() is stale
+            assert await resolve_pmm_api() is stale
         finally:
             await settings.invalidate_client(PMM_ENDPOINT)
 
@@ -440,6 +445,86 @@ class TestWorkerPmmClientInvalidation:
         )
 
         assert settings.PMM.api_key == SecretStr("new-key")
+
+
+@pytest.fixture(name="worker_logging_boot")
+def worker_logging_boot_fixture() -> None:
+    """Install a WARNING-level NullHandler config and restore process logging.
+
+    Mutates process-global logging and the ``settings`` snapshot; teardown
+    always runs so a leaked ``NullHandler`` root config cannot silence later
+    tests. Snapshot restore is belt-and-suspenders with the autouse
+    ``_override_snapshot_cleared`` fixture (that one runs only on setup).
+    """
+    boot_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "handlers": {"default": {"class": "logging.NullHandler"}},
+        "loggers": {
+            "": {"handlers": ["default"], "level": "WARNING"},
+            "app": {"handlers": ["default"], "level": "WARNING", "propagate": False},
+        },
+    }
+    try:
+        logging.config.dictConfig(boot_config)
+        settings._set_snapshot({"LOGGING": LogLevel.WARNING})
+        yield
+    finally:
+        settings._set_snapshot({})
+        logging.config.dictConfig(settings.LOGGING_CONFIG)
+
+
+class TestWorkerLoggingRebind:
+    """Verify a LOGGING override re-applies dictConfig in the worker path."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("no_app_owned_classes", "worker_logging_boot")
+    async def test_logging_override_changes_effective_app_level(
+        self, override_session_maker: async_sessionmaker
+    ) -> None:
+        """Raise the worker's app logger to the overridden level on refresh.
+
+        Also pin ``disable_existing_loggers: False``: a runtime logger outside
+        the configured logger tree (not under a name ``LOGGING_CONFIG``
+        declares) must stay enabled after the callback re-enters ``dictConfig``.
+        Children of configured names -- e.g. ``celery.app.trace`` under
+        ``celery`` -- are never disabled either way, so they cannot discriminate.
+        """
+        runtime_logger = logging.getLogger("kombu.connection")
+        proxies = build_sep_override_proxies()
+        await _upsert_override(
+            override_session_maker,
+            setting_class=SettingClassEnum.SETTINGS,
+            key="LOGGING",
+            value="DEBUG",
+        )
+
+        await refresh_all(
+            lambda: override_session_maker, proxies, WORKER_OVERRIDE_CALLBACKS
+        )
+
+        assert settings.LOGGING == LogLevel.DEBUG
+        assert logging.getLogger("app").isEnabledFor(logging.DEBUG)
+        assert not runtime_logger.disabled
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("no_app_owned_classes", "worker_logging_boot")
+    async def test_without_the_callback_boot_level_survives(
+        self, override_session_maker: async_sessionmaker
+    ) -> None:
+        """Pin the gap: snapshot updates LOGGING but handlers stay at boot level."""
+        proxies = build_sep_override_proxies()
+        await _upsert_override(
+            override_session_maker,
+            setting_class=SettingClassEnum.SETTINGS,
+            key="LOGGING",
+            value="DEBUG",
+        )
+
+        await refresh_all(lambda: override_session_maker, proxies)
+
+        assert settings.LOGGING == LogLevel.DEBUG
+        assert not logging.getLogger("app").isEnabledFor(logging.DEBUG)
 
 
 class TestRepublishSepSettingsSnapshot:

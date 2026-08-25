@@ -992,6 +992,11 @@ app = TaskExecutionApp(
 )
 ```
 
+When you supply an explicit `response_builder`, set `response_model` to the same
+class the builder's return annotation declares. The derived list route serializes
+the builder's model, and every other `response_model` reader — including the
+`list_view` column gate — measures that field; construction rejects a mismatch.
+
 `TaskExecutionApp` also exposes `update_handler` / `delete_handler`
 (`app/sep/apps/framework/apps.py`) for fully replacing a mutation handler — no app
 in the tree overrides those today; prefer the lighter response-builder override
@@ -1198,7 +1203,7 @@ rules and you need to pin which one tripped.
 ### Factory conventions
 
 Test data comes from `polyfactory` factories — build with `.build()` and customise
-inline (`CasdoorUserFactory.build(is_admin=True)`). Never hand-roll a `dict` for a
+inline (`CasdoorUserFactory.build(role=UserRole.ADMIN)`). Never hand-roll a `dict` for a
 model a factory already covers. The contract suite's own task/inventory seeding goes
 through the `MockTaskAPI` / `MockInventoryAPI` helpers in
 `tests/app/sep/apps/framework/kit.py`, not raw dicts.

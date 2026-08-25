@@ -46,7 +46,8 @@ def serialized_field_names(model: type[BaseModel]) -> frozenset[str]:
     ``serialization_alias`` then ``alias`` then the attribute name, unioned
     with every computed field resolved through its alias then attribute name.
     Use this — not ``model_fields`` alone — when validating that a
-    ``list_view`` column key is present in the serialized row.
+    ``list_view`` column key or ``detail_view`` field path is present in
+    the serialized row.
 
     :param model: The Pydantic response model class whose dump keys are listed.
     :return: The frozenset of names ``model_dump(by_alias=True)`` emits for
@@ -67,6 +68,16 @@ def serialized_field_names(model: type[BaseModel]) -> frozenset[str]:
         for name, field in model.model_computed_fields.items()
     )
     return frozenset(names)
+
+
+def root_segment(path: str) -> str:
+    """Return the leading field name of a dotted/indexed view path.
+
+    :param path: A list-view column key or detail-view field path (for example
+        ``"target.service"`` or ``"data.meta[0]"``).
+    :return: The path's first segment, stripped of any ``[N]`` index.
+    """
+    return path.split(".", 1)[0].split("[", 1)[0]
 
 
 def dump_with_excluded_fields(

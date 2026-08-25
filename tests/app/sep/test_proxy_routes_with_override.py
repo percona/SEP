@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession, create_asyn
 from sqlmodel import SQLModel
 from sqlmodel.pool import StaticPool
 
+from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
@@ -123,6 +124,7 @@ async def test_snippets_refresh_route_observes_enable_manual_sync_override(
         async with override_session_maker() as guard_session:
             yield guard_session
 
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = _guard_session
     try:

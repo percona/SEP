@@ -36,12 +36,13 @@ from app.core.config import Settings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.api.routes import build_settings_router
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
 from app.core.utils import json_serializer
 from app.inventory.config import inventory_settings, InventorySettings
 from app.sep.config import sep_settings, SEPSettings
 from app.tasks.config import tasks_settings, TasksSettings
+from tests.app.core.settings_override.conftest import insert_override_row
 
 ANNOTATIONS_KEY = "Settings.PMM__annotations_enabled"
 LOGGING_KEY = "Settings.LOGGING"
@@ -72,7 +73,7 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
 
 @pytest.fixture(name="client")
 def client_fixture(override_session: AsyncSession) -> Iterator[TestClient]:
-    """Yield a client whose router wires every locally-owned settings class."""
+    """Return a client whose router wires every locally-owned settings class."""
 
     async def get_session() -> AsyncSession:
         return override_session
@@ -96,11 +97,6 @@ def client_fixture(override_session: AsyncSession) -> Iterator[TestClient]:
     app = FastAPI()
     app.include_router(router, prefix="/settings")
     return TestClient(app, raise_server_exceptions=False)
-
-
-async def _seed_row(session: AsyncSession, **kwargs: object) -> None:
-    """Insert one override row straight through the manager, bypassing the API."""
-    await SettingsOverrideManager.create(session, SettingOverride(**kwargs))
 
 
 def _error_types(response_json: dict) -> set[str]:
@@ -364,7 +360,7 @@ class TestDeleteGate:
         restrict: Callable[..., None],
     ) -> None:
         """Assert a stale row for a now-locked key is removable."""
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.SEP_SETTINGS,
             key="INVENTORY_ENDPOINT",
@@ -409,7 +405,7 @@ class TestDeleteGate:
         restrict: Callable[..., None],
     ) -> None:
         """Assert a stale leaf row survives its parent becoming unaddressable."""
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.TASKS_SETTINGS,
             key="NOMAD__timeout",
@@ -443,7 +439,7 @@ class TestDeleteGate:
         restrict: Callable[..., None],
     ) -> None:
         """Assert a whole-parent row survives every leaf beneath it being withheld."""
-        await _seed_row(
+        await insert_override_row(
             override_session,
             setting_class=SettingClassEnum.TASKS_SETTINGS,
             key="NOMAD",
@@ -477,3 +473,247 @@ class TestDeleteGate:
         response = client.delete(f"{TASKS_URL}/NOMAD")
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         assert _error_types(response.json()) == {"not_overridable"}
+
+
+class TestLegacyCasedOverrideRows:
+    """Cover DELETE and PATCH resolving rows whose stored key is not canonical.
+
+    The API never writes a non-canonical key; these rows are seeded directly
+    to stand in for a hand-written or historically re-cased override.
+    """
+
+    _CANONICAL_NESTED = "NOMAD__timeout"
+    _LEGACY_NESTED = "nomad__TIMEOUT"
+    _CANONICAL_PMM = "PMM__endpoint"
+    _LEGACY_PMM = "pmm__ENDPOINT"
+    _CANONICAL_TOP = "INVENTORY_ENDPOINT"
+    _LEGACY_TOP = "inventory_endpoint"
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_legacy_cased_row(
+        self,
+        client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Assert DELETE of the canonical key removes a mixed-case stored row."""
+        await insert_override_row(
+            override_session,
+            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            key=self._LEGACY_NESTED,
+            value=30,
+            is_active=True,
+        )
+        response = client.delete(f"{TASKS_URL}/{self._CANONICAL_NESTED}")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert (
+            await SettingsOverrideManager.count(
+                override_session,
+                setting_class=SettingClassEnum.TASKS_SETTINGS,
+            )
+            == 0
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_legacy_row_under_allowlist_is_not_conflict(
+        self,
+        client: TestClient,
+        override_session: AsyncSession,
+        restrict: Callable[..., None],
+    ) -> None:
+        """Assert a withheld field's legacy row is still found and deleted."""
+        await insert_override_row(
+            override_session,
+            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            key=self._LEGACY_NESTED,
+            value=30,
+            is_active=True,
+        )
+        restrict(LOGGING_KEY)
+        response = client.delete(f"{TASKS_URL}/{self._CANONICAL_NESTED}")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert (
+            await SettingsOverrideManager.count(
+                override_session,
+                setting_class=SettingClassEnum.TASKS_SETTINGS,
+            )
+            == 0
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_legacy_and_canonical_duplicates(
+        self,
+        client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Assert DELETE of the canonical key removes every matching stored row."""
+        await insert_override_row(
+            override_session,
+            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            key=self._LEGACY_NESTED,
+            value=30,
+            is_active=True,
+        )
+        await insert_override_row(
+            override_session,
+            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            key=self._CANONICAL_NESTED,
+            value=45,
+            is_active=True,
+        )
+        response = client.delete(f"{TASKS_URL}/{self._CANONICAL_NESTED}")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert (
+            await SettingsOverrideManager.count(
+                override_session,
+                setting_class=SettingClassEnum.TASKS_SETTINGS,
+            )
+            == 0
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_legacy_cased_top_level_row(
+        self,
+        client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Assert DELETE of a top-level key removes a mixed-case stored row.
+
+        Mirrors MySQL's historical case-insensitive key match after the lookup
+        moved from SQL into Python.
+        """
+        await insert_override_row(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=self._LEGACY_TOP,
+            value="https://stale.example.com",
+            is_active=True,
+        )
+        response = client.delete(f"{SEP_URL}/{self._CANONICAL_TOP}")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert (
+            await SettingsOverrideManager.count(
+                override_session,
+                setting_class=SettingClassEnum.SEP_SETTINGS,
+            )
+            == 0
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_legacy_top_level_under_allowlist_is_not_conflict(
+        self,
+        client: TestClient,
+        override_session: AsyncSession,
+        restrict: Callable[..., None],
+    ) -> None:
+        """Assert a withheld top-level legacy row is still found and deleted."""
+        await insert_override_row(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=self._LEGACY_TOP,
+            value="https://stale.example.com",
+            is_active=True,
+        )
+        restrict(LOGGING_KEY)
+        response = client.delete(f"{SEP_URL}/{self._CANONICAL_TOP}")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert (
+            await SettingsOverrideManager.count(
+                override_session,
+                setting_class=SettingClassEnum.SEP_SETTINGS,
+            )
+            == 0
+        )
+
+    @pytest.mark.asyncio
+    async def test_patch_updates_legacy_row_instead_of_duplicating(
+        self,
+        client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Assert PATCH heals a legacy nested key to the canonical spelling."""
+        await insert_override_row(
+            override_session,
+            setting_class=SettingClassEnum.SETTINGS,
+            key=self._LEGACY_PMM,
+            value="https://stale.example.com",
+            is_active=True,
+        )
+        new_value = "https://pmm.example.com"
+        response = client.patch(SETTINGS_URL, json={self._CANONICAL_PMM: new_value})
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SETTINGS
+        )
+        assert len(rows) == 1
+        assert rows[0].key == self._CANONICAL_PMM
+        assert rows[0].value == new_value
+        assert rows[0].is_active is True
+
+    @pytest.mark.asyncio
+    async def test_patch_updates_legacy_and_canonical_duplicates(
+        self,
+        client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Assert PATCH collapses duplicate case-variants to one canonical row."""
+        await insert_override_row(
+            override_session,
+            setting_class=SettingClassEnum.SETTINGS,
+            key=self._LEGACY_PMM,
+            value="https://legacy.example.com",
+            is_active=True,
+        )
+        await insert_override_row(
+            override_session,
+            setting_class=SettingClassEnum.SETTINGS,
+            key=self._CANONICAL_PMM,
+            value="https://canonical.example.com",
+            is_active=True,
+        )
+        new_value = "https://pmm.example.com"
+        response = client.patch(SETTINGS_URL, json={self._CANONICAL_PMM: new_value})
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SETTINGS
+        )
+        assert len(rows) == 1
+        assert rows[0].key == self._CANONICAL_PMM
+        assert rows[0].value == new_value
+        assert rows[0].is_active is True
+
+    @pytest.mark.asyncio
+    async def test_patch_updates_legacy_top_level_row_instead_of_duplicating(
+        self,
+        client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Assert PATCH heals a mixed-case top-level row so the snapshot can read it.
+
+        Leaving the legacy spelling would update a row ``_apply_top_level_row``
+        never looks up, yielding a 200 that silently discards the override.
+        """
+        await insert_override_row(
+            override_session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key=self._LEGACY_TOP,
+            value="https://stale.example.com",
+            is_active=True,
+        )
+        new_value = "https://inventory.example.com/"
+        response = client.patch(SEP_URL, json={self._CANONICAL_TOP: new_value})
+        assert response.status_code == status.HTTP_200_OK
+        applied = response.json()[0]
+        assert applied["key"] == self._CANONICAL_TOP
+        assert applied["value"] == new_value
+        assert applied["has_override"] is True
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+        )
+        assert len(rows) == 1
+        assert rows[0].key == self._CANONICAL_TOP
+        assert rows[0].value == new_value
+        assert rows[0].is_active is True
+        detail = client.get(f"{SEP_URL}/{self._CANONICAL_TOP}")
+        assert detail.status_code == status.HTTP_200_OK
+        assert detail.json()["has_override"] is True
+        assert detail.json()["value"] == new_value

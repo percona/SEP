@@ -32,6 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, params, Request, status
 from pydantic import ValidationError
 from pydantic.fields import FieldInfo
 from sqlalchemy.exc import IntegrityError
+from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import BaseYamlSettings
@@ -72,6 +73,7 @@ from app.core.settings_override.registry import (
     materialize_override_value,
     NESTED_VALUE_MISSING,
     override_keys_for_rows,
+    override_rows_for_key,
     preserve_patch_credential_url_value,
     ReloadClassification,
     rendered_leaf_keys,
@@ -1037,6 +1039,7 @@ def build_settings_router(
         await _persist_overrides(
             session=session,
             setting_class=setting_class,
+            settings_cls=settings_cls,
             to_apply=to_apply,
         )
         previous = proxy.get_snapshot()
@@ -1067,7 +1070,7 @@ def build_settings_router(
         session: session_dep,  # type: ignore[valid-type]
         remote_api: remote_dep,  # type: ignore[valid-type]
     ) -> None:
-        """Revert one override row to the field's declared default.
+        """Revert override row(s) for one field to the field's declared default.
 
         For a remote class the DELETE is forwarded to the owning sub-app, which
         owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
@@ -1079,7 +1082,10 @@ def build_settings_router(
         override row in the first place and the operator's intent is
         unsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld
         may still carry a row written before the restriction applied, so that
-        row is deleted normally and only the no-row case answers 409.
+        row is deleted normally (found by canonicalizing the stored key, so a
+        legacy non-canonical casing is still seen) and only the no-row case
+        answers 409. When several rows canonicalize to the same key, all of
+        them are removed.
 
         After republishing the snapshot, fires the rebind callbacks for the
         reverted key so a HOT target rebinds to its restored value without
@@ -1111,15 +1117,14 @@ def build_settings_router(
         settings_cls, proxy = _resolve(setting_class)
         key = canonical_override_key(settings_cls, key)
         field_meta = _field_meta_or_404(settings_cls, key)
-        has_override_row = await SettingsOverrideManager.exists(
-            session, setting_class=setting_class, key=key
+        rows = await override_rows_for_key(
+            session,
+            settings_cls=settings_cls,
+            setting_class=setting_class,
+            key=key,
         )
-        _assert_key_deletable(
-            settings_cls, field_meta, has_override_row=has_override_row
-        )
-        await SettingsOverrideManager.delete_where(
-            session, setting_class=setting_class, key=key
-        )
+        _assert_key_deletable(settings_cls, field_meta, has_override_row=bool(rows))
+        await _delete_override_rows(session, setting_class, rows)
         previous = proxy.get_snapshot()
         await publish_snapshot(proxy, session, settings_cls)
         await _fire_inline_rebind_callbacks(request, setting_class, proxy, previous)
@@ -1260,21 +1265,52 @@ def _assert_key_deletable(
         )
 
 
+async def _delete_override_rows(
+    session: AsyncSession,
+    setting_class: SettingClassEnum,
+    rows: list[SettingOverride],
+) -> None:
+    """Delete every resolved override row by its stored key.
+
+    A no-op when ``rows`` is empty, so DELETE stays idempotent without emitting
+    an invalid ``IN ()`` clause.
+
+    :param session: The sub-app's database session.
+    :param setting_class: The settings class the rows belong to.
+    :param rows: The rows :func:`override_rows_for_key` resolved for this key.
+    """
+    if not rows:
+        return
+    await SettingsOverrideManager.delete_where(
+        session,
+        col(SettingOverride.key).in_({row.key for row in rows}),
+        setting_class=setting_class,
+    )
+
+
 async def _persist_overrides(
     *,
     session: AsyncSession,
     setting_class: SettingClassEnum,
+    settings_cls: type[BaseYamlSettings],
     to_apply: list[tuple[str, Any]],
 ) -> None:
     """Insert or update each ``(setting_class, key)`` row in a single transaction.
 
-    Existing rows have ``value`` and ``is_active`` updated; missing rows are
-    inserted fresh. The transaction is committed once at the end so a failure
-    on any single row rolls back the entire batch.
+    Existing rows (resolved by canonicalizing the stored key) have ``value``
+    and ``is_active`` updated and their stored key healed to the canonical
+    spelling; missing rows are inserted fresh. When several rows resolve to
+    the same key, one survivor is kept (preferring an already-canonical row)
+    and the rest are dropped so the unique index stays satisfied after the
+    rename. Healing matters for top-level keys: the snapshot loader looks up
+    ``model_fields`` by exact key, so leaving a mixed-case spelling would
+    accept the PATCH while never applying the override. The transaction is
+    committed once at the end so a failure on any single row rolls back the
+    entire batch.
 
     Concurrent PATCHes against the same key would otherwise race: both
-    requests can observe ``existing is None`` between their ``first()`` and
-    the unique-index commit, and the second commit would raise
+    requests can observe no matching row between their lookup and the
+    unique-index commit, and the second commit would raise
     :class:`sqlalchemy.exc.IntegrityError`. The handler catches that case,
     rolls back the failed transaction, and replays the batch against the
     rows the winning writer left in place so the second PATCH still applies
@@ -1282,16 +1318,23 @@ async def _persist_overrides(
 
     :param session: The sub-app's database session.
     :param setting_class: The settings class the rows belong to.
+    :param settings_cls: The Pydantic settings class used to canonicalize keys.
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
     """
     try:
         await _stage_and_commit_overrides(
-            session=session, setting_class=setting_class, to_apply=to_apply
+            session=session,
+            setting_class=setting_class,
+            settings_cls=settings_cls,
+            to_apply=to_apply,
         )
     except IntegrityError:
         await session.rollback()
         await _stage_and_commit_overrides(
-            session=session, setting_class=setting_class, to_apply=to_apply
+            session=session,
+            setting_class=setting_class,
+            settings_cls=settings_cls,
+            to_apply=to_apply,
         )
 
 
@@ -1299,20 +1342,29 @@ async def _stage_and_commit_overrides(
     *,
     session: AsyncSession,
     setting_class: SettingClassEnum,
+    settings_cls: type[BaseYamlSettings],
     to_apply: list[tuple[str, Any]],
 ) -> None:
-    """Stage every (setting_class, key) row and commit the batch.
+    """Stage every matching (setting_class, key) row and commit the batch.
+
+    Resolves existing rows by canonicalizing each stored key. A missing key
+    is inserted; a matching set collapses to one row under the canonical
+    ``key`` with the new value.
 
     :param session: The sub-app's database session.
     :param setting_class: The settings class the rows belong to.
+    :param settings_cls: The Pydantic settings class used to canonicalize keys.
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
     """
     for key, value in to_apply:
         stored_value = unwrap_secrets_for_storage(value)
-        existing = await SettingsOverrideManager.first(
-            session, setting_class=setting_class, key=key
+        existing_rows = await override_rows_for_key(
+            session,
+            settings_cls=settings_cls,
+            setting_class=setting_class,
+            key=key,
         )
-        if existing is None:
+        if not existing_rows:
             session.add(
                 SettingOverride(
                     setting_class=setting_class,
@@ -1321,8 +1373,18 @@ async def _stage_and_commit_overrides(
                     is_active=True,
                 )
             )
-        else:
-            existing.value = stored_value
-            existing.is_active = True
-            session.add(existing)
+            continue
+        # Prefer a row that already stores the canonical spelling so renaming
+        # a legacy sibling does not collide with it on the unique index.
+        keep = next((row for row in existing_rows if row.key == key), existing_rows[0])
+        for row in existing_rows:
+            if row is keep:
+                continue
+            # Delete in-session (do not use Manager.delete_where): that path
+            # commits, and extras must share this batch's single transaction.
+            await session.delete(row)
+        keep.key = key
+        keep.value = stored_value
+        keep.is_active = True
+        session.add(keep)
     await session.commit()

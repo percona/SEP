@@ -28,8 +28,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.alerts.config import AlertSettings
 from app.core.config import Settings
 from app.core.settings_override.cache import build_snapshot
-from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import (
     chain_is_locked,
     coerce_nested_field_value,
@@ -41,14 +40,10 @@ from app.core.settings_override.registry import (
 )
 from app.sep.config import SEPSettings
 from app.tasks.config import TasksSettings
+from tests.app.core.settings_override.conftest import insert_override_row
 
 ANNOTATIONS_KEY = "Settings.PMM__annotations_enabled"
 _SYNC_REFRESH_OVERRIDE = 11
-
-
-async def _insert(session: AsyncSession, **kwargs: object) -> None:
-    """Insert a setting override row via the manager."""
-    await SettingsOverrideManager.create(session, SettingOverride(**kwargs))
 
 
 def _reload_of(settings_cls: type, key: str) -> ReloadClassification:
@@ -242,7 +237,7 @@ class TestSnapshotFiltering:
         """Assert a pre-lockdown row for a now-locked field never reaches readers."""
         caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
         restrict("SEPSettings.SYNC_REFRESH_TIME")
-        await _insert(
+        await insert_override_row(
             session,
             setting_class=SettingClassEnum.SEP_SETTINGS,
             key="CONNECTIVITY_CHECK_DEFAULT",
@@ -259,7 +254,7 @@ class TestSnapshotFiltering:
     ) -> None:
         """Assert an allowed field's row still lands in the snapshot."""
         restrict("SEPSettings.SYNC_REFRESH_TIME")
-        await _insert(
+        await insert_override_row(
             session,
             setting_class=SettingClassEnum.SEP_SETTINGS,
             key="SYNC_REFRESH_TIME",
@@ -279,7 +274,7 @@ class TestSnapshotFiltering:
         """Assert a row under a fully locked parent never reaches readers."""
         caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
         restrict(ANNOTATIONS_KEY)
-        await _insert(
+        await insert_override_row(
             session,
             setting_class=SettingClassEnum.TASKS_SETTINGS,
             key="NOMAD__timeout",
@@ -302,7 +297,7 @@ class TestSnapshotFiltering:
         """Assert the per-leaf coercion gate skips a locked sibling of an open leaf."""
         caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
         restrict(ANNOTATIONS_KEY)
-        await _insert(
+        await insert_override_row(
             session,
             setting_class=SettingClassEnum.SETTINGS,
             key="PMM__endpoint",
@@ -321,7 +316,7 @@ class TestSnapshotFiltering:
     ) -> None:
         """Assert an allowed leaf's row still merges into its parent."""
         restrict(ANNOTATIONS_KEY)
-        await _insert(
+        await insert_override_row(
             session,
             setting_class=SettingClassEnum.SETTINGS,
             key="PMM__annotations_enabled",

@@ -15,9 +15,10 @@
 
 """Define the Grafana user and token-payload models."""
 
-from collections.abc import Sequence
+import logging
+from collections.abc import Iterable, Mapping, Sequence
 from enum import StrEnum
-from typing import Any, cast, NoReturn, NotRequired, Self
+from typing import Any, cast, Final, NoReturn, NotRequired, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from fastapi import HTTPException, status
@@ -31,13 +32,19 @@ from app.core.auth.models import (
     BaseUser,
     OAuthToken,
     SessionExchangeTokenResponse,
+    UserRole,
 )
 from app.core.auth.providers.grafana.sdk import GrafanaException, GrafanaSDK
 from app.core.config import settings
+from app.core.exceptions import HTTPNotFoundException
 from app.core.utils.fields import NonEmptyStr
 
+logger = logging.getLogger(__name__)
+
+ASSERTION_SALT: Final = "sep.auth.grafana.v1"
+
 _TOKEN_SERIALIZER = URLSafeTimedSerializer(
-    settings.SECRET_KEY.get_secret_value(), salt="sep.auth.grafana.v1"
+    settings.SECRET_KEY.get_secret_value(), salt=ASSERTION_SALT
 )
 
 
@@ -59,7 +66,33 @@ class _TokenType(StrEnum):
 # check.
 _BEARER_TOKEN_TYPES = (_TokenType.ACCESS, _TokenType.EXCHANGE)
 
-_ADMIN_ROLE = "Admin"
+_GRAFANA_ORG_ROLE_TO_USER_ROLE: Final[Mapping[str, UserRole]] = {
+    "None": UserRole.NONE,
+    "Viewer": UserRole.VIEWER,
+    "Editor": UserRole.EDITOR,
+    "Admin": UserRole.ADMIN,
+}
+
+
+def _rank_org_role(name: str | None) -> UserRole:
+    """Return the SEP role a Grafana org role names.
+
+    Grafana models "holds no role" as ``"None"`` or as an absent field, so both
+    rank lowest without comment. A value Grafana does not define is schema
+    drift instead: it also ranks lowest, because an unreadable membership
+    proves no access, but it is logged so the drift stays visible rather than
+    reading as a deliberate no-access decision.
+
+    :param name: The ``role`` a Grafana record carries, if any.
+    :return: The ranked ``UserRole``.
+    """
+    if name is None:
+        return UserRole.NONE
+    role = _GRAFANA_ORG_ROLE_TO_USER_ROLE.get(name)
+    if role is None:
+        logger.warning("Grafana returned an unsupported organization role %r", name)
+        return UserRole.NONE
+    return role
 
 
 class _GrafanaUserRecord(TypedDict):
@@ -86,6 +119,36 @@ class _GrafanaOrgUserRecord(TypedDict):
     login: str
     email: NotRequired[str]
     role: NotRequired[str]
+
+
+def _find_org_user(
+    records: list[_GrafanaOrgUserRecord], login_or_email: str
+) -> _GrafanaOrgUserRecord | None:
+    """Return the row a login or email names, ranking a login match first.
+
+    Grafana allows a login shaped like an email, so one user's login can equal
+    another's email; matching every login before any email keeps the result
+    independent of listing order. Comparison is case-folded because Grafana
+    treats logins case-insensitively, and a row whose field is absent or null is
+    skipped rather than compared, so a blank input matches nothing.
+
+    :param records: The org-users listing.
+    :param login_or_email: The login or email to match, in any case.
+    :return: The matching row, or ``None`` when the listing names neither.
+    """
+    wanted = login_or_email.casefold()
+    for field in ("login", "email"):
+        match = next(
+            (
+                row
+                for row in records
+                if (value := row.get(field)) and value.casefold() == wanted
+            ),
+            None,
+        )
+        if match is not None:
+            return match
+    return None
 
 
 def _active_grafana_sdk() -> GrafanaSDK:
@@ -150,11 +213,16 @@ class GrafanaUser(BaseUser):
         pass with the longest lifetime would check a short-lived assertion
         against a longer one's expiry.
 
+        The assertion carries the identity's role as its own claim. A payload
+        without it predates that claim and is refused rather than downgraded to
+        a role derived from ``is_admin``, which would launder the degraded role
+        into every assertion re-minted from it.
+
         :param data: The raw model input.
         :param info: The validation context carrying the expected ``token_type``.
         :return: The decoded claims mapping, or ``data`` unchanged.
-        :raises ValueError: If the assertion is tampered, expired, malformed, or of
-            the wrong type.
+        :raises ValueError: If the assertion is tampered, expired, malformed, of
+            the wrong type, or carries no role claim.
         """
         if not isinstance(data, str):
             return data
@@ -174,6 +242,8 @@ class GrafanaUser(BaseUser):
             raise ValueError("invalid or expired Grafana session token") from exc
         if payload.get("typ") != token_type:
             raise ValueError("unexpected Grafana token type")
+        if "role" not in payload:
+            raise ValueError("Grafana session token carries no role claim")
         return payload
 
     @staticmethod
@@ -186,7 +256,7 @@ class GrafanaUser(BaseUser):
         :return: The signed, URL-safe identity assertion.
         """
         payload = user.model_dump(
-            mode="json", include={"id", "username", "email", "is_admin"}
+            mode="json", include={"id", "username", "email", "role", "is_admin"}
         )
         payload["typ"] = token_type
         return _TOKEN_SERIALIZER.dumps(payload)
@@ -213,27 +283,38 @@ class GrafanaUser(BaseUser):
 
     @classmethod
     def _from_grafana_record(
-        cls, record: _GrafanaUserRecord, orgs: list[dict[str, Any]]
+        cls, record: _GrafanaUserRecord, orgs: Iterable[Mapping[str, Any]]
     ) -> Self:
         """Build a user from a Grafana ``/api/user`` or user-lookup record.
 
         Grafana's numeric ``id`` is the stable subject: the SEP UUID is derived
         from it so a username change does not change the identity.
 
+        The server-admin flag outranks every org membership; without it the
+        user holds the highest role any of their orgs grants. Roles rank through
+        :func:`_rank_org_role`, so a membership carrying no role ranks lowest
+        silently and one naming a role Grafana does not define ranks lowest and
+        is logged -- an unreadable membership grants no more than it proves.
+
         :param record: A Grafana record carrying ``id``, ``login``, ``email``,
             and ``isGrafanaAdmin``.
-        :param orgs: The user's org memberships; an ``Admin`` role in any org
-            grants admin, as does the server-admin flag.
+        :param orgs: The memberships to rank, flattened to their highest role.
+            They may be every org the user belongs to or only the ones a single
+            org's listing proves.
         :return: The mapped ``GrafanaUser``.
         """
-        is_admin = bool(record.get("isGrafanaAdmin")) or any(
-            org.get("role") == _ADMIN_ROLE for org in orgs
-        )
+        if record.get("isGrafanaAdmin"):
+            role = UserRole.SUPER_ADMIN
+        else:
+            role = max(
+                (_rank_org_role(org.get("role")) for org in orgs),
+                default=UserRole.NONE,
+            )
         return cls(
             id=uuid5(NAMESPACE_URL, f"grafana:{record['id']}"),
             username=record["login"],
             email=record.get("email") or "",
-            is_admin=is_admin,
+            role=role,
         )
 
     @classmethod
@@ -242,6 +323,8 @@ class GrafanaUser(BaseUser):
 
         The org-users listing carries ``userId`` and a single ``role`` per row,
         unlike the ``/api/user`` shape handled by :meth:`_from_grafana_record`.
+        Roles rank through :func:`_rank_org_role`, so a row this provider
+        cannot rank grants nothing and is logged rather than defaulting upwards.
 
         :param record: A Grafana org-user record carrying ``userId``, ``login``,
             ``email``, and ``role``.
@@ -251,7 +334,7 @@ class GrafanaUser(BaseUser):
             id=uuid5(NAMESPACE_URL, f"grafana:{record['userId']}"),
             username=record["login"],
             email=record.get("email") or "",
-            is_admin=record.get("role") == _ADMIN_ROLE,
+            role=_rank_org_role(record.get("role")),
         )
 
     @staticmethod
@@ -392,32 +475,130 @@ class GrafanaUser(BaseUser):
     async def get_user(cls, username: NonEmptyStr) -> Self:
         """Fetch a single user by login or email.
 
-        The user-lookup endpoint carries the server-admin flag but no org
-        memberships, so ``is_admin`` here reflects only the Grafana server-admin
-        role -- unlike the login flow, which also grants admin for an org-admin
-        role.
+        The user-lookup endpoint needs Grafana's instance-scoped ``users:read``,
+        which only a Server Admin holds, so a service account scoped to a single
+        org is refused. That refusal alone falls back to the org-users listing the
+        same token already reads for :meth:`get_users`. Every other status
+        propagates: a 401 means the credential itself is bad and a 404 means the
+        user is genuinely absent, and re-reading a listing answers neither.
+        Nothing in this provider raises a SEP-side 403, so the status is
+        unambiguous here.
+
+        The lookup endpoint carries the server-admin flag but no org memberships,
+        so the target's membership is read from the org-users listing -- the same
+        source :meth:`get_users` reads, so an org role reported there is reported
+        here too. A server admin still outranks that listing, which carries no
+        server-admin flag of its own, so its rows go unread. The listing is scoped
+        to the service account's own org, so a target whose only membership is in
+        another org is absent from it and ranks lowest.
+
+        The numeric id keys the match on this path: it is the identifier both
+        shapes agree on, while a login can differ in case or be given as an email.
+        The fallback has no lookup record to key on, so it matches on the login or
+        email instead, and reports the org role with no server-admin flag to
+        outrank it -- the same limitation :meth:`get_users` carries. Both paths
+        read the listing through :meth:`_org_user_records`, so they inherit its
+        cache, which can answer both stale and after the lookup has begun refusing.
 
         :param username: The login or email to look up.
         :return: The mapped ``GrafanaUser``.
+        :raises HTTPException: Whatever the lookup endpoint raised, for every
+            status other than 403, or whatever the org-users listing raised, on
+            either path -- so a role is never reported from membership data that
+            could not be read.
+        :raises HTTPNotFoundException: If the org-scoped fallback holds no such
+            user.
+        :raises GrafanaException: If the org-users listing breaks the record
+            contract.
         """
-        record = cast(
-            "_GrafanaUserRecord", await _active_grafana_sdk().lookup_user(username)
-        )
-        return cls._from_grafana_record(record, [])
+        try:
+            record = cast(
+                "_GrafanaUserRecord", await _active_grafana_sdk().lookup_user(username)
+            )
+        except HTTPException as exc:
+            if exc.status_code != status.HTTP_403_FORBIDDEN:
+                raise
+            return await cls._get_user_from_org_listing(username)
+        if record.get("isGrafanaAdmin"):
+            return cls._from_grafana_record(record, [])
+        orgs = [
+            row
+            for row in await cls._org_user_records()
+            if row["userId"] == record["id"]
+        ]
+        return cls._from_grafana_record(record, orgs)
+
+    @classmethod
+    async def _org_user_records(cls) -> list[_GrafanaOrgUserRecord]:
+        """Read the org-users listing, refusing a payload off contract.
+
+        The listing is validated before anything reads a field, so a shape
+        Grafana never promised surfaces as an upstream failure instead of
+        escaping from inside the mapping as an unhandled key or attribute error.
+
+        Every field either mapper reads is checked, not only the ones the match
+        compares: a row without ``userId`` or with an unhashable ``role`` passes
+        a narrower gate and then crashes inside the mapping instead.
+
+        A null ``email`` or ``role`` passes: the mappers already read those
+        fields as optional, so refusing them would reject a listing the provider
+        has always been able to map.
+
+        :return: The listing rows.
+        :raises HTTPException: Whatever the org-users listing raised.
+        :raises GrafanaException: If the payload is not a list of records each
+            carrying an integer ``userId`` and a string ``login``, with
+            ``email`` and ``role`` either a string or absent.
+        """
+        payload = await _active_grafana_sdk().get_org_users()
+        if not isinstance(payload, list) or not all(
+            isinstance(row, Mapping)
+            and isinstance(row.get("userId"), int)
+            and isinstance(row.get("login"), str)
+            and isinstance(row.get("email"), str | None)
+            and isinstance(row.get("role"), str | None)
+            for row in payload
+        ):
+            raise GrafanaException(detail="Grafana returned an unreadable user list.")
+        return cast("list[_GrafanaOrgUserRecord]", payload)
+
+    @classmethod
+    async def _get_user_from_org_listing(cls, username: NonEmptyStr) -> Self:
+        """Resolve a user from the listing an org-scoped service account can read.
+
+        The listing accepts either field the lookup endpoint's ``loginOrEmail``
+        accepts, matched by :func:`_find_org_user`. A matched row ranks through
+        the same policy :meth:`get_users` applies, so holding no org role reports
+        the lowest role rather than failing: that is a state Grafana models, and
+        the two read paths must not disagree about one row.
+
+        :param username: The login or email to resolve.
+        :return: The mapped ``GrafanaUser``.
+        :raises HTTPException: Whatever the org-users listing raised.
+        :raises HTTPNotFoundException: If no org user matches ``username``.
+        :raises GrafanaException: If the listing breaks the record contract.
+        """
+        record = _find_org_user(await cls._org_user_records(), username)
+        if record is None:
+            raise HTTPNotFoundException(detail="User not found")
+        return cls._from_org_user_record(record)
 
     @classmethod
     async def get_users(cls) -> list[Self]:
         """List the org users.
 
         Org-user records carry a single org role and no server-admin flag, so
-        ``is_admin`` reflects the org-admin role only.
+        the role reflects that org membership only and never reaches
+        ``SUPER_ADMIN``.
 
         :return: The mapped ``GrafanaUser`` instances.
+        :raises HTTPException: Whatever the org-users listing raised.
+        :raises GrafanaException: If the listing breaks the record contract.
         """
-        records = cast(
-            "list[_GrafanaOrgUserRecord]", await _active_grafana_sdk().get_org_users()
-        )
-        return [cls._from_org_user_record(record) for record in records]
+        return [
+            cls._from_org_user_record(record)
+            for record in await cls._org_user_records()
+        ]
 
     @classmethod
     async def from_token_payload(cls, token_payload: BaseTokenPayload) -> NoReturn:  # noqa: ARG003

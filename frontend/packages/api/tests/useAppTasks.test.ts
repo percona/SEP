@@ -194,6 +194,40 @@ describe('fetchAppEntityList', () => {
     });
   });
 
+  it('forwards sort and search when provided', async () => {
+    getMock.mockResolvedValue({
+      data: { items: [{ id: 1 }], total: 1, offset: 0, limit: 50 },
+    });
+
+    await fetchAppEntityList('inventory', 'nodes', {
+      offset: 0,
+      limit: 50,
+      sort: '-created_at',
+      search: 'db1',
+    });
+
+    expect(getMock).toHaveBeenCalledWith('/apps/inventory/nodes/', {
+      params: { offset: 0, limit: 50, sort: '-created_at', search: 'db1' },
+    });
+  });
+
+  it('omits blank search from the request params', async () => {
+    getMock.mockResolvedValue({
+      data: { items: [], total: 0, offset: 0, limit: 50 },
+    });
+
+    await fetchAppEntityList('inventory', 'nodes', {
+      offset: 0,
+      limit: 50,
+      sort: 'name',
+      search: '   ',
+    });
+
+    expect(getMock).toHaveBeenCalledWith('/apps/inventory/nodes/', {
+      params: { offset: 0, limit: 50, sort: 'name' },
+    });
+  });
+
   it('returns a bare array for NO_PAGINATION entity routes', async () => {
     const items = [{ id: 1 }, { id: 2 }];
     getMock.mockResolvedValue({ data: items });

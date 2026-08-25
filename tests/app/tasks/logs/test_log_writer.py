@@ -203,7 +203,7 @@ async def test_record_capture_status_discards_a_stale_epoch_verdict(
         source="run-script",
         stream=TaskLogType.STDOUT,
         capture_status=LogCaptureStatusEnum.COMPLETE,
-        allocation_epoch=ALLOCATION_EPOCH_NEW,
+        producer_epoch=ALLOCATION_EPOCH_NEW,
     )
 
     await TaskHistoryLogWriter.record_capture_status(
@@ -212,14 +212,14 @@ async def test_record_capture_status_discards_a_stale_epoch_verdict(
         source="run-script",
         stream=TaskLogType.STDOUT,
         capture_status=LogCaptureStatusEnum.INCOMPLETE,
-        allocation_epoch=ALLOCATION_EPOCH_OLD,
+        producer_epoch=ALLOCATION_EPOCH_OLD,
     )
 
     state = await TaskHistoryLogStateManager.get_for_stream(
         session, history.id, "run-script", TaskLogType.STDOUT
     )
     assert state.capture_status == LogCaptureStatusEnum.COMPLETE
-    assert state.allocation_epoch == ALLOCATION_EPOCH_NEW
+    assert state.producer_epoch == ALLOCATION_EPOCH_NEW
 
 
 @pytest.mark.asyncio
@@ -531,12 +531,12 @@ async def test_reset_producer_offsets_clears_db_and_allows_realloc_writes(
         new_bytes=b"alloc-a content",
         force_flush=True,
         producer_offset_after=50_000,
-        nomad_offset_after=50_000,
-        allocation_epoch=ALLOCATION_EPOCH_OLD,
+        producer_fetch_offset_after=50_000,
+        producer_epoch=ALLOCATION_EPOCH_OLD,
     )
 
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-        session, history.id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
+        session, history.id, new_producer_epoch=ALLOCATION_EPOCH_NEW
     )
 
     state = await TaskHistoryLogStateManager.get_for_stream(
@@ -544,8 +544,8 @@ async def test_reset_producer_offsets_clears_db_and_allows_realloc_writes(
     )
     assert state is not None
     assert state.producer_offset == 0
-    assert state.nomad_offset == 0
-    assert state.allocation_epoch == ALLOCATION_EPOCH_NEW
+    assert state.producer_fetch_offset == 0
+    assert state.producer_epoch == ALLOCATION_EPOCH_NEW
     persisted_after_alloc_a = state.persisted_offset
 
     await TaskHistoryLogWriter.append(
@@ -556,23 +556,23 @@ async def test_reset_producer_offsets_clears_db_and_allows_realloc_writes(
         new_bytes=b"alloc-b content",
         force_flush=True,
         producer_offset_after=ALLOC_B_PRODUCER_OFFSET,
-        nomad_offset_after=len(b"alloc-b content"),
-        allocation_epoch=ALLOCATION_EPOCH_NEW,
+        producer_fetch_offset_after=len(b"alloc-b content"),
+        producer_epoch=ALLOCATION_EPOCH_NEW,
     )
     state = await TaskHistoryLogStateManager.get_for_stream(
         session, history.id, "run-script", TaskLogType.STDOUT
     )
     assert state is not None
     assert state.producer_offset == ALLOC_B_PRODUCER_OFFSET
-    assert state.nomad_offset == len(b"alloc-b content")
-    assert state.allocation_epoch == ALLOCATION_EPOCH_NEW
+    assert state.producer_fetch_offset == len(b"alloc-b content")
+    assert state.producer_epoch == ALLOCATION_EPOCH_NEW
     assert state.persisted_offset == persisted_after_alloc_a + len(b"alloc-b content")
     chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert [chunk.content for chunk in chunks] == ["alloc-a content", "alloc-b content"]
 
 
 @pytest.mark.asyncio
-async def test_append_discards_write_from_older_allocation_epoch(
+async def test_append_discards_write_from_older_producer_epoch(
     session: AsyncSession, created_task_with_history: TaskHistory
 ):
     """Assert an append whose epoch predates the committed row's epoch is dropped.
@@ -591,11 +591,11 @@ async def test_append_discards_write_from_older_allocation_epoch(
         new_bytes=b"epoch-100",
         force_flush=True,
         producer_offset_after=len(b"epoch-100"),
-        nomad_offset_after=len(b"epoch-100"),
-        allocation_epoch=ALLOCATION_EPOCH_OLD,
+        producer_fetch_offset_after=len(b"epoch-100"),
+        producer_epoch=ALLOCATION_EPOCH_OLD,
     )
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-        session, history.id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
+        session, history.id, new_producer_epoch=ALLOCATION_EPOCH_NEW
     )
 
     await TaskHistoryLogWriter.append(
@@ -606,17 +606,17 @@ async def test_append_discards_write_from_older_allocation_epoch(
         new_bytes=b"stale-from-dead-alloc",
         force_flush=True,
         producer_offset_after=1_000,
-        nomad_offset_after=1_000,
-        allocation_epoch=ALLOCATION_EPOCH_OLD,
+        producer_fetch_offset_after=1_000,
+        producer_epoch=ALLOCATION_EPOCH_OLD,
     )
 
     state = await TaskHistoryLogStateManager.get_for_stream(
         session, history.id, "run-script", TaskLogType.STDOUT
     )
     assert state is not None
-    assert state.allocation_epoch == ALLOCATION_EPOCH_NEW
+    assert state.producer_epoch == ALLOCATION_EPOCH_NEW
     assert state.producer_offset == 0
-    assert state.nomad_offset == 0
+    assert state.producer_fetch_offset == 0
     chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert [chunk.content for chunk in chunks] == ["epoch-100"]
 
@@ -628,13 +628,13 @@ async def test_append_discards_write_from_older_allocation_epoch(
         new_bytes=b"fresh-alloc",
         force_flush=True,
         producer_offset_after=len(b"fresh-alloc"),
-        nomad_offset_after=len(b"fresh-alloc"),
-        allocation_epoch=ALLOCATION_EPOCH_NEW,
+        producer_fetch_offset_after=len(b"fresh-alloc"),
+        producer_epoch=ALLOCATION_EPOCH_NEW,
     )
     state = await TaskHistoryLogStateManager.get_for_stream(
         session, history.id, "run-script", TaskLogType.STDOUT
     )
-    assert state.allocation_epoch == ALLOCATION_EPOCH_NEW
+    assert state.producer_epoch == ALLOCATION_EPOCH_NEW
     assert state.producer_offset == len(b"fresh-alloc")
     chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert [chunk.content for chunk in chunks] == ["epoch-100", "fresh-alloc"]
@@ -665,8 +665,8 @@ async def test_append_discard_guard_survives_version_retry(
         new_bytes=b"seed",
         force_flush=True,
         producer_offset_after=len(b"seed"),
-        nomad_offset_after=len(b"seed"),
-        allocation_epoch=ALLOCATION_EPOCH_OLD,
+        producer_fetch_offset_after=len(b"seed"),
+        producer_epoch=ALLOCATION_EPOCH_OLD,
     )
 
     real_persist_state = TaskHistoryLogWriter._persist_state
@@ -675,8 +675,8 @@ async def test_append_discard_guard_survives_version_retry(
     async def racing_persist_state(**kwargs):
         persist_calls["count"] += 1
         if persist_calls["count"] == 1:
-            await TaskHistoryLogStateManager.reset_allocation_frontier(
-                session, history.id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+            await TaskHistoryLogStateManager.reset_producer_frontier(
+                session, history.id, new_producer_epoch=ALLOCATION_EPOCH_NEW
             )
             await session.commit()
             return False
@@ -693,15 +693,15 @@ async def test_append_discard_guard_survives_version_retry(
         stream=TaskLogType.STDOUT,
         new_bytes=b"stale-through-retry",
         producer_offset_after=1_000,
-        nomad_offset_after=1_000,
-        allocation_epoch=ALLOCATION_EPOCH_OLD,
+        producer_fetch_offset_after=1_000,
+        producer_epoch=ALLOCATION_EPOCH_OLD,
     )
 
     assert persist_calls["count"] == 1
     state = await TaskHistoryLogStateManager.get_for_stream(
         session, history.id, "run-script", TaskLogType.STDOUT
     )
-    assert state.allocation_epoch == ALLOCATION_EPOCH_NEW
+    assert state.producer_epoch == ALLOCATION_EPOCH_NEW
     chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert [chunk.content for chunk in chunks] == ["seed"]
 
@@ -721,8 +721,8 @@ async def test_append_discards_stale_first_insert_during_switch(
     """
     # The discard rolls back to release its lock, which expires the fixture row.
     history_id = created_task_with_history.id
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-        session, history_id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
+        session, history_id, new_producer_epoch=ALLOCATION_EPOCH_NEW
     )
 
     await TaskHistoryLogWriter.append(
@@ -733,8 +733,8 @@ async def test_append_discards_stale_first_insert_during_switch(
         new_bytes=b"stale-first-insert",
         force_flush=True,
         producer_offset_after=len(b"stale-first-insert"),
-        nomad_offset_after=len(b"stale-first-insert"),
-        allocation_epoch=ALLOCATION_EPOCH_OLD,
+        producer_fetch_offset_after=len(b"stale-first-insert"),
+        producer_epoch=ALLOCATION_EPOCH_OLD,
     )
     # Discard must roll back to free the row lock. Assert before any read below,
     # which would autobegin a fresh transaction.
@@ -755,13 +755,13 @@ async def test_append_discards_stale_first_insert_during_switch(
         new_bytes=b"current-alloc",
         force_flush=True,
         producer_offset_after=len(b"current-alloc"),
-        nomad_offset_after=len(b"current-alloc"),
-        allocation_epoch=ALLOCATION_EPOCH_NEW,
+        producer_fetch_offset_after=len(b"current-alloc"),
+        producer_epoch=ALLOCATION_EPOCH_NEW,
     )
     state = await TaskHistoryLogStateManager.get_for_stream(
         session, history_id, "run-script", TaskLogType.STDOUT
     )
-    assert state.allocation_epoch == ALLOCATION_EPOCH_NEW
+    assert state.producer_epoch == ALLOCATION_EPOCH_NEW
     assert state.producer_offset == len(b"current-alloc")
     chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history_id)
     assert [chunk.content for chunk in chunks] == ["current-alloc"]
@@ -778,8 +778,8 @@ async def test_append_first_insert_accepts_epoch_at_or_above_hwm(
     is accepted and stamps the row.
     """
     history = created_task_with_history
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-        session, history.id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
+        session, history.id, new_producer_epoch=ALLOCATION_EPOCH_NEW
     )
 
     await TaskHistoryLogWriter.append(
@@ -790,14 +790,14 @@ async def test_append_first_insert_accepts_epoch_at_or_above_hwm(
         new_bytes=b"live-first-insert",
         force_flush=True,
         producer_offset_after=len(b"live-first-insert"),
-        nomad_offset_after=len(b"live-first-insert"),
-        allocation_epoch=ALLOCATION_EPOCH_NEW,
+        producer_fetch_offset_after=len(b"live-first-insert"),
+        producer_epoch=ALLOCATION_EPOCH_NEW,
     )
     state = await TaskHistoryLogStateManager.get_for_stream(
         session, history.id, "run-script", TaskLogType.STDOUT
     )
     assert state is not None
-    assert state.allocation_epoch == ALLOCATION_EPOCH_NEW
+    assert state.producer_epoch == ALLOCATION_EPOCH_NEW
     chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert [chunk.content for chunk in chunks] == ["live-first-insert"]
 
@@ -821,14 +821,14 @@ async def test_append_first_insert_without_hwm_accepts_write(
         new_bytes=b"first-alloc",
         force_flush=True,
         producer_offset_after=len(b"first-alloc"),
-        nomad_offset_after=len(b"first-alloc"),
-        allocation_epoch=ALLOCATION_EPOCH_LIVE,
+        producer_fetch_offset_after=len(b"first-alloc"),
+        producer_epoch=ALLOCATION_EPOCH_LIVE,
     )
     state = await TaskHistoryLogStateManager.get_for_stream(
         session, history.id, "run-script", TaskLogType.STDOUT
     )
     assert state is not None
-    assert state.allocation_epoch == ALLOCATION_EPOCH_LIVE
+    assert state.producer_epoch == ALLOCATION_EPOCH_LIVE
     chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert [chunk.content for chunk in chunks] == ["first-alloc"]
 
@@ -858,8 +858,8 @@ async def test_append_first_insert_discards_when_reset_commits_mid_append(
     async def racing_persist_state(**kwargs):
         persist_calls["count"] += 1
         if persist_calls["count"] == 1:
-            await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-                session, history_id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+            await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
+                session, history_id, new_producer_epoch=ALLOCATION_EPOCH_NEW
             )
             return False
         return await real_persist_state(**kwargs)
@@ -875,8 +875,8 @@ async def test_append_first_insert_discards_when_reset_commits_mid_append(
         stream=TaskLogType.STDOUT,
         new_bytes=b"stale-through-first-insert",
         producer_offset_after=len(b"stale-through-first-insert"),
-        nomad_offset_after=len(b"stale-through-first-insert"),
-        allocation_epoch=ALLOCATION_EPOCH_OLD,
+        producer_fetch_offset_after=len(b"stale-through-first-insert"),
+        producer_epoch=ALLOCATION_EPOCH_OLD,
     )
 
     assert persist_calls["count"] == 1
@@ -894,27 +894,27 @@ async def test_drain_does_not_regress_high_water_mark_on_out_of_order_reset(
 ):
     """Assert an out-of-order drain with a smaller epoch never lowers the mark.
 
-    Regression for the monotonicity guard in ``bump_log_allocation_epoch``: the
+    Regression for the monotonicity guard in ``bump_log_producer_epoch``: the
     task-level high-water mark must only advance. A stale drain carrying a lower
     ``CreateIndex`` than the current mark is a no-op, so a superseded-allocation
     first-insert stays discarded instead of being re-accepted after the mark is
     clobbered downward.
     """
     history_id = created_task_with_history.id
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-        session, history_id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
+        session, history_id, new_producer_epoch=ALLOCATION_EPOCH_NEW
     )
     assert (
-        await TaskHistoryManager.get_log_allocation_epoch(session, history_id)
+        await TaskHistoryManager.get_log_producer_epoch(session, history_id)
         == ALLOCATION_EPOCH_NEW
     )
 
     # A late drain from the superseded allocation carries the smaller epoch.
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-        session, history_id, new_allocation_epoch=ALLOCATION_EPOCH_OLD
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
+        session, history_id, new_producer_epoch=ALLOCATION_EPOCH_OLD
     )
     assert (
-        await TaskHistoryManager.get_log_allocation_epoch(session, history_id)
+        await TaskHistoryManager.get_log_producer_epoch(session, history_id)
         == ALLOCATION_EPOCH_NEW
     )
 
@@ -930,8 +930,8 @@ async def test_drain_does_not_regress_high_water_mark_on_out_of_order_reset(
         new_bytes=b"mid-epoch-stale",
         force_flush=True,
         producer_offset_after=len(b"mid-epoch-stale"),
-        nomad_offset_after=len(b"mid-epoch-stale"),
-        allocation_epoch=mid_epoch,
+        producer_fetch_offset_after=len(b"mid-epoch-stale"),
+        producer_epoch=mid_epoch,
     )
     state = await TaskHistoryLogStateManager.get_for_stream(
         session, history_id, "run-script", TaskLogType.STDOUT
@@ -954,8 +954,8 @@ async def test_append_discards_stale_first_insert_across_both_streams(
     current-allocation writes.
     """
     history_id = created_task_with_history.id
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-        session, history_id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
+        session, history_id, new_producer_epoch=ALLOCATION_EPOCH_NEW
     )
 
     for stream in (TaskLogType.STDOUT, TaskLogType.STDERR):
@@ -967,8 +967,8 @@ async def test_append_discards_stale_first_insert_across_both_streams(
             new_bytes=b"stale-" + stream.value.encode("utf-8"),
             force_flush=True,
             producer_offset_after=len(b"stale-" + stream.value.encode("utf-8")),
-            nomad_offset_after=len(b"stale-" + stream.value.encode("utf-8")),
-            allocation_epoch=ALLOCATION_EPOCH_OLD,
+            producer_fetch_offset_after=len(b"stale-" + stream.value.encode("utf-8")),
+            producer_epoch=ALLOCATION_EPOCH_OLD,
         )
         assert (
             await TaskHistoryLogStateManager.get_for_stream(
@@ -988,14 +988,14 @@ async def test_append_discards_stale_first_insert_across_both_streams(
             new_bytes=payload,
             force_flush=True,
             producer_offset_after=len(payload),
-            nomad_offset_after=len(payload),
-            allocation_epoch=ALLOCATION_EPOCH_NEW,
+            producer_fetch_offset_after=len(payload),
+            producer_epoch=ALLOCATION_EPOCH_NEW,
         )
         state = await TaskHistoryLogStateManager.get_for_stream(
             session, history_id, "run-script", stream
         )
         assert state is not None
-        assert state.allocation_epoch == ALLOCATION_EPOCH_NEW
+        assert state.producer_epoch == ALLOCATION_EPOCH_NEW
         assert state.producer_offset == len(payload)
 
 
@@ -1003,7 +1003,7 @@ async def test_append_discards_stale_first_insert_across_both_streams(
 async def test_append_legacy_epoch_zero_row_accepts_live_write(
     session: AsyncSession, created_task_with_history: TaskHistory
 ):
-    """Assert a legacy ``allocation_epoch == 0`` row is stamped by the next write.
+    """Assert a legacy ``producer_epoch == 0`` row is stamped by the next write.
 
     Pre-migration rows carry the ``0`` sentinel; the discard guard must treat
     them as trusted and let the first live write advance the epoch to the
@@ -1022,7 +1022,7 @@ async def test_append_legacy_epoch_zero_row_accepts_live_write(
     state = await TaskHistoryLogStateManager.get_for_stream(
         session, history.id, "run-script", TaskLogType.STDOUT
     )
-    assert state.allocation_epoch == 0
+    assert state.producer_epoch == 0
 
     await TaskHistoryLogWriter.append(
         session,
@@ -1032,13 +1032,13 @@ async def test_append_legacy_epoch_zero_row_accepts_live_write(
         new_bytes=b"live-bytes",
         force_flush=True,
         producer_offset_after=len(b"legacy-bytes") + len(b"live-bytes"),
-        nomad_offset_after=len(b"legacy-bytes") + len(b"live-bytes"),
-        allocation_epoch=ALLOCATION_EPOCH_LIVE,
+        producer_fetch_offset_after=len(b"legacy-bytes") + len(b"live-bytes"),
+        producer_epoch=ALLOCATION_EPOCH_LIVE,
     )
     state = await TaskHistoryLogStateManager.get_for_stream(
         session, history.id, "run-script", TaskLogType.STDOUT
     )
-    assert state.allocation_epoch == ALLOCATION_EPOCH_LIVE
+    assert state.producer_epoch == ALLOCATION_EPOCH_LIVE
     chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert [chunk.content for chunk in chunks] == ["legacy-bytes", "live-bytes"]
 
@@ -1061,8 +1061,8 @@ async def test_append_non_nomad_caller_leaves_frontier_columns_zero(
         session, history.id, "execution", TaskLogType.STDOUT
     )
     assert state is not None
-    assert state.nomad_offset == 0
-    assert state.allocation_epoch == 0
+    assert state.producer_fetch_offset == 0
+    assert state.producer_epoch == 0
     chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert [chunk.content for chunk in chunks] == ["celery-output"]
 
@@ -1183,7 +1183,7 @@ async def test_drain_and_reset_flushes_staging_before_zeroing_producer_offset(
     ``staging`` intact, so the next allocation's bytes were concatenated
     inline with the previous allocation's leftover remainder — producing a
     chunk that mixed content from both allocations. The writer method
-    ``drain_and_reset_allocation_frontier`` must emit the remainder as its own
+    ``drain_and_reset_producer_frontier`` must emit the remainder as its own
     chunk first, then zero ``producer_offset``.
     """
     history = created_task_with_history
@@ -1205,8 +1205,8 @@ async def test_drain_and_reset_flushes_staging_before_zeroing_producer_offset(
     chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert chunks == []
 
-    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-        session, history.id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+    await TaskHistoryLogWriter.drain_and_reset_producer_frontier(
+        session, history.id, new_producer_epoch=ALLOCATION_EPOCH_NEW
     )
 
     state = await TaskHistoryLogStateManager.get_for_stream(
@@ -1247,8 +1247,8 @@ async def test_first_insert_lock_serialises_reset_on_postgres(
     ``with_for_update()`` is a no-op on SQLite, so the rest of this module proves
     the epoch-discard *behaviour* but never the row-lock *ordering* it rests on.
     Here two independent PostgreSQL-bound sessions race: the holder takes the
-    first-insert lock via ``get_log_allocation_epoch(for_update=True)`` and keeps
-    its transaction open; the resetter's ``bump_log_allocation_epoch`` + commit
+    first-insert lock via ``get_log_producer_epoch(for_update=True)`` and keeps
+    its transaction open; the resetter's ``bump_log_producer_epoch`` + commit
     (the frontier reset) must block until the holder ends, then land — proving the
     two serialise on the ``TaskHistory`` row rather than racing.
     """
@@ -1266,14 +1266,14 @@ async def test_first_insert_lock_serialises_reset_on_postgres(
 
         async with maker() as holder, maker() as resetter:
             # Holder takes the first-insert lock and keeps its transaction open.
-            locked_epoch = await TaskHistoryManager.get_log_allocation_epoch(
+            locked_epoch = await TaskHistoryManager.get_log_producer_epoch(
                 holder, history_id, for_update=True
             )
             assert locked_epoch == 0
 
             async def _reset() -> None:
-                await TaskHistoryManager.bump_log_allocation_epoch(
-                    resetter, history_id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+                await TaskHistoryManager.bump_log_producer_epoch(
+                    resetter, history_id, new_producer_epoch=ALLOCATION_EPOCH_NEW
                 )
                 await resetter.commit()
 
@@ -1289,9 +1289,7 @@ async def test_first_insert_lock_serialises_reset_on_postgres(
             await asyncio.wait_for(reset_task, timeout=RESET_RELEASE_TIMEOUT_SEC)
 
         async with maker() as verify:
-            epoch = await TaskHistoryManager.get_log_allocation_epoch(
-                verify, history_id
-            )
+            epoch = await TaskHistoryManager.get_log_producer_epoch(verify, history_id)
         assert epoch == ALLOCATION_EPOCH_NEW
     finally:
         async with postgres_engine.begin() as conn:

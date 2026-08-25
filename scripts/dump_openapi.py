@@ -27,6 +27,7 @@ depend on test-collection order.
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -76,6 +77,43 @@ def _patch_deterministic_schema_names() -> None:
     fastapi.openapi.utils.get_model_name_map = _ordered_model_name_map
 
 
+# The same pins `[tool.pytest.ini_options].env` applies in ``pyproject.toml``,
+# so a dump and the freshness guard resolve identical settings. Keep both sites
+# in sync.
+_CANONICAL_ENV = {
+    "ENV_FILE": str(REPO_ROOT / "tests" / "pytest.env"),
+    "AUTH__PROVIDER__CASDOOR__CLIENT_ID": "test-client-id",
+    "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET": "test-client-secret",
+    "AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS": '["https://allowed-issuer.com"]',
+}
+
+
+def _pin_canonical_settings_env() -> None:
+    """Pin the settings environment so the generated spec is environment-independent.
+
+    The spec is a build artifact whose shape must not vary with the developer's
+    local configuration, so both settings sources able to name an auth provider
+    are neutralized:
+
+    - ``ENV_FILE`` is repointed at the committed assignment-free dotenv, since
+      it selects the file the dotenv source reads. Exporting variables cannot
+      dislodge a provider that a developer's ``ENV_FILE=.env.local`` supplies,
+      because the dotenv source reads that file from disk regardless.
+    - Pre-existing ``AUTH__PROVIDER*`` variables are cleared, so an exported
+      provider cannot survive alongside the canonical one.
+
+    Leaving either source in place resolves a second provider, which
+    ``AuthSettings`` rejects outright rather than merging.
+
+    Must be called before ``_load_apps()`` imports the application, since the
+    settings object is constructed at import time.
+    """
+    for key in [k for k in os.environ if k.startswith("AUTH__PROVIDER")]:
+        del os.environ[key]
+    for key, value in _CANONICAL_ENV.items():
+        os.environ[key] = value
+
+
 def _load_apps() -> dict[str, Any]:
     """Import the whole-app objects from the worktree this script lives in.
 
@@ -108,6 +146,7 @@ def main() -> int:
         finds a missing or drifted fixture.
     """
     _patch_deterministic_schema_names()
+    _pin_canonical_settings_env()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--check",

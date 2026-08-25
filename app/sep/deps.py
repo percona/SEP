@@ -41,6 +41,7 @@ from app.core.exceptions import (
 )
 from app.core.pagination import fetch_all_dict_items
 from app.core.requests import RemoteAPI
+from app.core.security import is_bearer_authenticated, SAFE_HTTP_METHODS
 from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
 from app.sep.clients.pmm import PMMRemoteAPI
@@ -81,19 +82,6 @@ def get_base_url(request: Request) -> URL:
     if settings.BASE_URL is not None:
         return settings.BASE_URL
     return URL(str(request.base_url))
-
-
-def is_bearer_authenticated(request: Request) -> bool:
-    """Return whether the request carries an ``Authorization: Bearer`` header.
-
-    Inspects only the ``Authorization`` header prefix — the token itself is not
-    validated. Used to reject a credential-less request before ``oauth2_scheme``
-    can raise a bare Starlette error, and to gate mutating methods.
-
-    :param request: The incoming HTTP request.
-    :return: ``True`` when the header starts with ``Bearer ``, ``False`` otherwise.
-    """
-    return request.headers.get("authorization", "").lower().startswith("bearer ")
 
 
 async def get_current_user(
@@ -145,7 +133,7 @@ async def require_bearer_for_unsafe_methods(request: Request) -> None:
     :raises HTTPUnauthorizedException: When the method is unsafe and the
         request lacks an ``Authorization: Bearer`` header.
     """
-    if request.method in {"GET", "HEAD", "OPTIONS"}:
+    if request.method in SAFE_HTTP_METHODS:
         return
     if not is_bearer_authenticated(request):
         raise HTTPUnauthorizedException(detail=BEARER_REQUIRED_DETAIL)
@@ -391,14 +379,18 @@ def render_footer_text() -> str:
     )
 
 
-async def get_inventory_client(request: Request) -> RemoteAPI:
+async def get_inventory_client(request: Request) -> AsyncGenerator[RemoteAPI]:
     """Construct a ``RemoteAPI`` instance for interacting with the Inventory API.
+
+    The client is held for the whole request, so a hot endpoint override that
+    retires it mid-response leaves this request's client open until the response
+    has been sent.
 
     :param request: The HTTP request object.
     :return: An instance of ``RemoteAPI`` configured for the Inventory service,
         including the endpoint, API key, and SSL settings.
     """
-    return getattr(
+    client = getattr(
         request.app.state, "inventory_api", None
     ) or await settings.get_remote_api(
         endpoint=sep_settings.INVENTORY_ENDPOINT,
@@ -407,6 +399,8 @@ async def get_inventory_client(request: Request) -> RemoteAPI:
         ssl_certfile=inventory_settings.SSL_CERTFILE,
         logger_name="inventory_api",
     )
+    async with client.hold():
+        yield client
 
 
 InventoryClient = Annotated[RemoteAPI, Depends(get_inventory_client)]
@@ -432,16 +426,19 @@ async def get_inventory_api(
 InventoryAPI = Annotated[RemoteAPI, Depends(get_inventory_api)]
 
 
-async def get_tasks_client(request: Request) -> RemoteAPI:
-    """Construct a `RemoteAPI` instance for interacting with the Tasks API.
+async def get_tasks_client(request: Request) -> AsyncGenerator[RemoteAPI]:
+    """Construct a ``RemoteAPI`` instance for interacting with the Tasks API.
+
+    The client is held for the whole request, so a hot endpoint override that
+    retires it mid-response leaves this request's client open until the response
+    has been sent: long enough for a live log stream or a file download to run
+    to completion on it.
 
     :param request: The HTTP request object.
-    :type request: Request
-    :return: An instance of `RemoteAPI` configured for the Tasks service, including
-        the endpoint, API key, and SSL settings.
-    :rtype: RemoteAPI
+    :return: An instance of ``RemoteAPI`` configured for the Tasks service,
+        including the endpoint, API key, and SSL settings.
     """
-    return getattr(
+    client = getattr(
         request.app.state, "tasks_api", None
     ) or await settings.get_remote_api(
         endpoint=sep_settings.TASKS_ENDPOINT,
@@ -450,6 +447,8 @@ async def get_tasks_client(request: Request) -> RemoteAPI:
         ssl_certfile=tasks_settings.SSL_CERTFILE,
         logger_name="tasks_api",
     )
+    async with client.hold():
+        yield client
 
 
 TasksClient = Annotated[RemoteAPI, Depends(get_tasks_client)]
@@ -473,15 +472,16 @@ async def get_tasks_api(
 TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]
 
 
-async def get_pmm_api() -> PMMRemoteAPI | None:
+async def resolve_pmm_api() -> PMMRemoteAPI | None:
     """Return a ``PMMRemoteAPI`` client, or ``None`` when PMM is not configured.
 
     Construct the SEP-wide PMM client from settings, sitting alongside the
     sibling Inventory / Tasks client deps so core SEP code never reaches into a
-    plugin for it.
+    plugin for it. A caller with a request scope takes :func:`get_pmm_api`,
+    which wraps this in a request-scoped hold; a caller with no request to scope
+    a hold to takes the client directly and relies on the per-call hold.
 
     :return: The PMM API client, or ``None`` if endpoint or API key is missing.
-    :rtype: PMMRemoteAPI | None
     """
     if not settings.PMM.endpoint or not settings.PMM.api_key:
         return None
@@ -492,6 +492,22 @@ async def get_pmm_api() -> PMMRemoteAPI | None:
         verify_ssl=settings.PMM.verify_ssl,
         ssl_cafile=settings.SSL_CAFILE,
     )
+
+
+async def get_pmm_api() -> AsyncGenerator[PMMRemoteAPI | None]:
+    """Hold the shared PMM client for the duration of the request.
+
+    A hot ``PMM`` override retires the cached client; holding it here keeps this
+    request's client open until the response has been sent.
+
+    :return: The PMM API client, or ``None`` if PMM is not configured.
+    """
+    client = await resolve_pmm_api()
+    if client is None:
+        yield None
+        return
+    async with client.hold():
+        yield client
 
 
 PMMAPIDep = Annotated[PMMRemoteAPI | None, Depends(get_pmm_api)]
@@ -796,21 +812,20 @@ async def get_task_by_name(
 # TODO(yan): Put get_task_history in a proper TasksAPI SDK class
 # SEP-130
 async def get_task_history(
-    tasks_api: TaskAPI, task_history_id: int, owner: str | None = None
+    tasks_api: TaskAPI, task_history_id: int
 ) -> TaskHistoryResponse:
     """Fetch and validate a task history by ID.
 
-    This function retrieves a task history by its ID from the Tasks API and optionally
-    validates that it is owned by a specific owner. If the task history does not exist
-    or the validation fails, it raises a 404 HTTP exception.
+    Retrieve a task history by its ID from the Tasks API. A task history is
+    readable by any authenticated user; ``Task.owner`` is an app namespace, not
+    a user identity, and is not used as an access filter. Per-execution
+    attribution lives on ``executed_by``. If the task history does not exist,
+    raise a 404 HTTP exception.
 
     :param tasks_api: The TaskAPI instance used to make requests to the task service.
     :param task_history_id: The ID of the task history to retrieve.
-    :param owner: The owner filter for the task history's task. Defaults to ``None``,
-        meaning no filter.
     :return: The retrieved task history.
-    :raises HTTPNotFoundException: If the task history is not found or the validation
-        fails.
+    :raises HTTPNotFoundException: If the task history is not found.
     """
     try:
         task_history = TaskHistoryResponse.model_validate(
@@ -820,8 +835,6 @@ async def get_task_history(
         logger.debug("ValidationError retrieving task history.", exc_info=True)
         raise HTTPNotFoundException from None
     logger.debug("TASK IS %s", task_history)
-    if owner is not None and owner != task_history.task.owner:
-        raise HTTPNotFoundException
     return task_history
 
 

@@ -57,6 +57,12 @@ default:
     # only ways to set it. BASE_URL must include the prefix when one is set.
     ROOT_PATH: ""
     ARTIFACT_DOWNLOAD_TTL: 600
+    # Celery beat waits this long for the HTTP API to answer /health before
+    # starting ungated. Raise it on a deployment whose application startup runs
+    # long; starting ungated is what lets an overdue periodic task fail on
+    # connect to SEP's own API.
+    API_READINESS_TIMEOUT: 60.0
+    API_READINESS_POLL_INTERVAL: 0.5
     CONNECTIVITY_CHECK_DEFAULT: False
     ALERT_DEFINITIONS_DIR: null
     OAUTH:
@@ -255,6 +261,8 @@ default:
       NAME: tasks.db
     SYNC_LOCK_TTL: 300  # TaskHistory sync lock timeout (seconds)
     PRE_EXECUTION_CONNECTIVITY_CHECK: warn  # disabled | warn | block
+    HOOK_MODULE_ALLOWLIST:  # Module roots a task hook path may import from; extend for out-of-tree apps
+      - app.sep.apps
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
       SECURE: False

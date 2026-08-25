@@ -33,6 +33,12 @@ from types import SimpleNamespace
 from typing import cast
 from urllib.parse import urlencode
 
+from app.sep.apps.field_names import (
+    EXECUTOR_HOST_FIELD_NAME,
+    EXTRA_ARGS_FIELD_NAME,
+    SCRIPT_PREVIEW_FIELD_NAME,
+    SUDO_FIELD_NAME,
+)
 from app.sep.apps.framework.rules import (
     evaluate_conditional_rules,
     extract_forbidden_field_gate_plan,
@@ -54,19 +60,15 @@ from app.sep.apps.framework.schema import (
     ColumnFormat,
     DateTimeField,
     EXECUTION_HOST_LABEL,
-    EXECUTOR_HOST_FIELD_NAME,
     FloatField,
     FormSection,
     HostField,
     IntegerField,
     ListView,
-    SCRIPT_PREVIEW_FIELD_NAME,
     ScriptPreviewField,
     StringField,
-    SUDO_FIELD_NAME,
 )
 from app.sep.snippets.config import SnippetSudoOption
-from app.sep.snippets.models.constants import EXTRA_ARGS_FIELD_NAME
 from app.sep.snippets.models.meta import (
     SnippetMetaParameter,
     SnippetMetaParameterType,

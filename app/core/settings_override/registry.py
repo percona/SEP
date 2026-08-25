@@ -53,6 +53,7 @@ __all__ = [
     "nested_overridable_field_names",
     "not_overridable_field",
     "override_keys_for_rows",
+    "override_rows_for_key",
     "preserve_patch_credential_url_value",
     "rendered_leaf_keys",
     "resolve_nested_field",
@@ -74,6 +75,7 @@ from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter, WrapSeriali
 from pydantic.errors import PydanticSchemaGenerationError
 from pydantic_core import PydanticUndefined
 
+from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.policy import (
     has_allowed_key_under,
@@ -93,6 +95,7 @@ from app.core.utils.pydantic import (
 
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
+    from sqlmodel.ext.asyncio.session import AsyncSession
 
     # Imported only for annotations: the override substrate must not depend on
     # the concrete settings classes at runtime, which lets ``app.core.config``
@@ -1153,6 +1156,69 @@ def override_keys_for_rows(
     return keys
 
 
+def _stored_key_matches_override_key(
+    settings_cls: type[BaseModel],
+    stored_key: str,
+    key: str,
+) -> bool:
+    """Return whether a stored override key resolves to the same field as ``key``.
+
+    Nested keys go through :func:`canonical_override_key`. Top-level keys also
+    match case-insensitively: the previous SQL ``WHERE key = ...`` lookup
+    inherited MySQL's ``utf8mb4_0900_ai_ci`` collation, so moving the filter
+    into Python must not drop a mixed-case top-level row that DELETE/PATCH
+    used to find. Snapshot application still ignores unknown casing via
+    :func:`app.core.settings_override.cache._apply_top_level_row`; DELETE
+    removes those inert rows, and PATCH heals their stored key to the
+    canonical spelling so the next snapshot can read them.
+
+    :param settings_cls: The Pydantic settings class the rows belong to.
+    :param stored_key: The key column value from an override row.
+    :param key: The canonical override key requested by the caller.
+    :return: ``True`` when ``stored_key`` should be treated as the same override.
+    """
+    if canonical_override_key(settings_cls, stored_key) == key:
+        return True
+    if "__" in key or "__" in stored_key:
+        return False
+    return stored_key.casefold() == key.casefold()
+
+
+async def override_rows_for_key(
+    session: AsyncSession,
+    *,
+    settings_cls: type[BaseModel],
+    setting_class: SettingClassEnum,
+    key: str,
+) -> list[SettingOverride]:
+    """Return the :class:`SettingOverride` rows whose stored key resolves to ``key``.
+
+    Lists every row for ``setting_class`` and keeps those whose stored ``key``
+    matches via :func:`_stored_key_matches_override_key`. That makes a legacy
+    non-canonically-cased nested or top-level row visible to DELETE and PATCH,
+    which previously matched the stored column with dialect-dependent SQL
+    equality and, after the filter moved into Python, missed mixed-case
+    top-level rows on MySQL.
+
+    Inactive rows are included: both write paths currently match on
+    ``(setting_class, key)`` alone, so an inactive row stays deletable and
+    re-activatable.
+
+    :param session: The sub-app's database session.
+    :param settings_cls: The Pydantic settings class the rows belong to.
+    :param setting_class: The class identifier used to filter override rows.
+    :param key: The canonical override key to resolve against.
+    :return: Every matching row, in the order :meth:`SettingsOverrideManager.list`
+        returns them.
+    """
+    rows = await SettingsOverrideManager.list(session, setting_class=setting_class)
+    return [
+        row
+        for row in rows
+        if _stored_key_matches_override_key(settings_cls, row.key, key)
+    ]
+
+
 def _clear_cached_properties(instance: BaseModel) -> None:
     """Remove every ``@cached_property`` memo from ``instance.__dict__``.
 
@@ -1378,24 +1444,29 @@ def preserve_patch_credential_url_value(
     :class:`~pydantic.SecretStr` / :class:`~pydantic.SecretBytes` JSON masks
     (:data:`SECRET_STR_MASK`). Non-mask submissions are left unchanged.
 
+    Routing is decided by the payload shape before
+    :func:`is_credential_url_field` is consulted. That predicate descends into
+    nested models, so it answers "does this subtree carry a credential URL",
+    not "is this field itself one". A model-typed field holding a
+    credential-URL leaf answers ``True`` to the first question while needing
+    the model-payload walk, not the scalar restore.
+
     :param field_info: The Pydantic field metadata for the target attribute.
     :param current: The effective stored value (model, mapping, or secret wrapper).
     :param incoming: The value submitted in the PATCH body.
     :return: ``incoming`` with any masked credentials restored from ``current``.
     """
-    if is_credential_url_field(field_info):
-        if isinstance(incoming, str) and current is not None:
-            value = preserve_credential_url_password(str(current), incoming)
-        else:
-            value = incoming
+    parent_cls = annotation_pydantic_class(field_info.annotation)
+    if parent_cls is not None and isinstance(incoming, Mapping):
+        value = preserve_credential_urls_in_model_payload(parent_cls, current, incoming)
+    elif (
+        is_credential_url_field(field_info)
+        and isinstance(incoming, str)
+        and current is not None
+    ):
+        value = preserve_credential_url_password(str(current), incoming)
     else:
-        parent_cls = annotation_pydantic_class(field_info.annotation)
-        if parent_cls and isinstance(incoming, Mapping):
-            value = preserve_credential_urls_in_model_payload(
-                parent_cls, current, incoming
-            )
-        else:
-            value = incoming
+        value = incoming
     return preserve_patch_secret_value(field_info, current, value)
 
 

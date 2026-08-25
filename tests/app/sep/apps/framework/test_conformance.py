@@ -33,7 +33,7 @@ from typing import Annotated
 
 import pytest
 from fastapi import APIRouter, status
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field, ConfigDict, Field
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp, Views
@@ -106,6 +106,26 @@ class _DetailResponse(_CleanResponse):
     """Represent a detail response richer than the list response."""
 
     host: str | None = None
+
+
+class _DivergenceResponse(_CleanResponse):
+    """Carry an excluded field and a computed field on top of the clean list row."""
+
+    secret: str = Field(exclude=True)
+
+    @computed_field
+    @property
+    def label(self) -> str:
+        """Return a derived label that serializes but is absent from ``model_fields``."""
+        return self.name.upper()
+
+
+class _AliasedResponse(_CleanResponse):
+    """Carry a serialization-aliased field on top of the clean list row."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    internal_host: str | None = Field(default=None, serialization_alias="wire_host")
 
 
 def _detail_builder(task: object, *, status: object = None) -> _DetailResponse:
@@ -531,6 +551,85 @@ def test_view_fields_resolve_against_detail_response_model():
     )
 
     assert check_view_fields_reference_real_fields(app) == []
+
+
+def test_view_fields_flags_excluded_detail_path():
+    """Report a detail path rooted at a ``Field(exclude=True)`` attribute."""
+    app = _build_app(
+        response_model=_DivergenceResponse,
+        views=Views(
+            layout=_LAYOUT,
+            list_view=_LIST_VIEW,
+            detail_view=DetailView(
+                sections=[
+                    DetailSection(
+                        title="X", fields=[DetailField(path="secret", label="S")]
+                    )
+                ]
+            ),
+        ),
+    )
+    violations = check_view_fields_reference_real_fields(app)
+    assert any("secret" in v and "_DivergenceResponse" in v for v in violations), (
+        violations
+    )
+
+
+def test_view_fields_accepts_computed_detail_path():
+    """Accept a detail path rooted at a ``@computed_field`` that serializes."""
+    app = _build_app(
+        response_model=_DivergenceResponse,
+        views=Views(
+            layout=_LAYOUT,
+            list_view=_LIST_VIEW,
+            detail_view=DetailView(
+                sections=[
+                    DetailSection(
+                        title="X", fields=[DetailField(path="label", label="L")]
+                    )
+                ]
+            ),
+        ),
+    )
+    assert check_view_fields_reference_real_fields(app) == []
+
+
+def test_view_fields_aliased_root_uses_serialized_name():
+    """Accept the serialized alias and report the attribute name."""
+    accepted = _build_app(
+        response_model=_AliasedResponse,
+        views=Views(
+            layout=_LAYOUT,
+            list_view=_LIST_VIEW,
+            detail_view=DetailView(
+                sections=[
+                    DetailSection(
+                        title="X",
+                        fields=[DetailField(path="wire_host", label="H")],
+                    )
+                ]
+            ),
+        ),
+    )
+    assert check_view_fields_reference_real_fields(accepted) == []
+
+    flagged = _build_app(
+        response_model=_AliasedResponse,
+        views=Views(
+            layout=_LAYOUT,
+            list_view=_LIST_VIEW,
+            detail_view=DetailView(
+                sections=[
+                    DetailSection(
+                        title="X",
+                        fields=[DetailField(path="internal_host", label="H")],
+                    )
+                ]
+            ),
+        ),
+    )
+    violations = check_view_fields_reference_real_fields(flagged)
+    assert any("internal_host" in v for v in violations), violations
 
 
 # --- check_schema_derivation_succeeds -----------------------------------------
