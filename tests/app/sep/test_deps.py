@@ -15,6 +15,7 @@
 
 """Define tests for base SEP dependencies."""
 
+import inspect
 from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -71,13 +72,11 @@ from app.sep.deps import (
     require_pmm_api,
     resolve_ambient_exchange_token,
     resolve_ambient_session_token,
+    resolve_pmm_api,
 )
 from app.sep.inventory import CreatedNode, CreatedSchema
 from app.sep.models import AppLifecycleEnum, AppState, SyncInventoryEntityTypeEnum
-from app.tasks.models import (
-    Task,
-    TaskHistoryStatusEnum,
-)
+from app.tasks.models import Task
 from tests.app.conftest import make_request
 from tests.app.factories import (
     CasdoorUserFactory,
@@ -85,6 +84,8 @@ from tests.app.factories import (
     CreatedSchemaFactory,
     CreatedServiceFactory,
     TaskFactory,
+    TaskHistoryResponseFactory,
+    TaskResponseFactory,
 )
 
 PENDING_HISTORY_ID = 10
@@ -450,8 +451,8 @@ class TestGetTasksApi:
         mock_client.auth.assert_called_once_with("test-token")
 
 
-class TestGetPmmApi:
-    """Test the ``get_pmm_api`` dependency."""
+class TestResolvePmmApi:
+    """Cover the ``resolve_pmm_api`` resolver."""
 
     @pytest.mark.asyncio
     async def test_returns_none_when_endpoint_not_configured(self):
@@ -459,7 +460,7 @@ class TestGetPmmApi:
         with patch("app.sep.deps.settings") as mock_settings:
             mock_settings.PMM.endpoint = None
             mock_settings.PMM.api_key = None
-            result = await get_pmm_api()
+            result = await resolve_pmm_api()
         assert result is None
 
     @pytest.mark.asyncio
@@ -468,7 +469,7 @@ class TestGetPmmApi:
         with patch("app.sep.deps.settings") as mock_settings:
             mock_settings.PMM.endpoint = "https://pmm.example.com"
             mock_settings.PMM.api_key = None
-            result = await get_pmm_api()
+            result = await resolve_pmm_api()
         assert result is None
 
     @pytest.mark.asyncio
@@ -481,7 +482,7 @@ class TestGetPmmApi:
             mock_settings.PMM.verify_ssl = True
             mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
             mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
-            result = await get_pmm_api()
+            result = await resolve_pmm_api()
         assert result is mock_client
         mock_settings.get_remote_api.assert_awaited_once_with(
             PMMRemoteAPI,
@@ -501,7 +502,7 @@ class TestGetPmmApi:
             mock_settings.PMM.verify_ssl = False
             mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
             mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
-            result = await get_pmm_api()
+            result = await resolve_pmm_api()
         assert result is mock_client
         mock_settings.get_remote_api.assert_awaited_once_with(
             PMMRemoteAPI,
@@ -510,6 +511,40 @@ class TestGetPmmApi:
             verify_ssl=False,
             ssl_cafile="/etc/ssl/ca.pem",
         )
+
+
+class TestGetPmmApi:
+    """Cover the ``get_pmm_api`` request-scoped dependency."""
+
+    @pytest.mark.asyncio
+    async def test_holds_the_client_for_the_request(self) -> None:
+        """Keep a retired PMM client open until the dependency's hold releases."""
+        client = await PMMRemoteAPI(
+            endpoint="https://pmm.example.com", api_key="secret-key"
+        ).open()
+
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = "secret-key"
+            mock_settings.PMM.verify_ssl = True
+            mock_settings.SSL_CAFILE = None
+            mock_settings.get_remote_api = AsyncMock(return_value=client)
+            async for held in get_pmm_api():
+                assert held is client
+                await client.close_when_idle()
+                assert client._session is not None
+
+        assert client._session is None
+
+    @pytest.mark.asyncio
+    async def test_yields_none_when_pmm_is_not_configured(self) -> None:
+        """Yield ``None`` without reaching for a hold on a client that is absent."""
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = None
+            mock_settings.PMM.api_key = None
+            results = [held async for held in get_pmm_api()]
+
+        assert results == [None]
 
 
 class TestRequirePmmApi:
@@ -649,25 +684,25 @@ class TestGetTaskHistory:
         with pytest.raises(HTTPNotFoundException):
             await get_task_history(mock_api, 1)
 
-    @pytest.mark.asyncio
-    async def test_owner_mismatch_raises_not_found(self) -> None:
-        """Assert wrong owner raises 404."""
-        task = TaskFactory.build(owner="BACKUPS")
-        history_data = {
-            "id": 1,
-            "execution_request": {"tracking": {}},
-            "status": TaskHistoryStatusEnum.SUCCESS,
-            "started_at": None,
-            "finished_at": None,
-            "anonymize_mask": None,
-            "task": task.model_dump(mode="json"),
-            "executed_by": None,
-        }
-        mock_api = AsyncMock()
-        mock_api.get.return_value = history_data
+    def test_has_no_owner_parameter(self) -> None:
+        """Assert get_task_history no longer accepts an owner filter."""
+        assert "owner" not in inspect.signature(get_task_history).parameters
 
-        with pytest.raises(HTTPNotFoundException):
-            await get_task_history(mock_api, 1, owner="ALTERS")
+    @pytest.mark.asyncio
+    async def test_returns_history_executed_by_someone_else(self) -> None:
+        """Assert a history is returned regardless of executed_by or task.owner."""
+        history = TaskHistoryResponseFactory.build(
+            executed_by="alice",
+            task=TaskResponseFactory.build(owner="BACKUPS"),
+        )
+        mock_api = AsyncMock()
+        mock_api.get.return_value = history.model_dump(mode="json")
+
+        result = await get_task_history(mock_api, history.id)
+
+        assert result.id == history.id
+        assert result.executed_by == "alice"
+        assert result.task.owner == "BACKUPS"
 
 
 class TestCheckForConflictedRunningTasks:

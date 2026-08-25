@@ -171,7 +171,7 @@
         "requirements": "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/apps/mysql_backups/xtrabackup_payload",
+      "payload": "file://app/sep/apps/mysql_backups/xtrabackup_s3_payload",
       "task": "run-python"
     },
     "is_template": false,

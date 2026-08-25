@@ -8196,7 +8196,7 @@
       },
       "framework__ListView": {
         "additionalProperties": false,
-        "description": "Represent the list-view configuration for a plugin.\n\n:param columns: The ordered list of columns displayed in the list view.\n:type columns: list[Column]\n:param default_sort: Optional key of the column to sort by on first\n    render. Prefix with ``-`` for descending order (for example,\n    ``\"-lastRun\"``). The unprefixed key must match one of the declared\n    column keys. Defaults to ``None``.\n:type default_sort: NonEmptyStr | None\n:param overview_hidden_fields: Additional task-level keys to suppress\n    from the auto-rendered \"extras\" loop on the plugin detail Overview\n    tab. The framework always hides a baseline set of internal fields\n    (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,\n    ``last_updated_by``, ``connectivity_warning``); any keys listed here\n    are merged with that baseline. Defaults to ``[]``.\n:type overview_hidden_fields: list[str]",
+        "description": "Represent the list-view configuration for a plugin.\n\n:param columns: The ordered list of columns displayed in the list view.\n:type columns: list[Column]\n:param default_sort: Optional key of the column to sort by on first\n    render. Prefix with ``-`` for descending order (for example,\n    ``\"-lastRun\"``). The unprefixed key must match one of the declared\n    column keys. Defaults to ``None``.\n:type default_sort: NonEmptyStr | None\n:param server_side_query: Opt-in capability flag declaring that the list\n    endpoint honors whole-result-set sort and search via server query\n    params. When ``True`` and the list is also server-paginated, the React\n    list view enables manual sorting and filtering and drives them through\n    those params instead of sorting the loaded page; a capability-on list\n    rendered without pagination stays client-side.\n    Typed ``bool | None`` so the discovery endpoint's\n    ``exclude_none`` posture drops it from the wire until a plugin opts\n    in, keeping the addition byte-compatible with existing schemas.\n    Defaults to ``None``.\n:type server_side_query: bool | None\n:param overview_hidden_fields: Additional task-level keys to suppress\n    from the auto-rendered \"extras\" loop on the plugin detail Overview\n    tab. The framework always hides a baseline set of internal fields\n    (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,\n    ``last_updated_by``, ``connectivity_warning``); any keys listed here\n    are merged with that baseline. Defaults to ``[]``.\n:type overview_hidden_fields: list[str]",
         "properties": {
           "columns": {
             "items": {
@@ -8224,6 +8224,17 @@
             },
             "title": "Overview Hidden Fields",
             "type": "array"
+          },
+          "server_side_query": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Side Query"
           }
         },
         "required": [
@@ -17650,7 +17661,7 @@
     },
     "/api/apps/inventory/{entity}/": {
       "get": {
-        "description": "List inventory nodes, services, schemas, or tables.\n\n:param request: Inbound request; its query string carries entity filters.\n:param entity: Inventory entity type (nodes, services, schemas, tables).\n:param inventory_api: Async client for the Inventory sub-app.\n:param pagination: Validated offset/limit forwarded to the upstream call.\n:return: A paginated envelope echoing the requested window.",
+        "description": "List inventory nodes, services, schemas, or tables.\n\n:param request: Inbound request; its query string carries entity filters.\n:param entity: Inventory entity type (nodes, services, schemas, tables).\n:param inventory_api: Async client for the Inventory sub-app.\n:param pagination: Validated offset/limit forwarded to the upstream call.\n:param list_query: Allowlist-vetted sort/search for this entity.\n:return: A paginated envelope echoing the requested window.",
         "operationId": "inventory_inventory_list_entity_api_apps_inventory__entity___get",
         "parameters": [
           {
@@ -17683,6 +17694,52 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Sort key; prefix with '-' for descending order.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sort key; prefix with '-' for descending order.",
+              "enum": [
+                "created_at",
+                "-created_at",
+                "name",
+                "-name",
+                "schema_id",
+                "-schema_id",
+                "service_id",
+                "-service_id"
+              ],
+              "title": "Sort"
+            }
+          },
+          {
+            "description": "Case-insensitive search across the searchable columns.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive search across the searchable columns.",
+              "title": "Search"
             }
           }
         ],
@@ -19999,7 +20056,7 @@
     },
     "/api/sep/admin/settings/{setting_class}/{key}": {
       "delete": {
-        "description": "Revert one override row to the field's declared default.\n\nFor a remote class the DELETE is forwarded to the owning sub-app, which\nowns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and\n``detail`` are preserved through the proxy.\n\nFor a local class the DELETE is idempotent: deleting a (class, key) pair\nthat has no override row succeeds with 204. Attempting to delete a field\nthe code declares NOT_OVERRIDABLE responds 409, since it cannot have an\noverride row in the first place and the operator's intent is\nunsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld\nmay still carry a row written before the restriction applied, so that\nrow is deleted normally and only the no-row case answers 409.\n\nAfter republishing the snapshot, fires the rebind callbacks for the\nreverted key so a HOT target rebinds to its restored value without\nwaiting for the next background refresh cycle.\n\n:param request: The incoming request; its ``app.state`` carries the\n    sub-app's rebind-callback registry.\n:param setting_class: The settings class the field belongs to.\n:param key: The field name on the settings class.\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:raises HTTPNotFoundException: If the class isn't exposed or the key\n    doesn't exist on the class.\n:raises HTTPConflictException: If the field is NOT_OVERRIDABLE and has\n    no row to delete.\n:raises HTTPUnprocessableEntityException: If ``key`` names a\n    ``NESTED_ONLY`` parent (the whole parent cannot be overridden;\n    target an individual ``parent__leaf`` instead).\n:raises HTTPBadGatewayException: For a remote class, when the owning\n    sub-app returns a server error (status >= 500) or is unreachable.",
+        "description": "Revert override row(s) for one field to the field's declared default.\n\nFor a remote class the DELETE is forwarded to the owning sub-app, which\nowns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and\n``detail`` are preserved through the proxy.\n\nFor a local class the DELETE is idempotent: deleting a (class, key) pair\nthat has no override row succeeds with 204. Attempting to delete a field\nthe code declares NOT_OVERRIDABLE responds 409, since it cannot have an\noverride row in the first place and the operator's intent is\nunsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld\nmay still carry a row written before the restriction applied, so that\nrow is deleted normally (found by canonicalizing the stored key, so a\nlegacy non-canonical casing is still seen) and only the no-row case\nanswers 409. When several rows canonicalize to the same key, all of\nthem are removed.\n\nAfter republishing the snapshot, fires the rebind callbacks for the\nreverted key so a HOT target rebinds to its restored value without\nwaiting for the next background refresh cycle.\n\n:param request: The incoming request; its ``app.state`` carries the\n    sub-app's rebind-callback registry.\n:param setting_class: The settings class the field belongs to.\n:param key: The field name on the settings class.\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:raises HTTPNotFoundException: If the class isn't exposed or the key\n    doesn't exist on the class.\n:raises HTTPConflictException: If the field is NOT_OVERRIDABLE and has\n    no row to delete.\n:raises HTTPUnprocessableEntityException: If ``key`` names a\n    ``NESTED_ONLY`` parent (the whole parent cannot be overridden;\n    target an individual ``parent__leaf`` instead).\n:raises HTTPBadGatewayException: For a remote class, when the owning\n    sub-app returns a server error (status >= 500) or is unreachable.",
         "operationId": "sep_delete_setting_api_sep_admin_settings__setting_class___key__delete",
         "parameters": [
           {
@@ -20180,23 +20237,53 @@
     },
     "/api/sep/periodic-tasks/": {
       "get": {
-        "description": "Return the upstream periodic-task list through the SEP gateway.\n\n:param tasks_api: The Tasks API client used to fetch the upstream list.\n:return: The upstream periodic-task list, or ``[]`` when the upstream\n    payload is not a list.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "description": "Return the upstream periodic-task page through the SEP gateway.\n\n:param tasks_api: The Tasks API client used to fetch the upstream page.\n:param pagination: Validated offset/limit forwarded to the upstream list.\n:return: The upstream paginated envelope, or an empty envelope echoing the\n    requested window when the upstream payload is not a dict.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
         "operationId": "tasks_list_periodic_tasks_api_sep_periodic_tasks__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "additionalProperties": true,
-                    "type": "object"
-                  },
-                  "title": "Response Tasks List Periodic Tasks Api Sep Periodic Tasks  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_ArbitraryMapping_"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           },
           "502": {
             "content": {
@@ -20883,22 +20970,6 @@
               "title": "Task History Id",
               "type": "integer"
             }
-          },
-          {
-            "in": "query",
-            "name": "owner",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Owner"
-            }
           }
         ],
         "responses": {
@@ -20945,22 +21016,6 @@
             "schema": {
               "title": "Task History Id",
               "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "owner",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Owner"
             }
           }
         ],
@@ -21009,22 +21064,6 @@
               "title": "Task History Id",
               "type": "integer"
             }
-          },
-          {
-            "in": "query",
-            "name": "owner",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Owner"
-            }
           }
         ],
         "responses": {
@@ -21066,22 +21105,6 @@
               "title": "Task History Id",
               "type": "integer"
             }
-          },
-          {
-            "in": "query",
-            "name": "owner",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Owner"
-            }
           }
         ],
         "responses": {
@@ -21122,22 +21145,6 @@
             "schema": {
               "title": "Task History Id",
               "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "owner",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Owner"
             }
           }
         ],

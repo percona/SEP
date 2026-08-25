@@ -1759,6 +1759,7 @@ export interface paths {
      *     :param entity: Inventory entity type (nodes, services, schemas, tables).
      *     :param inventory_api: Async client for the Inventory sub-app.
      *     :param pagination: Validated offset/limit forwarded to the upstream call.
+     *     :param list_query: Allowlist-vetted sort/search for this entity.
      *     :return: A paginated envelope echoing the requested window.
      */
     get: operations['inventory_inventory_list_entity_api_apps_inventory__entity___get'];
@@ -2877,7 +2878,7 @@ export interface paths {
     post?: never;
     /**
      * Delete Setting
-     * @description Revert one override row to the field's declared default.
+     * @description Revert override row(s) for one field to the field's declared default.
      *
      *     For a remote class the DELETE is forwarded to the owning sub-app, which
      *     owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
@@ -2889,7 +2890,10 @@ export interface paths {
      *     override row in the first place and the operator's intent is
      *     unsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld
      *     may still carry a row written before the restriction applied, so that
-     *     row is deleted normally and only the no-row case answers 409.
+     *     row is deleted normally (found by canonicalizing the stored key, so a
+     *     legacy non-canonical casing is still seen) and only the no-row case
+     *     answers 409. When several rows canonicalize to the same key, all of
+     *     them are removed.
      *
      *     After republishing the snapshot, fires the rebind callbacks for the
      *     reverted key so a HOT target rebinds to its restored value without
@@ -3039,11 +3043,12 @@ export interface paths {
     };
     /**
      * List Periodic Tasks
-     * @description Return the upstream periodic-task list through the SEP gateway.
+     * @description Return the upstream periodic-task page through the SEP gateway.
      *
-     *     :param tasks_api: The Tasks API client used to fetch the upstream list.
-     *     :return: The upstream periodic-task list, or ``[]`` when the upstream
-     *         payload is not a list.
+     *     :param tasks_api: The Tasks API client used to fetch the upstream page.
+     *     :param pagination: Validated offset/limit forwarded to the upstream list.
+     *     :return: The upstream paginated envelope, or an empty envelope echoing the
+     *         requested window when the upstream payload is not a dict.
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
      *         (status < 500).
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -7834,6 +7839,17 @@ export interface components {
      *         ``"-lastRun"``). The unprefixed key must match one of the declared
      *         column keys. Defaults to ``None``.
      *     :type default_sort: NonEmptyStr | None
+     *     :param server_side_query: Opt-in capability flag declaring that the list
+     *         endpoint honors whole-result-set sort and search via server query
+     *         params. When ``True`` and the list is also server-paginated, the React
+     *         list view enables manual sorting and filtering and drives them through
+     *         those params instead of sorting the loaded page; a capability-on list
+     *         rendered without pagination stays client-side.
+     *         Typed ``bool | None`` so the discovery endpoint's
+     *         ``exclude_none`` posture drops it from the wire until a plugin opts
+     *         in, keeping the addition byte-compatible with existing schemas.
+     *         Defaults to ``None``.
+     *     :type server_side_query: bool | None
      *     :param overview_hidden_fields: Additional task-level keys to suppress
      *         from the auto-rendered "extras" loop on the plugin detail Overview
      *         tab. The framework always hides a baseline set of internal fields
@@ -7849,6 +7865,8 @@ export interface components {
       default_sort?: string | null;
       /** Overview Hidden Fields */
       overview_hidden_fields?: string[];
+      /** Server Side Query */
+      server_side_query?: boolean | null;
     };
     /**
      * MultiChoiceField
@@ -13041,6 +13059,18 @@ export interface operations {
       query?: {
         offset?: number;
         limit?: number;
+        /** @description Sort key; prefix with '-' for descending order. */
+        sort?:
+          | 'created_at'
+          | '-created_at'
+          | 'name'
+          | '-name'
+          | 'schema_id'
+          | '-schema_id'
+          | 'service_id'
+          | '-service_id';
+        /** @description Case-insensitive search across the searchable columns. */
+        search?: string | null;
       };
       header?: never;
       path: {
@@ -14721,7 +14751,10 @@ export interface operations {
   };
   tasks_list_periodic_tasks_api_sep_periodic_tasks__get: {
     parameters: {
-      query?: never;
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -14734,9 +14767,16 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            [key: string]: unknown;
-          }[];
+          'application/json': components['schemas']['PaginatedResponse_ArbitraryMapping_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
       /** @description Upstream Tasks API failure. */
@@ -15127,9 +15167,7 @@ export interface operations {
   };
   tasks_list_task_execution_events_execution_events__task_history_id__get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -15160,9 +15198,7 @@ export interface operations {
   };
   tasks_list_task_history_files_files__task_history_id__get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -15195,9 +15231,7 @@ export interface operations {
   };
   tasks_download_task_history_file_files__task_history_id__download_get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -15228,9 +15262,7 @@ export interface operations {
   };
   tasks_task_logs_event_stream_stream_logs__task_history_id__get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -15261,9 +15293,7 @@ export interface operations {
   };
   tasks_task_execution_events_stream_stream_logs__task_history_id__execution_events_get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;

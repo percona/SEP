@@ -22,6 +22,8 @@ import pytest
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
+
 ROUTE_CASES = [
     pytest.param("get", "/api/sep/periodic-tasks/", "get", None, id="list"),
     pytest.param("post", "/api/sep/periodic-tasks/my-task/", "post", {}, id="create"),
@@ -34,6 +36,19 @@ MUTATION_CASES = [
     pytest.param("put", "/api/sep/periodic-tasks/42", "put", {}, id="update"),
     pytest.param("delete", "/api/sep/periodic-tasks/42", "delete", None, id="delete"),
 ]
+
+PROXY_PAGE_OFFSET = 10
+PROXY_PAGE_LIMIT = 5
+PROXY_PAGE_TOTAL = 2
+
+
+def _empty_envelope(
+    *,
+    offset: int = DEFAULT_PAGINATION_OFFSET,
+    limit: int = DEFAULT_PAGINATION_LIMIT,
+) -> dict[str, Any]:
+    """Build an empty paginated envelope echoing the requested window."""
+    return {"items": [], "total": 0, "offset": offset, "limit": limit}
 
 
 def _issue(
@@ -53,44 +68,83 @@ class TestSepPeriodicTasksEndpoint:
     def test_list_returns_upstream_payload(
         self, test_client: TestClient, mock_task_api_dep: AsyncMock
     ) -> None:
-        """Forward the upstream periodic-task list unchanged."""
-        payload = [{"id": 1, "name": "run_x"}, {"id": 2, "name": "run_y"}]
+        """Forward the upstream paginated envelope unchanged."""
+        payload = {
+            "items": [{"id": 1, "name": "run_x"}, {"id": 2, "name": "run_y"}],
+            "total": PROXY_PAGE_TOTAL,
+            "offset": DEFAULT_PAGINATION_OFFSET,
+            "limit": DEFAULT_PAGINATION_LIMIT,
+        }
         mock_task_api_dep.get.return_value = payload
         response = test_client.get("/api/sep/periodic-tasks/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == payload
-        mock_task_api_dep.get.assert_awaited_once_with("/periodic/")
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/periodic/",
+            params={
+                "offset": DEFAULT_PAGINATION_OFFSET,
+                "limit": DEFAULT_PAGINATION_LIMIT,
+            },
+        )
+
+    def test_list_forwards_offset_and_limit(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Forward client offset/limit to the upstream periodic-task list."""
+        payload = {
+            "items": [{"id": 1, "name": "run_x"}],
+            "total": PROXY_PAGE_TOTAL,
+            "offset": PROXY_PAGE_OFFSET,
+            "limit": PROXY_PAGE_LIMIT,
+        }
+        mock_task_api_dep.get.return_value = payload
+        response = test_client.get(
+            "/api/sep/periodic-tasks/",
+            params={"offset": PROXY_PAGE_OFFSET, "limit": PROXY_PAGE_LIMIT},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == payload
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/periodic/",
+            params={"offset": PROXY_PAGE_OFFSET, "limit": PROXY_PAGE_LIMIT},
+        )
 
     def test_list_preserves_last_run_status(
         self, test_client: TestClient, mock_task_api_dep: AsyncMock
     ) -> None:
         """Forward the upstream ``last_run_status`` field through the proxy."""
-        payload = [
-            {"id": 1, "name": "run_x", "last_run_status": "success"},
-            {"id": 2, "name": "run_y", "last_run_status": None},
-        ]
+        payload = {
+            "items": [
+                {"id": 1, "name": "run_x", "last_run_status": "success"},
+                {"id": 2, "name": "run_y", "last_run_status": None},
+            ],
+            "total": PROXY_PAGE_TOTAL,
+            "offset": DEFAULT_PAGINATION_OFFSET,
+            "limit": DEFAULT_PAGINATION_LIMIT,
+        }
         mock_task_api_dep.get.return_value = payload
         response = test_client.get("/api/sep/periodic-tasks/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == payload
 
-    def test_list_empty_upstream_returns_empty_list(
+    def test_list_empty_upstream_returns_empty_envelope(
         self, test_client: TestClient, mock_task_api_dep: AsyncMock
     ) -> None:
-        """Return ``[]`` for an empty upstream list."""
-        mock_task_api_dep.get.return_value = []
+        """Return an empty envelope when upstream has no rows."""
+        payload = _empty_envelope()
+        mock_task_api_dep.get.return_value = payload
         response = test_client.get("/api/sep/periodic-tasks/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        assert response.json() == payload
 
-    def test_list_non_list_upstream_coerced_to_empty(
+    def test_list_non_dict_upstream_coerced_to_empty(
         self, test_client: TestClient, mock_task_api_dep: AsyncMock
     ) -> None:
-        """Coerce a non-list upstream payload (e.g. ``None`` on 204) to ``[]``."""
+        """Coerce a non-dict upstream payload to an empty envelope."""
         mock_task_api_dep.get.return_value = None
         response = test_client.get("/api/sep/periodic-tasks/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        assert response.json() == _empty_envelope()
 
     def test_create_forwards_body_and_returns_201(
         self, test_client: TestClient, mock_task_api_dep: AsyncMock
@@ -233,6 +287,7 @@ class TestSepPeriodicTasksAuth:
         self, api_admin_client_no_bearer: TestClient, mock_task_api_dep: AsyncMock
     ) -> None:
         """Allow a cookie-only GET: the Bearer gate covers mutations only."""
-        mock_task_api_dep.get.return_value = []
+        mock_task_api_dep.get.return_value = _empty_envelope()
         response = api_admin_client_no_bearer.get("/api/sep/periodic-tasks/")
         assert response.status_code == status.HTTP_200_OK
+        assert response.json() == _empty_envelope()

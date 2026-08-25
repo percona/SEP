@@ -73,7 +73,7 @@ from app.tasks.execution.executors.nomad.steps import (
 )
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
-from app.tasks.logs.line_split import split_complete_lines
+from app.tasks.logs.line_split import split_complete_lines, WithheldLineBuffer
 from app.tasks.logs.log_reader import decompress_legacy_logs
 from app.tasks.logs.log_writer import (
     backfill_legacy_logs,
@@ -2040,8 +2040,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
     async def _push_logs_to_queue(
         self,
-        # TODO(yan): Use Pydantic model for alloc
-        # SEP-154
         alloc: dict[str, Any],
         step: str,
         log_type: TaskLogType,
@@ -2075,7 +2073,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             "offset": start_offset,
         }
         state = "running"
-        pending = bytearray()
+        pending = WithheldLineBuffer()
         while state == "running":
             alloc_id = alloc["ID"]
             stream_start = None
@@ -2123,7 +2121,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 break
         if pending:
             decoded_msg = _decode_and_anonymize(
-                bytes(pending), anonymize_entities or None
+                pending.drain(), anonymize_entities or None
             )
             await queue.put(
                 TaskLog(
@@ -2137,7 +2135,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
     def _decode_live_frame(
         self,
-        pending: bytearray,
+        pending: WithheldLineBuffer,
         raw_msg: str,
         step: str,
         offset: int,
@@ -2173,14 +2171,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         """
         if not _should_anonymize(step, anonymize_entities):
             return b64decode_str(raw_msg), offset
-        pending.extend(b64decode(raw_msg))
-        split = split_complete_lines(
-            bytes(pending), max_withheld=self.log_anonymization_max_withheld_bytes
+        release = pending.append(
+            b64decode(raw_msg),
+            max_withheld=self.log_anonymization_max_withheld_bytes,
         )
-        complete = split.complete
-        if not complete:
+        if not release.complete:
             return None, offset
-        if split.forced:
+        if release.forced:
             _warn_forced_flush(
                 alloc_id,
                 step,
@@ -2188,8 +2185,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 self.log_anonymization_max_withheld_bytes,
                 "the live viewer can advance",
             )
-        del pending[: len(complete)]
-        decoded_msg = _decode_and_anonymize(complete, anonymize_entities)
+        decoded_msg = _decode_and_anonymize(release.complete, anonymize_entities)
         return decoded_msg, offset - len(pending)
 
     async def _consume_nomad_log_stream(
@@ -2201,7 +2197,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         params: dict[str, Any],
         client_timeout: ClientTimeout,
         anonymize_entities: set[PIIEntity] | None,
-        pending: bytearray,
+        pending: WithheldLineBuffer,
     ) -> tuple[str, dict[str, Any], float | None]:
         """Perform a single Nomad log streaming HTTP request and consume chunks.
 

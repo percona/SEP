@@ -61,6 +61,9 @@ const inventoryNestedMockSchema: AppSchema = {
           { key: 'id', label: 'ID' },
           { key: 'name', label: 'Name' },
         ],
+        // Top-level lists opt in; nested InventoryAppNavigation child tables
+        // reuse this schema and must stay client-side (no pagination/serverQuery).
+        server_side_query: true,
       },
     },
     {
@@ -72,6 +75,7 @@ const inventoryNestedMockSchema: AppSchema = {
           { key: 'id', label: 'ID' },
           { key: 'name', label: 'Name' },
         ],
+        server_side_query: true,
       },
     },
     {
@@ -84,6 +88,7 @@ const inventoryNestedMockSchema: AppSchema = {
           { key: 'create', label: 'CREATE statement' },
           { key: 'keys', label: 'Keys' },
         ],
+        server_side_query: true,
       },
       detail_highlights: { create: 'sql', keys: 'json' },
     },
@@ -292,6 +297,18 @@ describe('InventoryApp', () => {
       await waitFor(() => {
         expect(router.state.location.pathname).toBe('/inventory/nodes/1/services/2');
       });
+    });
+
+    it('keeps nested child lists client-side even when list_view opts into server query', async () => {
+      renderWithProviders(<InventoryApp mockSchema={inventoryNestedMockSchema} />, [
+        '/inventory/nodes/1',
+      ]);
+
+      await screen.findByRole('heading', { name: /Nodes? detail/i });
+      expect(await screen.findByRole('row', { name: /svc/ })).toBeInTheDocument();
+      // NestedEntityList passes neither pagination nor serverQuery, so the
+      // capability flag on services.list_view must not open the server search box.
+      expect(screen.queryByPlaceholderText(/search/i)).toBeNull();
     });
 
     it('drills into a schema via the nested route from a service detail page', async () => {

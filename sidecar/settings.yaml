@@ -50,7 +50,9 @@ default:
     PROVIDER:
       grafana:
         endpoint: https://pmm-server:8443/graph
-        # Supplied at runtime; Grafana auth and the PMM syncer stay inert until then.
+        # Left blank deliberately: entrypoint.sh resolves a token at container
+        # start — persisted, then minted against Grafana — whenever neither
+        # canonical name supplies one.
         service_account_token: ""
         session_cookie_name: pmm_session
         verify_ssl: false
@@ -59,7 +61,8 @@ default:
     ENDPOINT: https://pmm-server:8443
     VERIFY_SSL: false
     # Task-lifecycle annotations onto PMM. create_pmm_annotation returns early
-    # when API_KEY is unset, so this stays a silent no-op until a token is supplied.
+    # when API_KEY is unset, which entrypoint.sh fills from the same resolved
+    # token, so this is a silent no-op only when that resolution finds nothing.
     ANNOTATIONS_ENABLED: true
 
   CELERY:

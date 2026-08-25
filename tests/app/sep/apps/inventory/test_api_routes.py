@@ -54,6 +54,8 @@ _EXPECTED_SCHEMA_ENTITY_COUNT = len(INVENTORY_PLUGIN_ENTITY_NAMES)
 _MYSQL_PORT = 3306
 _TASK_HISTORY_ID = 42
 _ENVELOPE_TOTAL = 7
+_FILTERED_TOTAL = 3
+_PAGE_ITEM_COUNT = 2
 _REQUEST_OFFSET = 2
 _REQUEST_LIMIT = 5
 _UPSTREAM_OFFSET = 99
@@ -149,7 +151,11 @@ class TestInventoryGateway:
         assert body["limit"] == _REQUEST_LIMIT
         mock_inventory_api_dep.get.assert_awaited_once_with(
             "/nodes/",
-            params={"offset": _REQUEST_OFFSET, "limit": _REQUEST_LIMIT},
+            params={
+                "offset": _REQUEST_OFFSET,
+                "limit": _REQUEST_LIMIT,
+                "sort": "-created_at",
+            },
         )
 
     def test_list_forwards_validated_pagination_and_preserves_filters(
@@ -168,6 +174,92 @@ class TestInventoryGateway:
                 "name": "db1",
                 "offset": DEFAULT_PAGINATION_OFFSET,
                 "limit": _REQUEST_LIMIT,
+                "sort": "-created_at",
+            },
+        )
+
+    def test_list_forwards_validated_sort_and_search(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure allowlisted sort/search reach upstream as validated query params."""
+        mock_inventory_api_dep.get.return_value = {
+            "items": [{"id": 1}],
+            "total": _FILTERED_TOTAL,
+        }
+        response = test_client.get(
+            "/api/apps/inventory/nodes/",
+            params={"sort": "name", "search": "db1", "limit": _REQUEST_LIMIT},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == _FILTERED_TOTAL
+        assert len(body["items"]) == 1
+        mock_inventory_api_dep.get.assert_awaited_once_with(
+            "/nodes/",
+            params={
+                "offset": DEFAULT_PAGINATION_OFFSET,
+                "limit": _REQUEST_LIMIT,
+                "sort": "name",
+                "search": "db1",
+            },
+        )
+
+    def test_list_drops_whitespace_only_search_from_upstream(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure a blank search is stripped so the raw query value cannot leak upstream."""
+        mock_inventory_api_dep.get.return_value = {"items": [], "total": 0}
+        response = test_client.get(
+            "/api/apps/inventory/nodes/",
+            params={"search": "  ", "sort": "-name", "limit": _REQUEST_LIMIT},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        mock_inventory_api_dep.get.assert_awaited_once_with(
+            "/nodes/",
+            params={
+                "offset": DEFAULT_PAGINATION_OFFSET,
+                "limit": _REQUEST_LIMIT,
+                "sort": "-name",
+            },
+        )
+
+    def test_list_rejects_out_of_allowlist_sort_with_422(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure an unknown sort key is rejected before any upstream call."""
+        response = test_client.get(
+            "/api/apps/inventory/nodes/",
+            params={"sort": "bogus"},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_inventory_api_dep.get.assert_not_called()
+
+    def test_list_preserves_upstream_total_not_page_length(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Ensure the proxied total is the upstream filtered total, never ``len(items)``."""
+        mock_inventory_api_dep.get.return_value = {
+            "items": [{"id": i} for i in range(1, _PAGE_ITEM_COUNT + 1)],
+            "total": _FILTERED_TOTAL,
+            "offset": 0,
+            "limit": _REQUEST_LIMIT,
+        }
+        response = test_client.get(
+            "/api/apps/inventory/schemas/",
+            params={"sort": "service_id", "search": "db", "limit": _REQUEST_LIMIT},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert len(body["items"]) == _PAGE_ITEM_COUNT
+        assert body["total"] == _FILTERED_TOTAL
+        assert body["total"] != len(body["items"])
+        mock_inventory_api_dep.get.assert_awaited_once_with(
+            "/schemas/",
+            params={
+                "offset": DEFAULT_PAGINATION_OFFSET,
+                "limit": _REQUEST_LIMIT,
+                "sort": "service_id",
+                "search": "db",
             },
         )
 

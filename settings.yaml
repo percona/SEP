@@ -57,6 +57,12 @@ default:
     # only ways to set it. BASE_URL must include the prefix when one is set.
     ROOT_PATH: ""
     ARTIFACT_DOWNLOAD_TTL: 600
+    # Celery beat waits this long for the HTTP API to answer /health before
+    # starting ungated. Raise it on a deployment whose application startup runs
+    # long; starting ungated is what lets an overdue periodic task fail on
+    # connect to SEP's own API.
+    API_READINESS_TIMEOUT: 60.0
+    API_READINESS_POLL_INTERVAL: 0.5
     CONNECTIVITY_CHECK_DEFAULT: False
     ALERT_DEFINITIONS_DIR: null
     OAUTH:

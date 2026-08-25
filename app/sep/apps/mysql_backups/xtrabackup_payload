@@ -22,17 +22,23 @@ import socket
 import subprocess
 import sys
 import time
+# GEN:UPLOAD-BEGIN gsutil
 import tempfile
+# GEN:UPLOAD-END gsutil
 from contextlib import suppress
 from filelock import FileLock, Timeout
 from pathlib import Path
 from typing import Any
 
+# GEN:UPLOAD-BEGIN s3
 import boto3
+# GEN:UPLOAD-END s3
 import pymysql
 import pymysql.cursors
 import yaml
+# GEN:UPLOAD-BEGIN s3
 from botocore.exceptions import ClientError
+# GEN:UPLOAD-END s3
 from pymysql import InternalError, OperationalError, ProgrammingError
 
 BYTES_PER_MB = 1024**2
@@ -163,8 +169,12 @@ GZIP_BIN = os.getenv("PERCONA_BACKUP_GZIP_BIN", "/usr/bin/gzip")
 INNOCHECKSUM_BIN = "innochecksum"
 LZ4_BIN = os.getenv("PERCONA_BACKUP_LZ4_BIN", "/usr/bin/lz4")
 QPRESS_BIN = os.getenv("PERCONA_BACKUP_QPRESS_BIN", "/usr/bin/qpress")
+# GEN:UPLOAD-BEGIN rsync
 RSYNC_BIN = "/usr/bin/rsync"
+# GEN:UPLOAD-END rsync
+# GEN:UPLOAD-BEGIN gsutil
 GCLOUD_BIN = os.getenv("PERCONA_BACKUP_GCLOUD_BIN", "/usr/bin/gcloud")
+# GEN:UPLOAD-END gsutil
 XBCRYPT_BIN = os.getenv("PERCONA_BACKUP_XBCRYPT_BIN", "/usr/bin/xbcrypt")
 XTRABACKUP_BIN = os.getenv("PERCONA_BACKUP_XTRABACKUP_BIN", "/usr/bin/innobackupex")
 XTRABACKUP_BIN_REAL = os.getenv(
@@ -712,8 +722,6 @@ class DirectoryEncryptor:
                 self._set_default_config()
         else:
             self._set_default_config()
-
-        gpg_bin = self.config.get("gpg bin", "/usr/bin/gpg")
 
     def _set_default_config(self) -> None:
         """Set default configuration values."""
@@ -1688,6 +1696,7 @@ class XtraBackupUpload(Upload):
 
 
 
+# GEN:UPLOAD-BEGIN rsync
 class RsyncUploadProvider:
     """Rsync folder to another location."""
 
@@ -1751,8 +1760,10 @@ class RsyncUploadProvider:
             raise BackupError(msg)
 
         return dest_path
+# GEN:UPLOAD-END rsync
 
 
+# GEN:UPLOAD-BEGIN s3
 class S3UploadProvider:
     """Upload to Amazon S3 bucket using boto3."""
 
@@ -1894,7 +1905,9 @@ class S3UploadProvider:
                 self.logger.warning("S3 latest file upload failed: %s", e)
 
         return f"s3://{self.bucket_name}/{full_prefix}"
+# GEN:UPLOAD-END s3
 
+# GEN:UPLOAD-BEGIN gsutil
 class GSUploadProvider:
     """Google Cloud Storage upload using gcloud storage."""
 
@@ -1978,6 +1991,7 @@ class GSUploadProvider:
                     Path(latest_file_local_path).unlink()
 
         return dest_path
+# GEN:UPLOAD-END gsutil
 
 class XtraBackupRunner(multiprocessing.Process):
 
@@ -2103,7 +2117,6 @@ class Xtrabackup(Backup):
 
         # Upload options to keep backward-compatibility
         self.server_setting = server_data
-        self.rsync_dir = server_data.get('XTRABACKUP_RSYNC_DIR')
 
         # report options
         self.report_options['options'] = {
@@ -2239,17 +2252,28 @@ class Xtrabackup(Backup):
 
         # Upload if needed
         upload_providers = {
+            # GEN:UPLOAD-BEGIN rsync
             "rsync": RsyncUploadProvider,
+            # GEN:UPLOAD-END rsync
+            # GEN:UPLOAD-BEGIN s3
             "s3": S3UploadProvider,
+            # GEN:UPLOAD-END s3
+            # GEN:UPLOAD-BEGIN gsutil
+            "gs": GSUploadProvider,
             "gsutil": GSUploadProvider,
+            # GEN:UPLOAD-END gsutil
         }
         upload_destination = None
         for upload_type in sorted(self.upload_type):
             self.enable_upload(self.last_backup_dir)
-            provider = upload_providers.get(upload_type)
+            # Configs written before the provider names were lowercased record
+            # them capitalised, and those stored tasks still dispatch here.
+            provider = upload_providers.get(upload_type.casefold())
+            # A selected provider absent from the map means this variant was not built
+            # to carry it. Warning and skipping would report the backup OK with no
+            # offsite copy, so fail loudly instead.
             if provider is None:
-                self.logger.warning("Unsupported upload type: %r", upload_type)
-                continue
+                raise BackupError('Unsupported upload type: %r' % (upload_type,))
             uploader = XtraBackupUpload(
                 upload_type=upload_type,
                 upload_provider=provider,
@@ -2817,9 +2841,18 @@ class Xtrabackup(Backup):
 
         self.logger.info('OK Checksummed %d InnoDB files.', count)
 
-    @staticmethod
-    def _is_good_base_backup(path):
-        """Check if the base backup is good for incrementals, specially not fully prepared or encrypted."""
+    def _is_good_base_backup(self, path: str) -> bool:
+        """Return whether the base backup can seed an incremental run.
+
+        A fully prepared base cannot, and under ``fast_restore`` neither can an
+        encrypted one: that method copies the base and feeds it to ``--prepare``,
+        which needs real InnoDB files rather than their encrypted renames.
+        ``less_space`` never feeds the base's InnoDB files to anything -- it reads
+        only the plaintext checkpoints for an LSN -- so it tolerates one.
+
+        :param path: Base backup directory.
+        :return: True if the base can seed an incremental, False otherwise.
+        """
         chk_file = os.path.join(path, 'xtrabackup_checkpoints')
         if not os.path.isfile(chk_file):
             return False
@@ -2829,7 +2862,27 @@ class Xtrabackup(Backup):
             if row == 'backup_type = full-prepared':
                 return False
 
-        return True
+        if self.incremental_method != 'fast_restore':
+            return True
+
+        return not self._is_encrypted_base(path)
+
+    def _is_encrypted_base(self, path: str) -> bool:
+        """Return whether the base backup holds any encrypted file.
+
+        Detection cannot rely on the job's own encryption settings: a base encrypted
+        by an earlier run stays encrypted after those settings are turned off. Nor can
+        it require the whole directory to be encrypted, the way ``is_encrypted_dir``
+        does -- an encryption pass that dies part-way leaves a mixed base behind after
+        the backup has already been moved into the retained directory, and one renamed
+        table is enough to break ``--prepare``. The renames both formats leave are the
+        whole answer, so no file is opened and no ``gpg`` process is spawned: a host
+        that only ever encrypted with xbcrypt has no reason to have that binary.
+
+        :param path: Base backup directory.
+        :return: True if any file in the base is encrypted, False otherwise.
+        """
+        return any(p.suffix in ('.xbcrypt', '.gpg') for p in Path(path).rglob('*'))
 
     def _is_track_changed_pages(self):
         """Returns true if innodb_track_changed_pages is enabled."""
@@ -2864,29 +2917,26 @@ class Xtrabackup(Backup):
         return to_lsn
 
     @staticmethod
-    def _is_compressed_backup(backup_path, strict_mode=False):
-        """Check if the backup is compressed."""
-        checkpoint = os.path.join(backup_path, 'xtrabackup_checkpoints')
-        for ipath in (
-                'ibdata1.qp.xbcrypt',
-                'ibdata1.zst.xbcrypt',
-                'ibdata1.lz4.xbcrypt',
-                'ibdata1.qp.xbcrypt.gpg',
-                'ibdata1.zst.xbcrypt.gpg',
-                'ibdata1.lz4.xbcrypt.gpg',
-                'ibdata1.qp.gpg',
-                'ibdata1.zst.gpg',
-                'ibdata1.lz4.gpg',
-                'ibdata1.qp',
-                'ibdata1.zst',
-                'ibdata1.lz4',
-        ):
-            ibdata = os.path.join(backup_path, ipath)
-            if os.path.exists(checkpoint) and os.path.exists(ibdata):
+    def _is_compressed_backup(backup_path: str) -> bool:
+        """Return whether the base backup can be merged as uncompressed plaintext.
+
+        Only the plaintext compression suffixes are probed, because an encrypted
+        base is already rejected by :meth:`_is_good_base_backup` before this runs.
+        The closing fallback is wider than compression by design: any base whose
+        ``ibdata1`` is missing or renamed cannot be merged as it stands, whatever
+        did the renaming.
+
+        :param backup_path: Base backup directory.
+        :return: True if the base cannot be merged without unpacking it first.
+        """
+        if not os.path.exists(os.path.join(backup_path, 'xtrabackup_checkpoints')):
+            return False
+
+        for comp in ('qp', 'zst', 'lz4'):
+            if os.path.exists(os.path.join(backup_path, 'ibdata1.%s' % (comp,))):
                 return True
-        if strict_mode and not os.path.exists(checkpoint):
-            raise BackupError('Unable to locate xtrabackup_checkpoints in {}'.format(backup_path))
-        return os.path.exists(checkpoint) and not os.path.exists(os.path.join(backup_path, 'ibdata1'))
+
+        return not os.path.exists(os.path.join(backup_path, 'ibdata1'))
 
     def _is_ongoing_incremental_cycle(self, path, cycle):
         """Check if the current incremental cycle is ongoing for the given path name.

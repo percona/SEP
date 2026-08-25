@@ -18,7 +18,13 @@
 import pytest
 import yaml
 
+from app.core.utils.path import resolve_payload_reference
 from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.payload_variants import (
+    CANONICAL_PAYLOAD_NAME,
+    selections,
+    variant_name,
+)
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate
 from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
@@ -92,3 +98,37 @@ def test_build_restore_spec_injects_resolved_destination_and_service_name():
         "requirements",
         "_service_name",
     ]
+
+
+class TestRestoreUsesTheCanonicalPayload:
+    """Assert a restore always dispatches the all-providers payload, by name and on disk.
+
+    A restore may have to reach any provider, so it is deliberately not
+    variant-selected. Spelling the filename here as a literal would let a rename of
+    the canonical pass every generator test and fail at Nomad dispatch instead, since
+    the restore spec does no existence check of its own.
+    """
+
+    def test_xtrabackup_restore_names_the_canonical_payload(self) -> None:
+        """Assert the mapping reads the shared constant, not a second copy of the name."""
+        spec = build_restore_spec(_form(BackupType.XTRABACKUP), RestoreResolved())
+        assert spec.data["payload"].endswith(f"/{CANONICAL_PAYLOAD_NAME}")
+
+    @pytest.mark.parametrize(
+        "backup_type",
+        [BackupType.MYDUMPER, BackupType.XTRABACKUP, BackupType.BINLOG],
+    )
+    def test_restore_payload_exists_on_disk(self, backup_type: BackupType) -> None:
+        """Assert each restore payload reference resolves to a file that ships."""
+        spec = build_restore_spec(_form(backup_type), RestoreResolved())
+        assert resolve_payload_reference(spec.data["payload"]).is_file()
+
+    def test_restore_is_not_variant_selected(self) -> None:
+        """Assert no upload-selection variant is ever dispatched for a restore."""
+        spec = build_restore_spec(_form(BackupType.XTRABACKUP), RestoreResolved())
+        stripped = {
+            variant_name(providers)
+            for providers in selections()
+            if variant_name(providers) != CANONICAL_PAYLOAD_NAME
+        }
+        assert spec.data["payload"].rsplit("/", 1)[-1] not in stripped

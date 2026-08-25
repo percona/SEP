@@ -128,7 +128,7 @@ export interface paths {
     post?: never;
     /**
      * Delete Setting
-     * @description Revert one override row to the field's declared default.
+     * @description Revert override row(s) for one field to the field's declared default.
      *
      *     For a remote class the DELETE is forwarded to the owning sub-app, which
      *     owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
@@ -140,7 +140,10 @@ export interface paths {
      *     override row in the first place and the operator's intent is
      *     unsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld
      *     may still carry a row written before the restriction applied, so that
-     *     row is deleted normally and only the no-row case answers 409.
+     *     row is deleted normally (found by canonicalizing the stored key, so a
+     *     legacy non-canonical casing is still seen) and only the no-row case
+     *     answers 409. When several rows canonicalize to the same key, all of
+     *     them are removed.
      *
      *     After republishing the snapshot, fires the rebind callbacks for the
      *     reverted key so a HOT target rebinds to its restored value without
@@ -466,7 +469,16 @@ export interface paths {
     };
     /**
      * List Periodic Tasks
-     * @description List all periodic tasks.
+     * @description List periodic tasks for the requested page window.
+     *
+     *     :param session: The beat-store session the schedules are read from.
+     *     :param tasks_session: The tasks-database session used to resolve the
+     *         ``owner`` filter and to stamp each row's last-run status.
+     *     :param pagination: Validated offset/limit window for this page.
+     *     :param owner: Optional owner whose active tasks scope the page; omit to
+     *         page every SEP-managed schedule.
+     *     :param enabled: Optional enabled-state filter.
+     *     :return: A page of beat-store schedules, each carrying ``last_run_status``.
      */
     get: operations['periodic_list_periodic_tasks_periodic__get'];
     put?: never;
@@ -802,6 +814,17 @@ export interface components {
      * @enum {string}
      */
     LogCaptureStatusEnum: 'complete' | 'incomplete' | 'unknown';
+    /** PaginatedResponse[PeriodicTaskResponse] */
+    PaginatedResponse_PeriodicTaskResponse_: {
+      /** Items */
+      items: components['schemas']['PeriodicTaskResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[TaskHistoryResponse] */
     PaginatedResponse_TaskHistoryResponse_: {
       /** Items */
@@ -2437,6 +2460,8 @@ export interface operations {
       query?: {
         owner?: string | null;
         enabled?: boolean | null;
+        offset?: number;
+        limit?: number;
       };
       header?: never;
       path?: never;
@@ -2450,7 +2475,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PeriodicTaskResponse'][];
+          'application/json': components['schemas']['PaginatedResponse_PeriodicTaskResponse_'];
         };
       };
       /** @description Validation Error */
