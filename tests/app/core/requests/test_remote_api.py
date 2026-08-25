@@ -15,6 +15,8 @@
 
 """Define tests for RemoteAPI request-logging helpers and the upload primitive."""
 
+import asyncio
+
 import pytest
 from aioresponses import aioresponses
 from fastapi import HTTPException, status
@@ -345,3 +347,126 @@ class TestUpload:
                     await remote_api.upload("upload", files=_one_file())
 
         assert exc_info.value.detail == "An unexpected error occurred on the server."
+
+
+class TestDrainOnRebind:
+    """Cover the in-flight accounting behind ``hold`` and ``close_when_idle``."""
+
+    pytestmark = pytest.mark.asyncio
+
+    async def test_idle_client_closes_immediately(self, remote_api):
+        """Close synchronously when no consumer holds the client."""
+        await remote_api.open()
+
+        await remote_api.close_when_idle()
+
+        assert remote_api._session is None
+
+    async def test_active_hold_defers_the_close(self, remote_api):
+        """Keep the session open until the holder releases it."""
+        await remote_api.open()
+
+        async with remote_api.hold():
+            await remote_api.close_when_idle()
+            assert remote_api._session is not None
+
+        assert remote_api._session is None
+
+    async def test_nested_holds_close_once_at_zero(self, remote_api):
+        """Close on the outermost release, not on an inner one."""
+        await remote_api.open()
+
+        async with remote_api.hold():
+            async with remote_api.hold():
+                await remote_api.close_when_idle()
+            assert remote_api._session is not None
+
+        assert remote_api._session is None
+
+    async def test_request_takes_its_own_hold(self, remote_api):
+        """Keep the session open when a rebind lands mid-call with no outer hold."""
+        with aioresponses() as mock:
+            mock.post(_UPLOAD_URL, status=status.HTTP_200_OK, payload={"ok": True})
+            await remote_api.open()
+            async with remote_api._request("POST", "upload"):
+                await remote_api.close_when_idle()
+                assert remote_api._session is not None
+
+        assert remote_api._session is None
+
+    async def test_release_on_exception_still_closes(self, remote_api):
+        """Perform the deferred close even when the held block raises."""
+        await remote_api.open()
+
+        async def consumer() -> None:
+            async with remote_api.hold():
+                await remote_api.close_when_idle()
+                raise RuntimeError("consumer blew up")
+
+        with pytest.raises(RuntimeError, match="consumer blew up"):
+            await consumer()
+
+        assert remote_api._session is None
+
+    async def test_release_on_cancellation_still_closes(self, remote_api):
+        """Perform the deferred close when the consuming task is cancelled."""
+        await remote_api.open()
+        held = asyncio.Event()
+
+        async def consumer() -> None:
+            async with remote_api.hold():
+                held.set()
+                await asyncio.Event().wait()
+
+        task = asyncio.create_task(consumer())
+        await asyncio.wait_for(held.wait(), timeout=5)
+        await remote_api.close_when_idle()
+        assert remote_api._session is not None
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert remote_api._session is None
+
+    async def test_hold_alone_never_closes(self, remote_api):
+        """Leave the session open when no rebind asked for a close."""
+        await remote_api.open()
+
+        async with remote_api.hold():
+            pass
+
+        assert remote_api._session is not None
+        await remote_api.close()
+
+    async def test_repeated_close_when_idle_closes_once(self, remote_api):
+        """Treat a second rebind before the first drains as a no-op."""
+        await remote_api.open()
+
+        async with remote_api.hold():
+            await remote_api.close_when_idle()
+            await remote_api.close_when_idle()
+            assert remote_api._session is not None
+
+        assert remote_api._session is None
+
+    async def test_flag_is_cleared_after_the_deferred_close(self, remote_api):
+        """Leave a reopened client unaffected by the drain that already fired."""
+        await remote_api.open()
+        async with remote_api.hold():
+            await remote_api.close_when_idle()
+
+        await remote_api.open()
+        async with remote_api.hold():
+            pass
+
+        assert remote_api._session is not None
+        await remote_api.close()
+
+    async def test_close_still_closes_unconditionally(self, remote_api):
+        """Keep ``close`` immediate so ``close_all`` and shutdown are unchanged."""
+        await remote_api.open()
+
+        async with remote_api.hold():
+            await remote_api.close()
+            assert remote_api._session is None
