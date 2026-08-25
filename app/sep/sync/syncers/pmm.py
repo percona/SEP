@@ -191,18 +191,30 @@ class PMMSyncer(BaseSyncer):
             )
         return snapshot
 
-    async def _generation_permits_retirement(self) -> bool:
-        """Check whether this generation may retire anything at all.
+    async def _owns_run(self) -> bool:
+        """Check whether this run still owns its SyncInstance.
 
-        :return: `True` only for a complete generation belonging to a run that still
-            owns its ``SyncInstance``.
+        This fences every ledger write and every retirement: a run reclaimed while
+        it worked must perform neither.
+
+        :return: ``True`` while this run still owns its ``SyncInstance``.
         """
-        if self._generation is None or not self._generation.diagnostics.is_complete:
-            return False
         return await SyncInstanceManager.is_still_owned(
             self._session,
             self.sync_instance.id,
         )
+
+    def _generation_is_complete(self) -> bool:
+        """Check whether a complete generation is driving this call.
+
+        Only absence needs a complete generation to be believed. An entity the
+        fetch *did* return was observed regardless of what else the fetch missed,
+        which is why clearing a counter is not gated on this.
+
+        :return: ``True`` only when a generation is in progress and its fetch
+            represented the remote inventory faithfully.
+        """
+        return self._generation is not None and self._generation.diagnostics.is_complete
 
     async def _retire_absent(
         self,
@@ -286,8 +298,8 @@ class PMMSyncer(BaseSyncer):
                 present_ids.append(created_node.id)
                 await self.sync_node(created_node, node)
             logger.debug("Nodes absent from PMM: %s", syncable_nodes)
-            permitted = await self._generation_permits_retirement()
-            if permitted:
+            owns_run = await self._owns_run()
+            if owns_run:
                 await SyncEntityAbsenceManager.clear(
                     self._session,
                     self.get_name(),
@@ -298,7 +310,7 @@ class PMMSyncer(BaseSyncer):
                 SyncInventoryEntityTypeEnum.NODE,
                 syncable_nodes.values(),
                 self.delete_node,
-                permitted=permitted,
+                permitted=owns_run and self._generation_is_complete(),
                 filtered_external_ids=snapshot.diagnostics.filtered_node_ids,
             )
         finally:
@@ -374,13 +386,13 @@ class PMMSyncer(BaseSyncer):
                 created_service.node = created_node.model_copy(update={"services": []})
             present_ids.append(created_service.id)
             await self.sync_service(created_service, service)
-        permitted = await self._generation_permits_retirement()
+        owns_run = await self._owns_run()
         filtered_service_ids = (
             self._generation.diagnostics.filtered_service_ids
             if self._generation is not None
             else set()
         )
-        if permitted:
+        if owns_run:
             await SyncEntityAbsenceManager.clear(
                 self._session,
                 self.get_name(),
@@ -391,7 +403,7 @@ class PMMSyncer(BaseSyncer):
             SyncInventoryEntityTypeEnum.SERVICE,
             syncable_services.values(),
             self.delete_service,
-            permitted=permitted,
+            permitted=owns_run and self._generation_is_complete(),
             filtered_external_ids=filtered_service_ids,
         )
 

@@ -300,9 +300,9 @@ class SyncInstanceManager(BaseSQLModelManager):
         :param syncer: The name of the synchronizer whose runs should be inspected.
         :param stale_after: The age beyond which an idle run is presumed abandoned.
             Must exceed the longest expected runtime of a sync.
-        :return: The IDs of the ``SyncInstance`` records this call selected as stale.
-            They are read before the conditional update, so a caller that lost a race
-            to a concurrent reclaimer sees IDs it did not itself flip.
+        :return: The IDs of the ``SyncInstance`` records this call actually reclaimed.
+            A run that finished, or that a concurrent reclaimer already took, is not
+            included.
         """
         in_progress = (
             select(col(SyncItem.sync_instance_id))
@@ -327,28 +327,36 @@ class SyncInstanceManager(BaseSQLModelManager):
         stale_instance_ids = list(result.all())
         if not stale_instance_ids:
             return []
-        logger.warning(
-            "Reclaiming %d stale %s run(s): %s",
-            len(stale_instance_ids),
-            syncer,
-            stale_instance_ids,
-        )
         # The instance is fenced first, and only then are its items released.
         # Each statement commits on its own, so flipping the items first would
         # leave a window in which a reclaimed-but-live worker still reads
-        # ``RUNNING`` and walks into its retire phase.
-        await cls.update_where(
+        # ``RUNNING`` and walks into its retire phase. The status predicate keeps
+        # a run that finished between the query above and this update: it has
+        # already written its own verdict, and is no longer anyone's to reclaim.
+        reclaimed_ids = await cls.update_where(
             session,
             {"status": SyncStatusEnum.FAILED},
             col(SyncInstance.id).in_(stale_instance_ids),
+            col(SyncInstance.status).in_(
+                [SyncStatusEnum.PENDING, SyncStatusEnum.RUNNING],
+            ),
+            returning=["id"],
+        )
+        if not reclaimed_ids:
+            return []
+        logger.warning(
+            "Reclaimed %d stale %s run(s): %s",
+            len(reclaimed_ids),
+            syncer,
+            reclaimed_ids,
         )
         await SyncItemManager.update_where(
             session,
             {"status": SyncStatusEnum.FAILED},
             col(SyncItem.status).in_([SyncStatusEnum.PENDING, SyncStatusEnum.RUNNING]),
-            col(SyncItem.sync_instance_id).in_(stale_instance_ids),
+            col(SyncItem.sync_instance_id).in_(reclaimed_ids),
         )
-        return stale_instance_ids
+        return reclaimed_ids
 
     @classmethod
     async def is_still_owned(

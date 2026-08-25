@@ -1244,6 +1244,36 @@ class TestInventoryGenerationGating:
         delete_node.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_presence_in_an_incomplete_generation_clears_the_counter(
+        self, local_node, owned_pmmsyncer, session, delete_node
+    ):
+        """Clear the counter for an entity the fetch returned, complete or not.
+
+        Incompleteness makes an *absence* unreliable, never a presence: an entity
+        the fetch listed was observed whatever else the fetch missed. Counting the
+        absences either side of it would retire an entity that never went away for
+        two consecutive generations.
+        """
+        owned_pmmsyncer.inventory_api.get.side_effect = [
+            _local_nodes_payload(local_node)
+        ]
+        owned_pmmsyncer.inventory_api.put.return_value = local_node.model_dump()
+        owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(
+            side_effect=[
+                _snapshot(),
+                _snapshot(_remote_node(local_node), invalid_services=1),
+                _snapshot(),
+            ]
+        )
+
+        await owned_pmmsyncer.perform_inventory_sync()
+        await owned_pmmsyncer.perform_inventory_sync()
+        await owned_pmmsyncer.perform_inventory_sync()
+
+        delete_node.assert_not_awaited()
+        assert [row.missing_generations for row in await _absence_rows(session)] == [1]
+
+    @pytest.mark.asyncio
     async def test_cross_list_inconsistency_retries_once_then_marks_incomplete(
         self, local_node, owned_pmmsyncer, session, delete_node
     ):
