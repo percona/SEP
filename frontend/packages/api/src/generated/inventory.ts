@@ -104,7 +104,7 @@ export interface paths {
     post?: never;
     /**
      * Delete Setting
-     * @description Revert one override row to the field's declared default.
+     * @description Revert override row(s) for one field to the field's declared default.
      *
      *     For a remote class the DELETE is forwarded to the owning sub-app, which
      *     owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
@@ -116,7 +116,10 @@ export interface paths {
      *     override row in the first place and the operator's intent is
      *     unsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld
      *     may still carry a row written before the restriction applied, so that
-     *     row is deleted normally and only the no-row case answers 409.
+     *     row is deleted normally (found by canonicalizing the stored key, so a
+     *     legacy non-canonical casing is still seen) and only the no-row case
+     *     answers 409. When several rows canonicalize to the same key, all of
+     *     them are removed.
      *
      *     After republishing the snapshot, fires the rebind callbacks for the
      *     reverted key so a HOT target rebinds to its restored value without
