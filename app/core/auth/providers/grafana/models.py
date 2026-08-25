@@ -15,7 +15,7 @@
 
 """Define the Grafana user and token-payload models."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from enum import StrEnum
 from typing import Any, cast, Final, NoReturn, NotRequired, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -228,7 +228,7 @@ class GrafanaUser(BaseUser):
 
     @classmethod
     def _from_grafana_record(
-        cls, record: _GrafanaUserRecord, orgs: list[dict[str, Any]]
+        cls, record: _GrafanaUserRecord, orgs: Iterable[Mapping[str, Any]]
     ) -> Self:
         """Build a user from a Grafana ``/api/user`` or user-lookup record.
 
@@ -242,8 +242,9 @@ class GrafanaUser(BaseUser):
 
         :param record: A Grafana record carrying ``id``, ``login``, ``email``,
             and ``isGrafanaAdmin``.
-        :param orgs: The user's org memberships, flattened to their highest
-            role.
+        :param orgs: The memberships to rank, flattened to their highest role.
+            They may be every org the user belongs to or only the ones a single
+            org's listing proves.
         :return: The mapped ``GrafanaUser``.
         """
         if record.get("isGrafanaAdmin"):
@@ -422,16 +423,33 @@ class GrafanaUser(BaseUser):
         """Fetch a single user by login or email.
 
         The user-lookup endpoint carries the server-admin flag but no org
-        memberships, so the role here is either ``SUPER_ADMIN`` or the lowest
-        role, unlike the login flow, which also ranks org memberships.
+        memberships, so the target's membership is read from the org-users
+        listing — the same source :meth:`get_users` reads, so an org role
+        reported there is reported here too. A server admin still outranks that
+        listing, which carries no server-admin flag of its own. The listing is
+        scoped to the service account's own org, so a target whose only
+        membership is in another org is absent from it and ranks lowest.
+
+        The numeric id keys the match: it is the identifier both shapes agree
+        on, while a login can differ in case or be given as an email.
 
         :param username: The login or email to look up.
         :return: The mapped ``GrafanaUser``.
+        :raises HTTPException: If either Grafana call fails — a
+            :class:`GrafanaException` when Grafana is unreachable, otherwise the
+            project exception mapped to the response status — so a role is never
+            reported from membership data that could not be read.
+        :raises KeyError: If an org-users row omits the ``userId`` the match
+            keys on, matching the listing path's own refusal to read a
+            malformed record.
         """
-        record = cast(
-            "_GrafanaUserRecord", await _active_grafana_sdk().lookup_user(username)
-        )
-        return cls._from_grafana_record(record, [])
+        sdk = _active_grafana_sdk()
+        record = cast("_GrafanaUserRecord", await sdk.lookup_user(username))
+        if record.get("isGrafanaAdmin"):
+            return cls._from_grafana_record(record, [])
+        org_users = cast("list[_GrafanaOrgUserRecord]", await sdk.get_org_users())
+        orgs = [row for row in org_users if row["userId"] == record["id"]]
+        return cls._from_grafana_record(record, orgs)
 
     @classmethod
     async def get_users(cls) -> list[Self]:

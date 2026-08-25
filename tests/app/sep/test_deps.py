@@ -72,6 +72,7 @@ from app.sep.deps import (
     require_pmm_api,
     resolve_ambient_exchange_token,
     resolve_ambient_session_token,
+    resolve_pmm_api,
 )
 from app.sep.inventory import CreatedNode, CreatedSchema
 from app.sep.models import AppLifecycleEnum, AppState, SyncInventoryEntityTypeEnum
@@ -450,8 +451,8 @@ class TestGetTasksApi:
         mock_client.auth.assert_called_once_with("test-token")
 
 
-class TestGetPmmApi:
-    """Test the ``get_pmm_api`` dependency."""
+class TestResolvePmmApi:
+    """Cover the ``resolve_pmm_api`` resolver."""
 
     @pytest.mark.asyncio
     async def test_returns_none_when_endpoint_not_configured(self):
@@ -459,7 +460,7 @@ class TestGetPmmApi:
         with patch("app.sep.deps.settings") as mock_settings:
             mock_settings.PMM.endpoint = None
             mock_settings.PMM.api_key = None
-            result = await get_pmm_api()
+            result = await resolve_pmm_api()
         assert result is None
 
     @pytest.mark.asyncio
@@ -468,7 +469,7 @@ class TestGetPmmApi:
         with patch("app.sep.deps.settings") as mock_settings:
             mock_settings.PMM.endpoint = "https://pmm.example.com"
             mock_settings.PMM.api_key = None
-            result = await get_pmm_api()
+            result = await resolve_pmm_api()
         assert result is None
 
     @pytest.mark.asyncio
@@ -481,7 +482,7 @@ class TestGetPmmApi:
             mock_settings.PMM.verify_ssl = True
             mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
             mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
-            result = await get_pmm_api()
+            result = await resolve_pmm_api()
         assert result is mock_client
         mock_settings.get_remote_api.assert_awaited_once_with(
             PMMRemoteAPI,
@@ -501,7 +502,7 @@ class TestGetPmmApi:
             mock_settings.PMM.verify_ssl = False
             mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
             mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
-            result = await get_pmm_api()
+            result = await resolve_pmm_api()
         assert result is mock_client
         mock_settings.get_remote_api.assert_awaited_once_with(
             PMMRemoteAPI,
@@ -510,6 +511,40 @@ class TestGetPmmApi:
             verify_ssl=False,
             ssl_cafile="/etc/ssl/ca.pem",
         )
+
+
+class TestGetPmmApi:
+    """Cover the ``get_pmm_api`` request-scoped dependency."""
+
+    @pytest.mark.asyncio
+    async def test_holds_the_client_for_the_request(self) -> None:
+        """Keep a retired PMM client open until the dependency's hold releases."""
+        client = await PMMRemoteAPI(
+            endpoint="https://pmm.example.com", api_key="secret-key"
+        ).open()
+
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = "secret-key"
+            mock_settings.PMM.verify_ssl = True
+            mock_settings.SSL_CAFILE = None
+            mock_settings.get_remote_api = AsyncMock(return_value=client)
+            async for held in get_pmm_api():
+                assert held is client
+                await client.close_when_idle()
+                assert client._session is not None
+
+        assert client._session is None
+
+    @pytest.mark.asyncio
+    async def test_yields_none_when_pmm_is_not_configured(self) -> None:
+        """Yield ``None`` without reaching for a hold on a client that is absent."""
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = None
+            mock_settings.PMM.api_key = None
+            results = [held async for held in get_pmm_api()]
+
+        assert results == [None]
 
 
 class TestRequirePmmApi:

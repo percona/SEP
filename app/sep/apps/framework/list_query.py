@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar
 
 from app.core.db.list_query import make_query_param_dep, UnknownSortKeyError
+from app.core.exceptions import HTTPUnprocessableEntityException
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
@@ -192,6 +193,33 @@ def _build_in_memory_query(
     return InMemoryListQuery.from_sort(sort, search)
 
 
+def build_in_memory_list_query(
+    spec: ListQuerySpec,
+    sort: str,
+    search: str | None,
+) -> InMemoryListQuery:
+    """Resolve a request's sort and search into an :class:`InMemoryListQuery`.
+
+    Validation delegates to :meth:`ListQuerySpec.resolve_sort` so the allowlist and
+    the 422 boundary are identical to the SQL dependency. Public so a hand-written
+    route — for example a proxied inventory list that dispatches across per-entity
+    specs — can reuse the same mapping without going through
+    :func:`make_in_memory_list_query_dep`.
+
+    :param spec: The spec whose allowlist bounds the request.
+    :param sort: The requested public sort key (possibly ``-`` prefixed).
+    :param search: The raw search term, or ``None`` when search is disabled or unset.
+    :return: The resolved in-memory list query.
+    :raises HTTPUnprocessableEntityException: When ``sort`` is not in the allowlist.
+    """
+    try:
+        return _build_in_memory_query(spec, sort, search)
+    except UnknownSortKeyError as exc:
+        raise HTTPUnprocessableEntityException(
+            detail=f"Invalid sort key: {exc.key!r}"
+        ) from exc
+
+
 def default_in_memory_query(spec: ListQuerySpec) -> InMemoryListQuery:
     """Return the query a request that selected nothing resolves to.
 
@@ -334,6 +362,7 @@ def _sort(
 __all__ = [
     "InMemoryListQuery",
     "apply_in_memory",
+    "build_in_memory_list_query",
     "default_in_memory_query",
     "in_memory_list_scripts",
     "make_in_memory_list_query_dep",
