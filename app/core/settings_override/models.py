@@ -60,11 +60,8 @@ def setting_class_token(settings_cls: type["BaseYamlSettings"]) -> str:
 class SettingClassEnum(StrEnum):
     """Enumerate settings classes that may have HOT override rows.
 
-    The wired core classes are ``SEPSettings``, ``TasksSettings``,
-    ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
-    ``AnonymizerSettings``, and ``InventorySettings``. App-owned classes
-    (``AlertsSettings``, ``HealthReportSettings``) declare themselves under
-    ``app/sep/apps/<app>/`` and do not need a member here.
+    Members are the core-wired classes only. A settings class owned by an app
+    declares itself under ``app/sep/apps/<app>/`` and needs no member here.
 
     Members are in-process constants. The ``settingoverride.setting_class``
     column is a plain string whose stored token is derived by
