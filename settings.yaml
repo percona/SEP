@@ -339,6 +339,8 @@ development:
     RESULT_EXPIRES: 3600
     RESULT_PERSISTENT: True
     BEAT_DBURI: "sqlite:///schedule.db"
+    BEAT_ENGINE_OPTIONS:
+      POOL_PRE_PING: true  # Test beat/worker pooled connections on checkout; set false to opt out
   ALERTING:
     SOURCE_SUFFIX: ":dev"
 
@@ -369,6 +371,8 @@ production_docker:
     RESULT_BACKEND: redis://redis:6379/1
     RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
+    BEAT_ENGINE_OPTIONS:
+      POOL_PRE_PING: true  # Test beat/worker pooled connections on checkout; set false to opt out
   DATABASE:
     ENGINE: postgresql
     HOST: sep-db

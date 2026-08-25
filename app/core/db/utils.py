@@ -74,11 +74,12 @@ def get_async_session_maker_from_engine(engine: AsyncEngine) -> async_sessionmak
 
 
 def create_app_async_engine(database: DatabaseOptions) -> AsyncEngine:
-    """Build a service API async engine, forwarding only the set pool options.
+    """Build a service API async engine with pool and connect options.
 
-    Unset pool fields are omitted so the engine keeps SQLAlchemy's own defaults,
-    leaving standalone deployments unchanged. An unset or SQLite-inapplicable
-    ``CONNECT_TIMEOUT`` likewise omits ``connect_args`` entirely.
+    ``pool_pre_ping`` is always forwarded; unset pool sizing fields are omitted
+    so the engine keeps SQLAlchemy's own defaults for those. An unset or
+    SQLite-inapplicable ``CONNECT_TIMEOUT`` likewise omits ``connect_args``
+    entirely.
 
     :param database: The service database options carrying the URL and any
         configured pool sizing.

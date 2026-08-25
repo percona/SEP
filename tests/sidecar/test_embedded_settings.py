@@ -151,6 +151,12 @@ def test_profile_constructs_every_settings_class():
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
+def test_embedded_profile_enables_beat_pool_pre_ping():
+    """Assert the baked profile enables Celery beat/worker pool pre-ping."""
+    assert Settings().CELERY.beat_engine_options.pool_pre_ping is True
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
 def test_pmm_annotations_stay_enabled_without_an_api_key():
     """Assert annotations are configured on, and inert, until a token arrives."""
     settings = Settings()
