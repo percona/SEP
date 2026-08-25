@@ -123,30 +123,38 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
     async def stop_task(
         self, session: AsyncSession, queue_item: TaskHistory
     ) -> TaskHistory:
-        """Stop a task execution.
+        """Stop a task execution and record its outcome.
+
+        Persist the outcome the sync resolved: a terminal status and the finish
+        time that came with it stand as they are, and only a run the sync left
+        non-terminal is stamped STOPPED. Whether a stop request beats the run's
+        own result is the executor's decision, already applied by the time the
+        sync returns.
+
+        Send PMM exactly one terminal annotation per stop, naming the status
+        that was persisted.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param queue_item: The task history record for tracking this execution.
-        :type queue_item: TaskHistory
         :return: The updated task history with execution details.
-        :rtype: TaskHistory
         """
         await self._stop_task(queue_item)
         was_running = queue_item.status == TaskHistoryStatusEnum.RUNNING
         # TODO(yan): Remove sync_task_history from here as it can keep the db session open for too long
         # SEP-554
         queue_item = await self.sync_task_history(queue_item)
-        sync_emitted_stopped = (
-            was_running and queue_item.status == TaskHistoryStatusEnum.STOPPED
-        )
-        queue_item.status = TaskHistoryStatusEnum.STOPPED
-        queue_item.finished_at = utc_now()
+        sync_resolved_it = queue_item.status.is_terminal()
+        if not sync_resolved_it:
+            queue_item.status = TaskHistoryStatusEnum.STOPPED
+        if queue_item.finished_at is None:
+            queue_item.finished_at = utc_now()
+        event = _TERMINAL_STATUS_EVENT_MAP[queue_item.status]
         saved = await TaskHistoryManager.save(session, queue_item)
-        if not sync_emitted_stopped:
+        # A run the sync found running and resolved is already annotated by it.
+        if not (was_running and sync_resolved_it):
             await session.refresh(saved, attribute_names=["execution_request"])
-            schedule_annotation(saved, "STOPPED")
+            schedule_annotation(saved, event)
         return saved
 
     @abstractmethod
