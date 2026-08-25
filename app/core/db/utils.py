@@ -434,8 +434,9 @@ def check_constraint_lists_members(
     ``native_enum=False``. This reflects the constraint text cross-dialect via
     ``sqlalchemy.inspect`` and tests membership by matching each value as a
     single-quoted SQL string literal, so ``"SETTINGS"`` does not spuriously
-    match ``"SEP_SETTINGS"``. Historical enum-extension migrations and the
-    CHECK-restoring downgrade still consult this helper.
+    match ``"SEP_SETTINGS"``. The historical enum-widening and enum-narrowing
+    revisions still consult this helper to decide whether their own DDL has
+    already been applied.
 
     Returns ``False`` when the table does not exist. ``get_check_constraints``
     raises ``NoSuchTableError`` for a missing table, and a missing table means

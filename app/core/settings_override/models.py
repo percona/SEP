@@ -93,8 +93,10 @@ class _SettingClassString(TypeDecorator):
     SQLAlchemy's ``Enum`` type persisted members by *name* (``SEP_SETTINGS``).
     A bare ``String`` would bind the *value* (``SEPSettings``) and orphan
     every existing row. This decorator keeps the historical spelling for any
-    leftover enum argument while the column itself remains an unconstrained
-    string.
+    enum argument that reaches bind time while the column itself remains an
+    unconstrained string. :meth:`SettingOverride._enum_member_to_token` applies
+    the same coercion earlier on the ``model_validate`` path, so an instance
+    built through a CRUD manager already carries the token.
 
     """
 
@@ -159,8 +161,14 @@ class SettingOverride(BaseSQLModel, table=True):
 
     @field_validator("setting_class", mode="before")
     @classmethod
-    def _enum_member_to_token(cls, value: object) -> object:
+    def _enum_member_to_token(cls, value: Any) -> Any:
         """Persist ``SettingClassEnum`` members by name, not value.
+
+        Runs on the ``model_validate`` path only, because SQLModel skips
+        validation in ``__init__`` for ``table=True`` models. A constructed
+        instance keeps the member and relies on
+        :meth:`_SettingClassString.process_bind_param` for the same coercion
+        at bind time.
 
         A ``StrEnum`` is a ``str`` whose content is the member *value*
         (``SEPSettings``). Without this coercion, constructing
