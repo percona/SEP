@@ -25,6 +25,7 @@ from pathlib import Path
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from alembic.util.exc import CommandError
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INI = REPO_ROOT / "alembic.ini"
@@ -112,19 +113,21 @@ def main(argv: list[str] | None = None) -> int:
 
     :param argv: CLI arguments (defaults to ``sys.argv[1:]``).
     :return: ``0`` when every track is converged; ``1`` when any is forked
-        or the ini cannot be read.
+        or the ini cannot be read or a track section is misconfigured.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--ini",
         type=Path,
         default=DEFAULT_INI,
-        help="path to alembic.ini (default: repo-root alembic.ini)",
+        help="path to alembic.ini (default: repo-root alembic.ini). "
+        "Must be run from the repository root so relative script_location "
+        "paths in the ini resolve correctly.",
     )
     args = parser.parse_args(argv)
     try:
         trees = inspect_revision_trees(args.ini)
-    except (ValueError, OSError) as exc:
+    except (ValueError, OSError, CommandError) as exc:
         print(exc, file=sys.stderr)
         return 1
     failed = [tree for tree in trees if tree.is_forked]
