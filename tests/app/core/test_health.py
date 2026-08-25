@@ -46,7 +46,7 @@ from tests.app.conftest import HealthProbeServer
 
 PROBE_LOGGER = "app.core.health"
 
-# One recorded probe interaction: ``("request", method, path, headers)`` or ``("close",)``.
+#: One recorded probe interaction: ``("request", method, path, headers)`` or ``("close",)``.
 JournalEntry = tuple[Any, ...]
 
 

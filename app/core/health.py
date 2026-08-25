@@ -46,9 +46,9 @@ API_READINESS_REQUEST_TIMEOUT = 2.0
 _IPV4_LOOPBACK = "127.0.0.1"
 _IPV6_LOOPBACK = "::1"
 
-# Stands in for the ``*`` of a wildcard allow-list pattern. Any label satisfies
-# Starlette's suffix comparison; a descriptive one makes the probe recognisable
-# in an access log.
+#: Stands in for the ``*`` of a wildcard allow-list pattern. Any label satisfies
+#: Starlette's suffix comparison; a descriptive one makes the probe recognisable
+#: in an access log.
 _WILDCARD_HOST_LABEL = "readiness"
 
 
