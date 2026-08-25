@@ -32,6 +32,7 @@ from pydantic import (
     field_validator,
     HttpUrl,
     model_validator,
+    PositiveFloat,
     PositiveInt,
     SecretStr,
 )
@@ -44,6 +45,12 @@ from app.core.config import (
     BaseYamlAppSettings,
 )
 from app.core.db.config import DatabaseOptions
+from app.core.health import (
+    API_READINESS_POLL_INTERVAL as DEFAULT_API_READINESS_POLL_INTERVAL,
+)
+from app.core.health import (
+    API_READINESS_TIMEOUT as DEFAULT_API_READINESS_TIMEOUT,
+)
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
@@ -609,6 +616,13 @@ class SEPSettings(BaseYamlAppSettings):
         checkboxes submit no field, the route parameter defaults to ``False`` —
         automated clients that omit ``check_connectivity`` will skip the check
         regardless of this setting.
+    :param API_READINESS_TIMEOUT: Total seconds Celery beat waits for the HTTP API
+        to answer its health probe before starting ungated. Defaults to 60. A
+        deployment whose application startup runs long needs to raise this;
+        exhausting the budget means beat dispatches overdue periodic tasks against
+        an API that is not yet accepting connections.
+    :param API_READINESS_POLL_INTERVAL: Seconds between readiness probe attempts.
+        Defaults to 0.5.
     :param AMBIENT_SESSION_SSO_ENABLED: Whether to sign an unauthenticated caller
         in automatically from an existing PMM/Grafana session cookie (ambient
         SSO), skipping SEP's login form. Defaults to ``False`` (opt-in). Takes
@@ -646,6 +660,10 @@ class SEPSettings(BaseYamlAppSettings):
     )
     APP_DRAIN: AppDrainSettings = nested_overridable_field(AppDrainSettings())
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600, advanced=True)
+    # Plain fields rather than ``hot_field``: the readiness gate runs in a
+    # pre-fork beat child, before the DB override refresher exists to serve one.
+    API_READINESS_TIMEOUT: PositiveFloat = DEFAULT_API_READINESS_TIMEOUT
+    API_READINESS_POLL_INTERVAL: PositiveFloat = DEFAULT_API_READINESS_POLL_INTERVAL
     CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=False)
     AMBIENT_SESSION_SSO_ENABLED: bool = hot_field(
         default=False,
