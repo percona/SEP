@@ -15,7 +15,6 @@
 
 """Tests for the Tasks-track ``setting_class`` CHECK-drop migration."""
 
-import logging
 from pathlib import Path
 
 import pytest
@@ -113,7 +112,7 @@ def test_setting_class_check_is_dropped_after_upgrade(tasks_alembic_config):
 
 
 def test_setting_class_check_downgrade_deletes_unknown_rows(
-    tasks_alembic_config, caplog
+    tasks_alembic_config, capsys
 ):
     """Downgrade deletes out-of-list rows, logs the count, and restores the CHECK."""
     cfg, sync_url = tasks_alembic_config
@@ -127,10 +126,11 @@ def test_setting_class_check_downgrade_deletes_unknown_rows(
     finally:
         engine.dispose()
 
-    with caplog.at_level(logging.INFO, logger="app.core.settings_override.alembic_ops"):
-        command.downgrade(cfg, "-1")
-
-    assert "Deleted 1 settingoverride row(s)" in caplog.text
+    # alembic fileConfig routes ``app.*`` to its console handler with
+    # ``propagate = 0``, so the delete notice is on stderr, not in caplog.
+    capsys.readouterr()
+    command.downgrade(cfg, "-1")
+    assert "Deleted 1 settingoverride row(s)" in capsys.readouterr().err
 
     engine = create_engine(sync_url)
     try:
