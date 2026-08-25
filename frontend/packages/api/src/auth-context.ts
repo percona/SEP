@@ -57,9 +57,9 @@ export interface AuthState extends AuthSession {
    *
    * Semantically distinct from {@link AuthSession.isAdmin} even though it is
    * exactly that today. The server already resolves a minimum role per route
-   * rather than one administrator flag, and ``User`` carries that
-   * role, so widening the UI to match is an edit to
-   * {@link deriveCanMutate} — per-control minimum roles — and to no call site.
+   * rather than one administrator flag, and ``User`` carries that role, so
+   * widening the UI to match is an edit to {@link deriveCanMutate} —
+   * per-control minimum roles — and to no call site.
    */
   canMutate: boolean;
 }

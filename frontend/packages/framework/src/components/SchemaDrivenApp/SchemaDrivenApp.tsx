@@ -182,7 +182,7 @@ function AppEditPage({
     );
   };
 
-  // Editing is a mutation, so the whole page is the control (see AppCreatePage).
+  // Editing is a mutation, so the whole page is the control (see AppCreatePage),
   // and the back chrome stays so a URL arrival is not a dead end.
   if (!canMutate) {
     return (

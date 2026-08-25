@@ -472,7 +472,6 @@ function ExecutionRow({
           sx={{ width: '100%', pr: 1, flexWrap: 'wrap' }}
         >
           {canMutate && (
-          {canMutate && (
             <Tooltip title={selectable ? '' : 'Only finished executions can be sent.'}>
               <span>
                 <Checkbox
