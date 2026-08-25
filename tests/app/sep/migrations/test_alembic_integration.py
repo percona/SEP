@@ -52,6 +52,10 @@ _SEP_PRE_LIFECYCLE_REVISION = "64f10ead74f6"
 # The add_lifecycle_state_to_app_state revision under test.
 _SEP_LIFECYCLE_REVISION = "a7c4e9f1b2d3"
 
+# The revision preceding drop_setting_class_check_constraint: downgrading to it
+# is what runs that migration's downgrade.
+_SETTING_CLASS_CHECK_PARENT = "d1e2f3a4b5c6"
+
 _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
 
 _SKIP_NOTICE = (
@@ -561,7 +565,9 @@ def test_setting_class_check_downgrade_deletes_unknown_rows(sep_alembic_config, 
     # alembic fileConfig routes ``app.*`` to its console handler with
     # ``propagate = 0``, so the delete notice is on stderr, not in caplog.
     capsys.readouterr()
-    command.downgrade(cfg, "sep_main@-1")
+    # The revision under test is named outright: a head-relative target silently
+    # retargets this assertion at whatever migration lands on sep_main next.
+    command.downgrade(cfg, _SETTING_CLASS_CHECK_PARENT)
     assert "Deleted 1 settingoverride row(s)" in capsys.readouterr().err
 
     engine = create_engine(sync_url)
