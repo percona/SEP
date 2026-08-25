@@ -78,6 +78,7 @@ from app.tasks.deps import (
     TaskListQueryDep,
     validate_chain_task_names,
 )
+from app.tasks.execution.models import ExecutorHostState
 from app.tasks.execution.utils import parse_payload
 from app.tasks.logs.log_reader import has_legacy_logs, iter_task_history_logs
 from app.tasks.models import (
@@ -759,6 +760,32 @@ async def get_executor_hosts(executor: TaskExecutor) -> dict[str, str]:
     """
     try:
         return executor.get_hosts()
+    except requests.exceptions.RequestException as exc:
+        raise HTTPBadGatewayException(
+            detail=f"Executor backend unreachable: {exc}"
+        ) from exc
+
+
+@router.get("/hosts/states/", dependencies=[IsAuthenticatedDep])
+async def get_executor_host_states(executor: TaskExecutor) -> list[ExecutorHostState]:
+    """Return every host the executor knows about, usable or not.
+
+    ``GET /hosts/`` answers "where can I place a job", which is what a dispatcher
+    needs and all it needs. This answers "what is the state of the fleet", which is a
+    different question: a host missing from the other list may never have been
+    onboarded, or be onboarded and down, or be up with a broken driver, and those are
+    three different things for whoever has to fix it.
+
+    Wrapped the same way as ``/hosts/`` so an unreachable backend surfaces as a 502
+    rather than a 500 with a text/plain body.
+
+    :param executor: The task executor backend used to fetch host metadata.
+    :return: One entry per host the backend knows about.
+    :raises HTTPBadGatewayException: If the executor backend is unreachable or
+        answers with something the client cannot parse.
+    """
+    try:
+        return executor.get_host_states()
     except requests.exceptions.RequestException as exc:
         raise HTTPBadGatewayException(
             detail=f"Executor backend unreachable: {exc}"
