@@ -39,7 +39,7 @@ from app.sep.apps.framework.form_dsl import (
     check_form_conformance,
     derive_form_sections,
 )
-from app.sep.apps.framework.responses import root_segment
+from app.sep.apps.framework.responses import root_segment, serialized_field_names
 from app.sep.apps.framework.schema import Capabilities
 
 if TYPE_CHECKING:
@@ -206,16 +206,20 @@ def _detail_response_model(app: "TaskExecutionApp") -> type[BaseModel]:
 
 
 def check_view_fields_reference_real_fields(app: "TaskExecutionApp") -> list[str]:
-    """Return violations where a detail-view path's root is not a response field.
+    """Return violations where a detail-view path's root is not a serialized field.
 
     Validate the root segment (before the first ``.``, stripped of any ``[N]``) of
-    every ``detail_view`` field path against the detail model's ``model_fields``
-    (the explicit ``detail_response_model``, the detail builder's inferred model,
-    or the shared ``response_model`` — see :func:`_detail_response_model`),
-    exempting paths rooted at ``data`` (the opaque task-payload dict whose
-    sub-paths are free-form). ``list_view`` column keys are enforced at
-    ``TaskExecutionApp`` construction against the serialized response-row names
-    instead, so they are not checked here.
+    every ``detail_view`` field path against the names
+    ``detail_model.model_dump(by_alias=True)`` emits (see
+    :func:`~app.sep.apps.framework.responses.serialized_field_names`), not
+    ``model_fields`` alone. ``by_alias=True`` matches the derived detail route,
+    which pins ``response_model_by_alias=True``. The model is the explicit
+    ``detail_response_model``, the detail builder's inferred model, or the
+    shared ``response_model`` — see :func:`_detail_response_model`. Paths rooted
+    at ``data`` are exempt (the opaque task-payload dict whose sub-paths are
+    free-form). ``list_view`` column keys are enforced at
+    ``TaskExecutionApp`` construction against the same serialized-row plane, so
+    they are not checked here.
 
     :param app: The migrated app whose detail-view paths are checked against its
         detail response model.
@@ -227,7 +231,7 @@ def check_view_fields_reference_real_fields(app: "TaskExecutionApp") -> list[str
     if app.views.detail_view is None:
         return []
     detail_model = _detail_response_model(app)
-    response_fields = set(detail_model.model_fields)
+    response_fields = serialized_field_names(detail_model)
     paths = [
         field.path
         for section in app.views.detail_view.sections
