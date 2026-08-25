@@ -22,7 +22,7 @@ suppression flag -- a blanket "update every column" upsert wipes it on the next
 sweep, and the test that catches that has to exist before the field does, not after.
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -293,16 +293,31 @@ async def list_services(
     return list(result.all())
 
 
-async def recent_runs(session: AsyncSession, limit: int = 20) -> list[ProbeRun]:
+async def recent_runs(
+    session: AsyncSession,
+    limit: int = 20,
+    *,
+    since: datetime | None = None,
+    until: datetime | None = None,
+) -> list[ProbeRun]:
     """Return the most recent runs, newest first.
+
+    ``since`` / ``until`` bound ``started_at`` *before* ``limit`` is applied, so a
+    week window of twenty-one runs is twenty-one runs rather than "the twenty newest
+    overall, then those that happen to fall in the week".
 
     :param session: The database session.
     :param limit: How many to return.
+    :param since: Inclusive lower bound on ``started_at``.
+    :param until: Inclusive upper bound on ``started_at``.
     :return: The runs.
     """
-    result = await session.exec(
-        select(ProbeRun).order_by(col(ProbeRun.started_at).desc()).limit(limit)
-    )
+    statement = select(ProbeRun).order_by(col(ProbeRun.started_at).desc())
+    if since is not None:
+        statement = statement.where(col(ProbeRun.started_at) >= since)
+    if until is not None:
+        statement = statement.where(col(ProbeRun.started_at) <= until)
+    result = await session.exec(statement.limit(limit))
     return list(result.all())
 
 

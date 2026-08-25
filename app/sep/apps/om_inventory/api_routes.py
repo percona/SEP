@@ -40,7 +40,7 @@ so PMM reaches all of these with its deployment token whatever rank a human need
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
@@ -49,7 +49,11 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import require_minimum_role
 from app.core.auth.models import UserRole
-from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
+from app.core.exceptions import (
+    HTTPConflictException,
+    HTTPNotFoundException,
+    HTTPUnprocessableEntityException,
+)
 from app.core.settings_override.api import (
     apply_class_overrides,
     clear_class_override,
@@ -57,6 +61,7 @@ from app.core.settings_override.api import (
     SettingResponse,
     SettingsPatch,
 )
+from app.core.utils.fields import UTCDatetime
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.om_inventory.config import (
     om_inventory_settings,
@@ -559,15 +564,39 @@ async def delete_estate_service(service_id: str, session: SessionDep) -> None:
 
 @router.get("/runs", response_model=list[ProbeRunResponse])
 async def list_runs(
-    session: SessionDep, limit: int = Query(default=20, ge=1, le=100)
+    session: SessionDep,
+    limit: int = Query(default=20, ge=1, le=100),
+    since: Annotated[
+        UTCDatetime | None,
+        Query(
+            description="Inclusive lower bound on started_at. Omit for no lower bound."
+        ),
+    ] = None,
+    until: Annotated[
+        UTCDatetime | None,
+        Query(
+            description="Inclusive upper bound on started_at. Omit for no upper bound."
+        ),
+    ] = None,
 ) -> list[ProbeRunResponse]:
     """Return recent sweeps, newest first.
 
+    ``since`` / ``until`` filter on ``started_at`` before ``limit`` is applied, so
+    asking for last week is last week rather than "the twenty newest, then those
+    that happen to fall in the week".
+
     :param session: The database session.
     :param limit: How many to return.
+    :param since: Inclusive lower bound on ``started_at``.
+    :param until: Inclusive upper bound on ``started_at``.
     :return: The sweeps.
     """
-    return [_run_response(run) for run in await recent_runs(session, limit)]
+    if since is not None and until is not None and until < since:
+        raise HTTPUnprocessableEntityException(detail="until must not be before since")
+    return [
+        _run_response(run)
+        for run in await recent_runs(session, limit, since=since, until=until)
+    ]
 
 
 @router.get("/runs/{run_id}", response_model=ProbeRunDetail)
