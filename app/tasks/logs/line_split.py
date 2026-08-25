@@ -153,7 +153,9 @@ class WithheldLineBuffer:
             return LineRelease(self.drain(), forced=True)
         if not cut:
             return LineRelease(b"", forced=False)
-        complete = bytes(self._buf[:cut])
+        # A memoryview slice avoids the intermediate bytearray a direct slice
+        # would build, halving the copies made of a full release window.
+        complete = bytes(memoryview(self._buf)[:cut])
         del self._buf[:cut]
         return LineRelease(complete, forced=False)
 

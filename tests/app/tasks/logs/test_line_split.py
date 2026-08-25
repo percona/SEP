@@ -332,12 +332,11 @@ class TestWithheldLineBuffer:
         buf.append(b"more\n")
         assert release.complete == b"line\n"
 
-    def test_withheld_bytes_have_no_public_snapshot(self):
-        """Assert the withheld bytes cannot be copied out wholesale.
+    def test_withheld_bytes_have_no_non_destructive_snapshot(self):
+        """Assert the withheld bytes have no non-destructive snapshot.
 
         The type exists so no caller pays for the whole buffer on every frame.
-        A public snapshot hands that cost straight back, and the live-log path
-        would silently regain the per-frame copy the narrowed scan removed.
+        A snapshot that leaves the buffer intact hands that cost straight back.
         """
         buf = WithheldLineBuffer()
         buf.append(b"tail")

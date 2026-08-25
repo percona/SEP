@@ -21,6 +21,7 @@ import logging
 from base64 import b64encode
 from binascii import b2a_base64
 from collections import defaultdict
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime, UTC
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -3592,7 +3593,9 @@ class TestNomadLogStreaming:
         return frames
 
     @staticmethod
-    def _stream_response(iter_chunks):
+    def _stream_response(
+        iter_chunks: Callable[[], AsyncIterator[tuple[bytes, bool | None]]],
+    ) -> AsyncMock:
         """Build a 200 log-stream response whose body iterates ``iter_chunks``.
 
         :param iter_chunks: The zero-argument async generator function the
