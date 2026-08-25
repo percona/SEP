@@ -228,25 +228,20 @@ class SyncInstanceManager(BaseSQLModelManager):
         it raises a `SyncInstanceAlreadyInProgressError`. Otherwise, it creates and
         saves the new `SyncInstance`.
 
-        When `stale_after` is supplied, an in-progress conflict is first re-examined
+        When ``stale_after`` is supplied, an in-progress conflict is first re-examined
         for abandoned runs: items left behind by a killed worker would otherwise
-        block the syncer permanently, since the hanging-item sweep only runs on a
-        graceful exit.
+        block the syncer permanently, because the hanging-item sweep runs only when
+        the run exits through its context manager.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param instance_create: The data used to create the new SyncInstance.
-        :type instance_create: SyncInstanceWrite
         :param stale_after: The age beyond which an idle in-progress run is presumed
-            abandoned and reclaimed. Defaults to `None`, which never reclaims.
-        :type stale_after: timedelta | None
+            abandoned and reclaimed. Defaults to ``None``, which never reclaims.
         :param extra_fields: Additional fields to be set on the SyncInstance.
-        :type extra_fields: Any
         :return: The newly created and saved SyncInstance.
-        :rtype: SyncInstance
         :raises SyncInstanceAlreadyInProgressError: If a SyncInstance with the same
-            `syncer` is already in progress and could not be reclaimed as stale.
+            ``syncer`` is already in progress and could not be reclaimed as stale.
         """
         syncs_in_progress = await cls._items_in_progress(
             session, instance_create.syncer
@@ -271,11 +266,8 @@ class SyncInstanceManager(BaseSQLModelManager):
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param syncer: The name of the synchronizer to inspect.
-        :type syncer: str
-        :return: The `PENDING` or `RUNNING` items across that syncer's instances.
-        :rtype: list[SyncItem]
+        :return: The ``PENDING`` or ``RUNNING`` items across that syncer's instances.
         """
         query = select(SyncItem).join(SyncInstance)
         query = cls._filter_query(
@@ -296,23 +288,19 @@ class SyncInstanceManager(BaseSQLModelManager):
         """Fail the runs of a syncer whose items stopped progressing long ago.
 
         A run is stale when the newest activity across **all** of its items predates
-        `stale_after`, so a run still making progress is never reclaimed. The item
+        ``stale_after``, so a run still making progress is never reclaimed. The item
         flip is a single conditional statement, so a second reclaimer arriving
         concurrently matches no rows rather than reclaiming twice.
 
-        `snapshot_complete` is deliberately left untouched: a partially applied run
+        ``snapshot_complete`` is deliberately left untouched: a partially applied run
         must never be counted as a complete generation.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param syncer: The name of the synchronizer whose runs should be inspected.
-        :type syncer: str
         :param stale_after: The age beyond which an idle run is presumed abandoned.
             Must exceed the longest expected runtime of a sync.
-        :type stale_after: timedelta
-        :return: The IDs of the reclaimed `SyncInstance` records.
-        :rtype: list[UUID4]
+        :return: The IDs of the reclaimed ``SyncInstance`` records.
         """
         in_progress = (
             select(col(SyncItem.sync_instance_id))
@@ -365,17 +353,14 @@ class SyncInstanceManager(BaseSQLModelManager):
         """Check whether a run still owns its SyncInstance.
 
         This is the fencing read a run performs before any destructive action, so it
-        queries the `status` column directly rather than reading it off an ORM
+        queries the ``status`` column directly rather than reading it off an ORM
         instance loaded earlier in the run, whose in-memory value would not reflect
         a reclaim committed by another worker.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
-        :param instance_id: The ID of the `SyncInstance` to check.
-        :type instance_id: UUID4
-        :return: `True` while the instance is still `RUNNING`, otherwise `False`.
-        :rtype: bool
+        :param instance_id: The ID of the ``SyncInstance`` to check.
+        :return: `True` while the instance is still ``RUNNING``, otherwise ``False``.
         """
         query = select(col(SyncInstance.status)).where(
             col(SyncInstance.id) == instance_id,
@@ -394,20 +379,16 @@ class SyncInstanceManager(BaseSQLModelManager):
     ) -> None:
         """Write the run-level verdict for a finishing SyncInstance.
 
-        The transition is guarded on the instance still being `RUNNING`, so a run
-        that was reclaimed while it worked cannot overwrite the `FAILED` verdict
-        (nor the `NULL` `snapshot_complete`) the reclaim recorded.
+        The transition is guarded on the instance still being ``RUNNING``, so a run
+        that was reclaimed while it worked cannot overwrite the ``FAILED`` verdict
+        (nor the ``NULL`` ``snapshot_complete``) the reclaim recorded.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
-        :param instance_id: The ID of the `SyncInstance` being finalized.
-        :type instance_id: UUID4
+        :param instance_id: The ID of the ``SyncInstance`` being finalized.
         :param failed: Whether an exception left the synchronization.
-        :type failed: bool
         :param snapshot_complete: Whether the run observed a complete generation, or
-            `None` when the syncer does not produce one.
-        :type snapshot_complete: bool | None
+            ``None`` when the syncer does not produce one.
         """
         if not failed:
             failed = (
@@ -436,18 +417,15 @@ class SyncInstanceManager(BaseSQLModelManager):
     ) -> list[SyncItem]:
         """Mark all hanging SyncItems as failed for a given SyncInstance.
 
-        This method retrieves all `SyncItem` instances associated with the given
-        `SyncInstance` that are either `PENDING` or `RUNNING` and marks them as
-        `FAILED`. It then saves the updated `SyncItem` instances to the database.
+        This method retrieves all ``SyncItem`` instances associated with the given
+        ``SyncInstance`` that are either ``PENDING`` or ``RUNNING`` and marks them as
+        ``FAILED``. It then saves the updated ``SyncItem`` instances to the database.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
-        :param instance_id: The ID of the `SyncInstance` whose hanging `SyncItem`
+        :param instance_id: The ID of the ``SyncInstance`` whose hanging ``SyncItem``
             instances should be marked as failed.
-        :type instance_id: int
-        :return: A list of `SyncItem` instances that were marked as failed.
-        :rtype: list[SyncItem]
+        :return: A list of ``SyncItem`` instances that were marked as failed.
         """
         hanging_items = await SyncItemManager.list(
             session,
@@ -464,8 +442,7 @@ class SyncEntityAbsenceManager(BaseSQLModelManager):
     """Manage the missing-grace ledger backing deferred entity retirement.
 
     :ivar Model: The SQLModel class this manager is responsible for
-        (`SyncEntityAbsence`).
-    :vartype Model: type[SyncEntityAbsence]
+        (``SyncEntityAbsence``).
     """
 
     Model = SyncEntityAbsence
@@ -482,16 +459,11 @@ class SyncEntityAbsenceManager(BaseSQLModelManager):
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param syncer: The name of the synchronizer that observed the absence.
-        :type syncer: str
         :param entity_type: The type of the absent inventory entity.
-        :type entity_type: SyncInventoryEntityTypeEnum
         :param entity_id: The local identifier of the absent inventory entity.
-        :type entity_id: int
         :return: The number of consecutive complete generations reporting the entity
             absent, including this one.
-        :rtype: int
         :raises HTTPBadRequestException: If the ledger insert hits a database error.
         """
         absence, _ = await cls.get_or_create(
@@ -516,19 +488,15 @@ class SyncEntityAbsenceManager(BaseSQLModelManager):
     ) -> None:
         """Drop the ledger rows for entities that are present again.
 
-        `entity_id` is only unique within an entity type and a syncer -- a node and a
-        service are numbered from separate sequences and collide freely -- so the
+        ``entity_id`` is only unique within an entity type and a syncer. A node and a
+        service are numbered from separate sequences and collide freely, so the
         delete carries the full unique key rather than the IDs alone.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param syncer: The name of the synchronizer that observed the entities.
-        :type syncer: str
         :param entity_type: The type of the inventory entities.
-        :type entity_type: SyncInventoryEntityTypeEnum
         :param entity_ids: The local identifiers whose ledger rows should be dropped.
-        :type entity_ids: int
         """
         if not entity_ids:
             return
@@ -552,7 +520,6 @@ class AppStateManager(BaseSQLModelManager):
     """Manage per-app runtime lifecycle state.
 
     :ivar Model: The SQLModel class this manager is responsible for (``AppState``).
-    :vartype Model: type[AppState]
     """
 
     Model = AppState

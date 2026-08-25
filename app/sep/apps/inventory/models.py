@@ -30,16 +30,11 @@ class SyncRunSummary(BaseModel):
     """Summarize one recorded synchronization run for the sync-status endpoint.
 
     :param syncer: The fully qualified name of the synchronizer that ran.
-    :type syncer: str
     :param started_at: When the run was recorded.
-    :type started_at: UTCDatetime
-    :param finished_at: When the run last changed, or `None` while it is open.
-    :type finished_at: UTCDatetime | None
+    :param finished_at: When the run last changed, or ``None`` while it is open.
     :param status: The run-level outcome.
-    :type status: SyncStatusEnum
     :param snapshot_complete: Whether the run observed a complete generation of the
-        remote inventory, or `None` when the syncer does not produce one.
-    :type snapshot_complete: bool | None
+        remote inventory, or ``None`` when the syncer does not produce one.
     """
 
     syncer: str
@@ -53,9 +48,7 @@ class PluginTaskResponse(BaseModel):
     """Represent a single plugin task entry returned by ``GET /api/apps/inventory/``.
 
     :param name: Machine-readable task identifier (e.g. ``"inventory-sync"``).
-    :type name: str
     :param display_name: Human-readable label for the schedule UI.
-    :type display_name: str
     """
 
     name: str

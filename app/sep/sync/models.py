@@ -148,30 +148,21 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     APIs and abstract methods that can be overridden by subclasses.
 
     :cvar SYNC_TO_LIMIT: The upper limit for entity types that can be synchronized.
-    :vartype SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
     :param inventory_api: The remote API interface for interacting with the inventory
         system.
-    :type inventory_api: RemoteAPI
     :param sync_instance: The synchronization instance used to track sync processes.
-    :type sync_instance: SyncInstance | None
     :param sync_items: A dictionary mapping tuples of entity type and ID to SyncItem
         objects.
-    :type sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem]
     :param sync_id: The unique identifier for this synchronization.
-    :type sync_id: UUID4
     :param break_on_error: Flag indicating whether to stop synchronization on error.
         Defaults to False.
-    :type break_on_error: bool
     :param stale_run_after: The age beyond which an idle in-progress run of this
         syncer is presumed abandoned and reclaimed, unblocking the syncer after a
         worker was killed mid-run. Must exceed the longest expected runtime of a
         sync, or a live run gets reclaimed out from under itself. Defaults to 1 hour.
-    :type stale_run_after: timedelta
     :param _session: The asynchronous database session.
-    :type _session: AsyncSession
     :param _snapshot_complete: Whether this run observed a complete generation of the
-        remote inventory, or `None` when the syncer does not produce one.
-    :type _snapshot_complete: bool | None
+        remote inventory, or ``None`` when the syncer does not produce one.
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
@@ -193,7 +184,6 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         """Compute the hash based on the synchronization ID.
 
         :return: The hash value of the syncer instance.
-        :rtype: int
         """
         return hash(self.sync_id)
 
@@ -232,11 +222,8 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         run-level rollup reads the item statuses it writes.
 
         :param exc_type: The exception type, if any.
-        :type exc_type: type[BaseException]
         :param exc_val: The exception value, if any.
-        :type exc_val: BaseException
         :param exc_tb: The traceback, if any.
-        :type exc_tb: Any
         """
         await SyncInstanceManager.finish_hanging_items(
             self._session,
@@ -257,7 +244,6 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         If a SyncInstance exists, its ID is assigned to the sync_id attribute.
 
         :return: The syncer instance with the updated sync_id.
-        :rtype: BaseSyncer
         """
         if self.sync_instance is not None:
             self.sync_id = self.sync_instance.id
@@ -651,16 +637,14 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     ) -> None:
         """Close an entity's SyncItem without touching the inventory.
 
-        A held entity is one this run declined to retire. Its `SyncItem` was created
+        A held entity is one this run declined to retire. Its ``SyncItem`` was created
         up-front from the local inventory, so leaving it open would let the
         hanging-item sweep fail it and drag the run-level status down on an
         otherwise healthy run.
 
         :param entity_type: The type of the entity being held.
-        :type entity_type: SyncInventoryEntityTypeEnum
         :param created_entity: The entity instance being held.
-        :type created_entity: CreatedEntity
-        :raises SyncFailError: If closing the SyncItem fails and `break_on_error`
+        :raises SyncFailError: If closing the SyncItem fails and ``break_on_error``
             is set.
         """
         logger.info(
@@ -678,7 +662,6 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         SyncItem and performing the deletion via the inventory API.
 
         :param created_node: The node instance to be deleted.
-        :type created_node: CreatedNode
         """
         logger.debug("Deleting node %s from inventory", created_node.id)
         async with self.manage_sync_item(

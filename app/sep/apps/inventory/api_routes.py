@@ -157,9 +157,7 @@ async def inventory_sync_status(session: SessionDep) -> InventorySyncStatusRespo
     same state without scraping HTML.
 
     :param session: SQLModel async session.
-    :type session: SessionDep
     :return: The running flag and the most recent runs, newest first.
-    :rtype: InventorySyncStatusResponse
     """
     is_running = await SyncItemManager.sync_is_running(
         session,

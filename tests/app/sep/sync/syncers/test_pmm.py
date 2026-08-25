@@ -980,7 +980,7 @@ class TestGetInventorySnapshot:
 
     @pytest.mark.asyncio
     async def test_records_invalid_service(self, snapshot_api, mock_request):
-        """A service dropped by validation makes the generation incomplete."""
+        """Mark the generation incomplete when validation drops a service."""
         mock_request.side_effect = [
             {"mysql": [{"service_id": "svc-1", "node_id": "node-1"}]},
             {"Generic": [{"node_id": "node-1", "name": "N1", "address": "localhost"}]},
@@ -994,7 +994,7 @@ class TestGetInventorySnapshot:
 
     @pytest.mark.asyncio
     async def test_records_invalid_node(self, snapshot_api, mock_request):
-        """A node dropped by validation makes the generation incomplete."""
+        """Mark the generation incomplete when validation drops a node."""
         mock_request.side_effect = [
             {},
             {
@@ -1014,7 +1014,7 @@ class TestGetInventorySnapshot:
 
     @pytest.mark.asyncio
     async def test_flags_orphan_services(self, snapshot_api, mock_request):
-        """A service whose node never appeared in the node list is an orphan."""
+        """Flag a service whose node never appeared in the node list as orphaned."""
         mock_request.side_effect = [
             {"mysql": [{"service_id": "s", "service_name": "S", "node_id": "ghost"}]},
             {"Generic": [{"node_id": "node-1", "name": "N1", "address": "localhost"}]},
@@ -1029,7 +1029,7 @@ class TestGetInventorySnapshot:
     async def test_filtered_node_services_are_not_orphans(
         self, snapshot_api, mock_request
     ):
-        """Orphans are computed pre-filter, so an excluded node keeps its services."""
+        """Compute orphans pre-filter, so an excluded node keeps its services."""
         mock_request.side_effect = [
             {"mysql": [{"service_id": "s", "service_name": "S", "node_id": "node-1"}]},
             {
@@ -1054,7 +1054,7 @@ class TestGetInventorySnapshot:
 
     @pytest.mark.asyncio
     async def test_records_filtered_services(self, snapshot_api, mock_request):
-        """An excluded service is recorded without making the generation incomplete."""
+        """Record an excluded service without making the generation incomplete."""
         mock_request.side_effect = [
             {
                 "mysql": [
@@ -1102,7 +1102,7 @@ class TestInventoryGenerationGating:
 
     @pytest.fixture
     def delete_node(self, mocker) -> AsyncMock:
-        """Patch the node deletion so the retire decision is observed in isolation."""
+        """Replace the node deletion so the retire decision is seen in isolation."""
         return mocker.patch(
             "app.sep.sync.syncers.pmm.PMMSyncer.delete_node", new_callable=AsyncMock
         )
@@ -1111,7 +1111,7 @@ class TestInventoryGenerationGating:
     async def test_validation_failure_deletes_nothing(
         self, local_node, owned_pmmsyncer, session, delete_node
     ):
-        """AC #1: a validation-skipped entity blocks every deletion this run."""
+        """Delete nothing when a validation-skipped entity blocks the run."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1135,7 +1135,7 @@ class TestInventoryGenerationGating:
         mock_request,
         mock_get_version,
     ):
-        """AC #1 end to end: a genuine mid-fetch validation failure retires nothing.
+        """Delete nothing when a genuine mid-fetch validation failure occurs.
 
         The snapshot comes from the real client against a node payload that actually
         fails ``Node`` validation, so the incompleteness driving the gate is observed
@@ -1170,7 +1170,7 @@ class TestInventoryGenerationGating:
     async def test_single_absence_does_not_delete(
         self, local_node, owned_pmmsyncer, session, delete_node
     ):
-        """AC #2: one complete generation reporting absence only starts the count."""
+        """Start the count without deleting on one generation reporting absence."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1187,7 +1187,7 @@ class TestInventoryGenerationGating:
     async def test_complete_generation_deletes_after_grace(
         self, local_node, owned_pmmsyncer, session, delete_node
     ):
-        """AC #7: a second consecutive complete generation retires the entity."""
+        """Delete the entity on a second consecutive complete generation."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1206,7 +1206,7 @@ class TestInventoryGenerationGating:
     async def test_absence_counter_resets_on_reappearance(
         self, local_node, owned_pmmsyncer, session, delete_node
     ):
-        """AC #2: a reappearance resets the counter to zero, not to N-1."""
+        """Reset the counter to zero, not to N-1, when an entity reappears."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1228,7 +1228,7 @@ class TestInventoryGenerationGating:
     async def test_incomplete_generation_freezes_the_counter(
         self, local_node, owned_pmmsyncer, session, delete_node
     ):
-        """An inconclusive generation is evidence in neither direction."""
+        """Hold the counter steady when a generation is inconclusive."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1247,7 +1247,7 @@ class TestInventoryGenerationGating:
     async def test_cross_list_inconsistency_retries_once_then_marks_incomplete(
         self, local_node, owned_pmmsyncer, session, delete_node
     ):
-        """AC #3: orphans on both fetches leave the generation incomplete."""
+        """Leave the generation incomplete when orphans persist across fetches."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1269,7 +1269,7 @@ class TestInventoryGenerationGating:
     async def test_cross_list_inconsistency_second_fetch_clean_proceeds(
         self, local_node, owned_pmmsyncer, session, delete_node
     ):
-        """A clean re-fetch restores a complete generation and normal gating."""
+        """Restore a complete generation and normal gating after a clean refetch."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1290,7 +1290,7 @@ class TestInventoryGenerationGating:
     async def test_filtered_node_is_held_not_counted(
         self, local_node, owned_pmmsyncer, session, delete_node
     ):
-        """A node newly labelled ``sep_sync: disabled`` is held indefinitely."""
+        """Hold a node newly labelled ``sep_sync: disabled`` indefinitely."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1309,7 +1309,7 @@ class TestInventoryGenerationGating:
     async def test_reclaimed_run_aborts_retire_phase(
         self, local_node, owned_pmmsyncer, session, delete_node
     ):
-        """A run that lost ownership retires nothing, complete snapshot or not."""
+        """Delete nothing from a run that lost ownership of its instance."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1331,7 +1331,7 @@ class TestInventoryGenerationGating:
     async def test_held_entities_end_success_not_failed(
         self, local_node, owned_pmmsyncer, session, delete_node
     ):
-        """A held entity's SyncItem is closed, so the run does not roll up FAILED."""
+        """Close a held entity's SyncItem so the run does not roll up FAILED."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1350,7 +1350,7 @@ class TestInventoryGenerationGating:
     async def test_records_generation_completeness_on_the_run(
         self, local_node, owned_pmmsyncer, delete_node
     ):
-        """The run carries the completeness verdict for ``__aexit__`` to persist."""
+        """Carry the completeness verdict for ``__aexit__`` to persist."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1365,7 +1365,7 @@ class TestInventoryGenerationGating:
 
 @pytest.mark.parametrize("grace", [0, 1])
 def test_syncer_rejects_grace_below_two(mock_remote_api, grace):
-    """N=1 collapses back to the single-absence deletion this ticket removes."""
+    """Reject a grace below two, which collapses to single-absence deletion."""
     with pytest.raises(ValidationError):
         PMMSyncer(
             pmm={"endpoint": "http://localhost", "api_key": "test-key"},
@@ -1381,7 +1381,7 @@ class TestSingleEntitySyncNeverDeletes:
     async def test_single_node_sync_never_deletes_services(
         self, node_with_services, owned_pmmsyncer, session, mocker
     ):
-        """AC: outside a generation, a missing service is held, never deleted."""
+        """Hold a missing service outside a generation instead of deleting it."""
         delete_service = mocker.patch(
             "app.sep.sync.syncers.pmm.PMMSyncer.delete_service", new_callable=AsyncMock
         )

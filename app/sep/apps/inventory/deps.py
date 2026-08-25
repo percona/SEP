@@ -67,9 +67,7 @@ class InventorySyncStatusResponse(BaseModel):
 
     :param is_running: ``True`` when an inventory-wide sync is currently
         in progress; ``False`` otherwise.
-    :type is_running: bool
     :param last_runs: The most recently recorded synchronization runs, newest first.
-    :type last_runs: list[SyncRunSummary]
     """
 
     is_running: bool

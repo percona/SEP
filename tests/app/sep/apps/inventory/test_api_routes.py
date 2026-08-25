@@ -797,7 +797,7 @@ class TestInventorySyncStatus:
 
     @pytest.mark.asyncio
     async def test_returns_last_runs(self, async_test_client, session, mocker):
-        """Recorded runs surface with their status and completeness verdict."""
+        """Surface recorded runs with their status and completeness verdict."""
         mocker.patch.object(
             SyncItemManager, "sync_is_running", new=AsyncMock(return_value=False)
         )

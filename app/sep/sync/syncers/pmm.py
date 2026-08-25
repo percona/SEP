@@ -173,8 +173,7 @@ class PMMSyncer(BaseSyncer):
         disagreement; a persistent one leaves the generation incomplete.
 
         :return: The snapshot to reconcile this generation against.
-        :rtype: PMMInventorySnapshot
-        :raises ValidationError: If an entity fails validation and `break_on_error`
+        :raises ValidationError: If an entity fails validation and ``break_on_error``
             is set.
         """
         snapshot = await self.pmm_api.get_inventory_snapshot(
@@ -196,8 +195,7 @@ class PMMSyncer(BaseSyncer):
         """Check whether this generation may retire anything at all.
 
         :return: `True` only for a complete generation belonging to a run that still
-            owns its `SyncInstance`.
-        :rtype: bool
+            owns its ``SyncInstance``.
         """
         if self._generation is None or not self._generation.diagnostics.is_complete:
             return False
@@ -222,17 +220,12 @@ class PMMSyncer(BaseSyncer):
         incomplete generation.
 
         :param entity_type: The type of the absent entities.
-        :type entity_type: SyncInventoryEntityTypeEnum
         :param absent_entities: The local entities this generation did not report.
-        :type absent_entities: Iterable[CreatedEntity]
         :param delete: The retirement call to make once grace is spent.
-        :type delete: Callable[[Any], Awaitable[None]]
         :param permitted: Whether this generation may retire anything.
-        :type permitted: bool
         :param filtered_external_ids: External IDs excluded by the fetch filter.
-        :type filtered_external_ids: set[str]
         :raises SyncFailError: If holding or retiring an entity fails and
-            `break_on_error` is set.
+            ``break_on_error`` is set.
         """
         for created_entity in absent_entities:
             excluded = created_entity.external_id in filtered_external_ids
@@ -262,15 +255,15 @@ class PMMSyncer(BaseSyncer):
         Synchronize the entire inventory by fetching nodes from the PMM API and
         creating or updating corresponding nodes in the local inventory. A node that
         the fetch did not report is retired only once a complete generation has
-        reported it absent `missing_grace_generations` times in a row -- a partial
+        reported it absent ``missing_grace_generations`` times in a row. A partial
         read is not evidence that anything disappeared from PMM.
 
-        :raises ValidationError: If an entity fails validation and `break_on_error`
+        :raises ValidationError: If an entity fails validation and ``break_on_error``
             is set.
-        :raises SyncFailError: If synchronizing an entity fails and `break_on_error`
+        :raises SyncFailError: If synchronizing an entity fails and ``break_on_error``
             is set.
         """
-        syncable_nodes = {}
+        syncable_nodes: dict[str | None, CreatedNode] = {}
         for node in await self.get_inventory_nodes():
             syncable_nodes[node.external_id] = node
         logger.debug("Syncable nodes: %s", syncable_nodes)
@@ -278,7 +271,7 @@ class PMMSyncer(BaseSyncer):
         self._generation = snapshot
         self._snapshot_complete = snapshot.diagnostics.is_complete
         try:
-            present_ids = []
+            present_ids: list[int | None] = []
             for node in snapshot.nodes:
                 if (created_node := syncable_nodes.pop(node.external_id, None)) is None:
                     logger.debug("Creating new node: %r", node)
@@ -316,9 +309,7 @@ class PMMSyncer(BaseSyncer):
         Returns None if the node is filtered out (e.g., has sep_sync: disabled).
 
         :param created_node: The node instance to fetch updated data for.
-        :type created_node: CreatedNode
         :return: The updated node data, or None if filtered out.
-        :rtype: Node | None
         """
         logger.debug(
             "Fetching node from PMM with external id %s",
@@ -340,27 +331,25 @@ class PMMSyncer(BaseSyncer):
         Update the local inventory node with data from the PMM API and handle associated
         services.
 
-        Services are retired under the same generation gate as nodes. When this call
-        did not arrive from a full inventory generation -- an operator-triggered
-        single-node refresh -- there is no generation to judge absence against, so it
-        is upsert-only.
+        Services are retired under the same generation gate as nodes. A call that did
+        not arrive from a full inventory generation, such as an operator-triggered
+        single-node refresh, has no generation to judge absence against, so it is
+        upsert-only.
 
         :param created_node: The local node instance to synchronize.
-        :type created_node: CreatedNode
         :param updated_node: The updated node data fetched from the PMM API.
-        :type updated_node: Node
         """
         await self.update_node(created_node, updated_node)
-        external_id_to_id = {}
-        port_to_id = {}
-        syncable_services = {}
+        external_id_to_id: dict[str, int] = {}
+        port_to_id: dict[int, int] = {}
+        syncable_services: dict[int | None, CreatedService] = {}
         for service in created_node.services:
             syncable_services[service.id] = service
             if service.external_id is not None:
                 external_id_to_id[service.external_id] = service.id
             if service.port is not None:
                 port_to_id[service.port] = service.id
-        present_ids = []
+        present_ids: list[int | None] = []
         for service in updated_node.services:
             if (
                 created_service := syncable_services.pop(
@@ -408,9 +397,7 @@ class PMMSyncer(BaseSyncer):
         Returns None if the service is filtered out (e.g., has sep_sync: disabled).
 
         :param created_service: The service instance for which to fetch updated data.
-        :type created_service: CreatedService
         :return: The updated service data, or None if filtered out.
-        :rtype: PMMService | None
         """
         logger.debug(
             "Fetching service from PMM with external id %s",

@@ -189,16 +189,11 @@ class PMMFetchDiagnostics(BaseModel):
     estate from a half-read one without this record.
 
     :param invalid_nodes: The number of nodes dropped by validation.
-    :type invalid_nodes: int
     :param invalid_services: The number of services dropped by validation.
-    :type invalid_services: int
     :param orphan_service_node_ids: Node IDs referenced by fetched services but
         absent from the node list, which means the two lists disagree.
-    :type orphan_service_node_ids: list[str]
     :param filtered_node_ids: The IDs of nodes excluded by the caller's filter.
-    :type filtered_node_ids: set[str]
     :param filtered_service_ids: The IDs of services excluded by the caller's filter.
-    :type filtered_service_ids: set[str]
     """
 
     invalid_nodes: int = 0
@@ -215,7 +210,6 @@ class PMMFetchDiagnostics(BaseModel):
         intentional operator choice, not a failure to read.
 
         :return: `True` when nothing was dropped and the two lists agree.
-        :rtype: bool
         """
         return not (
             self.invalid_nodes or self.invalid_services or self.orphan_service_node_ids
@@ -226,9 +220,7 @@ class PMMInventorySnapshot(BaseModel):
     """Pair a fetched PMM node list with the diagnostics describing the fetch.
 
     :param nodes: The nodes fetched from PMM, with their services attached.
-    :type nodes: list[Node]
     :param diagnostics: What the fetch could not represent faithfully.
-    :type diagnostics: PMMFetchDiagnostics
     """
 
     nodes: list[Node]
@@ -242,28 +234,18 @@ class PMMRemoteAPI(RemoteAPI):
     and services, and managing service associations.
 
     :param endpoint: The base URL for the external API endpoint.
-    :type endpoint: HttpUrl
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
-    :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
-    :type ssl_cafile: RelativeFilePathField | None
     :param ssl_keyfile: Path to the SSL key file. Defaults to None.
-    :type ssl_keyfile: RelativeFilePathField | None
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
-    :type ssl_certfile: RelativeFilePathField | None
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
-    :type logger_name: str
     :param api_key: The API key for authentication. Defaults to None.
-    :type api_key: SecretStr | None
     :param error_detail_key: The key to expect errors details to be. Defaults to
         "message".
-    :type error_detail_key: NonEmptyStr
     :param error_code_key: The key to expect error codes to be, or None if no error
         code is expected. Defaults to "code".
-    :type error_code_key: NonEmptyStr | None
     :param default_to_v3: Whether to default to PMM v3 API endpoints if the API version
         cannot be determined. Defaults to True.
-    :type default_to_v3: bool
     :cvar CONNECTIVITY_CHECK_PATH: PMM exposes its version (and proves
         reachability) at this route, so the connectivity probe targets it
         instead of the base ``/``.
@@ -480,25 +462,18 @@ class PMMRemoteAPI(RemoteAPI):
 
         :param node_id: The ID of the node to filter services by. Defaults to an empty
             string, meaning the field won't be used as a filter.
-        :type node_id: str
         :param service_type: The type of services to filter by. Defaults to an empty
             string, meaning the field won't be used as a filter.
-        :type service_type: str
         :param external_group: The external group to filter services by. Defaults to an
             empty string, meaning the field won't be used as a filter.
-        :type external_group: str
         :param skip_failed: Whether to skip services that fail validation. Defaults to
             True.
-        :type skip_failed: bool
         :param filter_: Optional callable that takes a service dict and returns True if
             the service should be included, False if it should be filtered out.
             Defaults to None.
-        :type filter_: Callable[[dict[str, Any]], bool] | None
         :param diagnostics: Optional record to accumulate what this fetch could not
             represent faithfully. Defaults to None, which records nothing.
-        :type diagnostics: PMMFetchDiagnostics | None
         :return: A list of PMMService instances retrieved from the API.
-        :rtype: list[PMMService]
         :raises ValidationError: If a service fails validation and `skip_failed` is
             False.
         """
@@ -549,7 +524,6 @@ class PMMRemoteAPI(RemoteAPI):
         the API remain editable in the PMM UI.
 
         :return: A dictionary containing the alerting-specific request headers.
-        :rtype: dict[str, str]
         """
         return {"X-Disable-Provenance": "true"}
 
@@ -557,10 +531,8 @@ class PMMRemoteAPI(RemoteAPI):
         """Create a PMM alert template from a YAML definition.
 
         :param yaml: The YAML content of the alert template.
-        :type yaml: str
         :return: The created alert template, or ``None`` if the API returns no data
             (PMM v3).
-        :rtype: AlertTemplate | None
         """
         if await self.is_older_than_v3():
             data = await self.post(
@@ -934,16 +906,12 @@ class PMMRemoteAPI(RemoteAPI):
 
         :param skip_failed: Whether to skip services that fail validation. Defaults to
             True.
-        :type skip_failed: bool
         :param filter_: Optional callable that takes a service dict and returns True if
             the service should be included, False if it should be filtered out.
             Defaults to None.
-        :type filter_: Callable[[dict[str, Any]], bool] | None
         :param diagnostics: Optional record to accumulate what this fetch could not
             represent faithfully. Defaults to None, which records nothing.
-        :type diagnostics: PMMFetchDiagnostics | None
         :return: A defaultdict mapping node IDs to lists of PMMService instances.
-        :rtype: defaultdict[NonEmptyStr, list[PMMService]]
         """
         services_by_node_id = defaultdict(list)
         for service in await self.get_services(
@@ -964,7 +932,7 @@ class PMMRemoteAPI(RemoteAPI):
         """Fetch nodes from the PMM API together with fetch-completeness diagnostics.
 
         Orphan detection runs against the **raw** node IDs, collected before the
-        filter and before `Node` construction: an intentionally excluded node would
+        filter and before ``Node`` construction: an intentionally excluded node would
         otherwise make its own services look orphaned, and no generation would ever
         be complete.
 
@@ -974,18 +942,14 @@ class PMMRemoteAPI(RemoteAPI):
 
         :param node_type: The type of nodes to retrieve (e.g., "generic"). Defaults to
             an empty string, meaning the field won't be used as a filter.
-        :type node_type: str
         :param skip_failed: Whether to skip nodes that fail validation. Defaults to
             True.
-        :type skip_failed: bool
         :param filter_: Optional callable that takes a node or service dict and returns
             True if the item should be included, False if it should be filtered out.
             Used to filter nodes and, when loading services, each service.
             Defaults to None.
-        :type filter_: Callable[[dict[str, Any]], bool] | None
         :return: The fetched nodes paired with the diagnostics for this fetch.
-        :rtype: PMMInventorySnapshot
-        :raises ValidationError: If a node fails validation and `skip_failed` is False.
+        :raises ValidationError: If a node fails validation and ``skip_failed`` is False.
         """
         diagnostics = PMMFetchDiagnostics()
         services_by_node_id = await self.get_services_by_node_external_id(
@@ -1002,8 +966,8 @@ class PMMRemoteAPI(RemoteAPI):
         else:
             nodes_data = await self.get("/v1/inventory/nodes", params=params)
 
-        nodes = []
-        fetched_node_ids = set()
+        nodes: list[Node] = []
+        fetched_node_ids: set[str] = set()
         for nodes_type, node_list in nodes_data.items():
             for node in node_list:
                 fetched_node_ids.add(node.get("node_id"))
@@ -1053,18 +1017,14 @@ class PMMRemoteAPI(RemoteAPI):
 
         :param node_type: The type of nodes to retrieve (e.g., "generic"). Defaults to
             an empty string, meaning the field won't be used as a filter.
-        :type node_type: str
         :param skip_failed: Whether to skip nodes that fail validation. Defaults to
             True.
-        :type skip_failed: bool
         :param filter_: Optional callable that takes a node or service dict and returns
             True if the item should be included, False if it should be filtered out.
             Used to filter nodes and, when loading services, each service.
             Defaults to None.
-        :type filter_: Callable[[dict[str, Any]], bool] | None
         :return: A list of Node instances retrieved from the API.
-        :rtype: list[Node]
-        :raises ValidationError: If a node fails validation and `skip_failed` is False.
+        :raises ValidationError: If a node fails validation and ``skip_failed`` is False.
         """
         snapshot = await self.get_inventory_snapshot(
             node_type,
@@ -1077,7 +1037,6 @@ class PMMRemoteAPI(RemoteAPI):
         """List all advisor checks (enabled and disabled).
 
         :return: A list of check dictionaries.
-        :rtype: list[dict[str, Any]]
         """
         if await self.is_older_than_v3():
             data = await self.post("/v1/management/SecurityChecks/List", json={})
@@ -1089,7 +1048,6 @@ class PMMRemoteAPI(RemoteAPI):
         """List advisor checks that have failed.
 
         :return: A list of failed check result dictionaries.
-        :rtype: list[dict[str, Any]]
         """
         if await self.is_older_than_v3():
             data = await self.post(
@@ -1106,9 +1064,7 @@ class PMMRemoteAPI(RemoteAPI):
 
         :param names: Optional list of check names to run. When ``None``, all
             checks are started.
-        :type names: list[str] | None
         :return: The API response.
-        :rtype: dict[str, Any]
         """
         payload = {"names": names} if names else {}
         if await self.is_older_than_v3():

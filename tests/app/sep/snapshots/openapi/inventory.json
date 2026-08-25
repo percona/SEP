@@ -3388,7 +3388,7 @@
         "type": "object"
       },
       "inventory__InventorySyncStatusResponse": {
-        "description": "Represent the inventory sync status response.\n\n:param is_running: ``True`` when an inventory-wide sync is currently\n    in progress; ``False`` otherwise.\n:type is_running: bool\n:param last_runs: The most recently recorded synchronization runs, newest first.\n:type last_runs: list[SyncRunSummary]",
+        "description": "Represent the inventory sync status response.\n\n:param is_running: ``True`` when an inventory-wide sync is currently\n    in progress; ``False`` otherwise.\n:param last_runs: The most recently recorded synchronization runs, newest first.",
         "properties": {
           "is_running": {
             "title": "Is Running",
@@ -3429,7 +3429,7 @@
         "type": "object"
       },
       "inventory__PluginTaskResponse": {
-        "description": "Represent a single plugin task entry returned by ``GET /api/apps/inventory/``.\n\n:param name: Machine-readable task identifier (e.g. ``\"inventory-sync\"``).\n:type name: str\n:param display_name: Human-readable label for the schedule UI.\n:type display_name: str",
+        "description": "Represent a single plugin task entry returned by ``GET /api/apps/inventory/``.\n\n:param name: Machine-readable task identifier (e.g. ``\"inventory-sync\"``).\n:param display_name: Human-readable label for the schedule UI.",
         "properties": {
           "display_name": {
             "title": "Display Name",
@@ -3448,7 +3448,7 @@
         "type": "object"
       },
       "inventory__SyncRunSummary": {
-        "description": "Summarize one recorded synchronization run for the sync-status endpoint.\n\n:param syncer: The fully qualified name of the synchronizer that ran.\n:type syncer: str\n:param started_at: When the run was recorded.\n:type started_at: UTCDatetime\n:param finished_at: When the run last changed, or `None` while it is open.\n:type finished_at: UTCDatetime | None\n:param status: The run-level outcome.\n:type status: SyncStatusEnum\n:param snapshot_complete: Whether the run observed a complete generation of the\n    remote inventory, or `None` when the syncer does not produce one.\n:type snapshot_complete: bool | None",
+        "description": "Summarize one recorded synchronization run for the sync-status endpoint.\n\n:param syncer: The fully qualified name of the synchronizer that ran.\n:param started_at: When the run was recorded.\n:param finished_at: When the run last changed, or ``None`` while it is open.\n:param status: The run-level outcome.\n:param snapshot_complete: Whether the run observed a complete generation of the\n    remote inventory, or ``None`` when the syncer does not produce one.",
         "properties": {
           "finished_at": {
             "anyOf": [
@@ -3746,7 +3746,7 @@
     },
     "/api/apps/inventory/sync/status/": {
       "get": {
-        "description": "Return whether an inventory-wide sync is running, plus recent run outcomes.\n\nReplaces the server-rendered ``sync_is_running`` template variable\nused by the Jinja2 inventory page so the React control can poll the\nsame state without scraping HTML.\n\n:param session: SQLModel async session.\n:type session: SessionDep\n:return: The running flag and the most recent runs, newest first.\n:rtype: InventorySyncStatusResponse",
+        "description": "Return whether an inventory-wide sync is running, plus recent run outcomes.\n\nReplaces the server-rendered ``sync_is_running`` template variable\nused by the Jinja2 inventory page so the React control can poll the\nsame state without scraping HTML.\n\n:param session: SQLModel async session.\n:return: The running flag and the most recent runs, newest first.",
         "operationId": "inventory_inventory_sync_status_api_apps_inventory_sync_status__get",
         "responses": {
           "200": {

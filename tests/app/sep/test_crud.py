@@ -531,7 +531,7 @@ class TestSyncInstanceManagerStaleReclaim:
 
     @pytest.mark.asyncio
     async def test_create_refuses_live_concurrent_run(self, session) -> None:
-        """A run whose items are newer than ``stale_after`` still refuses."""
+        """Refuse a run whose items are newer than ``stale_after``."""
         await _seed_run(session, age=timedelta(minutes=1))
 
         with pytest.raises(SyncInstanceAlreadyInProgressError):
@@ -543,7 +543,7 @@ class TestSyncInstanceManagerStaleReclaim:
 
     @pytest.mark.asyncio
     async def test_create_does_not_reclaim_paused_live_run(self, session) -> None:
-        """A run blocked mid-fetch, its items untouched but recent, still refuses."""
+        """Refuse a run blocked mid-fetch whose items are untouched but recent."""
         await _seed_run(
             session, item_status=SyncStatusEnum.PENDING, age=timedelta(minutes=30)
         )
@@ -557,7 +557,7 @@ class TestSyncInstanceManagerStaleReclaim:
 
     @pytest.mark.asyncio
     async def test_create_reclaims_stale_run_and_proceeds(self, session) -> None:
-        """A run whose newest item activity predates ``stale_after`` is reclaimed."""
+        """Mark a run failed when its newest activity predates ``stale_after``."""
         stale = await _seed_run(session, age=timedelta(hours=3))
 
         created = await SyncInstanceManager.create(
@@ -574,7 +574,7 @@ class TestSyncInstanceManagerStaleReclaim:
 
     @pytest.mark.asyncio
     async def test_reclaim_leaves_snapshot_complete_null(self, session) -> None:
-        """A reclaimed partial apply never counts as a complete generation."""
+        """Leave ``snapshot_complete`` unset so a reclaimed apply is incomplete."""
         stale = await _seed_run(session, age=timedelta(hours=3))
 
         await SyncInstanceManager.reclaim_stale_runs(
@@ -586,7 +586,7 @@ class TestSyncInstanceManagerStaleReclaim:
 
     @pytest.mark.asyncio
     async def test_create_without_stale_after_never_reclaims(self, session) -> None:
-        """Omitting ``stale_after`` preserves the pre-existing refusal behaviour."""
+        """Preserve the existing refusal behaviour when ``stale_after`` is unset."""
         await _seed_run(session, age=timedelta(days=7))
 
         with pytest.raises(SyncInstanceAlreadyInProgressError):
@@ -596,7 +596,7 @@ class TestSyncInstanceManagerStaleReclaim:
 
     @pytest.mark.asyncio
     async def test_reclaim_is_idempotent_under_repeat(self, session) -> None:
-        """A second reclaimer's conditional update matches no rows."""
+        """Match no rows on a second reclaimer's conditional update."""
         stale = await _seed_run(session, age=timedelta(hours=3))
 
         first_pass = await SyncInstanceManager.reclaim_stale_runs(
@@ -611,7 +611,7 @@ class TestSyncInstanceManagerStaleReclaim:
 
     @pytest.mark.asyncio
     async def test_reclaim_ignores_other_syncers(self, session) -> None:
-        """A stale run belonging to another syncer is left untouched."""
+        """Leave a stale run belonging to another syncer untouched."""
         other = await _seed_run(session, syncer="other-syncer", age=timedelta(hours=3))
 
         reclaimed = await SyncInstanceManager.reclaim_stale_runs(
@@ -633,7 +633,7 @@ class TestSyncInstanceManagerFinalizeRun:
 
     @pytest.mark.asyncio
     async def test_finalize_run_success(self, session) -> None:
-        """An all-success run rolls up to ``SUCCESS`` and records completeness."""
+        """Roll an all-success run up to ``SUCCESS`` and record completeness."""
         instance = await _seed_run(session, item_status=SyncStatusEnum.SUCCESS)
 
         await SyncInstanceManager.finalize_run(
@@ -646,7 +646,7 @@ class TestSyncInstanceManagerFinalizeRun:
 
     @pytest.mark.asyncio
     async def test_finalize_run_failed_item(self, session) -> None:
-        """Any failed item drags the run-level rollup to ``FAILED``."""
+        """Roll the run up to ``FAILED`` when any item failed."""
         instance = await _seed_run(session, item_status=SyncStatusEnum.FAILED)
 
         await SyncInstanceManager.finalize_run(
@@ -670,7 +670,7 @@ class TestSyncInstanceManagerFinalizeRun:
 
     @pytest.mark.asyncio
     async def test_finalize_run_leaves_reclaimed_instance_alone(self, session) -> None:
-        """A falsely-reclaimed worker cannot overwrite the ``FAILED`` verdict."""
+        """Keep the ``FAILED`` verdict a falsely-reclaimed worker would overwrite."""
         instance = await _seed_run(
             session,
             item_status=SyncStatusEnum.SUCCESS,
@@ -687,7 +687,7 @@ class TestSyncInstanceManagerFinalizeRun:
 
     @pytest.mark.asyncio
     async def test_is_still_owned_tracks_the_persisted_status(self, session) -> None:
-        """The fence reads the row, not the caller's in-memory copy."""
+        """Read the persisted row, not the caller's in-memory copy."""
         instance = await _seed_run(session, age=timedelta(hours=3))
 
         assert await SyncInstanceManager.is_still_owned(session, instance.id) is True
@@ -709,7 +709,7 @@ class TestSyncEntityAbsenceManager:
 
     @pytest.mark.asyncio
     async def test_record_missing_increments_and_clear_deletes(self, session) -> None:
-        """Consecutive absences accumulate; a reappearance drops the row."""
+        """Accumulate consecutive absences and drop the row on reappearance."""
         first = await SyncEntityAbsenceManager.record_missing(
             session, "pmm", SyncInventoryEntityTypeEnum.NODE, 7
         )
@@ -727,7 +727,7 @@ class TestSyncEntityAbsenceManager:
 
     @pytest.mark.asyncio
     async def test_clear_without_ids_is_a_noop(self, session) -> None:
-        """Clearing an empty id tuple must not delete the whole ledger."""
+        """Delete nothing when the id tuple is empty."""
         await SyncEntityAbsenceManager.record_missing(
             session, "pmm", SyncInventoryEntityTypeEnum.NODE, 7
         )

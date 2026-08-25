@@ -925,14 +925,14 @@ def lifecycle_syncer_cls() -> type[BaseSyncer]:
     """Return a minimal concrete syncer usable as an async context manager."""
 
     class LifecycleSyncer(BaseSyncer):
-        SYNC_TO_LIMIT: ClassVar = SyncInventoryEntityTypeEnum.SERVICE
+        SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.SERVICE
 
     return LifecycleSyncer
 
 
 @pytest.fixture
 def lifecycle_mocks(mocker) -> dict[str, AsyncMock]:
-    """Patch the SyncInstance lifecycle collaborators around a mocked session."""
+    """Replace the SyncInstance lifecycle collaborators around a mock session."""
     mock_session = AsyncMock()
     mock_session.__aenter__.return_value = mock_session
     mock_session.__aexit__.return_value = None
@@ -974,7 +974,7 @@ async def test_aenter_passes_stale_run_after(
 async def test_aenter_marks_the_run_running(
     mock_remote_api, lifecycle_syncer_cls, lifecycle_mocks
 ):
-    """A live run is visible as ``RUNNING`` so the fencing read can trip."""
+    """Mark a live run ``RUNNING`` so the fencing read can trip."""
     syncer = lifecycle_syncer_cls(inventory_api=mock_remote_api)
 
     async with syncer:
@@ -989,7 +989,7 @@ async def test_aenter_marks_the_run_running(
 async def test_aexit_finalizes_run_after_sweeping_hanging_items(
     mock_remote_api, lifecycle_syncer_cls, lifecycle_mocks, mocker
 ):
-    """The rollup must read item statuses the hanging-item sweep already wrote."""
+    """Read item statuses the hanging-item sweep already wrote."""
     order = mocker.Mock()
     lifecycle_mocks["finish_hanging_items"].side_effect = lambda *_args, **_kwargs: (
         order("sweep")
@@ -1013,7 +1013,7 @@ async def test_aexit_finalizes_run_after_sweeping_hanging_items(
 async def test_aexit_reports_failure_when_an_exception_propagates(
     mock_remote_api, lifecycle_syncer_cls, lifecycle_mocks
 ):
-    """An exception leaving the run rolls the run-level status up to failed."""
+    """Roll the run-level status up to failed when an exception escapes."""
     syncer = lifecycle_syncer_cls(inventory_api=mock_remote_api)
 
     with pytest.raises(RuntimeError):
@@ -1027,7 +1027,7 @@ async def test_aexit_reports_failure_when_an_exception_propagates(
 async def test_aexit_persists_the_generation_completeness_verdict(
     mock_remote_api, lifecycle_syncer_cls, lifecycle_mocks
 ):
-    """Whatever the fetch concluded about completeness reaches the run row."""
+    """Persist whatever the fetch concluded about completeness."""
     syncer = lifecycle_syncer_cls(inventory_api=mock_remote_api)
 
     async with syncer:
@@ -1042,7 +1042,7 @@ async def test_aexit_persists_the_generation_completeness_verdict(
 def test_syncer_rejects_non_positive_stale_run_after(
     mock_remote_api, lifecycle_syncer_cls, stale_run_after
 ):
-    """A non-positive threshold makes every in-progress run instantly reclaimable."""
+    """Reject a non-positive threshold that makes every run reclaimable."""
     with pytest.raises(PydanticValidationError):
         lifecycle_syncer_cls(
             inventory_api=mock_remote_api, stale_run_after=stale_run_after
@@ -1053,7 +1053,7 @@ def test_syncer_rejects_non_positive_stale_run_after(
 async def test_hold_entity_closes_the_sync_item(
     session: AsyncSession, created_node, mock_remote_api
 ):
-    """A held entity's SyncItem reaches SUCCESS instead of hanging at PENDING."""
+    """Close a held entity's SyncItem to SUCCESS instead of leaving PENDING."""
     sync_instance = await _create_sync_instance(session, StubTestSyncer)
     syncer = _build_syncer(
         StubTestSyncer,

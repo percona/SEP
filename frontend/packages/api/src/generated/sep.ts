@@ -1731,9 +1731,7 @@ export interface paths {
      *     same state without scraping HTML.
      *
      *     :param session: SQLModel async session.
-     *     :type session: SessionDep
      *     :return: The running flag and the most recent runs, newest first.
-     *     :rtype: InventorySyncStatusResponse
      */
     get: operations['inventory_inventory_sync_status_api_apps_inventory_sync_status__get'];
     put?: never;
@@ -8743,9 +8741,7 @@ export interface components {
      *
      *     :param is_running: ``True`` when an inventory-wide sync is currently
      *         in progress; ``False`` otherwise.
-     *     :type is_running: bool
      *     :param last_runs: The most recently recorded synchronization runs, newest first.
-     *     :type last_runs: list[SyncRunSummary]
      */
     inventory__InventorySyncStatusResponse: {
       /** Is Running */
@@ -8777,9 +8773,7 @@ export interface components {
      * @description Represent a single plugin task entry returned by ``GET /api/apps/inventory/``.
      *
      *     :param name: Machine-readable task identifier (e.g. ``"inventory-sync"``).
-     *     :type name: str
      *     :param display_name: Human-readable label for the schedule UI.
-     *     :type display_name: str
      */
     inventory__PluginTaskResponse: {
       /** Display Name */
@@ -8792,16 +8786,11 @@ export interface components {
      * @description Summarize one recorded synchronization run for the sync-status endpoint.
      *
      *     :param syncer: The fully qualified name of the synchronizer that ran.
-     *     :type syncer: str
      *     :param started_at: When the run was recorded.
-     *     :type started_at: UTCDatetime
-     *     :param finished_at: When the run last changed, or `None` while it is open.
-     *     :type finished_at: UTCDatetime | None
+     *     :param finished_at: When the run last changed, or ``None`` while it is open.
      *     :param status: The run-level outcome.
-     *     :type status: SyncStatusEnum
      *     :param snapshot_complete: Whether the run observed a complete generation of the
-     *         remote inventory, or `None` when the syncer does not produce one.
-     *     :type snapshot_complete: bool | None
+     *         remote inventory, or ``None`` when the syncer does not produce one.
      */
     inventory__SyncRunSummary: {
       /** Finished At */
