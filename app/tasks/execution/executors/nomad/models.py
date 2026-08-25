@@ -2040,7 +2040,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
     async def _push_logs_to_queue(
         self,
-        # TODO(yan): Use Pydantic model for alloc  # noqa: TD003
         alloc: dict[str, Any],
         step: str,
         log_type: TaskLogType,
