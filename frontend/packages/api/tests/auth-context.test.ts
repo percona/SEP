@@ -16,7 +16,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { UNAUTHENTICATED_SESSION, deriveCanMutate, type AuthSession } from '../src/auth-context';
+import {
+  ADMIN_SESSION,
+  UNAUTHENTICATED_SESSION,
+  deriveCanMutate,
+  type AuthSession,
+} from '../src/auth-context';
 
 function session(overrides: Partial<AuthSession> = {}): AuthSession {
   return { ...UNAUTHENTICATED_SESSION, ...overrides };
@@ -61,5 +66,28 @@ describe('UNAUTHENTICATED_SESSION', () => {
   it('resolves its no-op login and logout without throwing', async () => {
     await expect(UNAUTHENTICATED_SESSION.login('u', 'p')).resolves.toBeUndefined();
     await expect(UNAUTHENTICATED_SESSION.logout()).resolves.toBeUndefined();
+  });
+});
+
+describe('ADMIN_SESSION', () => {
+  it('is a session that may mutate, so an "admin still sees it" render is a real admin', () => {
+    expect(ADMIN_SESSION.isAdmin).toBe(true);
+    expect(ADMIN_SESSION.isAuthenticated).toBe(true);
+    expect(ADMIN_SESSION.ready).toBe(true);
+    expect(deriveCanMutate(ADMIN_SESSION)).toBe(true);
+  });
+
+  it('is frozen, so one test cannot mutate the fixture the next one reads', () => {
+    expect(Object.isFrozen(ADMIN_SESSION)).toBe(true);
+    expect(() => {
+      (ADMIN_SESSION as { isAdmin: boolean }).isAdmin = false;
+    }).toThrow();
+    expect(ADMIN_SESSION.isAdmin).toBe(true);
+  });
+
+  it('leaves the shared fallback alone', () => {
+    // Built by spreading UNAUTHENTICATED_SESSION: a spread that mutated its
+    // source would hand every provider-less consumer an administrator.
+    expect(UNAUTHENTICATED_SESSION.isAdmin).toBe(false);
   });
 });

@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { apiClient, AuthContext, UNAUTHENTICATED_SESSION } from '@sep/api';
+import { ADMIN_SESSION, apiClient, AuthContext, UNAUTHENTICATED_SESSION } from '@sep/api';
 import { TOPOLOGY_TASK_IDS_STORAGE_KEY, TopologyView } from './TopologyView';
 import type { TopologyGraph } from './types';
 
@@ -61,14 +61,6 @@ const SAMPLE_GRAPH: TopologyGraph = {
     cluster_count: 0,
     edge_count: 1,
   },
-};
-
-/** Session state for a signed-in administrator (the only session that may mutate). */
-const ADMIN_SESSION = {
-  ...UNAUTHENTICATED_SESSION,
-  isAuthenticated: true,
-  isAdmin: true,
-  ready: true,
 };
 
 function renderTopology({ canMutate = true }: { canMutate?: boolean } = {}) {

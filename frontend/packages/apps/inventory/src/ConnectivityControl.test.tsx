@@ -20,20 +20,12 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SnackbarProvider } from 'notistack';
-import { apiClient, AuthContext, UNAUTHENTICATED_SESSION } from '@sep/api';
+import { ADMIN_SESSION, apiClient, AuthContext, UNAUTHENTICATED_SESSION } from '@sep/api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectivityControl } from './ConnectivityControl';
 
 const SERVICE_ID = 7;
 const CHECK_BUTTON = /check connectivity/i;
-
-/** Session state for a signed-in administrator (the only session that may mutate). */
-const ADMIN_SESSION = {
-  ...UNAUTHENTICATED_SESSION,
-  isAuthenticated: true,
-  isAdmin: true,
-  ready: true,
-};
 
 function makeWrapper({ canMutate = true }: { canMutate?: boolean } = {}) {
   const client = new QueryClient({

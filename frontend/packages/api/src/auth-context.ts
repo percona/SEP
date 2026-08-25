@@ -93,6 +93,28 @@ export const UNAUTHENTICATED_SESSION: AuthSession = Object.freeze({
   logout: async () => {},
 });
 
+/**
+ * Session state for a signed-in administrator: the mirror of
+ * {@link UNAUTHENTICATED_SESSION}, and the fixture every "an admin still sees
+ * this control" render needs.
+ *
+ * A test fixture living in shipped code, deliberately. It belongs beside the
+ * constant it mirrors, and the alternative — a ``@sep/test-utils`` export —
+ * would drag ``@sep/api`` into every package's vitest setup file, where the
+ * eagerly-loaded real module defeats ``vi.mock('@sep/api')`` in suites that
+ * have nothing to do with auth.
+ *
+ * Do not hand this to ``AuthContext`` in application code: the shell's
+ * ``AuthProvider`` owns the real session, and a hardcoded admin one only
+ * unlocks controls the API still refuses.
+ */
+export const ADMIN_SESSION: AuthSession = Object.freeze({
+  ...UNAUTHENTICATED_SESSION,
+  isAuthenticated: true,
+  isAdmin: true,
+  ready: true,
+});
+
 export const AuthContext = createContext<AuthSession | null>(null);
 
 let warnedMissingProvider = false;

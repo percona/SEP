@@ -182,13 +182,11 @@ export function DipperApp() {
 
       {/* The form is the execute control, so a read-only session never gets it. */}
       {!canMutate ? (
-        <Alert severity="info" sx={{ maxWidth: 640 }}>
-          <ReadOnlyNotice
-            variant="inline"
-            action="run diagnostic collection"
-            testId="dipper-execute-read-only"
-          />
-        </Alert>
+        <ReadOnlyNotice
+          variant="inline"
+          action="run diagnostic collection"
+          testId="dipper-execute-read-only"
+        />
       ) : serviceId === null ? (
         <Alert severity="info" sx={{ maxWidth: 640 }}>
           Select a database service to load the execution form.

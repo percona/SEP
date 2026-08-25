@@ -20,7 +20,7 @@ import { ThemeContextProvider, sepThemeOptions } from '@percona/percona-ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Preview } from '@storybook/react-vite';
 import { MemoryRouter } from 'react-router';
-import { apiClient, AuthContext, UNAUTHENTICATED_SESSION } from '@sep/api';
+import { ADMIN_SESSION, apiClient, AuthContext } from '@sep/api';
 import {
   installStorybookSseMocks,
   registerFetchResponse,
@@ -38,16 +38,6 @@ apiClient.defaults.adapter = 'fetch';
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
 });
-
-// Stories exist to show components at full capability, so they render as an
-// administrator: without a provider ``useAuth`` resolves to a signed-out,
-// non-admin session and every write control is hidden.
-const STORYBOOK_SESSION = {
-  ...UNAUTHENTICATED_SESSION,
-  isAuthenticated: true,
-  isAdmin: true,
-  ready: true,
-};
 
 export type SseScriptMap = Record<string, (es: StoryEventSource) => void>;
 export type FetchResponseMap = Record<string, unknown>;
@@ -77,8 +67,11 @@ const preview: Preview = {
         registerFetchResponse(prefix, body);
       }
 
+      // Stories exist to show components at full capability, so they render as
+      // an administrator: with no provider ``useAuth`` resolves to a signed-out,
+      // non-admin session and every write control is hidden.
       return (
-        <AuthContext value={STORYBOOK_SESSION}>
+        <AuthContext value={ADMIN_SESSION}>
           <QueryClientProvider client={queryClient}>
             <ThemeContextProvider themeOptions={sepThemeOptions}>
               <CssBaseline />

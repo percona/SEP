@@ -307,6 +307,26 @@ describe('IncidentListPage — write access', () => {
     expect(screen.getByRole('button', { name: /Delete DB slowness/i })).toBeInTheDocument();
   });
 
+  it('keeps the create instruction in the empty state for a session that may mutate', async () => {
+    mockedApi.get.mockResolvedValue(paginated([]));
+
+    renderPage(<IncidentListPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/No incidents yet\. Create one to get started\./)).toBeTruthy(),
+    );
+  });
+
+  it('drops the create instruction from the empty state for a non-admin', async () => {
+    mockCanMutate = false;
+    mockedApi.get.mockResolvedValue(paginated([]));
+
+    renderPage(<IncidentListPage />);
+
+    await waitFor(() => expect(screen.getByText('No incidents yet.')).toBeTruthy());
+    expect(screen.queryByText(/Create one to get started/i)).not.toBeInTheDocument();
+  });
+
   it('renders no create, close, rename or delete for a non-admin', async () => {
     mockCanMutate = false;
     mockedApi.get.mockResolvedValue(paginated([incident]));

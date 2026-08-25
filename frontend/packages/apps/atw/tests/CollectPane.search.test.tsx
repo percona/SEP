@@ -316,12 +316,22 @@ describe('CollectPane — write access', () => {
     await userEvent.click(option);
   }
 
+  /** Every merged-execution-schema request issued so far. */
+  function schemaCalls(): string[] {
+    return mockedApi.get.mock.calls
+      .map(([url]: [string]) => url)
+      .filter((url) => url.includes('/execution-schema/'));
+  }
+
   it('renders the batch execute form for a session that may mutate', async () => {
     await selectOneSnippet();
 
     expect(
       await screen.findByRole('button', { name: /Execute batch/i }, { timeout: 3000 }),
     ).toBeInTheDocument();
+    expect(screen.queryByTestId('atw-collect-read-only')).not.toBeInTheDocument();
+    // Pins the read-only counterpart below as non-vacuous: this path does fetch.
+    expect(schemaCalls().length).toBeGreaterThan(0);
   });
 
   it('renders no batch execute form for a non-admin', async () => {
@@ -332,5 +342,25 @@ describe('CollectPane — write access', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: /Execute batch/i })).not.toBeInTheDocument();
     });
+    expect(screen.getByRole('combobox', { name: 'Snippets' })).toBeEnabled();
+  });
+
+  it('tells a non-admin why the form is gone instead of leaving a dead end', async () => {
+    mockCanMutate = false;
+    await selectOneSnippet();
+
+    expect(await screen.findByTestId('atw-collect-read-only')).toHaveTextContent(
+      /don.t have permission to run snippets against this incident/i,
+    );
+  });
+
+  it('skips the merged-schema fetch for a non-admin, whose only consumer is the withheld form', async () => {
+    mockCanMutate = false;
+    await selectOneSnippet();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('atw-collect-read-only')).toBeInTheDocument();
+    });
+    expect(schemaCalls()).toHaveLength(0);
   });
 });

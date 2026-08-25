@@ -39,7 +39,13 @@ export type { ApiErrorDetails, ApiErrorKind, FieldValidationError } from './erro
 
 // Auth context (provider lives in @sep/shell; the context lives here so the
 // framework and app packages can read it without depending on the shell)
-export { AuthContext, UNAUTHENTICATED_SESSION, deriveCanMutate, useAuth } from './auth-context';
+export {
+  ADMIN_SESSION,
+  AuthContext,
+  UNAUTHENTICATED_SESSION,
+  deriveCanMutate,
+  useAuth,
+} from './auth-context';
 export type { AuthSession, AuthState } from './auth-context';
 
 // Auth

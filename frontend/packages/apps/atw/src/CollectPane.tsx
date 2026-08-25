@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Autocomplete, Box, CircularProgress, TextField, Typography } from '@mui/material';
 import {
+  ReadOnlyNotice,
   SchemaFormRenderer,
   SNIPPET_FORM_RESERVED_FIELD_NAMES,
   useDebouncedValue,
@@ -278,7 +279,7 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
   }, [isClosed]);
 
   const selectedNames = useMemo(() => selected.map((snippet) => snippet.name), [selected]);
-  const schemaQuery = useAtwMergedSchema(isClosed ? [] : selectedNames);
+  const schemaQuery = useAtwMergedSchema(isClosed || !canMutate ? [] : selectedNames);
   const batchMutation = useAtwBatchExecute(incidentId);
   const searchQuery = useAtwSnippetSearch(debouncedSearch);
 
@@ -475,7 +476,7 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
         )}
       />
 
-      {selected.length === 0 && (
+      {selected.length === 0 && canMutate && (
         <Alert severity="info" sx={{ mt: 3 }}>
           Search for a snippet by name or description, or browse a category, then select one or more
           snippets to build the execution form.
@@ -499,6 +500,22 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
           These snippets use conditional (required/forbidden) fields, which batch collection does
           not evaluate — review their inputs before executing: {gatedSnippetTitles.join(', ')}.
         </Alert>
+      )}
+
+      {/*
+        The form is the execute control, so a read-only session never gets it.
+        Said here, where the form would be, rather than at the top of the pane:
+        the picker and category browser above stay live because browsing
+        snippets is a read, and this is the only thing that goes away.
+      */}
+      {!isClosed && !canMutate && (
+        <Box sx={{ mt: 3 }}>
+          <ReadOnlyNotice
+            variant="inline"
+            action="run snippets against this incident"
+            testId="atw-collect-read-only"
+          />
+        </Box>
       )}
 
       {selected.length > 0 && schemaQuery.data && !isClosed && canMutate && (
