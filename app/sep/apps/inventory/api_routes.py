@@ -72,6 +72,10 @@ from app.sep.apps.inventory.deps import (
     SYSTEM_OBSERVATION_SEGMENT,
     unwrap_inventory_plugin_list_payload,
 )
+from app.sep.apps.inventory.list_query import (
+    InventoryListQueryDep,
+    list_query_upstream_params,
+)
 from app.sep.apps.inventory.models import (
     INVENTORY_SYNC_TASK_NAME,
     PluginTaskResponse,
@@ -195,6 +199,7 @@ async def inventory_list_entity(
     entity: str,
     inventory_api: InventoryAPI,
     pagination: PaginationDep,
+    list_query: InventoryListQueryDep,
 ) -> PaginatedResponse[Any]:
     """List inventory nodes, services, schemas, or tables.
 
@@ -202,12 +207,18 @@ async def inventory_list_entity(
     :param entity: Inventory entity type (nodes, services, schemas, tables).
     :param inventory_api: Async client for the Inventory sub-app.
     :param pagination: Validated offset/limit forwarded to the upstream call.
+    :param list_query: Allowlist-vetted sort/search for this entity.
     :return: A paginated envelope echoing the requested window.
     """
     entity = require_inventory_plugin_entity(entity)
     params = inventory_plugin_query_params(request)
     params["offset"] = pagination.offset
     params["limit"] = pagination.limit
+    # Drop raw sort/search before merging the validated adapter output so a
+    # blank or omitted search cannot leak through from the query string.
+    params.pop("sort", None)
+    params.pop("search", None)
+    params.update(list_query_upstream_params(list_query))
     data = await inventory_api.get(inventory_service_list_path(entity), params=params)
     items = unwrap_inventory_plugin_list_payload(data)
     envelope = data if isinstance(data, dict) else {}
@@ -236,8 +247,9 @@ async def inventory_node_system_observation(
     Forwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``
     endpoint via ``InventoryAPI``. This three-segment literal path cannot
     collide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An
-    upstream HTTP 404 — the "not collected yet" signal — propagates unchanged
-    for the React panel to render as an empty state.
+    upstream HTTP 404 propagates unchanged, along with the ``detail`` that tells
+    a node whose observation has not been collected yet — which the React panel
+    renders as an empty state — apart from a node that does not exist.
 
     :param node_id: Primary key of the node.
     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
@@ -255,8 +267,10 @@ async def inventory_service_system_observation(
 
     Forwards to the inventory sub-app's
     ``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.
-    An upstream HTTP 404 propagates unchanged so the React panel renders its
-    "not collected yet" empty state.
+    An upstream HTTP 404 propagates unchanged, along with the ``detail`` that
+    tells a service whose observation has not been collected yet — which the
+    React panel renders as an empty state — apart from a service that does not
+    exist.
 
     :param service_id: Primary key of the service.
     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.

@@ -72,7 +72,7 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
 
 @pytest.fixture(name="client")
 def client_fixture(override_session: AsyncSession) -> Iterator[TestClient]:
-    """Yield a client whose router wires every locally-owned settings class."""
+    """Return a client whose router wires every locally-owned settings class."""
 
     async def get_session() -> AsyncSession:
         return override_session

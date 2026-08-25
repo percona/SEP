@@ -18,27 +18,63 @@
 Each app package exports ``FORM_BACKFILL_ENTRIES`` naming the tasks it wants
 backfilled; the collector walks the ``SEP.APPS`` activation list and merges those
 declarations, so the backfill orchestrator names no app.
+
+The reconstructor callable an app must supply, and the shared context that
+callable receives, live here so an app package can read the whole contract
+from one module.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import import_module
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from app.sep.apps.framework.registry import build_app_registry
 from app.sep.config import sep_settings
 
 if TYPE_CHECKING:
+    import logging
     from collections.abc import Iterable
 
-    from app.sep.apps.framework.form_backfill import FormReconstructor
+    from app.sep.apps.framework.form_backfill_inventory import (
+        SchemaIdLookup,
+        ServiceIdLookup,
+    )
     from app.sep.apps.framework.form_dsl import AppFormModel
     from app.sep.config import App
+    from app.tasks.models import Task
 
-__all__ = ["DECLARATION_ATTR", "FormBackfillEntry", "collect_form_backfill_entries"]
+__all__ = [
+    "DECLARATION_ATTR",
+    "FormBackfillContext",
+    "FormBackfillEntry",
+    "FormReconstructor",
+    "collect_form_backfill_entries",
+]
 
 DECLARATION_ATTR = "FORM_BACKFILL_ENTRIES"
+
+
+@dataclass
+class FormBackfillContext:
+    """Carry shared state for per-app form reconstructors.
+
+    :param log: Logger used for per-task skip and error messages.
+    :param dry_run: When ``True``, the orchestrator logs actions but does not persist.
+    :param service_lookup: Inventory service-id resolver built once per backfill run.
+    :param schema_lookup: Inventory schema-id resolver built once per backfill run.
+    """
+
+    log: logging.Logger
+    dry_run: bool = False
+    service_lookup: ServiceIdLookup | None = None
+    schema_lookup: SchemaIdLookup | None = None
+
+
+FormReconstructor = Callable[["Task", FormBackfillContext], dict[str, Any] | None]
+"""Reconstruct a legacy task's create-form body, or return ``None`` when impossible."""
 
 
 @dataclass(frozen=True, slots=True)

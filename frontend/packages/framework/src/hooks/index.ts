@@ -86,4 +86,6 @@ export type { UseSnippetAppExecutionOptions } from './useSnippetAppExecution';
 export { useTaskStats } from './useTaskStats';
 export type { TaskStatsView } from './useTaskStats';
 
+export { useDebouncedValue, SEARCH_DEBOUNCE_MS } from './useDebouncedValue';
+
 export { sepRetry } from './sepRetry';

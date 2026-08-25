@@ -22,17 +22,23 @@ import socket
 import subprocess
 import sys
 import time
+# GEN:UPLOAD-BEGIN gsutil
 import tempfile
+# GEN:UPLOAD-END gsutil
 from contextlib import suppress
 from filelock import FileLock, Timeout
 from pathlib import Path
 from typing import Any
 
+# GEN:UPLOAD-BEGIN s3
 import boto3
+# GEN:UPLOAD-END s3
 import pymysql
 import pymysql.cursors
 import yaml
+# GEN:UPLOAD-BEGIN s3
 from botocore.exceptions import ClientError
+# GEN:UPLOAD-END s3
 from pymysql import InternalError, OperationalError, ProgrammingError
 
 BYTES_PER_MB = 1024**2
@@ -163,8 +169,12 @@ GZIP_BIN = os.getenv("PERCONA_BACKUP_GZIP_BIN", "/usr/bin/gzip")
 INNOCHECKSUM_BIN = "innochecksum"
 LZ4_BIN = os.getenv("PERCONA_BACKUP_LZ4_BIN", "/usr/bin/lz4")
 QPRESS_BIN = os.getenv("PERCONA_BACKUP_QPRESS_BIN", "/usr/bin/qpress")
+# GEN:UPLOAD-BEGIN rsync
 RSYNC_BIN = "/usr/bin/rsync"
+# GEN:UPLOAD-END rsync
+# GEN:UPLOAD-BEGIN gsutil
 GCLOUD_BIN = os.getenv("PERCONA_BACKUP_GCLOUD_BIN", "/usr/bin/gcloud")
+# GEN:UPLOAD-END gsutil
 XBCRYPT_BIN = os.getenv("PERCONA_BACKUP_XBCRYPT_BIN", "/usr/bin/xbcrypt")
 XTRABACKUP_BIN = os.getenv("PERCONA_BACKUP_XTRABACKUP_BIN", "/usr/bin/innobackupex")
 XTRABACKUP_BIN_REAL = os.getenv(
@@ -1688,6 +1698,7 @@ class XtraBackupUpload(Upload):
 
 
 
+# GEN:UPLOAD-BEGIN rsync
 class RsyncUploadProvider:
     """Rsync folder to another location."""
 
@@ -1751,8 +1762,10 @@ class RsyncUploadProvider:
             raise BackupError(msg)
 
         return dest_path
+# GEN:UPLOAD-END rsync
 
 
+# GEN:UPLOAD-BEGIN s3
 class S3UploadProvider:
     """Upload to Amazon S3 bucket using boto3."""
 
@@ -1894,7 +1907,9 @@ class S3UploadProvider:
                 self.logger.warning("S3 latest file upload failed: %s", e)
 
         return f"s3://{self.bucket_name}/{full_prefix}"
+# GEN:UPLOAD-END s3
 
+# GEN:UPLOAD-BEGIN gsutil
 class GSUploadProvider:
     """Google Cloud Storage upload using gcloud storage."""
 
@@ -1978,6 +1993,7 @@ class GSUploadProvider:
                     Path(latest_file_local_path).unlink()
 
         return dest_path
+# GEN:UPLOAD-END gsutil
 
 class XtraBackupRunner(multiprocessing.Process):
 
@@ -2103,7 +2119,6 @@ class Xtrabackup(Backup):
 
         # Upload options to keep backward-compatibility
         self.server_setting = server_data
-        self.rsync_dir = server_data.get('XTRABACKUP_RSYNC_DIR')
 
         # report options
         self.report_options['options'] = {
@@ -2239,17 +2254,28 @@ class Xtrabackup(Backup):
 
         # Upload if needed
         upload_providers = {
+            # GEN:UPLOAD-BEGIN rsync
             "rsync": RsyncUploadProvider,
+            # GEN:UPLOAD-END rsync
+            # GEN:UPLOAD-BEGIN s3
             "s3": S3UploadProvider,
+            # GEN:UPLOAD-END s3
+            # GEN:UPLOAD-BEGIN gsutil
+            "gs": GSUploadProvider,
             "gsutil": GSUploadProvider,
+            # GEN:UPLOAD-END gsutil
         }
         upload_destination = None
         for upload_type in sorted(self.upload_type):
             self.enable_upload(self.last_backup_dir)
-            provider = upload_providers.get(upload_type)
+            # Configs written before the provider names were lowercased record
+            # them capitalised, and those stored tasks still dispatch here.
+            provider = upload_providers.get(upload_type.casefold())
+            # A selected provider absent from the map means this variant was not built
+            # to carry it. Warning and skipping would report the backup OK with no
+            # offsite copy, so fail loudly instead.
             if provider is None:
-                self.logger.warning("Unsupported upload type: %r", upload_type)
-                continue
+                raise BackupError('Unsupported upload type: %r' % (upload_type,))
             uploader = XtraBackupUpload(
                 upload_type=upload_type,
                 upload_provider=provider,

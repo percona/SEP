@@ -31,6 +31,7 @@ from app.core.utils.path import payload_uri
 from app.core.utils.pydantic import extract_model_from_instance
 from app.sep.apps.framework.spec import build_run_python_task
 from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.payload_variants import CANONICAL_PAYLOAD_NAME
 from app.sep.apps.mysql_backups.restore.models import (
     BaseRestoreConfigServer,
     OWNER,
@@ -43,7 +44,9 @@ from app.tasks.models import TaskWrite
 
 _BACKUP_TYPE_TO_PAYLOAD = {
     BackupType.MYDUMPER: "mydumper_payload",
-    BackupType.XTRABACKUP: "xtrabackup_payload",
+    # A restore may have to reach any provider, so it always dispatches the
+    # all-providers canonical payload rather than an upload-selection variant.
+    BackupType.XTRABACKUP: CANONICAL_PAYLOAD_NAME,
     BackupType.BINLOG: "binlog_payload",
 }
 _BASE_REQUIREMENTS = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"

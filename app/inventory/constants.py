@@ -17,3 +17,14 @@
 
 DEFAULT_MYSQL_PORT = 3306
 DEFAULT_POSTGRESQL_PORT = 5432
+
+#: Part of the API contract: callers tell an uncollected observation apart from a
+#: missing parent by this wording, so both routes and their tests share it.
+UNCOLLECTED_HOST_OBSERVATION_DETAIL = (
+    "System observation not collected yet for this node"
+)
+#: Service-level counterpart of :data:`UNCOLLECTED_HOST_OBSERVATION_DETAIL`, pinned
+#: by the same contract.
+UNCOLLECTED_SERVICE_OBSERVATION_DETAIL = (
+    "System observation not collected yet for this service"
+)
