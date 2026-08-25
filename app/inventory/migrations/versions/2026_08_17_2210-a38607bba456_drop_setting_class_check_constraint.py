@@ -24,8 +24,8 @@ plain string so an app can declare a settings class without a migration.
 The registry, not the database, is now the authority for which classes
 exist.
 
-Downgrade re-adds the CHECK with the member list in force before SEP-1825
-and deletes rows naming a class outside that list.
+Downgrade re-adds the CHECK with the pre-drop member list and deletes rows
+naming a class outside that list.
 """
 
 from app.core.settings_override.alembic_ops import (
