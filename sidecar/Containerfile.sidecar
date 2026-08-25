@@ -58,10 +58,12 @@ COPY --chown=0:1001 --chmod=550 ./sidecar/healthcheck.sh ./healthcheck.sh
 COPY --chown=0:1001 --chmod=550 ./sidecar/entrypoint.sh ./entrypoint.sh
 # Sourced by entrypoint.sh, never executed, hence 440 rather than 550
 COPY --chown=0:1001 --chmod=440 ./sidecar/settings-env.sh ./settings-env.sh
-# Run by entrypoint.sh through the interpreter, never executed directly, so 440
+# Run through the interpreter and never executed directly -- grafana_service_account.py
+# by entrypoint.sh, wait_for_api.py by supervisord's celery-beat command -- so 440
 # for the same reason. Copied explicitly because bundle.tgz carries app/ and
 # snippets/ only -- no sidecar/ helper reaches the runtime image on its own.
 COPY --chown=0:1001 --chmod=440 ./sidecar/grafana_service_account.py ./grafana_service_account.py
+COPY --chown=0:1001 --chmod=440 ./sidecar/wait_for_api.py ./wait_for_api.py
 
 ADD --chown=0:1001 --chmod=440 bundle.tgz $APP_HOME
 
