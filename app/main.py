@@ -209,8 +209,8 @@ def start_celery_beat() -> None:
     second in. Under ``--start-celery`` that lands inside the window before
     ``uvicorn.run`` has opened its listening socket, and a periodic task whose
     first act is to call SEP's own API fails on connect through no fault of its
-    own. Gating beat -- not the worker, which idles harmlessly -- closes that
-    window without a fixed sleep.
+    own. Gating beat, not the worker, which idles harmlessly, closes that window
+    without a fixed sleep.
 
     The gate is best-effort. If the probe never answers ``200`` beat is started
     anyway, because scheduling nothing at all until an operator notices is a worse
@@ -219,8 +219,8 @@ def start_celery_beat() -> None:
 
     Logging is configured here rather than inherited: a ``spawn`` start method
     re-imports this module without running its ``__main__`` block, so the parent's
-    ``dictConfig`` call does not reach this process and the gate's own log lines --
-    the only account of why beat has not started yet -- would be dropped.
+    ``dictConfig`` call does not reach this process and the gate's own log lines —
+    the only account of why beat has not started yet — would be dropped.
     """
     logging.config.dictConfig(settings.LOGGING_CONFIG)
     try:
@@ -228,6 +228,8 @@ def start_celery_beat() -> None:
             sep_settings.UVICORN_HOST,
             sep_settings.UVICORN_PORT,
             allowed_hosts=sep_settings.ALLOWED_HOSTS,
+            timeout=sep_settings.API_READINESS_TIMEOUT,
+            interval=sep_settings.API_READINESS_POLL_INTERVAL,
         )
     except KeyboardInterrupt:
         logging.info("Celery beat start cancelled before the HTTP API became ready.")

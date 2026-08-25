@@ -171,7 +171,7 @@ class _ConnectionFactory:
 
     def __init__(self, outcomes: list[int | BaseException]) -> None:
         self._outcomes = list(outcomes)
-        # Exhaustion repeats the last scripted outcome -- defaulting to a 200 would
+        # Exhaustion repeats the last scripted outcome; defaulting to a 200 would
         # silently open the gate in the tests that exercise the deadline.
         self._last = self._outcomes[-1] if self._outcomes else status.HTTP_200_OK
         self.journal: list[JournalEntry] = []
@@ -261,8 +261,8 @@ class TestResolveProbeHost:
 
         Containers bind ``0.0.0.0``, which is bind-only; dialling it is not
         portable, so the probe aims at loopback instead. The equivalent IPv6
-        spellings resolve the same way, and anything that is not an IP literal --
-        including a string that merely looks like one -- is dialled verbatim.
+        spellings resolve the same way, and anything that is not an IP literal —
+        including a string that merely looks like one — is dialled verbatim.
         """
         assert _resolve_probe_host(bind_host) == expected
 
@@ -301,24 +301,19 @@ class TestResolveProbeHostHeader:
 
         assert _resolve_probe_host_header("127.0.0.1", allowed) == "sep.example.com"
 
-    @pytest.mark.parametrize(
-        ("pattern", "expected"),
-        [
-            ("*.example.com", "readiness.example.com"),
-            ("*example.com", "readinessexample.com"),
-        ],
-        ids=["subdomain-wildcard", "suffix-wildcard"],
-    )
-    def test_wildcard_only_allow_list_synthesizes_a_matching_hostname(
-        self, pattern: str, expected: str
-    ) -> None:
+    def test_wildcard_only_allow_list_synthesizes_a_matching_hostname(self) -> None:
         """Build a hostname from the wildcard when there is none to borrow.
 
         A wildcard-only allow-list is a supported configuration, so sending the
         dialled host instead would earn a ``400`` for the whole deadline and start
-        beat ungated against a perfectly healthy API.
+        beat ungated against a perfectly healthy API. Only the ``*.`` spelling is
+        covered because ``TrustedHostMiddleware.__init__`` asserts it for every
+        ``*``-prefixed entry, so no other wildcard shape reaches a running
+        deployment.
         """
-        assert _resolve_probe_host_header("127.0.0.1", [pattern]) == expected
+        assert _resolve_probe_host_header("127.0.0.1", ["*.example.com"]) == (
+            "readiness.example.com"
+        )
 
     def test_blank_entries_are_ignored(self) -> None:
         """Skip empty allow-list entries rather than sending an empty ``Host``."""
@@ -583,6 +578,51 @@ class TestWaitForApiReady:
         assert wait_for_api_ready("127.0.0.1", 8000, interval=0.01) is True
         assert factory.attempts == len(outcomes)
 
+    def test_a_header_http_client_rejects_is_treated_as_not_ready(
+        self, mocker: MockerFixture, no_sleep: MagicMock
+    ) -> None:
+        """Absorb the bare ``ValueError`` a CR/LF-bearing ``Host`` value raises.
+
+        ``putheader`` refuses an embedded newline with a plain ``ValueError``,
+        which is neither an ``OSError`` nor an ``HTTPException``. Letting it out
+        would kill the beat child with a traceback instead of degrading to an
+        ungated start, and the value comes from ``ALLOWED_HOSTS``.
+        """
+        _patch_connection(mocker, [ValueError("Invalid header value")])
+
+        assert (
+            wait_for_api_ready(
+                "127.0.0.1",
+                8000,
+                allowed_hosts=["sep.example.com\r\nX-Evil: 1"],
+                timeout=0.0,
+            )
+            is False
+        )
+
+    def test_the_wait_is_announced_above_the_default_log_level(
+        self,
+        mocker: MockerFixture,
+        no_sleep: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Announce the wait at ``WARNING`` so a default install sees it.
+
+        ``LOGGING`` defaults to ``WARNING``, and this line is the only account of
+        why beat has not started yet; at ``INFO`` an operator would watch beat
+        idle for the whole deadline with no reason given.
+        """
+        _patch_connection(mocker, [status.HTTP_200_OK])
+
+        with caplog.at_level("WARNING", logger=PROBE_LOGGER):
+            assert wait_for_api_ready("127.0.0.1", 8000) is True
+
+        warnings = [
+            record for record in caplog.records if record.levelname == "WARNING"
+        ]
+        assert warnings, "the wait must be visible at the default log level"
+        assert "Waiting up to" in warnings[0].getMessage()
+
     def test_keyboard_interrupt_is_not_swallowed(
         self, mocker: MockerFixture, no_sleep: MagicMock
     ) -> None:
@@ -603,7 +643,7 @@ def silent_listener_port_fixture() -> Iterator[int]:
 
     This is the shape uvicorn's socket takes between ``listen`` and the ASGI app
     serving requests, and the shape any unrelated service squatting the port
-    takes. Nothing is ever accepted in userspace -- the kernel backlog completes
+    takes. Nothing is ever accepted in userspace: the kernel backlog completes
     the handshake, so the probe connects and then waits for a reply forever.
     """
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -726,7 +766,7 @@ class TestWaitForApiReadyAgainstARealSocket:
         """Report a 3xx as the outcome instead of chasing its ``Location``.
 
         The redirect points at a port nothing listens on, so a client that
-        followed it would log a connection error instead of the 302 -- which is
+        followed it would log a connection error instead of the 302, which is
         how this distinguishes reporting from following.
         """
         dead_port = 9
@@ -758,7 +798,7 @@ class TestWaitForApiReadyAgainstARealSocket:
         """Reach the local listener even with a proxy set in the environment.
 
         A container that exports a proxy for outbound traffic must not have its
-        own readiness probe routed through it -- the gate would never open, and
+        own readiness probe routed through it: the gate would never open, and
         the probe would announce the restart to whatever the proxy is.
         """
         monkeypatch.setenv(proxy_variable, "http://127.0.0.1:9")

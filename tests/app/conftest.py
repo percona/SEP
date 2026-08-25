@@ -99,8 +99,8 @@ class HealthProbeServer:
     """Drive a real HTTP listener on loopback answering the shared health path.
 
     The readiness gate in :mod:`app.core.health` polls over a real socket, so the
-    failures worth covering -- connection refused, a listener that accepts and
-    never answers, a host-header rejection -- only reproduce against a real
+    failures worth covering — connection refused, a listener that accepts and
+    never answers, a host-header rejection — only reproduce against a real
     listener. The port is reserved and released in ``__init__`` so a test can
     probe a closed port before calling :meth:`start`.
     """

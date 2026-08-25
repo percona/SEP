@@ -15,9 +15,10 @@
 
 """Define tests for the top-level app.main module."""
 
-import functools
 import logging.config
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from http.client import HTTPConnection
 from typing import Any
 from unittest.mock import MagicMock
@@ -28,7 +29,7 @@ from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 
 from app import main as main_module
-from app.core.health import HEALTH_PATH, wait_for_api_ready
+from app.core.health import HEALTH_PATH
 from app.main import app
 from tests.app.conftest import HealthProbeServer
 
@@ -158,7 +159,7 @@ class TestCeleryBeatReadinessGate:
     """Cover holding Celery beat back until the HTTP API answers ``/health``.
 
     Beat's schedule lives in the database, so a restart dispatches anything
-    already overdue about a second in -- before ``uvicorn.run`` has opened its
+    already overdue about a second in, before ``uvicorn.run`` has opened its
     listening socket. A periodic task that calls SEP's own API in that window
     fails on connect through no fault of its own.
     """
@@ -202,7 +203,12 @@ class TestCeleryBeatReadinessGate:
         assert beat_cls.call_args.kwargs["scheduler"] == "sqlalchemy"
 
     def test_gate_targets_the_configured_listener(self, mocker: MockerFixture) -> None:
-        """Probe the host, port and allow-list the API is actually started with."""
+        """Probe the host, port and allow-list the API is actually started with.
+
+        The readiness budget is read from settings too: a deployment whose startup
+        runs long has no other way to raise it, and exhausting it starts beat
+        ungated, which is the reported failure back again.
+        """
         wait = mocker.patch.object(main_module, "wait_for_api_ready", return_value=True)
         mocker.patch.object(main_module.celery_app, "Beat")
         mocker.patch.object(main_module.sep_settings, "UVICORN_HOST", "0.0.0.0")
@@ -210,12 +216,22 @@ class TestCeleryBeatReadinessGate:
         mocker.patch.object(
             main_module.sep_settings, "ALLOWED_HOSTS", ["sep.example.com"]
         )
+        configured_timeout = 90.0
+        configured_interval = 0.25
+        mocker.patch.object(
+            main_module.sep_settings, "API_READINESS_TIMEOUT", configured_timeout
+        )
+        mocker.patch.object(
+            main_module.sep_settings, "API_READINESS_POLL_INTERVAL", configured_interval
+        )
 
         main_module.start_celery_beat()
 
         args, kwargs = wait.call_args
         assert args == ("0.0.0.0", 8123)
         assert kwargs["allowed_hosts"] == ["sep.example.com"]
+        assert kwargs["timeout"] == configured_timeout
+        assert kwargs["interval"] == configured_interval
 
     def test_beat_still_runs_when_the_gate_times_out(
         self, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
@@ -298,10 +314,54 @@ class TestCeleryBeatReadinessGate:
 class TestCeleryBeatReadinessGateOverARealSocket:
     """Pin the startup ordering the fix turns on against a real listener."""
 
+    #: A test-sized stand-in for the production readiness budget.
+    GATE_TIMEOUT = 15.0
+    GATE_INTERVAL = 0.05
+    #: Long enough that the port is still refusing on the gate's first attempt.
+    SERVER_START_DELAY = 0.3
+
     @pytest.fixture(name="stub_logging_config", autouse=True)
     def stub_logging_config_fixture(self, mocker: MockerFixture) -> MagicMock:
         """Keep the child's ``dictConfig`` call from replacing the root handlers."""
         return mocker.patch.object(logging.config, "dictConfig")
+
+    @pytest.fixture(name="gate_targets_the_probe_server", autouse=True)
+    def gate_targets_the_probe_server_fixture(
+        self, mocker: MockerFixture, health_probe_server: HealthProbeServer
+    ) -> None:
+        """Aim the real gate at the probe server on a shortened deadline.
+
+        The gate is left unpatched because it is the thing under test; shortening
+        it through ``SEPSettings`` instead of a wrapper means these tests also
+        cover the wiring ``start_celery_beat`` reads its budget from.
+        """
+        mocker.patch.object(main_module.sep_settings, "UVICORN_HOST", "127.0.0.1")
+        mocker.patch.object(
+            main_module.sep_settings, "UVICORN_PORT", health_probe_server.port
+        )
+        mocker.patch.object(main_module.sep_settings, "ALLOWED_HOSTS", ["*"])
+        mocker.patch.object(
+            main_module.sep_settings, "API_READINESS_TIMEOUT", self.GATE_TIMEOUT
+        )
+        mocker.patch.object(
+            main_module.sep_settings,
+            "API_READINESS_POLL_INTERVAL",
+            self.GATE_INTERVAL,
+        )
+
+    @contextmanager
+    def _starts_listening_mid_wait(
+        self, health_probe_server: HealthProbeServer
+    ) -> Iterator[None]:
+        """Bring the probe server up part-way through the block's wait."""
+        delayed_start = threading.Timer(
+            self.SERVER_START_DELAY, health_probe_server.start
+        )
+        delayed_start.start()
+        try:
+            yield
+        finally:
+            delayed_start.cancel()
 
     def test_beat_is_constructed_only_after_the_api_starts_listening(
         self, mocker: MockerFixture, health_probe_server: HealthProbeServer
@@ -310,8 +370,7 @@ class TestCeleryBeatReadinessGateOverARealSocket:
 
         The full ordering, end to end: the port refuses connections, a server
         starts listening part-way through the wait, and only then does anything
-        capable of dispatching exist. The real gate runs -- only its deadline and
-        poll interval are shortened, so the test does not sit for a minute.
+        capable of dispatching exist.
         """
         listening_when_beat_built: list[bool] = []
 
@@ -319,24 +378,10 @@ class TestCeleryBeatReadinessGateOverARealSocket:
             listening_when_beat_built.append(health_probe_server.listening.is_set())
             return mocker.MagicMock()
 
-        mocker.patch.object(main_module.sep_settings, "UVICORN_HOST", "127.0.0.1")
-        mocker.patch.object(
-            main_module.sep_settings, "UVICORN_PORT", health_probe_server.port
-        )
-        mocker.patch.object(main_module.sep_settings, "ALLOWED_HOSTS", ["*"])
-        mocker.patch.object(
-            main_module,
-            "wait_for_api_ready",
-            functools.partial(wait_for_api_ready, timeout=15.0, interval=0.05),
-        )
         mocker.patch.object(main_module.celery_app, "Beat", side_effect=build_beat)
 
-        delayed_start = threading.Timer(0.3, health_probe_server.start)
-        delayed_start.start()
-        try:
+        with self._starts_listening_mid_wait(health_probe_server):
             main_module.start_celery_beat()
-        finally:
-            delayed_start.cancel()
 
         assert listening_when_beat_built == [True], (
             "beat was constructed before the API started listening"
@@ -380,24 +425,10 @@ class TestCeleryBeatReadinessGateOverARealSocket:
             beat.run.side_effect = lambda: dispatched.append(call_internal_api())
             return beat
 
-        mocker.patch.object(main_module.sep_settings, "UVICORN_HOST", "127.0.0.1")
-        mocker.patch.object(
-            main_module.sep_settings, "UVICORN_PORT", health_probe_server.port
-        )
-        mocker.patch.object(main_module.sep_settings, "ALLOWED_HOSTS", ["*"])
-        mocker.patch.object(
-            main_module,
-            "wait_for_api_ready",
-            functools.partial(wait_for_api_ready, timeout=15.0, interval=0.05),
-        )
         mocker.patch.object(main_module.celery_app, "Beat", side_effect=build_beat)
 
-        delayed_start = threading.Timer(0.3, health_probe_server.start)
-        delayed_start.start()
-        try:
+        with self._starts_listening_mid_wait(health_probe_server):
             main_module.start_celery_beat()
-        finally:
-            delayed_start.cancel()
 
         assert dispatched == [status.HTTP_200_OK]
         # The server records only what it accepted, so the gate's own probe is

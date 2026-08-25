@@ -20,7 +20,7 @@ drift onto different paths.
 """
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable
 from http.client import HTTPConnection, HTTPException
 from ipaddress import ip_address, IPv6Address
 from time import monotonic, sleep
@@ -60,7 +60,7 @@ def build_health_router(
     The probe confirms the server is accepting requests and its database is
     reachable via a ``SELECT 1`` round-trip. Schema currency is not re-checked
     here, so a reachable database behind a responding server implies migrations
-    are applied only where they finish before the server starts -- as under an
+    are applied only where they finish before the server starts — as under an
     entrypoint that runs ``alembic upgrade heads`` first. A deployment that
     starts migrations alongside the server, such as one process manager
     supervising both, owes its own completion signal.
@@ -109,7 +109,7 @@ def _resolve_probe_host(bind_host: str) -> str:
     return _IPV6_LOOPBACK if isinstance(address, IPv6Address) else _IPV4_LOOPBACK
 
 
-def _resolve_probe_host_header(connect_host: str, allowed_hosts: Sequence[str]) -> str:
+def _resolve_probe_host_header(connect_host: str, allowed_hosts: Iterable[str]) -> str:
     """Return a ``Host`` header value ``TrustedHostMiddleware`` will admit.
 
     A deployment that restricts ``ALLOWED_HOSTS`` to its public names answers a
@@ -121,7 +121,7 @@ def _resolve_probe_host_header(connect_host: str, allowed_hosts: Sequence[str]) 
 
     :param connect_host: The host the probe dials.
     :param allowed_hosts: The configured ``TrustedHostMiddleware`` patterns; an
-        empty sequence means the middleware is not installed.
+        empty iterable means the middleware is not installed.
     :return: The hostname to send as ``Host``.
     """
     patterns = [pattern for pattern in allowed_hosts if pattern]
@@ -150,7 +150,9 @@ def _probe_health_once(
     :param host_header: The ``Host`` header to send.
     :param attempt_timeout: Seconds to allow for connect plus response headers.
     :return: The response status (``None`` when nothing answered) and a short
-        description of the outcome for logging.
+        description of the outcome for logging. A ``Host`` value carrying an
+        embedded CR/LF is reported the same way: ``http.client`` rejects it with
+        a bare ``ValueError``, which must not escape into the caller's process.
     """
     connection = HTTPConnection(connect_host, port, timeout=attempt_timeout)
     try:
@@ -158,7 +160,7 @@ def _probe_health_once(
             "GET", HEALTH_PATH, headers={"Host": host_header, "Connection": "close"}
         )
         response = connection.getresponse()
-    except (OSError, HTTPException) as error:
+    except (OSError, HTTPException, ValueError) as error:
         return None, f"{type(error).__name__}: {error}"
     else:
         return response.status, f"HTTP {response.status}"
@@ -170,7 +172,7 @@ def wait_for_api_ready(
     host: str,
     port: int,
     *,
-    allowed_hosts: Sequence[str] = (),
+    allowed_hosts: Iterable[str] = (),
     timeout: float = API_READINESS_TIMEOUT,
     interval: float = API_READINESS_POLL_INTERVAL,
     request_timeout: float = API_READINESS_REQUEST_TIMEOUT,
@@ -179,14 +181,17 @@ def wait_for_api_ready(
 
     Only ``200`` opens the gate. A ``503`` means the listener is up but its
     database is not, which is not a state a caller of SEP's own API can use, and
-    a ``400`` means the host header was rejected -- neither is readiness. The
+    a ``400`` means the host header was rejected — neither is readiness. The
     first attempt happens immediately, so an API that is already serving costs
     nothing.
 
-    Every attempt is bounded by whatever is left of ``timeout``, so total wall
-    time stays inside the caller's budget even against a listener that accepts a
-    connection and then never answers -- the shape uvicorn's socket takes while
-    the ASGI app is still starting up.
+    Every attempt after the first is bounded by whatever is left of ``timeout``,
+    so total wall time stays inside the caller's budget against a listener that
+    accepts a connection and then sends nothing — the shape uvicorn's socket
+    takes while the ASGI app is still starting up. Two cases fall outside that
+    bound: a listener that trickles its status line, since ``http.client``
+    re-arms the socket timeout per ``recv``, and a caller passing a non-positive
+    ``timeout``, whose single attempt runs on the full ``request_timeout``.
 
     The scheme is plain HTTP because the listener this gate fronts
     (``app.main``'s ``uvicorn.run``) is started without ``ssl_keyfile`` /
@@ -207,7 +212,7 @@ def wait_for_api_ready(
     host_header = _resolve_probe_host_header(connect_host, allowed_hosts)
     started_at = monotonic()
     deadline = started_at + timeout
-    logger.info(
+    logger.warning(
         "Waiting up to %.1fs for the HTTP API at %s:%s to answer %s",
         timeout,
         connect_host,
