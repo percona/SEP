@@ -535,11 +535,11 @@ class TestAtwListApprovalFilter:
 
 
 class TestAtwListTitleFallback:
-    """Pin the category listing's share of the summary projection's title fallback.
+    """Observe the library's blank-title fallback through the category listing.
 
-    ``_build_summary`` is shared with the search route, so hardening it against a
-    degenerate title changes this listing too — an empty title rendered as a blank
-    label before, and a valueless one failed the whole response.
+    The rule lives on ``BaseSnippet``, so ``_build_summary`` projects the properties
+    as they arrive. These cases pin the listing's share of it: a blank title is
+    labelled with the filename whatever spelling declares it.
     """
 
     @pytest.mark.asyncio
@@ -562,6 +562,33 @@ class TestAtwListTitleFallback:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()[0]["snippets"][0]["title"] == "ops/blank-title.sh"
+
+    @pytest.mark.asyncio
+    async def test_whitespace_only_title_and_description_normalise(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Treat a whitespace-only title and description as blank.
+
+        Whitespace is truthy, so an ``or`` fallback passes it straight through; the
+        library rule folds it into the same class as every other blank spelling.
+        """
+        await _persist_snippet(
+            session,
+            filename="ops/padded-title.sh",
+            meta={
+                "title": "   ",
+                "description": "  ",
+                "service_type": "mysql",
+                "atw": ["OVERALL_SLOWNESS"],
+            },
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        summary = response.json()[0]["snippets"][0]
+        assert summary["title"] == "ops/padded-title.sh"
+        assert summary["description"] == ""
 
 
 class TestAtwSnippetSearch:
