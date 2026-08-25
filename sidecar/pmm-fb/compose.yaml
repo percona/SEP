@@ -38,7 +38,7 @@ x-sep-mysql-address: &sep_mysql_address 172.28.9.40
 services:
   pmm-server:
     # Default repeated on sep-mysql's PMM_FB_TAG build arg — a repin edits both
-    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-73298a4}
+    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-a2f83c2}
     # The image ships start_period 25s with 3 retries at 4s, so it is marked
     # unhealthy around 37s while a cold start needs appreciably longer to first
     # pass readyz — and sep-sidecar's service_healthy dependency turns that into
@@ -106,7 +106,7 @@ services:
       context: .
       dockerfile: Containerfile.mysql
       args:
-        PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-73298a4}
+        PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-a2f83c2}
     # service_started, not service_healthy: this node consumes none of the SEP
     # secret provisioning pmm-server's health now gates on, and ordering is all
     # it needs — pmm-managed starts answering registration requests later still,
