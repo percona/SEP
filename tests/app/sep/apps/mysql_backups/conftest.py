@@ -17,11 +17,10 @@
 
 import ast
 import pathlib
-from typing import Any, get_args
+from typing import Any
 from unittest.mock import AsyncMock
 
 from httpx import ASGITransport, AsyncClient, Response
-from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import require_minimum_role_for_unsafe_methods
@@ -123,22 +122,3 @@ async def authenticated_get(
     finally:
         sep_app.dependency_overrides.clear()
         sep_app.dependency_overrides.update(previous_overrides)
-
-
-def literal_members(model: type[BaseModel], field: str) -> tuple[str, ...]:
-    """Return the string ``Literal`` members a model field accepts.
-
-    Reaches through the optional wrapper (``Literal[...] | EmptyStrToNone``) so a
-    test can parametrize over the vocabulary a form declares instead of restating
-    it and drifting from the model.
-
-    :param model: The model owning the field.
-    :param field: The field name whose annotation carries the ``Literal``.
-    :return: The declared members, in declaration order.
-    """
-    return tuple(
-        arg
-        for member in get_args(model.model_fields[field].annotation)
-        for arg in get_args(member)
-        if isinstance(arg, str)
-    )

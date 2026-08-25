@@ -36,6 +36,7 @@ from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableE
 from app.core.health import build_health_router
 from app.core.requests import RemoteAPI
 from app.core.settings_override.lifecycle import (
+    CallbackRegistry,
     previous_or_base,
     RefreshCallback,
     settings_override_refresher,
@@ -213,7 +214,12 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         callbacks against ``app.state``.
     :return: None
     """
-    callbacks = {
+    # Imported here rather than at module scope: this module is reachable from
+    # the Celery include list, and importing an app's config at import time
+    # pulls the app tree in alongside the ``celery.py`` modules loaded from it.
+    from app.sep.apps.alerts.config import AlertsSettings
+
+    callbacks: CallbackRegistry = {
         (
             SettingClassEnum.SEP_SETTINGS,
             "INVENTORY_ENDPOINT",
@@ -242,7 +248,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "SYNC_INTERVAL",
         ): _reseed_system_periodic_tasks,
         (
-            SettingClassEnum.ALERTS_SETTINGS,
+            AlertsSettings.__name__,
             "BACKUP_INTERVAL",
         ): _reseed_system_periodic_tasks,
         (

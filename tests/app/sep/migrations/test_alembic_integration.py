@@ -37,6 +37,7 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import LOGGING_CONFIG
+from app.core.db.utils import check_constraint_name
 from app.sep.apps.alerts.models import AlertBackup
 
 from .conftest import ALEMBIC_INI, ALERTS_HEAD, UNKNOWN_REVISION
@@ -490,27 +491,27 @@ def test_alembic_downgrade_alerts_to_base_drops_table(sep_alembic_config):
     assert sep_main_heads & stamped
 
 
-def test_setting_class_enum_accepts_new_members_after_upgrade(sep_alembic_config):
-    """After ``upgrade heads``, SETTINGS and ALERT_SETTINGS rows are accepted."""
+def test_setting_class_accepts_unregistered_token_after_upgrade(sep_alembic_config):
+    """Accept a token never listed in the CHECK once ``upgrade heads`` has run."""
     cfg, sync_url = sep_alembic_config
     command.upgrade(cfg, "heads")
 
-    new_members = ("SETTINGS", "ALERT_SETTINGS")
+    unregistered = ("CUSTOM_PLUGIN_SETTINGS", "APP_OWNED_SETTINGS")
     engine = create_engine(sync_url)
     try:
         with engine.begin() as conn:
-            for member in new_members:
+            for member in unregistered:
                 _insert_override(conn, member)
             count = conn.exec_driver_sql(
                 "SELECT COUNT(*) FROM settingoverride"
             ).scalar()
-        assert count == len(new_members)
+        assert count == len(unregistered)
     finally:
         engine.dispose()
 
 
-def test_setting_class_enum_rejects_new_members_before_upgrade(sep_alembic_config):
-    """At the pre-enum revision, a SETTINGS row violates the CHECK constraint."""
+def test_setting_class_check_rejects_unlisted_token_before_drop(sep_alembic_config):
+    """Reject a SETTINGS row at the pre-enum revision, whose CHECK excludes it."""
     cfg, sync_url = sep_alembic_config
     command.upgrade(cfg, _SEP_PRE_ENUM_REVISION)
 
@@ -518,6 +519,64 @@ def test_setting_class_enum_rejects_new_members_before_upgrade(sep_alembic_confi
     try:
         with engine.begin() as conn, pytest.raises(IntegrityError):
             _insert_override(conn, "SETTINGS")
+    finally:
+        engine.dispose()
+
+
+def test_setting_class_check_is_dropped_after_upgrade(sep_alembic_config):
+    """Leave ``setting_class`` an unconstrained string after ``upgrade heads``."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, "heads")
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            unconstrained = ("UNREGISTERED_SETTINGS", "X" * 50)
+            assert (
+                check_constraint_name(conn, "settingoverride", "setting_class") is None
+            )
+            for token in unconstrained:
+                _insert_override(conn, token)
+            count = conn.exec_driver_sql(
+                "SELECT COUNT(*) FROM settingoverride"
+            ).scalar()
+        assert count == len(unconstrained)
+    finally:
+        engine.dispose()
+
+
+def test_setting_class_check_downgrade_deletes_unknown_rows(sep_alembic_config, capsys):
+    """Delete out-of-list rows on downgrade, log the count, and restore the CHECK."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, "heads")
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            _insert_override(conn, "UNREGISTERED_SETTINGS")
+            _insert_override(conn, "SEP_SETTINGS")
+    finally:
+        engine.dispose()
+
+    # alembic fileConfig routes ``app.*`` to its console handler with
+    # ``propagate = 0``, so the delete notice is on stderr, not in caplog.
+    capsys.readouterr()
+    command.downgrade(cfg, "sep_main@-1")
+    assert "Deleted 1 settingoverride row(s)" in capsys.readouterr().err
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            assert (
+                check_constraint_name(conn, "settingoverride", "setting_class")
+                == "settingclassenum"
+            )
+            remaining = conn.exec_driver_sql(
+                "SELECT setting_class FROM settingoverride"
+            ).fetchall()
+            assert remaining == [("SEP_SETTINGS",)]
+            with pytest.raises(IntegrityError):
+                _insert_override(conn, "UNREGISTERED_SETTINGS")
     finally:
         engine.dispose()
 

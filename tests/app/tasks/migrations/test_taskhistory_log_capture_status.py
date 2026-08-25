@@ -32,7 +32,7 @@ ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 
 # The head immediately before capture_status is added. Cursor columns still
 # use the pre-rename names ``nomad_offset`` / ``allocation_epoch``.
-_PRE_CAPTURE_STATUS_REVISION = "6a19d56d7985"
+_PRE_CAPTURE_STATUS_REVISION = "e2f3a4b5c6d7"
 
 _INSERT_STATE_ROW_PRE_RENAME = (
     "INSERT INTO taskhistory_log_state "
@@ -98,7 +98,7 @@ def test_pre_existing_rows_are_classified_unknown(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     # Read through the mapped type rather than the driver: the raw string
     # compares equal to the enum member either way, so only an ORM read proves
@@ -135,7 +135,7 @@ def test_upgrade_constrains_capture_status_to_the_enum_domain(tasks_alembic_conf
     which is exactly the mistake the name-persisting column invites.
     """
     cfg, sync_url = tasks_alembic_config
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -158,7 +158,7 @@ def test_upgrade_constrains_capture_status_to_the_enum_domain(tasks_alembic_conf
 def test_downgrade_drops_the_column(tasks_alembic_config):
     """Assert the downgrade removes the column and leaves the table usable."""
     cfg, sync_url = tasks_alembic_config
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
     command.downgrade(cfg, _PRE_CAPTURE_STATUS_REVISION)
 
     engine = create_engine(sync_url)

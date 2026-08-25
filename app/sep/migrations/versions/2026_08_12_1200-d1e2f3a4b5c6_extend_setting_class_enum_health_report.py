@@ -27,6 +27,7 @@ from alembic import op
 from app.core.db.utils import (
     acquire_pg_advisory_xact_lock,
     check_constraint_lists_members,
+    check_constraint_name,
 )
 from app.core.settings_override.constants import SETTINGOVERRIDE_MIGRATION_LOCK_KEY
 
@@ -50,9 +51,16 @@ _NEW_MEMBERS = (*_OLD_MEMBERS, "HEALTH_REPORT_SETTINGS")
 
 
 def upgrade() -> None:
-    """Add ``HEALTH_REPORT_SETTINGS`` to the setting_class constraint."""
+    """Add ``HEALTH_REPORT_SETTINGS`` to the setting_class constraint.
+
+    Returns early when the CHECK is already absent: on a shared PostgreSQL
+    database another track's drop revision may have removed it, and replaying
+    this older upgrade there must not recreate it.
+    """
     bind = op.get_bind()
     acquire_pg_advisory_xact_lock(bind, SETTINGOVERRIDE_MIGRATION_LOCK_KEY)
+    if check_constraint_name(bind, "settingoverride", "setting_class") is None:
+        return
     if check_constraint_lists_members(
         bind, "settingoverride", "setting_class", ("HEALTH_REPORT_SETTINGS",)
     ):

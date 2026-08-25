@@ -73,6 +73,8 @@ default:
     # mounted SEP__DATABASE__PASSWORD reaches it without an env-visible URI.
     RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
+    BEAT_ENGINE_OPTIONS:
+      POOL_PRE_PING: true  # Test beat/worker pooled connections on checkout; set false to opt out
 
   SEP:
     AMBIENT_SESSION_SSO_ENABLED: true
