@@ -32,7 +32,7 @@ ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 
 # The head immediately before capture_status is added. Cursor columns still
 # use the pre-rename names ``nomad_offset`` / ``allocation_epoch``.
-_PRE_CAPTURE_STATUS_REVISION = "6a19d56d7985"
+_PRE_CAPTURE_STATUS_REVISION = "e2f3a4b5c6d7"
 
 _INSERT_STATE_ROW_PRE_RENAME = (
     "INSERT INTO taskhistory_log_state "

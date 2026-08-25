@@ -28,7 +28,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, RootModel
 
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
 
 
@@ -47,7 +46,7 @@ class SettingOption(BaseModel):
 class SettingResponse(BaseModel):
     """Represent a single setting's metadata and current value.
 
-    :param setting_class: The settings class the field belongs to.
+    :param setting_class: The Pydantic class ``__name__`` the field belongs to.
     :param key: The field name on the settings class.
     :param key_path: Carry the canonical key segments for ``key`` such that
         ``"__".join(key_path) == key``.
@@ -80,7 +79,7 @@ class SettingResponse(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    setting_class: SettingClassEnum
+    setting_class: str
     key: str
     key_path: list[str] = Field(default_factory=list)
     value: Any
@@ -128,30 +127,24 @@ class SettingClassAppMetadata(BaseModel):
 
 
 class SettingClassGroup(BaseModel):
-    """One settings-class group in the LIST response.
+    """Group one settings class's fields for the LIST response.
 
-    :param setting_class: The settings class this group represents.
-    :type setting_class: SettingClassEnum
+    :param setting_class: The Pydantic class ``__name__`` this group represents.
     :param settings: The fields declared on the settings class, with their
         current values and metadata.
-    :type settings: list[SettingResponse]
     :param is_app_owned: Whether this group belongs to a SEP app under
         ``app/sep/apps/`` rather than core SEP wiring.
-    :type is_app_owned: bool
     :param app_id: The owning app's registry key when ``is_app_owned`` is
         ``True``; ``None`` for core groups.
-    :type app_id: str | None
     :param app_display_name: The owning app's human-facing label when
         ``is_app_owned`` is ``True``; ``None`` for core groups.
-    :type app_display_name: str | None
     :param app_enabled: Whether the owning app is currently enabled when
         ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled
         apps remain listed so the frontend can hide them without a second
         lookup.
-    :type app_enabled: bool | None
     """
 
-    setting_class: SettingClassEnum
+    setting_class: str
     settings: list[SettingResponse]
     is_app_owned: bool = False
     app_id: str | None = None

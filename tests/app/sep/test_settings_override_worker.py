@@ -84,7 +84,7 @@ class _AppOwnedSettings(BaseYamlSettings):
     LABEL: str = hot_field("default")
 
 
-def _app_owned_entry(setting_class: SettingClassEnum) -> AppOwnedClassEntry:
+def _app_owned_entry(setting_class: str) -> AppOwnedClassEntry:
     """Build an app-owned registration for ``setting_class``."""
     return AppOwnedClassEntry(
         setting_class=setting_class,
@@ -183,15 +183,15 @@ class TestBuildSepOverrideProxies:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Carry an app-declared class alongside SEP's own entries."""
-        entry = _app_owned_entry(SettingClassEnum.ALERTS_SETTINGS)
+        entry = _app_owned_entry("AlertsSettings")
         monkeypatch.setattr(
             sep_worker, "collect_app_owned_settings_classes", lambda: [entry]
         )
 
         proxies = build_sep_override_proxies()
 
-        assert set(proxies) == SEP_CORE_CLASSES | {SettingClassEnum.ALERTS_SETTINGS}
-        assert proxies[SettingClassEnum.ALERTS_SETTINGS].proxy is entry.proxy
+        assert set(proxies) == SEP_CORE_CLASSES | {"AlertsSettings"}
+        assert proxies["AlertsSettings"].proxy is entry.proxy
 
     def test_sep_entries_win_over_an_app_owned_collision(
         self, monkeypatch: pytest.MonkeyPatch
