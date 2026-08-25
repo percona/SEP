@@ -291,6 +291,30 @@ class TestConnectivityCheckEndpoint:
         assert results["pmm"]["reachable"] is False
         assert "not configured" in results["pmm"]["detail"].lower()
 
+    def test_resolves_the_real_pmm_dependency_over_real_http(
+        self,
+        admin_client: TestClient,
+        mock_inventory_api_dep: AsyncMock,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Resolve ``get_pmm_api`` through FastAPI itself, with no override.
+
+        Every other case here replaces the dependency wholesale, which bypasses
+        FastAPI's own resolution of it, so nothing else would notice the
+        request-scoped ``yield`` form failing at the framework level. PMM is
+        unconfigured under the test settings, so the real resolver yields
+        ``None`` and the probe reports not-configured.
+        """
+        mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
+        mock_task_api_dep.get.return_value = {}
+
+        response = admin_client.post(ENDPOINT, json=ALL_TARGETS)
+
+        assert response.status_code == status.HTTP_200_OK
+        results = _results_by_service(response.json())
+        assert results["pmm"]["reachable"] is False
+        assert "not configured" in results["pmm"]["detail"].lower()
+
     def test_requires_admin(self, test_client: TestClient) -> None:
         """Reject a non-admin caller (cookie/regular user) with 403."""
         # ``test_client`` authenticates a regular (non-admin) user. Auth is
