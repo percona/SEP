@@ -85,15 +85,16 @@ class SettingClassEnum(StrEnum):
 
 
 class _SettingClassString(TypeDecorator):
-    """Store the settings-class token as VARCHAR, binding enum members by name.
+    """Store the settings-class token as VARCHAR, coercing enum members by name.
 
-    SQLAlchemy's ``Enum`` type persisted members by *name* (``SEP_SETTINGS``).
-    A bare ``String`` would bind the *value* (``SEPSettings``) and orphan
-    every existing row. This decorator keeps the historical spelling for any
-    enum argument that reaches bind time while the column itself remains an
-    unconstrained string. :meth:`SettingOverride._enum_member_to_token` applies
-    the same coercion earlier on the ``model_validate`` path, so an instance
-    built through a CRUD manager already carries the token.
+    Every production caller already passes a plain string token produced by
+    :func:`setting_class_token`, which owns row-compatibility end-to-end.
+    The enum-coercion branch in :meth:`process_bind_param` exists solely as a
+    guard for any future caller that might pass a raw
+    :class:`SettingClassEnum` member directly — it is not itself a
+    row-compatibility mechanism.  :meth:`SettingOverride._enum_member_to_token`
+    applies the same coercion earlier on the ``model_validate`` path, so an
+    instance built through a CRUD manager already carries the token.
 
     """
 
