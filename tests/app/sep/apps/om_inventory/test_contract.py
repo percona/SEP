@@ -52,6 +52,16 @@ def test_schema_200(regular_user: CasdoorUser) -> None:
     assert response.status_code == status.HTTP_200_OK
 
 
+def test_declares_no_custom_ui() -> None:
+    """``custom_ui`` means "ships a bespoke React UI", which this app does not.
+
+    Unlike ``atw``/``topology``, which register one, this app has no ``react_route``
+    and no component of its own -- ``sidebar=False`` already says there is nothing to
+    navigate to. ``custom_ui=True`` here would claim a UI that does not exist.
+    """
+    assert om_inventory_app.custom_ui is False
+
+
 # The scaffold's ``test_list_200`` was removed rather than repaired. It asserted a
 # ``GET /`` list route this app has never had -- it declares a purpose-built router
 # instead of the derived task contract -- so it had been failing since the app was
