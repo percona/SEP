@@ -52,6 +52,16 @@ _SEP_PRE_LIFECYCLE_REVISION = "64f10ead74f6"
 # The add_lifecycle_state_to_app_state revision under test.
 _SEP_LIFECYCLE_REVISION = "a7c4e9f1b2d3"
 
+#: The revision preceding drop_setting_class_check_constraint: downgrading to it
+#: is what runs that migration's downgrade.
+_SETTING_CLASS_CHECK_PARENT = "d1e2f3a4b5c6"
+
+#: The revision preceding add_sync_run_state_and_entity_absence: syncinstance
+#: still lacks the run-level ``status`` and ``snapshot_complete`` columns.
+_SEP_PRE_SYNC_RUN_STATE_REVISION = "74720aeda25b"
+#: The add_sync_run_state_and_entity_absence revision under test.
+_SEP_SYNC_RUN_STATE_REVISION = "867df844fe17"
+
 _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
 
 _SKIP_NOTICE = (
@@ -561,7 +571,9 @@ def test_setting_class_check_downgrade_deletes_unknown_rows(sep_alembic_config, 
     # alembic fileConfig routes ``app.*`` to its console handler with
     # ``propagate = 0``, so the delete notice is on stderr, not in caplog.
     capsys.readouterr()
-    command.downgrade(cfg, "sep_main@-1")
+    # The revision under test is named outright: a head-relative target silently
+    # retargets this assertion at whatever migration lands on sep_main next.
+    command.downgrade(cfg, _SETTING_CLASS_CHECK_PARENT)
     assert "Deleted 1 settingoverride row(s)" in capsys.readouterr().err
 
     engine = create_engine(sync_url)
@@ -663,3 +675,125 @@ def test_app_lifecycle_downgrade_restores_enabled(sep_alembic_config):
     assert "lifecycle_state" not in columns
     assert "enabled" in columns
     assert rows == {"snippets": 1, "checksums": 0}
+
+
+def _insert_sync_instance(conn, instance_id: str) -> None:
+    """Insert a ``syncinstance`` row using the pre-run-state column set."""
+    conn.exec_driver_sql(
+        "INSERT INTO syncinstance (id, created_at, syncer) "
+        "VALUES (?, '2026-01-01 00:00:00', 'PMMSyncer')",
+        (instance_id,),
+    )
+
+
+def _insert_sync_item(conn, item_id: str, instance_id: str, status: str) -> None:
+    """Insert a ``syncitem`` row belonging to the given instance."""
+    conn.exec_driver_sql(
+        "INSERT INTO syncitem "
+        "(id, created_at, entity_type, status, sync_instance_id) "
+        "VALUES (?, '2026-01-01 00:00:00', 'INVENTORY', ?, ?)",
+        (item_id, status, instance_id),
+    )
+
+
+def test_sync_run_state_backfill_derives_a_verdict_per_historical_run(
+    sep_alembic_config,
+):
+    """Derive ``status`` for historical runs by the rule finalize_run applies."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _SEP_PRE_SYNC_RUN_STATE_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            _insert_sync_instance(conn, "all-success")
+            _insert_sync_item(conn, "s1", "all-success", "SUCCESS")
+            _insert_sync_item(conn, "s2", "all-success", "SUCCESS")
+            _insert_sync_instance(conn, "one-failed")
+            _insert_sync_item(conn, "f1", "one-failed", "SUCCESS")
+            _insert_sync_item(conn, "f2", "one-failed", "FAILED")
+            _insert_sync_instance(conn, "still-running")
+            _insert_sync_item(conn, "r1", "still-running", "RUNNING")
+            _insert_sync_instance(conn, "no-items")
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, _SEP_SYNC_RUN_STATE_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            rows = dict(
+                conn.exec_driver_sql("SELECT id, status FROM syncinstance").fetchall()
+            )
+            complete = dict(
+                conn.exec_driver_sql(
+                    "SELECT id, snapshot_complete FROM syncinstance"
+                ).fetchall()
+            )
+    finally:
+        engine.dispose()
+
+    assert rows == {
+        "all-success": "SUCCESS",
+        "one-failed": "FAILED",
+        "still-running": "PENDING",
+        "no-items": "PENDING",
+    }
+    assert set(complete.values()) == {None}
+
+
+def test_sync_run_state_status_check_rejects_unknown_value(sep_alembic_config):
+    """Reject a bogus ``syncinstance.status`` through the CHECK constraint."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _SEP_SYNC_RUN_STATE_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn, pytest.raises(IntegrityError):
+            conn.exec_driver_sql(
+                "INSERT INTO syncinstance (id, created_at, syncer, status) "
+                "VALUES ('bogus', '2026-01-01 00:00:00', 'PMMSyncer', 'NOPE')"
+            )
+    finally:
+        engine.dispose()
+
+
+def test_sync_run_state_status_server_default_survives_the_migration(
+    sep_alembic_config,
+):
+    """Accept an insert omitting ``status``, as a pre-rollout release issues."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _SEP_SYNC_RUN_STATE_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            _insert_sync_instance(conn, "old-code")
+            status = conn.exec_driver_sql(
+                "SELECT status FROM syncinstance WHERE id = 'old-code'"
+            ).scalar_one()
+    finally:
+        engine.dispose()
+
+    assert status == "PENDING"
+
+
+def test_sync_run_state_downgrade_drops_the_added_state(sep_alembic_config):
+    """Remove both run-state columns and the absence ledger on downgrade."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _SEP_SYNC_RUN_STATE_REVISION)
+    command.downgrade(cfg, _SEP_PRE_SYNC_RUN_STATE_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        inspector = inspect(engine)
+        columns = {col["name"] for col in inspector.get_columns("syncinstance")}
+        tables = set(inspector.get_table_names())
+    finally:
+        engine.dispose()
+
+    assert "status" not in columns
+    assert "snapshot_complete" not in columns
+    assert "syncentityabsence" not in tables
+    assert "syncitem" in tables

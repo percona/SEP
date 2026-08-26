@@ -1724,16 +1724,14 @@ export interface paths {
     };
     /**
      * Inventory Sync Status
-     * @description Return whether an inventory-wide sync is currently running.
+     * @description Return whether an inventory-wide sync is running, plus recent run outcomes.
      *
      *     Replaces the server-rendered ``sync_is_running`` template variable
      *     used by the Jinja2 inventory page so the React control can poll the
      *     same state without scraping HTML.
      *
      *     :param session: SQLModel async session.
-     *     :type session: SessionDep
-     *     :return: ``{"is_running": <bool>}``.
-     *     :rtype: InventorySyncStatusResponse
+     *     :return: The running flag and the most recent runs, newest first.
      */
     get: operations['inventory_inventory_sync_status_api_apps_inventory_sync_status__get'];
     put?: never;
@@ -4386,6 +4384,21 @@ export interface components {
      * @enum {string}
      */
     SourceEnum: 'pmm';
+    /**
+     * SyncStatusEnum
+     * @description Enumerate the possible statuses of a synchronization process.
+     *
+     *     :cvar PENDING: The synchronization is pending.
+     *     :vartype PENDING: str
+     *     :cvar RUNNING: The synchronization is currently running.
+     *     :vartype RUNNING: str
+     *     :cvar SUCCESS: The synchronization completed successfully.
+     *     :vartype SUCCESS: str
+     *     :cvar FAILED: The synchronization failed.
+     *     :vartype FAILED: str
+     * @enum {string}
+     */
+    SyncStatusEnum: 'pending' | 'running' | 'success' | 'failed';
     /**
      * TaskBackendEnum
      * @description Control the choice of backends.
@@ -8728,11 +8741,16 @@ export interface components {
      *
      *     :param is_running: ``True`` when an inventory-wide sync is currently
      *         in progress; ``False`` otherwise.
-     *     :type is_running: bool
+     *     :param last_runs: The most recently recorded synchronization runs, newest first.
      */
     inventory__InventorySyncStatusResponse: {
       /** Is Running */
       is_running: boolean;
+      /**
+       * Last Runs
+       * @default []
+       */
+      last_runs: components['schemas']['inventory__SyncRunSummary'][];
     };
     /**
      * InventorySyncTriggerWrite
@@ -8755,15 +8773,38 @@ export interface components {
      * @description Represent a single plugin task entry returned by ``GET /api/apps/inventory/``.
      *
      *     :param name: Machine-readable task identifier (e.g. ``"inventory-sync"``).
-     *     :type name: str
      *     :param display_name: Human-readable label for the schedule UI.
-     *     :type display_name: str
      */
     inventory__PluginTaskResponse: {
       /** Display Name */
       display_name: string;
       /** Name */
       name: string;
+    };
+    /**
+     * SyncRunSummary
+     * @description Summarize one recorded synchronization run for the sync-status endpoint.
+     *
+     *     :param syncer: The fully qualified name of the synchronizer that ran.
+     *     :param started_at: When the run was recorded.
+     *     :param finished_at: When the run last changed, or ``None`` while it is open.
+     *     :param status: The run-level outcome.
+     *     :param snapshot_complete: Whether the run observed a complete generation of the
+     *         remote inventory, or ``None`` when the syncer does not produce one.
+     */
+    inventory__SyncRunSummary: {
+      /** Finished At */
+      finished_at: string | null;
+      /** Snapshot Complete */
+      snapshot_complete: boolean | null;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      status: components['schemas']['SyncStatusEnum'];
+      /** Syncer */
+      syncer: string;
     };
     /**
      * BackupCreate
