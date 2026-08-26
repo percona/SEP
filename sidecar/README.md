@@ -145,11 +145,12 @@ owning migrations is an independent Alembic branch recorded in the shared
 `alembic_version_sep` table, so a database a full image migrated carries head
 rows for apps this image does not ship. `skip_unresolvable_heads` in
 `app/sep/migrations/_orphan_heads.py` drops those rows from the heads it hands
-Alembic — but only when a configured `version_locations` entry is absent from
-disk, which is what a stripped app looks like. With every configured location
-present, an unresolvable revision means version skew instead and the upgrade
-hard-fails by design. So pruning a stripped app's entry — regenerating the list
-in an already-stripped tree, or rewriting the file during the build — turns a
+Alembic — but only when a configured `version_locations` entry contributes no
+revisions (absent from disk or present and empty), which is what a stripped
+app looks like. With every configured location present and populated, an
+unresolvable revision means version skew instead and the upgrade hard-fails by
+design. So pruning a stripped app's entry — regenerating the list in an
+already-stripped tree, or rewriting the file during the build — turns a
 working upgrade into a failed one. `tests/sidecar/test_app_strip.py` asserts the
 entries survive for every app the strip removes that owns migrations; an app
 owning none needs no entry, and must not carry one.
