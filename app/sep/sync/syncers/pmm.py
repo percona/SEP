@@ -37,9 +37,9 @@ from app.sep.sync.models import BaseSyncer
 
 logger = logging.getLogger(__name__)
 
-# Ties an absent-entity batch to the deleter that retires it. A plain
-# ``Callable[[CreatedEntity], ...]`` would reject both deleters, whose parameters
-# are the narrower subclasses.
+#: Ties an absent-entity batch to the deleter that retires it. A plain
+#: ``Callable[[CreatedEntity], ...]`` would reject both deleters, whose parameters
+#: are the narrower subclasses.
 _Retirable = TypeVar("_Retirable", bound=CreatedEntity)
 
 

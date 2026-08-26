@@ -52,14 +52,14 @@ _SEP_PRE_LIFECYCLE_REVISION = "64f10ead74f6"
 # The add_lifecycle_state_to_app_state revision under test.
 _SEP_LIFECYCLE_REVISION = "a7c4e9f1b2d3"
 
-# The revision preceding drop_setting_class_check_constraint: downgrading to it
-# is what runs that migration's downgrade.
+#: The revision preceding drop_setting_class_check_constraint: downgrading to it
+#: is what runs that migration's downgrade.
 _SETTING_CLASS_CHECK_PARENT = "d1e2f3a4b5c6"
 
-# The revision preceding add_sync_run_state_and_entity_absence: syncinstance
-# still lacks the run-level ``status`` and ``snapshot_complete`` columns.
+#: The revision preceding add_sync_run_state_and_entity_absence: syncinstance
+#: still lacks the run-level ``status`` and ``snapshot_complete`` columns.
 _SEP_PRE_SYNC_RUN_STATE_REVISION = "74720aeda25b"
-# The add_sync_run_state_and_entity_absence revision under test.
+#: The add_sync_run_state_and_entity_absence revision under test.
 _SEP_SYNC_RUN_STATE_REVISION = "867df844fe17"
 
 _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
