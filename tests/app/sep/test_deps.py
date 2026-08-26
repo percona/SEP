@@ -270,17 +270,22 @@ class TestGetCurrentUser:
 
     @pytest.mark.asyncio
     async def test_valid_bearer_returns_user(self) -> None:
-        """Assert a valid Bearer token resolves through the API dependency."""
+        """Assert a valid Bearer token resolves through the API dependency.
+
+        The request is forwarded alongside the token because that is what carries
+        the API dependency's per-request resolution cache; dropping it would send
+        this alias down a second, uncached resolution of the same credential.
+        """
         request = make_request(authorization="Bearer bearer-token")
         active_user = CasdoorUserFactory.build(is_forbidden=False)
+        resolve = AsyncMock(return_value=active_user)
         with (
             patch("app.sep.deps.oauth2_scheme", AsyncMock(return_value="bearer-token")),
-            patch(
-                "app.sep.deps.get_current_user_api",
-                AsyncMock(return_value=active_user),
-            ),
+            patch("app.sep.deps.get_current_user_api", resolve),
         ):
             assert await get_current_user(request) is active_user
+
+        resolve.assert_awaited_once_with(request, "bearer-token")
 
     @pytest.mark.asyncio
     async def test_missing_bearer_raises_unauthorized(self) -> None:

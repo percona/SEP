@@ -96,6 +96,35 @@ logger = logging.getLogger(__name__)
 ExtraArgsField = Annotated[list[str], BeforeValidator(shlex.split)]
 
 
+def _meta_or_default(meta: dict[str, Any], key: str, default: str) -> str:
+    """Read ``key`` from snippet metadata, treating a blank declared value as absent.
+
+    Frontmatter reaches ``meta`` through ``yaml.safe_load``, which maps a valueless
+    ``key:`` to ``None`` and ``key: ""`` to ``""``. Both are present keys, so a
+    ``dict.get`` default never fires for them and the declared blank is handed to
+    consumers whose fields reject it. A padded but non-blank value is returned
+    unchanged, keeping this read consistent with ``SnippetManager.list_query_spec``'s
+    ``_meta_text(META_KEY_TITLE)``, which sorts and searches on the value as declared
+    — unlike ``_service_type_exprs`` alongside it, which trims before comparing.
+
+    ``meta`` is untyped, so a non-string value such as ``title: 5`` is rendered as
+    text rather than passed through: the ``str`` fields downstream reject an ``int``
+    for the whole response, which is the same page-wide failure a blank value caused.
+    A sequence or mapping takes the same path and renders as its ``repr``.
+
+    :param meta: The snippet's parsed frontmatter mapping.
+    :param key: The metadata key to read.
+    :param default: The value to return when the key is absent or declared blank.
+    :return: The declared value as text, or ``default`` when it is missing, ``None``,
+        or whitespace-only.
+    """
+    value = meta.get(key)
+    if value is None:
+        return default
+    text = value if isinstance(value, str) else str(value)
+    return text if text.strip() else default
+
+
 class FilePreview(NamedTuple):
     """Represent a preview of a snippet's content with separated frontmatter.
 
@@ -389,21 +418,19 @@ class BaseSnippet(BaseModel):
     def title(self) -> str:
         """Get the title of the snippet.
 
-        :return: The title of the snippet, or the filename if no title is specified in
-            the metadata.
-        :rtype: str
+        :return: The title of the snippet, or the filename when the metadata declares
+            no title or declares a blank one.
         """
-        return self.meta.get(META_KEY_TITLE, self.filename)
+        return _meta_or_default(self.meta, META_KEY_TITLE, self.filename)
 
     @cached_property
     def description(self) -> str:
         """Get the description of the snippet.
 
-        :return: The description of the snippet, or an empty string if no description is
-            specified in the metadata.
-        :rtype: str
+        :return: The description of the snippet, or an empty string when the metadata
+            declares no description or declares a blank one.
         """
-        return self.meta.get(META_KEY_DESCRIPTION, "")
+        return _meta_or_default(self.meta, META_KEY_DESCRIPTION, "")
 
     @cached_property
     def service_type(self) -> str | None:

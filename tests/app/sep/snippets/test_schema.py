@@ -16,7 +16,6 @@
 """Tests for the snippets plugin schema synthesiser."""
 
 from collections.abc import Awaitable, Callable
-from functools import cached_property
 from typing import Any
 from urllib.parse import urlencode
 
@@ -59,6 +58,7 @@ from tests.app.sep.form_schema_utils import (
     form_field_names,
     form_field_types,
 )
+from tests.app.sep.snippets.snippet_kit import drop_cached_reads
 
 
 def test_static_schema_has_no_forms_and_keyed_columns():
@@ -219,18 +219,11 @@ _SYNTHESIZED_FIELD_TYPES = {
 def _reset_cached_meta(snippet: Snippet, **meta: Any) -> None:
     """Re-apply snippet meta and drop every cached property derived from it.
 
-    Every ``cached_property`` on the class is dropped rather than a named few,
-    so a property added later cannot leave a test asserting against a stale
-    value computed from the pre-mutation meta.
-
     :param snippet: The already-created snippet whose meta is being replaced.
     :param meta: Frontmatter keys merged over the snippet's existing meta.
     """
     snippet.meta = {**snippet.meta, **meta}
-    for klass in type(snippet).__mro__:
-        for name, attribute in vars(klass).items():
-            if isinstance(attribute, cached_property):
-                snippet.__dict__.pop(name, None)
+    drop_cached_reads(snippet)
 
 
 class TestReservedParameterNames:
