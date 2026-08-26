@@ -198,13 +198,12 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
 def build_sep_override_callbacks(app: FastAPI) -> CallbackRegistry:
     """Compose the SEP web process's rebind callbacks.
 
-    A function rather than a literal inside the lifespan so the wiring is
-    assertable: every entry here is a change that has an effect *outside* the
-    settings snapshot -- a client rebound, a logging config re-applied, a beat row
-    rewritten -- and a missing one fails silently. The setting changes, the API
-    reports the new value, and nothing acts on it until the process restarts. A
-    ``SCHEDULE`` override that beat never picked up is exactly that shape, and it
-    is why this is testable at all.
+    Each entry maps a ``(settings class, field)`` key to the callback that
+    applies that field's live value somewhere outside the settings snapshot
+    itself -- rebinding a ``RemoteAPI`` client, re-applying the logging
+    ``dictConfig``, or rewriting a beat schedule row. The registry is returned
+    rather than fired here, so both the background refresher and the inline
+    PATCH/DELETE path can wire it in.
 
     :param app: The FastAPI application whose ``state`` the endpoint rebinders
         write their refreshed clients to.
