@@ -79,10 +79,10 @@
 | app/core/utils/serialization.py                                                                                              |        7 |        0 |        0 |        0 |    100% |           |
 | app/core/utils/strings.py                                                                                                    |       24 |        3 |        4 |        1 |     79% |     64-69 |
 | app/inventory/config.py                                                                                                      |       12 |        0 |        0 |        0 |    100% |           |
-| app/inventory/constants.py                                                                                                   |        4 |        0 |        0 |        0 |    100% |           |
-| app/inventory/crud.py                                                                                                        |       30 |        0 |        0 |        0 |    100% |           |
+| app/inventory/constants.py                                                                                                   |        6 |        0 |        0 |        0 |    100% |           |
+| app/inventory/crud.py                                                                                                        |      110 |        1 |       14 |        1 |     98% |231-\>233, 236 |
 | app/inventory/db.py                                                                                                          |        6 |        0 |        0 |        0 |    100% |           |
-| app/inventory/deps.py                                                                                                        |       43 |        9 |        4 |        0 |     72% |58-60, 156-158, 177-179 |
+| app/inventory/deps.py                                                                                                        |       63 |        9 |        4 |        0 |     81% |63-65, 271-273, 292-294 |
 | app/inventory/main.py                                                                                                        |       44 |        8 |        2 |        1 |     80% |52, 97-98, 130-131, 135-139 |
 | app/inventory/migrations/versions/2024\_09\_24\_1701-8e95b4982efb\_create\_inventory\_tables.py                              |       36 |       26 |        0 |        0 |     28% |39-90, 96-108 |
 | app/inventory/migrations/versions/2024\_10\_15\_1724-6761fa809e84\_create\_unique\_index\_for\_service\_port\_by\_.py        |       12 |        2 |        0 |        0 |     83% |    39, 45 |
@@ -96,11 +96,12 @@
 | app/inventory/migrations/versions/2026\_08\_08\_0306-34e6108ea194\_drop\_messages\_setting\_overrides.py                     |       27 |       15 |        6 |        0 |     36% |56-66, 90-99 |
 | app/inventory/migrations/versions/2026\_08\_12\_1200-f3a4b5c6d7e8\_extend\_setting\_class\_enum\_health\_report.py           |       27 |       15 |        6 |        0 |     36% |60-69, 89-99 |
 | app/inventory/migrations/versions/2026\_08\_17\_2210-a38607bba456\_drop\_setting\_class\_check\_constraint.py                |        9 |        2 |        0 |        0 |     78% |    45, 50 |
-| app/inventory/models.py                                                                                                      |       92 |        0 |        4 |        0 |    100% |           |
-| app/inventory/routes/nodes.py                                                                                                |       52 |        2 |        4 |        0 |     93% |  140, 142 |
-| app/inventory/routes/schemas.py                                                                                              |       34 |        0 |        0 |        0 |    100% |           |
-| app/inventory/routes/services.py                                                                                             |       48 |        3 |        4 |        0 |     87% |129, 131, 165 |
-| app/inventory/routes/tables.py                                                                                               |       26 |        0 |        0 |        0 |    100% |           |
+| app/inventory/migrations/versions/2026\_08\_26\_1030-c7d1e94ab3f2\_add\_retirement\_columns\_to\_inventory\_.py              |       25 |       15 |       10 |        0 |     29% |63-79, 89-97 |
+| app/inventory/models.py                                                                                                      |       98 |        0 |        4 |        0 |    100% |           |
+| app/inventory/routes/nodes.py                                                                                                |       56 |        2 |        4 |        0 |     93% |  202, 204 |
+| app/inventory/routes/schemas.py                                                                                              |       38 |        0 |        0 |        0 |    100% |           |
+| app/inventory/routes/services.py                                                                                             |       52 |        3 |        4 |        0 |     88% |163, 165, 201 |
+| app/inventory/routes/tables.py                                                                                               |       30 |        0 |        0 |        0 |    100% |           |
 | app/inventory/settings/routes.py                                                                                             |       12 |        0 |        0 |        0 |    100% |           |
 | app/main.py                                                                                                                  |       91 |       23 |        6 |        1 |     73% |   252-306 |
 | app/sep/api/constants.py                                                                                                     |        2 |        0 |        0 |        0 |    100% |           |
@@ -243,7 +244,7 @@
 | app/sep/apps/mysql\_backups/app.py                                                                                           |       14 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/backup\_source\_choices.py                                                                       |       62 |       11 |       24 |        1 |     77% |   148-158 |
 | app/sep/apps/mysql\_backups/crud.py                                                                                          |       19 |        0 |        2 |        0 |    100% |           |
-| app/sep/apps/mysql\_backups/deps.py                                                                                          |       66 |        1 |       12 |        2 |     96% |65, 212-\>215 |
+| app/sep/apps/mysql\_backups/deps.py                                                                                          |       66 |        1 |       12 |        2 |     96% |65, 218-\>221 |
 | app/sep/apps/mysql\_backups/form\_backfill.py                                                                                |       56 |        6 |       20 |        7 |     83% |73-\>95, 76-77, 78-\>95, 80-\>95, 82-\>95, 86-\>95, 89, 119-120, 130 |
 | app/sep/apps/mysql\_backups/forms.py                                                                                         |      186 |        2 |       14 |        2 |     98% |  647, 662 |
 | app/sep/apps/mysql\_backups/migrations/versions/2026\_07\_29\_1200-f0a1b2c3d4e5\_create\_mysql\_backup\_run\_table.py        |       22 |        6 |        4 |        1 |     65% |40-\>exit, 89-98 |
@@ -297,7 +298,7 @@
 | app/sep/db/engine.py                                                                                                         |        7 |        0 |        0 |        0 |    100% |           |
 | app/sep/db/seed.py                                                                                                           |       39 |        0 |       12 |        0 |    100% |           |
 | app/sep/deps.py                                                                                                              |      252 |        2 |       48 |        1 |     99% |243, 632-\>637, 653 |
-| app/sep/inventory.py                                                                                                         |       99 |        6 |       12 |        1 |     94% |86, 97, 233, 289, 329, 366 |
+| app/sep/inventory.py                                                                                                         |      100 |        5 |       12 |        1 |     95% |84, 95, 287, 327, 364 |
 | app/sep/main.py                                                                                                              |      121 |       15 |       12 |        2 |     87% |161-163, 293-312, 332-\>341, 466-470 |
 | app/sep/migrations/\_discovery.py                                                                                            |       41 |        2 |       20 |        3 |     92% |65, 97, 133-\>130 |
 | app/sep/migrations/\_orphan\_heads.py                                                                                        |       33 |        0 |        6 |        0 |    100% |           |
@@ -345,10 +346,10 @@
 | app/sep/snippets/script\_source.py                                                                                           |       96 |        1 |       22 |        1 |     98% |       354 |
 | app/sep/snippets/utils.py                                                                                                    |       32 |        0 |       10 |        0 |    100% |           |
 | app/sep/sync/exceptions.py                                                                                                   |       25 |        0 |        0 |        0 |    100% |           |
-| app/sep/sync/models.py                                                                                                       |      377 |       44 |      100 |       17 |     85% |84-93, 107, 109, 128, 134-\>136, 137-\>139, 202-\>212, 288-290, 319-\>317, 411-412, 559, 737-\>exit, 755, 769, 789-790, 870, 884, 906-907, 943-\>exit, 988, 1001, 1025-1027, 1060-\>exit, 1099, 1112, 1169-\>exit, 1208, 1352-1354, 1461-1463, 1468-1474, 1478 |
+| app/sep/sync/models.py                                                                                                       |      394 |       43 |      104 |       16 |     86% |123-132, 146-148, 167, 173-\>175, 176-\>178, 253-\>263, 339-341, 462, 851-\>exit, 869, 883, 903-904, 984, 998, 1020-1021, 1057-\>exit, 1102, 1115, 1139-1141, 1174-\>exit, 1213, 1226, 1283-\>exit, 1322, 1466-1468, 1575-1577, 1582-1588, 1592 |
 | app/sep/sync/syncers/mysql/payload.py                                                                                        |      175 |       47 |       54 |        5 |     69% |156-\>164, 240-244, 249-254, 267-273, 277-300, 354-\>370, 373, 394-402, 421 |
-| app/sep/sync/syncers/mysql/syncer.py                                                                                         |      222 |        1 |       86 |        8 |     97% |112, 268-\>270, 272-\>274, 586-\>594, 595-\>599, 676-\>687, 762-\>766, 764-\>763 |
-| app/sep/sync/syncers/pmm.py                                                                                                  |      127 |       13 |       36 |        7 |     85% |95-\>99, 119-122, 133, 297-298, 371-\>373, 377-394, 401-\>408, 448-\>453 |
+| app/sep/sync/syncers/mysql/syncer.py                                                                                         |      233 |        1 |       90 |        5 |     98% |112, 275-\>277, 279-\>281, 790-\>794, 792-\>791 |
+| app/sep/sync/syncers/pmm.py                                                                                                  |      134 |        4 |       38 |        6 |     93% |94-\>98, 119-121, 132, 296-\>294, 308-\>309, 429-\>436, 476-\>481 |
 | app/sep/sync/syncers/system\_facts/payload.py                                                                                |      235 |       19 |       78 |       12 |     90% |52-\>58, 147-148, 176, 222-224, 231, 233-\>229, 244-251, 261-\>263, 263-\>265, 265-\>267, 282-284, 290-292, 316, 415-\>417, 417-\>419, 522, 533 |
 | app/sep/sync/syncers/system\_facts/syncer.py                                                                                 |      118 |        7 |       28 |        3 |     93% |104, 169-170, 245, 256-\>254, 310-311, 350 |
 | app/sep/tasks.py                                                                                                             |       31 |        0 |       12 |        2 |     95% |69-\>84, 73-\>76 |
@@ -439,7 +440,7 @@
 | app/tasks/routes.py                                                                                                          |      237 |       20 |       46 |        4 |     91% |153-157, 240-246, 279, 329-335, 342, 432, 475, 490, 650, 664, 672, 698, 706-\>708, 729-730 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **27068** | **1771** | **6736** |  **637** | **92%** |           |
+| **TOTAL**                                                                                                                    | **27253** | **1776** | **6770** |  **633** | **92%** |           |
 
 
 ## Setup coverage badge

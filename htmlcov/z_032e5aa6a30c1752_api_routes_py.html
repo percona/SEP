@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_032e5aa6a30c1752_app_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-08-26 16:54 +0000
+            created at 2026-08-26 18:33 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -446,10 +446,19 @@
     <p class="run run2"><span class="n"><a id="t362" href="#t362">362</a></span><span class="t">    <span class="nam">item_id</span><span class="op">:</span> <span class="nam">int</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t363" href="#t363">363</a></span><span class="t">    <span class="nam">inventory_api</span><span class="op">:</span> <span class="nam">InventoryAPI</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t364" href="#t364">364</a></span><span class="t"><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">Response</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t365" href="#t365">365</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Delete an inventory node, service, schema, or table.&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t366" href="#t366">366</a></span><span class="t">    <span class="nam">entity</span> <span class="op">=</span> <span class="nam">require_inventory_plugin_entity</span><span class="op">(</span><span class="nam">entity</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t367" href="#t367">367</a></span><span class="t">    <span class="key">await</span> <span class="nam">inventory_api</span><span class="op">.</span><span class="nam">delete</span><span class="op">(</span><span class="nam">inventory_service_detail_path</span><span class="op">(</span><span class="nam">entity</span><span class="op">,</span> <span class="nam">item_id</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t368" href="#t368">368</a></span><span class="t">    <span class="key">return</span> <span class="nam">Response</span><span class="op">(</span><span class="nam">status_code</span><span class="op">=</span><span class="nam">status</span><span class="op">.</span><span class="nam">HTTP_204_NO_CONTENT</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t365" href="#t365">365</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Retire an inventory node, service, schema, or table, and its descendants.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t366" href="#t366">366</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t367" href="#t367">367</a></span><span class="t"><span class="str">    The row and its subtree survive: they drop out of every active read and stay</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t368" href="#t368">368</a></span><span class="t"><span class="str">    reachable through the Inventory API&#x27;s ``include_retired`` opt-in.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t369" href="#t369">369</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t370" href="#t370">370</a></span><span class="t"><span class="str">    :param entity: The inventory entity kind addressed by the path.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t371" href="#t371">371</a></span><span class="t"><span class="str">    :param item_id: The identifier of the entity to retire.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t372" href="#t372">372</a></span><span class="t"><span class="str">    :param inventory_api: The Inventory API client the call is proxied through.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t373" href="#t373">373</a></span><span class="t"><span class="str">    :return: An empty 204 response.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t374" href="#t374">374</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t375" href="#t375">375</a></span><span class="t">    <span class="nam">entity</span> <span class="op">=</span> <span class="nam">require_inventory_plugin_entity</span><span class="op">(</span><span class="nam">entity</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t376" href="#t376">376</a></span><span class="t">    <span class="key">await</span> <span class="nam">inventory_api</span><span class="op">.</span><span class="nam">delete</span><span class="op">(</span><span class="nam">inventory_service_detail_path</span><span class="op">(</span><span class="nam">entity</span><span class="op">,</span> <span class="nam">item_id</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t377" href="#t377">377</a></span><span class="t">    <span class="key">return</span> <span class="nam">Response</span><span class="op">(</span><span class="nam">status_code</span><span class="op">=</span><span class="nam">status</span><span class="op">.</span><span class="nam">HTTP_204_NO_CONTENT</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -459,7 +468,7 @@
             <a class="nav" href="z_032e5aa6a30c1752_app_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-08-26 16:54 +0000
+            created at 2026-08-26 18:33 +0000
         </p>
     </div>
 </footer>
