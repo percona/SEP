@@ -777,14 +777,14 @@ export interface components {
        */
       created_at?: string;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
-      source?: components['schemas']['SourceEnum'] | null;
+      source: components['schemas']['SourceEnum'];
       /**
        * Type
        * @default generic
@@ -820,7 +820,7 @@ export interface components {
        */
       created_at?: string;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
@@ -829,7 +829,7 @@ export interface components {
       retired_at?: string | null;
       /** Services */
       services: components['schemas']['Service'][];
-      source?: components['schemas']['SourceEnum'] | null;
+      source: components['schemas']['SourceEnum'];
       /**
        * Type
        * @default generic
@@ -845,19 +845,18 @@ export interface components {
      *     :param address: The network address of the node.
      *     :param name: The name of the node.
      *     :param external_id: An external identifier for the node, indexed for quick lookup.
-     *         Defaults to None.
      *     :param source: The source from which the node information is derived. Indexed for
-     *         quick lookup. Defaults to None.
+     *         quick lookup.
      *     :param type: The type of the node (e.g., remote, generic). Defaults to "generic".
      */
     NodeWrite: {
       /** Address */
       address: string;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Name */
       name: string;
-      source?: components['schemas']['SourceEnum'] | null;
+      source: components['schemas']['SourceEnum'];
       /**
        * Type
        * @default generic
@@ -1137,7 +1136,7 @@ export interface components {
       /** Environment */
       environment?: string | null;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
@@ -1190,7 +1189,7 @@ export interface components {
       /** Environment */
       environment?: string | null;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
@@ -1248,7 +1247,7 @@ export interface components {
       /** Environment */
       environment?: string | null;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
@@ -1360,25 +1359,17 @@ export interface components {
      * @description Define the model for writing service data to the inventory.
      *
      *     :param external_id: An external identifier for the service, indexed for quick
-     *         lookup. Defaults to None.
-     *     :type external_id: NonEmptyStr | None
+     *         lookup.
      *     :param name: The name of the service.
-     *     :type name: NonEmptyStr
      *     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-     *     :type type: ServiceTypeEnum
      *     :param port: The port number on which the service is running. Defaults to None.
-     *     :type port: int | None
      *     :param environment: The environment in which the service is running (e.g.,
      *         production, staging). Defaults to None.
-     *     :type environment: str | None
      *     :param cluster: The cluster in which the service is running. Defaults to None.
-     *     :type cluster: str | None
      *     :param replication_set: The replication set in which the service is running. Defaults to None.
-     *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service. Defaults to None.
      *     :param node_id: The foreign key referencing the node to which the service belongs.
      *         Defaults to None.
-     *     :type node_id: int | None
      */
     ServiceWrite: {
       /** Cluster */
@@ -1390,7 +1381,7 @@ export interface components {
       /** Environment */
       environment?: string | null;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Name */
       name: string;
       /** Node Id */
