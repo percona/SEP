@@ -35,6 +35,8 @@ import pytest
 
 from app.sep.apps.om_inventory.payload.probe import (
     find_unregistered,
+    match_process,
+    matched_process_pids,
     parse_config_path,
     parse_port,
 )
@@ -126,16 +128,18 @@ class TestParsePort:
         assert parse_port("/usr/bin/mongod", "/nonexistent/mongod.conf") is None
 
 
-def process(port: int | None, program: str = "mongod") -> dict:
+def process(port: int | None, program: str = "mongod", pid: int = 1) -> dict:
     """Build one server process as the payload reports it.
 
     :param port: The port it listens on, or ``None`` when undetermined.
     :param program: ``mongod`` or ``mongos``.
+    :param pid: Its pid. Defaults to ``1``, which is fine as long as a test never
+        needs to tell two processes apart by pid.
     :return: The process mapping.
     """
     return {
         "program": program,
-        "pid": 1,
+        "pid": pid,
         "port": port,
         "config_path": CONFIG_PATH,
         "argv": f"/usr/bin/{program} --config {CONFIG_PATH}",
@@ -204,3 +208,46 @@ class TestFindUnregistered:
         )
 
         assert found == []
+
+
+class TestMatchedPidsExcludeADoubleListing:
+    """Assert a process a target already claimed is not also reported as a stranger.
+
+    Both halves have to run together for this to mean anything: an isolated call to
+    :func:`find_unregistered` cannot see what a target matched, and an isolated call
+    to :func:`match_process` says nothing about what :func:`find_unregistered` would
+    otherwise report. The bug this pins was a real one -- a mongod on the default port
+    with no explicit ``port:`` in its config attributed to its target by
+    :func:`match_process`'s single-process shortcut, *and* picked up by
+    :func:`find_unregistered`'s ``port is None`` arm, because the same missing port
+    satisfies both checks in opposite directions.
+    """
+
+    def test_a_default_port_mongod_is_not_also_a_stranger(self) -> None:
+        """The regression: one running mongod, reported as itself and as a stranger.
+
+        This is ``main``'s own sequence, minus the I/O: resolve every target's match
+        first, then hand the pids that produced to :func:`find_unregistered`.
+        """
+        processes = [process(None)]
+        targets = [{"service": "db00", "port": DEFAULT_PORT}]
+
+        matched = matched_process_pids(processes, targets)
+        found = find_unregistered(processes, targets, matched)
+
+        assert match_process(processes, DEFAULT_PORT) is processes[0]
+        assert found == []
+
+    def test_a_genuine_stranger_beside_a_matched_process_is_still_reported(
+        self,
+    ) -> None:
+        """Excluding a matched pid must not swallow an actual stranger beside it."""
+        matched_process = process(DEFAULT_PORT, pid=1)
+        stranger = process(SHARD_PORT, pid=2)
+        processes = [matched_process, stranger]
+        targets = [{"service": "db00", "port": DEFAULT_PORT}]
+
+        matched = matched_process_pids(processes, targets)
+        found = find_unregistered(processes, targets, matched)
+
+        assert [entry["port"] for entry in found] == [SHARD_PORT]
