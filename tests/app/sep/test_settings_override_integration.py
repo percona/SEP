@@ -71,7 +71,7 @@ def _sep_proxies() -> dict:
         SettingClassEnum.SNIPPETS_SETTINGS: ProxyEntry(
             snippets_settings, SnippetsSettings
         ),
-        SettingClassEnum.ALERTS_SETTINGS: ProxyEntry(alerts_settings, AlertsSettings),
+        AlertsSettings.__name__: ProxyEntry(alerts_settings, AlertsSettings),
     }
 
 
@@ -423,7 +423,7 @@ async def test_backup_interval_override_reseeds_alert_backup_beat_schedule_live(
 
     The alerts backup interval is a ``hot_field`` feeding the system beat schedule
     (:func:`app.sep.db.seed.get_system_periodic_tasks`). Wiring
-    ``(ALERTS_SETTINGS, BACKUP_INTERVAL)`` to ``_reseed_system_periodic_tasks`` means
+    ``(AlertsSettings, BACKUP_INTERVAL)`` to ``_reseed_system_periodic_tasks`` means
     a runtime override updates the live beat row -- not just the proxy -- so Celery
     beat reloads it on its next tick without a restart. Mirrors the snippets case.
     """
@@ -440,7 +440,7 @@ async def test_backup_interval_override_reseeds_alert_backup_beat_schedule_live(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.ALERTS_SETTINGS,
+                setting_class="ALERTS_SETTINGS",
                 key="BACKUP_INTERVAL",
                 value={"every": OVERRIDE_EVERY_MINUTES, "period": "minutes"},
             ),
@@ -452,7 +452,7 @@ async def test_backup_interval_override_reseeds_alert_backup_beat_schedule_live(
     )
     callbacks = {
         (
-            SettingClassEnum.ALERTS_SETTINGS,
+            AlertsSettings.__name__,
             "BACKUP_INTERVAL",
         ): _reseed_system_periodic_tasks,
     }

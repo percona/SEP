@@ -1724,16 +1724,14 @@ export interface paths {
     };
     /**
      * Inventory Sync Status
-     * @description Return whether an inventory-wide sync is currently running.
+     * @description Return whether an inventory-wide sync is running, plus recent run outcomes.
      *
      *     Replaces the server-rendered ``sync_is_running`` template variable
      *     used by the Jinja2 inventory page so the React control can poll the
      *     same state without scraping HTML.
      *
      *     :param session: SQLModel async session.
-     *     :type session: SessionDep
-     *     :return: ``{"is_running": <bool>}``.
-     *     :rtype: InventorySyncStatusResponse
+     *     :return: The running flag and the most recent runs, newest first.
      */
     get: operations['inventory_inventory_sync_status_api_apps_inventory_sync_status__get'];
     put?: never;
@@ -4082,61 +4080,22 @@ export interface components {
       | 'external'
       | 'valkey';
     /**
-     * SettingClassEnum
-     * @description Enumerate settings classes that may have HOT override rows.
-     *
-     *     The wired classes are ``SEPSettings``, ``TasksSettings``,
-     *     ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
-     *     ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings`` and
-     *     ``InventorySettings``.
-     *
-     *     To wire a new settings class:
-     *
-     *     1. Add a member here whose value matches the Pydantic class ``__name__``.
-     *     2. Generate an Alembic migration on every consumer track that extends the
-     *        ``CHECK`` constraint on ``settingoverride.setting_class``. The column
-     *        uses ``native_enum=False`` so the value list lives in a constraint,
-     *        not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.
-     *        Note that the column and ``CHECK`` constraint persist the enum member
-     *        *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member
-     *        *value* (the Pydantic class name, e.g. ``SEPSettings``).
-     *     3. Wire a ``ProxyEntry`` for the new class in the relevant service's
-     *        lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).
-     * @enum {string}
-     */
-    SettingClassEnum:
-      | 'SEPSettings'
-      | 'TasksSettings'
-      | 'SnippetsSettings'
-      | 'Settings'
-      | 'AlertSettings'
-      | 'AnonymizerSettings'
-      | 'AlertsSettings'
-      | 'HealthReportSettings'
-      | 'InventorySettings';
-    /**
      * SettingClassGroup
-     * @description One settings-class group in the LIST response.
+     * @description Group one settings class's fields for the LIST response.
      *
-     *     :param setting_class: The settings class this group represents.
-     *     :type setting_class: SettingClassEnum
+     *     :param setting_class: The Pydantic class ``__name__`` this group represents.
      *     :param settings: The fields declared on the settings class, with their
      *         current values and metadata.
-     *     :type settings: list[SettingResponse]
      *     :param is_app_owned: Whether this group belongs to a SEP app under
      *         ``app/sep/apps/`` rather than core SEP wiring.
-     *     :type is_app_owned: bool
      *     :param app_id: The owning app's registry key when ``is_app_owned`` is
      *         ``True``; ``None`` for core groups.
-     *     :type app_id: str | None
      *     :param app_display_name: The owning app's human-facing label when
      *         ``is_app_owned`` is ``True``; ``None`` for core groups.
-     *     :type app_display_name: str | None
      *     :param app_enabled: Whether the owning app is currently enabled when
      *         ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled
      *         apps remain listed so the frontend can hide them without a second
      *         lookup.
-     *     :type app_enabled: bool | None
      */
     SettingClassGroup: {
       /** App Display Name */
@@ -4150,7 +4109,8 @@ export interface components {
        * @default false
        */
       is_app_owned: boolean;
-      setting_class: components['schemas']['SettingClassEnum'];
+      /** Setting Class */
+      setting_class: string;
       /** Settings */
       settings: components['schemas']['SettingResponse'][];
     };
@@ -4171,7 +4131,7 @@ export interface components {
      * SettingResponse
      * @description Represent a single setting's metadata and current value.
      *
-     *     :param setting_class: The settings class the field belongs to.
+     *     :param setting_class: The Pydantic class ``__name__`` the field belongs to.
      *     :param key: The field name on the settings class.
      *     :param key_path: Carry the canonical key segments for ``key`` such that
      *         ``"__".join(key_path) == key``.
@@ -4229,7 +4189,8 @@ export interface components {
       /** Options */
       options?: components['schemas']['SettingOption'][] | null;
       reload: components['schemas']['ReloadClassification'];
-      setting_class: components['schemas']['SettingClassEnum'];
+      /** Setting Class */
+      setting_class: string;
       /** Type */
       type: string;
       /** Value */
@@ -4423,6 +4384,21 @@ export interface components {
      * @enum {string}
      */
     SourceEnum: 'pmm';
+    /**
+     * SyncStatusEnum
+     * @description Enumerate the possible statuses of a synchronization process.
+     *
+     *     :cvar PENDING: The synchronization is pending.
+     *     :vartype PENDING: str
+     *     :cvar RUNNING: The synchronization is currently running.
+     *     :vartype RUNNING: str
+     *     :cvar SUCCESS: The synchronization completed successfully.
+     *     :vartype SUCCESS: str
+     *     :cvar FAILED: The synchronization failed.
+     *     :vartype FAILED: str
+     * @enum {string}
+     */
+    SyncStatusEnum: 'pending' | 'running' | 'success' | 'failed';
     /**
      * TaskBackendEnum
      * @description Control the choice of backends.
@@ -6408,7 +6384,9 @@ export interface components {
       /** Pgbackrest Datadir */
       pgbackrest_datadir?: string | null;
       /** Pgbackrest Incremental Cycle */
-      pgbackrest_incremental_cycle?: string | number | null;
+      pgbackrest_incremental_cycle?:
+        | ('daily' | 'weekly' | '1' | '2' | '3' | '4' | '5' | '6' | '7')
+        | null;
       /** Pgbackrest Retention Archive */
       pgbackrest_retention_archive?: number | null;
       /** Pgbackrest Retention Full */
@@ -8763,11 +8741,16 @@ export interface components {
      *
      *     :param is_running: ``True`` when an inventory-wide sync is currently
      *         in progress; ``False`` otherwise.
-     *     :type is_running: bool
+     *     :param last_runs: The most recently recorded synchronization runs, newest first.
      */
     inventory__InventorySyncStatusResponse: {
       /** Is Running */
       is_running: boolean;
+      /**
+       * Last Runs
+       * @default []
+       */
+      last_runs: components['schemas']['inventory__SyncRunSummary'][];
     };
     /**
      * InventorySyncTriggerWrite
@@ -8790,15 +8773,38 @@ export interface components {
      * @description Represent a single plugin task entry returned by ``GET /api/apps/inventory/``.
      *
      *     :param name: Machine-readable task identifier (e.g. ``"inventory-sync"``).
-     *     :type name: str
      *     :param display_name: Human-readable label for the schedule UI.
-     *     :type display_name: str
      */
     inventory__PluginTaskResponse: {
       /** Display Name */
       display_name: string;
       /** Name */
       name: string;
+    };
+    /**
+     * SyncRunSummary
+     * @description Summarize one recorded synchronization run for the sync-status endpoint.
+     *
+     *     :param syncer: The fully qualified name of the synchronizer that ran.
+     *     :param started_at: When the run was recorded.
+     *     :param finished_at: When the run last changed, or ``None`` while it is open.
+     *     :param status: The run-level outcome.
+     *     :param snapshot_complete: Whether the run observed a complete generation of the
+     *         remote inventory, or ``None`` when the syncer does not produce one.
+     */
+    inventory__SyncRunSummary: {
+      /** Finished At */
+      finished_at: string | null;
+      /** Snapshot Complete */
+      snapshot_complete: boolean | null;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      status: components['schemas']['SyncStatusEnum'];
+      /** Syncer */
+      syncer: string;
     };
     /**
      * BackupCreate
@@ -14586,7 +14592,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        setting_class: components['schemas']['SettingClassEnum'];
+        setting_class: string;
       };
       cookie?: never;
     };
@@ -14621,7 +14627,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        setting_class: components['schemas']['SettingClassEnum'];
+        setting_class: string;
         key: string;
       };
       cookie?: never;
@@ -14653,7 +14659,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        setting_class: components['schemas']['SettingClassEnum'];
+        setting_class: string;
         key: string;
       };
       cookie?: never;
