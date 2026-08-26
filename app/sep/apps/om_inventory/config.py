@@ -34,7 +34,7 @@ from app.core.celery.models import IntervalSchedule, Period
 from app.core.config import BaseYamlSettings
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import hot_field
-from app.core.utils.fields import TimedeltaSeconds
+from app.core.utils.fields import StrHttpUrl, TimedeltaSeconds
 
 
 class OmInventorySettings(BaseYamlSettings):
@@ -64,6 +64,8 @@ class OmInventorySettings(BaseYamlSettings):
     :param REPO_URL: The file each host fetches to prove it can reach Percona's
         repository. Configurable because an air-gapped estate mirrors it somewhere
         else, and checking the public one there would report every host as broken.
+        Restricted to HTTP/HTTPS: the payload hands it straight to
+        ``urllib.request``, which would otherwise also accept ``file:`` or ``ftp:``.
     :param REPO_TIMEOUT: How long that fetch may take, seconds. Short on purpose: a
         repository slow enough to exceed it is not usable by a package manager
         either, so waiting longer only delays the same answer.
@@ -88,7 +90,7 @@ class OmInventorySettings(BaseYamlSettings):
         IntervalSchedule(every=10, period=Period.MINUTES)
     )
     PROBE_DATABASE: bool = hot_field(default=True)
-    REPO_URL: str = hot_field(
+    REPO_URL: StrHttpUrl = hot_field(
         "https://repo.percona.com/percona/yum/PERCONA-PACKAGING-KEY", advanced=True
     )
     REPO_TIMEOUT: PositiveInt = hot_field(8, advanced=True)

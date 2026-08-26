@@ -196,6 +196,7 @@ def _record_for(entry: Any, host_results: dict[str, HostProbeResult]) -> dict | 
 HOST_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("os", ("system", "os_name")),
     ("kernel", ("system", "kernel")),
+    ("arch", ("system", "arch")),
     # The installed server binary, on the *host* as well as on its services. A
     # machine carrying a PMM client and no database is the one an install decision is
     # about, and it has no service row for this to land on: without it here the

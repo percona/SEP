@@ -413,7 +413,7 @@ async def test_the_host_document_carries_the_installed_binary() -> None:
                 executor_host="pmm-client-node00",
                 host_record={
                     "binary_version": "7.0.39-21",
-                    "system": {"os_name": "Ubuntu 24.04"},
+                    "system": {"os_name": "Ubuntu 24.04", "arch": "x86_64"},
                 },
             )
         },
@@ -422,6 +422,9 @@ async def test_the_host_document_carries_the_installed_binary() -> None:
     document = outcome.host_documents["pmm-client-node00"]
     assert document["installed_version"] == "7.0.39-21"
     assert document["os"] == "Ubuntu 24.04"
+    # The payload collects it (collect_os_facts), but nothing lifted it into the
+    # document until HOST_FIELDS carried an entry for it.
+    assert document["arch"] == "x86_64"
 
 
 @pytest.mark.asyncio
