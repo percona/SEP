@@ -56,7 +56,7 @@ from app.core.settings_override.lifecycle import (
     publish_snapshot,
 )
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import setting_class_token, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
     _resolve_field_in_model,
@@ -83,41 +83,37 @@ from app.core.settings_override.registry import (
     unwrap_secrets_for_storage,
 )
 
-ClassEntry = tuple[SettingClassEnum, type[BaseYamlSettings], OverridableSettingsProxy]
+ClassEntry = tuple[str, type[BaseYamlSettings], OverridableSettingsProxy]
 
 
 @dataclass(frozen=True, slots=True)
 class AppOwnedClassEntry:
-    """One app-owned settings class exposed on the SEP settings router.
+    """Expose one app-owned settings class on the SEP settings router.
 
-    :param setting_class: The settings class identifier.
-    :type setting_class: SettingClassEnum
+    :param setting_class: The Pydantic class ``__name__`` of the settings class.
     :param settings_cls: The Pydantic settings model class.
-    :type settings_cls: type[BaseYamlSettings]
     :param proxy: The live override proxy for the class.
-    :type proxy: OverridableSettingsProxy
     :param app_key: The owning app's registry key.
-    :type app_key: str
     """
 
-    setting_class: SettingClassEnum
+    setting_class: str
     settings_cls: type[BaseYamlSettings]
     proxy: OverridableSettingsProxy
     app_key: str
 
 
-#: One ``(SettingClassEnum, remote_base_path)`` pair per settings class whose
+#: One ``(class_name, remote_base_path)`` pair per settings class whose
 #: storage lives in another sub-app and must be proxied server-side rather than
 #: read from a local config singleton. ``remote_base_path`` is the path the
 #: remote sub-app mounts its settings router at (e.g. ``"/admin/settings"``),
 #: relative to the injected ``RemoteAPI`` client's base URL.
-RemoteClassEntry = tuple[SettingClassEnum, str]
+RemoteClassEntry = tuple[str, str]
 
 #: Predicate deciding whether a field applies under current runtime state (e.g.
 #: the active auth provider). ``None`` at a router or call site means every field
 #: applies. Display-only: it drives ``SettingResponse.is_applicable`` for the UI
 #: and never blocks PATCH/DELETE.
-ApplicabilityPredicate = Callable[[SettingClassEnum, FieldMetadata], bool]
+ApplicabilityPredicate = Callable[[str, FieldMetadata], bool]
 
 #: Async callback resolving app identity and enabled state for one ``app_key``.
 #: Injected by the SEP wiring so this factory stays free of ``app.sep`` imports.
@@ -183,10 +179,10 @@ async def _proxy_settings_request(
 def _remote_wiring(
     remote_classes: list[RemoteClassEntry] | None,
     remote_api_dep: Any,
-) -> tuple[dict[SettingClassEnum, str], Any]:
+) -> tuple[dict[str, str], Any]:
     """Resolve the remote-class lookup and the handler's ``remote_api`` annotation.
 
-    :param remote_classes: The configured ``(enum, base_path)`` pairs, or ``None``.
+    :param remote_classes: The configured ``(class_name, base_path)`` pairs, or ``None``.
     :param remote_api_dep: The ``Annotated[RemoteAPI, Depends(...)]`` alias, or
         ``None`` when no remote classes are wired.
     :return: A ``(setting_class -> base_path)`` map and the dependency annotation
@@ -195,7 +191,7 @@ def _remote_wiring(
         is ``None``, so the misconfiguration fails fast at router construction
         instead of as a runtime ``500`` when a handler calls ``None.get(...)``.
     """
-    remote_lookup = dict(remote_classes or {})
+    remote_lookup = {str(name): path for name, path in (remote_classes or [])}
     if remote_lookup and remote_api_dep is None:
         raise ValueError(
             "remote_api_dep is required when remote_classes is non-empty.",
@@ -206,7 +202,7 @@ def _remote_wiring(
 
 async def _remote_list_group(
     remote_api: RemoteAPI,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     base_path: str,
 ) -> SettingClassGroup:
     """Fetch and validate one remote settings class's group for the LIST.
@@ -234,7 +230,7 @@ async def _remote_list_group(
     group = next((g for g in remote.groups if g.setting_class == setting_class), None)
     if group is None:
         raise HTTPBadGatewayException(
-            detail=f"Upstream did not return settings class {setting_class.value!r}.",
+            detail=f"Upstream did not return settings class {setting_class!r}.",
         )
     return group
 
@@ -242,7 +238,7 @@ async def _remote_list_group(
 async def _remote_detail(
     remote_api: RemoteAPI,
     base_path: str,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     key: str,
 ) -> SettingResponse:
     """Proxy a DETAIL read for a remote settings class and validate the response.
@@ -260,7 +256,7 @@ async def _remote_detail(
         :class:`SettingResponse`.
     """
     payload = await _proxy_settings_request(
-        remote_api, "get", f"{base_path}/{setting_class.value}/{key}"
+        remote_api, "get", f"{base_path}/{setting_class}/{key}"
     )
     return SettingResponse.model_validate(payload)
 
@@ -268,7 +264,7 @@ async def _remote_detail(
 async def _remote_patch(
     remote_api: RemoteAPI,
     base_path: str,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     body: SettingsPatch,
 ) -> list[SettingResponse]:
     """Proxy a PATCH batch for a remote settings class and validate the response.
@@ -288,7 +284,7 @@ async def _remote_patch(
     payload = await _proxy_settings_request(
         remote_api,
         "patch",
-        f"{base_path}/{setting_class.value}",
+        f"{base_path}/{setting_class}",
         json=body.model_dump(mode="json"),
     )
     return [SettingResponse.model_validate(item) for item in payload]
@@ -297,7 +293,7 @@ async def _remote_patch(
 async def collect_class_setting_responses(
     *,
     session: AsyncSession,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     settings_cls: type[BaseYamlSettings],
     proxy: OverridableSettingsProxy,
     applicability: ApplicabilityPredicate | None = None,
@@ -309,7 +305,7 @@ async def collect_class_setting_responses(
     :func:`dump_field_value` so the key set matches ``GET /settings/``.
 
     :param session: The sub-app's database session.
-    :param setting_class: The settings class identifier (enum member).
+    :param setting_class: The settings class identifier (Pydantic class ``__name__``).
     :param settings_cls: The Pydantic settings class to introspect.
     :param proxy: The proxy whose attribute access yields current values.
     :param applicability: Optional predicate deciding whether each field applies
@@ -317,7 +313,7 @@ async def collect_class_setting_responses(
     :return: One :class:`SettingResponse` per LIST row for the class.
     """
     rows = await SettingsOverrideManager.list(
-        session, setting_class=setting_class, is_active=True
+        session, setting_class=setting_class_token(settings_cls), is_active=True
     )
     override_keys = override_keys_for_rows(settings_cls, rows)
     return [
@@ -355,7 +351,7 @@ def _enum_options(field_info: FieldInfo) -> list[SettingOption] | None:
 
 def _settings_response_from_field(
     *,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     settings_cls: type[BaseYamlSettings],
     proxy: OverridableSettingsProxy,
     field_meta: FieldMetadata,
@@ -364,7 +360,7 @@ def _settings_response_from_field(
 ) -> SettingResponse:
     """Build a :class:`SettingResponse` for one field on a settings class.
 
-    :param setting_class: The settings class identifier (enum member).
+    :param setting_class: The settings class identifier (Pydantic class ``__name__``).
     :param settings_cls: The Pydantic settings class declaring the field.
     :param proxy: The proxy whose attribute access yields the field's current
         value (snapshot if present, else the wrapped Pydantic instance).
@@ -414,7 +410,7 @@ def _settings_response_from_field(
 
 def _field_responses(
     *,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     settings_cls: type[BaseYamlSettings],
     proxy: OverridableSettingsProxy,
     field_meta: FieldMetadata,
@@ -428,7 +424,7 @@ def _field_responses(
     :func:`resolve_nested_field_metadata`) in place of the parent's single
     summary entry; when it names none, the parent keeps that entry.
 
-    :param setting_class: The settings class identifier (enum member).
+    :param setting_class: The settings class identifier (Pydantic class ``__name__``).
     :param settings_cls: The Pydantic settings class declaring ``field_meta``.
     :param proxy: The proxy whose attribute access yields current values.
     :param field_meta: The introspected metadata for the top-level field.
@@ -669,7 +665,7 @@ def _validate_nested_key(
 
 async def _fire_inline_rebind_callbacks(
     request: Request,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     proxy: OverridableSettingsProxy,
     previous: Mapping[str, object],
 ) -> None:
@@ -722,10 +718,8 @@ def _validate_app_owned_wiring(
 
 
 def _merge_app_owned_into_lookup(
-    class_lookup: dict[
-        SettingClassEnum, tuple[type[BaseYamlSettings], OverridableSettingsProxy]
-    ],
-    remote_lookup: dict[SettingClassEnum, str],
+    class_lookup: dict[str, tuple[type[BaseYamlSettings], OverridableSettingsProxy]],
+    remote_lookup: dict[str, str],
     app_owned: list[AppOwnedClassEntry],
 ) -> None:
     """Register app-owned classes in the local lookup, rejecting duplicates.
@@ -736,17 +730,18 @@ def _merge_app_owned_into_lookup(
     :raises ValueError: If a setting class is wired more than once.
     """
     for entry in app_owned:
-        if entry.setting_class in class_lookup:
+        class_id = str(entry.setting_class)
+        if class_id in class_lookup:
             raise ValueError(
-                f"Settings class {entry.setting_class.value!r} is wired as both"
+                f"Settings class {class_id!r} is wired as both"
                 " a core class and an app-owned class.",
             )
-        if entry.setting_class in remote_lookup:
+        if class_id in remote_lookup:
             raise ValueError(
-                f"Settings class {entry.setting_class.value!r} is wired as both"
+                f"Settings class {class_id!r} is wired as both"
                 " a remote class and an app-owned class.",
             )
-        class_lookup[entry.setting_class] = (entry.settings_cls, entry.proxy)
+        class_lookup[class_id] = (entry.settings_cls, entry.proxy)
 
 
 async def _collect_app_owned_list_groups(
@@ -763,16 +758,17 @@ async def _collect_app_owned_list_groups(
     """
     groups = []
     for entry in app_owned:
+        class_id = str(entry.setting_class)
         settings_list = await collect_class_setting_responses(
             session=session,
-            setting_class=entry.setting_class,
+            setting_class=class_id,
             settings_cls=entry.settings_cls,
             proxy=entry.proxy,
         )
         metadata = await resolve_app_metadata(session, entry.app_key)
         groups.append(
             SettingClassGroup(
-                setting_class=entry.setting_class,
+                setting_class=class_id,
                 settings=settings_list,
                 is_app_owned=metadata.is_app_owned,
                 app_id=metadata.app_id,
@@ -787,7 +783,7 @@ async def _collect_settings_list_groups(
     session: AsyncSession,
     remote_api: RemoteAPI | None,
     classes: list[ClassEntry],
-    remote_lookup: dict[SettingClassEnum, str],
+    remote_lookup: dict[str, str],
     app_owned: list[AppOwnedClassEntry],
     resolve_app_metadata: ResolveAppMetadata | None,
     applicability: ApplicabilityPredicate | None,
@@ -797,7 +793,7 @@ async def _collect_settings_list_groups(
     :param session: The sub-app's database session.
     :param remote_api: The client for remote settings classes, or ``None``.
     :param classes: The core settings classes exposed locally.
-    :param remote_lookup: Remote classes keyed by enum member.
+    :param remote_lookup: Remote classes keyed by class name.
     :param app_owned: App-owned settings classes appended after remote groups.
     :param resolve_app_metadata: The callback that resolves app metadata.
     :param applicability: Optional predicate driving ``is_applicable`` on each
@@ -806,16 +802,15 @@ async def _collect_settings_list_groups(
     """
     groups = []
     for setting_class, settings_cls, proxy in classes:
+        class_id = str(setting_class)
         settings_list = await collect_class_setting_responses(
             session=session,
-            setting_class=setting_class,
+            setting_class=class_id,
             settings_cls=settings_cls,
             proxy=proxy,
             applicability=applicability,
         )
-        groups.append(
-            SettingClassGroup(setting_class=setting_class, settings=settings_list)
-        )
+        groups.append(SettingClassGroup(setting_class=class_id, settings=settings_list))
     for setting_class, base_path in remote_lookup.items():
         groups.append(await _remote_list_group(remote_api, setting_class, base_path))
     if app_owned:
@@ -855,7 +850,7 @@ def build_settings_router(
     cross-site JSON request carrying only ambient cookies cannot mutate
     settings.
 
-    :param classes: One ``(SettingClassEnum, settings_cls, proxy)`` triple per
+    :param classes: One ``(class_name, settings_cls, proxy)`` triple per
         core settings class to expose on this router.
     :param session_dep: An ``Annotated[AsyncSession, Depends(...)]`` type alias
         for the sub-app's session dependency (e.g. ``app.sep.deps.SessionDep``
@@ -870,7 +865,7 @@ def build_settings_router(
         SEP wiring passes ``[RequireBearerForUnsafeMethods]`` so cookie sessions cannot
         mutate settings; the Tasks wiring leaves this empty because its
         admin dependency is bearer-only via ``OAuth2PasswordBearer``.
-    :param remote_classes: Optional ``(SettingClassEnum, remote_base_path)`` pairs
+    :param remote_classes: Optional ``(class_name, remote_base_path)`` pairs
         for settings classes whose storage lives in another sub-app. Such a class
         has no local config singleton or override table; the LIST handler appends
         its group by proxying ``GET {remote_base_path}/`` server-side, and the
@@ -904,12 +899,12 @@ def build_settings_router(
     router = APIRouter(dependencies=[admin_dep])
     app_owned = list(app_owned_classes or [])
     _validate_app_owned_wiring(app_owned, resolve_app_metadata)
-    class_lookup = {member: (cls, proxy) for member, cls, proxy in classes}
+    class_lookup = {str(member): (cls, proxy) for member, cls, proxy in classes}
     remote_lookup, remote_dep = _remote_wiring(remote_classes, remote_api_dep)
     _merge_app_owned_into_lookup(class_lookup, remote_lookup, app_owned)
 
     def _resolve(
-        setting_class: SettingClassEnum,
+        setting_class: str,
     ) -> tuple[type[BaseYamlSettings], OverridableSettingsProxy]:
         """Return the settings class and proxy for ``setting_class`` or 404.
 
@@ -921,8 +916,7 @@ def build_settings_router(
         entry = class_lookup.get(setting_class)
         if entry is None:
             raise HTTPNotFoundException(
-                f"Settings class {setting_class.value!r} is not exposed by"
-                " this sub-app.",
+                f"Settings class {setting_class!r} is not exposed by this sub-app.",
             )
         return entry
 
@@ -958,7 +952,7 @@ def build_settings_router(
 
     @router.get("/{setting_class}/{key}")
     async def get_setting(
-        setting_class: SettingClassEnum,
+        setting_class: str,
         key: str,
         session: session_dep,  # type: ignore[valid-type]
         remote_api: remote_dep,  # type: ignore[valid-type]
@@ -982,7 +976,7 @@ def build_settings_router(
         key = canonical_override_key(settings_cls, key)
         field_meta = _field_meta_or_404(settings_cls, key)
         rows = await SettingsOverrideManager.list(
-            session, setting_class=setting_class, is_active=True
+            session, setting_class=setting_class_token(settings_cls), is_active=True
         )
         override_keys = override_keys_for_rows(settings_cls, rows)
         return _settings_response_from_field(
@@ -997,7 +991,7 @@ def build_settings_router(
     @router.patch("/{setting_class}", dependencies=mutation_deps or [])
     async def patch_settings(
         request: Request,
-        setting_class: SettingClassEnum,
+        setting_class: str,
         body: SettingsPatch,
         session: session_dep,  # type: ignore[valid-type]
         remote_api: remote_dep,  # type: ignore[valid-type]
@@ -1038,7 +1032,6 @@ def build_settings_router(
         )
         await _persist_overrides(
             session=session,
-            setting_class=setting_class,
             settings_cls=settings_cls,
             to_apply=to_apply,
         )
@@ -1065,7 +1058,7 @@ def build_settings_router(
     )
     async def delete_setting(
         request: Request,
-        setting_class: SettingClassEnum,
+        setting_class: str,
         key: str,
         session: session_dep,  # type: ignore[valid-type]
         remote_api: remote_dep,  # type: ignore[valid-type]
@@ -1111,20 +1104,21 @@ def build_settings_router(
         if setting_class in remote_lookup:
             base_path = remote_lookup[setting_class]
             await _proxy_settings_request(
-                remote_api, "delete", f"{base_path}/{setting_class.value}/{key}"
+                remote_api, "delete", f"{base_path}/{setting_class}/{key}"
             )
             return
         settings_cls, proxy = _resolve(setting_class)
         key = canonical_override_key(settings_cls, key)
         field_meta = _field_meta_or_404(settings_cls, key)
+        token = setting_class_token(settings_cls)
         rows = await override_rows_for_key(
             session,
             settings_cls=settings_cls,
-            setting_class=setting_class,
+            setting_class=token,
             key=key,
         )
         _assert_key_deletable(settings_cls, field_meta, has_override_row=bool(rows))
-        await _delete_override_rows(session, setting_class, rows)
+        await _delete_override_rows(session, token, rows)
         previous = proxy.get_snapshot()
         await publish_snapshot(proxy, session, settings_cls)
         await _fire_inline_rebind_callbacks(request, setting_class, proxy, previous)
@@ -1267,7 +1261,7 @@ def _assert_key_deletable(
 
 async def _delete_override_rows(
     session: AsyncSession,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     rows: list[SettingOverride],
 ) -> None:
     """Delete every resolved override row by its stored key.
@@ -1291,7 +1285,6 @@ async def _delete_override_rows(
 async def _persist_overrides(
     *,
     session: AsyncSession,
-    setting_class: SettingClassEnum,
     settings_cls: type[BaseYamlSettings],
     to_apply: list[tuple[str, Any]],
 ) -> None:
@@ -1317,14 +1310,16 @@ async def _persist_overrides(
     its values cleanly.
 
     :param session: The sub-app's database session.
-    :param setting_class: The settings class the rows belong to.
-    :param settings_cls: The Pydantic settings class used to canonicalize keys.
+    :param settings_cls: The Pydantic settings class whose storage token is
+        written to ``settingoverride.setting_class``, and against which each
+        stored key is canonicalized.
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
     """
+    token = setting_class_token(settings_cls)
     try:
         await _stage_and_commit_overrides(
             session=session,
-            setting_class=setting_class,
+            setting_class=token,
             settings_cls=settings_cls,
             to_apply=to_apply,
         )
@@ -1332,7 +1327,7 @@ async def _persist_overrides(
         await session.rollback()
         await _stage_and_commit_overrides(
             session=session,
-            setting_class=setting_class,
+            setting_class=token,
             settings_cls=settings_cls,
             to_apply=to_apply,
         )
@@ -1341,7 +1336,7 @@ async def _persist_overrides(
 async def _stage_and_commit_overrides(
     *,
     session: AsyncSession,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     settings_cls: type[BaseYamlSettings],
     to_apply: list[tuple[str, Any]],
 ) -> None:
@@ -1352,7 +1347,8 @@ async def _stage_and_commit_overrides(
     ``key`` with the new value.
 
     :param session: The sub-app's database session.
-    :param setting_class: The settings class the rows belong to.
+    :param setting_class: The storage token written to
+        ``settingoverride.setting_class``.
     :param settings_cls: The Pydantic settings class used to canonicalize keys.
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
     """

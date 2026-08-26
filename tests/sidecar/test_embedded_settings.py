@@ -152,6 +152,12 @@ def test_profile_constructs_every_settings_class():
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
+def test_embedded_profile_enables_beat_pool_pre_ping():
+    """Assert the baked profile enables Celery beat/worker pool pre-ping."""
+    assert Settings().CELERY.beat_engine_options.pool_pre_ping is True
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
 def test_pmm_annotations_stay_enabled_without_an_api_key():
     """Assert annotations are configured on, and inert, until a token arrives."""
     settings = Settings()
@@ -430,15 +436,15 @@ def test_every_allowlist_entry_names_a_reachable_class(embedded_profile_data: di
     """
     reachable_tokens: set[str] = set()
     for member, _, _ in SEP_ADMIN_SETTINGS_CLASSES:
-        reachable_tokens.add(member.value)
+        reachable_tokens.add(str(member))
     for member, _, _ in INVENTORY_ADMIN_SETTINGS_CLASSES:
-        reachable_tokens.add(member.value)
+        reachable_tokens.add(str(member))
     for member, _, _ in TASKS_ADMIN_SETTINGS_CLASSES:
-        reachable_tokens.add(member.value)
+        reachable_tokens.add(str(member))
 
     profile_apps = SEPSettings().APPS
     for entry in collect_app_owned_settings_classes(profile_apps):
-        reachable_tokens.add(entry.setting_class.value)
+        reachable_tokens.add(str(entry.setting_class))
 
     allowlist = read_allowlist(embedded_profile_data)
     for key in allowlist:

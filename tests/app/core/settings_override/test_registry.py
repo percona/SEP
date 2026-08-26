@@ -25,7 +25,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.alerts.config import AlertSettings
 from app.core.alerts.models import BaseAlertProvider
 from app.core.alerts.providers.pagerduty import PagerDutyEventsAlertProvider
-from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.models import setting_class_token, SettingClassEnum
 from app.core.settings_override.registry import (
     chain_has_advanced,
     dump_field_value,
@@ -888,7 +888,7 @@ async def test_override_rows_for_key_excludes_other_setting_class(
         key=_CANONICAL_NESTED,
     )
     assert [row.key for row in rows] == [_LEGACY_NESTED]
-    assert rows[0].setting_class == SettingClassEnum.TASKS_SETTINGS
+    assert rows[0].setting_class == setting_class_token(TasksSettings)
 
 
 @pytest.mark.asyncio

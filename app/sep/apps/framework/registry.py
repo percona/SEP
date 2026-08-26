@@ -41,7 +41,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.celery.config import STATIC_CELERY_INCLUDE
 from app.core.settings_override.api.models import SettingClassAppMetadata
 from app.core.settings_override.api.routes import AppOwnedClassEntry
-from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import import_var
 from app.sep.apps.framework.base import BaseApp
 from app.sep.config import App, sep_settings
@@ -500,7 +499,7 @@ def collect_app_owned_settings_classes(
     activation = list(plugins if plugins is not None else sep_settings.APPS)
     registry = build_app_registry(activation)
     entries: list[AppOwnedClassEntry] = []
-    seen_classes: set[SettingClassEnum] = set()
+    seen_classes: set[str] = set()
     for plugin in activation:
         declared = getattr(
             import_module(plugin.module_name),
@@ -521,17 +520,18 @@ def collect_app_owned_settings_classes(
                     " APP_OWNED_SETTINGS_CLASSES entry must be an"
                     f" AppOwnedClassEntry, got {type(entry).__name__}.",
                 )
-            if entry.setting_class in seen_classes:
+            class_id = str(entry.setting_class)
+            if class_id in seen_classes:
                 raise ValueError(
-                    f"Settings class {entry.setting_class.value!r} is declared"
+                    f"Settings class {class_id!r} is declared"
                     " by more than one app-owned settings registration.",
                 )
             if registry.get(entry.app_key) is None:
                 raise ValueError(
-                    f"App-owned settings class {entry.setting_class.value!r}"
+                    f"App-owned settings class {class_id!r}"
                     f" references unknown app key {entry.app_key!r}.",
                 )
-            seen_classes.add(entry.setting_class)
+            seen_classes.add(class_id)
             entries.append(entry)
     return entries
 
