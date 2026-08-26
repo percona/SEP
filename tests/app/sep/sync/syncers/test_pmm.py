@@ -24,6 +24,7 @@ import pytest
 import pytest_asyncio
 from pydantic import ValidationError
 
+from app.core.utils.date_time import utc_now
 from app.inventory.models import Service, ServiceTypeEnum, SourceEnum
 from app.sep.clients.pmm import (
     PMMFetchDiagnostics,
@@ -844,8 +845,8 @@ async def test_perform_node_sync(node_with_services, owned_pmmsyncer, mocker):
         address="localhost",
     )
     owned_pmmsyncer.inventory_api.put.side_effect = [created_node.model_dump()]
-    delete_service = mocker.patch(
-        "app.sep.sync.syncers.pmm.PMMSyncer.delete_service", new_callable=AsyncMock
+    retire_service = mocker.patch(
+        "app.sep.sync.syncers.pmm.PMMSyncer.retire_service", new_callable=AsyncMock
     )
 
     await owned_pmmsyncer.perform_node_sync(created_node, updated_node)
@@ -853,7 +854,7 @@ async def test_perform_node_sync(node_with_services, owned_pmmsyncer, mocker):
     owned_pmmsyncer.inventory_api.put.assert_awaited_once()
     # Outside a full inventory generation there is nothing to judge absence
     # against, so the missing service is held rather than retired.
-    delete_service.assert_not_awaited()
+    retire_service.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -862,8 +863,8 @@ async def test_perform_inventory_sync(local_node, owned_pmmsyncer, mocker):
     owned_pmmsyncer.break_on_error = False
     owned_pmmsyncer.inventory_api.get.side_effect = [_local_nodes_payload(local_node)]
     owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(return_value=_snapshot())
-    delete_node = mocker.patch(
-        "app.sep.sync.syncers.pmm.PMMSyncer.delete_node", new_callable=AsyncMock
+    retire_node = mocker.patch(
+        "app.sep.sync.syncers.pmm.PMMSyncer.retire_node", new_callable=AsyncMock
     )
 
     await owned_pmmsyncer.perform_inventory_sync()
@@ -873,8 +874,8 @@ async def test_perform_inventory_sync(local_node, owned_pmmsyncer, mocker):
         skip_failed=True,
         filter_=owned_pmmsyncer._filter_sep_sync_disabled,
     )
-    # A single absence never deletes: the node is held until grace is spent.
-    delete_node.assert_not_awaited()
+    # A single absence never retires: the node is held until grace is spent.
+    retire_node.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -886,7 +887,7 @@ async def test_perform_inventory_sync_break_on_error_true_skips_failed_false(
     owned_pmmsyncer.inventory_api.get.side_effect = [_local_nodes_payload(local_node)]
     owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(return_value=_snapshot())
     mocker.patch(
-        "app.sep.sync.syncers.pmm.PMMSyncer.delete_node", new_callable=AsyncMock
+        "app.sep.sync.syncers.pmm.PMMSyncer.retire_node", new_callable=AsyncMock
     )
 
     await owned_pmmsyncer.perform_inventory_sync()
@@ -1098,20 +1099,20 @@ class TestGetInventorySnapshot:
 
 
 class TestInventoryGenerationGating:
-    """Test that deletion requires a complete generation and spent grace."""
+    """Test that retirement requires a complete generation and spent grace."""
 
     @pytest.fixture
-    def delete_node(self, mocker) -> AsyncMock:
-        """Replace the node deletion so the retire decision is seen in isolation."""
+    def retire_node(self, mocker) -> AsyncMock:
+        """Replace the node retirement so the retire decision is seen in isolation."""
         return mocker.patch(
-            "app.sep.sync.syncers.pmm.PMMSyncer.delete_node", new_callable=AsyncMock
+            "app.sep.sync.syncers.pmm.PMMSyncer.retire_node", new_callable=AsyncMock
         )
 
     @pytest.mark.asyncio
-    async def test_validation_failure_deletes_nothing(
-        self, local_node, owned_pmmsyncer, session, delete_node
+    async def test_validation_failure_retires_nothing(
+        self, local_node, owned_pmmsyncer, session, retire_node
     ):
-        """Delete nothing when a validation-skipped entity blocks the run."""
+        """Retire nothing when a validation-skipped entity blocks the run."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1121,21 +1122,21 @@ class TestInventoryGenerationGating:
 
         await owned_pmmsyncer.perform_inventory_sync()
 
-        delete_node.assert_not_awaited()
+        retire_node.assert_not_awaited()
         assert await _absence_rows(session) == []
 
     @pytest.mark.asyncio
-    async def test_real_validation_failure_mid_fetch_deletes_nothing(
+    async def test_real_validation_failure_mid_fetch_retires_nothing(
         self,
         local_node,
         owned_pmmsyncer,
         session,
-        delete_node,
+        retire_node,
         pmm_remote_api,
         mock_request,
         mock_get_version,
     ):
-        """Delete nothing when a genuine mid-fetch validation failure occurs.
+        """Retire nothing when a genuine mid-fetch validation failure occurs.
 
         The snapshot comes from the real client against a node payload that actually
         fails ``Node`` validation, so the incompleteness driving the gate is observed
@@ -1161,16 +1162,16 @@ class TestInventoryGenerationGating:
 
         await owned_pmmsyncer.perform_inventory_sync()
 
-        delete_node.assert_not_awaited()
+        retire_node.assert_not_awaited()
         owned_pmmsyncer.inventory_api.delete.assert_not_awaited()
         assert await _absence_rows(session) == []
         assert owned_pmmsyncer._snapshot_complete is False
 
     @pytest.mark.asyncio
-    async def test_single_absence_does_not_delete(
-        self, local_node, owned_pmmsyncer, session, delete_node
+    async def test_single_absence_does_not_retire(
+        self, local_node, owned_pmmsyncer, session, retire_node
     ):
-        """Start the count without deleting on one generation reporting absence."""
+        """Start the count without retiring on one generation reporting absence."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1180,14 +1181,14 @@ class TestInventoryGenerationGating:
 
         await owned_pmmsyncer.perform_inventory_sync()
 
-        delete_node.assert_not_awaited()
+        retire_node.assert_not_awaited()
         assert [row.missing_generations for row in await _absence_rows(session)] == [1]
 
     @pytest.mark.asyncio
-    async def test_complete_generation_deletes_after_grace(
-        self, local_node, owned_pmmsyncer, session, delete_node
+    async def test_complete_generation_retires_after_grace(
+        self, local_node, owned_pmmsyncer, session, retire_node
     ):
-        """Delete the entity on a second consecutive complete generation."""
+        """Retire the entity on a second consecutive complete generation."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1196,15 +1197,15 @@ class TestInventoryGenerationGating:
         )
 
         await owned_pmmsyncer.perform_inventory_sync()
-        delete_node.assert_not_awaited()
+        retire_node.assert_not_awaited()
         await owned_pmmsyncer.perform_inventory_sync()
 
-        delete_node.assert_awaited_once()
+        retire_node.assert_awaited_once()
         assert await _absence_rows(session) == []
 
     @pytest.mark.asyncio
     async def test_absence_counter_resets_on_reappearance(
-        self, local_node, owned_pmmsyncer, session, delete_node
+        self, local_node, owned_pmmsyncer, session, retire_node
     ):
         """Reset the counter to zero, not to N-1, when an entity reappears."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
@@ -1221,12 +1222,12 @@ class TestInventoryGenerationGating:
         await owned_pmmsyncer.perform_inventory_sync()
         await owned_pmmsyncer.perform_inventory_sync()
 
-        delete_node.assert_not_awaited()
+        retire_node.assert_not_awaited()
         assert [row.missing_generations for row in await _absence_rows(session)] == [1]
 
     @pytest.mark.asyncio
     async def test_incomplete_generation_freezes_the_counter(
-        self, local_node, owned_pmmsyncer, session, delete_node
+        self, local_node, owned_pmmsyncer, session, retire_node
     ):
         """Hold the counter steady when a generation is inconclusive."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
@@ -1238,14 +1239,14 @@ class TestInventoryGenerationGating:
 
         await owned_pmmsyncer.perform_inventory_sync()
         await owned_pmmsyncer.perform_inventory_sync()
-        delete_node.assert_not_awaited()
+        retire_node.assert_not_awaited()
         await owned_pmmsyncer.perform_inventory_sync()
 
-        delete_node.assert_awaited_once()
+        retire_node.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_presence_in_an_incomplete_generation_clears_the_counter(
-        self, local_node, owned_pmmsyncer, session, delete_node
+        self, local_node, owned_pmmsyncer, session, retire_node
     ):
         """Clear the counter for an entity the fetch returned, complete or not.
 
@@ -1270,12 +1271,12 @@ class TestInventoryGenerationGating:
         await owned_pmmsyncer.perform_inventory_sync()
         await owned_pmmsyncer.perform_inventory_sync()
 
-        delete_node.assert_not_awaited()
+        retire_node.assert_not_awaited()
         assert [row.missing_generations for row in await _absence_rows(session)] == [1]
 
     @pytest.mark.asyncio
     async def test_cross_list_inconsistency_retries_once_then_marks_incomplete(
-        self, local_node, owned_pmmsyncer, session, delete_node
+        self, local_node, owned_pmmsyncer, session, retire_node
     ):
         """Leave the generation incomplete when orphans persist across fetches."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
@@ -1292,12 +1293,12 @@ class TestInventoryGenerationGating:
             owned_pmmsyncer.pmm_api.get_inventory_snapshot.await_count
             == _FETCHES_WITH_RETRY
         )
-        delete_node.assert_not_awaited()
+        retire_node.assert_not_awaited()
         assert await _absence_rows(session) == []
 
     @pytest.mark.asyncio
     async def test_cross_list_inconsistency_second_fetch_clean_proceeds(
-        self, local_node, owned_pmmsyncer, session, delete_node
+        self, local_node, owned_pmmsyncer, session, retire_node
     ):
         """Restore a complete generation and normal gating after a clean refetch."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
@@ -1313,12 +1314,12 @@ class TestInventoryGenerationGating:
             owned_pmmsyncer.pmm_api.get_inventory_snapshot.await_count
             == _FETCHES_WITH_RETRY
         )
-        delete_node.assert_not_awaited()
+        retire_node.assert_not_awaited()
         assert [row.missing_generations for row in await _absence_rows(session)] == [1]
 
     @pytest.mark.asyncio
     async def test_filtered_node_is_held_not_counted(
-        self, local_node, owned_pmmsyncer, session, delete_node
+        self, local_node, owned_pmmsyncer, session, retire_node
     ):
         """Hold a node newly labelled ``sep_sync: disabled`` indefinitely."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
@@ -1332,7 +1333,7 @@ class TestInventoryGenerationGating:
         await owned_pmmsyncer.perform_inventory_sync()
         await owned_pmmsyncer.perform_inventory_sync()
 
-        delete_node.assert_not_awaited()
+        retire_node.assert_not_awaited()
         assert await _absence_rows(session) == []
 
     @pytest.mark.asyncio
@@ -1344,8 +1345,8 @@ class TestInventoryGenerationGating:
         The node and service filter paths are separate code, so the node-level
         guarantee does not carry over on its own.
         """
-        delete_service = mocker.patch(
-            "app.sep.sync.syncers.pmm.PMMSyncer.delete_service", new_callable=AsyncMock
+        retire_service = mocker.patch(
+            "app.sep.sync.syncers.pmm.PMMSyncer.retire_service", new_callable=AsyncMock
         )
         node_with_services.source = SourceEnum.PMM
         for index, service in enumerate(node_with_services.services, start=1):
@@ -1364,7 +1365,7 @@ class TestInventoryGenerationGating:
         await owned_pmmsyncer.perform_inventory_sync()
         await owned_pmmsyncer.perform_inventory_sync()
 
-        delete_service.assert_not_awaited()
+        retire_service.assert_not_awaited()
         assert await _absence_rows(session, SyncInventoryEntityTypeEnum.SERVICE) == []
         # The services really did reach the retire path and were held there.
         held = await SyncItemManager.list(
@@ -1379,9 +1380,9 @@ class TestInventoryGenerationGating:
 
     @pytest.mark.asyncio
     async def test_reclaimed_run_aborts_retire_phase(
-        self, local_node, owned_pmmsyncer, session, delete_node
+        self, local_node, owned_pmmsyncer, session, retire_node
     ):
-        """Delete nothing from a run that lost ownership of its instance."""
+        """Retire nothing from a run that lost ownership of its instance."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1396,12 +1397,12 @@ class TestInventoryGenerationGating:
 
         await owned_pmmsyncer.perform_inventory_sync()
 
-        delete_node.assert_not_awaited()
+        retire_node.assert_not_awaited()
         assert await _absence_rows(session) == []
 
     @pytest.mark.asyncio
     async def test_held_entities_end_success_not_failed(
-        self, local_node, owned_pmmsyncer, session, delete_node
+        self, local_node, owned_pmmsyncer, session, retire_node
     ):
         """Close a held entity's SyncItem so the run does not roll up FAILED."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
@@ -1420,7 +1421,7 @@ class TestInventoryGenerationGating:
 
     @pytest.mark.asyncio
     async def test_records_generation_completeness_on_the_run(
-        self, local_node, owned_pmmsyncer, delete_node
+        self, local_node, owned_pmmsyncer, retire_node
     ):
         """Carry the completeness verdict for ``__aexit__`` to persist."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
@@ -1437,7 +1438,7 @@ class TestInventoryGenerationGating:
 
 @pytest.mark.parametrize("grace", [0, 1])
 def test_syncer_rejects_grace_below_two(mock_remote_api, grace):
-    """Reject a grace below two, which collapses to single-absence deletion."""
+    """Reject a grace below two, which collapses to single-absence retirement."""
     with pytest.raises(ValidationError):
         PMMSyncer(
             pmm={"endpoint": "http://localhost", "api_key": "test-key"},
@@ -1446,16 +1447,16 @@ def test_syncer_rejects_grace_below_two(mock_remote_api, grace):
         )
 
 
-class TestSingleEntitySyncNeverDeletes:
+class TestSingleEntitySyncNeverRetires:
     """Test that an operator-triggered single-entity refresh is upsert-only."""
 
     @pytest.mark.asyncio
-    async def test_single_node_sync_never_deletes_services(
+    async def test_single_node_sync_never_retires_services(
         self, node_with_services, owned_pmmsyncer, session, mocker
     ):
-        """Hold a missing service outside a generation instead of deleting it."""
-        delete_service = mocker.patch(
-            "app.sep.sync.syncers.pmm.PMMSyncer.delete_service", new_callable=AsyncMock
+        """Hold a missing service outside a generation instead of retiring it."""
+        retire_service = mocker.patch(
+            "app.sep.sync.syncers.pmm.PMMSyncer.retire_service", new_callable=AsyncMock
         )
         owned_pmmsyncer.inventory_api.put.return_value = node_with_services.model_dump()
 
@@ -1465,5 +1466,145 @@ class TestSingleEntitySyncNeverDeletes:
 
         assert node_with_services.services
         assert owned_pmmsyncer._generation is None
-        delete_service.assert_not_awaited()
+        retire_service.assert_not_awaited()
         assert await _absence_rows(session, SyncInventoryEntityTypeEnum.SERVICE) == []
+
+
+class TestTombstoneReconciliation:
+    """Test how the syncer reconciles against entities it retired earlier."""
+
+    @pytest.fixture
+    def sync_service(self, mocker) -> AsyncMock:
+        """Replace per-service syncing so the match decision is seen in isolation."""
+        return mocker.patch(
+            "app.sep.sync.syncers.pmm.PMMSyncer.sync_service", new_callable=AsyncMock
+        )
+
+    @staticmethod
+    def _node_reporting(created_node: CreatedNode, **service_fields: Any) -> Node:
+        """Build the PMM-side node reporting one service with the given fields."""
+        remote = _remote_node(created_node)
+        remote.services = [
+            {"service_name": "reported", "service_type": "mysql", **service_fields}
+        ]
+        return Node.model_validate(remote.model_dump() | {"node_name": remote.name})
+
+    @pytest.mark.asyncio
+    async def test_inventory_read_opts_into_tombstones(
+        self, local_node, owned_pmmsyncer
+    ):
+        """Read retired nodes, or a reappearance would create a duplicate row."""
+        owned_pmmsyncer.inventory_api.get.side_effect = [
+            _local_nodes_payload(local_node)
+        ]
+        owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(
+            return_value=_snapshot()
+        )
+
+        await owned_pmmsyncer.perform_inventory_sync()
+
+        params = owned_pmmsyncer.inventory_api.get.await_args.kwargs["params"]
+        assert params["include_retired"] == "true"
+
+    @pytest.mark.asyncio
+    async def test_reappearance_under_the_same_external_id_revives_the_row(
+        self, local_node, owned_pmmsyncer
+    ):
+        """Revive the existing row rather than creating a second one."""
+        local_node.retired_at = utc_now()
+        owned_pmmsyncer.inventory_api.get.side_effect = [
+            _local_nodes_payload(local_node)
+        ]
+        owned_pmmsyncer.inventory_api.put.return_value = local_node.model_dump()
+        owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(
+            return_value=_snapshot(_remote_node(local_node))
+        )
+
+        await owned_pmmsyncer.perform_inventory_sync()
+
+        owned_pmmsyncer.inventory_api.post.assert_awaited_once_with(
+            f"/nodes/{local_node.id}/revive"
+        )
+
+    @pytest.mark.asyncio
+    async def test_an_active_node_wins_its_external_id_over_a_tombstone(
+        self, local_node, owned_pmmsyncer, session
+    ):
+        """Match the live node, and still account for the tombstone it displaced.
+
+        The unique key admits one active row per external id plus any number of
+        tombstones, so a retired-inclusive read returns both. Matching the
+        tombstone would attempt a revive the active row's key refuses; dropping
+        it from the reconciliation set would leave its SyncItem hanging.
+        """
+        local_node.retired_at = utc_now()
+        replacement = CreatedNodeFactory.build(id=local_node.id + 1)
+        replacement.external_id = local_node.external_id
+        replacement.services = []
+        # Tombstone last, so a plain last-write-wins index would pick it.
+        owned_pmmsyncer.inventory_api.get.side_effect = [
+            _local_nodes_payload(replacement, local_node)
+        ]
+        owned_pmmsyncer.inventory_api.put.return_value = replacement.model_dump()
+        owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(
+            return_value=_snapshot(_remote_node(replacement))
+        )
+
+        await owned_pmmsyncer.perform_inventory_sync()
+
+        # The live node matched, so no revive was posted and no row was created.
+        owned_pmmsyncer.inventory_api.post.assert_not_awaited()
+        # The tombstone still reached absence handling, which held it.
+        assert await _absence_rows(session) == []
+        assert (
+            owned_pmmsyncer.sync_items[
+                (SyncInventoryEntityTypeEnum.NODE, local_node.id)
+            ].status
+            == SyncStatusEnum.SUCCESS
+        )
+
+    @pytest.mark.asyncio
+    async def test_port_fallback_passes_over_a_retired_predecessor(
+        self, local_node, owned_pmmsyncer, sync_service
+    ):
+        """Create a new service rather than claim a tombstone sharing its port."""
+        predecessor = CreatedServiceFactory.build(id=7)
+        predecessor.external_id = "svc-old"
+        predecessor.port = 3306
+        predecessor.node_id = local_node.id
+        predecessor.retired_at = utc_now()
+        local_node.services = [predecessor]
+        replacement = CreatedServiceFactory.build(id=8)
+        owned_pmmsyncer.inventory_api.put.return_value = local_node.model_dump()
+        owned_pmmsyncer.inventory_api.post.return_value = replacement.model_dump()
+
+        await owned_pmmsyncer.perform_node_sync(
+            local_node,
+            self._node_reporting(local_node, service_id="svc-new", port=3306),
+        )
+
+        owned_pmmsyncer.inventory_api.post.assert_awaited_once()
+        assert owned_pmmsyncer.inventory_api.post.await_args.args[0] == (
+            f"/nodes/{local_node.id}/services/"
+        )
+
+    @pytest.mark.asyncio
+    async def test_port_fallback_still_matches_a_live_service(
+        self, local_node, owned_pmmsyncer, sync_service
+    ):
+        """Keep matching two live services by port exactly as before."""
+        live = CreatedServiceFactory.build(id=7)
+        live.external_id = "svc-old"
+        live.port = 3306
+        live.node_id = local_node.id
+        live.retired_at = None
+        local_node.services = [live]
+        owned_pmmsyncer.inventory_api.put.return_value = local_node.model_dump()
+
+        await owned_pmmsyncer.perform_node_sync(
+            local_node,
+            self._node_reporting(local_node, service_id="svc-new", port=3306),
+        )
+
+        owned_pmmsyncer.inventory_api.post.assert_not_awaited()
+        assert sync_service.await_args.args[0].id == live.id
