@@ -19325,7 +19325,7 @@
     },
     "/api/apps/om_inventory/config": {
       "get": {
-        "description": "Return this app's configuration: every field, its value and its origin.\n\nServed here rather than pointing the caller at ``/api/sep/admin/settings``\nbecause that router is admin-gated and PMM's principal is not an admin: the\n``--sep-token`` bearer resolves to the synthetic ``sep-service`` user, built\nwith ``is_admin=False`` deliberately, since it is a deployment-level shared\nsecret with no person behind it. An app-owned endpoint keeps a schedule change\nscoped to this app instead of requiring SEP-wide administrative access.\n\nEvery field is listed, not only the overridden ones, and each row carries\nwhether an override is in effect - so \"why is it sweeping every 10 minutes\"\nis answerable without also reading the deployment's YAML.\n\n:param session: The database session.\n:return: One row per configuration field.",
+        "description": "Return this app's configuration: every field, its value and its origin.\n\nServed here rather than pointing the caller at ``/api/sep/admin/settings``\nbecause that router is admin-gated and PMM's principal is not an admin: the\n``--sep-token`` bearer resolves to the synthetic ``sep-service`` user, built\nwith ``is_admin=False`` deliberately, since it is a deployment-level shared\nsecret with no person behind it. An app-owned endpoint keeps a schedule change\nscoped to this app instead of requiring SEP-wide administrative access.\n\nEvery field is listed, not only the overridden ones, and each row carries\nwhether an override is in effect - so \"why is it sweeping every 10 minutes\"\nis answerable without also reading the deployment's YAML.\n\n``CREDENTIALS_PATH`` is the one exception: its row is present, with ``value``\nforced to ``None`` regardless of the deployment's real setting. See\n:func:`_redact_config` for why the whole route is not gated instead.\n\n:param session: The database session.\n:return: One row per configuration field.",
         "operationId": "om_inventory_get_config_api_apps_om_inventory_config_get",
         "responses": {
           "200": {
@@ -19600,7 +19600,7 @@
     },
     "/api/apps/om_inventory/runs": {
       "get": {
-        "description": "Return recent sweeps, newest first.\n\n:param session: The database session.\n:param limit: How many to return.\n:return: The sweeps.",
+        "description": "Return recent sweeps, newest first.\n\n``since`` / ``until`` filter on ``started_at`` before ``limit`` is applied, so\nasking for last week is last week rather than \"the twenty newest, then those\nthat happen to fall in the week\".\n\n:param session: The database session.\n:param limit: How many to return.\n:param since: Inclusive lower bound on ``started_at``.\n:param until: Inclusive upper bound on ``started_at``.\n:return: The sweeps.",
         "operationId": "om_inventory_list_runs_api_apps_om_inventory_runs_get",
         "parameters": [
           {
@@ -19613,6 +19613,44 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Inclusive lower bound on started_at. Omit for no lower bound.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive lower bound on started_at. Omit for no lower bound.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Inclusive upper bound on started_at. Omit for no upper bound.",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive upper bound on started_at. Omit for no upper bound.",
+              "title": "Until"
             }
           }
         ],

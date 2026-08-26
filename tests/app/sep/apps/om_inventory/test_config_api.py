@@ -193,6 +193,31 @@ class TestGetConfig:
         assert rows["SCHEDULE__period"]["value"] == "minutes"
         assert rows["SCHEDULE__every"]["has_override"] is False
 
+    @pytest.mark.asyncio
+    async def test_credentials_path_is_redacted_for_this_routes_audience(
+        self, api: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``CREDENTIALS_PATH`` reads as ``None`` here no matter what is deployed.
+
+        This route carries no ``@require_minimum_role``, so its only gate is
+        ``IsApiAuthenticated`` -- any signed-in SEP user, not only admins. The same
+        settings class is also served at ``/api/sep/admin/settings``, gated
+        ``IsApiAdmin``, so a value that is admin-only there must not be
+        viewer-readable here. Setting the field directly on the wrapped instance
+        (rather than relying on the default already being ``None``) proves this is
+        redaction, not coincidence.
+
+        :param api: The authenticated client.
+        :param monkeypatch: Restores the real value after the test.
+        """
+        monkeypatch.setattr(
+            om_inventory_settings, "CREDENTIALS_PATH", "/etc/mongodb_uri_prod"
+        )
+
+        rows = {row["key"]: row for row in (await api.get(f"{BASE}/config")).json()}
+
+        assert rows["CREDENTIALS_PATH"]["value"] is None
+
 
 class TestPatchConfig:
     """Change the app's configuration at runtime."""
