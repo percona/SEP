@@ -61,7 +61,7 @@ const MOCK_USER = {
   lastName: 'Test',
   // Deliberately non-admin: these specs only navigate and assert readable
   // sentinels, so they double as cross-app smoke coverage of the read-only
-  // experience (SEP-1844).
+  // experience.
   isAdmin: false,
 };
 
