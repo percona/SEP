@@ -189,14 +189,14 @@ def match_process(processes, port):
     """Return the server process that serves one target's port.
 
     By **port**, because that is the only thing a target and a process have in
-    common: the name is PMM's and the argv is the process's. This is what stops every
-    service on a host sharing one process's facts, which is how it worked before --
-    the first ``ps`` line was collected once and copied into every target record, so
-    three mongods reported one argv, one config path, one uptime and one installed
-    version while their database facts came from their own ports. The
-    upgraded-but-not-restarted divergence this payload exists to catch was then wrong
-    for every service on the host but one, and a mongos beside a mongod reported
-    itself as mongod.
+    common: the name is PMM's and the argv is the process's. Matching by port is
+    what stops every service on a host sharing one process's facts: collecting the
+    first ``ps`` line once and copying it into every target record would report one
+    argv, one config path, one uptime and one installed version for three mongods,
+    while their database facts came from their own ports. That would make the
+    upgraded-but-not-restarted divergence this payload exists to catch wrong for
+    every service on the host but one, and would report a mongos beside a mongod as
+    itself a mongod.
 
     A **single** server process is attributed to the target without matching, because
     a mongod started without an explicit port has no port to match on -- every mongod

@@ -48,9 +48,10 @@ class OmInventorySettings(BaseYamlSettings):
     Every field is ``hot_field`` except ``CREDENTIALS_PATH``, which stays YAML/env only
     on purpose. It names a file the payload reads off the *node* and hands to a MongoDB
     driver as a URI; making it settable over the API would turn "change this app's
-    configuration" into "read a chosen file on every database host", which is a
-    different permission from the one §10 argues for. It is a deployment fact, and it
-    belongs with the deployment.
+    configuration" into "read a chosen file on every database host" -- every other
+    field here only changes how SEP itself behaves, not what a probe reads off a
+    monitored machine's filesystem. It is a deployment fact, and it belongs with the
+    deployment.
 
     :cvar SETTINGS_PREFIXES: Places this section under ``SEP.OM_INVENTORY``.
     :param SCHEDULE: How often the probe sweeps the estate. ``None`` unregisters the

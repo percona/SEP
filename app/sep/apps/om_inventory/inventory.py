@@ -34,9 +34,9 @@ class InventoryService:
 
     Topology grouping -- cluster identity, replica-set membership, environment -- is
     PMM's to derive, not SEP's; this app only has to find the service and probe its
-    host. There used to be ``cluster``, ``replication_set`` and ``environment`` fields
-    here, left over from when that grouping lived in SEP. They had zero consumers and
-    were removed rather than kept as a temptation to start grouping here again.
+    host. No ``cluster``, ``replication_set`` or ``environment`` field lives here:
+    carrying them with zero consumers would be a standing temptation to start
+    grouping services in SEP again.
 
     :param service_id: The inventory service id.
     :param external_id: **PMM's** service UUID, which inventory stores as
