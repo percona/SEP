@@ -339,14 +339,25 @@ echo -e "AUTH__PROVIDER__CASDOOR__CLIENT_ID=YOUR_CASDOOR_CLIENT_ID\nAUTH__PROVID
 Any setting can instead be supplied as a file inside the directory `SECRETS_DIR` names,
 which keeps the value out of the process environment. Name the file after the canonical
 `__`-nested variable the setting already uses — `SECRET_KEY`,
-`SEP__DATABASE__PASSWORD`, `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN` — and put
-the value in its contents. `/run/secrets` is the conventional mount point:
+`DATABASE__PASSWORD`, `SEP__DATABASE__PASSWORD`,
+`AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN` — and put the value in its contents.
+`/run/secrets` is the conventional mount point:
 
 ```shell
 mkdir -p /run/secrets
 openssl rand -hex 32 > /run/secrets/SECRET_KEY
 SECRETS_DIR=/run/secrets uvicorn app.main:app
 ```
+
+An unprefixed global name such as `DATABASE__PASSWORD` resolves for every prefixed
+settings class that reads the same destination — one mounted file reaches SEP,
+Inventory, and Tasks when all three share one database. A per-service spelling such
+as `SEP__DATABASE__PASSWORD` overrides the global one for that service only; when
+both are present in the same source, the more specific name wins regardless of
+ordering. Across sources the usual priority still applies, so an environment
+variable outranks a file whichever spelling each uses. A name spelled
+with another class's prefix — `INVENTORY__DATABASE__PASSWORD` read by
+`SEPSettings`, say — stays invisible to that class.
 
 Surrounding whitespace is stripped, so a trailing newline is fine. A file only applies
 when nothing higher in the priority list supplies the same setting: an environment

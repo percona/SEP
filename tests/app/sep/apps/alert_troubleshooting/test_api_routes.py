@@ -20,6 +20,8 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests.app.sep.snippets.snippet_kit import persist_meta
+
 API_BASE = "/api/apps/alert_troubleshooting"
 EXPECTED_GROUP_COUNT = 2
 
@@ -124,6 +126,28 @@ class TestAlertTroubleshootingApiDetail:
         assert body["alert"]["name"] == "MySQLSlowQueries"
         assert len(body["snippets"]) == 1
         assert body["snippets"][0]["filename"] == "mysql_check.sh"
+
+    @pytest.mark.parametrize("declared_description", [None, "", "   "])
+    async def test_blank_declared_description_reads_as_empty(
+        self,
+        api_client: TestClient,
+        session: AsyncSession,
+        create_snippet_with_alerts,
+        snippets_dir,
+        declared_description,
+    ):
+        """Return an empty description rather than failing the whole detail view."""
+        snippet = await create_snippet_with_alerts(
+            "mysql_check.sh",
+            alerts=["MySQLSlowQueries"],
+            service_type="mysql",
+        )
+        await persist_meta(session, snippet, {"description": declared_description})
+
+        response = api_client.get(f"{API_BASE}/mysql/MySQLSlowQueries")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["snippets"][0]["description"] == ""
 
     async def test_returns_404_for_unknown_alert(
         self,

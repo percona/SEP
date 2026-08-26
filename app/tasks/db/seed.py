@@ -15,14 +15,17 @@
 
 """Define the database initial data for the Tasks app."""
 
+import json
 import logging
 from copy import deepcopy
 
 from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy_celery_beat.models import Period
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy_celery_beat.models import Period, PeriodicTask
 from sqlmodel import col
 
+from app.core.celery.db import get_async_session_maker as get_celery_beat_session_maker
 from app.core.celery.models import IntervalSchedule
 from app.core.celery.utils import (
     init_periodic_tasks_db,
@@ -50,6 +53,7 @@ from app.tasks.models import (
     Task,
     TaskBackendEnum,
 )
+from app.tasks.periodic.crud import PeriodicTaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -566,6 +570,150 @@ if _log_purge_schedule is not None:
     )
 
 
+SYSTEM_PERIODIC_TASK_PREFIX = "tasks__"
+INVENTORY_SYNC_SCHEDULE_NAME = f"{SYSTEM_PERIODIC_TASK_PREFIX}inventory_sync"
+
+
+def _inventory_sync_schedule() -> SystemPeriodicTaskSchedule | None:
+    """Build the default inventory-sync schedule, or ``None`` when unconfigured.
+
+    ``inventory-sync`` is a ``Task`` row rather than a Celery function, so the
+    entry uses the same indirection an operator-created schedule uses: it points
+    at ``execute_task_by_name`` and names the SEP task in ``kwargs``. Only that
+    shape appears in the sync UI's schedule list and produces the ``TaskHistory``
+    rows the sync-health rollup reads.
+
+    :return: The schedule to append to the seeded set, or ``None`` when
+        ``INVENTORY_SYNC_INTERVAL`` is unset.
+    """
+    interval = tasks_settings.INVENTORY_SYNC_INTERVAL
+    if interval is None:
+        return None
+    syncer = tasks_settings.INVENTORY_SYNC_SYNCER
+    kwargs = {
+        "task_name": INVENTORY_SYNC_TASK_NAME,
+        "periodic_task_name": INVENTORY_SYNC_SCHEDULE_NAME,
+        **({"execution_data": {"meta": {"syncer": syncer}}} if syncer else {}),
+    }
+    return SystemPeriodicTaskSchedule(
+        schedule=interval,
+        tasks=[
+            SystemPeriodicTaskData(
+                name=INVENTORY_SYNC_SCHEDULE_NAME,
+                task_name="app.tasks.celery.execute_task_by_name",
+                extra_kwargs={"kwargs": json.dumps(kwargs)},
+            ),
+        ],
+    )
+
+
+def _schedule_covers_syncer(row: PeriodicTask, syncer: str | None) -> bool:
+    """Return whether an existing beat row already syncs ``syncer``.
+
+    Fail closed: a row whose ``kwargs`` cannot be decoded to the expected shape
+    counts as covering, so an unreadable operator row can never result in a
+    second schedule firing alongside it. Every level is ``isinstance``-guarded
+    because ``kwargs`` is operator-populated free text and ``json.loads``
+    returns ``Any``, which type-checks against anything.
+
+    The ``syncer is None`` branch is deliberately asymmetric: when no syncer is
+    configured the default would run every syncer, so any operator row at all
+    covers it — including one pinned to a single syncer.
+
+    :param row: An existing periodic-task row targeting ``inventory-sync``.
+    :param syncer: The fully qualified syncer the default would target, or
+        ``None`` for the sync-all default.
+    :return: Whether the row makes seeding the default redundant.
+    """
+    try:
+        decoded = json.loads(row.kwargs) if row.kwargs else None
+    except json.JSONDecodeError:
+        return True
+    if not isinstance(decoded, dict):
+        return True
+    execution_data = decoded.get("execution_data")
+    meta = execution_data.get("meta") if isinstance(execution_data, dict) else None
+    existing = meta.get("syncer") if isinstance(meta, dict) else None
+    if not isinstance(existing, str) or not existing.strip():
+        return True
+    return syncer is None or existing == syncer
+
+
+async def _default_inventory_sync_schedule() -> SystemPeriodicTaskSchedule | None:
+    """Return the schedule to seed, or ``None`` when unset or already covered.
+
+    An operator's manually attached interval stays authoritative, so the default
+    is omitted when a schedule they own already covers the configured syncer.
+    Rows this seeder owns are excluded: they carry the same ``task`` and
+    ``kwargs.task_name`` the lookup filters on, so counting them would make the
+    orphan cleanup drop the row on one boot and re-create it on the next.
+
+    A lookup failure does not propagate: this runs at startup, and a malformed
+    persisted ``kwargs`` can fail inside the JSON extraction the query performs.
+    It also must not simply skip the default, because omitting an entry hands it
+    to ``init_periodic_tasks_db``'s orphan cleanup — a data-level failure would
+    delete a schedule seeded on an earlier boot and stop the sync entirely. So
+    the failure path re-seeds a row this seeder already owns and withholds only
+    a first-time one, which neither double-schedules nor un-schedules. That
+    ownership question is answered by name alone, before the failing query runs,
+    so it does not repeat the JSON extraction. A genuinely unreachable beat
+    store fails both queries and then fails ``init_periodic_tasks_db`` too,
+    which uses the same store, so nothing is deleted there either.
+
+    :return: The schedule to seed, or ``None``.
+    """
+    if (schedule := _inventory_sync_schedule()) is None:
+        return None
+    syncer = tasks_settings.INVENTORY_SYNC_SYNCER
+    session_maker = get_celery_beat_session_maker()
+    already_seeded = False
+    try:
+        async with session_maker() as session:
+            already_seeded = (
+                await PeriodicTaskManager.first(
+                    session, name=INVENTORY_SYNC_SCHEDULE_NAME
+                )
+                is not None
+            )
+            rows = await PeriodicTaskManager.list_by_task_names(
+                session, INVENTORY_SYNC_TASK_NAME
+            )
+    except SQLAlchemyError:
+        logger.exception(
+            "Could not read existing %s schedules; keeping any default this "
+            "seeder already owns rather than dropping it.",
+            INVENTORY_SYNC_TASK_NAME,
+        )
+        return schedule if already_seeded else None
+    covered = any(
+        _schedule_covers_syncer(row, syncer)
+        for row in rows
+        if not row.name.startswith(SYSTEM_PERIODIC_TASK_PREFIX)
+    )
+    if covered:
+        logger.info(
+            "Skipping the default %s schedule: an operator-managed schedule "
+            "already covers it.",
+            INVENTORY_SYNC_TASK_NAME,
+        )
+        return None
+    return schedule
+
+
+async def seed_system_periodic_tasks() -> None:
+    """Seed the tasks-service periodic tasks, including the conditional default.
+
+    Build a fresh list per call: ``init_tasks_db`` runs on every lifespan start,
+    and appending to the module-level set would accumulate duplicates.
+
+    :raises SQLAlchemyError: When the celery-beat store cannot be written.
+    """
+    periodic_tasks = list(SYSTEM_PERIODIC_TASKS)
+    if (inventory_sync := await _default_inventory_sync_schedule()) is not None:
+        periodic_tasks.append(inventory_sync)
+    await init_periodic_tasks_db(periodic_tasks, SYSTEM_PERIODIC_TASK_PREFIX)
+
+
 async def init_tasks_db() -> None:
     """Initialize the Tasks database with system tasks and periodic tasks."""
     async_session = get_async_session_maker()
@@ -626,7 +774,7 @@ async def init_tasks_db() -> None:
                 "Marked %s unused system tasks with attached runs as deleted.",
                 update_delete_result.rowcount,
             )
-    await init_periodic_tasks_db(SYSTEM_PERIODIC_TASKS, "tasks__")
+    await seed_system_periodic_tasks()
 
 
 async def verify_taskhistory_execution_request_is_jsonb() -> None:
