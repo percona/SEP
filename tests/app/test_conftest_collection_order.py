@@ -26,6 +26,7 @@ explicit multi-file, single-process invocation — it cannot be expressed as an 
 fixture assertion.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -33,6 +34,12 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Variables the child run must not inherit. ``-o addopts=`` clears the ini
+# option but not ``PYTEST_ADDOPTS``, which the pre-push gate uses to inject its
+# checkpoint plugin; the child would then deselect every node id the outer run
+# already verified, collect nothing, and exit 5 on a resumed push.
+_INHERITED_PYTEST_VARS = ("PYTEST_ADDOPTS", "SEP_PREPUSH_CHECKPOINT")
 
 PMM = "tests/app/sep/clients/test_pmm.py"
 CELERY = "tests/app/test_celery_signals.py"
@@ -76,6 +83,11 @@ def test_sep_conftest_fixtures_survive_collection_order(order: list[str]) -> Non
             "no:cacheprovider",
         ],
         cwd=REPO_ROOT,
+        env={
+            key: value
+            for key, value in os.environ.items()
+            if key not in _INHERITED_PYTEST_VARS
+        },
         capture_output=True,
         text=True,
         timeout=300,
