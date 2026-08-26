@@ -43,6 +43,7 @@ from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
 from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
+from app.sep.api.routes.settings import SEP_ADMIN_SETTINGS_CLASSES
 from app.sep.deps import (
     get_current_user,
     get_session,
@@ -163,30 +164,27 @@ class TestListAggregation:
         mock_tasks.get.return_value = _tasks_list([_tasks_setting(has_override=True)])
         response = admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
-        classes = [g["setting_class"] for g in response.json()["groups"]]
+        groups = response.json()["groups"]
+        classes = [g["setting_class"] for g in groups]
         assert {"SEPSettings", "SnippetsSettings", "AlertSettings"}.issubset(
             set(classes)
         )
         # Asserted as an ordering rather than by index: app-owned groups are appended,
         # so every app that declares a settings class shifts a fixed index and the
         # contract being checked here -- core, then remote, then app-owned -- does not
-        # change.
-        remote = classes.index(SettingClassEnum.TASKS_SETTINGS.value)
-        app_owned = [
-            classes.index(member.value)
-            for member in (
-                SettingClassEnum.ALERTS_SETTINGS,
-                SettingClassEnum.HEALTH_REPORT_SETTINGS,
-            )
+        # change. Core positions come from ``SEP_ADMIN_SETTINGS_CLASSES`` itself
+        # (every locally-wired class, not a hand-picked subset) and app-owned
+        # positions from each group's own ``is_app_owned`` flag, so a class added
+        # on either side of the boundary is picked up automatically instead of
+        # silently going unchecked.
+        core_positions = [
+            classes.index(member.value) for member, _, _ in SEP_ADMIN_SETTINGS_CLASSES
         ]
-        assert remote > max(
-            classes.index(member.value)
-            for member in (
-                SettingClassEnum.SEP_SETTINGS,
-                SettingClassEnum.SNIPPETS_SETTINGS,
-            )
-        )
-        assert min(app_owned) > remote
+        remote = classes.index(SettingClassEnum.TASKS_SETTINGS.value)
+        app_owned_positions = [i for i, g in enumerate(groups) if g["is_app_owned"]]
+        assert app_owned_positions  # at least one app-owned class is registered
+        assert remote > max(core_positions)
+        assert min(app_owned_positions) > remote
         mock_tasks.get.assert_awaited_once_with(f"{REMOTE_BASE}/")
 
     def test_list_emits_is_advanced_for_sep_settings(
