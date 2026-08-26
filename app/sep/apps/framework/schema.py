@@ -1764,16 +1764,36 @@ class AppSchema(SchemaBaseModel):
 
     @model_validator(mode="after")
     def _validate_unique_field_names(self) -> Self:
-        """Ensure every field name is unique within the active form set.
+        """Ensure root-level form configuration and entities are mutually exclusive.
 
-        When ``entities`` is set, each entity validates its own ``forms``.
-        Otherwise root ``forms`` are validated (task-style plugins).
+        When ``entities`` is set, root ``forms``, ``cardinality_rules``, and
+        ``fail_when`` must be empty — those keys belong on the entity that
+        owns them. If any are set alongside ``entities``, construction fails
+        with a message naming the offending keys.
+
+        For task-style schemas (no ``entities``), validates field-name
+        uniqueness across root ``forms``.
 
         :return: The validated plugin schema instance.
-        :raises ValueError: If duplicate field names appear in the same form
-            set, or if neither ``entities`` nor ``list_view`` is usable.
+        :raises ValueError: If root form config is set on an entity-style
+            schema, if duplicate field names appear, or if neither
+            ``entities`` nor ``list_view`` is usable.
         """
         if self.entities:
+            conflicting = []
+            if self.forms:
+                conflicting.append("forms")
+            if self.cardinality_rules:
+                conflicting.append("cardinality_rules")
+            if self.fail_when:
+                conflicting.append("fail_when")
+            if conflicting:
+                entity_names = ", ".join(repr(e.name) for e in self.entities)
+                raise ValueError(
+                    f"Root-level {', '.join(conflicting)} must not be set on an "
+                    f"entity-style schema — move the declaration onto the "
+                    f"relevant entity ({entity_names})."
+                )
             return self
         if self.list_view is None:
             raise ValueError(
