@@ -372,6 +372,15 @@ class PMMSyncer(BaseSyncer):
         single-node refresh, has no generation to judge absence against, so it is
         upsert-only.
 
+        An incoming service is matched by external id, and the port fallback resolves
+        only a service carrying no upstream identity: several databases behind one
+        server legally share that server's port, so a service whose external id is
+        present but unmatched is a distinct service rather than a moved one. Two
+        local rows may therefore now share a port, and an incoming service with no
+        upstream id then matches whichever of them was indexed last. That ambiguity
+        is accepted rather than resolved: it is reachable only for an unidentified
+        service arriving on a port two identified ones already share.
+
         :param created_node: The local node instance to synchronize.
         :param updated_node: The updated node data fetched from the PMM API.
         :raises SyncFailError: If synchronizing, holding or retiring a service fails
@@ -398,14 +407,12 @@ class PMMSyncer(BaseSyncer):
                 port_to_id[service.port] = service.id
         present_ids: list[int | None] = []
         for service in updated_node.services:
-            if (
-                created_service := syncable_services.pop(
-                    external_id_to_id.get(
-                        service.external_id, port_to_id.get(service.port)
-                    ),
-                    None,
-                )
-            ) is None:
+            matched_id = (
+                port_to_id.get(service.port)
+                if service.external_id is None
+                else external_id_to_id.get(service.external_id)
+            )
+            if (created_service := syncable_services.pop(matched_id, None)) is None:
                 logger.info("Creating new service: %r", service)
                 created_service = CreatedService.model_validate(
                     await self.inventory_api.post(

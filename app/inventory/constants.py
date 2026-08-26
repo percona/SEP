@@ -28,6 +28,14 @@ DEFAULT_POSTGRESQL_PORT = 5432
 #: silently disable.
 ACTIVE_RETIREMENT_KEY: Final = -1
 
+#: Discriminator carried by a service with no external identity, confining the port
+#: uniqueness index to the rows it actually protects. It is NULL on an externally
+#: identified row for two reasons at once: a unique index treats NULLs as distinct
+#: on every supported dialect, and the ``all(equal_filters.values())`` guard in
+#: ``BaseSQLModelManager.save`` skips an index carrying a falsy value. It has to be
+#: truthy here for the same reason :data:`ACTIVE_RETIREMENT_KEY` does.
+UNIDENTIFIED_PORT_GUARD_KEY: Final = -1
+
 #: Part of the API contract: callers tell an uncollected observation apart from a
 #: missing parent by this wording, so both routes and their tests share it.
 UNCOLLECTED_HOST_OBSERVATION_DETAIL = (

@@ -695,6 +695,61 @@ class TestCreateServiceForNode:
         )
         assert response2.status_code == status.HTTP_409_CONFLICT
 
+    def test_create_two_identified_services_on_same_port(
+        self, test_client: TestClient
+    ) -> None:
+        """Return 201 for both services PMM identifies on one node and port."""
+        node_payload = NodeWriteFactory.build(
+            source=SourceEnum.PMM, external_id="node-shared-port"
+        )
+        node_id = test_client.post(
+            "/nodes/", json=node_payload.model_dump(mode="json")
+        ).json()["id"]
+
+        first = test_client.post(
+            f"/nodes/{node_id}/services/",
+            json=ServiceWriteFactory.build(external_id="svc-a", port=5432).model_dump(
+                mode="json"
+            ),
+        )
+        second = test_client.post(
+            f"/nodes/{node_id}/services/",
+            json=ServiceWriteFactory.build(external_id="svc-b", port=5432).model_dump(
+                mode="json"
+            ),
+        )
+
+        assert first.status_code == status.HTTP_201_CREATED
+        assert second.status_code == status.HTTP_201_CREATED
+        assert first.json()["id"] != second.json()["id"]
+
+    def test_create_unidentified_service_on_a_port_an_identified_one_holds(
+        self, test_client: TestClient
+    ) -> None:
+        """Return 201 because an identified service reserves no port."""
+        node_payload = NodeWriteFactory.build(
+            source=SourceEnum.PMM, external_id="node-mixed-port"
+        )
+        node_id = test_client.post(
+            "/nodes/", json=node_payload.model_dump(mode="json")
+        ).json()["id"]
+        assert (
+            test_client.post(
+                f"/nodes/{node_id}/services/",
+                json=ServiceWriteFactory.build(
+                    external_id="svc-identified", port=5432
+                ).model_dump(mode="json"),
+            ).status_code
+            == status.HTTP_201_CREATED
+        )
+
+        response = test_client.post(
+            f"/nodes/{node_id}/services/",
+            json=ServiceWriteFactory.build(port=5432).model_dump(mode="json"),
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
     def test_create_service_for_node_duplicate_port(
         self, test_client: TestClient, node: Node
     ) -> None:
