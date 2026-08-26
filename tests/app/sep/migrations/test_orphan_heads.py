@@ -164,7 +164,7 @@ def test_empty_version_locations_matches_populated_dir_via_symlink(tmp_path):
 
 def test_empty_version_locations_tolerates_unset_locations():
     """Return an empty tuple when the ini omits ``version_locations``."""
-    stub_script = SimpleNamespace(version_locations=None)
+    stub_script = SimpleNamespace(version_locations=None, walk_revisions=lambda: [])
 
     assert empty_version_locations(stub_script) == ()
 

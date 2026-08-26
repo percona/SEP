@@ -53,19 +53,13 @@ _SEP_LIFECYCLE_REVISION = "a7c4e9f1b2d3"
 
 _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
 
+# Tokens only — these fixtures check rendering/grepability, not production prose.
 _SKIP_NOTICE = (
-    "Skipping 2 revision(s) recorded in alembic_version_sep with no migration "
-    "script: a1b2c3d4e5f6, 9f8e7d6c5b4a. Configured version_locations that "
-    "contributed no revisions: app/sep/apps/alerts/migrations/versions, "
-    "app/sep/apps/dipper/migrations/versions."
+    "a1b2c3d4e5f6 9f8e7d6c5b4a "
+    "app/sep/apps/alerts/migrations/versions "
+    "app/sep/apps/dipper/migrations/versions"
 )
-_SKEW_NOTICE = (
-    "1 revision(s) recorded in alembic_version_sep do not resolve "
-    f"({UNKNOWN_REVISION}) while every configured version_locations entry is "
-    "present on disk and contributes at least one revision. That is version "
-    "skew or a squashed revision, not a stripped app, so they are left in "
-    "place for Alembic to reject."
-)
+_SKEW_NOTICE = f"{UNKNOWN_REVISION} present on disk"
 
 
 @contextmanager
