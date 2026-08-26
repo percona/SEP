@@ -26,6 +26,7 @@ happened to answer -- they belong to the host, they are collected once, and now 
 are reported once.
 """
 
+import json
 import re
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -33,7 +34,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from python_minifier import minify
 
-from app.sep.apps.om_inventory.dispatch import parse_ndjson, probe_all
+from app.sep.apps.om_inventory.dispatch import build_config, parse_ndjson, probe_all
 from app.sep.apps.om_inventory.inventory import InventoryService
 from app.sep.apps.om_inventory.mapping import MappedService
 from app.sep.apps.om_inventory.models import NodeResolution
@@ -49,17 +50,22 @@ SERVICE_LINE = (
 )
 
 
-def mapped(name: str, host: str | None) -> MappedService:
+def mapped(
+    name: str, host: str | None, external_id: str | None = None
+) -> MappedService:
     """Pair a service with an executor host.
 
     :param name: The service name.
     :param host: The executor host, or ``None`` for an orphan.
+    :param external_id: PMM's service UUID. Defaults to a name-derived id, which is
+        fine for every test except the one that needs two *different* ids behind one
+        *shared* name.
     :return: The mapped service.
     """
     return MappedService(
         service=InventoryService(
             service_id=1,
-            external_id=f"svc-{name}",
+            external_id=external_id if external_id is not None else f"svc-{name}",
             name=name,
             port=27017,
             node_name=name,
@@ -107,6 +113,48 @@ class TestParseNdjson:
 
         assert records == {}
         assert host_record is None
+
+
+class TestServiceIdPreventsANameCollision:
+    """Two same-named services on one host must not overwrite each other's record.
+
+    ``build_config`` used to send only the service *name* as a target's identity, and
+    ``parse_ndjson`` keyed the parsed records the same way -- the payload never saw a
+    service id at all ("the service id never reaches the node"). Names are not unique
+    per node, so two same-named services dispatched to one executor host produced two
+    NDJSON lines under one key, and the second silently replaced the first.
+    """
+
+    def test_two_same_named_services_are_recorded_distinctly(self) -> None:
+        """The full path: ``build_config`` -> the payload's ``probe`` -> ``parse_ndjson``.
+
+        Two mapped services share a name (as two shards of the same replica set on
+        one host well might) but carry different PMM service ids. Both must survive
+        as two distinct entries once their NDJSON comes back.
+        """
+        entries = [
+            mapped("db00", "node00", external_id="svc-id-1"),
+            mapped("db00", "node00", external_id="svc-id-2"),
+        ]
+
+        config = json.loads(build_config(entries))
+        targets = config["targets"]
+        assert [target["service_id"] for target in targets] == [
+            "svc-id-1",
+            "svc-id-2",
+        ]
+        assert [target["service"] for target in targets] == ["db00", "db00"], (
+            "the collision case only exists when both targets share a name"
+        )
+
+        stdout = "\n".join(
+            json.dumps(probe.probe(target, {"probe_database": False}, {}))
+            for target in targets
+        )
+
+        records, _host_record = parse_ndjson(stdout)
+
+        assert set(records) == {"svc-id-1", "svc-id-2"}
 
 
 class TestProbeAllTargets:

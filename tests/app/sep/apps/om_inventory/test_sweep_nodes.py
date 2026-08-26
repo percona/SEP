@@ -60,8 +60,15 @@ RECORD: dict[str, Any] = {
 }
 
 
+#: PMM's service UUID :func:`make_service` and :func:`mapped` default to. Shared as a
+#: constant because it is also what dispatch.py's ``record_key`` now keys a probe
+#: result's records on, so a ``HostProbeResult.records`` fixture keyed by name alone
+#: would never be found by ``_record_for`` for a service using this default.
+DEFAULT_EXTERNAL_ID = "ff0275b6-3633-474a-8068-3c39d3c7a4da"
+
+
 def make_service(
-    name: str, external_id: str | None = "ff0275b6-3633-474a-8068-3c39d3c7a4da"
+    name: str, external_id: str | None = DEFAULT_EXTERNAL_ID
 ) -> InventoryService:
     """Build an inventory service.
 
@@ -83,7 +90,7 @@ def mapped(
     name: str,
     host: str | None,
     resolution: NodeResolution,
-    external_id: str | None = "ff0275b6-3633-474a-8068-3c39d3c7a4da",
+    external_id: str | None = DEFAULT_EXTERNAL_ID,
 ) -> MappedService:
     """Pair a service with the executor host resolved for it.
 
@@ -174,7 +181,9 @@ async def test_records_the_host_it_probed_and_the_services_on_it() -> None:
             "node00": HostProbeResult(
                 executor_host="node00",
                 host_record={"os": "Ubuntu 24.04"},
-                records={"svc-a": RECORD},
+                # Keyed by PMM's service id, as dispatch.py's record_key produces --
+                # not by the name "svc-a" the mapping carries.
+                records={DEFAULT_EXTERNAL_ID: RECORD},
                 duration_seconds=HOST_SECONDS,
             )
         },
@@ -199,10 +208,14 @@ async def test_an_answering_service_s_role_is_classified() -> None:
     record = {**RECORD, "process": {**RECORD["process"], "running": True}}
     outcome = await run_sweep(
         [mapped("svc-a", "node00", NodeResolution.NAME)],
-        {"node00": HostProbeResult(executor_host="node00", records={"svc-a": record})},
+        {
+            "node00": HostProbeResult(
+                executor_host="node00", records={DEFAULT_EXTERNAL_ID: record}
+            )
+        },
     )
 
-    assert outcome.service_roles == {"ff0275b6-3633-474a-8068-3c39d3c7a4da": "mongod"}
+    assert outcome.service_roles == {DEFAULT_EXTERNAL_ID: "mongod"}
 
 
 @pytest.mark.asyncio
@@ -420,14 +433,14 @@ async def test_one_dispatch_is_timed_once_not_per_service() -> None:
     """
     outcome = await run_sweep(
         [
-            mapped("svc-a", "node00", NodeResolution.NAME),
-            mapped("svc-b", "node00", NodeResolution.NAME),
+            mapped("svc-a", "node00", NodeResolution.NAME, external_id="id-a"),
+            mapped("svc-b", "node00", NodeResolution.NAME, external_id="id-b"),
         ],
         {
             "node00": HostProbeResult(
                 executor_host="node00",
                 host_record={"os": "Ubuntu 24.04"},
-                records={"svc-a": RECORD, "svc-b": RECORD},
+                records={"id-a": RECORD, "id-b": RECORD},
                 duration_seconds=HOST_SECONDS,
             )
         },
@@ -436,6 +449,7 @@ async def test_one_dispatch_is_timed_once_not_per_service() -> None:
     assert len(outcome.nodes) == 1
     assert outcome.nodes[0]["duration_seconds"] == HOST_SECONDS
     assert len(outcome.nodes[0]["services"]) == TWO_SERVICES
+    assert all(service["answered"] for service in outcome.nodes[0]["services"])
 
 
 class TestTheColdStartRace:

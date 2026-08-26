@@ -54,7 +54,7 @@ from app.sep.apps.om_inventory.crud import (
     upsert_host,
     upsert_service,
 )
-from app.sep.apps.om_inventory.dispatch import HostProbeResult, probe_all
+from app.sep.apps.om_inventory.dispatch import HostProbeResult, probe_all, record_key
 from app.sep.apps.om_inventory.enumeration import (
     build_hosts,
     InventoryHost,
@@ -180,10 +180,10 @@ def _record_for(entry: Any, host_results: dict[str, HostProbeResult]) -> dict | 
     result = host_results.get(entry.executor_host or "")
     if result is None:
         return None
-    # Keyed by service *name*: that is what the payload echoes back in each NDJSON
-    # record, because build_config sends the name as the target's identity. The
-    # service id never reaches the node.
-    return result.records.get(entry.service.name)
+    # Keyed the same way dispatch.py's parse_ndjson stores these records -- PMM's
+    # service id where the target carried one, since two same-named services on one
+    # host are not two same-id services. See record_key.
+    return result.records.get(record_key(entry.service.external_id, entry.service.name))
 
 
 #: Probe-record fields that describe the **host** rather than any service on it.

@@ -100,6 +100,30 @@ def group_by_executor(mapped: list[MappedService]) -> dict[str, list[MappedServi
     return dict(grouped)
 
 
+def record_key(service_id: str | None, service_name: str | None) -> str:
+    """Return the key a target's parsed NDJSON record is stored and looked up under.
+
+    PMM's service id, when the target carries one -- the only thing two identically
+    named services dispatched to the same host do not share. Keying on the name
+    alone, which is what ``build_config`` used to send as a target's whole identity,
+    let two same-named services on one host overwrite each other's record: the
+    service id never reached the node, so nothing distinguished them once their
+    NDJSON lines came back.
+
+    Falls back to the name for the rare target inventory carries with no PMM id --
+    the same key this dict used exclusively before ids were echoed back at all, so
+    that case is no worse off than before. It is also harmless: an entity with no
+    PMM id is never written to the estate (see ``_record_entity``), so a collision
+    among such targets loses nothing that would have been kept anyway.
+
+    :param service_id: The target's ``service_id``, or ``None`` when inventory
+        carries none.
+    :param service_name: The target's ``service`` name.
+    :return: The key.
+    """
+    return service_id or service_name or ""
+
+
 def build_config(entries: list[MappedService]) -> str:
     """Build the payload config for one executor host's targets.
 
@@ -111,6 +135,10 @@ def build_config(entries: list[MappedService]) -> str:
             "targets": [
                 {
                     "service": entry.service.name,
+                    # PMM's service id, echoed back by the payload on this target's
+                    # record and what parse_ndjson / _record_for key on -- see
+                    # record_key. The name alone is not unique per node.
+                    "service_id": entry.service.external_id,
                     # The node name is preferred over the address: in a sidecar
                     # deployment pmm-agent registers the node with its own container
                     # address while naming it after the database container, so the
@@ -146,7 +174,8 @@ def parse_ndjson(
     records are interleaved with output it does not control.
 
     :param stdout: The dispatched run's captured stdout.
-    :return: One record per service that reported, and the host record if it came.
+    :return: One record per service that reported, keyed by :func:`record_key`, and
+        the host record if it came.
     """
     records: dict[str, dict[str, Any]] = {}
     host_record: dict[str, Any] | None = None
@@ -161,7 +190,9 @@ def parse_ndjson(
         if not isinstance(record, dict):
             continue
         if record.get("service"):
-            records[record["service"]] = record
+            records[record_key(record.get("service_id"), record.get("service"))] = (
+                record
+            )
         elif "service" in record:
             host_record = record
     return records, host_record
