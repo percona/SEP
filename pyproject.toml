@@ -276,6 +276,7 @@ order-by-type = false
 runtime-evaluated-base-classes = [
     "sqlmodel.SQLModel",
     "app.core.db.models.BaseSQLModel",
+    "app.core.db.models.BaseUUIDSQLModel",
 ]
 
 [tool.ruff.lint.flake8-import-conventions.extend-aliases]
