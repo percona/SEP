@@ -322,6 +322,38 @@ def test_plugin_schema_entities_mode_rejects_all_root_form_keys():
         )
 
 
+def test_plugin_schema_entities_mode_duplicate_root_fields_unreachable():
+    """Duplicate root field names never surface — root forms are refused first."""
+    entity = AppEntitySchema(
+        name="things",
+        display_name="Things",
+        forms=[
+            FormSection(
+                title="T",
+                fields=[StringField(name="title", label="Title", required=True)],
+            )
+        ],
+        list_view=_minimal_list_view(),
+    )
+    with pytest.raises(ValidationError, match=r"Root-level forms.*entity-style") as exc:
+        AppSchema(
+            name="x",
+            display_name="X",
+            entities=[entity],
+            forms=[
+                FormSection(
+                    title="A",
+                    fields=[StringField(name="dup", label="D")],
+                ),
+                FormSection(
+                    title="B",
+                    fields=[StringField(name="dup", label="D")],
+                ),
+            ],
+        )
+    assert "duplicate field name" not in str(exc.value)
+
+
 def test_plugin_entity_schema_detail_highlights_round_trip():
     """Round-trip detail highlight hints through snake_case JSON (wire format)."""
     entity = AppEntitySchema.model_validate(
