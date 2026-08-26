@@ -95,11 +95,11 @@ class InventoryHost:
         """Return the executor facts to merge into this host's document.
 
         Always emitted, for every host, so "why can OM not probe this machine" is
-        answered by the row rather than by its absence. §11 asks for the split
-        between *no client registered* and *client registered but unusable*, and
-        ``registered`` is what carries it: a caller seeing ``registered: false``
-        knows to onboard the machine, and ``registered: true`` with
-        ``driver_healthy: false`` knows to go and look at the agent.
+        answered by the row rather than by its absence. ``registered`` carries the
+        split between *no client registered* and *client registered but unusable*:
+        a caller seeing ``registered: false`` knows to onboard the machine, and
+        ``registered: true`` with ``driver_healthy: false`` knows to go and look at
+        the agent.
 
         :return: The ``executor`` sub-document.
         """

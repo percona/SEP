@@ -264,9 +264,9 @@ def build_document(
 class SweepOutcome:
     """Carry everything one sweep produced.
 
-    A dataclass rather than the tuple this used to return: the counters and the
-    per-service records are different things, and positional unpacking at the call
-    site said which was which only by convention.
+    A dataclass, not a tuple: the counters and the per-service records are different
+    things, and positional unpacking at a call site would say which was which only by
+    convention.
 
     :param total: Services inventory reported.
     :param resolved: ...of which mapped to a live executor host.
@@ -477,16 +477,16 @@ def _build_receipt(
 ) -> list[dict[str, Any]]:
     """Record what the sweep attempted, one entry per **host**.
 
-    Host-oriented rather than service-oriented, because a sweep attempts hosts. The
-    receipt used to be a flat list of services, which meant a machine carrying a PMM
-    client and no database - the case OM most exists to describe - appeared nowhere
-    in it at all, however many times it was probed. A reader looking for
-    ``pmm-client-node00`` found the sweep counted it and could not see it.
+    Host-oriented rather than service-oriented, because a sweep attempts hosts: a
+    flat list of services would mean a machine carrying a PMM client and no database
+    - the case OM most exists to describe - appears nowhere in it at all, however
+    many times it is probed. A reader looking for ``pmm-client-node00`` would find
+    the sweep counted it and could not see it.
 
     One dispatch covers every service on a host, so the host owns the timing and the
-    failure; its services carry only what is theirs. That is also why the duration
-    used to be repeated identically across a host's services, which read as several
-    measurements when it was one.
+    failure; its services carry only what is theirs. That is also why the duration is
+    reported once, on the host, rather than repeated identically across its
+    services, which would read as several measurements when it is one.
 
     Outcomes only, deliberately: what the probe *found* belongs to the estate, where
     it is upserted and stays current, and carrying it here too would be a second copy
@@ -782,10 +782,10 @@ def _terminal_status(outcome: SweepOutcome) -> ProbeRunStatus:
     surface.
 
     "Nothing" means nothing *answered*, which is not the same as nothing being tried.
-    A run that dispatched to twelve hosts and got twelve failures used to be
-    ``PARTIAL``, because ``FAILED`` was reserved for having attempted nothing at all --
-    so the one status that says "look at OM itself" was unreachable in the case that
-    most needs it, and a total outage read as "some of the estate is fine" to anything
+    Reserving ``FAILED`` for having attempted nothing at all would make a run that
+    dispatched to twelve hosts and got twelve failures ``PARTIAL`` instead -- the one
+    status that says "look at OM itself" unreachable in the case that most needs it,
+    and a total outage would read as "some of the estate is fine" to anything
     automating against it.
 
     :param outcome: What the sweep produced.
