@@ -38,7 +38,7 @@ from app.sep.inventory import (
     Table,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.sync.models import BaseTaskSyncer, TaskRunResult
+from app.sep.sync.models import BaseTaskSyncer, claim_identity, TaskRunResult
 
 GZIP_WBITS = 16 + zlib.MAX_WBITS
 
@@ -184,16 +184,23 @@ class MySQLSyncer(BaseTaskSyncer):
 
     :cvar SYNC_TO_LIMIT: The highest entity type that can be synchronized. Set to
         `SyncInventoryEntityTypeEnum.TABLE`.
-    :vartype SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
+    :cvar reads_retired_entities: The schema and table levels, the only two this
+        syncer matches by name against a live fetch. Its node and service passes
+        walk the inventory unconditionally, so they stay active-only — reading a
+        tombstoned node there would launch a fetch payload at a host whose
+        upstream is gone.
     :param ignore_schemas: A list of schema names to ignore during synchronization.
-    :type ignore_schemas: list[str]
     :param resolve_localhost: Resolve the --host IP to 127.0.0.1 if it's the same as
         the executor host. Defaults to True.
-    :type resolve_localhost: bool
     """
 
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.TABLE
+    )
+    reads_retired_entities: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
+        frozenset(
+            {SyncInventoryEntityTypeEnum.SCHEMA, SyncInventoryEntityTypeEnum.TABLE}
+        )
     )
     ignore_schemas: list[str] = []
     resolve_localhost: bool = True
@@ -591,16 +598,22 @@ class MySQLSyncer(BaseTaskSyncer):
         :param updated_service: The updated service data.
         :type updated_service: MySQLService
         """
-        syncable_schemas = {}
+        # Keyed by primary key, not name: a tombstone and the replacement that took
+        # its name both come back from a retired-inclusive read, and only the
+        # primary key tells them apart once the active row has claimed the name.
+        syncable_schemas: dict[int | None, CreatedSchema] = {}
+        schema_ids_by_name: dict[str, int | None] = {}
         for schema in await self.get_inventory_service_schemas(created_service.id):
-            syncable_schemas[schema.name] = schema
+            syncable_schemas[schema.id] = schema
+            claim_identity(schema_ids_by_name, schema.name, schema, syncable_schemas)
 
         task_history_id: int | None = self._inventory_index_cache[
             _MySQLSyncResultEntityTypeEnum.SERVICES
         ].pop(created_service.address, (None,))[0]
         async for schema_index in updated_service.schemas_index:
             schema = Schema.model_validate(schema_index)
-            if (created_schema := syncable_schemas.pop(schema.name, None)) is None:
+            matched_id = schema_ids_by_name.get(schema.name)
+            if (created_schema := syncable_schemas.pop(matched_id, None)) is None:
                 logger.info("Creating new schema: %s", schema)
                 created_schema = CreatedSchema.model_validate(
                     await self.inventory_api.post(
@@ -608,14 +621,24 @@ class MySQLSyncer(BaseTaskSyncer):
                         json=schema.model_dump(),
                     ),
                 )
+            else:
+                await self._revive_if_retired(
+                    SyncInventoryEntityTypeEnum.SCHEMA, created_schema
+                )
             created_schema.service = created_service.model_copy(update={"schemas": []})
             if task_history_id is not None:
                 self._inventory_index_cache[_MySQLSyncResultEntityTypeEnum.SCHEMAS][
                     self._build_entity_address(created_service.address, schema.name)
                 ] = _MySQLFetchResult(task_history_id, schema_index)
             await self.sync_schema(created_schema)
+        # An already-retired schema is absent from every fetch by construction, so
+        # retiring it again would repeat on every run for as long as the tombstone
+        # is kept. Nothing else is owed to it: this syncer's SERVICE-level read is
+        # active-only, so prepare_sync never opened a SyncItem for a tombstone and
+        # there is none to close.
         for schema in syncable_schemas.values():
-            await self.delete_schema(schema)
+            if schema.retired_at is None:
+                await self.retire_schema(schema)
 
     async def fetch_schema(self, created_schema: CreatedSchema) -> MySQLSchema:
         """Fetch updated data for a specific schema.
@@ -625,9 +648,7 @@ class MySQLSyncer(BaseTaskSyncer):
         data is already cached, it uses the cached data instead of executing a new task.
 
         :param created_schema: The schema instance to fetch updated data for.
-        :type created_schema: CreatedSchema
         :return: The updated schema data.
-        :rtype: MySQLSchema
         """
         if (
             not (created_service := created_schema.service)
@@ -685,12 +706,16 @@ class MySQLSyncer(BaseTaskSyncer):
         :type updated_schema: MySQLSchema
         """
         await self.update_schema(created_schema, updated_schema)
-        syncable_tables = {}
+        # Keyed by primary key for the reason the schema index above is.
+        syncable_tables: dict[int | None, CreatedTable] = {}
+        table_ids_by_name: dict[str, int | None] = {}
         for table in created_schema.tables:
-            syncable_tables[table.name] = table
+            syncable_tables[table.id] = table
+            claim_identity(table_ids_by_name, table.name, table, syncable_tables)
 
         async for table in updated_schema.iter_tables():
-            if (created_table := syncable_tables.pop(table.name, None)) is None:
+            matched_id = table_ids_by_name.get(table.name)
+            if (created_table := syncable_tables.pop(matched_id, None)) is None:
                 logger.info("Creating new table: %s", table)
                 created_table = CreatedTable.model_validate(
                     await self.inventory_api.post(
@@ -701,9 +726,14 @@ class MySQLSyncer(BaseTaskSyncer):
                 created_table.database = created_schema.model_copy(
                     update={"tables": []},
                 )
+            else:
+                await self._revive_if_retired(
+                    SyncInventoryEntityTypeEnum.TABLE, created_table
+                )
             await self.sync_table(created_table, table)
         for table in syncable_tables.values():
-            await self.delete_table(table)
+            if table.retired_at is None:
+                await self.retire_table(table)
 
     async def fetch_table(self, created_table: CreatedTable) -> Table:
         """Fetch updated data for a specific table.
@@ -712,9 +742,7 @@ class MySQLSyncer(BaseTaskSyncer):
         synchronization task.
 
         :param created_table: The table instance to fetch updated data for.
-        :type created_table: CreatedTable
         :return: The updated table data.
-        :rtype: Table
         """
         if (created_schema := created_table.database) and (
             created_service := created_schema.service

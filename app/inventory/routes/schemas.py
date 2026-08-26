@@ -22,12 +22,18 @@ from fastapi import APIRouter, status
 from app.api.deps import IsAuthenticatedDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
-from app.inventory.crud import SchemaManager, TableManager
+from app.inventory.crud import (
+    SchemaManager,
+    TableManager,
+)
 from app.inventory.deps import (
+    RetirableSchemaDep,
     SchemaDep,
     SchemaListQueryDep,
+    SchemaScopeDep,
     SessionDep,
     TableListQueryDep,
+    TableScopeDep,
 )
 from app.inventory.models import (
     Schema,
@@ -49,10 +55,18 @@ async def list_schemas(
     session: SessionDep,
     pagination: PaginationDep,
     list_query: SchemaListQueryDep,
+    manager: SchemaScopeDep,
 ) -> PaginatedResponse[SchemaResponse]:
-    """List Schemas."""
+    """List Schemas.
+
+    :param session: The async database session.
+    :param pagination: Validated offset/limit query parameters.
+    :param list_query: The resolved sort/search produced at the request boundary.
+    :param manager: The schema manager the request's retirement scope selected.
+    :return: A paginated response of schema responses.
+    """
     logger.debug("Listing schemas")
-    return await SchemaManager.list_query_paginated(
+    return await manager.list_query_paginated(
         session,
         list_query=list_query,
         select_related=[Schema.tables],
@@ -61,10 +75,21 @@ async def list_schemas(
 
 
 @router.get("/{schema_id}", dependencies=[IsAuthenticatedDep])
-async def retrieve_schema(session: SessionDep, schema_id: int) -> SchemaDetailResponse:
-    """Retrieve Schema."""
+async def retrieve_schema(
+    session: SessionDep,
+    schema_id: int,
+    manager: SchemaScopeDep,
+) -> SchemaDetailResponse:
+    """Retrieve Schema.
+
+    :param session: The async database session.
+    :param schema_id: The identifier of the schema to retrieve.
+    :param manager: The schema manager the request's retirement scope selected.
+    :return: The schema, with its tables and service nested.
+    :raises HTTPNotFoundException: If no schema in scope has the given identifier.
+    """
     logger.debug("Retrieving schema %s", schema_id)
-    return await SchemaManager.get_or_404(
+    return await manager.get_or_404(
         session,
         select_related=[Schema.tables, Schema.service],
         id=schema_id,
@@ -87,10 +112,31 @@ async def update_schema(
     dependencies=[IsAuthenticatedDep],
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_schema(session: SessionDep, schema: SchemaDep) -> None:
-    """Delete Schema."""
-    logger.debug("Deleting schema %s", schema.id)
-    await SchemaManager.delete(session, schema)
+async def retire_schema(session: SessionDep, schema: RetirableSchemaDep) -> None:
+    """Retire Schema and its tables, keeping the rows resolvable.
+
+    :param session: The asynchronous database session.
+    :param schema: The schema to retire, retired or not.
+    """
+    logger.debug("Retiring schema %s", schema.id)
+    await SchemaManager.retire(session, schema)
+
+
+@router.post(
+    "/{schema_id}/revive",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def revive_schema(session: SessionDep, schema: RetirableSchemaDep) -> None:
+    """Revive a retired Schema together with its retired ancestors.
+
+    :param session: The asynchronous database session.
+    :param schema: The schema to revive, retired or not.
+    :raises HTTPConflictException: If an active entity already holds the unique
+        key the revived schema would reclaim.
+    """
+    logger.debug("Reviving schema %s", schema.id)
+    await SchemaManager.revive(session, schema)
 
 
 @router.get("/{schema_id}/tables/", dependencies=[IsAuthenticatedDep])
@@ -99,10 +145,11 @@ async def list_tables_by_schema(
     schema: SchemaDep,
     pagination: PaginationDep,
     list_query: TableListQueryDep,
+    manager: TableScopeDep,
 ) -> PaginatedResponse[TableResponse]:
     """List Tables by Schema."""
     logger.debug("Listing tables for schema '%s'", schema.id)
-    return await TableManager.list_query_paginated(
+    return await manager.list_query_paginated(
         session,
         list_query=list_query,
         pagination=pagination,
