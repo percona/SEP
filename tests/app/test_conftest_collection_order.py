@@ -35,10 +35,10 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Variables the child run must not inherit. ``-o addopts=`` clears the ini
-# option but not ``PYTEST_ADDOPTS``, which the pre-push gate uses to inject its
-# checkpoint plugin; the child would then deselect every node id the outer run
-# already verified, collect nothing, and exit 5 on a resumed push.
+#: Variables the child run must not inherit. ``-o addopts=`` clears the ini
+#: option but not ``PYTEST_ADDOPTS``, which the pre-push gate uses to inject its
+#: checkpoint plugin; the child would then deselect every node id the outer run
+#: already verified, collect nothing, and exit 5 on a resumed push.
 _INHERITED_PYTEST_VARS = ("PYTEST_ADDOPTS", "SEP_PREPUSH_CHECKPOINT")
 
 PMM = "tests/app/sep/clients/test_pmm.py"
