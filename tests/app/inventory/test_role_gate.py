@@ -61,19 +61,27 @@ MUTATIONS = [
     ("POST", "/schemas/1/tables/"),
     ("DELETE", "/tables/1"),
     ("POST", "/tables/1/revive"),
+    ("POST", "/collection/collect"),
 ]
-MUTATION_IDS = ["nodes", "services", "schemas", "tables", "revive"]
+MUTATION_IDS = [
+    "nodes",
+    "services",
+    "schemas",
+    "tables",
+    "revive",
+    "collection",
+]
 
 
 @pytest.mark.parametrize(("method", "path"), MUTATIONS, ids=MUTATION_IDS)
 def test_mutations_are_refused_for_a_non_admin(
     bearer_client: TestClient, method: str, path: str
 ) -> None:
-    """Refuse a non-admin's mutation on each of the four route modules.
+    """Refuse a non-admin's mutation on each of the route modules.
 
-    The four routers are separate ``APIRouter`` instances that declare nothing
-    about the gate — they inherit it through ``create_app``'s include loop, so
-    each is covered separately.
+    The routers are separate ``APIRouter`` instances that declare nothing about
+    the gate — they inherit it through ``create_app``'s include loop, so each is
+    covered separately.
     """
     response = bearer_client.request(method, path, json={}, headers=BEARER_HEADERS)
 

@@ -341,6 +341,7 @@ class TestSepSettingsList:
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             "AlertsSettings",
             "HealthReportSettings",
+            "InventoryAppSettings",
             SettingClassEnum.SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
             SettingClassEnum.ALERT_SETTINGS.value,

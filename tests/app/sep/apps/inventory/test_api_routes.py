@@ -449,6 +449,16 @@ class TestInventoryPluginTasksEndpoint:
         assert isinstance(body, list)
         assert any(t["name"] == "inventory-sync" for t in body)
 
+    def test_returns_the_inventory_collection_task(self, test_client):
+        """Ensure the endpoint offers collection alongside sync.
+
+        An operator schedules and toggles both from the same UI, so the hook
+        needs to discover the pair rather than sync alone.
+        """
+        response = test_client.get("/api/apps/inventory/")
+        assert response.status_code == status.HTTP_200_OK
+        assert any(t["name"] == "inventory-collection" for t in response.json())
+
     def test_response_shape_matches_use_plugin_tasks_contract(self, test_client):
         """Ensure every item has at minimum a ``name`` key for the React hook."""
         response = test_client.get("/api/apps/inventory/")

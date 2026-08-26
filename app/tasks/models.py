@@ -1032,6 +1032,7 @@ GENERIC_EXECUTOR_TASK_NAMES: frozenset[str] = frozenset(
 )
 
 INVENTORY_SYNC_TASK_NAME = "inventory-sync"
+INVENTORY_COLLECTION_TASK_NAME = "inventory-collection"
 SYNC_RUNNING_TASKS_TASK_NAME = "tasks__sync_running_tasks"
 
 #: Maintenance / system task names excluded from user-facing task lists.
@@ -1041,6 +1042,7 @@ SYNC_RUNNING_TASKS_TASK_NAME = "tasks__sync_running_tasks"
 INTERNAL_TASK_NAMES: frozenset[str] = frozenset(
     {
         INVENTORY_SYNC_TASK_NAME,
+        INVENTORY_COLLECTION_TASK_NAME,
         SYNC_RUNNING_TASKS_TASK_NAME,
         "tasks__check_nomad_cert_expiry",
     }

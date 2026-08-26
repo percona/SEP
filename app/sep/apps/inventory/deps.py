@@ -28,6 +28,7 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.core.requests import RemoteAPI
 from app.core.security import require_internal_token
 from app.core.utils import import_var
 from app.inventory.config import inventory_settings
@@ -264,6 +265,24 @@ InventoryAvailableSyncersDep = Annotated[
 ]
 
 
+async def get_inventory_api_standalone() -> RemoteAPI:
+    """Construct an Inventory API client from settings, outside request context.
+
+    The request-scoped :func:`app.sep.deps.get_inventory_client` cannot serve a
+    scheduled job — it resolves the shared client off ``request.app.state`` —
+    so a standalone caller builds its own from the same settings.
+
+    :return: A client addressing the Inventory API.
+    """
+    return await settings.get_remote_api(
+        endpoint=sep_settings.INVENTORY_ENDPOINT,
+        ssl_cafile=settings.SSL_CAFILE,
+        ssl_keyfile=inventory_settings.SSL_KEYFILE,
+        ssl_certfile=inventory_settings.SSL_CERTFILE,
+        logger_name="inventory_api",
+    )
+
+
 async def get_syncers_standalone() -> list[BaseSyncer]:
     """Initialize syncer instances with API clients constructed from settings.
 
@@ -275,13 +294,7 @@ async def get_syncers_standalone() -> list[BaseSyncer]:
     :return: A list of initialized ``BaseSyncer`` instances.
     :rtype: list[BaseSyncer]
     """
-    inventory_api = await settings.get_remote_api(
-        endpoint=sep_settings.INVENTORY_ENDPOINT,
-        ssl_cafile=settings.SSL_CAFILE,
-        ssl_keyfile=inventory_settings.SSL_KEYFILE,
-        ssl_certfile=inventory_settings.SSL_CERTFILE,
-        logger_name="inventory_api",
-    )
+    inventory_api = await get_inventory_api_standalone()
     tasks_api = await settings.get_remote_api(
         endpoint=sep_settings.TASKS_ENDPOINT,
         ssl_cafile=settings.SSL_CAFILE,

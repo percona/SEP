@@ -40,6 +40,17 @@ default:
     ANNOTATIONS_ENABLED: false
     ANNOTATIONS_TIMEOUT: 5  # Optional: PMM annotation request timeout in seconds
   SEP:
+    INVENTORY:
+      # Tombstone collection. A retired node/service/schema/table is deleted
+      # permanently once it has been retired for this long AND nothing SEP
+      # persisted still resolves it. Deletion is irreversible and cascades to
+      # the entity's subtree, so shortening this widens what a run removes.
+      # Collection only runs when TASKS.INVENTORY_COLLECTION_INTERVAL is set.
+      COLLECTION_RETENTION: 30 days
+      # Entities of each type one API call may collect, and the most calls one
+      # scheduled run issues before leaving the rest to the next tick.
+      COLLECTION_BATCH_SIZE: 500
+      COLLECTION_MAX_BATCHES: 20
     SNIPPETS:
       # Restrict snippet sync to shell scripts. Bare strings are parsed as
       # extension filters; MIME-type filters use the "mime:<value>" form.
@@ -265,6 +276,7 @@ default:
     PRE_EXECUTION_CONNECTIVITY_CHECK: warn  # disabled | warn | block
     INVENTORY_SYNC_INTERVAL: null  # Celery beat interval seeded for inventory-sync, e.g. "15 minutes"; null seeds no schedule
     INVENTORY_SYNC_SYNCER: null  # Dotted "module.ClassName" syncer the seeded schedule targets; null runs every configured syncer
+    INVENTORY_COLLECTION_INTERVAL: null  # Celery beat interval seeded for inventory-collection, e.g. "1 days"; null seeds no schedule and nothing is ever deleted
     HOOK_MODULE_ALLOWLIST:  # Module roots a task hook path may import from; extend for out-of-tree apps
       - app.sep.apps
     NOMAD:

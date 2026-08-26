@@ -167,9 +167,12 @@ class TestListAggregation:
         assert {"SEPSettings", "SnippetsSettings", "AlertSettings"}.issubset(
             set(classes)
         )
-        assert classes[-3] == SettingClassEnum.TASKS_SETTINGS.value
-        assert classes[-2] == "AlertsSettings"
-        assert classes[-1] == "HealthReportSettings"
+        assert classes[-4:] == [
+            SettingClassEnum.TASKS_SETTINGS.value,
+            "InventoryAppSettings",
+            "AlertsSettings",
+            "HealthReportSettings",
+        ]
         mock_tasks.get.assert_awaited_once_with(f"{REMOTE_BASE}/")
 
     def test_list_emits_is_advanced_for_sep_settings(

@@ -94,6 +94,7 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInstance, SyncInventoryEntityTypeEnum
 from app.tasks.connectivity.models import ConnectivityCheckResponse
+from app.tasks.models import INVENTORY_COLLECTION_TASK_NAME
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=inventory_schema)
@@ -190,13 +191,19 @@ async def inventory_sync_status(session: SessionDep) -> InventorySyncStatusRespo
 async def inventory_plugin_tasks() -> list[PluginTaskResponse]:
     """Return the list of periodic task names for the Inventory plugin.
 
-    Hard-coded because the Inventory plugin has exactly one periodic task
-    (``inventory-sync``). The shape matches what the React
-    ``usePluginTasks('inventory')`` hook expects: a list of objects with at
+    Hard-coded because the Inventory plugin's periodic tasks are a fixed pair
+    (``inventory-sync`` and ``inventory-collection``). The shape matches what the
+    React ``usePluginTasks('inventory')`` hook expects: a list of objects with at
     minimum a ``name`` key.
     """
     return [
-        PluginTaskResponse(name=INVENTORY_SYNC_TASK_NAME, display_name="Inventory Sync")
+        PluginTaskResponse(
+            name=INVENTORY_SYNC_TASK_NAME, display_name="Inventory Sync"
+        ),
+        PluginTaskResponse(
+            name=INVENTORY_COLLECTION_TASK_NAME,
+            display_name="Inventory Collection",
+        ),
     ]
 
 

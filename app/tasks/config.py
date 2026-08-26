@@ -134,6 +134,11 @@ class TasksSettings(BaseYamlAppSettings):
         runs. ``None`` disables seeding the schedule entirely, leaving the sync
         to whatever interval an operator attaches. Read at startup (not
         runtime-overridable). Defaults to ``None``.
+    :param INVENTORY_COLLECTION_INTERVAL: The schedule on which the
+        inventory-collection task runs. ``None`` disables seeding the schedule
+        entirely, which is the default: collection deletes rows irreversibly, so
+        no existing deployment starts doing so on upgrade. Read at startup (not
+        runtime-overridable). Defaults to ``None``.
     :param INVENTORY_SYNC_SYNCER: The fully qualified syncer
         (``"module.ClassName"``, matching ``BaseSyncer.get_name()``) the seeded
         schedule targets; ``None`` runs every configured syncer. Must be a
@@ -182,6 +187,7 @@ class TasksSettings(BaseYamlAppSettings):
         default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS)
     )
     INVENTORY_SYNC_INTERVAL: IntervalSchedule | None = None
+    INVENTORY_COLLECTION_INTERVAL: IntervalSchedule | None = None
     INVENTORY_SYNC_SYNCER: SyncerName | None = None
     LOG_STREAM_CAP_BYTES: PositiveInt = hot_field(104857600, advanced=True)
     LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt = hot_field(1000, advanced=True)

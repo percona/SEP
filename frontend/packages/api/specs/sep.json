@@ -17493,7 +17493,7 @@
     },
     "/api/apps/inventory/": {
       "get": {
-        "description": "Return the list of periodic task names for the Inventory plugin.\n\nHard-coded because the Inventory plugin has exactly one periodic task\n(``inventory-sync``). The shape matches what the React\n``usePluginTasks('inventory')`` hook expects: a list of objects with at\nminimum a ``name`` key.",
+        "description": "Return the list of periodic task names for the Inventory plugin.\n\nHard-coded because the Inventory plugin's periodic tasks are a fixed pair\n(``inventory-sync`` and ``inventory-collection``). The shape matches what the\nReact ``usePluginTasks('inventory')`` hook expects: a list of objects with at\nminimum a ``name`` key.",
         "operationId": "inventory_inventory_plugin_tasks_api_apps_inventory__get",
         "responses": {
           "200": {
