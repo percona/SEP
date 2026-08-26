@@ -293,7 +293,10 @@ class SyncInstanceManager(BaseSQLModelManager):
         A run is stale when the newest activity across **all** of its items predates
         ``stale_after``, so a run still making progress is never reclaimed. The item
         flip is a single conditional statement, so a second reclaimer arriving
-        concurrently matches no rows rather than reclaiming twice.
+        concurrently matches no rows rather than reclaiming twice. It covers every
+        stale run already fenced as ``FAILED``, not only the ones this call fenced,
+        so a reclaim interrupted between its two statements resumes on the next
+        attempt instead of leaving the syncer blocked.
 
         ``snapshot_complete`` is deliberately left untouched: a partially applied run
         must never be counted as a complete generation.
@@ -345,19 +348,33 @@ class SyncInstanceManager(BaseSQLModelManager):
             ),
             returning=["id"],
         )
-        if not reclaimed_ids:
-            return []
-        logger.warning(
-            "Reclaimed %d stale %s run(s): %s",
-            len(reclaimed_ids),
-            syncer,
-            reclaimed_ids,
+        # Items are released for every stale instance already fenced, not only the
+        # ones this call fenced. A crash between the two statements leaves a FAILED
+        # instance whose items were never released, and the update above then matches
+        # nothing on every later attempt -- so without this the syncer would stay
+        # blocked by exactly the abandoned run the reclaim exists to clear.
+        fenced = await cls._exec(
+            session,
+            select(col(SyncInstance.id)).where(
+                col(SyncInstance.id).in_(stale_instance_ids),
+                col(SyncInstance.status) == SyncStatusEnum.FAILED,
+            ),
         )
+        fenced_ids = list(fenced.all())
+        if not fenced_ids:
+            return []
+        if reclaimed_ids:
+            logger.warning(
+                "Reclaimed %d stale %s run(s): %s",
+                len(reclaimed_ids),
+                syncer,
+                reclaimed_ids,
+            )
         await SyncItemManager.update_where(
             session,
             {"status": SyncStatusEnum.FAILED},
             col(SyncItem.status).in_([SyncStatusEnum.PENDING, SyncStatusEnum.RUNNING]),
-            col(SyncItem.sync_instance_id).in_(reclaimed_ids),
+            col(SyncItem.sync_instance_id).in_(fenced_ids),
         )
         return reclaimed_ids
 

@@ -24,7 +24,6 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 import sqlmodel
 
 
@@ -34,27 +33,33 @@ down_revision: Union[str, None] = '74720aeda25b'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-# Both enum types already exist -- ``syncitem`` created them in 7f4dec8bc76a and
-# still uses them. Autogenerate emits a plain ``sa.Enum``, which re-emits CREATE
-# TYPE and fails with DuplicateObject, so both columns declare the existing type
-# with ``create_type=False``. For the same reason ``downgrade`` drops neither
-# type.
-sync_status_enum = postgresql.ENUM(
+# Both columns are VARCHAR + CHECK, so neither touches the native PostgreSQL
+# enum types ``syncitem`` still owns. The shared names land in pg_constraint
+# rather than pg_type, so nothing collides with those types.
+# ``create_constraint`` is False here and the CHECK is added explicitly below.
+# The two dialects disagree about what ``add_column`` does with an implicit
+# constraint: PostgreSQL emits it, SQLite warns and skips. Leaving it on would
+# therefore produce the constraint twice on PostgreSQL -- once implicitly, once
+# from the explicit call SQLite needs -- and abort the upgrade there while the
+# SQLite suite stayed green.
+sync_status_enum = sa.Enum(
     'PENDING',
     'RUNNING',
     'SUCCESS',
     'FAILED',
     name='syncstatusenum',
-    create_type=False,
+    native_enum=False,
+    create_constraint=False,
 )
-entity_type_enum = postgresql.ENUM(
+entity_type_enum = sa.Enum(
     'INVENTORY',
     'NODE',
     'SERVICE',
     'SCHEMA',
     'TABLE',
     name='syncinventoryentitytypeenum',
-    create_type=False,
+    native_enum=False,
+    create_constraint=True,
 )
 
 
@@ -72,10 +77,9 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_syncentityabsence_entity_id'), 'syncentityabsence', ['entity_id'], unique=False)
     op.create_index(op.f('ix_syncentityabsence_entity_type'), 'syncentityabsence', ['entity_type'], unique=False)
-    op.create_index(op.f('ix_syncentityabsence_syncer'), 'syncentityabsence', ['syncer'], unique=False)
-    # The server default backfills rows that predate the column; it is dropped
-    # once the backfill below has run, so the model's Python-side default stays
-    # the only source of the value.
+    # The server default backfills rows that predate the column, and then stays:
+    # migrations run ahead of the code rollout, so a release still running the
+    # previous code inserts a SyncInstance without ``status`` until it restarts.
     op.add_column(
         'syncinstance',
         sa.Column('status', sync_status_enum, nullable=False, server_default='PENDING'),
@@ -103,12 +107,14 @@ def upgrade() -> None:
           )
         """
     )
+    # The single source of the CHECK on every dialect, run after the backfill so
+    # SQLite's table rebuild validates rows that already satisfy it. The name
+    # matches the one the model's metadata derives, so a create_all schema and a
+    # migrated schema carry the same constraint.
     with op.batch_alter_table('syncinstance') as batch_op:
-        batch_op.alter_column(
-            'status',
-            existing_type=sync_status_enum,
-            existing_nullable=False,
-            server_default=None,
+        batch_op.create_check_constraint(
+            'syncstatusenum',
+            "status IN ('PENDING', 'RUNNING', 'SUCCESS', 'FAILED')",
         )
     op.add_column('syncinstance', sa.Column('snapshot_complete', sa.Boolean(), nullable=True))
     op.create_index(op.f('ix_syncinstance_snapshot_complete'), 'syncinstance', ['snapshot_complete'], unique=False)
@@ -119,8 +125,12 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_syncinstance_status'), table_name='syncinstance')
     op.drop_index(op.f('ix_syncinstance_snapshot_complete'), table_name='syncinstance')
     op.drop_column('syncinstance', 'snapshot_complete')
-    op.drop_column('syncinstance', 'status')
-    op.drop_index(op.f('ix_syncentityabsence_syncer'), table_name='syncentityabsence')
+    # The CHECK is dropped in the same batch as the column it constrains: SQLite
+    # rebuilds the table from reflection, so a constraint left behind would be
+    # re-emitted against a column that no longer exists.
+    with op.batch_alter_table('syncinstance') as batch_op:
+        batch_op.drop_constraint('syncstatusenum', type_='check')
+        batch_op.drop_column('status')
     op.drop_index(op.f('ix_syncentityabsence_entity_type'), table_name='syncentityabsence')
     op.drop_index(op.f('ix_syncentityabsence_entity_id'), table_name='syncentityabsence')
     op.drop_table('syncentityabsence')

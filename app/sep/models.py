@@ -124,7 +124,11 @@ class SyncInstanceBase(SQLModel):
     syncer: NonEmptyStr = SQLField(index=True)
     status: SyncStatusEnum = SQLField(
         default=SyncStatusEnum.PENDING,
-        sa_column=Column(EnumField(SyncStatusEnum), nullable=False, index=True),
+        sa_column=Column(
+            EnumField(SyncStatusEnum, native_enum=False, create_constraint=True),
+            nullable=False,
+            index=True,
+        ),
     )
     snapshot_complete: bool | None = SQLField(default=None, index=True)
 
@@ -280,11 +284,15 @@ class SyncEntityAbsenceBase(SQLModel):
     :param entity_type: The type of the absent inventory entity.
     """
 
-    syncer: NonEmptyStr = SQLField(index=True)
+    syncer: NonEmptyStr
     entity_id: int = SQLField(index=True)
     entity_type: SyncInventoryEntityTypeEnum = SQLField(
         sa_column=Column(
-            EnumField(SyncInventoryEntityTypeEnum),
+            EnumField(
+                SyncInventoryEntityTypeEnum,
+                native_enum=False,
+                create_constraint=True,
+            ),
             nullable=False,
             index=True,
         ),

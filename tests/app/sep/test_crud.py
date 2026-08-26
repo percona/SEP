@@ -639,6 +639,46 @@ class TestSyncInstanceManagerStaleReclaim:
         assert owned_during_item_flip == [False]
 
     @pytest.mark.asyncio
+    async def test_reclaim_resumes_an_interrupted_release(self, session) -> None:
+        """Release items of a stale run already fenced by an interrupted reclaim.
+
+        The fence and the item release commit separately, so a crash between them
+        leaves a ``FAILED`` instance whose items are still held. The conditional
+        fence matches nothing on the retry, so only covering already-fenced runs
+        keeps the syncer from staying blocked forever.
+        """
+        stale = await _seed_run(
+            session,
+            age=timedelta(hours=3),
+            instance_status=SyncStatusEnum.FAILED,
+        )
+
+        reclaimed = await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        assert reclaimed == []
+        items = await SyncItemManager.list(session, sync_instance_id=stale.id)
+        assert [item.status for item in items] == [SyncStatusEnum.FAILED]
+
+    @pytest.mark.asyncio
+    async def test_create_proceeds_after_an_interrupted_reclaim(self, session) -> None:
+        """Let a new run start once an interrupted reclaim has been resumed."""
+        await _seed_run(
+            session,
+            age=timedelta(hours=3),
+            instance_status=SyncStatusEnum.FAILED,
+        )
+
+        created = await SyncInstanceManager.create(
+            session,
+            SyncInstanceWrite(syncer="test-syncer"),
+            stale_after=timedelta(hours=1),
+        )
+
+        assert created.status == SyncStatusEnum.PENDING
+
+    @pytest.mark.asyncio
     async def test_reclaim_ignores_other_syncers(self, session) -> None:
         """Leave a stale run belonging to another syncer untouched."""
         other = await _seed_run(session, syncer="other-syncer", age=timedelta(hours=3))

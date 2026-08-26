@@ -165,7 +165,10 @@ async def inventory_sync_status(session: SessionDep) -> InventorySyncStatusRespo
     )
     runs = await SyncInstanceManager.list(
         session,
-        order_by=[col(SyncInstance.created_at).desc()],
+        order_by=[
+            col(SyncInstance.created_at).desc(),
+            col(SyncInstance.id).desc(),
+        ],
         limit=_SYNC_RUN_HISTORY_LIMIT,
     )
     return InventorySyncStatusResponse(
