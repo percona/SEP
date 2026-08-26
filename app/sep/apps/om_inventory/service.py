@@ -869,17 +869,24 @@ async def run_probe(
     observed_at = utc_now().isoformat()
     try:
         outcome = await _sweep(observed_at, node_ids)
+        # The estate goes in before the run reaches a terminal status, so a reader
+        # that sees a finished run always finds the rows that run produced. Covered
+        # by the same try as the sweep itself: a raise here or in ``_finalise`` left
+        # the run ``RUNNING`` forever before this widened, since only ``_sweep`` was
+        # inside the failure path and nothing downstream of it could mark the run
+        # failed.
+        await _persist_estate(outcome, run_id)
+        async with session_maker() as session:
+            await _finalise(session, run_id, outcome)
     except Exception as exc:
         logger.exception("OM inventory: sweep %s failed", run_id)
         await _fail_run(run_id, str(exc))
         return run_id
 
-    # The estate goes in before the run reaches a terminal status, so a reader that
-    # sees a finished run always finds the rows that run produced.
-    await _persist_estate(outcome, run_id)
-
+    # Deliberately outside the failure path above: a run that persisted and
+    # finalised successfully is done, and a pruning failure afterwards is its own
+    # problem -- it must not rewrite a completed run's status to failed.
     async with session_maker() as session:
-        await _finalise(session, run_id, outcome)
         await prune_runs(session, om_inventory_settings.RUN_RETENTION)
     status = _terminal_status(outcome)
 
