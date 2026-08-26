@@ -145,6 +145,21 @@ default:
       ARTIFACT_DIR: data/health-reports  # Shared staging dir (mount in worker + web)
       ARTIFACT_TTL: 3600                  # Seconds to retain a staged PDF; mirror CELERY.RESULT_EXPIRES
       CLEANUP_INTERVAL: {EVERY: 15, PERIOD: minutes}  # purge_report_artifacts cadence
+    # OM inventory's own knobs (app.sep.apps.om_inventory.config.OmInventorySettings)
+    # are read from SEP.OM_INVENTORY, entirely commented out below: every value
+    # shown is that class's own default, and the sidecar ships defaults-only.
+    # OM_INVENTORY:
+    #   SCHEDULE: {EVERY: 10, PERIOD: minutes}  # null unregisters the periodic sweep
+    #   PROBE_DATABASE: true
+    #   REPO_URL: https://repo.percona.com/percona/yum/PERCONA-PACKAGING-KEY
+    #   REPO_TIMEOUT: 8
+    #   CREDENTIALS_PATH: null  # falls back to ~/.mongodb_uri; YAML/env only, not hot
+    #   CONNECT_TIMEOUT: 5
+    #   TASK_TIMEOUT: 180
+    #   POLL_INTERVAL: 3
+    #   MAX_CONCURRENT_PROBES: 8
+    #   RUN_RETENTION: 50
+    #   STALE_RUN_AFTER: 1800  # seconds (30 minutes)
     # Diagnostic bundle delivery plan - unset by default (no receiver configured).
     # The skeleton below is settable through this file and environment variables
     # only: the whole plan is cross-validated as a unit at settings load, so the
