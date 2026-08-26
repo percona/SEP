@@ -46,7 +46,7 @@ from app.sep.snippets.models.responses import (
     SnippetsCapabilitiesResponse,
 )
 from app.tasks.models import TaskHistoryStatusEnum
-from tests.app.sep.apps.snippet_kit import persist_meta
+from tests.app.sep.snippets.snippet_kit import persist_meta
 
 API_BASE = "/api/apps/snippets"
 

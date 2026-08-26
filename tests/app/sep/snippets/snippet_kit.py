@@ -13,12 +13,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Shared helpers for seeding snippet frontmatter in the plugin API tests.
+"""Shared helpers for seeding snippet frontmatter in the tests.
 
-Every app that reads a snippet's derived properties needs the same two-step seed:
-write the metadata to the database, because the routes reload the row by filename,
-and evict the derived reads the in-memory instance already cached. Both the snippets
-and alert-troubleshooting suites need it, so the shape is stated here once.
+Any suite that mutates a persisted snippet's metadata directly needs the same
+two-step seed: write the metadata to the database, because the routes reload the row
+by filename, and evict the derived reads the in-memory instance already cached. The
+shape is stated here once for all of them.
 """
 
 from functools import cached_property

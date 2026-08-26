@@ -779,8 +779,9 @@ class TestAtwSnippetSearch:
     ) -> None:
         """Label a snippet declaring an empty ``title`` with its filename.
 
-        The key is present, so ``Snippet.title``'s ``dict.get`` default never fires
-        and the fallback has to live in the response projection.
+        The key is present, so a ``dict.get`` default could never absorb it;
+        ``Snippet.title`` treats the declared blank as absent instead, and the search
+        projection passes that through.
         """
         await _persist_snippet(
             session,
@@ -819,9 +820,10 @@ class TestAtwSnippetSearch:
     ) -> None:
         """Serve a snippet declaring a valueless ``description`` as an empty string.
 
-        The key is present, so ``Snippet.description``'s ``dict.get`` default never
-        fires and the raw ``None`` would fail the summary model's ``str`` field,
-        turning one malformed snippet into a 500 for the whole page.
+        The key is present, so a ``dict.get`` default could never absorb it, and the
+        raw ``None`` would fail the summary model's ``str`` field — turning one
+        malformed snippet into a 500 for the whole page. ``Snippet.description``
+        answers with the empty string before the projection sees it.
         """
         await _persist_snippet(
             session,

@@ -20,7 +20,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.app.sep.apps.snippet_kit import persist_meta
+from tests.app.sep.snippets.snippet_kit import persist_meta
 
 API_BASE = "/api/apps/alert_troubleshooting"
 EXPECTED_GROUP_COUNT = 2

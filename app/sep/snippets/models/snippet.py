@@ -103,11 +103,14 @@ def _meta_or_default(meta: dict[str, Any], key: str, default: str) -> str:
     ``key:`` to ``None`` and ``key: ""`` to ``""``. Both are present keys, so a
     ``dict.get`` default never fires for them and the declared blank is handed to
     consumers whose fields reject it. A padded but non-blank value is returned
-    unchanged, keeping this read consistent with the untrimmed SQL sort key.
+    unchanged, keeping this read consistent with ``SnippetManager.list_query_spec``'s
+    ``_meta_text(META_KEY_TITLE)``, which sorts and searches on the value as declared
+    — unlike ``_service_type_exprs`` alongside it, which trims before comparing.
 
-    ``meta`` is untyped, so a non-string scalar such as ``title: 5`` is rendered as
+    ``meta`` is untyped, so a non-string value such as ``title: 5`` is rendered as
     text rather than passed through: the ``str`` fields downstream reject an ``int``
     for the whole response, which is the same page-wide failure a blank value caused.
+    A sequence or mapping takes the same path and renders as its ``repr``.
 
     :param meta: The snippet's parsed frontmatter mapping.
     :param key: The metadata key to read.
