@@ -680,12 +680,10 @@ async def apply_class_overrides(
     """Validate, persist and publish a batch of overrides for one local class.
 
     The whole of ``PATCH /{setting_class}`` for a locally-wired class, minus the
-    routing and the remote-class branch. It exists as a function because an app
-    that owns its settings class serves its *own* ``/config`` endpoint (the
-    settings router is admin-gated, and not every caller of an app's
-    configuration is an admin), and a second implementation of "validate the
-    batch, write it atomically, republish the snapshot, rebind" is exactly the
-    kind of duplicate that drifts into two different validation rules.
+    routing and the remote-class branch. Extracted as a standalone function so
+    every caller shares one implementation of "validate the batch, write it
+    atomically, republish the snapshot, rebind" instead of each maintaining its
+    own copy that can drift into different validation rules.
 
     Phase A validates every key -- existence on the class, HOT classification,
     type and constraint coercion -- and rejects the whole batch on any failure,
@@ -739,9 +737,10 @@ async def clear_class_override(
     """Revert one override row for a local class to its YAML/env value.
 
     The counterpart to :func:`apply_class_overrides`, extracted for the same
-    reason: an app serving its own ``/config`` needs "put this back the way the
-    deployment configured it", and without it an operator who once set a value can
-    only ever set another one -- "no override" stops being reachable.
+    reason: "put this back the way the deployment configured it" is shared
+    across every caller rather than reimplemented per consumer. Without it, an
+    operator who once set a value could only ever set another one -- "no
+    override" would not be a reachable state.
 
     Idempotent: clearing a key with no row succeeds. A ``NOT_OVERRIDABLE`` field
     with no row answers 409, because the intent cannot be satisfied rather than
