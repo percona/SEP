@@ -40,7 +40,11 @@ and silently discarded above it, while the task-log chunk store has no total cap
 The config arrives as JSON in ``NOMAD_META_CONFIG``::
 
     {
-      "targets": [{"service": "sc-cfg00", "host": "sc-cfg00", "port": 27019}, ...],
+      "targets": [
+        {"service": "sc-cfg00", "service_id": "abc123", "host": "sc-cfg00",
+         "port": 27019},
+        ...
+      ],
       "probe_database": true,
       "credentials_path": "/root/.mongodb_uri",   // absent = $HOME/.mongodb_uri
       "auth_source": "admin",
@@ -573,7 +577,8 @@ def probe(target, config, host_facts, processes=(), versions=None):
     process serving its port. Sharing those was what made a multi-mongod host report
     the same argv and the same installed version for every service on it.
 
-    :param target: The target mapping carrying ``service``, ``host``, ``port``.
+    :param target: The target mapping carrying ``service``, ``service_id``, ``host``,
+        ``port``.
     :param config: The task config.
     :param host_facts: The already-collected host-level facts, shared across targets
         because every target on this dispatch runs on the same executor host.
@@ -584,6 +589,10 @@ def probe(target, config, host_facts, processes=(), versions=None):
     """
     record = {
         "service": target.get("service"),
+        # Echoed straight back: this is PMM's service id, and dispatch.py keys its
+        # parsed records by it rather than by ``service`` alone, because two
+        # same-named services on one host are not two same-id services.
+        "service_id": target.get("service_id"),
         "host": target.get("host"),
         "port": target.get("port"),
         "collected_at": int(time.time()),
