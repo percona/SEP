@@ -158,6 +158,15 @@ export interface paths {
     /**
      * List Nodes
      * @description List Nodes from Inventory.
+     *
+     *     :param session: The async database session.
+     *     :param pagination: Validated offset/limit query parameters.
+     *     :param list_query: The resolved sort/search produced at the request boundary.
+     *     :param manager: The node manager the request's retirement scope selected.
+     *     :param external_id: Return only the node carrying this upstream identifier.
+     *     :param source: Return only nodes discovered by this source.
+     *     :param node_type: Return only nodes of this type.
+     *     :return: A paginated response of node responses.
      */
     get: operations['nodes_list_nodes_nodes__get'];
     put?: never;
@@ -182,19 +191,58 @@ export interface paths {
     /**
      * Retrieve Node
      * @description Retrieve Node from inventory.
+     *
+     *     :param session: The async database session.
+     *     :param node_id: The identifier of the node to retrieve.
+     *     :param manager: The node manager the request's retirement scope selected.
+     *     :return: The node, with its services nested.
+     *     :raises HTTPNotFoundException: If no node in scope has the given identifier.
      */
     get: operations['nodes_retrieve_node_nodes__node_id__get'];
     /**
      * Update Node
      * @description Update Node.
+     *
+     *     :param session: The async database session.
+     *     :param existing_node: The active node addressed by the path.
+     *     :param updated_node: The fields to write onto it.
+     *     :return: The updated node.
      */
     put: operations['nodes_update_node_nodes__node_id__put'];
     post?: never;
     /**
-     * Delete Node
-     * @description Delete Node.
+     * Retire Node
+     * @description Retire Node and everything below it, keeping the rows resolvable.
+     *
+     *     :param session: The asynchronous database session.
+     *     :param node: The node to retire, retired or not.
      */
-    delete: operations['nodes_delete_node_nodes__node_id__delete'];
+    delete: operations['nodes_retire_node_nodes__node_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/nodes/{node_id}/revive': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Revive Node
+     * @description Revive a retired Node, leaving the services it was retired with retired.
+     *
+     *     :param session: The asynchronous database session.
+     *     :param node: The node to revive, retired or not.
+     *     :raises HTTPConflictException: If an active entity already holds the unique
+     *         key the revived node would reclaim.
+     */
+    post: operations['nodes_revive_node_nodes__node_id__revive_post'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -239,6 +287,11 @@ export interface paths {
     /**
      * Upsert Host System Observation
      * @description Upsert host system observation for a node.
+     *
+     *     :param session: The async database session.
+     *     :param node: The active node the observation belongs to.
+     *     :param data: The observed host facts to store.
+     *     :return: The stored observation.
      */
     put: operations['nodes_upsert_host_system_observation_nodes__node_id__system_observation_put'];
     post?: never;
@@ -258,6 +311,12 @@ export interface paths {
     /**
      * List Schemas
      * @description List Schemas.
+     *
+     *     :param session: The async database session.
+     *     :param pagination: Validated offset/limit query parameters.
+     *     :param list_query: The resolved sort/search produced at the request boundary.
+     *     :param manager: The schema manager the request's retirement scope selected.
+     *     :return: A paginated response of schema responses.
      */
     get: operations['schemas_list_schemas_schemas__get'];
     put?: never;
@@ -278,6 +337,12 @@ export interface paths {
     /**
      * Retrieve Schema
      * @description Retrieve Schema.
+     *
+     *     :param session: The async database session.
+     *     :param schema_id: The identifier of the schema to retrieve.
+     *     :param manager: The schema manager the request's retirement scope selected.
+     *     :return: The schema, with its tables and service nested.
+     *     :raises HTTPNotFoundException: If no schema in scope has the given identifier.
      */
     get: operations['schemas_retrieve_schema_schemas__schema_id__get'];
     /**
@@ -287,10 +352,38 @@ export interface paths {
     put: operations['schemas_update_schema_schemas__schema_id__put'];
     post?: never;
     /**
-     * Delete Schema
-     * @description Delete Schema.
+     * Retire Schema
+     * @description Retire Schema and its tables, keeping the rows resolvable.
+     *
+     *     :param session: The asynchronous database session.
+     *     :param schema: The schema to retire, retired or not.
      */
-    delete: operations['schemas_delete_schema_schemas__schema_id__delete'];
+    delete: operations['schemas_retire_schema_schemas__schema_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/schemas/{schema_id}/revive': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Revive Schema
+     * @description Revive a retired Schema together with its retired ancestors.
+     *
+     *     :param session: The asynchronous database session.
+     *     :param schema: The schema to revive, retired or not.
+     *     :raises HTTPConflictException: If an active entity already holds the unique
+     *         key the revived schema would reclaim.
+     */
+    post: operations['schemas_revive_schema_schemas__schema_id__revive_post'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -330,6 +423,13 @@ export interface paths {
     /**
      * List Services
      * @description List Services.
+     *
+     *     :param session: The async database session.
+     *     :param pagination: Validated offset/limit query parameters.
+     *     :param list_query: The resolved sort/search produced at the request boundary.
+     *     :param manager: The service manager the request's retirement scope selected.
+     *     :param service_type: Return only services of this type.
+     *     :return: A paginated response of service responses.
      */
     get: operations['services_list_services_services__get'];
     put?: never;
@@ -359,10 +459,38 @@ export interface paths {
     put: operations['services_update_service_services__service_id__put'];
     post?: never;
     /**
-     * Delete Service
-     * @description Delete Service.
+     * Retire Service
+     * @description Retire Service and everything below it, keeping the rows resolvable.
+     *
+     *     :param session: The asynchronous database session.
+     *     :param service: The service to retire, retired or not.
      */
-    delete: operations['services_delete_service_services__service_id__delete'];
+    delete: operations['services_retire_service_services__service_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/services/{service_id}/revive': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Revive Service
+     * @description Revive a retired Service together with its retired ancestors.
+     *
+     *     :param session: The asynchronous database session.
+     *     :param service: The service to revive, retired or not.
+     *     :raises HTTPConflictException: If an active entity already holds the unique
+     *         key the revived service would reclaim.
+     */
+    post: operations['services_revive_service_services__service_id__revive_post'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -387,6 +515,7 @@ export interface paths {
      *     :param pagination: Validated offset/limit query parameters.
      *     :param list_query: The resolved sort/search produced at the request
      *         boundary.
+     *     :param manager: The schema manager the request's retirement scope selected.
      *     :param include_tables: Include nested tables in the response when set to
      *         any non-empty value. Defaults to compact mode (no tables).
      *     :return: A paginated response of schema responses.
@@ -478,6 +607,12 @@ export interface paths {
     /**
      * Retrieve Table
      * @description Retrieve Table.
+     *
+     *     :param session: The async database session.
+     *     :param table_id: The identifier of the table to retrieve.
+     *     :param manager: The table manager the request's retirement scope selected.
+     *     :return: The table, with its schema nested.
+     *     :raises HTTPNotFoundException: If no table in scope has the given identifier.
      */
     get: operations['tables_retrieve_table_tables__table_id__get'];
     /**
@@ -487,10 +622,38 @@ export interface paths {
     put: operations['tables_update_table_tables__table_id__put'];
     post?: never;
     /**
-     * Delete Table
-     * @description Delete Table.
+     * Retire Table
+     * @description Retire Table, keeping the row resolvable.
+     *
+     *     :param session: The asynchronous database session.
+     *     :param table: The table to retire, retired or not.
      */
-    delete: operations['tables_delete_table_tables__table_id__delete'];
+    delete: operations['tables_retire_table_tables__table_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/tables/{table_id}/revive': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Revive Table
+     * @description Revive a retired Table together with its retired ancestors.
+     *
+     *     :param session: The asynchronous database session.
+     *     :param table: The table to revive, retired or not.
+     *     :raises HTTPConflictException: If an active entity already holds the unique
+     *         key the revived table would reclaim.
+     */
+    post: operations['tables_revive_table_tables__table_id__revive_post'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -594,19 +757,16 @@ export interface components {
      * @description Represent a node in the inventory.
      *
      *     :param address: The network address of the node.
-     *     :type address: NonEmptyStr
      *     :param name: The name of the node.
-     *     :type name: NonEmptyStr
      *     :param external_id: An external identifier for the node. Must be unique for source,
      *         as defined by composite index ix_node_external_id_source.
-     *     :type external_id: NonEmptyStr | None
      *     :param source: The source from which the node information is derived. Must be unique
      *         for external_id, as defined by composite index ix_node_external_id_source.
-     *     :type source: SourceEnum | None
      *     :param type: The type of the node (e.g., remote, generic).
-     *     :type type: NonEmptyStr
+     *     :param retired_at: When the node stopped being reported upstream, or None while
+     *         it is active.
+     *     :param retirement_key: The discriminator carried inside every unique index.
      *     :param services: A list of services associated with the node.
-     *     :type services: list[Service]
      */
     Node: {
       /** Address */
@@ -622,6 +782,8 @@ export interface components {
       id: number | null;
       /** Name */
       name: string;
+      /** Retired At */
+      retired_at?: string | null;
       source?: components['schemas']['SourceEnum'] | null;
       /**
        * Type
@@ -636,25 +798,18 @@ export interface components {
      * @description Represent a node API response.
      *
      *     :param id: The primary key for the table. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param address: The network address of the node.
-     *     :type address: NonEmptyStr
      *     :param name: The name of the node.
-     *     :type name: NonEmptyStr
      *     :param external_id: An external identifier for the node.
-     *     :type external_id: NonEmptyStr | None
      *     :param source: The source from which the node information is derived.
-     *     :type source: SourceEnum | None
      *     :param type: The type of the node (e.g., remote, generic).
-     *     :type type: NonEmptyStr
+     *     :param retired_at: When the node stopped being reported upstream, or None while
+     *         it is active.
      *     :param services: A list of services associated with the node.
-     *     :type services: list[Service]
      */
     NodeResponse: {
       /** Address */
@@ -670,6 +825,8 @@ export interface components {
       id: number | null;
       /** Name */
       name: string;
+      /** Retired At */
+      retired_at?: string | null;
       /** Services */
       services: components['schemas']['Service'][];
       source?: components['schemas']['SourceEnum'] | null;
@@ -686,17 +843,12 @@ export interface components {
      * @description Define the model for writing node data to the inventory.
      *
      *     :param address: The network address of the node.
-     *     :type address: NonEmptyStr
      *     :param name: The name of the node.
-     *     :type name: NonEmptyStr
      *     :param external_id: An external identifier for the node, indexed for quick lookup.
      *         Defaults to None.
-     *     :type external_id: NonEmptyStr | None
      *     :param source: The source from which the node information is derived. Indexed for
      *         quick lookup. Defaults to None.
-     *     :type source: SourceEnum | None
      *     :param type: The type of the node (e.g., remote, generic). Defaults to "generic".
-     *     :type type: NonEmptyStr
      */
     NodeWrite: {
       /** Address */
@@ -795,24 +947,20 @@ export interface components {
      * @description Represent a database schema within a service.
      *
      *     :param id: The primary key for the table. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param name: The name of the schema. Must be unique for service_id, as defined by
      *         composite index ix_schema_name_service_id.
-     *     :type name: NonEmptyStr
      *     :param service_id: The unique identifier of the service to which the schema belongs.
      *         Must be unique for name, as defined by composite index
      *         ix_schema_name_service_id.
-     *     :type service_id: int
      *     :param service: The service to which the schema is associated.
-     *     :type service: Service
+     *     :param retired_at: When the schema stopped being reported upstream, or None
+     *         while it is active.
+     *     :param retirement_key: The discriminator carried inside every unique index.
      *     :param tables: A list of tables within the schema.
-     *     :type tables: list[Table]
      */
     Schema: {
       /**
@@ -824,6 +972,8 @@ export interface components {
       id: number | null;
       /** Name */
       name: string;
+      /** Retired At */
+      retired_at?: string | null;
       /** Service Id */
       service_id: number;
       /** Updated At */
@@ -834,17 +984,14 @@ export interface components {
      * @description Define a compact schema response without nested tables.
      *
      *     :param id: The primary key for the schema. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param name: The name of the schema.
-     *     :type name: NonEmptyStr
      *     :param service_id: The unique identifier of the service to which the schema belongs.
-     *     :type service_id: int
+     *     :param retired_at: When the schema stopped being reported upstream, or None while
+     *         it is active.
      */
     SchemaCompactResponse: {
       /**
@@ -856,6 +1003,8 @@ export interface components {
       id: number | null;
       /** Name */
       name: string;
+      /** Retired At */
+      retired_at?: string | null;
       /** Service Id */
       service_id: number;
       /** Updated At */
@@ -866,19 +1015,13 @@ export interface components {
      * @description Define the schema retrieve API response.
      *
      *     :param id: The primary key for the table. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param name: The name of the schema.
-     *     :type name: NonEmptyStr
      *     :param service_id: The unique identifier of the service to which the schema belongs.
-     *     :type service_id: int
      *     :param service: The schema's service.
-     *     :type service: Service
      */
     SchemaDetailResponse: {
       /**
@@ -890,6 +1033,8 @@ export interface components {
       id: number | null;
       /** Name */
       name: string;
+      /** Retired At */
+      retired_at?: string | null;
       service: components['schemas']['Service'];
       /** Service Id */
       service_id: number;
@@ -903,19 +1048,15 @@ export interface components {
      * @description Define the schema API response.
      *
      *     :param id: The primary key for the schema. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param name: The name of the schema.
-     *     :type name: NonEmptyStr
      *     :param service_id: The unique identifier of the service to which the schema belongs.
-     *     :type service_id: int
+     *     :param retired_at: When the schema stopped being reported upstream, or None while
+     *         it is active.
      *     :param tables: A list of tables within the schema.
-     *     :type tables: list[Table]
      */
     SchemaResponse: {
       /**
@@ -927,6 +1068,8 @@ export interface components {
       id: number | null;
       /** Name */
       name: string;
+      /** Retired At */
+      retired_at?: string | null;
       /** Service Id */
       service_id: number;
       /** Tables */
@@ -955,39 +1098,29 @@ export interface components {
      * @description Represent a service running on a node in the inventory.
      *
      *     :param id: The primary key for the table. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param external_id: An external identifier for the service. Must be unique for
      *         node_id, as defined by composite index ix_service_external_id_node_id.
-     *     :type external_id: NonEmptyStr | None
      *     :param name: The name of the service.
-     *     :type name: NonEmptyStr
      *     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-     *     :type type: ServiceTypeEnum
      *     :param port: The port number on which the service is running. Must be unique for
      *         node_id, as defined by composite index ix_service_port_node_id.
-     *     :type port: int | None
      *     :param environment: The environment in which the service is running, if set.
-     *     :type environment: str | None
      *     :param cluster: The cluster in which the service is running, if set.
-     *     :type cluster: str | None
      *     :param replication_set: The replication set in which the service is running, if set.
-     *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service, if set.
      *     :param node_id: The unique identifier of the node on which the service is running.
      *         Must be unique for external_id, as defined by composite index
      *         ix_service_external_id_node_id, and for port, as defined by composite index
      *         ix_service_port_node_id.
-     *     :type node_id: int
      *     :param node: The node to which the service is associated.
-     *     :type node: Node
+     *     :param retired_at: When the service stopped being reported upstream, or None
+     *         while it is active.
+     *     :param retirement_key: The discriminator carried inside every unique index.
      *     :param schemas: A list of schemas associated with the service.
-     *     :type schemas: list[Schema]
      */
     Service: {
       /** Cluster */
@@ -1015,6 +1148,8 @@ export interface components {
       port?: number | null;
       /** Replication Set */
       replication_set?: string | null;
+      /** Retired At */
+      retired_at?: string | null;
       type: components['schemas']['ServiceTypeEnum'];
       /** Updated At */
       updated_at?: string | null;
@@ -1024,34 +1159,21 @@ export interface components {
      * @description Define the service retrieve API response.
      *
      *     :param id: The primary key for the table. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param external_id: An external identifier for the service.
-     *     :type external_id: NonEmptyStr | None
      *     :param name: The name of the service.
-     *     :type name: NonEmptyStr
      *     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-     *     :type type: ServiceTypeEnum
      *     :param port: The port number on which the service is running.
-     *     :type port: int | None
      *     :param environment: The environment in which the service is running, if set.
-     *     :type environment: str | None
      *     :param cluster: The cluster in which the service is running, if set.
-     *     :type cluster: str | None
      *     :param replication_set: The replication set in which the service is running, if set.
-     *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service, if set.
      *     :param node_id: The unique identifier of the node on which the service is running.
-     *     :type node_id: int
      *     :param schemas: A list of schemas associated with the service.
-     *     :type schemas: list[Schema]
      *     :param node: The service's node.
-     *     :type node: Node
      */
     ServiceDetailResponse: {
       /** Cluster */
@@ -1080,6 +1202,8 @@ export interface components {
       port?: number | null;
       /** Replication Set */
       replication_set?: string | null;
+      /** Retired At */
+      retired_at?: string | null;
       /** Schemas */
       schemas: components['schemas']['Schema'][];
       type: components['schemas']['ServiceTypeEnum'];
@@ -1091,34 +1215,23 @@ export interface components {
      * @description Define the service API response.
      *
      *     :param id: The primary key for the table. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param external_id: An external identifier for the service.
-     *     :type external_id: NonEmptyStr | None
      *     :param name: The name of the service.
-     *     :type name: NonEmptyStr
      *     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-     *     :type type: ServiceTypeEnum
      *     :param port: The port number on which the service is running.
-     *     :type port: int | None
      *     :param environment: The environment in which the service is running, if set.
-     *     :type environment: str | None
      *     :param cluster: The cluster in which the service is running, if set.
-     *     :type cluster: str | None
      *     :param replication_set: The replication set in which the service is running, if set.
-     *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service, if set.
      *     :param node_id: The unique identifier of the node on which the service is running.
-     *     :type node_id: int
      *     :param schemas: A list of schemas associated with the service.
-     *     :type schemas: list[Schema]
      *     :param node: The node to which the service is associated.
-     *     :type node: Node
+     *     :param retired_at: When the service stopped being reported upstream, or None
+     *         while it is active.
      */
     ServiceResponse: {
       /** Cluster */
@@ -1147,6 +1260,8 @@ export interface components {
       port?: number | null;
       /** Replication Set */
       replication_set?: string | null;
+      /** Retired At */
+      retired_at?: string | null;
       /** Schemas */
       schemas: components['schemas']['Schema'][];
       type: components['schemas']['ServiceTypeEnum'];
@@ -1442,23 +1557,19 @@ export interface components {
      * @description Represent a table within a schema.
      *
      *     :param id: The primary key for the table. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param name: The name of the table. Must be unique for schema_id, as defined by
      *         composite index ix_table_name_schema_id.
-     *     :type name: NonEmptyStr
      *     :param create: The SQL statement used to create the table.
-     *     :type create: NonEmptyStr
      *     :param schema_id: The unique identifier of the schema to which the table belongs.
      *         Must be unique for name, as defined by composite index ix_table_name_schema_id.
-     *     :type schema_id: int
+     *     :param retired_at: When the table stopped being reported upstream, or None while
+     *         it is active.
+     *     :param retirement_key: The discriminator carried inside every unique index.
      *     :param database: The schema to which the table is associated.
-     *     :type database: Schema
      */
     Table: {
       /** Create */
@@ -1476,6 +1587,8 @@ export interface components {
       };
       /** Name */
       name: string;
+      /** Retired At */
+      retired_at?: string | null;
       /** Schema Id */
       schema_id: number;
       /** Updated At */
@@ -1486,21 +1599,14 @@ export interface components {
      * @description Define the schema retrieve API response.
      *
      *     :param id: The primary key for the table. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param name: The name of the table.
-     *     :type name: NonEmptyStr
      *     :param create: The SQL statement used to create the table.
-     *     :type create: NonEmptyStr
      *     :param schema_id: The foreign key referencing the schema to which the table belongs.
-     *     :type schema_id: int
      *     :param database: The table's schema.
-     *     :type database: Schema
      */
     TableDetailResponse: {
       /** Create */
@@ -1519,6 +1625,8 @@ export interface components {
       };
       /** Name */
       name: string;
+      /** Retired At */
+      retired_at?: string | null;
       /** Schema Id */
       schema_id: number;
       /** Updated At */
@@ -1529,19 +1637,15 @@ export interface components {
      * @description Define the table API response.
      *
      *     :param id: The primary key for the table. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param name: The name of the table.
-     *     :type name: NonEmptyStr
      *     :param create: The SQL statement used to create the table.
-     *     :type create: NonEmptyStr
      *     :param schema_id: The foreign key referencing the schema to which the table belongs.
-     *     :type schema_id: int
+     *     :param retired_at: When the table stopped being reported upstream, or None while
+     *         it is active.
      */
     TableResponse: {
       /** Create */
@@ -1559,6 +1663,8 @@ export interface components {
       };
       /** Name */
       name: string;
+      /** Retired At */
+      retired_at?: string | null;
       /** Schema Id */
       schema_id: number;
       /** Updated At */
@@ -1569,11 +1675,8 @@ export interface components {
      * @description Define the model for writing table data to the inventory.
      *
      *     :param name: The name of the table.
-     *     :type name: NonEmptyStr
      *     :param create: The SQL statement used to create the table.
-     *     :type create: NonEmptyStr
      *     :param schema_id: The foreign key referencing the schema to which the table belongs.
-     *     :type schema_id: int | None
      */
     TableWrite: {
       /** Create */
@@ -1738,6 +1841,7 @@ export interface operations {
         sort?: 'created_at' | '-created_at' | 'name' | '-name';
         /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
+        include_retired?: boolean;
       };
       header?: never;
       path?: never;
@@ -1800,7 +1904,9 @@ export interface operations {
   };
   nodes_retrieve_node_nodes__node_id__get: {
     parameters: {
-      query?: never;
+      query?: {
+        include_retired?: boolean;
+      };
       header?: never;
       path: {
         node_id: number;
@@ -1864,7 +1970,36 @@ export interface operations {
       };
     };
   };
-  nodes_delete_node_nodes__node_id__delete: {
+  nodes_retire_node_nodes__node_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  nodes_revive_node_nodes__node_id__revive_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -1903,6 +2038,7 @@ export interface operations {
         sort?: 'created_at' | '-created_at' | 'name' | '-name';
         /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
+        include_retired?: boolean;
       };
       header?: never;
       path: {
@@ -2042,6 +2178,7 @@ export interface operations {
         sort?: 'created_at' | '-created_at' | 'name' | '-name' | 'service_id' | '-service_id';
         /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
+        include_retired?: boolean;
       };
       header?: never;
       path?: never;
@@ -2071,7 +2208,9 @@ export interface operations {
   };
   schemas_retrieve_schema_schemas__schema_id__get: {
     parameters: {
-      query?: never;
+      query?: {
+        include_retired?: boolean;
+      };
       header?: never;
       path: {
         schema_id: number;
@@ -2135,7 +2274,36 @@ export interface operations {
       };
     };
   };
-  schemas_delete_schema_schemas__schema_id__delete: {
+  schemas_retire_schema_schemas__schema_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schemas_revive_schema_schemas__schema_id__revive_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -2173,6 +2341,7 @@ export interface operations {
         sort?: 'created_at' | '-created_at' | 'name' | '-name' | 'schema_id' | '-schema_id';
         /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
+        include_retired?: boolean;
       };
       header?: never;
       path: {
@@ -2247,6 +2416,7 @@ export interface operations {
         sort?: 'created_at' | '-created_at' | 'name' | '-name';
         /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
+        include_retired?: boolean;
       };
       header?: never;
       path?: never;
@@ -2276,7 +2446,9 @@ export interface operations {
   };
   services_retrieve_service_services__service_id__get: {
     parameters: {
-      query?: never;
+      query?: {
+        include_retired?: boolean;
+      };
       header?: never;
       path: {
         service_id: number;
@@ -2340,7 +2512,36 @@ export interface operations {
       };
     };
   };
-  services_delete_service_services__service_id__delete: {
+  services_retire_service_services__service_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  services_revive_service_services__service_id__revive_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -2379,6 +2580,7 @@ export interface operations {
         sort?: 'created_at' | '-created_at' | 'name' | '-name' | 'service_id' | '-service_id';
         /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
+        include_retired?: boolean;
       };
       header?: never;
       path: {
@@ -2540,6 +2742,7 @@ export interface operations {
         sort?: 'created_at' | '-created_at' | 'name' | '-name' | 'schema_id' | '-schema_id';
         /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
+        include_retired?: boolean;
       };
       header?: never;
       path?: never;
@@ -2569,7 +2772,9 @@ export interface operations {
   };
   tables_retrieve_table_tables__table_id__get: {
     parameters: {
-      query?: never;
+      query?: {
+        include_retired?: boolean;
+      };
       header?: never;
       path: {
         table_id: number;
@@ -2633,7 +2838,36 @@ export interface operations {
       };
     };
   };
-  tables_delete_table_tables__table_id__delete: {
+  tables_retire_table_tables__table_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        table_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tables_revive_table_tables__table_id__revive_post: {
     parameters: {
       query?: never;
       header?: never;

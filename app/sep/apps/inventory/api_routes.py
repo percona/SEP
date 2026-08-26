@@ -362,7 +362,16 @@ async def inventory_delete_entity(
     item_id: int,
     inventory_api: InventoryAPI,
 ) -> Response:
-    """Delete an inventory node, service, schema, or table."""
+    """Retire an inventory node, service, schema, or table, and its descendants.
+
+    The row and its subtree survive: they drop out of every active read and stay
+    reachable through the Inventory API's ``include_retired`` opt-in.
+
+    :param entity: The inventory entity kind addressed by the path.
+    :param item_id: The identifier of the entity to retire.
+    :param inventory_api: The Inventory API client the call is proxied through.
+    :return: An empty 204 response.
+    """
     entity = require_inventory_plugin_entity(entity)
     await inventory_api.delete(inventory_service_detail_path(entity, item_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
