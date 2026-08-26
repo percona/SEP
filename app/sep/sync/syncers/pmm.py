@@ -375,11 +375,11 @@ class PMMSyncer(BaseSyncer):
         An incoming service is matched by external id, and the port fallback resolves
         only a service carrying no upstream identity: several databases behind one
         server legally share that server's port, so a service whose external id is
-        present but unmatched is a distinct service rather than a moved one. Two
-        local rows may therefore now share a port, and an incoming service with no
-        upstream id then matches whichever of them was indexed last. That ambiguity
-        is accepted rather than resolved: it is reachable only for an unidentified
-        service arriving on a port two identified ones already share.
+        present but unmatched is a distinct service rather than a moved one. The port
+        map is built from the same side of that line — an externally identified local
+        row never enters it — because two local rows may now share a port, and a
+        fallback that could reach the identified one would overwrite its external id
+        with the incoming NULL and strip the identity the row is matched by.
 
         :param created_node: The local node instance to synchronize.
         :param updated_node: The updated node data fetched from the PMM API.
@@ -403,7 +403,11 @@ class PMMSyncer(BaseSyncer):
             # Retired services are matchable by external id only. Letting the port
             # fallback reach one would revive a predecessor under a different
             # upstream id, handing an unrelated machine its backup and task history.
-            if service.port is not None and service.retired_at is None:
+            if (
+                service.port is not None
+                and service.retired_at is None
+                and service.external_id is None
+            ):
                 port_to_id[service.port] = service.id
         present_ids: list[int | None] = []
         for service in updated_node.services:
