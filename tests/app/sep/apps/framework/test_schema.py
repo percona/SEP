@@ -279,6 +279,49 @@ def test_plugin_schema_entities_mode_rejects_root_fail_when():
         )
 
 
+def test_plugin_schema_entities_mode_rejects_all_root_form_keys():
+    """Refuse all three root form keys at once and name each in the error."""
+    entity = AppEntitySchema(
+        name="things",
+        display_name="Things",
+        forms=[
+            FormSection(
+                title="T",
+                fields=[StringField(name="title", label="Title", required=True)],
+            )
+        ],
+        list_view=_minimal_list_view(),
+    )
+    with pytest.raises(
+        ValidationError,
+        match=(
+            r"Root-level forms, cardinality_rules, fail_when must not be set "
+            r"on an entity-style schema.*'things'"
+        ),
+    ):
+        AppSchema(
+            name="multi",
+            display_name="Multi",
+            entities=[entity],
+            forms=[
+                FormSection(
+                    title="Root",
+                    fields=[StringField(name="ignored", label="Ignored")],
+                )
+            ],
+            cardinality_rules=[
+                CardinalityRule(when=None, fields=["title"], min=1),
+            ],
+            fail_when=[
+                FailRule(
+                    fail_when=present("title"),
+                    error_fields=["title"],
+                    message="title must be set",
+                ),
+            ],
+        )
+
+
 def test_plugin_entity_schema_detail_highlights_round_trip():
     """Round-trip detail highlight hints through snake_case JSON (wire format)."""
     entity = AppEntitySchema.model_validate(
