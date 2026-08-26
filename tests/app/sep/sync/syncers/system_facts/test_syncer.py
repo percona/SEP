@@ -20,7 +20,6 @@ from unittest.mock import AsyncMock, call
 
 import pytest
 
-from app.core.utils.date_time import utc_now
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedNode, CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -723,22 +722,6 @@ class TestTombstoneBlindness:
         params = mock_remote_api.get.await_args.kwargs["params"]
         assert "include_retired" not in params
 
-    @pytest.mark.asyncio
-    async def test_a_run_over_a_retired_node_revives_nothing(
-        self, mock_syncer, created_node, mock_remote_api, mocker
-    ):
-        """Post no revive call even when the inventory holds tombstones."""
-        created_node.retired_at = utc_now()
-        created_node.services[0].retired_at = utc_now()
-        mocker.patch.object(
-            SystemFactsSyncer,
-            "get_inventory_nodes",
-            new_callable=AsyncMock,
-            return_value=[created_node],
-        )
-        mocker.patch.object(SystemFactsSyncer, "sync_node", new_callable=AsyncMock)
-
-        await mock_syncer.perform_inventory_sync()
-
-        mock_remote_api.post.assert_not_awaited()
-        mock_remote_api.put.assert_not_awaited()
+    def test_no_entity_level_opts_into_retired_reads(self):
+        """Keep every entity level out of retired reads."""
+        assert SystemFactsSyncer.reads_retired_entities == frozenset()

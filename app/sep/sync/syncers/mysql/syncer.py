@@ -22,7 +22,7 @@ from collections import defaultdict
 from collections.abc import AsyncGenerator, AsyncIterator, Generator
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, ClassVar, NamedTuple, TypeVar
+from typing import Any, ClassVar, NamedTuple
 
 from pydantic import Field
 
@@ -38,7 +38,7 @@ from app.sep.inventory import (
     Table,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.sync.models import BaseTaskSyncer, TaskRunResult
+from app.sep.sync.models import BaseTaskSyncer, claim_identity, TaskRunResult
 
 GZIP_WBITS = 16 + zlib.MAX_WBITS
 
@@ -172,28 +172,6 @@ class MySQLSchema(Schema):
         else:
             async for table_data in self._tables_aiter:
                 yield Table.model_validate(table_data)
-
-
-#: Ties a name-keyed index to the entity type it holds, so a schema index cannot
-#: be handed a table.
-_NamedEntity = TypeVar("_NamedEntity", CreatedSchema, CreatedTable)
-
-
-def _index_by_name(index: dict[str, _NamedEntity], entity: _NamedEntity) -> None:
-    """Index an entity by name, letting an active row win over a retired one.
-
-    This syncer matches by name, and a name is unique only among *active* rows —
-    a tombstone and the replacement that took its name both come back from a
-    retired-inclusive read. Preferring the active row keeps the live entity out
-    of the absent set; without it the winner would be decided by result ordering,
-    which the eagerly-loaded table collection does not define at all.
-
-    :param index: The name-keyed index to populate.
-    :param entity: The entity to record under its name.
-    """
-    incumbent = index.get(entity.name)
-    if incumbent is None or incumbent.retired_at is not None:
-        index[entity.name] = entity
 
 
 class MySQLSyncer(BaseTaskSyncer):
@@ -603,16 +581,23 @@ class MySQLSyncer(BaseTaskSyncer):
         :param updated_service: The updated service data.
         :type updated_service: MySQLService
         """
-        syncable_schemas: dict[str, CreatedSchema] = {}
+        # Keyed by primary key, not name: a tombstone and the replacement that took
+        # its name both come back from a retired-inclusive read, and a row that lost
+        # the name slot would never reach the absence pass below, leaving the
+        # SyncItem prepare_sync opened for it hanging.
+        syncable_schemas: dict[int | None, CreatedSchema] = {}
+        schema_ids_by_name: dict[str, int | None] = {}
         for schema in await self.get_inventory_service_schemas(created_service.id):
-            _index_by_name(syncable_schemas, schema)
+            syncable_schemas[schema.id] = schema
+            claim_identity(schema_ids_by_name, schema.name, schema, syncable_schemas)
 
         task_history_id: int | None = self._inventory_index_cache[
             _MySQLSyncResultEntityTypeEnum.SERVICES
         ].pop(created_service.address, (None,))[0]
         async for schema_index in updated_service.schemas_index:
             schema = Schema.model_validate(schema_index)
-            if (created_schema := syncable_schemas.pop(schema.name, None)) is None:
+            matched_id = schema_ids_by_name.get(schema.name)
+            if (created_schema := syncable_schemas.pop(matched_id, None)) is None:
                 logger.info("Creating new schema: %s", schema)
                 created_schema = CreatedSchema.model_validate(
                     await self.inventory_api.post(
@@ -632,10 +617,13 @@ class MySQLSyncer(BaseTaskSyncer):
             await self.sync_schema(created_schema)
         # An already-retired schema is absent from every fetch by construction, so
         # retiring it again would repeat on every run for as long as the tombstone
-        # is kept.
+        # is kept. It is held instead, which closes the SyncItem prepare_sync opened
+        # for it without touching the inventory.
         for schema in syncable_schemas.values():
             if schema.retired_at is None:
                 await self.retire_schema(schema)
+            else:
+                await self.hold_entity(SyncInventoryEntityTypeEnum.SCHEMA, schema)
 
     async def fetch_schema(self, created_schema: CreatedSchema) -> MySQLSchema:
         """Fetch updated data for a specific schema.
@@ -703,12 +691,16 @@ class MySQLSyncer(BaseTaskSyncer):
         :type updated_schema: MySQLSchema
         """
         await self.update_schema(created_schema, updated_schema)
-        syncable_tables: dict[str, CreatedTable] = {}
+        # Keyed by primary key for the reason the schema index above is.
+        syncable_tables: dict[int | None, CreatedTable] = {}
+        table_ids_by_name: dict[str, int | None] = {}
         for table in created_schema.tables:
-            _index_by_name(syncable_tables, table)
+            syncable_tables[table.id] = table
+            claim_identity(table_ids_by_name, table.name, table, syncable_tables)
 
         async for table in updated_schema.iter_tables():
-            if (created_table := syncable_tables.pop(table.name, None)) is None:
+            matched_id = table_ids_by_name.get(table.name)
+            if (created_table := syncable_tables.pop(matched_id, None)) is None:
                 logger.info("Creating new table: %s", table)
                 created_table = CreatedTable.model_validate(
                     await self.inventory_api.post(
@@ -724,9 +716,12 @@ class MySQLSyncer(BaseTaskSyncer):
                     SyncInventoryEntityTypeEnum.TABLE, created_table
                 )
             await self.sync_table(created_table, table)
+        # Held rather than dropped, for the reason the schema pass above is.
         for table in syncable_tables.values():
             if table.retired_at is None:
                 await self.retire_table(table)
+            else:
+                await self.hold_entity(SyncInventoryEntityTypeEnum.TABLE, table)
 
     async def fetch_table(self, created_table: CreatedTable) -> Table:
         """Fetch updated data for a specific table.

@@ -33,7 +33,7 @@ from app.sep.clients.pmm import (
 from app.sep.crud import SyncEntityAbsenceManager, SyncInstanceManager
 from app.sep.inventory import CreatedEntity, CreatedNode, CreatedService, Node
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.sync.models import BaseSyncer
+from app.sep.sync.models import BaseSyncer, claim_identity
 
 logger = logging.getLogger(__name__)
 
@@ -41,31 +41,6 @@ logger = logging.getLogger(__name__)
 #: ``Callable[[CreatedEntity], ...]`` would reject both retirers, whose parameters
 #: are the narrower subclasses.
 _Retirable = TypeVar("_Retirable", bound=CreatedEntity)
-
-
-def _claim_identity(
-    identities: dict[str, int | None],
-    external_id: str,
-    entity: _Retirable,
-    by_id: dict[int | None, _Retirable],
-) -> None:
-    """Point an upstream identity at an entity, letting an active row win.
-
-    An upstream id is unique among *active* rows only, so a tombstone and the
-    replacement that took its id both come back from a retired-inclusive read.
-    Matching an incoming report against the tombstone would attempt a revive the
-    active row's unique key refuses, so the active row claims the identity and
-    the tombstone keeps its own entry in ``by_id``, where absence handling finds
-    it. Without this, result ordering would decide.
-
-    :param identities: The upstream-id to primary-key map being built.
-    :param external_id: The upstream identity to claim.
-    :param entity: The local entity claiming it.
-    :param by_id: The primary-key-keyed index holding every candidate.
-    """
-    incumbent = by_id.get(identities.get(external_id))
-    if incumbent is None or incumbent.retired_at is not None:
-        identities[external_id] = entity.id
 
 
 class PMMSyncer(BaseSyncer):
@@ -319,7 +294,7 @@ class PMMSyncer(BaseSyncer):
         for node in await self.get_inventory_nodes():
             syncable_nodes[node.id] = node
             if node.external_id is not None:
-                _claim_identity(
+                claim_identity(
                     external_id_to_id, node.external_id, node, syncable_nodes
                 )
         logger.debug("Syncable nodes: %s", syncable_nodes)
@@ -410,7 +385,7 @@ class PMMSyncer(BaseSyncer):
         for service in created_node.services:
             syncable_services[service.id] = service
             if service.external_id is not None:
-                _claim_identity(
+                claim_identity(
                     external_id_to_id,
                     service.external_id,
                     service,

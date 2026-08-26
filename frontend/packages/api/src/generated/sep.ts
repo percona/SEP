@@ -3846,11 +3846,6 @@ export interface components {
       name: string;
       /** Retired At */
       retired_at?: string | null;
-      /**
-       * Retirement Key
-       * @default -1
-       */
-      retirement_key: number;
       source?: components['schemas']['SourceEnum'] | null;
       /**
        * Type
@@ -3983,11 +3978,6 @@ export interface components {
       name: string;
       /** Retired At */
       retired_at?: string | null;
-      /**
-       * Retirement Key
-       * @default -1
-       */
-      retirement_key: number;
       /** Service Id */
       service_id: number;
       /** Updated At */

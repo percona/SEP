@@ -1050,6 +1050,43 @@ class TestTombstoneReconciliation:
         bound_mysql_syncer.inventory_api.delete.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_an_absent_tombstoned_schema_is_held_not_retired_again(
+        self, created_service, created_schema, bound_mysql_syncer, session, mocker
+    ):
+        """Close the tombstone's SyncItem without re-issuing its retirement."""
+        mocker.patch.object(MySQLSyncer, "sync_schema", new_callable=AsyncMock)
+        created_schema.service = None
+        retired = created_schema.model_copy(update={"retired_at": utc_now()})
+        bound_mysql_syncer.inventory_api.get.side_effect = [
+            {"items": [retired.model_dump()], "total": 1, "offset": 0, "limit": 50},
+        ]
+        await _seed_sync_item(
+            bound_mysql_syncer,
+            session,
+            SyncInventoryEntityTypeEnum.SCHEMA,
+            created_schema.id,
+        )
+
+        async def schemas_idx():
+            return
+            yield
+
+        updated = MySQLService.model_validate(
+            created_service.model_dump(exclude={"schemas"})
+        )
+        updated.schemas_index = schemas_idx()
+
+        await bound_mysql_syncer.perform_service_sync(created_service, updated)
+
+        bound_mysql_syncer.inventory_api.delete.assert_not_awaited()
+        assert (
+            bound_mysql_syncer.sync_items[
+                (SyncInventoryEntityTypeEnum.SCHEMA, created_schema.id)
+            ].status
+            == SyncStatusEnum.SUCCESS
+        )
+
+    @pytest.mark.asyncio
     async def test_reappearing_table_is_revived_on_its_existing_row(
         self, created_schema, created_table, bound_mysql_syncer, mocker
     ):
@@ -1075,3 +1112,78 @@ class TestTombstoneReconciliation:
             f"/tables/{created_table.id}/revive"
         )
         bound_mysql_syncer.inventory_api.delete.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_an_absent_tombstoned_table_is_held_not_retired_again(
+        self, created_schema, created_table, bound_mysql_syncer, session, mocker
+    ):
+        """Close the tombstone's SyncItem without re-issuing its retirement."""
+        mocker.patch.object(MySQLSyncer, "sync_table", new_callable=AsyncMock)
+        created_table.database = None
+        created_table.retired_at = utc_now()
+        created_schema.tables = [created_table]
+        await _seed_sync_item(
+            bound_mysql_syncer,
+            session,
+            SyncInventoryEntityTypeEnum.TABLE,
+            created_table.id,
+        )
+
+        # No ``tables_aiter``: ``iter_tables`` falls back to the model's own empty
+        # table list, which is the fetch reporting nothing.
+        mysql_schema = MySQLSchema.model_validate(
+            created_schema.model_dump(exclude={"tables"})
+            | {"address": "localhost:8000/test_schema"}
+        )
+
+        await bound_mysql_syncer.perform_schema_sync(created_schema, mysql_schema)
+
+        bound_mysql_syncer.inventory_api.delete.assert_not_awaited()
+        assert (
+            bound_mysql_syncer.sync_items[
+                (SyncInventoryEntityTypeEnum.TABLE, created_table.id)
+            ].status
+            == SyncStatusEnum.SUCCESS
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_tombstone_that_lost_its_name_slot_is_still_held(
+        self, created_schema, created_table, bound_mysql_syncer, session, mocker
+    ):
+        """Close the SyncItem of the tombstone the live row displaced."""
+        mocker.patch.object(MySQLSyncer, "sync_table", new_callable=AsyncMock)
+        created_table.database = None
+        tombstone = created_table.model_copy(
+            update={"id": created_table.id + 1, "retired_at": utc_now()}
+        )
+        # Tombstone last, so a plain last-write-wins index would pick it.
+        created_schema.tables = [created_table, tombstone]
+        await _seed_sync_item(
+            bound_mysql_syncer,
+            session,
+            SyncInventoryEntityTypeEnum.TABLE,
+            tombstone.id,
+        )
+        table_data = created_table.model_dump()
+
+        async def tables_iter() -> AsyncGenerator[dict, None]:
+            yield table_data
+
+        mysql_schema = MySQLSchema.model_validate(
+            created_schema.model_dump(exclude={"tables"})
+            | {"address": "localhost:8000/test_schema"}
+        )
+        mysql_schema.tables_aiter = tables_iter()
+
+        await bound_mysql_syncer.perform_schema_sync(created_schema, mysql_schema)
+
+        # The live row matched, so nothing was revived and nothing was retired — but
+        # the displaced tombstone still had to reach the absence pass.
+        bound_mysql_syncer.inventory_api.post.assert_not_awaited()
+        bound_mysql_syncer.inventory_api.delete.assert_not_awaited()
+        assert (
+            bound_mysql_syncer.sync_items[
+                (SyncInventoryEntityTypeEnum.TABLE, tombstone.id)
+            ].status
+            == SyncStatusEnum.SUCCESS
+        )

@@ -734,11 +734,6 @@ export interface components {
       name: string;
       /** Retired At */
       retired_at?: string | null;
-      /**
-       * Retirement Key
-       * @default -1
-       */
-      retirement_key: number;
       source?: components['schemas']['SourceEnum'] | null;
       /**
        * Type
@@ -929,11 +924,6 @@ export interface components {
       name: string;
       /** Retired At */
       retired_at?: string | null;
-      /**
-       * Retirement Key
-       * @default -1
-       */
-      retirement_key: number;
       /** Service Id */
       service_id: number;
       /** Updated At */
@@ -1110,11 +1100,6 @@ export interface components {
       replication_set?: string | null;
       /** Retired At */
       retired_at?: string | null;
-      /**
-       * Retirement Key
-       * @default -1
-       */
-      retirement_key: number;
       type: components['schemas']['ServiceTypeEnum'];
       /** Updated At */
       updated_at?: string | null;
@@ -1554,11 +1539,6 @@ export interface components {
       name: string;
       /** Retired At */
       retired_at?: string | null;
-      /**
-       * Retirement Key
-       * @default -1
-       */
-      retirement_key: number;
       /** Schema Id */
       schema_id: number;
       /** Updated At */

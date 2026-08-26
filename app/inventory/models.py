@@ -55,9 +55,13 @@ class RetirableSQLModel(RetiredAtBase):
     :param retired_at: When the entity stopped being reported by its upstream
         source, or None while it is active.
     :param retirement_key: The discriminator carried inside every unique index.
+        Excluded from serialization: the responses nest these table models, and a
+        database-internal discriminator has no business in the published schema.
     """
 
-    retirement_key: int = SQLField(default=ACTIVE_RETIREMENT_KEY, nullable=False)
+    retirement_key: int = SQLField(
+        default=ACTIVE_RETIREMENT_KEY, nullable=False, exclude=True
+    )
 
 
 class SourceEnum(StrEnum):

@@ -219,11 +219,6 @@
             ],
             "title": "Retired At"
           },
-          "retirement_key": {
-            "default": -1,
-            "title": "Retirement Key",
-            "type": "integer"
-          },
           "source": {
             "anyOf": [
               {
@@ -616,11 +611,6 @@
             ],
             "title": "Retired At"
           },
-          "retirement_key": {
-            "default": -1,
-            "title": "Retirement Key",
-            "type": "integer"
-          },
           "service_id": {
             "title": "Service Id",
             "type": "integer"
@@ -982,11 +972,6 @@
               }
             ],
             "title": "Retired At"
-          },
-          "retirement_key": {
-            "default": -1,
-            "title": "Retirement Key",
-            "type": "integer"
           },
           "type": {
             "$ref": "#/components/schemas/ServiceTypeEnum"
@@ -1754,11 +1739,6 @@
               }
             ],
             "title": "Retired At"
-          },
-          "retirement_key": {
-            "default": -1,
-            "title": "Retirement Key",
-            "type": "integer"
           },
           "schema_id": {
             "title": "Schema Id",

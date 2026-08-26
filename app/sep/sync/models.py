@@ -24,7 +24,7 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from functools import cached_property
 from types import TracebackType
-from typing import Annotated, Any, ClassVar, Final, NamedTuple, Self
+from typing import Annotated, Any, ClassVar, Final, NamedTuple, Self, TypeVar
 from uuid import uuid4
 
 from aiohttp import ClientError
@@ -78,6 +78,36 @@ INVENTORY_PATH_SEGMENTS: Final = {
     SyncInventoryEntityTypeEnum.SCHEMA: "schemas",
     SyncInventoryEntityTypeEnum.TABLE: "tables",
 }
+
+#: Ties an identity map to the index it points into, so a schema index cannot be
+#: handed a table.
+_Identifiable = TypeVar("_Identifiable", bound=CreatedEntity)
+
+
+def claim_identity(
+    identities: dict[str, int | None],
+    identity: str,
+    entity: _Identifiable,
+    by_id: dict[int | None, _Identifiable],
+) -> None:
+    """Point an identity at an entity, letting an active row win.
+
+    An identity — an upstream id, or a name unique within a parent — is unique
+    among *active* rows only, so a tombstone and the replacement that took its
+    identity both come back from a retired-inclusive read. Matching an incoming
+    report against the tombstone would attempt a revive the active row's unique
+    key refuses, so the active row claims the identity and the tombstone keeps its
+    own entry in ``by_id``, where absence handling still finds it. Without this,
+    result ordering would decide.
+
+    :param identities: The identity-to-primary-key map being built.
+    :param identity: The identity to claim.
+    :param entity: The local entity claiming it.
+    :param by_id: The primary-key-keyed index holding every candidate.
+    """
+    incumbent = by_id.get(identities.get(identity))
+    if incumbent is None or incumbent.retired_at is not None:
+        identities[identity] = entity.id
 
 
 def inventory_sync_alert_address(entity: CreatedEntity) -> str | None:

@@ -548,11 +548,6 @@
             ],
             "title": "Retired At"
           },
-          "retirement_key": {
-            "default": -1,
-            "title": "Retirement Key",
-            "type": "integer"
-          },
           "source": {
             "anyOf": [
               {
@@ -804,11 +799,6 @@
               }
             ],
             "title": "Retired At"
-          },
-          "retirement_key": {
-            "default": -1,
-            "title": "Retirement Key",
-            "type": "integer"
           },
           "service_id": {
             "title": "Service Id",
