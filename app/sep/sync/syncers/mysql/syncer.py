@@ -246,32 +246,42 @@ class MySQLSyncer(BaseTaskSyncer):
     ) -> Generator[str]:
         """Append data to buffer and yield complete lines.
 
-        Appends incoming byte data to the provided buffer and yields complete lines
-        decoded using the specified encoding.
+        Each call consumes the newlines ``data`` introduced and drops what
+        precedes them, so ``buffer`` holds no newline when the next call
+        arrives. Searching only the arriving bytes therefore finds exactly what
+        a search from the front finds, at a cost proportional to ``data`` rather
+        than to the remainder behind it.
 
-        :param buffer: A bytearray buffer to hold incomplete line data.
-        :type buffer: bytearray
+        That narrowing makes two things preconditions rather than niceties: the
+        caller must drive the generator to exhaustion, and nothing else may
+        mutate ``buffer`` between calls. Reusing a buffer left behind by an
+        abandoned generator silently glues two lines together.
+
+        :param buffer: A bytearray buffer to hold incomplete line data. Must
+            hold no newline on entry.
         :param data: Incoming byte data to append to the buffer.
-        :type data: bytes
         :param encoding: The character encoding to use for decoding lines. Defaults to
             `"utf-8"`.
-        :type encoding: str
-        :yield: Each complete line decoded from the buffer.
-        :rtype: Generator[str]
+        :yield: Each complete line decoded from the buffer, terminator stripped;
+            empty lines are dropped.
         """
         if data:
+            # Two cursors, not one: the terminator can only be in the arriving
+            # bytes, but the line it ends begins at the front of the buffer,
+            # where the remainder carried from earlier calls sits.
+            search_from = len(buffer)
             buffer.extend(data)
-            offset = 0
+            line_start = 0
             while True:
-                newline_pos = buffer.find(b"\n", offset)
+                newline_pos = buffer.find(b"\n", search_from)
                 if newline_pos == -1:
-                    if offset:
-                        del buffer[:offset]
+                    if line_start:
+                        del buffer[:line_start]
                     break
-                line_bytes = buffer[offset:newline_pos]
+                line_bytes = buffer[line_start:newline_pos]
                 if line_bytes:
                     yield line_bytes.decode(encoding)
-                offset = newline_pos + 1
+                line_start = search_from = newline_pos + 1
 
     async def _iter_lines_gzip_stream(
         self, chunks: AsyncIterator[bytes], encoding: str = "utf-8"
