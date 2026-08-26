@@ -855,26 +855,24 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         states = []
         for node in self.backend.nodes.get_nodes():
             driver = (node.get("Drivers") or {}).get(RAW_EXEC_DRIVER) or {}
+            # An absent or non-boolean driver entry is not a healthy one: Nomad
+            # omits drivers it has not detected, and "not detected" is exactly the
+            # never-onboarded case worth telling apart. An identity check, not a
+            # truthiness one, so a malformed upstream value cannot read as healthy.
+            healthy = driver.get("Healthy") is True
             states.append(
                 ExecutorHostState(
                     name=node["Name"],
                     address=node["Address"],
                     reachable=node.get("Status") == NODE_STATUS_READY,
-                    # An absent driver entry is not a healthy one: Nomad omits
-                    # drivers it has not detected, and "not detected" is exactly the
-                    # never-onboarded case worth telling apart.
-                    driver_healthy=bool(driver.get("Healthy")),
+                    driver_healthy=healthy,
                     status=node.get("Status"),
                     # Only when it is a problem. Nomad sets HealthDescription to
                     # the literal "Healthy" on a working driver, and a field that
                     # explains failures must not be full of the word "Healthy" --
                     # a reader scanning for the broken ones would find nothing to
                     # scan by.
-                    detail=(
-                        None
-                        if driver.get("Healthy")
-                        else driver.get("HealthDescription") or None
-                    ),
+                    detail=None if healthy else driver.get("HealthDescription") or None,
                 )
             )
         return states

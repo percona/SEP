@@ -51,7 +51,7 @@ _TERMINAL_STATUS_EVENT_MAP = {
 class ExecutorHostState(BaseModel):
     """Describe one executor host in more detail than "usable or absent".
 
-    :func:`BaseExecutor.get_hosts` answers a yes/no question -- can a job be placed
+    :meth:`BaseExecutor.get_hosts` answers a yes/no question -- can a job be placed
     here -- by collapsing several conditions into presence in a mapping. That is the
     right answer for *dispatching*, and the wrong one for *reporting*: a host that is
     missing from it may never have been onboarded, or may be onboarded and down, or up
