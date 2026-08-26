@@ -15,10 +15,10 @@
 
 """Define dependencies for the Inventory API."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Query
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import ListQuery, make_list_query_dep
@@ -30,6 +30,7 @@ from app.inventory.constants import (
 from app.inventory.crud import (
     HostSystemObservationManager,
     NodeManager,
+    RetirableManagerMixin,
     RetiredInclusiveNodeManager,
     RetiredInclusiveSchemaManager,
     RetiredInclusiveServiceManager,
@@ -202,6 +203,53 @@ RetirableNodeDep = Annotated[Node, Depends(get_node_including_retired)]
 RetirableServiceDep = Annotated[Service, Depends(get_service_including_retired)]
 RetirableSchemaDep = Annotated[Schema, Depends(get_schema_including_retired)]
 RetirableTableDep = Annotated[Table, Depends(get_table_including_retired)]
+
+
+def make_retirement_scope_dep(
+    active: type[RetirableManagerMixin],
+    retired_inclusive: type[RetirableManagerMixin],
+) -> Callable[[bool], type[RetirableManagerMixin]]:
+    """Build the dependency choosing which manager a read goes through.
+
+    The opt-in rides the manager class rather than a call argument, so every read
+    route needs the same pairing. Declaring it once here also declares the
+    ``include_retired`` query parameter once, instead of per handler.
+
+    :param active: The manager whose reads exclude retired rows.
+    :param retired_inclusive: Its sibling whose reads include them.
+    :return: The ``Depends()`` callable resolving one of the two.
+    """
+
+    def resolve(
+        *,
+        include_retired: Annotated[bool, Query()] = False,
+    ) -> type[RetirableManagerMixin]:
+        """Return the manager matching the request's retirement scope.
+
+        :param include_retired: Whether the read should see retired rows.
+        :return: The manager to read through.
+        """
+        return retired_inclusive if include_retired else active
+
+    return resolve
+
+
+NodeScopeDep = Annotated[
+    type[NodeManager],
+    Depends(make_retirement_scope_dep(NodeManager, RetiredInclusiveNodeManager)),
+]
+ServiceScopeDep = Annotated[
+    type[ServiceManager],
+    Depends(make_retirement_scope_dep(ServiceManager, RetiredInclusiveServiceManager)),
+]
+SchemaScopeDep = Annotated[
+    type[SchemaManager],
+    Depends(make_retirement_scope_dep(SchemaManager, RetiredInclusiveSchemaManager)),
+]
+TableScopeDep = Annotated[
+    type[TableManager],
+    Depends(make_retirement_scope_dep(TableManager, RetiredInclusiveTableManager)),
+]
 
 
 async def get_host_system_observation(

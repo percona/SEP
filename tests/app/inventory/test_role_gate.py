@@ -62,8 +62,9 @@ MUTATIONS = [
     ("PUT", "/services/1"),
     ("POST", "/schemas/1/tables/"),
     ("DELETE", "/tables/1"),
+    ("POST", "/tables/1/revive"),
 ]
-MUTATION_IDS = ["nodes", "services", "schemas", "tables"]
+MUTATION_IDS = ["nodes", "services", "schemas", "tables", "revive"]
 
 
 @pytest.mark.parametrize(("method", "path"), MUTATIONS, ids=MUTATION_IDS)
@@ -136,14 +137,33 @@ def test_the_service_principal_can_still_update_a_node(
     assert response.json()["name"] == "renamed-by-sync"
 
 
-def test_the_service_principal_can_still_delete_a_service(
+def test_the_service_principal_can_still_retire_a_service(
     bearer_client: TestClient, service: Service, mocker: MockerFixture
 ) -> None:
-    """Delete a service as the principal, which the scheduled sync depends on."""
+    """Retire a service as the principal, which the scheduled sync depends on."""
     mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
 
     response = bearer_client.delete(
         f"/services/{service.id}",
+        headers={"Authorization": f"Bearer {SERVICE_TOKEN}"},
+    )
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
+def test_the_service_principal_can_revive_a_service(
+    bearer_client: TestClient, retired_service: Service, mocker: MockerFixture
+) -> None:
+    """Revive a service as the principal, the other half of what sync writes.
+
+    Revival is a POST rather than a DELETE, so it takes the gate's unsafe-method
+    path on its own; a principal admitted for retirement is not thereby admitted
+    for the call that undoes it.
+    """
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+
+    response = bearer_client.post(
+        f"/services/{retired_service.id}/revive",
         headers={"Authorization": f"Bearer {SERVICE_TOKEN}"},
     )
 

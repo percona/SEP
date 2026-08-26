@@ -86,10 +86,9 @@ class RetirableManagerMixin(BaseSQLModelManager):
     default managers — a collection job will have to go through the retired-
     inclusive siblings or it will silently match nothing. The opt-out rides
     ``cls`` rather than a call argument because ``BaseManager._select`` splits a
-    paginated
-    ``select_related`` read into a page query and a hydration query and forwards
-    neither ``equal_filters`` nor the original clauses to the second one: an
-    opt-out passed per call would be dropped there and the injection would fire
+    paginated ``select_related`` read into a page query and a hydration query and
+    forwards neither ``equal_filters`` nor the original clauses to the second one:
+    an opt-out passed per call would be dropped there and the injection would fire
     on the hydration query alone, returning a short page whose ``total`` does not
     match it.
 

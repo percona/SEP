@@ -358,7 +358,7 @@ class TestDeleteNode:
     """Test the DELETE /nodes/{node_id} endpoint."""
 
     def test_delete_node(self, test_client: TestClient, node: Node) -> None:
-        """Delete a node and confirm it is gone."""
+        """Retire a node and confirm the default read no longer resolves it."""
         response = test_client.delete(f"/nodes/{node.id}")
         assert response.status_code == status.HTTP_204_NO_CONTENT
 

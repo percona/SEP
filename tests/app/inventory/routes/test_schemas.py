@@ -351,7 +351,7 @@ class TestDeleteSchema:
     """Test DELETE /schemas/{schema_id} endpoint."""
 
     def test_delete_schema(self, test_client: TestClient, schema: Schema) -> None:
-        """Delete a schema and confirm it is gone."""
+        """Retire a schema and confirm the default read no longer resolves it."""
         response = test_client.delete(f"/schemas/{schema.id}")
         assert response.status_code == status.HTTP_204_NO_CONTENT
 

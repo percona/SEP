@@ -582,9 +582,8 @@ class MySQLSyncer(BaseTaskSyncer):
         :type updated_service: MySQLService
         """
         # Keyed by primary key, not name: a tombstone and the replacement that took
-        # its name both come back from a retired-inclusive read, and a row that lost
-        # the name slot would never reach the absence pass below, leaving the
-        # SyncItem prepare_sync opened for it hanging.
+        # its name both come back from a retired-inclusive read, and only the
+        # primary key tells them apart once the active row has claimed the name.
         syncable_schemas: dict[int | None, CreatedSchema] = {}
         schema_ids_by_name: dict[str, int | None] = {}
         for schema in await self.get_inventory_service_schemas(created_service.id):
@@ -617,13 +616,12 @@ class MySQLSyncer(BaseTaskSyncer):
             await self.sync_schema(created_schema)
         # An already-retired schema is absent from every fetch by construction, so
         # retiring it again would repeat on every run for as long as the tombstone
-        # is kept. It is held instead, which closes the SyncItem prepare_sync opened
-        # for it without touching the inventory.
+        # is kept. Nothing else is owed to it: this syncer's SERVICE-level read is
+        # active-only, so prepare_sync never opened a SyncItem for a tombstone and
+        # there is none to close.
         for schema in syncable_schemas.values():
             if schema.retired_at is None:
                 await self.retire_schema(schema)
-            else:
-                await self.hold_entity(SyncInventoryEntityTypeEnum.SCHEMA, schema)
 
     async def fetch_schema(self, created_schema: CreatedSchema) -> MySQLSchema:
         """Fetch updated data for a specific schema.
@@ -716,12 +714,9 @@ class MySQLSyncer(BaseTaskSyncer):
                     SyncInventoryEntityTypeEnum.TABLE, created_table
                 )
             await self.sync_table(created_table, table)
-        # Held rather than dropped, for the reason the schema pass above is.
         for table in syncable_tables.values():
             if table.retired_at is None:
                 await self.retire_table(table)
-            else:
-                await self.hold_entity(SyncInventoryEntityTypeEnum.TABLE, table)
 
     async def fetch_table(self, created_table: CreatedTable) -> Table:
         """Fetch updated data for a specific table.

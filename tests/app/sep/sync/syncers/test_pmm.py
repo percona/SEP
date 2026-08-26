@@ -874,7 +874,7 @@ async def test_perform_inventory_sync(local_node, owned_pmmsyncer, mocker):
         skip_failed=True,
         filter_=owned_pmmsyncer._filter_sep_sync_disabled,
     )
-    # A single absence never deletes: the node is held until grace is spent.
+    # A single absence never retires: the node is held until grace is spent.
     retire_node.assert_not_awaited()
 
 
@@ -1099,20 +1099,20 @@ class TestGetInventorySnapshot:
 
 
 class TestInventoryGenerationGating:
-    """Test that deletion requires a complete generation and spent grace."""
+    """Test that retirement requires a complete generation and spent grace."""
 
     @pytest.fixture
     def retire_node(self, mocker) -> AsyncMock:
-        """Replace the node deletion so the retire decision is seen in isolation."""
+        """Replace the node retirement so the retire decision is seen in isolation."""
         return mocker.patch(
             "app.sep.sync.syncers.pmm.PMMSyncer.retire_node", new_callable=AsyncMock
         )
 
     @pytest.mark.asyncio
-    async def test_validation_failure_deletes_nothing(
+    async def test_validation_failure_retires_nothing(
         self, local_node, owned_pmmsyncer, session, retire_node
     ):
-        """Delete nothing when a validation-skipped entity blocks the run."""
+        """Retire nothing when a validation-skipped entity blocks the run."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1126,7 +1126,7 @@ class TestInventoryGenerationGating:
         assert await _absence_rows(session) == []
 
     @pytest.mark.asyncio
-    async def test_real_validation_failure_mid_fetch_deletes_nothing(
+    async def test_real_validation_failure_mid_fetch_retires_nothing(
         self,
         local_node,
         owned_pmmsyncer,
@@ -1136,7 +1136,7 @@ class TestInventoryGenerationGating:
         mock_request,
         mock_get_version,
     ):
-        """Delete nothing when a genuine mid-fetch validation failure occurs.
+        """Retire nothing when a genuine mid-fetch validation failure occurs.
 
         The snapshot comes from the real client against a node payload that actually
         fails ``Node`` validation, so the incompleteness driving the gate is observed
@@ -1168,10 +1168,10 @@ class TestInventoryGenerationGating:
         assert owned_pmmsyncer._snapshot_complete is False
 
     @pytest.mark.asyncio
-    async def test_single_absence_does_not_delete(
+    async def test_single_absence_does_not_retire(
         self, local_node, owned_pmmsyncer, session, retire_node
     ):
-        """Start the count without deleting on one generation reporting absence."""
+        """Start the count without retiring on one generation reporting absence."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1185,10 +1185,10 @@ class TestInventoryGenerationGating:
         assert [row.missing_generations for row in await _absence_rows(session)] == [1]
 
     @pytest.mark.asyncio
-    async def test_complete_generation_deletes_after_grace(
+    async def test_complete_generation_retires_after_grace(
         self, local_node, owned_pmmsyncer, session, retire_node
     ):
-        """Delete the entity on a second consecutive complete generation."""
+        """Retire the entity on a second consecutive complete generation."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1382,7 +1382,7 @@ class TestInventoryGenerationGating:
     async def test_reclaimed_run_aborts_retire_phase(
         self, local_node, owned_pmmsyncer, session, retire_node
     ):
-        """Delete nothing from a run that lost ownership of its instance."""
+        """Retire nothing from a run that lost ownership of its instance."""
         owned_pmmsyncer.inventory_api.get.side_effect = [
             _local_nodes_payload(local_node)
         ]
@@ -1438,7 +1438,7 @@ class TestInventoryGenerationGating:
 
 @pytest.mark.parametrize("grace", [0, 1])
 def test_syncer_rejects_grace_below_two(mock_remote_api, grace):
-    """Reject a grace below two, which collapses to single-absence deletion."""
+    """Reject a grace below two, which collapses to single-absence retirement."""
     with pytest.raises(ValidationError):
         PMMSyncer(
             pmm={"endpoint": "http://localhost", "api_key": "test-key"},
@@ -1447,14 +1447,14 @@ def test_syncer_rejects_grace_below_two(mock_remote_api, grace):
         )
 
 
-class TestSingleEntitySyncNeverDeletes:
+class TestSingleEntitySyncNeverRetires:
     """Test that an operator-triggered single-entity refresh is upsert-only."""
 
     @pytest.mark.asyncio
-    async def test_single_node_sync_never_deletes_services(
+    async def test_single_node_sync_never_retires_services(
         self, node_with_services, owned_pmmsyncer, session, mocker
     ):
-        """Hold a missing service outside a generation instead of deleting it."""
+        """Hold a missing service outside a generation instead of retiring it."""
         retire_service = mocker.patch(
             "app.sep.sync.syncers.pmm.PMMSyncer.retire_service", new_callable=AsyncMock
         )

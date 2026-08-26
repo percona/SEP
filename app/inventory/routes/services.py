@@ -16,16 +16,13 @@
 """Define the routes for the Services resource."""
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import (
-    RetiredInclusiveSchemaManager,
-    RetiredInclusiveServiceManager,
     SchemaManager,
     ServiceManager,
     ServiceSystemObservationManager,
@@ -33,8 +30,10 @@ from app.inventory.crud import (
 from app.inventory.deps import (
     RetirableServiceDep,
     SchemaListQueryDep,
+    SchemaScopeDep,
     ServiceDep,
     ServiceListQueryDep,
+    ServiceScopeDep,
     ServiceSystemObservationDep,
     SessionDep,
 )
@@ -62,13 +61,19 @@ async def list_services(
     session: SessionDep,
     pagination: PaginationDep,
     list_query: ServiceListQueryDep,
+    manager: ServiceScopeDep,
     service_type: ServiceTypeEnum | None = None,
-    *,
-    include_retired: Annotated[bool, Query()] = False,
 ) -> PaginatedResponse[ServiceResponse]:
-    """List Services."""
+    """List Services.
+
+    :param session: The async database session.
+    :param pagination: Validated offset/limit query parameters.
+    :param list_query: The resolved sort/search produced at the request boundary.
+    :param manager: The service manager the request's retirement scope selected.
+    :param service_type: Return only services of this type.
+    :return: A paginated response of service responses.
+    """
     logger.debug("Listing services for type '%s'", service_type or "all")
-    manager = RetiredInclusiveServiceManager if include_retired else ServiceManager
     return await manager.list_query_paginated(
         session,
         list_query=list_query,
@@ -82,12 +87,10 @@ async def list_services(
 async def retrieve_service(
     session: SessionDep,
     service_id: int,
-    *,
-    include_retired: Annotated[bool, Query()] = False,
+    manager: ServiceScopeDep,
 ) -> ServiceDetailResponse:
     """Retrieve Service."""
     logger.debug("Retrieving service %s", service_id)
-    manager = RetiredInclusiveServiceManager if include_retired else ServiceManager
     return await manager.get_or_404(
         session,
         select_related=[Service.schemas, Service.node],
@@ -168,9 +171,8 @@ async def list_schemas_by_service(
     service: ServiceDep,
     pagination: PaginationDep,
     list_query: SchemaListQueryDep,
+    manager: SchemaScopeDep,
     include_tables: str | None = None,
-    *,
-    include_retired: Annotated[bool, Query()] = False,
 ) -> PaginatedResponse[SchemaResponse | SchemaCompactResponse]:
     """List Schemas by Service.
 
@@ -182,14 +184,13 @@ async def list_schemas_by_service(
     :param pagination: Validated offset/limit query parameters.
     :param list_query: The resolved sort/search produced at the request
         boundary.
+    :param manager: The schema manager the request's retirement scope selected.
     :param include_tables: Include nested tables in the response when set to
         any non-empty value. Defaults to compact mode (no tables).
-    :param include_retired: Include retired schemas in the response.
     :return: A paginated response of schema responses.
     """
     logger.debug("Listing schemas for service '%s'", service.id)
     select_related = [Schema.tables] if include_tables else []
-    manager = RetiredInclusiveSchemaManager if include_retired else SchemaManager
     result = await manager.list_query_paginated(
         session,
         list_query=list_query,

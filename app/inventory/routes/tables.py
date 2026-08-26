@@ -16,19 +16,19 @@
 """Define the routes for the Tables resource."""
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
-from app.inventory.crud import RetiredInclusiveTableManager, TableManager
+from app.inventory.crud import TableManager
 from app.inventory.deps import (
     RetirableTableDep,
     SessionDep,
     TableDep,
     TableListQueryDep,
+    TableScopeDep,
 )
 from app.inventory.models import Table, TableDetailResponse, TableResponse, TableWrite
 
@@ -42,12 +42,10 @@ async def list_tables(
     session: SessionDep,
     pagination: PaginationDep,
     list_query: TableListQueryDep,
-    *,
-    include_retired: Annotated[bool, Query()] = False,
+    manager: TableScopeDep,
 ) -> PaginatedResponse[TableResponse]:
     """List Tables."""
     logger.debug("Listing tables")
-    manager = RetiredInclusiveTableManager if include_retired else TableManager
     return await manager.list_query_paginated(
         session,
         list_query=list_query,
@@ -59,12 +57,17 @@ async def list_tables(
 async def retrieve_table(
     session: SessionDep,
     table_id: int,
-    *,
-    include_retired: Annotated[bool, Query()] = False,
+    manager: TableScopeDep,
 ) -> TableDetailResponse:
-    """Retrieve Table."""
+    """Retrieve Table.
+
+    :param session: The async database session.
+    :param table_id: The identifier of the table to retrieve.
+    :param manager: The table manager the request's retirement scope selected.
+    :return: The table, with its schema nested.
+    :raises HTTPNotFoundException: If no table in scope has the given identifier.
+    """
     logger.debug("Retrieving table %s", table_id)
-    manager = RetiredInclusiveTableManager if include_retired else TableManager
     return await manager.get_or_404(
         session,
         select_related=[Table.database],

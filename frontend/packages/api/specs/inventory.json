@@ -2211,7 +2211,7 @@
     },
     "/nodes/": {
       "get": {
-        "description": "List Nodes from Inventory.",
+        "description": "List Nodes from Inventory.\n\n:param session: The async database session.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request boundary.\n:param manager: The node manager the request's retirement scope selected.\n:param external_id: Return only the node carrying this upstream identifier.\n:param source: Return only nodes discovered by this source.\n:param node_type: Return only nodes of this type.\n:return: A paginated response of node responses.",
         "operationId": "nodes_list_nodes_nodes__get",
         "parameters": [
           {
@@ -2262,16 +2262,6 @@
                 }
               ],
               "title": "Node Type"
-            }
-          },
-          {
-            "in": "query",
-            "name": "include_retired",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Retired",
-              "type": "boolean"
             }
           },
           {
@@ -2331,6 +2321,16 @@
               ],
               "description": "Case-insensitive search across the searchable columns.",
               "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           }
         ],
@@ -2453,7 +2453,7 @@
         ]
       },
       "get": {
-        "description": "Retrieve Node from inventory.",
+        "description": "Retrieve Node from inventory.\n\n:param session: The async database session.\n:param node_id: The identifier of the node to retrieve.\n:param manager: The node manager the request's retirement scope selected.\n:return: The node, with its services nested.\n:raises HTTPNotFoundException: If no node in scope has the given identifier.",
         "operationId": "nodes_retrieve_node_nodes__node_id__get",
         "parameters": [
           {
@@ -2509,7 +2509,7 @@
         ]
       },
       "put": {
-        "description": "Update Node.",
+        "description": "Update Node.\n\n:param session: The async database session.\n:param existing_node: The active node addressed by the path.\n:param updated_node: The fields to write onto it.\n:return: The updated node.",
         "operationId": "nodes_update_node_nodes__node_id__put",
         "parameters": [
           {
@@ -2567,7 +2567,7 @@
     },
     "/nodes/{node_id}/revive": {
       "post": {
-        "description": "Revive a retired Node, leaving the services retired with it retired.\n\n:param session: The asynchronous database session.\n:param node: The node to revive, retired or not.\n:raises HTTPConflictException: If an active entity already holds the unique\n    key the revived node would reclaim.",
+        "description": "Revive a retired Node, leaving the services it was retired with retired.\n\n:param session: The asynchronous database session.\n:param node: The node to revive, retired or not.\n:raises HTTPConflictException: If an active entity already holds the unique\n    key the revived node would reclaim.",
         "operationId": "nodes_revive_node_nodes__node_id__revive_post",
         "parameters": [
           {
@@ -2638,16 +2638,6 @@
           },
           {
             "in": "query",
-            "name": "include_retired",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Retired",
-              "type": "boolean"
-            }
-          },
-          {
-            "in": "query",
             "name": "offset",
             "required": false,
             "schema": {
@@ -2703,6 +2693,16 @@
               ],
               "description": "Case-insensitive search across the searchable columns.",
               "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           }
         ],
@@ -2843,7 +2843,7 @@
         ]
       },
       "put": {
-        "description": "Upsert host system observation for a node.",
+        "description": "Upsert host system observation for a node.\n\n:param session: The async database session.\n:param node: The active node the observation belongs to.\n:param data: The observed host facts to store.\n:return: The stored observation.",
         "operationId": "nodes_upsert_host_system_observation_nodes__node_id__system_observation_put",
         "parameters": [
           {
@@ -2901,19 +2901,9 @@
     },
     "/schemas/": {
       "get": {
-        "description": "List Schemas.",
+        "description": "List Schemas.\n\n:param session: The async database session.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request boundary.\n:param manager: The schema manager the request's retirement scope selected.\n:return: A paginated response of schema responses.",
         "operationId": "schemas_list_schemas_schemas__get",
         "parameters": [
-          {
-            "in": "query",
-            "name": "include_retired",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Retired",
-              "type": "boolean"
-            }
-          },
           {
             "in": "query",
             "name": "offset",
@@ -2973,6 +2963,16 @@
               ],
               "description": "Case-insensitive search across the searchable columns.",
               "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           }
         ],
@@ -3050,7 +3050,7 @@
         ]
       },
       "get": {
-        "description": "Retrieve Schema.",
+        "description": "Retrieve Schema.\n\n:param session: The async database session.\n:param schema_id: The identifier of the schema to retrieve.\n:param manager: The schema manager the request's retirement scope selected.\n:return: The schema, with its tables and service nested.\n:raises HTTPNotFoundException: If no schema in scope has the given identifier.",
         "operationId": "schemas_retrieve_schema_schemas__schema_id__get",
         "parameters": [
           {
@@ -3219,16 +3219,6 @@
           },
           {
             "in": "query",
-            "name": "include_retired",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Retired",
-              "type": "boolean"
-            }
-          },
-          {
-            "in": "query",
             "name": "offset",
             "required": false,
             "schema": {
@@ -3286,6 +3276,16 @@
               ],
               "description": "Case-insensitive search across the searchable columns.",
               "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           }
         ],
@@ -3380,7 +3380,7 @@
     },
     "/services/": {
       "get": {
-        "description": "List Services.",
+        "description": "List Services.\n\n:param session: The async database session.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request boundary.\n:param manager: The service manager the request's retirement scope selected.\n:param service_type: Return only services of this type.\n:return: A paginated response of service responses.",
         "operationId": "services_list_services_services__get",
         "parameters": [
           {
@@ -3397,16 +3397,6 @@
                 }
               ],
               "title": "Service Type"
-            }
-          },
-          {
-            "in": "query",
-            "name": "include_retired",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Retired",
-              "type": "boolean"
             }
           },
           {
@@ -3466,6 +3456,16 @@
               ],
               "description": "Case-insensitive search across the searchable columns.",
               "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           }
         ],
@@ -3698,7 +3698,7 @@
     },
     "/services/{service_id}/schemas/": {
       "get": {
-        "description": "List Schemas by Service.\n\nReturn ``SchemaResponse`` (with nested tables) when ``include_tables``\nis set, otherwise return ``SchemaCompactResponse`` (without tables).\n\n:param session: The async database session.\n:param service: The resolved service dependency.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request\n    boundary.\n:param include_tables: Include nested tables in the response when set to\n    any non-empty value. Defaults to compact mode (no tables).\n:param include_retired: Include retired schemas in the response.\n:return: A paginated response of schema responses.",
+        "description": "List Schemas by Service.\n\nReturn ``SchemaResponse`` (with nested tables) when ``include_tables``\nis set, otherwise return ``SchemaCompactResponse`` (without tables).\n\n:param session: The async database session.\n:param service: The resolved service dependency.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request\n    boundary.\n:param manager: The schema manager the request's retirement scope selected.\n:param include_tables: Include nested tables in the response when set to\n    any non-empty value. Defaults to compact mode (no tables).\n:return: A paginated response of schema responses.",
         "operationId": "services_list_schemas_by_service_services__service_id__schemas__get",
         "parameters": [
           {
@@ -3724,16 +3724,6 @@
                 }
               ],
               "title": "Include Tables"
-            }
-          },
-          {
-            "in": "query",
-            "name": "include_retired",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Retired",
-              "type": "boolean"
             }
           },
           {
@@ -3795,6 +3785,16 @@
               ],
               "description": "Case-insensitive search across the searchable columns.",
               "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           }
         ],
@@ -4029,16 +4029,6 @@
         "parameters": [
           {
             "in": "query",
-            "name": "include_retired",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Retired",
-              "type": "boolean"
-            }
-          },
-          {
-            "in": "query",
             "name": "offset",
             "required": false,
             "schema": {
@@ -4096,6 +4086,16 @@
               ],
               "description": "Case-insensitive search across the searchable columns.",
               "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           }
         ],
@@ -4173,7 +4173,7 @@
         ]
       },
       "get": {
-        "description": "Retrieve Table.",
+        "description": "Retrieve Table.\n\n:param session: The async database session.\n:param table_id: The identifier of the table to retrieve.\n:param manager: The table manager the request's retirement scope selected.\n:return: The table, with its schema nested.\n:raises HTTPNotFoundException: If no table in scope has the given identifier.",
         "operationId": "tables_retrieve_table_tables__table_id__get",
         "parameters": [
           {

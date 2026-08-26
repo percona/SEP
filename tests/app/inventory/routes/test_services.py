@@ -236,6 +236,18 @@ class TestRetrieveService:
         response = test_client.get(f"/services/{retired_service.id}")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    def test_retrieve_service_hides_retired_schema_nested_in_active_service(
+        self, test_client: TestClient, retired_schema: Schema
+    ) -> None:
+        """Drop a retired schema from the schemas nested in an active service.
+
+        The sync engine's ``prepare_sync`` recursion reads its schemas from this
+        route, so what it nests decides which entities get a ``SyncItem``.
+        """
+        response = test_client.get(f"/services/{retired_schema.service_id}")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["schemas"] == []
+
 
 class TestUpdateService:
     """Test PUT /services/{service_id} endpoint."""
@@ -362,7 +374,7 @@ class TestDeleteService:
     """Test DELETE /services/{service_id} endpoint."""
 
     def test_delete_service(self, test_client: TestClient, service: Service) -> None:
-        """Delete a service and confirm it is gone."""
+        """Retire a service and confirm the default read no longer resolves it."""
         response = test_client.delete(f"/services/{service.id}")
         assert response.status_code == status.HTTP_204_NO_CONTENT
 

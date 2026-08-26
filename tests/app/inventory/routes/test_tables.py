@@ -340,7 +340,7 @@ class TestDeleteTable:
     """Test the DELETE /tables/{table_id} endpoint."""
 
     def test_delete_table(self, test_client: TestClient, table: Table) -> None:
-        """Delete a table and confirm it is gone."""
+        """Retire a table and confirm the default read no longer resolves it."""
         response = test_client.delete(f"/tables/{table.id}")
         assert response.status_code == status.HTTP_204_NO_CONTENT
 

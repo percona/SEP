@@ -17,7 +17,7 @@
 
 These tests drive a real ``MySQLSyncer`` through its public surface against canned
 ``RemoteAPI`` responses. The orchestration methods (``perform_*_sync``) and their
-real downstream cascade (``sync_*`` / ``delete_*`` / ``update_*`` / ``get_inventory_*``)
+real downstream cascade (``sync_*`` / ``retire_*`` / ``update_*`` / ``get_inventory_*``)
 are exercised end-to-end and asserted behaviourally on the ``inventory_api`` traffic,
 on ``_inventory_index_cache`` state, and on the resulting ``SyncItem`` lifecycle —
 never by patching the subject class. External boundaries (e.g. ``wait_for_task_output``,
@@ -657,7 +657,7 @@ class TestPerformMethods:
             MySQLSyncer, "wait_for_task_output", new_callable=AsyncMock
         )
         schema_data = created_schema.model_dump()
-        # An existing inventory schema absent from the streamed set must be deleted.
+        # An existing inventory schema absent from the streamed set must be retired.
         stale_schema = CreatedSchemaFactory.build(name="stale_schema")
         stale_schema.id = created_schema.id + 1
         stale_schema.service = None
@@ -673,7 +673,7 @@ class TestPerformMethods:
             _MySQLSyncResultEntityTypeEnum.SERVICES
         ][created_service.address] = (111, {"schemas_path": "p", "schemas_count": 1})
         # The stale schema is returned by the inventory listing; the streamed schema is
-        # new -> created via POST, while the stale one is deleted.
+        # new -> created via POST, while the stale one is retired.
         bound_mysql_syncer.inventory_api.get.side_effect = [
             {
                 "items": [stale_schema.model_dump()],
@@ -699,7 +699,7 @@ class TestPerformMethods:
             bound_mysql_syncer.inventory_api.post.await_args.args[0]
             == f"/services/{created_service.id}/schemas/"
         )
-        # The stale schema is deleted from inventory.
+        # The stale schema is retired in inventory.
         bound_mysql_syncer.inventory_api.delete.assert_awaited_once_with(
             f"/schemas/{stale_schema.id}"
         )
@@ -717,10 +717,10 @@ class TestPerformMethods:
     async def test_perform_schema_sync(
         self, created_schema, created_table, bound_mysql_syncer, session, mocker
     ):
-        """Drive perform_schema_sync: a new table is created and a stale one deleted."""
+        """Drive perform_schema_sync: a new table is created and a stale one retired."""
         trigger = mocker.patch.object(alert_service, "trigger", new_callable=AsyncMock)
         table_data = created_table.model_dump()
-        # A stale table not present in the streamed set must be deleted. No back-ref to
+        # A stale table not present in the streamed set must be retired. No back-ref to
         # created_schema (that would create a serialization cycle in model_dump).
         stale_table = CreatedTableFactory.build(name="stale_table")
         stale_table.id = created_table.id + 1
@@ -1050,22 +1050,16 @@ class TestTombstoneReconciliation:
         bound_mysql_syncer.inventory_api.delete.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_an_absent_tombstoned_schema_is_held_not_retired_again(
-        self, created_service, created_schema, bound_mysql_syncer, session, mocker
+    async def test_an_absent_tombstoned_schema_is_not_retired_again(
+        self, created_service, created_schema, bound_mysql_syncer, mocker
     ):
-        """Close the tombstone's SyncItem without re-issuing its retirement."""
+        """Leave an already-retired schema alone rather than re-retiring it."""
         mocker.patch.object(MySQLSyncer, "sync_schema", new_callable=AsyncMock)
         created_schema.service = None
         retired = created_schema.model_copy(update={"retired_at": utc_now()})
         bound_mysql_syncer.inventory_api.get.side_effect = [
             {"items": [retired.model_dump()], "total": 1, "offset": 0, "limit": 50},
         ]
-        await _seed_sync_item(
-            bound_mysql_syncer,
-            session,
-            SyncInventoryEntityTypeEnum.SCHEMA,
-            created_schema.id,
-        )
 
         async def schemas_idx():
             return
@@ -1079,12 +1073,7 @@ class TestTombstoneReconciliation:
         await bound_mysql_syncer.perform_service_sync(created_service, updated)
 
         bound_mysql_syncer.inventory_api.delete.assert_not_awaited()
-        assert (
-            bound_mysql_syncer.sync_items[
-                (SyncInventoryEntityTypeEnum.SCHEMA, created_schema.id)
-            ].status
-            == SyncStatusEnum.SUCCESS
-        )
+        assert not bound_mysql_syncer.sync_items
 
     @pytest.mark.asyncio
     async def test_reappearing_table_is_revived_on_its_existing_row(
@@ -1114,20 +1103,14 @@ class TestTombstoneReconciliation:
         bound_mysql_syncer.inventory_api.delete.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_an_absent_tombstoned_table_is_held_not_retired_again(
-        self, created_schema, created_table, bound_mysql_syncer, session, mocker
+    async def test_an_absent_tombstoned_table_is_not_retired_again(
+        self, created_schema, created_table, bound_mysql_syncer, mocker
     ):
-        """Close the tombstone's SyncItem without re-issuing its retirement."""
+        """Leave an already-retired table alone rather than re-retiring it."""
         mocker.patch.object(MySQLSyncer, "sync_table", new_callable=AsyncMock)
         created_table.database = None
         created_table.retired_at = utc_now()
         created_schema.tables = [created_table]
-        await _seed_sync_item(
-            bound_mysql_syncer,
-            session,
-            SyncInventoryEntityTypeEnum.TABLE,
-            created_table.id,
-        )
 
         # No ``tables_aiter``: ``iter_tables`` falls back to the model's own empty
         # table list, which is the fetch reporting nothing.
@@ -1139,18 +1122,13 @@ class TestTombstoneReconciliation:
         await bound_mysql_syncer.perform_schema_sync(created_schema, mysql_schema)
 
         bound_mysql_syncer.inventory_api.delete.assert_not_awaited()
-        assert (
-            bound_mysql_syncer.sync_items[
-                (SyncInventoryEntityTypeEnum.TABLE, created_table.id)
-            ].status
-            == SyncStatusEnum.SUCCESS
-        )
+        assert not bound_mysql_syncer.sync_items
 
     @pytest.mark.asyncio
-    async def test_a_tombstone_that_lost_its_name_slot_is_still_held(
-        self, created_schema, created_table, bound_mysql_syncer, session, mocker
+    async def test_an_active_row_wins_the_table_name_over_a_tombstone(
+        self, created_schema, created_table, bound_mysql_syncer, mocker
     ):
-        """Close the SyncItem of the tombstone the live row displaced."""
+        """Match the live table, not the tombstone that used to hold its name."""
         mocker.patch.object(MySQLSyncer, "sync_table", new_callable=AsyncMock)
         created_table.database = None
         tombstone = created_table.model_copy(
@@ -1158,12 +1136,6 @@ class TestTombstoneReconciliation:
         )
         # Tombstone last, so a plain last-write-wins index would pick it.
         created_schema.tables = [created_table, tombstone]
-        await _seed_sync_item(
-            bound_mysql_syncer,
-            session,
-            SyncInventoryEntityTypeEnum.TABLE,
-            tombstone.id,
-        )
         table_data = created_table.model_dump()
 
         async def tables_iter() -> AsyncGenerator[dict, None]:
@@ -1177,13 +1149,6 @@ class TestTombstoneReconciliation:
 
         await bound_mysql_syncer.perform_schema_sync(created_schema, mysql_schema)
 
-        # The live row matched, so nothing was revived and nothing was retired — but
-        # the displaced tombstone still had to reach the absence pass.
+        # The live row matched, so nothing was created, revived, or retired.
         bound_mysql_syncer.inventory_api.post.assert_not_awaited()
         bound_mysql_syncer.inventory_api.delete.assert_not_awaited()
-        assert (
-            bound_mysql_syncer.sync_items[
-                (SyncInventoryEntityTypeEnum.TABLE, tombstone.id)
-            ].status
-            == SyncStatusEnum.SUCCESS
-        )
