@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""End-to-end handoff between the sync generator and the orphan-head filter.
+"""Define the end-to-end handoff between the sync generator and the orphan-head filter.
 
 One tree, readable by both halves, asserts the refusal and arming outcomes
 for every strip shape the shipped advice claims to cover.
@@ -21,9 +21,7 @@ for every strip shape the shipped advice claims to cover.
 
 from __future__ import annotations
 
-import importlib.util
 import shutil
-import sys
 from pathlib import Path
 
 import pytest
@@ -32,44 +30,12 @@ from alembic.script import ScriptDirectory
 
 from app.sep.migrations._orphan_heads import empty_version_locations
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[4]
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "sync_alembic_version_locations.py"
+from .conftest import load_sync_alembic_version_locations, write_revision
 
-_spec = importlib.util.spec_from_file_location(
-    "sync_alembic_version_locations", _SCRIPT_PATH
-)
-assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-sync_alembic_version_locations = importlib.util.module_from_spec(_spec)
-sys.modules["sync_alembic_version_locations"] = sync_alembic_version_locations
-_spec.loader.exec_module(sync_alembic_version_locations)
+sync_alembic_version_locations = load_sync_alembic_version_locations()
 
 _ALPHA_ENTRY = "%(here)s/app/sep/apps/alpha/migrations/versions"
 _MAIN_ENTRY = sync_alembic_version_locations.MAIN_VERSIONS_ENTRY
-
-_MINIMAL_REVISION = """\
-revision = "{revision}"
-down_revision = None
-branch_labels = ({branch!r},)
-depends_on = None
-
-
-def upgrade() -> None:
-    pass
-
-
-def downgrade() -> None:
-    pass
-"""
-
-
-def _write_revision(versions_dir: Path, revision: str, branch: str) -> None:
-    """Write a no-op Alembic revision script under ``versions_dir``."""
-    versions_dir.mkdir(parents=True, exist_ok=True)
-    (versions_dir / f"{revision}_noop.py").write_text(
-        _MINIMAL_REVISION.format(revision=revision, branch=branch),
-        encoding="utf-8",
-    )
 
 
 def _build_handoff_tree(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -87,10 +53,10 @@ def _build_handoff_tree(tmp_path: Path) -> tuple[Path, Path, Path]:
     alpha_versions = alpha / "migrations" / "versions"
 
     (tmp_path / "app" / "sep" / "migrations").mkdir(parents=True)
-    _write_revision(main_versions, "main00000001", "sep_main")
+    write_revision(main_versions, "main00000001", "sep_main")
     alpha.mkdir(parents=True)
     (alpha / "__init__.py").write_text("", encoding="utf-8")
-    _write_revision(alpha_versions, "alpha0000001", "alpha")
+    write_revision(alpha_versions, "alpha0000001", "alpha")
 
     ini_path = tmp_path / "alembic.ini"
     ini_path.write_text(

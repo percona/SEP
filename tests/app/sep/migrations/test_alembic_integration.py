@@ -219,11 +219,10 @@ def sep_alembic_config_stripped_alerts(sep_alembic_config, tmp_path):
 def sep_alembic_config_empty_alerts_versions(sep_alembic_config, tmp_path):
     """Return a Config whose alerts location exists on disk but has no revisions.
 
-    The configured ``versions/`` directory is present (so ``Path.is_dir()``
-    would have left the filter fail-closed), yet it contributes no scripts to
-    the revision map — the shared evidence for both a package that lost its
-    ``__init__.py`` while leaving ``versions/``, and a package left intact
-    with an empty ``versions/``.
+    The configured ``versions/`` directory is present but contributes no scripts
+    to the revision map — the shared evidence for both a package that lost its
+    ``__init__.py`` while leaving ``versions/``, and a package left intact with
+    an empty ``versions/``.
 
     :param sep_alembic_config: The full-config fixture whose database is shared.
     :param tmp_path: Pytest's per-test temporary directory.

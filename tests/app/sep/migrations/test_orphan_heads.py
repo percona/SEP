@@ -22,7 +22,6 @@ the integration tests in ``test_alembic_integration.py``.
 """
 
 import logging
-import shutil
 from types import SimpleNamespace
 
 import pytest
@@ -35,7 +34,7 @@ from app.sep.migrations._orphan_heads import (
     skip_unresolvable_heads,
 )
 
-from .conftest import ALEMBIC_INI, ALERTS_HEAD, REPO_ROOT, UNKNOWN_REVISION
+from .conftest import ALEMBIC_INI, ALERTS_HEAD, UNKNOWN_REVISION, write_revision
 
 _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
 
@@ -106,7 +105,12 @@ def test_partition_heads_reports_several_unknown_ids(sep_script):
 
 def test_empty_version_locations_is_empty_when_every_entry_is_populated(sep_script):
     """Report nothing empty for the checked-in configuration."""
-    assert empty_version_locations(sep_script) == ()
+    assert empty_version_locations(sep_script) == (), (
+        "A configured [sep] version_locations entry contributes no revisions, so "
+        "skip_unresolvable_heads will read this tree as a stripped app and stop "
+        "treating an unresolvable revision as version skew. Add the app's first "
+        "revision, or drop the entry — don't relax this assertion."
+    )
 
 
 def test_empty_version_locations_reports_an_absent_entry(tmp_path):
@@ -141,14 +145,9 @@ def test_empty_version_locations_matches_populated_dir_via_symlink(tmp_path):
     configured paths against those parents falsely armed the filter on trees
     where the spelling differs (for example a ``/tmp`` symlink).
     """
+    revision = "symlink000001"
     real = tmp_path / "real" / "versions"
-    real.mkdir(parents=True)
-    shutil.copy(
-        REPO_ROOT
-        / "app/sep/apps/alerts/migrations/versions"
-        / "2026_04_20_1817-d21ad387df7a_create_alert_backup_table.py",
-        real / "2026_04_20_1817-d21ad387df7a_create_alert_backup_table.py",
-    )
+    write_revision(real, revision, "symlink")
     link_parent = tmp_path / "via_link"
     link_parent.mkdir()
     linked = link_parent / "versions"
@@ -160,7 +159,7 @@ def test_empty_version_locations_matches_populated_dir_via_symlink(tmp_path):
     script = ScriptDirectory.from_config(cfg)
 
     assert empty_version_locations(script) == ()
-    assert script.get_revision(ALERTS_HEAD) is not None
+    assert script.get_revision(revision) is not None
 
 
 def test_empty_version_locations_tolerates_unset_locations():

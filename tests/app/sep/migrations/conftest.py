@@ -15,7 +15,12 @@
 
 """Define the Alembic locations and revision ids the migration tests share."""
 
+from __future__ import annotations
+
+import importlib.util
+import sys
 from pathlib import Path
+from types import ModuleType
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
@@ -25,3 +30,49 @@ ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 ALERTS_HEAD = "d21ad387df7a"
 # A revision id no branch in the tree defines, standing in for version skew.
 UNKNOWN_REVISION = "deadbeef1234"
+
+MINIMAL_REVISION = """\
+revision = "{revision}"
+down_revision = None
+branch_labels = ({branch!r},)
+depends_on = None
+
+
+def upgrade() -> None:
+    pass
+
+
+def downgrade() -> None:
+    pass
+"""
+
+
+def write_revision(versions_dir: Path, revision: str, branch: str) -> None:
+    """Write a no-op Alembic revision script under ``versions_dir``.
+
+    :param versions_dir: Directory that should hold the revision script.
+    :param revision: Alembic revision id embedded in the script.
+    :param branch: Branch label recorded on the revision.
+    """
+    versions_dir.mkdir(parents=True, exist_ok=True)
+    (versions_dir / f"{revision}_noop.py").write_text(
+        MINIMAL_REVISION.format(revision=revision, branch=branch),
+        encoding="utf-8",
+    )
+
+
+def load_sync_alembic_version_locations() -> ModuleType:
+    """Load ``scripts/sync_alembic_version_locations.py`` as a module.
+
+    :return: The loaded sync script module.
+    """
+    script_path = REPO_ROOT / "scripts" / "sync_alembic_version_locations.py"
+    spec = importlib.util.spec_from_file_location(
+        "sync_alembic_version_locations", script_path
+    )
+    assert spec is not None, f"cannot load {script_path}"
+    assert spec.loader is not None, f"cannot load {script_path}"
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["sync_alembic_version_locations"] = module
+    spec.loader.exec_module(module)
+    return module
