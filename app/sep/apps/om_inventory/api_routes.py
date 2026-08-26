@@ -440,7 +440,7 @@ def _run_response(run: ProbeRun) -> ProbeRunResponse:
     )
 
 
-@router.get("/hosts", response_model=list[HostResponse])
+@router.get("/hosts")
 async def list_estate_hosts(
     session: SessionDep,
     has_service: bool | None = Query(
@@ -489,7 +489,7 @@ async def list_estate_hosts(
     ]
 
 
-@router.get("/hosts/{node_id}", response_model=HostResponse)
+@router.get("/hosts/{node_id}")
 async def get_estate_host(node_id: str, session: SessionDep) -> HostResponse:
     """Return one host, with its services.
 
@@ -504,7 +504,7 @@ async def get_estate_host(node_id: str, session: SessionDep) -> HostResponse:
     return _host_response(host, await list_services(session, node_id=node_id))
 
 
-@router.get("/services", response_model=list[ServiceResponse])
+@router.get("/services")
 async def list_estate_services(
     session: SessionDep,
     node_id: str | None = Query(default=None, description="Restrict to one host."),
@@ -531,7 +531,7 @@ async def list_estate_services(
     ]
 
 
-@router.get("/services/{service_id}", response_model=ServiceResponse)
+@router.get("/services/{service_id}")
 async def get_estate_service(service_id: str, session: SessionDep) -> ServiceResponse:
     """Return one service, by PMM's service id.
 
@@ -594,7 +594,7 @@ async def delete_estate_service(service_id: str, session: SessionDep) -> None:
     await delete_service(session, service)
 
 
-@router.get("/runs", response_model=list[ProbeRunResponse])
+@router.get("/runs")
 async def list_runs(
     session: SessionDep,
     limit: int = Query(default=20, ge=1, le=100),
@@ -631,7 +631,7 @@ async def list_runs(
     ]
 
 
-@router.get("/runs/{run_id}", response_model=ProbeRunDetail)
+@router.get("/runs/{run_id}")
 async def get_probe_run(run_id: UUID, session: SessionDep) -> ProbeRunDetail:
     """Return one sweep, with its per-host receipt.
 
@@ -653,7 +653,6 @@ async def get_probe_run(run_id: UUID, session: SessionDep) -> ProbeRunDetail:
 
 @router.post(
     "/runs",
-    response_model=ProbeRunAccepted,
     status_code=http_status.HTTP_202_ACCEPTED,
 )
 @require_minimum_role(UserRole.EDITOR)
@@ -710,7 +709,7 @@ async def trigger_probe(
     )
 
 
-@router.get("/config", response_model=list[SettingResponse])
+@router.get("/config")
 async def get_config(session: SessionDep) -> list[SettingResponse]:
     """Return this app's configuration: every field, its value and its origin.
 
@@ -742,7 +741,7 @@ async def get_config(session: SessionDep) -> list[SettingResponse]:
     )
 
 
-@router.patch("/config", response_model=list[SettingResponse])
+@router.patch("/config")
 @require_minimum_role(UserRole.ADMIN)
 async def patch_config(
     request: Request, body: SettingsPatch, session: SessionDep
