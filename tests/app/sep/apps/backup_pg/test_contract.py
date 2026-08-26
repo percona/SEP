@@ -169,6 +169,32 @@ class TestBackupPgContract(DerivedRouterContractTests):
         ]
         assert len(stanza_errors) == 1
 
+    def test_create_rejects_out_of_vocabulary_incremental_cycle(
+        self, contract_client
+    ) -> None:
+        """Reject ``monday`` at create with 422 before a task exists."""
+        body = build_valid_create_body(self.app_def)
+        assert body is not None
+        body["pgbackrest_incremental_cycle"] = "monday"
+        base = app_base_url(self.app_def)
+
+        response = post_create_body(contract_client, f"{base}/", self.app_def, body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_update_rejects_out_of_vocabulary_incremental_cycle(
+        self, contract_client
+    ) -> None:
+        """Reject ``monday`` at update with 422 so a bad save cannot persist."""
+        body = build_valid_create_body(self.app_def, task_name=SEEDED_TASK_NAME)
+        assert body is not None
+        body["pgbackrest_incremental_cycle"] = "monday"
+        base = app_base_url(self.app_def)
+
+        response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
 
 def test_update_protected_task_returns_409(regular_user: CasdoorUser) -> None:
     """Assert the derived PUT rejects a protected task with 409 via the update guard."""

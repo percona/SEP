@@ -21,12 +21,14 @@ import logging
 from collections import defaultdict
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from functools import cached_property
 from types import TracebackType
-from typing import Any, ClassVar, NamedTuple, Self
+from typing import Annotated, Any, ClassVar, NamedTuple, Self
 from uuid import uuid4
 
 from aiohttp import ClientError
+from annotated_types import Gt
 from async_lru import _LRUCacheWrapper, alru_cache
 from fastapi import HTTPException
 from pydantic import ConfigDict, Field, model_validator, UUID4, validate_call
@@ -57,6 +59,7 @@ from app.sep.models import (
     SyncInventoryEntityTypeEnum,
     SyncItem,
     SyncItemWrite,
+    SyncStatusEnum,
 )
 from app.sep.sync.exceptions import (
     ExecutorHostNotFoundError,
@@ -145,22 +148,21 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     APIs and abstract methods that can be overridden by subclasses.
 
     :cvar SYNC_TO_LIMIT: The upper limit for entity types that can be synchronized.
-    :vartype SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
     :param inventory_api: The remote API interface for interacting with the inventory
         system.
-    :type inventory_api: RemoteAPI
     :param sync_instance: The synchronization instance used to track sync processes.
-    :type sync_instance: SyncInstance | None
     :param sync_items: A dictionary mapping tuples of entity type and ID to SyncItem
         objects.
-    :type sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem]
     :param sync_id: The unique identifier for this synchronization.
-    :type sync_id: UUID4
     :param break_on_error: Flag indicating whether to stop synchronization on error.
         Defaults to False.
-    :type break_on_error: bool
+    :param stale_run_after: The age beyond which an idle in-progress run of this
+        syncer is presumed abandoned and reclaimed, unblocking the syncer after a
+        worker was killed mid-run. Must exceed the longest expected runtime of a
+        sync, or a live run gets reclaimed out from under itself. Defaults to 1 hour.
     :param _session: The asynchronous database session.
-    :type _session: AsyncSession
+    :param _snapshot_complete: Whether this run observed a complete generation of the
+        remote inventory, or ``None`` when the syncer does not produce one.
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
@@ -170,13 +172,18 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem] = {}
     sync_id: UUID4 = Field(default_factory=uuid4)
     break_on_error: bool = False
+    # Positivity uses the ``Gt`` annotation constraint rather than a
+    # ``field_validator`` because ``SyncOptions`` carries ``extra="allow"`` and
+    # forwards every extra key verbatim, and runtime-override coercion re-checks
+    # annotated-type constraints but does not re-run field validators.
+    stale_run_after: Annotated[timedelta, Gt(timedelta(0))] = timedelta(hours=1)
     _session: AsyncSession
+    _snapshot_complete: bool | None = None
 
     def __hash__(self) -> int:
         """Compute the hash based on the synchronization ID.
 
         :return: The hash value of the syncer instance.
-        :rtype: int
         """
         return hash(self.sync_id)
 
@@ -195,7 +202,11 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         if self.sync_instance is None:
             self.sync_instance = await SyncInstanceManager.create(
                 self._session,
-                SyncInstanceWrite(syncer=self.get_name()),
+                SyncInstanceWrite(
+                    syncer=self.get_name(),
+                    status=SyncStatusEnum.RUNNING,
+                ),
+                stale_after=self.stale_run_after,
                 id=self.sync_id,
             )
         return self
@@ -208,18 +219,23 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     ) -> None:
         """Exit the asynchronous context manager.
 
-        Marks any hanging SyncItems as failed and closes the database session.
+        Marks any hanging SyncItems as failed, records the run-level verdict, and
+        closes the database session. The hanging-item sweep runs first because the
+        run-level rollup reads the item statuses it writes.
 
         :param exc_type: The exception type, if any.
-        :type exc_type: type[BaseException]
         :param exc_val: The exception value, if any.
-        :type exc_val: BaseException
         :param exc_tb: The traceback, if any.
-        :type exc_tb: Any
         """
         await SyncInstanceManager.finish_hanging_items(
             self._session,
             self.sync_instance.id,
+        )
+        await SyncInstanceManager.finalize_run(
+            self._session,
+            self.sync_instance.id,
+            failed=exc_type is not None,
+            snapshot_complete=self._snapshot_complete,
         )
         await self._session.__aexit__(exc_type, exc_val, exc_tb)
 
@@ -230,7 +246,6 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         If a SyncInstance exists, its ID is assigned to the sync_id attribute.
 
         :return: The syncer instance with the updated sync_id.
-        :rtype: BaseSyncer
         """
         if self.sync_instance is not None:
             self.sync_id = self.sync_instance.id
@@ -617,6 +632,31 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         )
         return [CreatedSchema.model_validate(schema) for schema in schema_data]
 
+    async def hold_entity(
+        self,
+        entity_type: SyncInventoryEntityTypeEnum,
+        created_entity: CreatedEntity,
+    ) -> None:
+        """Close an entity's SyncItem without touching the inventory.
+
+        A held entity is one this run declined to retire. Its ``SyncItem`` was created
+        up-front from the local inventory, so leaving it open would let the
+        hanging-item sweep fail it and drag the run-level status down on an
+        otherwise healthy run.
+
+        :param entity_type: The type of the entity being held.
+        :param created_entity: The entity instance being held.
+        :raises SyncFailError: If closing the SyncItem fails and ``break_on_error``
+            is set.
+        """
+        logger.info(
+            "Holding %s %s: absent, but this generation is not evidence of removal",
+            entity_type.name,
+            created_entity.id,
+        )
+        async with self.manage_sync_item(entity_type, created_entity):
+            pass
+
     async def delete_node(self, created_node: CreatedNode) -> None:
         """Delete a node from the inventory system.
 
@@ -624,7 +664,6 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         SyncItem and performing the deletion via the inventory API.
 
         :param created_node: The node instance to be deleted.
-        :type created_node: CreatedNode
         """
         logger.debug("Deleting node %s from inventory", created_node.id)
         async with self.manage_sync_item(

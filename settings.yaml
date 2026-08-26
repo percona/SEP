@@ -57,6 +57,12 @@ default:
     # only ways to set it. BASE_URL must include the prefix when one is set.
     ROOT_PATH: ""
     ARTIFACT_DOWNLOAD_TTL: 600
+    # Celery beat waits this long for the HTTP API to answer /health before
+    # starting ungated. Raise it on a deployment whose application startup runs
+    # long; starting ungated is what lets an overdue periodic task fail on
+    # connect to SEP's own API.
+    API_READINESS_TIMEOUT: 60.0
+    API_READINESS_POLL_INTERVAL: 0.5
     CONNECTIVITY_CHECK_DEFAULT: False
     ALERT_DEFINITIONS_DIR: null
     OAUTH:
@@ -223,6 +229,8 @@ default:
       NAME: sep.db
     SYNCERS:
       - SYNCER: PMMSyncer
+        STALE_RUN_AFTER: 3600  # Seconds an idle in-progress run may sit before it is reclaimed; must exceed the longest expected sync
+        MISSING_GRACE_GENERATIONS: 2  # Consecutive complete syncs that must report an entity absent before it is removed; minimum 2
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys
@@ -309,6 +317,8 @@ development:
       - MODULE_NAME: tasks
     SYNCERS:
       - SYNCER: PMMSyncer
+        STALE_RUN_AFTER: 3600  # Seconds an idle in-progress run may sit before it is reclaimed; must exceed the longest expected sync
+        MISSING_GRACE_GENERATIONS: 2  # Consecutive complete syncs that must report an entity absent before it is removed; minimum 2
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys
@@ -333,6 +343,8 @@ development:
     RESULT_EXPIRES: 3600
     RESULT_PERSISTENT: True
     BEAT_DBURI: "sqlite:///schedule.db"
+    BEAT_ENGINE_OPTIONS:
+      POOL_PRE_PING: true  # Test beat/worker pooled connections on checkout; set false to opt out
   ALERTING:
     SOURCE_SUFFIX: ":dev"
 
@@ -363,6 +375,8 @@ production_docker:
     RESULT_BACKEND: redis://redis:6379/1
     RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
+    BEAT_ENGINE_OPTIONS:
+      POOL_PRE_PING: true  # Test beat/worker pooled connections on checkout; set false to opt out
   DATABASE:
     ENGINE: postgresql
     HOST: sep-db
@@ -407,6 +421,8 @@ production_docker:
       MAX_AGE: 604800
     SYNCERS:
       - SYNCER: PMMSyncer
+        STALE_RUN_AFTER: 3600  # Seconds an idle in-progress run may sit before it is reclaimed; must exceed the longest expected sync
+        MISSING_GRACE_GENERATIONS: 2  # Consecutive complete syncs that must report an entity absent before it is removed; minimum 2
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys

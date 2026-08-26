@@ -43,6 +43,7 @@ from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification, SECRET_STR_MASK
 from app.core.utils import json_serializer
 from app.sep.api.routes.settings import SEP_ADMIN_SETTINGS_CLASSES
+from app.sep.apps.alerts.config import alerts_settings
 from app.sep.apps.framework.registry import (
     collect_app_owned_settings_classes,
     resolve_app_settings_metadata,
@@ -286,7 +287,7 @@ class TestReducedActivationSettings:
         response = reduced_activation_client.get(f"{REDUCED_SETTINGS_PREFIX}/")
         assert response.status_code == status.HTTP_200_OK
         groups = {group["setting_class"] for group in response.json()["groups"]}
-        assert SettingClassEnum.ALERTS_SETTINGS.value not in groups
+        assert "AlertsSettings" not in groups
         assert SettingClassEnum.ALERT_SETTINGS.value in groups
 
     async def test_health_report_settings_not_wired_at_all(
@@ -296,14 +297,14 @@ class TestReducedActivationSettings:
         response = reduced_activation_client.get(f"{REDUCED_SETTINGS_PREFIX}/")
         assert response.status_code == status.HTTP_200_OK
         groups = {group["setting_class"] for group in response.json()["groups"]}
-        assert SettingClassEnum.HEALTH_REPORT_SETTINGS.value not in groups
+        assert "HealthReportSettings" not in groups
 
     async def test_patch_on_deactivated_class_is_not_found(
         self, reduced_activation_client: TestClient
     ) -> None:
         """Reject a PATCH against the deactivated ``AlertsSettings`` class."""
         response = reduced_activation_client.patch(
-            f"{REDUCED_SETTINGS_PREFIX}/{SettingClassEnum.ALERTS_SETTINGS.value}",
+            f"{REDUCED_SETTINGS_PREFIX}/{'AlertsSettings'}",
             json={"ALERT_FOLDER_NAME": "Nope"},
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -313,8 +314,7 @@ class TestReducedActivationSettings:
     ) -> None:
         """Reject a DELETE against the deactivated ``AlertsSettings`` class."""
         response = reduced_activation_client.delete(
-            f"{REDUCED_SETTINGS_PREFIX}/{SettingClassEnum.ALERTS_SETTINGS.value}"
-            "/ALERT_FOLDER_NAME",
+            f"{REDUCED_SETTINGS_PREFIX}/{'AlertsSettings'}/ALERT_FOLDER_NAME",
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -339,8 +339,8 @@ class TestSepSettingsList:
         assert groups == {
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
-            SettingClassEnum.ALERTS_SETTINGS.value,
-            SettingClassEnum.HEALTH_REPORT_SETTINGS.value,
+            "AlertsSettings",
+            "HealthReportSettings",
             SettingClassEnum.SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
             SettingClassEnum.ALERT_SETTINGS.value,
@@ -388,7 +388,7 @@ class TestSepSettingsList:
         assert response.status_code == status.HTTP_200_OK
         alerts_group = _find_group(
             response.json(),
-            SettingClassEnum.ALERTS_SETTINGS.value,
+            "AlertsSettings",
         )
         assert alerts_group["is_app_owned"] is True
         assert alerts_group["app_id"] == "alerts"
@@ -410,7 +410,7 @@ class TestSepSettingsList:
         assert response.status_code == status.HTTP_200_OK
         alerts_group = _find_group(
             response.json(),
-            SettingClassEnum.ALERTS_SETTINGS.value,
+            "AlertsSettings",
         )
         assert alerts_group["is_app_owned"] is True
         assert alerts_group["app_id"] == "alerts"
@@ -578,14 +578,23 @@ class TestSepSettingsGet:
         assert body["key_path"] == ["SESSION_REFRESH", "MAX_AGE"]
         assert "__".join(body["key_path"]) == body["key"]
 
-    async def test_unknown_class_returns_422(
+    async def test_unknown_class_returns_404(
         self, api_admin_client: TestClient
     ) -> None:
-        """Reject an unknown settings class with 422 via FastAPI's enum validation."""
+        """Reject an unknown settings class with 404; the path param is an unconstrained str."""
         response = api_admin_client.get(
             "/api/sep/admin/settings/NonExistentSettings/SYNC_REFRESH_TIME"
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_storage_token_as_path_param_returns_404(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Reject the storage token ``SEP_SETTINGS``; the path speaks the class ``__name__``."""
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEP_SETTINGS/SYNC_REFRESH_TIME"
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_unknown_key_returns_404(self, api_admin_client: TestClient) -> None:
         """Return 404 for an unknown key on a wired class."""
@@ -624,6 +633,16 @@ class TestSepSettingsPatch:
         assert len(rows) == 1
         assert rows[0].key == "SYNC_REFRESH_TIME"
         assert rows[0].value == new_value
+
+    async def test_storage_token_as_path_param_returns_404(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Reject PATCH against the storage token; the path speaks the class ``__name__``."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEP_SETTINGS",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_materializer_field_footer_template_is_patchable(
         self,
@@ -1375,6 +1394,81 @@ class TestSepSettingsDelete:
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    async def test_storage_token_as_path_param_returns_404(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Reject DELETE against the storage token; the path speaks the class ``__name__``."""
+        response = api_admin_client.delete(
+            "/api/sep/admin/settings/SEP_SETTINGS/SYNC_REFRESH_TIME"
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+class TestSepSettingsAppOwnedAlerts:
+    """Resolve the app-owned ``AlertsSettings`` class by its ``__name__``."""
+
+    async def test_get_alerts_setting(self, api_admin_client: TestClient) -> None:
+        """Return one field from ``GET /settings/AlertsSettings/{key}``."""
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/AlertsSettings/ALERT_FOLDER_NAME"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["setting_class"] == "AlertsSettings"
+        assert body["key"] == "ALERT_FOLDER_NAME"
+
+    async def test_storage_token_as_path_param_returns_404(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Reject the storage token ``ALERTS_SETTINGS`` the same way as ``SEP_SETTINGS``."""
+        get_response = api_admin_client.get(
+            "/api/sep/admin/settings/ALERTS_SETTINGS/ALERT_FOLDER_NAME"
+        )
+        assert get_response.status_code == status.HTTP_404_NOT_FOUND
+
+        patch_response = api_admin_client.patch(
+            "/api/sep/admin/settings/ALERTS_SETTINGS",
+            json={"ALERT_FOLDER_NAME": "Should Not Persist"},
+        )
+        assert patch_response.status_code == status.HTTP_404_NOT_FOUND
+
+        delete_response = api_admin_client.delete(
+            "/api/sep/admin/settings/ALERTS_SETTINGS/ALERT_FOLDER_NAME"
+        )
+        assert delete_response.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_patch_and_delete_alerts_setting(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """Persist and clear an ``AlertsSettings`` override through value-form paths."""
+        try:
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/AlertsSettings",
+                json={"ALERT_FOLDER_NAME": "Patched Alerts"},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            assert alerts_settings.ALERT_FOLDER_NAME == "Patched Alerts"
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class="ALERTS_SETTINGS"
+            )
+            assert len(rows) == 1
+            assert rows[0].key == "ALERT_FOLDER_NAME"
+            assert rows[0].value == "Patched Alerts"
+
+            deleted = api_admin_client.delete(
+                "/api/sep/admin/settings/AlertsSettings/ALERT_FOLDER_NAME"
+            )
+            assert deleted.status_code == status.HTTP_204_NO_CONTENT
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class="ALERTS_SETTINGS"
+            )
+            assert rows == []
+        finally:
+            alerts_settings._set_snapshot({})
+
 
 @pytest.mark.asyncio
 class TestSepSettingsNestedOverrides:
@@ -1970,7 +2064,7 @@ class TestSepOverridesLifespanWiring:
                 (SettingClassEnum.SETTINGS, "PMM"),
                 (SettingClassEnum.SETTINGS, "LOGGING"),
                 (SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"),
-                (SettingClassEnum.ALERTS_SETTINGS, "BACKUP_INTERVAL"),
+                ("AlertsSettings", "BACKUP_INTERVAL"),
                 (SettingClassEnum.SEP_SETTINGS, "APP_DRAIN"),
             }
         finally:
