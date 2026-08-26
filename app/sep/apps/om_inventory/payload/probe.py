@@ -319,7 +319,26 @@ def collect_server_processes():
     return processes
 
 
-def find_unregistered(processes, targets):
+def matched_process_pids(processes, targets):
+    """Return the pid of every process :func:`match_process` already attributed.
+
+    Resolved the same way :func:`probe` resolves it per target, so :func:`main` can
+    tell :func:`find_unregistered` which processes are already spoken for -- before
+    it applies its own, coarser port filter.
+
+    :param processes: Every server process found on the host.
+    :param targets: The configured targets, each carrying a ``port``.
+    :return: The pids already attributed to a target.
+    """
+    matched = set()
+    for target in targets:
+        process = match_process(processes, target.get("port"))
+        if process is not None and process.get("pid") is not None:
+            matched.add(process["pid"])
+    return matched
+
+
+def find_unregistered(processes, targets, matched_pids=frozenset()):
     """Return the server processes no target accounts for.
 
     A "target" is a service PMM has registered and asked us to probe, identified by
@@ -330,10 +349,17 @@ def find_unregistered(processes, targets):
 
     A process whose port could not be determined is reported as unregistered rather
     than dropped: it cannot be matched to a target, and silently discarding a running
-    database would be exactly the dishonesty this list exists to prevent.
+    database would be exactly the dishonesty this list exists to prevent. That rule
+    on its own double-counts one case, though: a lone mongod with no explicit port has
+    no port to match here either, so without ``matched_pids`` it would land in this
+    list *and* be the process :func:`match_process` already attributed to a target --
+    one running database reported as both a healthy service and a stranger.
+    ``matched_pids`` is how :func:`main` excludes it before the port filter runs.
 
     :param processes: Every server process found on the host.
     :param targets: The configured targets, each carrying a ``port``.
+    :param matched_pids: Pids :func:`match_process` already attributed to a target;
+        excluded regardless of what the port filter below would otherwise say.
     :return: The processes that matched no target.
     """
     registered_ports = {
@@ -342,7 +368,8 @@ def find_unregistered(processes, targets):
     return [
         process
         for process in processes
-        if process.get("port") is None or process["port"] not in registered_ports
+        if process.get("pid") not in matched_pids
+        and (process.get("port") is None or process["port"] not in registered_ports)
     ]
 
 
@@ -782,7 +809,12 @@ def main():
     # inventing an identity for a database PMM does not monitor would commit to a
     # shape before anyone needs it. Dropping them instead would let the estate view
     # claim a host is empty while a mongod is running on it.
-    host_record["unregistered_mongods"] = find_unregistered(processes, targets)
+    # Resolved before the port filter runs, so a process match_process already gave a
+    # target -- including the single-process shortcut, which has no port of its own to
+    # match on -- is not also reported as a stranger here.
+    host_record["unregistered_mongods"] = find_unregistered(
+        processes, targets, matched_process_pids(processes, targets)
+    )
     print(json.dumps(host_record, default=str), flush=True)
 
     for target in targets:
