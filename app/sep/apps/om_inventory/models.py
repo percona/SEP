@@ -43,10 +43,12 @@ the schema below is a bare string rather than
 ``sqlalchemy_celery_beat`` makes the same trade with ``celery_schema``.
 """
 
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
+from pydantic import BaseModel, Field
 from sqlalchemy import Column, ForeignKey, Index, JSON, Text, text
 from sqlalchemy import Enum as EnumField
 from sqlalchemy.dialects import postgresql
@@ -403,3 +405,230 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
         ),
     )
     error: str | None = SQLField(default=None)
+
+
+# api_routes.py's request/response DTOs, moved here to match the sibling apps'
+# convention (report, mysql_backups, atw all keep theirs in their own models.py)
+# rather than declaring them inline in the routes file. Plain ``pydantic.BaseModel``
+# subclasses, not table models -- unlike everything above them in this file.
+
+
+class ProbeCounts(BaseModel):
+    """Count what one sweep reached.
+
+    ``resolved`` versus ``answered`` is the diagnostic split: the first says the
+    service mapped to a live executor host, the second says the node ran the payload.
+    A sweep with ``resolved=9, answered=0`` is a healthy mapping and broken executors.
+
+    :param services_total: MongoDB services inventory reported.
+    :param services_resolved: ...of which mapped to a live executor host.
+    :param services_orphaned: ...of which did not. Not an error.
+    :param services_answered: Services that returned a usable probe record.
+    :param hosts_total: Hosts in scope this sweep, service or no service.
+    :param hosts_probeable: ...of which had a usable executor to dispatch to.
+    :param hosts_answered: Hosts that returned a usable record.
+    """
+
+    services_total: int
+    services_resolved: int
+    services_orphaned: int
+    services_answered: int
+    # A sweep attempts hosts too, and has since a host became probeable for its own
+    # sake. Counting only services makes a refresh of a host with no database read as
+    # "0 of 0", which is indistinguishable from a run that did nothing.
+    hosts_total: int = 0
+    hosts_probeable: int = 0
+    hosts_answered: int = 0
+
+
+class ProbeRunResponse(BaseModel):
+    """One sweep's record.
+
+    :param run_id: The sweep's id.
+    :param status: ``running`` / ``success`` / ``partial`` / ``failed``.
+    :param started_at: When it began.
+    :param finished_at: When it reached a terminal status; ``None`` while running.
+    :param counts: What it reached.
+    :param scope: The hosts it was asked to refresh, or ``None`` for the whole
+        estate. Without it the counters cannot be read: "9 of 13 answered" means
+        something different when the run was only ever asked about one host.
+    :param error: The failure detail when the sweep itself raised.
+    """
+
+    run_id: UUID
+    status: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    counts: ProbeCounts
+    scope: list[str] | None = None
+    error: str | None = None
+
+
+class ProbeNodeService(BaseModel):
+    """One service on a host, as this sweep saw it.
+
+    :param service_id: **PMM's** service UUID, or ``None`` where inventory holds none.
+    :param service_name: Its name, so a reader is not left joining UUIDs by hand.
+    :param answered: Whether the host returned a usable record for it.
+    :param error: Why it did not, when it did not.
+    """
+
+    service_id: str | None = None
+    service_name: str | None = None
+    answered: bool = False
+    error: str | None = None
+
+
+class ProbeNode(BaseModel):
+    """One **host** this sweep attempted, and what came of it.
+
+    Host-oriented, because a sweep attempts hosts. A flat list of services -- which
+    this was -- cannot show a machine carrying a PMM client and no database, however
+    many times it is probed, and that machine is the case OM most exists to describe.
+
+    One dispatch covers every service on a host, so the host owns the timing and the
+    failure and its services carry only what is theirs. Previously the duration was
+    repeated identically across a host's services, which read as several measurements
+    when it was one.
+
+    :param node_id: **PMM's** node id, the key OM holds this host under.
+    :param host_name: The node's registered name.
+    :param executor_host: The client its probe ran on; ``None`` when none matched.
+    :param resolution: ``name`` / ``address`` / ``orphaned`` -- how that client was
+        matched, or that it was not. Orphaned is why nothing ran, not an error.
+    :param answered: Whether the *host* returned a record. A different question from
+        whether its services did: a host with no database answers perfectly well and
+        has no services at all.
+    :param duration_seconds: The host's wall-clock, dispatch to collected output.
+    :param task_history_id: The dispatch's task history id, so a reader can open the
+        probe's raw output. ``None`` when the dispatch never got one back.
+    :param error: The host-level failure, when its probe failed.
+    :param services: The services on it, empty when there are none.
+    """
+
+    node_id: str
+    host_name: str | None = None
+    executor_host: str | None = None
+    resolution: str
+    answered: bool = False
+    duration_seconds: float | None = None
+    task_history_id: int | None = None
+    error: str | None = None
+    services: list[ProbeNodeService] = Field(default_factory=list)
+
+
+class ProbeRunDetail(ProbeRunResponse):
+    """One sweep, with everything it recorded.
+
+    Kept apart from the list shape on purpose: a sweep's nodes run to a few hundred
+    records, so returning them for every row of a 25-run history would make the list
+    an order of magnitude larger to serve a page that shows one run at a time.
+
+    :param nodes: What the sweep attempted per host.
+    """
+
+    nodes: list[ProbeNode] = Field(default_factory=list)
+
+
+class TriggerRequest(BaseModel):
+    """Ask for a refresh of named hosts rather than the whole estate.
+
+    :param node_ids: PMM's node ids. Empty, or the whole body absent, means every
+        host OM holds -- which is what the scheduled sweep does.
+    """
+
+    node_ids: list[str] = Field(default_factory=list)
+
+
+class ProbeRunAccepted(BaseModel):
+    """Acknowledge a queued sweep.
+
+    Returned with ``202``: a sweep dispatches Nomad jobs and takes tens of seconds, so
+    it is never performed synchronously.
+
+    :param run_id: The queued sweep's id.
+    :param status: Always ``running`` at this point.
+    :param started_at: When the run row was created.
+    :param scope: The hosts it will refresh, or ``None`` for the whole estate.
+    """
+
+    run_id: UUID
+    status: str
+    started_at: datetime
+    scope: list[str] | None = None
+
+
+class ServiceResponse(BaseModel):
+    """One MongoDB service PMM has registered, as OM currently holds it.
+
+    Keyed on **PMM's** service id, which is the whole benefit of storing it that way:
+    the path and the payload carry the id every consumer already has, with nothing to
+    translate on either side.
+
+    :param service_id: PMM's service id.
+    :param node_id: The host it runs on.
+    :param name: The service name as PMM registered it.
+    :param port: The port it listens on.
+    :param role: What the probe found it to be, when a probe determined one.
+    :param observed: Everything collected, with its own ``collected_at``. Empty when
+        this service has never been successfully probed.
+    :param first_seen_at: When OM first wrote a row for it.
+    :param last_attempt_at: When a run last targeted it. ``None`` means no run ever
+        has, which is different from having tried and failed.
+    :param last_success_at: When it last answered. This is the data's age.
+    :param failing_since: The first failure after the last success; ``None`` while
+        healthy.
+    :param consecutive_failures: Failures since the last success.
+    :param last_error: The most recent failure detail.
+    """
+
+    service_id: str
+    node_id: str
+    name: str | None = None
+    port: int | None = None
+    role: str | None = None
+    observed: dict[str, Any] = Field(default_factory=dict)
+    first_seen_at: datetime
+    last_attempt_at: datetime | None = None
+    last_success_at: datetime | None = None
+    failing_since: datetime | None = None
+    consecutive_failures: int = 0
+    last_error: str | None = None
+
+
+class HostResponse(BaseModel):
+    """One host, with the services OM knows are on it.
+
+    A host is a row whether or not any MongoDB was found on it: that is what makes
+    "which hosts have no database" a query rather than an absence, and it is the only
+    way a machine that has never run one appears at all.
+
+    :param node_id: PMM's node id.
+    :param name: The node's registered name.
+    :param address: The node's registered address.
+    :param executor_host: The Nomad client serving it. ``None`` means nothing can be
+        run there, which is a fact about the estate rather than a probe failure.
+    :param observed: Everything collected about the host, including
+        ``unregistered_mongods`` where the probe found a database PMM has no service
+        for. Empty when the host has never been successfully probed.
+    :param first_seen_at: When OM first wrote a row for it.
+    :param last_attempt_at: When a run last probed it.
+    :param last_success_at: When it last answered.
+    :param failing_since: The first failure after the last success.
+    :param consecutive_failures: Failures since the last success.
+    :param last_error: The most recent failure detail.
+    :param services: The services on it. Empty is a meaningful answer, not a gap.
+    """
+
+    node_id: str
+    name: str
+    address: str | None = None
+    executor_host: str | None = None
+    observed: dict[str, Any] = Field(default_factory=dict)
+    first_seen_at: datetime
+    last_attempt_at: datetime | None = None
+    last_success_at: datetime | None = None
+    failing_since: datetime | None = None
+    consecutive_failures: int = 0
+    last_error: str | None = None
+    services: list[ServiceResponse] = Field(default_factory=list)
