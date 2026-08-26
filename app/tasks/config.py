@@ -62,6 +62,28 @@ def _validate_hook_module_root(root: str) -> str:
 HookModuleRoot = Annotated[str, AfterValidator(_validate_hook_module_root)]
 
 
+def _validate_syncer_name(name: str) -> str:
+    """Return ``name`` when it is a well-formed dotted syncer path, else raise.
+
+    :param name: A candidate :attr:`TasksSettings.INVENTORY_SYNC_SYNCER` value.
+    :return: The validated name, unchanged.
+    :raises ValueError: When ``name`` is blank or not a dotted path, in which
+        case it can only be read as the sync-all default or fail every firing.
+    """
+    if not is_dotted_module_path(name):
+        raise ValueError(
+            f"{name!r} is not a dotted 'module.ClassName' path, so it names no "
+            "syncer; omit the setting to run every configured syncer"
+        )
+    return name
+
+
+#: The value of :attr:`TasksSettings.INVENTORY_SYNC_SYNCER`. A blank string
+#: would otherwise be read as the sync-all default, silently widening a schedule
+#: that was pinned on purpose, and a whitespace-only one would fail every firing.
+SyncerName = Annotated[str, AfterValidator(_validate_syncer_name)]
+
+
 class PreExecutionCheckMode(StrEnum):
     """Define modes for the pre-execution connectivity check.
 
@@ -114,10 +136,12 @@ class TasksSettings(BaseYamlAppSettings):
         runtime-overridable). Defaults to ``None``.
     :param INVENTORY_SYNC_SYNCER: The fully qualified syncer
         (``"module.ClassName"``, matching ``BaseSyncer.get_name()``) the seeded
-        schedule targets; ``None`` runs every configured syncer. A name no
-        configured syncer matches is not rejected at seed time — the tasks
-        service does not import the sep syncers — so every firing of the
-        schedule fails instead. Read at startup. Defaults to ``None``.
+        schedule targets; ``None`` runs every configured syncer. Must be a
+        dotted path, so a blank value is rejected rather than read as the
+        sync-all default. A well-formed name that no configured syncer matches
+        is still not rejected at seed time — the tasks service does not import
+        the sep syncers — so every firing of the schedule fails instead. Read at
+        startup. Defaults to ``None``.
     :param LOG_STREAM_CAP_BYTES: The maximum captured-log bytes retained per
         ``(task_history_id, source, stream)``. As a stream grows past the cap
         the writer drops the oldest chunks, keeping a bounded recent tail so a
@@ -158,7 +182,7 @@ class TasksSettings(BaseYamlAppSettings):
         default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS)
     )
     INVENTORY_SYNC_INTERVAL: IntervalSchedule | None = None
-    INVENTORY_SYNC_SYNCER: str | None = None
+    INVENTORY_SYNC_SYNCER: SyncerName | None = None
     LOG_STREAM_CAP_BYTES: PositiveInt = hot_field(104857600, advanced=True)
     LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt = hot_field(1000, advanced=True)
     HOOK_MODULE_ALLOWLIST: tuple[HookModuleRoot, ...] = not_overridable_field(

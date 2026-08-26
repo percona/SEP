@@ -549,6 +549,18 @@ class TestInventorySyncSchedule:
             True,
             id="empty-syncer-means-sync-all",
         ),
+        pytest.param(
+            json.dumps({"execution_data": {"meta": {"syncer": {"bad": True}}}}),
+            PMM_SYNCER,
+            True,
+            id="non-string-syncer-fails-closed",
+        ),
+        pytest.param(
+            json.dumps({"execution_data": {"meta": {"syncer": "   "}}}),
+            PMM_SYNCER,
+            True,
+            id="blank-syncer-fails-closed",
+        ),
     ],
 )
 def test_schedule_covers_syncer(

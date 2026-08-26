@@ -18,6 +18,7 @@ import re
 from typing import Any
 
 import pytest
+from sqlalchemy_celery_beat.models import Period
 
 from app import BASE_DIR
 from app.core.auth.config import AuthSettings
@@ -32,6 +33,7 @@ from app.sep.apps.framework.registry import (
 from app.sep.config import SEPSettings
 from app.sep.routes.artifacts import collect_base_dirs
 from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
+from app.sep.sync.syncers.pmm import PMMSyncer
 from app.tasks.config import TasksSettings
 from app.tasks.settings.routes import TASKS_ADMIN_SETTINGS_CLASSES
 from tests.app.sep.conftest import REDUCED_ACTIVATION
@@ -72,6 +74,9 @@ SHARED_DATABASE_NAME = "sep"
 """The one database PMM's ``PMM_ENABLE_SEP`` provisions for all three services."""
 
 ALLOWLIST_SIZE = 12
+
+#: The inventory-sync cadence the baked profile provisions.
+EMBEDDED_INVENTORY_SYNC_MINUTES = 15
 """How many entries the embedded override allowlist ships.
 
 Pinned so a silently truncated list -- which the policy suite's negative
@@ -148,6 +153,25 @@ def test_profile_constructs_every_settings_class():
     assert SEPSettings().DIAGNOSTICS_DELIVERY is not None
     assert InventorySettings().DATABASE.NAME == SHARED_DATABASE_NAME
     assert TasksSettings().NOMAD.endpoint
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_profile_seeds_a_pmm_pinned_inventory_sync_schedule():
+    """Assert the profile resolves the values the inventory-sync seeder reads.
+
+    A YAML indentation or key regression would otherwise leave both settings at
+    their ``None`` defaults, silently dropping the seeded schedule — or worse,
+    keeping the interval and losing the pin, which widens the 15-minute firing
+    to every configured syncer.
+    """
+    settings = TasksSettings()
+
+    assert settings.INVENTORY_SYNC_INTERVAL is not None
+    assert (
+        settings.INVENTORY_SYNC_INTERVAL.every,
+        settings.INVENTORY_SYNC_INTERVAL.period,
+    ) == (EMBEDDED_INVENTORY_SYNC_MINUTES, Period.MINUTES)
+    assert PMMSyncer.get_name() == settings.INVENTORY_SYNC_SYNCER
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")

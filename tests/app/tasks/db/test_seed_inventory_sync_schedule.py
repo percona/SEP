@@ -31,6 +31,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlalchemy_celery_beat.models import IntervalSchedule, Period, PeriodicTask
+from sqlmodel import SQLModel
 
 import app.tasks.db.seed as seed_module
 from app.core.celery import utils as celery_utils
@@ -59,6 +60,23 @@ async def beat_maker_fixture() -> AsyncIterator[async_sessionmaker[AsyncSession]
     engine = engine.execution_options(schema_translate_map={"celery_schema": None})
     async with engine.begin() as conn:
         await conn.run_sync(PeriodicTask.__table__.metadata.create_all)
+    try:
+        yield get_async_session_maker_from_engine(engine)
+    finally:
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture(name="tasks_maker")
+async def tasks_maker_fixture() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """Provide a session maker bound to an in-memory tasks DB."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:
@@ -276,3 +294,22 @@ async def test_unreadable_beat_store_skips_the_default(configured, mocker) -> No
     )
 
     assert await seed_module._default_inventory_sync_schedule() is None
+
+
+@pytest.mark.asyncio
+async def test_startup_seeds_the_schedule(configured, beat_maker, tasks_maker, mocker):
+    """Assert startup itself provisions the schedule, not just the seeder.
+
+    Every other test in this module drives ``seed_system_periodic_tasks``
+    directly, so none of them would notice ``init_tasks_db`` losing the call.
+    Both databases are real here: the tasks tables the system-task half writes,
+    and the beat store the assertion reads.
+    """
+    mocker.patch.object(
+        seed_module, "get_async_session_maker", return_value=tasks_maker
+    )
+
+    await seed_module.init_tasks_db()
+
+    (row,) = await _seeded_rows(beat_maker)
+    assert json.loads(row.kwargs)["execution_data"]["meta"]["syncer"] == PMM_SYNCER

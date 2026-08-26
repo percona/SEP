@@ -634,7 +634,7 @@ def _schedule_covers_syncer(row: PeriodicTask, syncer: str | None) -> bool:
     execution_data = decoded.get("execution_data")
     meta = execution_data.get("meta") if isinstance(execution_data, dict) else None
     existing = meta.get("syncer") if isinstance(meta, dict) else None
-    if not existing:
+    if not isinstance(existing, str) or not existing.strip():
         return True
     return syncer is None or existing == syncer
 

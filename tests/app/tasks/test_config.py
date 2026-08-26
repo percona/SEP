@@ -105,6 +105,12 @@ class TestTasksSettings:
             Period.MINUTES,
         )
 
+    def test_inventory_sync_syncer_rejects_blank_and_malformed_names(self):
+        """Assert a blank name is refused rather than read as the sync-all default."""
+        for value in ("", "   ", "not a path", "trailing."):
+            with pytest.raises(ValidationError):
+                TasksSettings(INVENTORY_SYNC_SYNCER=value)
+
     def test_log_retention_days_rejects_non_positive(self):
         """Assert LOG_RETENTION_DAYS rejects zero and negative values."""
         for value in (0, -1):
