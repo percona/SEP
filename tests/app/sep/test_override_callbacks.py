@@ -403,6 +403,43 @@ async def test_logging_and_app_drain_callbacks_registered() -> None:
         sep_main.sep_app.state.override_callbacks = original
 
 
+def test_build_sep_override_callbacks_registers_all_expected_keys() -> None:
+    """Assert every override-triggering field the SEP process rebinds gets a callback.
+
+    Each ``(settings class, field)`` key here is a setting whose change has an
+    effect outside the settings snapshot -- a client rebind, a logging
+    re-apply, a beat row rewrite -- so a key missing from the builder means an
+    override silently stops taking effect until the process restarts.
+    Comparing the full returned key set, rather than spot-checking a few,
+    makes an accidental omission fail this test instead of shipping quietly.
+    """
+    callbacks = sep_main.build_sep_override_callbacks(FastAPI())
+
+    assert set(callbacks) == {
+        (SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT"),
+        (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"),
+        (SettingClassEnum.SETTINGS, "PMM"),
+        (SettingClassEnum.SETTINGS, "LOGGING"),
+        (SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"),
+        (SettingClassEnum.ALERTS_SETTINGS, "BACKUP_INTERVAL"),
+        (SettingClassEnum.SEP_SETTINGS, "APP_DRAIN"),
+    }
+    assert callbacks[(SettingClassEnum.SETTINGS, "PMM")] is invalidate_pmm_clients
+    assert callbacks[(SettingClassEnum.SETTINGS, "LOGGING")] is apply_logging_dictconfig
+    assert (
+        callbacks[(SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL")]
+        is sep_main._reseed_system_periodic_tasks
+    )
+    assert (
+        callbacks[(SettingClassEnum.ALERTS_SETTINGS, "BACKUP_INTERVAL")]
+        is sep_main._reseed_system_periodic_tasks
+    )
+    assert (
+        callbacks[(SettingClassEnum.SEP_SETTINGS, "APP_DRAIN")]
+        is sep_main._reseed_system_periodic_tasks
+    )
+
+
 @pytest.mark.asyncio
 async def test_reseed_callback_reapplies_app_gating(mocker: MockerFixture) -> None:
     """Assert the re-seed re-applies app gating over the task set it just seeded.
