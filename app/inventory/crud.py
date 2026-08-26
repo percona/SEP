@@ -17,7 +17,7 @@
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TYPE_CHECKING
 
 from sqlalchemy import Update, update
 from sqlalchemy.exc import IntegrityError
@@ -39,6 +39,9 @@ from app.inventory.models import (
     ServiceSystemObservation,
     Table,
 )
+
+if TYPE_CHECKING:
+    from sqlmodel.sql.expression import SelectOfScalar
 
 
 def _retire(
@@ -163,7 +166,7 @@ class RetirableManagerMixin(BaseSQLModelManager):
         statements = [
             _retire(cls.Model, col(cls.Model.id) == entity_id, retired_at=retired_at)
         ]
-        parent_ids: Any = select(col(cls.Model.id)).where(
+        parent_ids: SelectOfScalar[int] = select(col(cls.Model.id)).where(
             col(cls.Model.id) == entity_id
         )
         for model, foreign_key in cls.retirement_subtree:
@@ -188,7 +191,7 @@ class RetirableManagerMixin(BaseSQLModelManager):
         :return: The UPDATE statements to run in order, in one transaction.
         """
         ancestors: list[Update] = []
-        entity_ids: Any = select(col(cls.Model.id)).where(
+        entity_ids: SelectOfScalar[int] = select(col(cls.Model.id)).where(
             col(cls.Model.id) == entity_id
         )
         manager = cls

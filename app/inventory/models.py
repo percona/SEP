@@ -42,7 +42,7 @@ class RetiredAtBase(SQLModel):
     )
 
 
-class RetirableSQLModel(RetiredAtBase):
+class RetirableSQLModel(RetiredAtBase, BaseSQLModel):
     """Store the retirement state of a tombstoned entity.
 
     An entity that vanishes upstream is retired rather than deleted, so the
@@ -148,7 +148,7 @@ class NodeBase(SQLModel):
         return self
 
 
-class Node(NodeBase, RetirableSQLModel, BaseSQLModel, table=True):
+class Node(NodeBase, RetirableSQLModel, table=True):
     """Represent a node in the inventory.
 
     :param address: The network address of the node.
@@ -280,7 +280,7 @@ class ServiceWrite(ServiceBase):
     )
 
 
-class Service(BaseSQLModel, RetirableSQLModel, ServiceBase, table=True):
+class Service(RetirableSQLModel, ServiceBase, table=True):
     """Represent a service running on a node in the inventory.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -396,7 +396,7 @@ class SchemaBase(SQLModel):
     service_id: int = SQLField(foreign_key="service.id", index=True, ondelete="CASCADE")
 
 
-class Schema(BaseSQLModel, RetirableSQLModel, SchemaBase, table=True):
+class Schema(RetirableSQLModel, SchemaBase, table=True):
     """Represent a database schema within a service.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -515,7 +515,7 @@ class TableBase(SQLModel):
     )
 
 
-class Table(BaseSQLModel, RetirableSQLModel, TableBase, table=True):
+class Table(RetirableSQLModel, TableBase, table=True):
     """Represent a table within a schema.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
