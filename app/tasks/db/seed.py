@@ -648,11 +648,17 @@ async def _default_inventory_sync_schedule() -> SystemPeriodicTaskSchedule | Non
     ``kwargs.task_name`` the lookup filters on, so counting them would make the
     orphan cleanup drop the row on one boot and re-create it on the next.
 
-    A lookup failure skips the default rather than propagating: this runs at
-    startup, and a malformed persisted ``kwargs`` can fail inside the JSON
-    extraction the query performs. Skipping keeps the tasks service booting and
-    cannot double-schedule; a genuinely unreachable beat store still fails in
-    ``init_periodic_tasks_db``, which uses the same store.
+    A lookup failure does not propagate: this runs at startup, and a malformed
+    persisted ``kwargs`` can fail inside the JSON extraction the query performs.
+    It also must not simply skip the default, because omitting an entry hands it
+    to ``init_periodic_tasks_db``'s orphan cleanup — a data-level failure would
+    delete a schedule seeded on an earlier boot and stop the sync entirely. So
+    the failure path re-seeds a row this seeder already owns and withholds only
+    a first-time one, which neither double-schedules nor un-schedules. That
+    ownership question is answered by name alone, before the failing query runs,
+    so it does not repeat the JSON extraction. A genuinely unreachable beat
+    store fails both queries and then fails ``init_periodic_tasks_db`` too,
+    which uses the same store, so nothing is deleted there either.
 
     :return: The schedule to seed, or ``None``.
     """
@@ -660,17 +666,25 @@ async def _default_inventory_sync_schedule() -> SystemPeriodicTaskSchedule | Non
         return None
     syncer = tasks_settings.INVENTORY_SYNC_SYNCER
     session_maker = get_celery_beat_session_maker()
+    already_seeded = False
     try:
         async with session_maker() as session:
+            already_seeded = (
+                await PeriodicTaskManager.first(
+                    session, name=INVENTORY_SYNC_SCHEDULE_NAME
+                )
+                is not None
+            )
             rows = await PeriodicTaskManager.list_by_task_names(
                 session, INVENTORY_SYNC_TASK_NAME
             )
     except SQLAlchemyError:
         logger.exception(
-            "Could not read existing %s schedules; skipping the default schedule.",
+            "Could not read existing %s schedules; keeping any default this "
+            "seeder already owns rather than dropping it.",
             INVENTORY_SYNC_TASK_NAME,
         )
-        return None
+        return schedule if already_seeded else None
     covered = any(
         _schedule_covers_syncer(row, syncer)
         for row in rows

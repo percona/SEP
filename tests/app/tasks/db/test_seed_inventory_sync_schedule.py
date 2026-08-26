@@ -284,7 +284,9 @@ async def test_malformed_operator_kwargs_fails_closed(configured, beat_maker) ->
 
 
 @pytest.mark.asyncio
-async def test_unreadable_beat_store_skips_the_default(configured, mocker) -> None:
+async def test_unreadable_beat_store_skips_a_first_time_default(
+    configured, mocker
+) -> None:
     """Assert a failing pre-seed lookup skips the default instead of raising."""
     mocker.patch.object(
         seed_module.PeriodicTaskManager,
@@ -294,6 +296,30 @@ async def test_unreadable_beat_store_skips_the_default(configured, mocker) -> No
     )
 
     assert await seed_module._default_inventory_sync_schedule() is None
+
+
+@pytest.mark.asyncio
+async def test_unreadable_beat_store_keeps_an_already_seeded_default(
+    configured, beat_maker, mocker
+) -> None:
+    """Assert a failing lookup does not let the orphan cleanup drop the default.
+
+    Omitting the entry is not neutral: ``init_periodic_tasks_db`` deletes every
+    ``tasks__`` row it was not handed, so a data-level lookup failure would stop
+    the sync on a deployment that was already syncing.
+    """
+    await seed_module.seed_system_periodic_tasks()
+    mocker.patch.object(
+        seed_module.PeriodicTaskManager,
+        "list_by_task_names",
+        autospec=True,
+        side_effect=SQLAlchemyError("malformed persisted kwargs"),
+    )
+
+    await seed_module.seed_system_periodic_tasks()
+
+    (row,) = await _seeded_rows(beat_maker)
+    assert json.loads(row.kwargs)["execution_data"]["meta"]["syncer"] == PMM_SYNCER
 
 
 @pytest.mark.asyncio
