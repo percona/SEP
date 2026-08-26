@@ -291,6 +291,26 @@ class TestPatchConfig:
         )
 
     @pytest.mark.asyncio
+    async def test_repo_url_is_restricted_to_http_and_https(
+        self, api: AsyncClient
+    ) -> None:
+        """A ``file:`` URL is refused, not handed to ``urllib.request`` as-is.
+
+        ``REPO_URL`` is fetched by the payload to prove a host can reach Percona's
+        repository. A plain ``str`` would accept any scheme ``urllib.request``
+        understands, including ``file:`` and ``ftp:``, which is not a repository
+        reachability check at all.
+
+        :param api: The authenticated client.
+        """
+        response = await api.patch(
+            f"{BASE}/config", json={"REPO_URL": "file:///etc/passwd"}
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert om_inventory_settings.REPO_URL == DEFAULTS.REPO_URL
+
+    @pytest.mark.asyncio
     async def test_one_bad_key_rejects_the_whole_batch(self, api: AsyncClient) -> None:
         """Nothing is written when any key fails, so no partial apply is reachable.
 
