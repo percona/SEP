@@ -10333,6 +10333,7 @@
             "$ref": "#/components/schemas/SyncStatusEnum"
           },
           "syncer": {
+            "minLength": 1,
             "title": "Syncer",
             "type": "string"
           }

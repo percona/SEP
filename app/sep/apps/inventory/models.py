@@ -20,7 +20,7 @@ from typing import Any
 from pydantic import BaseModel, model_validator
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
-from app.core.utils.fields import EmptyStrToNone, UTCDatetime
+from app.core.utils.fields import EmptyStrToNone, NonEmptyStr, UTCDatetime
 from app.sep.models import SyncStatusEnum
 from app.sep.utils.forms import parse_crontab_form_fields, parse_interval_form_fields
 from app.tasks.models import INVENTORY_SYNC_TASK_NAME
@@ -37,7 +37,7 @@ class SyncRunSummary(BaseModel):
         remote inventory, or ``None`` when the syncer does not produce one.
     """
 
-    syncer: str
+    syncer: NonEmptyStr
     started_at: UTCDatetime
     finished_at: UTCDatetime | None
     status: SyncStatusEnum
