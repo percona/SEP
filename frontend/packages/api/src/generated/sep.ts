@@ -2059,6 +2059,10 @@ export interface paths {
      *     whether an override is in effect - so "why is it sweeping every 10 minutes"
      *     is answerable without also reading the deployment's YAML.
      *
+     *     ``CREDENTIALS_PATH`` is the one exception: its row is present, with ``value``
+     *     forced to ``None`` regardless of the deployment's real setting. See
+     *     :func:`_redact_config` for why the whole route is not gated instead.
+     *
      *     :param session: The database session.
      *     :return: One row per configuration field.
      */
@@ -2218,8 +2222,14 @@ export interface paths {
      * List Runs
      * @description Return recent sweeps, newest first.
      *
+     *     ``since`` / ``until`` filter on ``started_at`` before ``limit`` is applied, so
+     *     asking for last week is last week rather than "the twenty newest, then those
+     *     that happen to fall in the week".
+     *
      *     :param session: The database session.
      *     :param limit: How many to return.
+     *     :param since: Inclusive lower bound on ``started_at``.
+     *     :param until: Inclusive upper bound on ``started_at``.
      *     :return: The sweeps.
      */
     get: operations['om_inventory_list_runs_api_apps_om_inventory_runs_get'];
@@ -14573,6 +14583,10 @@ export interface operations {
     parameters: {
       query?: {
         limit?: number;
+        /** @description Inclusive lower bound on started_at. Omit for no lower bound. */
+        since?: string | null;
+        /** @description Inclusive upper bound on started_at. Omit for no upper bound. */
+        until?: string | null;
       };
       header?: never;
       path?: never;
