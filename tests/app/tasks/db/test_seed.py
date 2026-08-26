@@ -15,13 +15,15 @@
 
 """Define tests for the Tasks database seed module."""
 
+import json
 import subprocess
 import time
 
 import pytest
+from sqlalchemy_celery_beat.models import Period, PeriodicTask
 
 import app.tasks.db.seed as seed_module
-from app.sep.apps.inventory.models import INVENTORY_SYNC_TASK_NAME
+from app.core.celery.models import IntervalSchedule
 from app.tasks.config import tasks_settings
 from app.tasks.db.seed import (
     _CHECK_STALENESS_TASK,
@@ -41,9 +43,14 @@ from app.tasks.execution.executors.nomad.constants import (
 from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.models import (
     INTERNAL_TASK_NAMES,
+    INVENTORY_SYNC_TASK_NAME,
     SYNC_RUNNING_TASKS_TASK_NAME,
     TaskBackendEnum,
 )
+
+PMM_SYNCER = "app.sep.sync.syncers.pmm.PMMSyncer"
+MYSQL_SYNCER = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
+FIFTEEN_MINUTES = IntervalSchedule(every=15, period=Period.MINUTES)
 
 NOMAD_TEMPLATES_WITH_STALENESS = [
     NOMAD_RUN_COMMAND,
@@ -441,3 +448,113 @@ def test_purge_task_history_logs_periodic_task_seeded() -> None:
                 assert entry.task_name == "app.tasks.celery.purge_task_history_logs"
                 return
     raise AssertionError("tasks__purge_task_history_logs task not found")
+
+
+class TestInventorySyncSchedule:
+    """Test the default inventory-sync schedule entry builder."""
+
+    def test_returns_none_when_interval_unset(self, mocker) -> None:
+        """Assert no entry is built when INVENTORY_SYNC_INTERVAL is unset."""
+        mocker.patch.object(tasks_settings, "INVENTORY_SYNC_INTERVAL", None)
+
+        assert seed_module._inventory_sync_schedule() is None
+
+    def test_builds_entry_pinned_to_the_configured_syncer(self, mocker) -> None:
+        """Assert the entry carries the execute-by-name shape and the syncer."""
+        mocker.patch.object(tasks_settings, "INVENTORY_SYNC_INTERVAL", FIFTEEN_MINUTES)
+        mocker.patch.object(tasks_settings, "INVENTORY_SYNC_SYNCER", PMM_SYNCER)
+
+        schedule = seed_module._inventory_sync_schedule()
+
+        assert schedule is not None
+        (entry,) = schedule.tasks
+        assert entry.name == seed_module.INVENTORY_SYNC_SCHEDULE_NAME
+        assert entry.task_name == "app.tasks.celery.execute_task_by_name"
+        assert entry.extra_kwargs is not None
+        kwargs = json.loads(entry.extra_kwargs["kwargs"])
+        assert kwargs["task_name"] == INVENTORY_SYNC_TASK_NAME
+        assert kwargs["periodic_task_name"] == seed_module.INVENTORY_SYNC_SCHEDULE_NAME
+        assert kwargs["execution_data"]["meta"]["syncer"] == PMM_SYNCER
+
+    def test_builds_sync_all_entry_when_syncer_unset(self, mocker) -> None:
+        """Assert an unset syncer produces kwargs carrying no execution data."""
+        mocker.patch.object(tasks_settings, "INVENTORY_SYNC_INTERVAL", FIFTEEN_MINUTES)
+        mocker.patch.object(tasks_settings, "INVENTORY_SYNC_SYNCER", None)
+
+        schedule = seed_module._inventory_sync_schedule()
+
+        assert schedule is not None
+        (entry,) = schedule.tasks
+        assert entry.extra_kwargs is not None
+        kwargs = json.loads(entry.extra_kwargs["kwargs"])
+        assert kwargs["task_name"] == INVENTORY_SYNC_TASK_NAME
+        assert "execution_data" not in kwargs
+
+    def test_entry_uses_the_configured_interval(self, mocker) -> None:
+        """Assert the entry is seeded on the configured interval."""
+        mocker.patch.object(tasks_settings, "INVENTORY_SYNC_INTERVAL", FIFTEEN_MINUTES)
+
+        schedule = seed_module._inventory_sync_schedule()
+
+        assert schedule is not None
+        assert schedule.schedule == FIFTEEN_MINUTES
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "configured_syncer", "expected"),
+    [
+        pytest.param(
+            json.dumps({"execution_data": {"meta": {"syncer": PMM_SYNCER}}}),
+            PMM_SYNCER,
+            True,
+            id="same-syncer-blocks",
+        ),
+        pytest.param(
+            json.dumps({"execution_data": {"meta": {"syncer": MYSQL_SYNCER}}}),
+            PMM_SYNCER,
+            False,
+            id="other-syncer-does-not-block",
+        ),
+        pytest.param(
+            json.dumps({"task_name": INVENTORY_SYNC_TASK_NAME}),
+            PMM_SYNCER,
+            True,
+            id="sync-all-row-blocks",
+        ),
+        pytest.param(
+            json.dumps({"execution_data": {"meta": {"syncer": MYSQL_SYNCER}}}),
+            None,
+            True,
+            id="any-row-blocks-a-sync-all-default",
+        ),
+        pytest.param("", PMM_SYNCER, True, id="empty-kwargs-fails-closed"),
+        pytest.param(None, PMM_SYNCER, True, id="null-kwargs-fails-closed"),
+        pytest.param("[1, 2]", PMM_SYNCER, True, id="non-object-json-fails-closed"),
+        pytest.param("{not json", PMM_SYNCER, True, id="undecodable-fails-closed"),
+        pytest.param(
+            json.dumps({"execution_data": "not-a-dict"}),
+            PMM_SYNCER,
+            True,
+            id="non-mapping-execution-data-fails-closed",
+        ),
+        pytest.param(
+            json.dumps({"execution_data": {"meta": "not-a-dict"}}),
+            PMM_SYNCER,
+            True,
+            id="non-mapping-meta-fails-closed",
+        ),
+        pytest.param(
+            json.dumps({"execution_data": {"meta": {"syncer": ""}}}),
+            PMM_SYNCER,
+            True,
+            id="empty-syncer-means-sync-all",
+        ),
+    ],
+)
+def test_schedule_covers_syncer(
+    kwargs: str | None, configured_syncer: str | None, *, expected: bool
+) -> None:
+    """Assert an existing beat row is judged against the configured syncer."""
+    row = PeriodicTask(name="run_inventory-sync_15_minutes", kwargs=kwargs)
+
+    assert seed_module._schedule_covers_syncer(row, configured_syncer) is expected

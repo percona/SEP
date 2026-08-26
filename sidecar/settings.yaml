@@ -174,5 +174,7 @@ default:
       SSL_CAFILE: null
       SSL_CERTFILE: null
       SSL_KEYFILE: null
+    INVENTORY_SYNC_INTERVAL: 15 minutes
+    INVENTORY_SYNC_SYNCER: app.sep.sync.syncers.pmm.PMMSyncer
     SSL_CERTFILE: null
     SSL_KEYFILE: null
