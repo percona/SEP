@@ -384,17 +384,22 @@ class SyncInstanceManager(BaseSQLModelManager):
         session: AsyncSession,
         instance_id: UUID4,
     ) -> bool:
-        """Check whether a run still owns its SyncInstance.
+        """Check whether a run's SyncInstance has been reclaimed out from under it.
 
-        This is the fencing read a run performs before any destructive action, so it
-        queries the ``status`` column directly rather than reading it off an ORM
-        instance loaded earlier in the run, whose in-memory value would not reflect
-        a reclaim committed by another worker.
+        The check a run performs before any destructive action, so it queries the
+        ``status`` column directly rather than reading it off an ORM instance loaded
+        earlier in the run, whose in-memory value would not reflect a reclaim
+        committed by another worker.
+
+        This establishes that *this* run was not reclaimed, not that it is the
+        syncer's only run: the concurrent-run refusal in ``create`` reads and writes
+        non-atomically, so two runs can each hold a ``RUNNING`` instance and both
+        pass. Exclusivity needs an ownership primitive this does not provide.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
         :param instance_id: The ID of the ``SyncInstance`` to check.
-        :return: `True` while the instance is still ``RUNNING``, otherwise ``False``.
+        :return: ``True`` while the instance is still ``RUNNING``, otherwise ``False``.
         """
         query = select(col(SyncInstance.status)).where(
             col(SyncInstance.id) == instance_id,

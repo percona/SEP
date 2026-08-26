@@ -18,7 +18,7 @@
 import logging
 from collections.abc import Awaitable, Callable, Iterable
 from types import TracebackType
-from typing import Annotated, Any, ClassVar, Self
+from typing import Annotated, Any, ClassVar, Self, TypeVar
 
 from annotated_types import Ge
 from async_lru import alru_cache
@@ -36,6 +36,11 @@ from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.sync.models import BaseSyncer
 
 logger = logging.getLogger(__name__)
+
+# Ties an absent-entity batch to the deleter that retires it. A plain
+# ``Callable[[CreatedEntity], ...]`` would reject both deleters, whose parameters
+# are the narrower subclasses.
+_Retirable = TypeVar("_Retirable", bound=CreatedEntity)
 
 
 class PMMSyncer(BaseSyncer):
@@ -192,12 +197,13 @@ class PMMSyncer(BaseSyncer):
         return snapshot
 
     async def _owns_run(self) -> bool:
-        """Check whether this run still owns its SyncInstance.
+        """Check whether this run's SyncInstance has been reclaimed out from under it.
 
-        This fences every ledger write and every retirement: a run reclaimed while
-        it worked must perform neither.
+        Every ledger write and every retirement is gated on this: a run reclaimed
+        while it worked must perform neither. It does not establish that this is the
+        syncer's only run; see ``SyncInstanceManager.is_still_owned``.
 
-        :return: ``True`` while this run still owns its ``SyncInstance``.
+        :return: ``True`` while this run's ``SyncInstance`` is still ``RUNNING``.
         """
         return await SyncInstanceManager.is_still_owned(
             self._session,
@@ -219,8 +225,8 @@ class PMMSyncer(BaseSyncer):
     async def _retire_absent(
         self,
         entity_type: SyncInventoryEntityTypeEnum,
-        absent_entities: Iterable[CreatedEntity],
-        delete: Callable[[Any], Awaitable[None]],
+        absent_entities: Iterable[_Retirable],
+        delete: Callable[[_Retirable], Awaitable[None]],
         *,
         permitted: bool,
         filtered_external_ids: set[str],
