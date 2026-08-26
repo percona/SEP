@@ -1409,7 +1409,6 @@ class TestReferenceFieldAllowCustom:
 
 
 from app.sep.apps.framework.rules import (  # noqa: E402 — group near tests
-    CardinalityRule,
     F,
     FieldGate,
     truthy,
