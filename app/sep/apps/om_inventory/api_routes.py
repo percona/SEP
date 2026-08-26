@@ -63,6 +63,7 @@ from app.core.settings_override.api import (
 )
 from app.core.utils.fields import UTCDatetime
 from app.sep.apps.framework.api import schema_endpoint
+from app.sep.apps.om_inventory.celery import run_om_probe
 from app.sep.apps.om_inventory.config import (
     om_inventory_settings,
     OmInventorySettings,
@@ -700,11 +701,6 @@ async def trigger_probe(
         raise HTTPConflictException(detail=conflict_detail(blocking, node_ids))
 
     run = await ProbeRunManager.save(session, ProbeRun(scope=node_ids or None))
-
-    # Imported here rather than at module scope: the API process has no reason to load
-    # the dispatch stack, and importing celery.py at import time would pull it in.
-    from app.sep.apps.om_inventory.celery import run_om_probe
-
     run_om_probe.delay(str(run.id), node_ids or None)
     return ProbeRunAccepted(
         run_id=run.id,
