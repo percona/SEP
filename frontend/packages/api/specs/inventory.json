@@ -167,7 +167,7 @@
       },
       "JsonValue": {},
       "Node": {
-        "description": "Represent a node in the inventory.\n\n:param address: The network address of the node.\n:type address: NonEmptyStr\n:param name: The name of the node.\n:type name: NonEmptyStr\n:param external_id: An external identifier for the node. Must be unique for source,\n    as defined by composite index ix_node_external_id_source.\n:type external_id: NonEmptyStr | None\n:param source: The source from which the node information is derived. Must be unique\n    for external_id, as defined by composite index ix_node_external_id_source.\n:type source: SourceEnum | None\n:param type: The type of the node (e.g., remote, generic).\n:type type: NonEmptyStr\n:param services: A list of services associated with the node.\n:type services: list[Service]",
+        "description": "Represent a node in the inventory.\n\n:param address: The network address of the node.\n:param name: The name of the node.\n:param external_id: An external identifier for the node. Must be unique for source,\n    as defined by composite index ix_node_external_id_source.\n:param source: The source from which the node information is derived. Must be unique\n    for external_id, as defined by composite index ix_node_external_id_source.\n:param type: The type of the node (e.g., remote, generic).\n:param retired_at: When the node stopped being reported upstream, or None while\n    it is active.\n:param retirement_key: The discriminator carried inside every unique index.\n:param services: A list of services associated with the node.",
         "properties": {
           "address": {
             "minLength": 1,
@@ -206,6 +206,23 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
+          "retirement_key": {
+            "default": -1,
+            "title": "Retirement Key",
+            "type": "integer"
           },
           "source": {
             "anyOf": [
@@ -245,7 +262,7 @@
         "type": "object"
       },
       "NodeResponse": {
-        "description": "Represent a node API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param address: The network address of the node.\n:type address: NonEmptyStr\n:param name: The name of the node.\n:type name: NonEmptyStr\n:param external_id: An external identifier for the node.\n:type external_id: NonEmptyStr | None\n:param source: The source from which the node information is derived.\n:type source: SourceEnum | None\n:param type: The type of the node (e.g., remote, generic).\n:type type: NonEmptyStr\n:param services: A list of services associated with the node.\n:type services: list[Service]",
+        "description": "Represent a node API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:param address: The network address of the node.\n:param name: The name of the node.\n:param external_id: An external identifier for the node.\n:param source: The source from which the node information is derived.\n:param type: The type of the node (e.g., remote, generic).\n:param retired_at: When the node stopped being reported upstream, or None while\n    it is active.\n:param services: A list of services associated with the node.",
         "properties": {
           "address": {
             "minLength": 1,
@@ -284,6 +301,18 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
           },
           "services": {
             "items": {
@@ -331,7 +360,7 @@
         "type": "object"
       },
       "NodeWrite": {
-        "description": "Define the model for writing node data to the inventory.\n\n:param address: The network address of the node.\n:type address: NonEmptyStr\n:param name: The name of the node.\n:type name: NonEmptyStr\n:param external_id: An external identifier for the node, indexed for quick lookup.\n    Defaults to None.\n:type external_id: NonEmptyStr | None\n:param source: The source from which the node information is derived. Indexed for\n    quick lookup. Defaults to None.\n:type source: SourceEnum | None\n:param type: The type of the node (e.g., remote, generic). Defaults to \"generic\".\n:type type: NonEmptyStr",
+        "description": "Define the model for writing node data to the inventory.\n\n:param address: The network address of the node.\n:param name: The name of the node.\n:param external_id: An external identifier for the node, indexed for quick lookup.\n    Defaults to None.\n:param source: The source from which the node information is derived. Indexed for\n    quick lookup. Defaults to None.\n:param type: The type of the node (e.g., remote, generic). Defaults to \"generic\".",
         "properties": {
           "address": {
             "minLength": 1,
@@ -552,7 +581,7 @@
         "type": "string"
       },
       "Schema": {
-        "description": "Represent a database schema within a service.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param name: The name of the schema. Must be unique for service_id, as defined by\n    composite index ix_schema_name_service_id.\n:type name: NonEmptyStr\n:param service_id: The unique identifier of the service to which the schema belongs.\n    Must be unique for name, as defined by composite index\n    ix_schema_name_service_id.\n:type service_id: int\n:param service: The service to which the schema is associated.\n:type service: Service\n:param tables: A list of tables within the schema.\n:type tables: list[Table]",
+        "description": "Represent a database schema within a service.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:param name: The name of the schema. Must be unique for service_id, as defined by\n    composite index ix_schema_name_service_id.\n:param service_id: The unique identifier of the service to which the schema belongs.\n    Must be unique for name, as defined by composite index\n    ix_schema_name_service_id.\n:param service: The service to which the schema is associated.\n:param retired_at: When the schema stopped being reported upstream, or None\n    while it is active.\n:param retirement_key: The discriminator carried inside every unique index.\n:param tables: A list of tables within the schema.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -574,6 +603,23 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
+          "retirement_key": {
+            "default": -1,
+            "title": "Retirement Key",
+            "type": "integer"
           },
           "service_id": {
             "title": "Service Id",
@@ -601,7 +647,7 @@
         "type": "object"
       },
       "SchemaCompactResponse": {
-        "description": "Define a compact schema response without nested tables.\n\n:param id: The primary key for the schema. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param name: The name of the schema.\n:type name: NonEmptyStr\n:param service_id: The unique identifier of the service to which the schema belongs.\n:type service_id: int",
+        "description": "Define a compact schema response without nested tables.\n\n:param id: The primary key for the schema. Auto-incremented and not nullable.\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:param name: The name of the schema.\n:param service_id: The unique identifier of the service to which the schema belongs.\n:param retired_at: When the schema stopped being reported upstream, or None while\n    it is active.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -623,6 +669,18 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
           },
           "service_id": {
             "title": "Service Id",
@@ -650,7 +708,7 @@
         "type": "object"
       },
       "SchemaDetailResponse": {
-        "description": "Define the schema retrieve API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param name: The name of the schema.\n:type name: NonEmptyStr\n:param service_id: The unique identifier of the service to which the schema belongs.\n:type service_id: int\n:param service: The schema's service.\n:type service: Service",
+        "description": "Define the schema retrieve API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:param name: The name of the schema.\n:param service_id: The unique identifier of the service to which the schema belongs.\n:param service: The schema's service.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -672,6 +730,18 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
           },
           "service": {
             "$ref": "#/components/schemas/Service"
@@ -711,7 +781,7 @@
         "type": "object"
       },
       "SchemaResponse": {
-        "description": "Define the schema API response.\n\n:param id: The primary key for the schema. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param name: The name of the schema.\n:type name: NonEmptyStr\n:param service_id: The unique identifier of the service to which the schema belongs.\n:type service_id: int\n:param tables: A list of tables within the schema.\n:type tables: list[Table]",
+        "description": "Define the schema API response.\n\n:param id: The primary key for the schema. Auto-incremented and not nullable.\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:param name: The name of the schema.\n:param service_id: The unique identifier of the service to which the schema belongs.\n:param retired_at: When the schema stopped being reported upstream, or None while\n    it is active.\n:param tables: A list of tables within the schema.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -733,6 +803,18 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
           },
           "service_id": {
             "title": "Service Id",
@@ -794,7 +876,7 @@
         "type": "object"
       },
       "Service": {
-        "description": "Represent a service running on a node in the inventory.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param external_id: An external identifier for the service. Must be unique for\n    node_id, as defined by composite index ix_service_external_id_node_id.\n:type external_id: NonEmptyStr | None\n:param name: The name of the service.\n:type name: NonEmptyStr\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:type type: ServiceTypeEnum\n:param port: The port number on which the service is running. Must be unique for\n    node_id, as defined by composite index ix_service_port_node_id.\n:type port: int | None\n:param environment: The environment in which the service is running, if set.\n:type environment: str | None\n:param cluster: The cluster in which the service is running, if set.\n:type cluster: str | None\n:param replication_set: The replication set in which the service is running, if set.\n:type replication_set: str | None\n:param custom_labels: Custom labels associated with the service, if set.\n:param node_id: The unique identifier of the node on which the service is running.\n    Must be unique for external_id, as defined by composite index\n    ix_service_external_id_node_id, and for port, as defined by composite index\n    ix_service_port_node_id.\n:type node_id: int\n:param node: The node to which the service is associated.\n:type node: Node\n:param schemas: A list of schemas associated with the service.\n:type schemas: list[Schema]",
+        "description": "Represent a service running on a node in the inventory.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:param external_id: An external identifier for the service. Must be unique for\n    node_id, as defined by composite index ix_service_external_id_node_id.\n:param name: The name of the service.\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:param port: The port number on which the service is running. Must be unique for\n    node_id, as defined by composite index ix_service_port_node_id.\n:param environment: The environment in which the service is running, if set.\n:param cluster: The cluster in which the service is running, if set.\n:param replication_set: The replication set in which the service is running, if set.\n:param custom_labels: Custom labels associated with the service, if set.\n:param node_id: The unique identifier of the node on which the service is running.\n    Must be unique for external_id, as defined by composite index\n    ix_service_external_id_node_id, and for port, as defined by composite index\n    ix_service_port_node_id.\n:param node: The node to which the service is associated.\n:param retired_at: When the service stopped being reported upstream, or None\n    while it is active.\n:param retirement_key: The discriminator carried inside every unique index.\n:param schemas: A list of schemas associated with the service.",
         "properties": {
           "cluster": {
             "anyOf": [
@@ -889,6 +971,23 @@
             ],
             "title": "Replication Set"
           },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
+          "retirement_key": {
+            "default": -1,
+            "title": "Retirement Key",
+            "type": "integer"
+          },
           "type": {
             "$ref": "#/components/schemas/ServiceTypeEnum"
           },
@@ -915,7 +1014,7 @@
         "type": "object"
       },
       "ServiceDetailResponse": {
-        "description": "Define the service retrieve API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param external_id: An external identifier for the service.\n:type external_id: NonEmptyStr | None\n:param name: The name of the service.\n:type name: NonEmptyStr\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:type type: ServiceTypeEnum\n:param port: The port number on which the service is running.\n:type port: int | None\n:param environment: The environment in which the service is running, if set.\n:type environment: str | None\n:param cluster: The cluster in which the service is running, if set.\n:type cluster: str | None\n:param replication_set: The replication set in which the service is running, if set.\n:type replication_set: str | None\n:param custom_labels: Custom labels associated with the service, if set.\n:param node_id: The unique identifier of the node on which the service is running.\n:type node_id: int\n:param schemas: A list of schemas associated with the service.\n:type schemas: list[Schema]\n:param node: The service's node.\n:type node: Node",
+        "description": "Define the service retrieve API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:param external_id: An external identifier for the service.\n:param name: The name of the service.\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:param port: The port number on which the service is running.\n:param environment: The environment in which the service is running, if set.\n:param cluster: The cluster in which the service is running, if set.\n:param replication_set: The replication set in which the service is running, if set.\n:param custom_labels: Custom labels associated with the service, if set.\n:param node_id: The unique identifier of the node on which the service is running.\n:param schemas: A list of schemas associated with the service.\n:param node: The service's node.",
         "properties": {
           "cluster": {
             "anyOf": [
@@ -1012,6 +1111,18 @@
               }
             ],
             "title": "Replication Set"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
           },
           "schemas": {
             "items": {
@@ -1048,7 +1159,7 @@
         "type": "object"
       },
       "ServiceResponse": {
-        "description": "Define the service API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param external_id: An external identifier for the service.\n:type external_id: NonEmptyStr | None\n:param name: The name of the service.\n:type name: NonEmptyStr\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:type type: ServiceTypeEnum\n:param port: The port number on which the service is running.\n:type port: int | None\n:param environment: The environment in which the service is running, if set.\n:type environment: str | None\n:param cluster: The cluster in which the service is running, if set.\n:type cluster: str | None\n:param replication_set: The replication set in which the service is running, if set.\n:type replication_set: str | None\n:param custom_labels: Custom labels associated with the service, if set.\n:param node_id: The unique identifier of the node on which the service is running.\n:type node_id: int\n:param schemas: A list of schemas associated with the service.\n:type schemas: list[Schema]\n:param node: The node to which the service is associated.\n:type node: Node",
+        "description": "Define the service API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:param external_id: An external identifier for the service.\n:param name: The name of the service.\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:param port: The port number on which the service is running.\n:param environment: The environment in which the service is running, if set.\n:param cluster: The cluster in which the service is running, if set.\n:param replication_set: The replication set in which the service is running, if set.\n:param custom_labels: Custom labels associated with the service, if set.\n:param node_id: The unique identifier of the node on which the service is running.\n:param schemas: A list of schemas associated with the service.\n:param node: The node to which the service is associated.\n:param retired_at: When the service stopped being reported upstream, or None\n    while it is active.",
         "properties": {
           "cluster": {
             "anyOf": [
@@ -1145,6 +1256,18 @@
               }
             ],
             "title": "Replication Set"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
           },
           "schemas": {
             "items": {
@@ -1587,7 +1710,7 @@
         "type": "string"
       },
       "Table": {
-        "description": "Represent a table within a schema.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param name: The name of the table. Must be unique for schema_id, as defined by\n    composite index ix_table_name_schema_id.\n:type name: NonEmptyStr\n:param create: The SQL statement used to create the table.\n:type create: NonEmptyStr\n:param schema_id: The unique identifier of the schema to which the table belongs.\n    Must be unique for name, as defined by composite index ix_table_name_schema_id.\n:type schema_id: int\n:param database: The schema to which the table is associated.\n:type database: Schema",
+        "description": "Represent a table within a schema.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:param name: The name of the table. Must be unique for schema_id, as defined by\n    composite index ix_table_name_schema_id.\n:param create: The SQL statement used to create the table.\n:param schema_id: The unique identifier of the schema to which the table belongs.\n    Must be unique for name, as defined by composite index ix_table_name_schema_id.\n:param retired_at: When the table stopped being reported upstream, or None while\n    it is active.\n:param retirement_key: The discriminator carried inside every unique index.\n:param database: The schema to which the table is associated.",
         "properties": {
           "create": {
             "minLength": 1,
@@ -1620,6 +1743,23 @@
             "title": "Name",
             "type": "string"
           },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
+          "retirement_key": {
+            "default": -1,
+            "title": "Retirement Key",
+            "type": "integer"
+          },
           "schema_id": {
             "title": "Schema Id",
             "type": "integer"
@@ -1648,7 +1788,7 @@
         "type": "object"
       },
       "TableDetailResponse": {
-        "description": "Define the schema retrieve API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param name: The name of the table.\n:type name: NonEmptyStr\n:param create: The SQL statement used to create the table.\n:type create: NonEmptyStr\n:param schema_id: The foreign key referencing the schema to which the table belongs.\n:type schema_id: int\n:param database: The table's schema.\n:type database: Schema",
+        "description": "Define the schema retrieve API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:param name: The name of the table.\n:param create: The SQL statement used to create the table.\n:param schema_id: The foreign key referencing the schema to which the table belongs.\n:param database: The table's schema.",
         "properties": {
           "create": {
             "minLength": 1,
@@ -1684,6 +1824,18 @@
             "title": "Name",
             "type": "string"
           },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
           "schema_id": {
             "title": "Schema Id",
             "type": "integer"
@@ -1713,7 +1865,7 @@
         "type": "object"
       },
       "TableResponse": {
-        "description": "Define the table API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param name: The name of the table.\n:type name: NonEmptyStr\n:param create: The SQL statement used to create the table.\n:type create: NonEmptyStr\n:param schema_id: The foreign key referencing the schema to which the table belongs.\n:type schema_id: int",
+        "description": "Define the table API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:param name: The name of the table.\n:param create: The SQL statement used to create the table.\n:param schema_id: The foreign key referencing the schema to which the table belongs.\n:param retired_at: When the table stopped being reported upstream, or None while\n    it is active.",
         "properties": {
           "create": {
             "minLength": 1,
@@ -1746,6 +1898,18 @@
             "title": "Name",
             "type": "string"
           },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
           "schema_id": {
             "title": "Schema Id",
             "type": "integer"
@@ -1774,7 +1938,7 @@
         "type": "object"
       },
       "TableWrite": {
-        "description": "Define the model for writing table data to the inventory.\n\n:param name: The name of the table.\n:type name: NonEmptyStr\n:param create: The SQL statement used to create the table.\n:type create: NonEmptyStr\n:param schema_id: The foreign key referencing the schema to which the table belongs.\n:type schema_id: int | None",
+        "description": "Define the model for writing table data to the inventory.\n\n:param name: The name of the table.\n:param create: The SQL statement used to create the table.\n:param schema_id: The foreign key referencing the schema to which the table belongs.",
         "properties": {
           "create": {
             "minLength": 1,
@@ -2122,6 +2286,16 @@
           },
           {
             "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "offset",
             "required": false,
             "schema": {
@@ -2260,8 +2434,8 @@
     },
     "/nodes/{node_id}": {
       "delete": {
-        "description": "Delete Node.",
-        "operationId": "nodes_delete_node_nodes__node_id__delete",
+        "description": "Retire Node and everything below it, keeping the rows resolvable.\n\n:param session: The asynchronous database session.\n:param node: The node to retire, retired or not.",
+        "operationId": "nodes_retire_node_nodes__node_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -2293,7 +2467,7 @@
             "OAuth2PasswordBearer": []
           }
         ],
-        "summary": "Delete Node",
+        "summary": "Retire Node",
         "tags": [
           "nodes"
         ]
@@ -2309,6 +2483,16 @@
             "schema": {
               "title": "Node Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           }
         ],
@@ -2401,6 +2585,47 @@
         ]
       }
     },
+    "/nodes/{node_id}/revive": {
+      "post": {
+        "description": "Revive a retired Node, leaving the services retired with it retired.\n\n:param session: The asynchronous database session.\n:param node: The node to revive, retired or not.\n:raises HTTPConflictException: If an active entity already holds the unique\n    key the revived node would reclaim.",
+        "operationId": "nodes_revive_node_nodes__node_id__revive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Revive Node",
+        "tags": [
+          "nodes"
+        ]
+      }
+    },
     "/nodes/{node_id}/services/": {
       "get": {
         "description": "List Services by Node.",
@@ -2429,6 +2654,16 @@
                 }
               ],
               "title": "Service Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           },
           {
@@ -2691,6 +2926,16 @@
         "parameters": [
           {
             "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "offset",
             "required": false,
             "schema": {
@@ -2786,8 +3031,8 @@
     },
     "/schemas/{schema_id}": {
       "delete": {
-        "description": "Delete Schema.",
-        "operationId": "schemas_delete_schema_schemas__schema_id__delete",
+        "description": "Retire Schema and its tables, keeping the rows resolvable.\n\n:param session: The asynchronous database session.\n:param schema: The schema to retire, retired or not.",
+        "operationId": "schemas_retire_schema_schemas__schema_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -2819,7 +3064,7 @@
             "OAuth2PasswordBearer": []
           }
         ],
-        "summary": "Delete Schema",
+        "summary": "Retire Schema",
         "tags": [
           "schemas"
         ]
@@ -2835,6 +3080,16 @@
             "schema": {
               "title": "Schema Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           }
         ],
@@ -2927,6 +3182,47 @@
         ]
       }
     },
+    "/schemas/{schema_id}/revive": {
+      "post": {
+        "description": "Revive a retired Schema together with its retired ancestors.\n\n:param session: The asynchronous database session.\n:param schema: The schema to revive, retired or not.\n:raises HTTPConflictException: If an active entity already holds the unique\n    key the revived schema would reclaim.",
+        "operationId": "schemas_revive_schema_schemas__schema_id__revive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schema_id",
+            "required": true,
+            "schema": {
+              "title": "Schema Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Revive Schema",
+        "tags": [
+          "schemas"
+        ]
+      }
+    },
     "/schemas/{schema_id}/tables/": {
       "get": {
         "description": "List Tables by Schema.",
@@ -2939,6 +3235,16 @@
             "schema": {
               "title": "Schema Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           },
           {
@@ -3115,6 +3421,16 @@
           },
           {
             "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "offset",
             "required": false,
             "schema": {
@@ -3208,8 +3524,8 @@
     },
     "/services/{service_id}": {
       "delete": {
-        "description": "Delete Service.",
-        "operationId": "services_delete_service_services__service_id__delete",
+        "description": "Retire Service and everything below it, keeping the rows resolvable.\n\n:param session: The asynchronous database session.\n:param service: The service to retire, retired or not.",
+        "operationId": "services_retire_service_services__service_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -3241,7 +3557,7 @@
             "OAuth2PasswordBearer": []
           }
         ],
-        "summary": "Delete Service",
+        "summary": "Retire Service",
         "tags": [
           "services"
         ]
@@ -3257,6 +3573,16 @@
             "schema": {
               "title": "Service Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           }
         ],
@@ -3349,9 +3675,50 @@
         ]
       }
     },
+    "/services/{service_id}/revive": {
+      "post": {
+        "description": "Revive a retired Service together with its retired ancestors.\n\n:param session: The asynchronous database session.\n:param service: The service to revive, retired or not.\n:raises HTTPConflictException: If an active entity already holds the unique\n    key the revived service would reclaim.",
+        "operationId": "services_revive_service_services__service_id__revive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "title": "Service Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Revive Service",
+        "tags": [
+          "services"
+        ]
+      }
+    },
     "/services/{service_id}/schemas/": {
       "get": {
-        "description": "List Schemas by Service.\n\nReturn ``SchemaResponse`` (with nested tables) when ``include_tables``\nis set, otherwise return ``SchemaCompactResponse`` (without tables).\n\n:param session: The async database session.\n:param service: The resolved service dependency.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request\n    boundary.\n:param include_tables: Include nested tables in the response when set to\n    any non-empty value. Defaults to compact mode (no tables).\n:return: A paginated response of schema responses.",
+        "description": "List Schemas by Service.\n\nReturn ``SchemaResponse`` (with nested tables) when ``include_tables``\nis set, otherwise return ``SchemaCompactResponse`` (without tables).\n\n:param session: The async database session.\n:param service: The resolved service dependency.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request\n    boundary.\n:param include_tables: Include nested tables in the response when set to\n    any non-empty value. Defaults to compact mode (no tables).\n:param include_retired: Include retired schemas in the response.\n:return: A paginated response of schema responses.",
         "operationId": "services_list_schemas_by_service_services__service_id__schemas__get",
         "parameters": [
           {
@@ -3377,6 +3744,16 @@
                 }
               ],
               "title": "Include Tables"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           },
           {
@@ -3672,6 +4049,16 @@
         "parameters": [
           {
             "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "offset",
             "required": false,
             "schema": {
@@ -3767,8 +4154,8 @@
     },
     "/tables/{table_id}": {
       "delete": {
-        "description": "Delete Table.",
-        "operationId": "tables_delete_table_tables__table_id__delete",
+        "description": "Retire Table, keeping the row resolvable.\n\n:param session: The asynchronous database session.\n:param table: The table to retire, retired or not.",
+        "operationId": "tables_retire_table_tables__table_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -3800,7 +4187,7 @@
             "OAuth2PasswordBearer": []
           }
         ],
-        "summary": "Delete Table",
+        "summary": "Retire Table",
         "tags": [
           "tables"
         ]
@@ -3816,6 +4203,16 @@
             "schema": {
               "title": "Table Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           }
         ],
@@ -3903,6 +4300,47 @@
           }
         ],
         "summary": "Update Table",
+        "tags": [
+          "tables"
+        ]
+      }
+    },
+    "/tables/{table_id}/revive": {
+      "post": {
+        "description": "Revive a retired Table together with its retired ancestors.\n\n:param session: The asynchronous database session.\n:param table: The table to revive, retired or not.\n:raises HTTPConflictException: If an active entity already holds the unique\n    key the revived table would reclaim.",
+        "operationId": "tables_revive_table_tables__table_id__revive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "table_id",
+            "required": true,
+            "schema": {
+              "title": "Table Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Revive Table",
         "tags": [
           "tables"
         ]

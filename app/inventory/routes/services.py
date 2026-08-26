@@ -16,18 +16,22 @@
 """Define the routes for the Services resource."""
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import (
+    RetiredInclusiveSchemaManager,
+    RetiredInclusiveServiceManager,
     SchemaManager,
     ServiceManager,
     ServiceSystemObservationManager,
 )
 from app.inventory.deps import (
+    RetirableServiceDep,
     SchemaListQueryDep,
     ServiceDep,
     ServiceListQueryDep,
@@ -59,10 +63,13 @@ async def list_services(
     pagination: PaginationDep,
     list_query: ServiceListQueryDep,
     service_type: ServiceTypeEnum | None = None,
+    *,
+    include_retired: Annotated[bool, Query()] = False,
 ) -> PaginatedResponse[ServiceResponse]:
     """List Services."""
     logger.debug("Listing services for type '%s'", service_type or "all")
-    return await ServiceManager.list_query_paginated(
+    manager = RetiredInclusiveServiceManager if include_retired else ServiceManager
+    return await manager.list_query_paginated(
         session,
         list_query=list_query,
         select_related=[Service.schemas, Service.node],
@@ -75,10 +82,13 @@ async def list_services(
 async def retrieve_service(
     session: SessionDep,
     service_id: int,
+    *,
+    include_retired: Annotated[bool, Query()] = False,
 ) -> ServiceDetailResponse:
     """Retrieve Service."""
     logger.debug("Retrieving service %s", service_id)
-    return await ServiceManager.get_or_404(
+    manager = RetiredInclusiveServiceManager if include_retired else ServiceManager
+    return await manager.get_or_404(
         session,
         select_related=[Service.schemas, Service.node],
         id=service_id,
@@ -101,10 +111,31 @@ async def update_service(
     dependencies=[IsAuthenticatedDep],
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_service(session: SessionDep, service: ServiceDep) -> None:
-    """Delete Service."""
-    logger.debug("Deleting service %s", service.id)
-    await ServiceManager.delete(session, service)
+async def retire_service(session: SessionDep, service: RetirableServiceDep) -> None:
+    """Retire Service and everything below it, keeping the rows resolvable.
+
+    :param session: The asynchronous database session.
+    :param service: The service to retire, retired or not.
+    """
+    logger.debug("Retiring service %s", service.id)
+    await ServiceManager.retire(session, service)
+
+
+@router.post(
+    "/{service_id}/revive",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def revive_service(session: SessionDep, service: RetirableServiceDep) -> None:
+    """Revive a retired Service together with its retired ancestors.
+
+    :param session: The asynchronous database session.
+    :param service: The service to revive, retired or not.
+    :raises HTTPConflictException: If an active entity already holds the unique
+        key the revived service would reclaim.
+    """
+    logger.debug("Reviving service %s", service.id)
+    await ServiceManager.revive(session, service)
 
 
 @router.get("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])
@@ -138,6 +169,8 @@ async def list_schemas_by_service(
     pagination: PaginationDep,
     list_query: SchemaListQueryDep,
     include_tables: str | None = None,
+    *,
+    include_retired: Annotated[bool, Query()] = False,
 ) -> PaginatedResponse[SchemaResponse | SchemaCompactResponse]:
     """List Schemas by Service.
 
@@ -151,11 +184,13 @@ async def list_schemas_by_service(
         boundary.
     :param include_tables: Include nested tables in the response when set to
         any non-empty value. Defaults to compact mode (no tables).
+    :param include_retired: Include retired schemas in the response.
     :return: A paginated response of schema responses.
     """
     logger.debug("Listing schemas for service '%s'", service.id)
     select_related = [Schema.tables] if include_tables else []
-    result = await SchemaManager.list_query_paginated(
+    manager = RetiredInclusiveSchemaManager if include_retired else SchemaManager
+    result = await manager.list_query_paginated(
         session,
         list_query=list_query,
         select_related=select_related,

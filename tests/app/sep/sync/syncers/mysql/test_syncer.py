@@ -34,6 +34,7 @@ import pytest
 import pytest_asyncio
 
 from app.core.alerts.config import alert_service
+from app.core.utils.date_time import utc_now
 from app.inventory.models import ServiceTypeEnum
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.inventory import (
@@ -66,6 +67,10 @@ from tests.app.factories import (
     CreatedTableFactory,
     MOCK_CREATED_NODE_ID,
 )
+
+# Pinned verbatim rather than imported: this syncer opting into tombstones is what
+# lets it match a reappearing entity, so losing the parameter must fail the test.
+RETIRED_INCLUSIVE_PARAMS = {"include_retired": "true"}
 
 
 @pytest.fixture
@@ -451,7 +456,7 @@ class TestFetchMethods:
         assert updated_schema.tables_aiter is not None
         # Behavioural proof the fallback fired: the unattached service was resolved by id.
         mock_mysql_syncer.inventory_api.get.assert_any_await(
-            f"/services/{created_service.id}"
+            f"/services/{created_service.id}", params={}
         )
 
     @pytest.mark.asyncio
@@ -487,7 +492,7 @@ class TestFetchMethods:
         assert isinstance(updated_table, Table)
         assert updated_table.name == created_table.name
         mock_mysql_syncer.inventory_api.get.assert_any_await(
-            f"/services/{created_service.id}"
+            f"/services/{created_service.id}", params={}
         )
 
     @pytest.mark.asyncio
@@ -528,10 +533,10 @@ class TestFetchMethods:
         assert isinstance(updated_table, Table)
         assert updated_table.name == created_table.name
         mock_mysql_syncer.inventory_api.get.assert_any_await(
-            f"/schemas/{created_table.schema_id}"
+            f"/schemas/{created_table.schema_id}", params=RETIRED_INCLUSIVE_PARAMS
         )
         mock_mysql_syncer.inventory_api.get.assert_any_await(
-            f"/services/{created_service.id}"
+            f"/services/{created_service.id}", params={}
         )
 
     @pytest.mark.asyncio
@@ -978,3 +983,95 @@ class TestModelIteratorsAndGuards:
         node_without_mysql = Node(address="y", name="y", services=[])
         assert mock_mysql_syncer.can_sync_node(node_with_mysql) is True
         assert mock_mysql_syncer.can_sync_node(node_without_mysql) is False
+
+
+class TestTombstoneReconciliation:
+    """Test how this syncer reconciles against schemas and tables it retired."""
+
+    @pytest.mark.asyncio
+    async def test_reappearing_schema_is_revived_on_its_existing_row(
+        self, created_service, created_schema, bound_mysql_syncer, mocker
+    ):
+        """Revive the tombstone rather than create a second row for its name."""
+        mocker.patch.object(MySQLSyncer, "sync_schema", new_callable=AsyncMock)
+        created_schema.service = None
+        retired = created_schema.model_copy(update={"retired_at": utc_now()})
+        bound_mysql_syncer.inventory_api.get.side_effect = [
+            {"items": [retired.model_dump()], "total": 1, "offset": 0, "limit": 50},
+        ]
+
+        async def schemas_idx():
+            yield created_schema.model_dump()
+
+        updated = MySQLService.model_validate(
+            created_service.model_dump(exclude={"schemas"})
+        )
+        updated.schemas_index = schemas_idx()
+
+        await bound_mysql_syncer.perform_service_sync(created_service, updated)
+
+        bound_mysql_syncer.inventory_api.post.assert_awaited_once_with(
+            f"/schemas/{created_schema.id}/revive"
+        )
+        bound_mysql_syncer.inventory_api.delete.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_an_active_row_wins_the_name_over_a_tombstone(
+        self, created_service, created_schema, bound_mysql_syncer, mocker
+    ):
+        """Match the live schema, not the tombstone that used to hold its name."""
+        mocker.patch.object(MySQLSyncer, "sync_schema", new_callable=AsyncMock)
+        created_schema.service = None
+        tombstone = created_schema.model_copy(
+            update={"id": created_schema.id + 1, "retired_at": utc_now()}
+        )
+        # Tombstone last, so a plain last-write-wins index would pick it.
+        bound_mysql_syncer.inventory_api.get.side_effect = [
+            {
+                "items": [created_schema.model_dump(), tombstone.model_dump()],
+                "total": 2,
+                "offset": 0,
+                "limit": 50,
+            },
+        ]
+
+        async def schemas_idx():
+            yield created_schema.model_dump()
+
+        updated = MySQLService.model_validate(
+            created_service.model_dump(exclude={"schemas"})
+        )
+        updated.schemas_index = schemas_idx()
+
+        await bound_mysql_syncer.perform_service_sync(created_service, updated)
+
+        # The live schema matched, so nothing was created and nothing revived.
+        bound_mysql_syncer.inventory_api.post.assert_not_awaited()
+        bound_mysql_syncer.inventory_api.delete.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_reappearing_table_is_revived_on_its_existing_row(
+        self, created_schema, created_table, bound_mysql_syncer, mocker
+    ):
+        """Revive the tombstoned table rather than create a second row for its name."""
+        mocker.patch.object(MySQLSyncer, "sync_table", new_callable=AsyncMock)
+        created_table.database = None
+        retired = created_table.model_copy(update={"retired_at": utc_now()})
+        created_schema.tables = [retired]
+        table_data = created_table.model_dump()
+
+        async def tables_iter() -> AsyncGenerator[dict, None]:
+            yield table_data
+
+        mysql_schema = MySQLSchema.model_validate(
+            created_schema.model_dump(exclude={"tables"})
+            | {"address": "localhost:8000/test_schema"}
+        )
+        mysql_schema.tables_aiter = tables_iter()
+
+        await bound_mysql_syncer.perform_schema_sync(created_schema, mysql_schema)
+
+        bound_mysql_syncer.inventory_api.post.assert_awaited_once_with(
+            f"/tables/{created_table.id}/revive"
+        )
+        bound_mysql_syncer.inventory_api.delete.assert_not_awaited()

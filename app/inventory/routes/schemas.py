@@ -16,14 +16,21 @@
 """Define the routes for the Schemas resource."""
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
-from app.inventory.crud import SchemaManager, TableManager
+from app.inventory.crud import (
+    RetiredInclusiveSchemaManager,
+    RetiredInclusiveTableManager,
+    SchemaManager,
+    TableManager,
+)
 from app.inventory.deps import (
+    RetirableSchemaDep,
     SchemaDep,
     SchemaListQueryDep,
     SessionDep,
@@ -49,10 +56,13 @@ async def list_schemas(
     session: SessionDep,
     pagination: PaginationDep,
     list_query: SchemaListQueryDep,
+    *,
+    include_retired: Annotated[bool, Query()] = False,
 ) -> PaginatedResponse[SchemaResponse]:
     """List Schemas."""
     logger.debug("Listing schemas")
-    return await SchemaManager.list_query_paginated(
+    manager = RetiredInclusiveSchemaManager if include_retired else SchemaManager
+    return await manager.list_query_paginated(
         session,
         list_query=list_query,
         select_related=[Schema.tables],
@@ -61,10 +71,16 @@ async def list_schemas(
 
 
 @router.get("/{schema_id}", dependencies=[IsAuthenticatedDep])
-async def retrieve_schema(session: SessionDep, schema_id: int) -> SchemaDetailResponse:
+async def retrieve_schema(
+    session: SessionDep,
+    schema_id: int,
+    *,
+    include_retired: Annotated[bool, Query()] = False,
+) -> SchemaDetailResponse:
     """Retrieve Schema."""
     logger.debug("Retrieving schema %s", schema_id)
-    return await SchemaManager.get_or_404(
+    manager = RetiredInclusiveSchemaManager if include_retired else SchemaManager
+    return await manager.get_or_404(
         session,
         select_related=[Schema.tables, Schema.service],
         id=schema_id,
@@ -87,10 +103,31 @@ async def update_schema(
     dependencies=[IsAuthenticatedDep],
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_schema(session: SessionDep, schema: SchemaDep) -> None:
-    """Delete Schema."""
-    logger.debug("Deleting schema %s", schema.id)
-    await SchemaManager.delete(session, schema)
+async def retire_schema(session: SessionDep, schema: RetirableSchemaDep) -> None:
+    """Retire Schema and its tables, keeping the rows resolvable.
+
+    :param session: The asynchronous database session.
+    :param schema: The schema to retire, retired or not.
+    """
+    logger.debug("Retiring schema %s", schema.id)
+    await SchemaManager.retire(session, schema)
+
+
+@router.post(
+    "/{schema_id}/revive",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def revive_schema(session: SessionDep, schema: RetirableSchemaDep) -> None:
+    """Revive a retired Schema together with its retired ancestors.
+
+    :param session: The asynchronous database session.
+    :param schema: The schema to revive, retired or not.
+    :raises HTTPConflictException: If an active entity already holds the unique
+        key the revived schema would reclaim.
+    """
+    logger.debug("Reviving schema %s", schema.id)
+    await SchemaManager.revive(session, schema)
 
 
 @router.get("/{schema_id}/tables/", dependencies=[IsAuthenticatedDep])
@@ -99,10 +136,13 @@ async def list_tables_by_schema(
     schema: SchemaDep,
     pagination: PaginationDep,
     list_query: TableListQueryDep,
+    *,
+    include_retired: Annotated[bool, Query()] = False,
 ) -> PaginatedResponse[TableResponse]:
     """List Tables by Schema."""
     logger.debug("Listing tables for schema '%s'", schema.id)
-    return await TableManager.list_query_paginated(
+    manager = RetiredInclusiveTableManager if include_retired else TableManager
+    return await manager.list_query_paginated(
         session,
         list_query=list_query,
         pagination=pagination,

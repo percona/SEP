@@ -40,6 +40,16 @@ class TestListTables:
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
+    def test_list_tables_excludes_retired(
+        self, test_client: TestClient, retired_table: Table
+    ) -> None:
+        """Omit a retired table from the default list."""
+        response = test_client.get("/tables/")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+
     def test_list_tables_rejects_unknown_sort_key(
         self, test_client: TestClient
     ) -> None:
@@ -219,6 +229,13 @@ class TestRetrieveTable:
         response = test_client.get("/tables/99999")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    def test_retrieve_table_retired_returns_404(
+        self, test_client: TestClient, retired_table: Table
+    ) -> None:
+        """Hide a retired table from the default read."""
+        response = test_client.get(f"/tables/{retired_table.id}")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
 
 class TestUpdateTable:
     """Test the PUT /tables/{table_id} endpoint."""
@@ -334,3 +351,46 @@ class TestDeleteTable:
         """Return 404 when deleting a nonexistent table."""
         response = test_client.delete("/tables/99999")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_delete_table_keeps_the_row(
+        self, test_client: TestClient, table: Table
+    ) -> None:
+        """Keep a retired table resolvable through the opt-in."""
+        assert (
+            test_client.delete(f"/tables/{table.id}").status_code
+            == status.HTTP_204_NO_CONTENT
+        )
+        retired = test_client.get(
+            f"/tables/{table.id}", params={"include_retired": True}
+        )
+        assert retired.status_code == status.HTTP_200_OK
+        assert retired.json()["id"] == table.id
+        assert retired.json()["retired_at"] is not None
+
+
+class TestReviveTable:
+    """Test the POST /tables/{table_id}/revive endpoint."""
+
+    def test_revive_table_revives_ancestors(
+        self,
+        test_client: TestClient,
+        service: Service,
+        schema: Schema,
+        table: Table,
+    ) -> None:
+        """Revive the table's schema, service and node along with it."""
+        assert (
+            test_client.delete(f"/services/{service.id}").status_code
+            == status.HTTP_204_NO_CONTENT
+        )
+
+        response = test_client.post(f"/tables/{table.id}/revive")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        for path, entity_id in (
+            ("services", service.id),
+            ("schemas", schema.id),
+            ("tables", table.id),
+        ):
+            assert test_client.get(f"/{path}/{entity_id}").status_code == (
+                status.HTTP_200_OK
+            )

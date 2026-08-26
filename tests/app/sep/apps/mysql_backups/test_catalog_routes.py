@@ -103,6 +103,27 @@ class TestServiceBackupsRoute:
         assert body["items"][0]["service_name"] == "svc-a"
 
     @pytest.mark.asyncio
+    async def test_retired_service_still_lists_its_runs(
+        self, session, regular_user
+    ) -> None:
+        """Resolve a retired service, so a backup history survives its retirement."""
+        await MysqlBackupRunManager.save(
+            session,
+            MysqlBackupRun(task_history_id=1, service_name="svc-gone", backup_type="M"),
+        )
+        inventory = inventory_mock(
+            service_payload("svc-gone") | {"retired_at": "2026-08-01T00:00:00Z"}
+        )
+
+        response = await self._get(session, 1, inventory, regular_user)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["total"] == 1
+        inventory.get.assert_awaited_once_with(
+            "/services/1", params={"include_retired": "true"}
+        )
+
+    @pytest.mark.asyncio
     async def test_existing_service_no_records_returns_empty(
         self, session, regular_user
     ) -> None:

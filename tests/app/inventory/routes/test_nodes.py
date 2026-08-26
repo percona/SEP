@@ -19,7 +19,14 @@ from starlette import status
 from starlette.testclient import TestClient
 
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
-from app.inventory.models import HostSystemObservation, Node, Service, SourceEnum
+from app.inventory.models import (
+    HostSystemObservation,
+    Node,
+    Schema,
+    Service,
+    SourceEnum,
+    Table,
+)
 from tests.app.factories import (
     HostSystemObservationWriteFactory,
     NodeWriteFactory,
@@ -47,6 +54,36 @@ class TestListNodes:
         assert data["total"] == 0
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+
+    def test_list_nodes_excludes_retired(
+        self, test_client: TestClient, retired_node: Node
+    ) -> None:
+        """Omit a retired node from the default list."""
+        response = test_client.get("/nodes/")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+
+    def test_list_nodes_include_retired(
+        self, test_client: TestClient, retired_node: Node
+    ) -> None:
+        """List a retired node through the opt-in with a matching total."""
+        response = test_client.get("/nodes/", params={"include_retired": True})
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert [item["id"] for item in data["items"]] == [retired_node.id]
+        assert data["total"] == len(data["items"])
+
+    def test_list_nodes_hides_retired_service_nested_in_active_node(
+        self, test_client: TestClient, retired_service: Service
+    ) -> None:
+        """Drop a retired service from the services nested in an active node."""
+        response = test_client.get("/nodes/")
+        assert response.status_code == status.HTTP_200_OK
+        items = response.json()["items"]
+        assert [item["id"] for item in items] == [retired_service.node_id]
+        assert items[0]["services"] == []
 
     def test_rejects_limit_zero(self, test_client: TestClient) -> None:
         """Return 422 when limit is zero."""
@@ -237,6 +274,23 @@ class TestRetrieveNode:
         response = test_client.get("/nodes/99999")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    def test_retrieve_node_retired_returns_404(
+        self, test_client: TestClient, retired_node: Node
+    ) -> None:
+        """Hide a retired node from the default read."""
+        response = test_client.get(f"/nodes/{retired_node.id}")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_retrieve_node_retired_with_opt_in(
+        self, test_client: TestClient, retired_node: Node
+    ) -> None:
+        """Resolve a retired node through the opt-in and expose its timestamp."""
+        response = test_client.get(
+            f"/nodes/{retired_node.id}", params={"include_retired": True}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["retired_at"] is not None
+
 
 class TestCreateNode:
     """Test the POST /nodes/ endpoint."""
@@ -316,6 +370,87 @@ class TestDeleteNode:
         response = test_client.delete("/nodes/99999")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    def test_delete_node_retires_and_keeps_subtree(
+        self,
+        test_client: TestClient,
+        node: Node,
+        service: Service,
+        schema: Schema,
+        table: Table,
+    ) -> None:
+        """Retire the node's whole subtree on its existing primary keys."""
+        response = test_client.delete(f"/nodes/{node.id}")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+        for path, entity_id in (
+            ("nodes", node.id),
+            ("services", service.id),
+            ("schemas", schema.id),
+            ("tables", table.id),
+        ):
+            retired = test_client.get(
+                f"/{path}/{entity_id}", params={"include_retired": True}
+            )
+            assert retired.status_code == status.HTTP_200_OK
+            assert retired.json()["id"] == entity_id
+            assert retired.json()["retired_at"] is not None
+
+    def test_delete_node_is_idempotent(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Leave the original timestamp alone when the node is retired again."""
+        assert (
+            test_client.delete(f"/nodes/{node.id}").status_code
+            == status.HTTP_204_NO_CONTENT
+        )
+        first = test_client.get(
+            f"/nodes/{node.id}", params={"include_retired": True}
+        ).json()["retired_at"]
+
+        assert (
+            test_client.delete(f"/nodes/{node.id}").status_code
+            == status.HTTP_204_NO_CONTENT
+        )
+        second = test_client.get(
+            f"/nodes/{node.id}", params={"include_retired": True}
+        ).json()["retired_at"]
+        assert second == first
+
+
+class TestReviveNode:
+    """Test the POST /nodes/{node_id}/revive endpoint."""
+
+    def test_revive_node(self, test_client: TestClient, service: Service) -> None:
+        """Revive the node without resurrecting the services retired with it."""
+        node_id = service.node_id
+        assert (
+            test_client.delete(f"/nodes/{node_id}").status_code
+            == status.HTTP_204_NO_CONTENT
+        )
+
+        response = test_client.post(f"/nodes/{node_id}/revive")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+        revived = test_client.get(f"/nodes/{node_id}")
+        assert revived.status_code == status.HTTP_200_OK
+        assert revived.json()["retired_at"] is None
+        assert test_client.get(f"/services/{service.id}").status_code == (
+            status.HTTP_404_NOT_FOUND
+        )
+
+    def test_revive_active_node_is_a_noop(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Return 204 without touching a node that was never retired."""
+        response = test_client.post(f"/nodes/{node.id}/revive")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert test_client.get(f"/nodes/{node.id}").json()["retired_at"] is None
+
+    def test_revive_node_not_found(self, test_client: TestClient) -> None:
+        """Return 404 for a nonexistent node ID."""
+        response = test_client.post("/nodes/99999/revive")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
 
 class TestListServicesByNode:
     """Test the GET /nodes/{node_id}/services/ endpoint."""
@@ -331,6 +466,16 @@ class TestListServicesByNode:
         assert data["total"] == 0
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+
+    def test_list_services_by_node_excludes_retired(
+        self, test_client: TestClient, retired_service: Service
+    ) -> None:
+        """Omit a retired service from an active node's services."""
+        response = test_client.get(f"/nodes/{retired_service.node_id}/services/")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
 
     def test_list_services_by_node_rejects_unknown_sort_key(
         self, test_client: TestClient, node: Node
@@ -489,6 +634,29 @@ class TestCreateServiceForNode:
         )
         assert response.status_code == status.HTTP_201_CREATED
         assert response.json()["node_id"] == node.id
+
+    def test_create_service_over_retired_predecessor(
+        self, test_client: TestClient, retired_service: Service
+    ) -> None:
+        """Admit a replacement on the node and port a tombstone still holds."""
+        payload = ServiceWriteFactory.build(port=retired_service.port)
+        response = test_client.post(
+            f"/nodes/{retired_service.node_id}/services/",
+            json=payload.model_dump(mode="json"),
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["id"] != retired_service.id
+
+    def test_create_second_active_service_on_same_port_conflicts(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Keep rejecting a second active service on one node and port."""
+        payload = ServiceWriteFactory.build(port=service.port)
+        response = test_client.post(
+            f"/nodes/{service.node_id}/services/",
+            json=payload.model_dump(mode="json"),
+        )
+        assert response.status_code == status.HTTP_409_CONFLICT
 
     def test_create_service_for_node_external_id_without_node_source(
         self, test_client: TestClient, node: Node

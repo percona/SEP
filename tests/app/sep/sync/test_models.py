@@ -29,6 +29,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.models import AlertService, AlertSeverity
+from app.core.utils.date_time import utc_now
 from app.inventory.models import ServiceTypeEnum
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.inventory import (
@@ -59,6 +60,10 @@ from tests.app.factories import (
     CreatedTableFactory,
     MOCK_CREATED_NODE_ID,
 )
+
+# Pinned verbatim rather than imported: the parameter name is the inventory API's
+# contract, so renaming the constant must fail the test.
+RETIRED_INCLUSIVE_PARAMS = {"include_retired": "true"}
 
 
 class StubTestSyncer(BaseSyncer):
@@ -517,7 +522,7 @@ async def test_finish_sync(session: AsyncSession, mock_remote_api):
 
 
 @pytest.mark.asyncio
-async def test_delete_node(
+async def test_retire_node(
     session: AsyncSession,
     created_node,
     created_service,
@@ -525,7 +530,7 @@ async def test_delete_node(
     created_table,
     mock_remote_api,
 ):
-    """Test deleting inventories from the inventory system."""
+    """Test retiring inventories in the inventory system."""
     sync_instance = await _create_sync_instance(session, StubTestSyncer)
 
     class NodeLimitSyncer(StubTestSyncer):
@@ -545,17 +550,123 @@ async def test_delete_node(
         created_table.model_dump(),
     ]
 
-    await syncer.delete_node(created_node)
+    await syncer.retire_node(created_node)
     mock_remote_api.delete.assert_awaited_once_with(f"/nodes/{created_node.id}")
     mock_remote_api.delete.reset_mock()
-    await syncer.delete_service(created_service)
+    await syncer.retire_service(created_service)
     mock_remote_api.delete.assert_awaited_once_with(f"/services/{created_service.id}")
     mock_remote_api.delete.reset_mock()
-    await syncer.delete_schema(created_schema)
+    await syncer.retire_schema(created_schema)
     mock_remote_api.delete.assert_awaited_once_with(f"/schemas/{created_schema.id}")
     mock_remote_api.delete.reset_mock()
-    await syncer.delete_table(created_table)
+    await syncer.retire_table(created_table)
     mock_remote_api.delete.assert_awaited_once_with(f"/tables/{created_table.id}")
+
+
+class TestRetiredEntityReads:
+    """Test how ``reads_retired_entities`` shapes the inventory reads."""
+
+    @pytest.mark.asyncio
+    async def test_reads_omit_the_opt_in_by_default(
+        self, session: AsyncSession, created_node, mock_remote_api
+    ) -> None:
+        """Leave tombstones invisible to a syncer that did not opt in."""
+        syncer = _build_syncer(StubTestSyncer, session, inventory_api=mock_remote_api)
+        mock_remote_api.get.return_value = created_node.model_dump()
+
+        await syncer.get_inventory_node(created_node.id)
+
+        mock_remote_api.get.assert_awaited_once_with(
+            f"/nodes/{created_node.id}", params={}
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_level_outside_the_declared_set_stays_active_only(
+        self, session: AsyncSession, created_node, created_schema, mock_remote_api
+    ) -> None:
+        """Scope the opt-in per level, so a walking level keeps hiding tombstones."""
+
+        class SchemaOnlySyncer(StubTestSyncer):
+            reads_retired_entities = frozenset({SyncInventoryEntityTypeEnum.SCHEMA})
+
+        syncer = _build_syncer(SchemaOnlySyncer, session, inventory_api=mock_remote_api)
+
+        mock_remote_api.get.return_value = created_node.model_dump()
+        await syncer.get_inventory_node(created_node.id)
+        assert mock_remote_api.get.await_args.kwargs["params"] == {}
+
+        mock_remote_api.get.return_value = created_schema.model_dump()
+        await syncer.get_inventory_schema(created_schema.id)
+        assert mock_remote_api.get.await_args.kwargs["params"] == (
+            RETIRED_INCLUSIVE_PARAMS
+        )
+
+    @pytest.mark.asyncio
+    async def test_reads_opt_in_when_the_syncer_declares_it(
+        self,
+        session: AsyncSession,
+        created_node,
+        created_service,
+        created_schema,
+        created_table,
+        mock_remote_api,
+    ) -> None:
+        """Send the opt-in on every per-entity read of a retirement-aware syncer."""
+
+        class RetirementAwareSyncer(StubTestSyncer):
+            reads_retired_entities = frozenset(SyncInventoryEntityTypeEnum)
+
+        syncer = _build_syncer(
+            RetirementAwareSyncer, session, inventory_api=mock_remote_api
+        )
+        reads = (
+            (syncer.get_inventory_node, created_node, "nodes"),
+            (syncer.get_inventory_service, created_service, "services"),
+            (syncer.get_inventory_schema, created_schema, "schemas"),
+            (syncer.get_inventory_table, created_table, "tables"),
+        )
+        for read, entity, segment in reads:
+            mock_remote_api.get.reset_mock()
+            mock_remote_api.get.return_value = entity.model_dump()
+
+            await read(entity.id)
+
+            mock_remote_api.get.assert_awaited_once_with(
+                f"/{segment}/{entity.id}", params=RETIRED_INCLUSIVE_PARAMS
+            )
+
+
+class TestReviveIfRetired:
+    """Test the revival helper the syncers call at their match sites."""
+
+    @pytest.mark.asyncio
+    async def test_active_entity_is_left_alone(
+        self, session: AsyncSession, created_node, mock_remote_api
+    ) -> None:
+        """Make no call for an entity that was never retired."""
+        syncer = _build_syncer(StubTestSyncer, session, inventory_api=mock_remote_api)
+        created_node.retired_at = None
+
+        await syncer._revive_if_retired(SyncInventoryEntityTypeEnum.NODE, created_node)
+
+        mock_remote_api.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_retired_entity_is_revived_and_cleared_locally(
+        self, session: AsyncSession, created_service, mock_remote_api
+    ) -> None:
+        """Revive the remote row and clear the cached copy's retirement."""
+        syncer = _build_syncer(StubTestSyncer, session, inventory_api=mock_remote_api)
+        created_service.retired_at = utc_now()
+
+        await syncer._revive_if_retired(
+            SyncInventoryEntityTypeEnum.SERVICE, created_service
+        )
+
+        mock_remote_api.post.assert_awaited_once_with(
+            f"/services/{created_service.id}/revive"
+        )
+        assert created_service.retired_at is None
 
 
 @pytest.mark.asyncio

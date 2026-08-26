@@ -16,19 +16,27 @@
 """Define the routes for the Nodes resource."""
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.exceptions import HTTPBadRequestException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.core.utils.fields import NonEmptyStr
-from app.inventory.crud import HostSystemObservationManager, NodeManager, ServiceManager
+from app.inventory.crud import (
+    HostSystemObservationManager,
+    NodeManager,
+    RetiredInclusiveNodeManager,
+    RetiredInclusiveServiceManager,
+    ServiceManager,
+)
 from app.inventory.deps import (
     HostSystemObservationDep,
     NodeDep,
     NodeListQueryDep,
+    RetirableNodeDep,
     ServiceListQueryDep,
     SessionDep,
 )
@@ -58,6 +66,8 @@ async def list_nodes(
     external_id: NonEmptyStr | None = None,
     source: SourceEnum | None = None,
     node_type: NonEmptyStr | None = None,
+    *,
+    include_retired: Annotated[bool, Query()] = False,
 ) -> PaginatedResponse[NodeResponse]:
     """List Nodes from Inventory."""
     logger.debug(
@@ -65,7 +75,8 @@ async def list_nodes(
         source or "all",
         node_type or "all",
     )
-    return await NodeManager.list_query_paginated(
+    manager = RetiredInclusiveNodeManager if include_retired else NodeManager
+    return await manager.list_query_paginated(
         session,
         list_query=list_query,
         select_related=[Node.services],
@@ -77,10 +88,16 @@ async def list_nodes(
 
 
 @router.get("/{node_id}", dependencies=[IsAuthenticatedDep])
-async def retrieve_node(session: SessionDep, node_id: int) -> NodeResponse:
+async def retrieve_node(
+    session: SessionDep,
+    node_id: int,
+    *,
+    include_retired: Annotated[bool, Query()] = False,
+) -> NodeResponse:
     """Retrieve Node from inventory."""
     logger.debug("Retrieving node %s", node_id)
-    return await NodeManager.get_or_404(
+    manager = RetiredInclusiveNodeManager if include_retired else NodeManager
+    return await manager.get_or_404(
         session,
         select_related=[Node.services],
         id=node_id,
@@ -112,10 +129,31 @@ async def update_node(
     dependencies=[IsAuthenticatedDep],
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_node(session: SessionDep, node: NodeDep) -> None:
-    """Delete Node."""
-    logger.debug("Deleting node %s", node.id)
-    await NodeManager.delete(session, node)
+async def retire_node(session: SessionDep, node: RetirableNodeDep) -> None:
+    """Retire Node and everything below it, keeping the rows resolvable.
+
+    :param session: The asynchronous database session.
+    :param node: The node to retire, retired or not.
+    """
+    logger.debug("Retiring node %s", node.id)
+    await NodeManager.retire(session, node)
+
+
+@router.post(
+    "/{node_id}/revive",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def revive_node(session: SessionDep, node: RetirableNodeDep) -> None:
+    """Revive a retired Node, leaving the services retired with it retired.
+
+    :param session: The asynchronous database session.
+    :param node: The node to revive, retired or not.
+    :raises HTTPConflictException: If an active entity already holds the unique
+        key the revived node would reclaim.
+    """
+    logger.debug("Reviving node %s", node.id)
+    await NodeManager.revive(session, node)
 
 
 @router.get("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])
@@ -149,6 +187,8 @@ async def list_services_by_node(
     pagination: PaginationDep,
     list_query: ServiceListQueryDep,
     service_type: ServiceTypeEnum | None = None,
+    *,
+    include_retired: Annotated[bool, Query()] = False,
 ) -> PaginatedResponse[ServiceResponse]:
     """List Services by Node."""
     logger.debug(
@@ -156,7 +196,8 @@ async def list_services_by_node(
         node.id,
         service_type or "all",
     )
-    return await ServiceManager.list_query_paginated(
+    manager = RetiredInclusiveServiceManager if include_retired else ServiceManager
+    return await manager.list_query_paginated(
         session,
         list_query=list_query,
         select_related=[Service.schemas],

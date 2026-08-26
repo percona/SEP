@@ -16,14 +16,20 @@
 """Define the routes for the Tables resource."""
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
-from app.inventory.crud import TableManager
-from app.inventory.deps import SessionDep, TableDep, TableListQueryDep
+from app.inventory.crud import RetiredInclusiveTableManager, TableManager
+from app.inventory.deps import (
+    RetirableTableDep,
+    SessionDep,
+    TableDep,
+    TableListQueryDep,
+)
 from app.inventory.models import Table, TableDetailResponse, TableResponse, TableWrite
 
 logger = logging.getLogger(__name__)
@@ -36,10 +42,13 @@ async def list_tables(
     session: SessionDep,
     pagination: PaginationDep,
     list_query: TableListQueryDep,
+    *,
+    include_retired: Annotated[bool, Query()] = False,
 ) -> PaginatedResponse[TableResponse]:
     """List Tables."""
     logger.debug("Listing tables")
-    return await TableManager.list_query_paginated(
+    manager = RetiredInclusiveTableManager if include_retired else TableManager
+    return await manager.list_query_paginated(
         session,
         list_query=list_query,
         pagination=pagination,
@@ -47,10 +56,16 @@ async def list_tables(
 
 
 @router.get("/{table_id}", dependencies=[IsAuthenticatedDep])
-async def retrieve_table(session: SessionDep, table_id: int) -> TableDetailResponse:
+async def retrieve_table(
+    session: SessionDep,
+    table_id: int,
+    *,
+    include_retired: Annotated[bool, Query()] = False,
+) -> TableDetailResponse:
     """Retrieve Table."""
     logger.debug("Retrieving table %s", table_id)
-    return await TableManager.get_or_404(
+    manager = RetiredInclusiveTableManager if include_retired else TableManager
+    return await manager.get_or_404(
         session,
         select_related=[Table.database],
         id=table_id,
@@ -73,7 +88,28 @@ async def update_table(
     dependencies=[IsAuthenticatedDep],
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_table(session: SessionDep, table: TableDep) -> None:
-    """Delete Table."""
-    logger.debug("Deleting table %s", table.id)
-    await TableManager.delete(session, table)
+async def retire_table(session: SessionDep, table: RetirableTableDep) -> None:
+    """Retire Table, keeping the row resolvable.
+
+    :param session: The asynchronous database session.
+    :param table: The table to retire, retired or not.
+    """
+    logger.debug("Retiring table %s", table.id)
+    await TableManager.retire(session, table)
+
+
+@router.post(
+    "/{table_id}/revive",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def revive_table(session: SessionDep, table: RetirableTableDep) -> None:
+    """Revive a retired Table together with its retired ancestors.
+
+    :param session: The asynchronous database session.
+    :param table: The table to revive, retired or not.
+    :raises HTTPConflictException: If an active entity already holds the unique
+        key the revived table would reclaim.
+    """
+    logger.debug("Reviving table %s", table.id)
+    await TableManager.revive(session, table)

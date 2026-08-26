@@ -37,10 +37,35 @@ from app.sep.sync.models import BaseSyncer
 
 logger = logging.getLogger(__name__)
 
-#: Ties an absent-entity batch to the deleter that retires it. A plain
-#: ``Callable[[CreatedEntity], ...]`` would reject both deleters, whose parameters
+#: Ties an absent-entity batch to the call that retires it. A plain
+#: ``Callable[[CreatedEntity], ...]`` would reject both retirers, whose parameters
 #: are the narrower subclasses.
 _Retirable = TypeVar("_Retirable", bound=CreatedEntity)
+
+
+def _claim_identity(
+    identities: dict[str, int | None],
+    external_id: str,
+    entity: _Retirable,
+    by_id: dict[int | None, _Retirable],
+) -> None:
+    """Point an upstream identity at an entity, letting an active row win.
+
+    An upstream id is unique among *active* rows only, so a tombstone and the
+    replacement that took its id both come back from a retired-inclusive read.
+    Matching an incoming report against the tombstone would attempt a revive the
+    active row's unique key refuses, so the active row claims the identity and
+    the tombstone keeps its own entry in ``by_id``, where absence handling finds
+    it. Without this, result ordering would decide.
+
+    :param identities: The upstream-id to primary-key map being built.
+    :param external_id: The upstream identity to claim.
+    :param entity: The local entity claiming it.
+    :param by_id: The primary-key-keyed index holding every candidate.
+    """
+    incumbent = by_id.get(identities.get(external_id))
+    if incumbent is None or incumbent.retired_at is not None:
+        identities[external_id] = entity.id
 
 
 class PMMSyncer(BaseSyncer):
@@ -48,36 +73,36 @@ class PMMSyncer(BaseSyncer):
 
     This class extends `BaseSyncer` to handle synchronization operations specific to PMM
     entities such as nodes and services. It interacts with the PMM remote API to
-    retrieve, update, and delete inventory data, ensuring that the local inventory is
+    retrieve, update, and retire inventory data, ensuring that the local inventory is
     consistent with the remote source.
 
     :cvar SYNC_TO_LIMIT: The highest entity type that can be synchronized.
         Set to `SyncInventoryEntityTypeEnum.SERVICE`.
-    :vartype SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
+    :cvar reads_retired_entities: The node and service levels, whose incoming
+        reports this syncer matches against the local inventory by external id.
     :param inventory_api: The remote API interface for interacting with the inventory
         system.
-    :type inventory_api: RemoteAPI
     :param access_token: The access token used for authenticating with the inventory
         API.
-    :type access_token: str
     :param sync_instance: The synchronization instance used to track sync processes.
-    :type sync_instance: SyncInstance | None
     :param sync_items: A dictionary mapping tuples of entity type and ID to SyncItem
         objects.
-    :type sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem]
     :param sync_id: The unique identifier for this synchronization.
-    :type sync_id: UUID4
     :param keepalive_api: Whether to keep the PMMRemoteAPI instance alive after
         synchronization. Defaults to True.
-    :type keepalive_api: bool
     """
 
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.SERVICE
     )
+    reads_retired_entities: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
+        frozenset(
+            {SyncInventoryEntityTypeEnum.NODE, SyncInventoryEntityTypeEnum.SERVICE}
+        )
+    )
     keepalive_api: bool = True
-    # The floor is 2, not 1: at 1 the grace counter collapses back to deleting on a
-    # single reported absence, which is the destructive behaviour it exists to end.
+    # The floor is 2, not 1: at 1 the grace counter collapses back to acting on a
+    # single reported absence, which is the behaviour it exists to end.
     # Expressed as an annotation constraint for the reason ``stale_run_after`` is.
     missing_grace_generations: Annotated[int, Ge(2)] = 2
     _pmm_api: PMMRemoteAPI | None = None
@@ -90,7 +115,6 @@ class PMMSyncer(BaseSyncer):
         client registry.
 
         :return: The `BaseRemoteAPI` instance.
-        :rtype: BaseRemoteAPI
         """
         if getattr(self, "_pmm_api", None) is None:
             self._pmm_api = await settings.get_remote_api(
@@ -226,7 +250,7 @@ class PMMSyncer(BaseSyncer):
         self,
         entity_type: SyncInventoryEntityTypeEnum,
         absent_entities: Iterable[_Retirable],
-        delete: Callable[[_Retirable], Awaitable[None]],
+        retire: Callable[[_Retirable], Awaitable[None]],
         *,
         permitted: bool,
         filtered_external_ids: set[str],
@@ -235,11 +259,14 @@ class PMMSyncer(BaseSyncer):
 
         An entity excluded by the caller's filter is held without its counter moving:
         an operator exclusion is evidence in neither direction, exactly like an
-        incomplete generation.
+        incomplete generation. An entity that is *already* retired is held the same
+        way: it is in the state this method exists to reach, so advancing its counter
+        would only re-issue an idempotent retirement on every run, for as long as the
+        tombstone is kept.
 
         :param entity_type: The type of the absent entities.
         :param absent_entities: The local entities this generation did not report.
-        :param delete: The retirement call to make once grace is spent.
+        :param retire: The retirement call to make once grace is spent.
         :param permitted: Whether this generation may retire anything.
         :param filtered_external_ids: External IDs excluded by the fetch filter.
         :raises SyncFailError: If holding or retiring an entity fails and
@@ -248,7 +275,7 @@ class PMMSyncer(BaseSyncer):
         """
         for created_entity in absent_entities:
             excluded = created_entity.external_id in filtered_external_ids
-            if not permitted or excluded:
+            if not permitted or excluded or created_entity.retired_at is not None:
                 await self.hold_entity(entity_type, created_entity)
                 continue
             missing = await SyncEntityAbsenceManager.record_missing(
@@ -260,7 +287,7 @@ class PMMSyncer(BaseSyncer):
             if missing < self.missing_grace_generations:
                 await self.hold_entity(entity_type, created_entity)
                 continue
-            await delete(created_entity)
+            await retire(created_entity)
             await SyncEntityAbsenceManager.clear(
                 self._session,
                 self.get_name(),
@@ -283,9 +310,18 @@ class PMMSyncer(BaseSyncer):
             is set.
         :raises HTTPBadRequestException: If a ledger write hits a database error.
         """
-        syncable_nodes: dict[str | None, CreatedNode] = {}
+        # Keyed by primary key, not external id: a tombstone and the replacement
+        # that took its external id both come back from a retired-inclusive read,
+        # and a row that lost an external-id slot would never reach _retire_absent,
+        # leaving the SyncItem prepare_sync opened for it hanging.
+        syncable_nodes: dict[int | None, CreatedNode] = {}
+        external_id_to_id: dict[str, int | None] = {}
         for node in await self.get_inventory_nodes():
-            syncable_nodes[node.external_id] = node
+            syncable_nodes[node.id] = node
+            if node.external_id is not None:
+                _claim_identity(
+                    external_id_to_id, node.external_id, node, syncable_nodes
+                )
         logger.debug("Syncable nodes: %s", syncable_nodes)
         snapshot = await self._fetch_snapshot()
         self._generation = snapshot
@@ -293,13 +329,18 @@ class PMMSyncer(BaseSyncer):
         try:
             present_ids: list[int | None] = []
             for node in snapshot.nodes:
-                if (created_node := syncable_nodes.pop(node.external_id, None)) is None:
+                matched_id = external_id_to_id.get(node.external_id)
+                if (created_node := syncable_nodes.pop(matched_id, None)) is None:
                     logger.debug("Creating new node: %r", node)
                     created_node = CreatedNode.model_validate(
                         await self.inventory_api.post(
                             "/nodes/",
                             json=node.model_dump(exclude={"services"}),
                         ),
+                    )
+                else:
+                    await self._revive_if_retired(
+                        SyncInventoryEntityTypeEnum.NODE, created_node
                     )
                 present_ids.append(created_node.id)
                 await self.sync_node(created_node, node)
@@ -315,7 +356,7 @@ class PMMSyncer(BaseSyncer):
             await self._retire_absent(
                 SyncInventoryEntityTypeEnum.NODE,
                 syncable_nodes.values(),
-                self.delete_node,
+                self.retire_node,
                 permitted=owns_run and self._generation_is_complete(),
                 filtered_external_ids=snapshot.diagnostics.filtered_node_ids,
             )
@@ -363,14 +404,22 @@ class PMMSyncer(BaseSyncer):
         :raises HTTPBadRequestException: If a ledger write hits a database error.
         """
         await self.update_node(created_node, updated_node)
-        external_id_to_id: dict[str, int] = {}
+        external_id_to_id: dict[str, int | None] = {}
         port_to_id: dict[int, int] = {}
         syncable_services: dict[int | None, CreatedService] = {}
         for service in created_node.services:
             syncable_services[service.id] = service
             if service.external_id is not None:
-                external_id_to_id[service.external_id] = service.id
-            if service.port is not None:
+                _claim_identity(
+                    external_id_to_id,
+                    service.external_id,
+                    service,
+                    syncable_services,
+                )
+            # Retired services are matchable by external id only. Letting the port
+            # fallback reach one would revive a predecessor under a different
+            # upstream id, handing an unrelated machine its backup and task history.
+            if service.port is not None and service.retired_at is None:
                 port_to_id[service.port] = service.id
         present_ids: list[int | None] = []
         for service in updated_node.services:
@@ -390,6 +439,10 @@ class PMMSyncer(BaseSyncer):
                     ),
                 )
                 created_service.node = created_node.model_copy(update={"services": []})
+            else:
+                await self._revive_if_retired(
+                    SyncInventoryEntityTypeEnum.SERVICE, created_service
+                )
             present_ids.append(created_service.id)
             await self.sync_service(created_service, service)
         owns_run = await self._owns_run()
@@ -408,7 +461,7 @@ class PMMSyncer(BaseSyncer):
         await self._retire_absent(
             SyncInventoryEntityTypeEnum.SERVICE,
             syncable_services.values(),
-            self.delete_service,
+            self.retire_service,
             permitted=owns_run and self._generation_is_complete(),
             filtered_external_ids=filtered_service_ids,
         )
