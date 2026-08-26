@@ -117,9 +117,10 @@ async def authenticate_bearer_token(token: str) -> User:
 
 #: Scope key under which a request's resolved users are cached. Kept out of
 #: ``scope["state"]``, which a request inherits as a shallow copy of the ASGI
-#: lifespan state: a cache found there would be shared process-wide. Entries key
-#: on a digest of the credential rather than the credential itself, so no
-#: structure the request carries grows a key that is a secret.
+#: lifespan state: a cache under a key anything publishes there would be shared
+#: process-wide. Entries key on a digest of the credential rather than the
+#: credential itself, so no structure the request carries grows a key that is a
+#: secret.
 _RESOLVED_USERS_KEY: Final = "app.api.deps.resolved_users"
 
 

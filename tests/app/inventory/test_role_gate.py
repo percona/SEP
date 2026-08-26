@@ -22,6 +22,7 @@ from pydantic import SecretStr
 from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api import deps as api_deps
 from app.core.config import settings
 from app.core.settings_override.models import SettingClassEnum
 from app.inventory.deps import get_session
@@ -148,7 +149,7 @@ def test_the_service_principal_can_still_delete_a_service(
 
 
 def test_a_gated_mutation_resolves_the_credential_once(
-    admin_bearer_client: TestClient, casdoor_mock
+    admin_bearer_client: TestClient, casdoor_mock, mocker: MockerFixture
 ) -> None:
     """Resolve one credential once, though the gate and the route both need it.
 
@@ -156,31 +157,44 @@ def test_a_gated_mutation_resolves_the_credential_once(
     cannot cover the route's ``IsAuthenticatedDep``; the count of provider
     round-trips is what says the request-scoped cache does. The status pins that
     the request reached the handler, so both consumers ran.
+
+    The spy sees the gate's resolution but not the route's, which holds the
+    original the module-level ``IsAuthenticatedDep`` captured at import, so it
+    counts the two consumers separately against the single round-trip.
     """
     casdoor_mock.introspect_token.reset_mock()
     casdoor_mock.get_user.reset_mock()
+    gate = mocker.spy(api_deps, "get_current_user")
 
     response = admin_bearer_client.put("/services/1", json={}, headers=BEARER_HEADERS)
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert gate.await_count == 1
     assert casdoor_mock.introspect_token.await_count == 1
     assert casdoor_mock.get_user.await_count == 1
 
 
 def test_a_safe_method_resolves_only_for_the_route(
-    admin_bearer_client: TestClient, casdoor_mock
+    admin_bearer_client: TestClient, casdoor_mock, mocker: MockerFixture
 ) -> None:
     """Resolve nothing in the gate on a safe method, leaving the route its own.
 
     The gate answers its method check ahead of everything else, so a read costs
     the one resolution its route declares rather than gaining the gate's.
+
+    The provider counts alone cannot say that: a gate that did resolve would be
+    served the route's resolution from the cache and leave them at one either
+    way. Spying the name the gate looks up at call time is what separates the
+    two, since the route holds the original captured at import.
     """
     casdoor_mock.introspect_token.reset_mock()
     casdoor_mock.get_user.reset_mock()
+    gate = mocker.spy(api_deps, "get_current_user")
 
     response = admin_bearer_client.get("/services/1", headers=BEARER_HEADERS)
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert gate.await_count == 0
     assert casdoor_mock.introspect_token.await_count == 1
     assert casdoor_mock.get_user.await_count == 1
 
@@ -197,5 +211,5 @@ def test_the_health_probe_resolves_no_credential(
 
     response = bearer_client.get("/health")
 
-    assert response.status_code != status.HTTP_401_UNAUTHORIZED
+    assert response.status_code == status.HTTP_200_OK
     casdoor_mock.introspect_token.assert_not_awaited()

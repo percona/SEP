@@ -24,6 +24,7 @@ from pydantic import SecretStr
 from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api import deps as api_deps
 from app.core.celery.deps import get_session as get_celery_beat_session
 from app.core.config import settings
 from app.core.settings_override.models import SettingClassEnum
@@ -256,22 +257,29 @@ def test_a_gated_mutation_resolves_the_credential_once(
 
 
 def test_the_waived_batch_read_still_resolves_once(
-    bearer_client: TestClient, casdoor_mock
+    bearer_client: TestClient, casdoor_mock, mocker: MockerFixture
 ) -> None:
     """Keep the waived batch read at the one resolution its own dependency makes.
 
     Its ``UserRole.NONE`` minimum is answered before the gate looks at the
     credential, so the route's ``IsAuthenticatedDep`` is the only thing resolving
     it — and stays so for a non-admin.
+
+    A gate that did reach the credential would be served the route's resolution
+    from the cache, leaving the provider counts at one either way; the spy on the
+    name the gate looks up at call time is what sees the waiver, since the route
+    holds the original captured at import.
     """
     casdoor_mock.introspect_token.reset_mock()
     casdoor_mock.get_user.reset_mock()
+    gate = mocker.spy(api_deps, "get_current_user")
 
     response = bearer_client.post(
         "/history/latest", json={"names": ["absent-task"]}, headers=BEARER_HEADERS
     )
 
     assert response.status_code == status.HTTP_200_OK
+    assert gate.await_count == 0
     assert casdoor_mock.introspect_token.await_count == 1
     assert casdoor_mock.get_user.await_count == 1
 
@@ -284,5 +292,5 @@ def test_the_health_probe_resolves_no_credential(
 
     response = bearer_client.get("/health")
 
-    assert response.status_code != status.HTTP_401_UNAUTHORIZED
+    assert response.status_code == status.HTTP_200_OK
     casdoor_mock.introspect_token.assert_not_awaited()

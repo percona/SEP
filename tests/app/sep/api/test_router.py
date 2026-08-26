@@ -892,7 +892,7 @@ class TestApiRoleGate:
 
         response = bearer_client.get("/health")
 
-        assert response.status_code != status.HTTP_401_UNAUTHORIZED
+        assert response.status_code == status.HTTP_200_OK
         casdoor_mock.introspect_token.assert_not_awaited()
 
     def test_the_role_gate_is_declared_after_the_bearer_gate(self) -> None:
