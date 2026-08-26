@@ -354,6 +354,30 @@ def test_plugin_schema_entities_mode_duplicate_root_fields_unreachable():
     assert "duplicate field name" not in str(exc.value)
 
 
+def test_plugin_schema_entities_mode_accepts_empty_root_form_config():
+    """Entity-style schemas with empty/omitted root form config still construct."""
+    entity = AppEntitySchema(
+        name="things",
+        display_name="Things",
+        forms=[
+            FormSection(
+                title="T",
+                fields=[StringField(name="title", label="Title", required=True)],
+            )
+        ],
+        list_view=_minimal_list_view(),
+    )
+    schema = AppSchema(
+        name="multi",
+        display_name="Multi",
+        entities=[entity],
+        forms=[],
+    )
+    assert schema.forms == []
+    assert schema.cardinality_rules is None
+    assert schema.fail_when is None
+
+
 def test_plugin_entity_schema_detail_highlights_round_trip():
     """Round-trip detail highlight hints through snake_case JSON (wire format)."""
     entity = AppEntitySchema.model_validate(
