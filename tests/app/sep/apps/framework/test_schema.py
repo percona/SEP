@@ -19,7 +19,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.framework.rules import FailRule, present
+from app.sep.apps.framework.rules import CardinalityRule, FailRule, present
 from app.sep.apps.framework.schema import (
     AppEntitySchema,
     AppSchema,
@@ -221,6 +221,32 @@ def test_plugin_schema_entities_mode_rejects_root_forms():
                     title="Root",
                     fields=[StringField(name="ignored", label="Ignored")],
                 )
+            ],
+        )
+
+
+def test_plugin_schema_entities_mode_rejects_root_cardinality_rules():
+    """Refuse root-level ``cardinality_rules`` on an entity-style ``AppSchema``."""
+    entity = AppEntitySchema(
+        name="things",
+        display_name="Things",
+        forms=[
+            FormSection(
+                title="T",
+                fields=[StringField(name="title", label="Title", required=True)],
+            )
+        ],
+        list_view=_minimal_list_view(),
+    )
+    with pytest.raises(
+        ValidationError, match=r"Root-level cardinality_rules.*entity-style"
+    ):
+        AppSchema(
+            name="multi",
+            display_name="Multi",
+            entities=[entity],
+            cardinality_rules=[
+                CardinalityRule(when=None, fields=["title"], min=1),
             ],
         )
 
