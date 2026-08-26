@@ -157,21 +157,13 @@ schema_endpoint(router=router, plugin_schema=atw_schema)
 def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
     """Project a snippet onto the ATW summary shape.
 
-    ``Snippet.title`` and ``Snippet.description`` default only when the frontmatter
-    key is **absent**, so a snippet declaring an empty or valueless one arrives here
-    as ``""`` or ``None``. Both are coerced, and the ``None`` half is what keeps one
-    malformed snippet from 500-ing the whole page: this model types both fields
-    ``str``, so a valueless ``title:`` or ``description:`` fails validation for the
-    entire response rather than for the offending row. ``title: ""`` validates and
-    the fallback merely relabels it, from a blank label to the filename.
-
     :param snippet: The snippet to project.
     :return: The snippet's identifying name, display title, and description.
     """
     return ATWSnippetSummary(
         name=snippet.filename,
-        title=snippet.title or snippet.filename,
-        description=snippet.description or "",
+        title=snippet.title,
+        description=snippet.description,
     )
 
 
