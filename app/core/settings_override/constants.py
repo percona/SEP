@@ -19,3 +19,23 @@
 # so they serialize against each other on a shared PostgreSQL database. Any fixed
 # bigint unused elsewhere works; no other advisory lock exists in the repo.
 SETTINGOVERRIDE_MIGRATION_LOCK_KEY = 0x5E770438
+
+#: Width of the ``settingoverride.setting_class`` column, shared by the ORM
+#: type, the Pydantic constraint, and the migration that widens the column, so
+#: the three cannot drift apart.
+SETTING_CLASS_MAX_LENGTH = 255
+
+#: Member list the ``settingoverride.setting_class`` CHECK enumerated immediately
+#: before the drop migration widened the column. Downgrades re-add this exact
+#: list and delete rows naming a class outside it.
+SETTING_CLASS_CHECK_MEMBERS_LEGACY = (
+    "SEP_SETTINGS",
+    "TASKS_SETTINGS",
+    "SNIPPETS_SETTINGS",
+    "SETTINGS",
+    "ALERT_SETTINGS",
+    "ANONYMIZER_SETTINGS",
+    "ALERTS_SETTINGS",
+    "INVENTORY_SETTINGS",
+    "HEALTH_REPORT_SETTINGS",
+)

@@ -73,3 +73,20 @@ def created_task() -> Task:
             }
         },
     )
+
+
+# Spelled out on purpose: this is the cadence vocabulary the product promises, so a
+# test that read it back off a model or the payload would assert a surface against
+# itself. ``literal_members`` answers the separate question of whether two surfaces
+# agree with each other.
+PGBACKREST_INCREMENTAL_CYCLES = (
+    "daily",
+    "weekly",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+)

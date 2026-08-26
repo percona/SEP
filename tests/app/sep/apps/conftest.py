@@ -24,8 +24,11 @@ inherits them by supplying only its definition — not only tests under
 and mounts onto a fresh ``FastAPI`` per test, so dependency overrides never leak.
 """
 
+from typing import get_args
+
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
 from app.core.auth.exceptions import HTTPUnauthorizedException
 from app.core.auth.providers.casdoor.models import CasdoorUser
@@ -44,6 +47,25 @@ from tests.app.sep.apps.framework.kit import (
     MockTaskAPI,
     SEEDED_TASK_NAME,
 )
+
+
+def literal_members(model: type[BaseModel], field: str) -> tuple[str, ...]:
+    """Return the string ``Literal`` members a model field accepts.
+
+    Reaches through the optional wrapper (``Literal[...] | EmptyStrToNone``) so a
+    test can parametrize over the vocabulary a form declares instead of restating
+    it and drifting from the model.
+
+    :param model: The model owning the field.
+    :param field: The field name whose annotation carries the ``Literal``.
+    :return: The declared members, in declaration order.
+    """
+    return tuple(
+        arg
+        for member in get_args(model.model_fields[field].annotation)
+        for arg in get_args(member)
+        if isinstance(arg, str)
+    )
 
 
 @pytest.fixture

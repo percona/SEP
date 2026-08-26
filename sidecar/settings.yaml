@@ -69,10 +69,27 @@ default:
     # Superseded per container start by the credentialed URLs entrypoint.sh mints.
     BROKER_URL: redis://127.0.0.1:6379/0
     RESULT_BACKEND: redis://127.0.0.1:6379/1
-    # No BEAT_DBURI: the beat store defaults to the resolved SEP database, so the
-    # mounted SEP__DATABASE__PASSWORD reaches it without an env-visible URI.
+    # No BEAT_DBURI: the beat store defaults to the resolved SEP database, so a
+    # mounted DATABASE__PASSWORD or SEP__DATABASE__PASSWORD reaches it without an
+    # env-visible URI.
     RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
+    BEAT_ENGINE_OPTIONS:
+      POOL_PRE_PING: true  # Test beat/worker pooled connections on checkout; set false to opt out
+
+  # One database for all three services: PMM_ENABLE_SEP provisions exactly the
+  # `sep` role and `sep` database, so this is defined once and aliased below.
+  # The aliases are required: the YAML source narrows to `default.<PREFIX>`, so a
+  # root-level block is an anchor definition, not a global each service inherits.
+  # The alias is one object, so a second profile block must not override a single
+  # service's DATABASE keys: the profile merge is in-place and would move all three.
+  # test_profile_carries_a_single_default_block keeps this file to one block.
+  DATABASE: &shared_database
+    ENGINE: postgresql
+    HOST: pmm-server
+    NAME: sep
+    PORT: 5432
+    USER: sep
 
   SEP:
     AMBIENT_SESSION_SSO_ENABLED: true
@@ -80,12 +97,7 @@ default:
     # rather than a per-deployment input. The loopback healthcheck stays
     # unprefixed: routing tolerates a request that arrives without the prefix.
     ROOT_PATH: /sep
-    DATABASE:
-      ENGINE: postgresql
-      HOST: pmm-server
-      NAME: sep
-      PORT: 5432
-      USER: sep
+    DATABASE: *shared_database
     # Where diagnostics bundles go once an operator supplies the credentials.
     # The secret names are declared but empty: the plan's cross-reference
     # validator requires every cited name to be declared, and the values arrive
@@ -132,6 +144,8 @@ default:
       - MODULE_NAME: mysql_backups
     SYNCERS:
       - SYNCER: PMMSyncer
+        STALE_RUN_AFTER: 3600  # Seconds an idle in-progress run may sit before it is reclaimed; must exceed the longest expected sync
+        MISSING_GRACE_GENERATIONS: 2  # Consecutive complete syncs that must report an entity absent before it is removed; minimum 2
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys
@@ -141,24 +155,14 @@ default:
       - SYNCER: SystemFactsSyncer
 
   INVENTORY:
-    DATABASE:
-      ENGINE: postgresql
-      HOST: pmm-server
-      NAME: sep
-      PORT: 5432
-      USER: sep
+    DATABASE: *shared_database
     UVICORN_HOST: 0.0.0.0
     UVICORN_PORT: 9001
     SSL_CERTFILE: null
     SSL_KEYFILE: null
 
   TASKS:
-    DATABASE:
-      ENGINE: postgresql
-      HOST: pmm-server
-      NAME: sep
-      PORT: 5432
-      USER: sep
+    DATABASE: *shared_database
     UVICORN_HOST: 0.0.0.0
     UVICORN_PORT: 9002
     NOMAD:
@@ -170,5 +174,7 @@ default:
       SSL_CAFILE: null
       SSL_CERTFILE: null
       SSL_KEYFILE: null
+    INVENTORY_SYNC_INTERVAL: 15 minutes
+    INVENTORY_SYNC_SYNCER: app.sep.sync.syncers.pmm.PMMSyncer
     SSL_CERTFILE: null
     SSL_KEYFILE: null

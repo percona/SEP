@@ -71,7 +71,7 @@ def test_backfill_seeds_producer_fetch_offset_from_producer_offset(
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -88,7 +88,7 @@ def test_backfill_seeds_producer_fetch_offset_from_producer_offset(
 def test_new_columns_default_zero_on_fresh_insert(tasks_alembic_config):
     """Assert a row inserted after the upgrade defaults both new columns to 0."""
     cfg, sync_url = tasks_alembic_config
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:

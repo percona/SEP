@@ -992,6 +992,11 @@ app = TaskExecutionApp(
 )
 ```
 
+When you supply an explicit `response_builder`, set `response_model` to the same
+class the builder's return annotation declares. The derived list route serializes
+the builder's model, and every other `response_model` reader — including the
+`list_view` column gate — measures that field; construction rejects a mismatch.
+
 `TaskExecutionApp` also exposes `update_handler` / `delete_handler`
 (`app/sep/apps/framework/apps.py`) for fully replacing a mutation handler — no app
 in the tree overrides those today; prefer the lighter response-builder override

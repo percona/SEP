@@ -15,14 +15,19 @@
 
 """Define tests classifying the unsafe surface the minimum-role gate reaches."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any, Final
 
 import pytest
 from fastapi import FastAPI
+from fastapi.dependencies.models import Dependant
 from fastapi.routing import APIRoute
 
-from app.api.deps import minimum_role_for, require_minimum_role_for_unsafe_methods
+from app.api.deps import (
+    get_current_user,
+    minimum_role_for,
+    require_minimum_role_for_unsafe_methods,
+)
 from app.core.auth.models import UserRole
 from app.core.security import SAFE_HTTP_METHODS
 from app.inventory.main import inventory_app
@@ -53,6 +58,21 @@ def _gate_callables(route: APIRoute) -> set[Callable[..., Any]]:
     return {dependency.call for dependency in route.dependant.dependencies}
 
 
+def _resolved_callables(dependant: Dependant) -> Iterator[Callable[..., Any]]:
+    """Yield every callable the dependency subtree below ``dependant`` resolves.
+
+    The walk recurses because a route reaching authentication through
+    ``IsAdminDep`` carries it as a grandchild rather than as one of its own
+    declared dependencies.
+
+    :param dependant: The dependency node whose subtree to walk.
+    :return: One entry per dependency at any depth below the node.
+    """
+    for sub in dependant.dependencies:
+        yield sub.call
+        yield from _resolved_callables(sub)
+
+
 def _api_routes(app: FastAPI) -> list[APIRoute]:
     """Return every ``APIRoute`` mounted on ``app``.
 
@@ -75,6 +95,22 @@ def test_every_service_route_inherits_the_role_gate(app: FastAPI) -> None:
         assert require_minimum_role_for_unsafe_methods in _gate_callables(route), (
             route.path
         )
+
+
+@pytest.mark.parametrize("app", [inventory_app, tasks_app], ids=["inventory", "tasks"])
+def test_every_unsafe_route_authenticates_itself_as_well(app: FastAPI) -> None:
+    """Assert an unsafe route resolves the caller through its own dependency too.
+
+    The gate resolves the caller in its body, so nothing about a route's own
+    authentication follows from the gate reaching it. This is the second consumer
+    the per-request resolution is shared with, and a route dropping it would
+    leave the round-trip counts in the per-service gate modules measuring one
+    resolution because only one is left to make.
+    """
+    unsafe = [route for route in _api_routes(app) if route.methods - SAFE_HTTP_METHODS]
+    assert unsafe
+    for route in unsafe:
+        assert get_current_user in set(_resolved_callables(route.dependant)), route.path
 
 
 def test_sep_api_routes_inherit_the_gate_and_the_identity_tree_does_not() -> None:
