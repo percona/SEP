@@ -272,6 +272,13 @@ task-tags = ["TODO"]
 [tool.ruff.lint.isort]
 order-by-type = false
 
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = [
+    "sqlmodel.SQLModel",
+    "app.core.db.models.BaseSQLModel",
+    "app.core.db.models.BaseUUIDSQLModel",
+]
+
 [tool.ruff.lint.flake8-import-conventions.extend-aliases]
 "sqlalchemy.Enum" = "EnumField"
 "sqlmodel.Field" = "SQLField"

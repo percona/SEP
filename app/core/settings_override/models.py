@@ -15,6 +15,8 @@
 
 """Define the persistent ``SettingOverride`` model and class identifier enum."""
 
+from __future__ import annotations
+
 __all__ = ["SettingClassEnum", "SettingOverride", "setting_class_token"]
 
 import re
@@ -23,7 +25,6 @@ from typing import Any, TYPE_CHECKING
 
 from pydantic import field_validator, JsonValue
 from sqlalchemy import Column, Index, String
-from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field as SQLField
 
@@ -32,6 +33,8 @@ from app.core.db.sql_types import AutoJSON
 from app.core.settings_override.constants import SETTING_CLASS_MAX_LENGTH
 
 if TYPE_CHECKING:
+    from sqlalchemy.engine.interfaces import Dialect
+
     from app.core.config import BaseYamlSettings
 
 #: Acronym-aware CamelCase split: ``SEPSettings`` -> ``SEP_Settings``,
@@ -39,7 +42,7 @@ if TYPE_CHECKING:
 _CAMEL_SPLIT = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
-def setting_class_token(settings_cls: type["BaseYamlSettings"]) -> str:
+def setting_class_token(settings_cls: type[BaseYamlSettings]) -> str:
     """Return the storage token written to ``settingoverride.setting_class``.
 
     The token is the SCREAMING_SNAKE form of the class ``__name__``, derived by
