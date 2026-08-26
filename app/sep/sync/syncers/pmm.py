@@ -16,19 +16,31 @@
 """Implement models and utilities for the PMM Inventory Sync."""
 
 import logging
+from collections.abc import Awaitable, Callable, Iterable
 from types import TracebackType
-from typing import Any, ClassVar, Self
+from typing import Annotated, Any, ClassVar, Self, TypeVar
 
+from annotated_types import Ge
 from async_lru import alru_cache
 
 from app.core.config import settings
 from app.inventory.models import SourceEnum
-from app.sep.clients.pmm import PMMRemoteAPI, PMMService
-from app.sep.inventory import CreatedNode, CreatedService, Node
+from app.sep.clients.pmm import (
+    PMMInventorySnapshot,
+    PMMRemoteAPI,
+    PMMService,
+)
+from app.sep.crud import SyncEntityAbsenceManager, SyncInstanceManager
+from app.sep.inventory import CreatedEntity, CreatedNode, CreatedService, Node
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.sync.models import BaseSyncer
 
 logger = logging.getLogger(__name__)
+
+#: Ties an absent-entity batch to the deleter that retires it. A plain
+#: ``Callable[[CreatedEntity], ...]`` would reject both deleters, whose parameters
+#: are the narrower subclasses.
+_Retirable = TypeVar("_Retirable", bound=CreatedEntity)
 
 
 class PMMSyncer(BaseSyncer):
@@ -64,7 +76,12 @@ class PMMSyncer(BaseSyncer):
         SyncInventoryEntityTypeEnum.SERVICE
     )
     keepalive_api: bool = True
+    # The floor is 2, not 1: at 1 the grace counter collapses back to deleting on a
+    # single reported absence, which is the destructive behaviour it exists to end.
+    # Expressed as an annotation constraint for the reason ``stale_run_after`` is.
+    missing_grace_generations: Annotated[int, Ge(2)] = 2
     _pmm_api: PMMRemoteAPI | None = None
+    _generation: PMMInventorySnapshot | None = None
 
     async def __aenter__(self) -> Self:
         """Enter the asynchronous context manager.
@@ -153,33 +170,157 @@ class PMMSyncer(BaseSyncer):
         """
         return await super().get_inventory_nodes(external_id, SourceEnum.PMM, node_type)
 
+    async def _fetch_snapshot(self) -> PMMInventorySnapshot:
+        """Fetch an inventory snapshot, retrying once on cross-list disagreement.
+
+        Orphaned services mean the node list and the service list were read at
+        moments PMM did not agree about. A single re-read settles a transient
+        disagreement; a persistent one leaves the generation incomplete.
+
+        :return: The snapshot to reconcile this generation against.
+        :raises ValidationError: If an entity fails validation and ``break_on_error``
+            is set.
+        """
+        snapshot = await self.pmm_api.get_inventory_snapshot(
+            skip_failed=not self.break_on_error,
+            filter_=self._filter_sep_sync_disabled,
+        )
+        if snapshot.diagnostics.orphan_service_node_ids:
+            logger.warning(
+                "PMM node and service lists disagree (orphan node ids: %s); refetching",
+                snapshot.diagnostics.orphan_service_node_ids,
+            )
+            snapshot = await self.pmm_api.get_inventory_snapshot(
+                skip_failed=not self.break_on_error,
+                filter_=self._filter_sep_sync_disabled,
+            )
+        return snapshot
+
+    async def _owns_run(self) -> bool:
+        """Check whether this run's SyncInstance has been reclaimed out from under it.
+
+        Every ledger write and every retirement is gated on this: a run reclaimed
+        while it worked must perform neither. It does not establish that this is the
+        syncer's only run; see ``SyncInstanceManager.is_still_owned``.
+
+        :return: ``True`` while this run's ``SyncInstance`` is still ``RUNNING``.
+        """
+        return await SyncInstanceManager.is_still_owned(
+            self._session,
+            self.sync_instance.id,
+        )
+
+    def _generation_is_complete(self) -> bool:
+        """Check whether a complete generation is driving this call.
+
+        Only absence needs a complete generation to be believed. An entity the
+        fetch *did* return was observed regardless of what else the fetch missed,
+        which is why clearing a counter is not gated on this.
+
+        :return: ``True`` only when a generation is in progress and its fetch
+            represented the remote inventory faithfully.
+        """
+        return self._generation is not None and self._generation.diagnostics.is_complete
+
+    async def _retire_absent(
+        self,
+        entity_type: SyncInventoryEntityTypeEnum,
+        absent_entities: Iterable[_Retirable],
+        delete: Callable[[_Retirable], Awaitable[None]],
+        *,
+        permitted: bool,
+        filtered_external_ids: set[str],
+    ) -> None:
+        """Advance the missing-grace counter for absent entities and retire the spent.
+
+        An entity excluded by the caller's filter is held without its counter moving:
+        an operator exclusion is evidence in neither direction, exactly like an
+        incomplete generation.
+
+        :param entity_type: The type of the absent entities.
+        :param absent_entities: The local entities this generation did not report.
+        :param delete: The retirement call to make once grace is spent.
+        :param permitted: Whether this generation may retire anything.
+        :param filtered_external_ids: External IDs excluded by the fetch filter.
+        :raises SyncFailError: If holding or retiring an entity fails and
+            ``break_on_error`` is set.
+        :raises HTTPBadRequestException: If a ledger write hits a database error.
+        """
+        for created_entity in absent_entities:
+            excluded = created_entity.external_id in filtered_external_ids
+            if not permitted or excluded:
+                await self.hold_entity(entity_type, created_entity)
+                continue
+            missing = await SyncEntityAbsenceManager.record_missing(
+                self._session,
+                self.get_name(),
+                entity_type,
+                created_entity.id,
+            )
+            if missing < self.missing_grace_generations:
+                await self.hold_entity(entity_type, created_entity)
+                continue
+            await delete(created_entity)
+            await SyncEntityAbsenceManager.clear(
+                self._session,
+                self.get_name(),
+                entity_type,
+                created_entity.id,
+            )
+
     async def perform_inventory_sync(self) -> None:
         """Perform the inventory synchronization process.
 
-        Synchronize the entire inventory by fetching nodes from the PMM API, creating or
-        updating corresponding nodes in the local inventory, and deleting any nodes that
-        no longer exist in the PMM system.
+        Synchronize the entire inventory by fetching nodes from the PMM API and
+        creating or updating corresponding nodes in the local inventory. A node that
+        the fetch did not report is retired only once a complete generation has
+        reported it absent ``missing_grace_generations`` times in a row. A partial
+        read is not evidence that anything disappeared from PMM.
+
+        :raises ValidationError: If an entity fails validation and ``break_on_error``
+            is set.
+        :raises SyncFailError: If synchronizing an entity fails and ``break_on_error``
+            is set.
+        :raises HTTPBadRequestException: If a ledger write hits a database error.
         """
-        syncable_nodes = {}
+        syncable_nodes: dict[str | None, CreatedNode] = {}
         for node in await self.get_inventory_nodes():
             syncable_nodes[node.external_id] = node
         logger.debug("Syncable nodes: %s", syncable_nodes)
-        for node in await self.pmm_api.get_nodes(
-            skip_failed=not self.break_on_error,
-            filter_=self._filter_sep_sync_disabled,
-        ):
-            if (created_node := syncable_nodes.pop(node.external_id, None)) is None:
-                logger.debug("Creating new node: %r", node)
-                created_node = CreatedNode.model_validate(
-                    await self.inventory_api.post(
-                        "/nodes/",
-                        json=node.model_dump(exclude={"services"}),
-                    ),
+        snapshot = await self._fetch_snapshot()
+        self._generation = snapshot
+        self._snapshot_complete = snapshot.diagnostics.is_complete
+        try:
+            present_ids: list[int | None] = []
+            for node in snapshot.nodes:
+                if (created_node := syncable_nodes.pop(node.external_id, None)) is None:
+                    logger.debug("Creating new node: %r", node)
+                    created_node = CreatedNode.model_validate(
+                        await self.inventory_api.post(
+                            "/nodes/",
+                            json=node.model_dump(exclude={"services"}),
+                        ),
+                    )
+                present_ids.append(created_node.id)
+                await self.sync_node(created_node, node)
+            logger.debug("Nodes absent from PMM: %s", syncable_nodes)
+            owns_run = await self._owns_run()
+            if owns_run:
+                await SyncEntityAbsenceManager.clear(
+                    self._session,
+                    self.get_name(),
+                    SyncInventoryEntityTypeEnum.NODE,
+                    *present_ids,
                 )
-            await self.sync_node(created_node, node)
-        logger.debug("Nodes to delete: %s", syncable_nodes)
-        for node in syncable_nodes.values():
-            await self.delete_node(node)
+            await self._retire_absent(
+                SyncInventoryEntityTypeEnum.NODE,
+                syncable_nodes.values(),
+                self.delete_node,
+                permitted=owns_run and self._generation_is_complete(),
+                filtered_external_ids=snapshot.diagnostics.filtered_node_ids,
+            )
+        finally:
+            self._generation = None
 
     async def fetch_node(self, created_node: CreatedNode) -> Node | None:
         """Fetch updated data for a specific node.
@@ -188,9 +329,7 @@ class PMMSyncer(BaseSyncer):
         Returns None if the node is filtered out (e.g., has sep_sync: disabled).
 
         :param created_node: The node instance to fetch updated data for.
-        :type created_node: CreatedNode
         :return: The updated node data, or None if filtered out.
-        :rtype: Node | None
         """
         logger.debug(
             "Fetching node from PMM with external id %s",
@@ -212,21 +351,28 @@ class PMMSyncer(BaseSyncer):
         Update the local inventory node with data from the PMM API and handle associated
         services.
 
+        Services are retired under the same generation gate as nodes. A call that did
+        not arrive from a full inventory generation, such as an operator-triggered
+        single-node refresh, has no generation to judge absence against, so it is
+        upsert-only.
+
         :param created_node: The local node instance to synchronize.
-        :type created_node: CreatedNode
         :param updated_node: The updated node data fetched from the PMM API.
-        :type updated_node: Node
+        :raises SyncFailError: If synchronizing, holding or retiring a service fails
+            and ``break_on_error`` is set.
+        :raises HTTPBadRequestException: If a ledger write hits a database error.
         """
         await self.update_node(created_node, updated_node)
-        external_id_to_id = {}
-        port_to_id = {}
-        syncable_services = {}
+        external_id_to_id: dict[str, int] = {}
+        port_to_id: dict[int, int] = {}
+        syncable_services: dict[int | None, CreatedService] = {}
         for service in created_node.services:
             syncable_services[service.id] = service
             if service.external_id is not None:
                 external_id_to_id[service.external_id] = service.id
             if service.port is not None:
                 port_to_id[service.port] = service.id
+        present_ids: list[int | None] = []
         for service in updated_node.services:
             if (
                 created_service := syncable_services.pop(
@@ -244,9 +390,28 @@ class PMMSyncer(BaseSyncer):
                     ),
                 )
                 created_service.node = created_node.model_copy(update={"services": []})
+            present_ids.append(created_service.id)
             await self.sync_service(created_service, service)
-        for service in syncable_services.values():
-            await self.delete_service(service)
+        owns_run = await self._owns_run()
+        filtered_service_ids = (
+            self._generation.diagnostics.filtered_service_ids
+            if self._generation is not None
+            else set()
+        )
+        if owns_run:
+            await SyncEntityAbsenceManager.clear(
+                self._session,
+                self.get_name(),
+                SyncInventoryEntityTypeEnum.SERVICE,
+                *present_ids,
+            )
+        await self._retire_absent(
+            SyncInventoryEntityTypeEnum.SERVICE,
+            syncable_services.values(),
+            self.delete_service,
+            permitted=owns_run and self._generation_is_complete(),
+            filtered_external_ids=filtered_service_ids,
+        )
 
     async def fetch_service(self, created_service: CreatedService) -> PMMService | None:
         """Fetch updated data for a specific service.
@@ -255,9 +420,7 @@ class PMMSyncer(BaseSyncer):
         Returns None if the service is filtered out (e.g., has sep_sync: disabled).
 
         :param created_service: The service instance for which to fetch updated data.
-        :type created_service: CreatedService
         :return: The updated service data, or None if filtered out.
-        :rtype: PMMService | None
         """
         logger.debug(
             "Fetching service from PMM with external id %s",

@@ -15,6 +15,7 @@
 """Verify the baked PMM-embedded settings profile."""
 
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -151,6 +152,12 @@ def test_profile_constructs_every_settings_class():
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
+def test_embedded_profile_enables_beat_pool_pre_ping():
+    """Assert the baked profile enables Celery beat/worker pool pre-ping."""
+    assert Settings().CELERY.beat_engine_options.pool_pre_ping is True
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
 def test_pmm_annotations_stay_enabled_without_an_api_key():
     """Assert annotations are configured on, and inert, until a token arrives."""
     settings = Settings()
@@ -190,6 +197,52 @@ def test_override_allowlist_resolves_from_the_profile(embedded_profile_data: dic
 def test_profile_carries_a_single_default_block(embedded_profile_data: dict):
     """Assert one block keeps the profile independent of ``FASTAPI_ENV``."""
     assert set(embedded_profile_data) == {"default"}
+
+
+def test_profile_database_block_is_defined_once(embedded_profile_data: dict):
+    """Assert the shared database is anchored once and aliased to every service."""
+    default = embedded_profile_data["default"]
+    shared = default["DATABASE"]
+    assert default["SEP"]["DATABASE"] is shared
+    assert default["INVENTORY"]["DATABASE"] is shared
+    assert default["TASKS"]["DATABASE"] is shared
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_all_services_resolve_the_same_database_connection():
+    """Assert SEP, Inventory, and Tasks read identical connection values from the profile."""
+    databases = [
+        settings_cls().DATABASE
+        for settings_cls in (SEPSettings, InventorySettings, TasksSettings)
+    ]
+    reference = databases[0]
+    for database in databases[1:]:
+        assert database.ENGINE == reference.ENGINE
+        assert (database.HOST, database.NAME, database.PORT, database.USER) == (
+            reference.HOST,
+            reference.NAME,
+            reference.PORT,
+            reference.USER,
+        )
+    assert (reference.HOST, reference.NAME, reference.PORT, reference.USER) == (
+        "pmm-server",
+        "sep",
+        5432,
+        "sep",
+    )
+
+
+def test_global_database_password_reaches_every_service(embedded_profile_cwd: Path):
+    """Assert one global password file supplies all three services from the profile."""
+    secrets_dir = embedded_profile_cwd / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "DATABASE__PASSWORD").write_text("shared-pw", encoding="utf-8")
+
+    for settings_cls in (SEPSettings, InventorySettings, TasksSettings):
+        assert (
+            settings_cls(_secrets_dir=secrets_dir).DATABASE.PASSWORD.get_secret_value()
+            == "shared-pw"
+        )
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
@@ -383,15 +436,15 @@ def test_every_allowlist_entry_names_a_reachable_class(embedded_profile_data: di
     """
     reachable_tokens: set[str] = set()
     for member, _, _ in SEP_ADMIN_SETTINGS_CLASSES:
-        reachable_tokens.add(member.value)
+        reachable_tokens.add(str(member))
     for member, _, _ in INVENTORY_ADMIN_SETTINGS_CLASSES:
-        reachable_tokens.add(member.value)
+        reachable_tokens.add(str(member))
     for member, _, _ in TASKS_ADMIN_SETTINGS_CLASSES:
-        reachable_tokens.add(member.value)
+        reachable_tokens.add(str(member))
 
     profile_apps = SEPSettings().APPS
     for entry in collect_app_owned_settings_classes(profile_apps):
-        reachable_tokens.add(entry.setting_class.value)
+        reachable_tokens.add(str(entry.setting_class))
 
     allowlist = read_allowlist(embedded_profile_data)
     for key in allowlist:

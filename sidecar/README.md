@@ -55,37 +55,48 @@ name. What a file supplies is a *canonical destination*:
 | Canonical name | Mountable? |
 |---|---|
 | `SECRET_KEY` | **Yes.** The gate accepts a file and the script never exports the key, so each process reads it from the file. |
-| `{SEP,INVENTORY,TASKS}__DATABASE__HOST` / `__PORT` / `__PASSWORD`, `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY`, `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT`, `TASKS__NOMAD__ENDPOINT` | **Yes.** A file suppresses the derived export. An explicitly-set variable of the same name still wins over both. |
+| `DATABASE__PASSWORD` | **Yes.** One file supplies all three services. A per-service `{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` file or variable overrides it for that service only. |
+| `{SEP,INVENTORY,TASKS}__DATABASE__HOST` / `__PORT` | **Yes.** Per-service names; host and port reach every service through the `SEP_DB_HOST` / `SEP_DB_PORT` shell inputs (see below), not through a global name in this image. |
+| `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY`, `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT`, `TASKS__NOMAD__ENDPOINT` | **Yes.** A file suppresses the derived export. An explicitly-set variable of the same name still wins over both. |
 | `SEP_INTERNAL_TOKEN`, `BASE_URL` | **Yes.** Already canonical; the script clears only a blank inherited value and otherwise leaves either alone. |
-| `CELERY__BEAT_DBURI` | **Yes.** The script only clears a blank inherited value, which would otherwise outrank the file; the setting itself carries a default derived from `SEP__DATABASE__*`, which a file outranks. |
+| `CELERY__BEAT_DBURI` | **Yes.** The script only clears a blank inherited value, which would otherwise outrank the file; the setting itself carries a default derived from the resolved SEP database, which a mounted `DATABASE__PASSWORD` or `SEP__DATABASE__PASSWORD` outranks. |
 | `CELERY__BROKER_URL`, `CELERY__RESULT_BACKEND` | **No.** `entrypoint.sh` mints the bundled Valkey credential per container run and exports both unconditionally, so a file has nothing to supply. |
 | The `SEP_*` deployment inputs | **No.** Shell inputs, not settings fields. |
 
 The resolution order is: an explicitly-set canonical environment variable, then a
-file of that name, then the value derived from the raw `SEP_*` input.
+file of that name, then the value derived from the raw `SEP_*` input. Within each
+of those tiers, a per-service `{SEP,INVENTORY,TASKS}__*` name outranks the
+unprefixed global spelling of the same destination — so a deployment that sets
+both `DATABASE__PASSWORD` and `SEP__DATABASE__PASSWORD` always resolves the
+per-service value for SEP, regardless of ordering.
 
-**To keep the database password out of the environment, mount all three
-`{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` files.** A password file supplies
-exactly the one canonical name it is named for: the fan-out of a single password
-to all three services happens only through the `SEP_DB_PASSWORD` input, which is
-an environment variable and so the very thing this mount avoids. Mounting
-`SEP__DATABASE__PASSWORD` alone leaves `InventorySettings` and `TasksSettings`
-with no password at all.
+**To keep the database password out of the environment, mount one
+`DATABASE__PASSWORD` file.** The settings classes resolve that global name for
+SEP, Inventory, and Tasks alike. Mount a per-service
+`{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` file only when one service needs a
+different password. Leave the name unset rather than blank: unlike the
+per-service password names, `settings-env.sh` does not clear a blank inherited
+`DATABASE__PASSWORD`, so an empty value outranks the mounted file (see the
+blank-inherited-value note below). The `SEP_DB_PASSWORD` shell input remains
+available: it fans out to all three per-service names as environment variables,
+which is the path to avoid when keeping the password out of the process
+environment.
 
-**`SEP__DATABASE__HOST` and `SEP__DATABASE__PORT` are the exception — they move
-every service, not just SEP.** Unlike a password file, these two seed the
-`SEP_DB_HOST` / `SEP_DB_PORT` shell inputs, which the migrate wait loops read and
-which all three services derive their host and port from. Mounting
-`SEP__DATABASE__HOST` therefore also sets `INVENTORY__DATABASE__HOST` and
-`TASKS__DATABASE__HOST`; likewise `SEP__DATABASE__PORT` fans out to
-`INVENTORY__DATABASE__PORT` and `TASKS__DATABASE__PORT`. There is no way to point
-one service at a different host or port with a file alone — to do that, set the
-per-service canonical variables explicitly rather than mounting the SEP file.
+**Host and port reach every service through the shell inputs, not a global
+name.** `settings-env.sh` reads `SEP_DB_HOST` and `SEP_DB_PORT` (defaulting to
+`pmm-server` and `5432`) and derives `{SEP,INVENTORY,TASKS}__DATABASE__HOST` and
+`__PORT` for all three services; the migrate wait loops read the same inputs.
+Mounting `SEP__DATABASE__HOST` or `SEP__DATABASE__PORT` seeds those inputs before
+the defaults apply, so the fan-out still reaches Inventory and Tasks. There is
+no global `DATABASE__HOST` mount path in this image: the script exports the three
+per-service names unconditionally, and an environment variable outranks every
+file. To point one service at a different host or port, set that service's
+canonical variable explicitly.
 
-The celery-beat store needs no file of its own: it follows `SEP__DATABASE__*`, so
-the mounted `SEP__DATABASE__PASSWORD` reaches it through the same settings
-resolution the services use. Mount `CELERY__BEAT_DBURI` only to point beat at a
-*different* store.
+The celery-beat store needs no file of its own: it follows the resolved SEP
+database, so a mounted `DATABASE__PASSWORD` or `SEP__DATABASE__PASSWORD`
+reaches it through the same settings resolution the services use. Mount
+`CELERY__BEAT_DBURI` only to point beat at a *different* store.
 
 Constraints on the directory: entries must be regular files directly inside it (a
 name in a subdirectory matches no setting). File names are matched
@@ -102,7 +113,9 @@ file, since a blank environment variable still counts as supplied, so the
 script clears the blank for every canonical name it manages — `SECRET_KEY`,
 every name it derives, and every name a `SEP_*` guard would otherwise leave
 untouched when that guard is inactive (`PMM__API_KEY` with no
-`SEP_GRAFANA_TOKEN` set, say). Unset is still the clearer choice for a
+`SEP_GRAFANA_TOKEN` set, say). The global `DATABASE__PASSWORD` name is outside
+that list: a blank inherited value there resolves as an empty password rather
+than deferring to a mounted file. Unset is still the clearer choice for a
 deployment that writes its own compose file or job template.
 
 ### App set
@@ -214,10 +227,11 @@ Already canonical, so they are passed straight through with no expansion:
 Any canonical variable can also be set directly — an explicit
 `TASKS__DATABASE__HOST` outranks the one derived from `SEP_DB_HOST`. It overrides
 only itself, though: setting `SEP__DATABASE__PASSWORD` by hand leaves the other
-two services on whatever `SEP_DB_PASSWORD` supplied, so prefer the deployment
-input when you want the value to fan out. `CELERY__BEAT_DBURI` needs no input at
-all: it defaults to the resolved SEP database connection, so set it explicitly
-only to keep the beat schedule in a store separate from the SEP database.
+two services on whatever `SEP_DB_PASSWORD` supplied, so prefer `DATABASE__PASSWORD`
+(or the `SEP_DB_PASSWORD` input) when you want one password to reach every
+service. `CELERY__BEAT_DBURI` needs no input at all: it defaults to the resolved
+SEP database connection, so set it explicitly only to keep the beat schedule in
+a store separate from the SEP database.
 
 ### Not deployment inputs
 

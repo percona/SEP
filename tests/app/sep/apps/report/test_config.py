@@ -21,7 +21,6 @@ import pytest
 from pydantic import SecretStr
 
 from app.core.celery.models import IntervalSchedule, Period
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import is_hot_reloadable
 from app.sep.apps.report.config import (
@@ -175,9 +174,9 @@ class TestHealthReportSettingsProxy:
         """``health_report_settings`` is an ``OverridableSettingsProxy``."""
         assert isinstance(health_report_settings, OverridableSettingsProxy)
 
-    def test_enum_member_exists(self) -> None:
-        """Assert the section has a distinct ``SettingClassEnum`` member."""
-        assert SettingClassEnum.HEALTH_REPORT_SETTINGS.value == "HealthReportSettings"
+    def test_proxy_uses_class_name_identifier(self) -> None:
+        """Bind the proxy to the Pydantic class ``__name__``, not an enum member."""
+        assert health_report_settings._setting_class == HealthReportSettings.__name__
 
 
 class TestHealthReportSettingsOverridePosture:

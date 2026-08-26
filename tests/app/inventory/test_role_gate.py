@@ -22,6 +22,7 @@ from pydantic import SecretStr
 from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api import deps as api_deps
 from app.core.config import settings
 from app.core.settings_override.models import SettingClassEnum
 from app.inventory.deps import get_session
@@ -47,13 +48,10 @@ def bearer_client(session: AsyncSession, casdoor_mock) -> TestClient:
 
 @pytest.fixture
 def admin_bearer_client(
-    bearer_client: TestClient, casdoor_user_data, mocker: MockerFixture
+    bearer_client: TestClient, casdoor_mock, casdoor_user_data
 ) -> TestClient:
     """Return the Bearer client whose credential resolves to an admin."""
-    mocker.patch(
-        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
-        new=mocker.AsyncMock(return_value={**casdoor_user_data, "is_admin": True}),
-    )
+    casdoor_mock.get_user.return_value = {**casdoor_user_data, "is_admin": True}
     return bearer_client
 
 
@@ -148,3 +146,70 @@ def test_the_service_principal_can_still_delete_a_service(
     )
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
+def test_a_gated_mutation_resolves_the_credential_once(
+    admin_bearer_client: TestClient, casdoor_mock, mocker: MockerFixture
+) -> None:
+    """Resolve one credential once, though the gate and the route both need it.
+
+    The gate resolves the caller in its body, so FastAPI's own dependency cache
+    cannot cover the route's ``IsAuthenticatedDep``; the count of provider
+    round-trips is what says the request-scoped cache does. The status pins that
+    the request reached the handler, so both consumers ran.
+
+    The spy sees the gate's resolution but not the route's, which holds the
+    original the module-level ``IsAuthenticatedDep`` captured at import, so it
+    counts the two consumers separately against the single round-trip.
+    """
+    casdoor_mock.introspect_token.reset_mock()
+    casdoor_mock.get_user.reset_mock()
+    gate = mocker.spy(api_deps, "get_current_user")
+
+    response = admin_bearer_client.put("/services/1", json={}, headers=BEARER_HEADERS)
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert gate.await_count == 1
+    assert casdoor_mock.introspect_token.await_count == 1
+    assert casdoor_mock.get_user.await_count == 1
+
+
+def test_a_safe_method_resolves_only_for_the_route(
+    admin_bearer_client: TestClient, casdoor_mock, mocker: MockerFixture
+) -> None:
+    """Resolve nothing in the gate on a safe method, leaving the route its own.
+
+    The gate answers its method check ahead of everything else, so a read costs
+    the one resolution its route declares rather than gaining the gate's.
+
+    The provider counts alone cannot say that: a gate that did resolve would be
+    served the route's resolution from the cache and leave them at one either
+    way. Spying the name the gate looks up at call time is what separates the
+    two, since the route holds the original captured at import.
+    """
+    casdoor_mock.introspect_token.reset_mock()
+    casdoor_mock.get_user.reset_mock()
+    gate = mocker.spy(api_deps, "get_current_user")
+
+    response = admin_bearer_client.get("/services/1", headers=BEARER_HEADERS)
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert gate.await_count == 0
+    assert casdoor_mock.introspect_token.await_count == 1
+    assert casdoor_mock.get_user.await_count == 1
+
+
+def test_the_health_probe_resolves_no_credential(
+    bearer_client: TestClient, casdoor_mock
+) -> None:
+    """Keep the liveness probe unauthenticated, resolving nothing at all.
+
+    This is why the gate resolves the caller imperatively rather than through a
+    sub-dependency, and the cache must not have made the resolution eager.
+    """
+    casdoor_mock.introspect_token.reset_mock()
+
+    response = bearer_client.get("/health")
+
+    assert response.status_code == status.HTTP_200_OK
+    casdoor_mock.introspect_token.assert_not_awaited()

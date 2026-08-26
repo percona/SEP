@@ -116,20 +116,21 @@ def test_database_options_password_masked_in_repr():
     assert "supersecret" not in repr(db_options)
 
 
-def test_pool_engine_kwargs_empty_when_unset():
-    """Return no kwargs when pool fields are unset, so the engine keeps defaults."""
+def test_pool_engine_kwargs_pre_pings_by_default():
+    """Emit pool_pre_ping when sizing fields are unset."""
     db_options = DatabaseOptions(NAME="test.db")
 
-    assert db_options.pool_engine_kwargs == {}
+    assert db_options.pool_engine_kwargs == {"pool_pre_ping": True}
 
 
 def test_pool_engine_kwargs_includes_all_set_fields():
-    """Map all three set pool fields to lowercase create_engine kwargs."""
+    """Map all set pool fields to lowercase create_engine kwargs."""
     db_options = DatabaseOptions(
         NAME="test.db", POOL_SIZE=7, MAX_OVERFLOW=3, POOL_TIMEOUT=25.0
     )
 
     assert db_options.pool_engine_kwargs == {
+        "pool_pre_ping": True,
         "pool_size": 7,
         "max_overflow": 3,
         "pool_timeout": 25.0,
@@ -137,17 +138,27 @@ def test_pool_engine_kwargs_includes_all_set_fields():
 
 
 def test_pool_engine_kwargs_omits_unset_fields():
-    """Omit unset pool fields from the kwargs."""
+    """Omit unset sizing fields from the kwargs."""
     db_options = DatabaseOptions(NAME="test.db", POOL_SIZE=7)
 
-    assert db_options.pool_engine_kwargs == {"pool_size": 7}
+    assert db_options.pool_engine_kwargs == {"pool_pre_ping": True, "pool_size": 7}
 
 
 def test_pool_engine_kwargs_includes_zero_max_overflow():
     """Keep MAX_OVERFLOW=0 because 0 is set, not None."""
     db_options = DatabaseOptions(NAME="test.db", MAX_OVERFLOW=0)
 
-    assert db_options.pool_engine_kwargs == {"max_overflow": 0}
+    assert db_options.pool_engine_kwargs == {
+        "pool_pre_ping": True,
+        "max_overflow": 0,
+    }
+
+
+def test_pool_engine_kwargs_respects_pre_ping_opt_out():
+    """Allow disabling pool_pre_ping per engine."""
+    db_options = DatabaseOptions(NAME="test.db", POOL_PRE_PING=False)
+
+    assert db_options.pool_engine_kwargs == {"pool_pre_ping": False}
 
 
 @pytest.mark.parametrize(

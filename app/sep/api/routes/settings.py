@@ -60,7 +60,7 @@ SEP_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
 ]
 
 
-def _sep_setting_applicable(cls: SettingClassEnum, field: FieldMetadata) -> bool:
+def _sep_setting_applicable(cls: str, field: FieldMetadata) -> bool:
     """Determine whether a SEP setting applies under the active runtime state.
 
     ``AMBIENT_SESSION_SSO_ENABLED`` applies only under an ambient-capable auth
@@ -255,9 +255,9 @@ def _wired_export_class_names() -> set[str]:
     :return: Core SEP, app-owned, and proxied Tasks class names.
     :rtype: set[str]
     """
-    names = {member.value for member, _, _ in SEP_ADMIN_SETTINGS_CLASSES}
-    names.update(entry.setting_class.value for entry in SEP_APP_OWNED_SETTINGS_CLASSES)
-    names.add(SettingClassEnum.TASKS_SETTINGS.value)
+    names = {str(member) for member, _, _ in SEP_ADMIN_SETTINGS_CLASSES}
+    names.update(str(entry.setting_class) for entry in SEP_APP_OWNED_SETTINGS_CLASSES)
+    names.add(str(SettingClassEnum.TASKS_SETTINGS))
     return names
 
 
@@ -265,7 +265,7 @@ async def _append_local_class_export(
     payload: dict[str, dict[str, Any]],
     *,
     session: AsyncSession,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     settings_cls: type[BaseYamlSettings],
     proxy: OverridableSettingsProxy,
     requested: dict[str, _ClassRequest] | None,
@@ -279,12 +279,12 @@ async def _append_local_class_export(
     :param proxy: The live override proxy for the class.
     :param requested: Parsed export selectors, or ``None`` for a full export.
     """
-    class_name = setting_class.value
+    class_name = str(setting_class)
     if requested is not None and class_name not in requested:
         return
     block = await build_settings_class_values(
         session=session,
-        setting_class=setting_class,
+        setting_class=class_name,
         settings_cls=settings_cls,
         proxy=proxy,
     )
@@ -396,7 +396,7 @@ async def export_settings(
         ``OSError`` (e.g. a connection failure), an unexpected payload shape,
         or a missing ``TasksSettings`` group.
     """
-    tasks_key = SettingClassEnum.TASKS_SETTINGS.value
+    tasks_key = str(SettingClassEnum.TASKS_SETTINGS)
     requested = (
         _parse_export_selectors(keys, _wired_export_class_names())
         if keys is not None
