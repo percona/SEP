@@ -24,7 +24,7 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from functools import cached_property
 from types import TracebackType
-from typing import Annotated, Any, ClassVar, NamedTuple, Self
+from typing import Annotated, Any, ClassVar, Final, NamedTuple, Self, TypeVar
 from uuid import uuid4
 
 from aiohttp import ClientError
@@ -69,6 +69,45 @@ from app.sep.sync.exceptions import (
 from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
 logger = logging.getLogger(__name__)
+
+#: Inventory API path segment per entity type, for the routes that address one
+#: entity generically rather than through a per-level method.
+INVENTORY_PATH_SEGMENTS: Final = {
+    SyncInventoryEntityTypeEnum.NODE: "nodes",
+    SyncInventoryEntityTypeEnum.SERVICE: "services",
+    SyncInventoryEntityTypeEnum.SCHEMA: "schemas",
+    SyncInventoryEntityTypeEnum.TABLE: "tables",
+}
+
+#: Ties an identity map to the index it points into, so a schema index cannot be
+#: handed a table.
+_Identifiable = TypeVar("_Identifiable", bound=CreatedEntity)
+
+
+def claim_identity(
+    identities: dict[str, int | None],
+    identity: str,
+    entity: _Identifiable,
+    by_id: dict[int | None, _Identifiable],
+) -> None:
+    """Point an identity at an entity, letting an active row win.
+
+    An identity — an upstream id, or a name unique within a parent — is unique
+    among *active* rows only, so a tombstone and the replacement that took its
+    identity both come back from a retired-inclusive read. Matching an incoming
+    report against the tombstone would attempt a revive the active row's unique
+    key refuses, so the active row claims the identity and the tombstone keeps its
+    own entry in ``by_id``, where absence handling still finds it. Without this,
+    result ordering would decide.
+
+    :param identities: The identity-to-primary-key map being built.
+    :param identity: The identity to claim.
+    :param entity: The local entity claiming it.
+    :param by_id: The primary-key-keyed index holding every candidate.
+    """
+    incumbent = by_id.get(identities.get(identity))
+    if incumbent is None or incumbent.retired_at is not None:
+        identities[identity] = entity.id
 
 
 def inventory_sync_alert_address(entity: CreatedEntity) -> str | None:
@@ -148,6 +187,15 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     APIs and abstract methods that can be overridden by subclasses.
 
     :cvar SYNC_TO_LIMIT: The upper limit for entity types that can be synchronized.
+    :cvar reads_retired_entities: The entity levels whose inventory reads include
+        retired entities. A level belongs here only if this syncer has a match
+        site there — a point where an incoming report is matched against the local
+        inventory, so a tombstone can be recognised as reappearing. At any other
+        level the opt-in is actively harmful: the level's read feeds an
+        unconditional walk, which then drives fetches and writes against entities
+        whose upstream is gone and whose parents the inventory's own active-only
+        routes reject. The distinction is per level, not per syncer, because a
+        syncer can diff at one level and walk at another.
     :param inventory_api: The remote API interface for interacting with the inventory
         system.
     :param sync_instance: The synchronization instance used to track sync processes.
@@ -167,6 +215,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
+    reads_retired_entities: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
+        frozenset()
+    )
     inventory_api: RemoteAPI
     sync_instance: SyncInstance | None = None
     sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem] = {}
@@ -507,6 +558,21 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 sync_item,
             )
 
+    def _retirement_params(
+        self, entity_type: SyncInventoryEntityTypeEnum
+    ) -> dict[str, str]:
+        """Return the query parameters opting one read into tombstones.
+
+        :param entity_type: The entity level the read addresses.
+        :return: ``{"include_retired": "true"}`` when this syncer has a match site
+            at that level, and an empty mapping otherwise.
+        """
+        return (
+            {"include_retired": "true"}
+            if entity_type in self.reads_retired_entities
+            else {}
+        )
+
     @alru_cache
     async def get_inventory_nodes(
         self,
@@ -537,6 +603,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             "node_type": node_type,
         }
         params = {key: value for key, value in params.items() if value is not None}
+        params |= self._retirement_params(SyncInventoryEntityTypeEnum.NODE)
         nodes = await fetch_all_dict_items(
             lambda pagination: self.inventory_api.get(
                 "/nodes/", params={**params, **pagination.model_dump()}
@@ -557,7 +624,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :rtype: CreatedNode
         """
         return CreatedNode.model_validate(
-            await self.inventory_api.get(f"/nodes/{node_id}")
+            await self.inventory_api.get(
+                f"/nodes/{node_id}",
+                params=self._retirement_params(SyncInventoryEntityTypeEnum.NODE),
+            )
         )
 
     @alru_cache
@@ -573,7 +643,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :rtype: CreatedService
         """
         return CreatedService.model_validate(
-            await self.inventory_api.get(f"/services/{service_id}"),
+            await self.inventory_api.get(
+                f"/services/{service_id}",
+                params=self._retirement_params(SyncInventoryEntityTypeEnum.SERVICE),
+            ),
         )
 
     @alru_cache
@@ -589,7 +662,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :rtype: CreatedSchema
         """
         return CreatedSchema.model_validate(
-            await self.inventory_api.get(f"/schemas/{schema_id}"),
+            await self.inventory_api.get(
+                f"/schemas/{schema_id}",
+                params=self._retirement_params(SyncInventoryEntityTypeEnum.SCHEMA),
+            ),
         )
 
     @alru_cache
@@ -605,7 +681,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :rtype: CreatedTable
         """
         return CreatedTable.model_validate(
-            await self.inventory_api.get(f"/tables/{table_id}"),
+            await self.inventory_api.get(
+                f"/tables/{table_id}",
+                params=self._retirement_params(SyncInventoryEntityTypeEnum.TABLE),
+            ),
         )
 
     @alru_cache
@@ -624,10 +703,13 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: A list of retrieved CreatedSchema instances.
         :rtype: list[CreatedSchema]
         """
+        params = {"include_tables": "true"} | self._retirement_params(
+            SyncInventoryEntityTypeEnum.SCHEMA
+        )
         schema_data = await fetch_all_dict_items(
             lambda pagination: self.inventory_api.get(
                 f"/services/{service_id}/schemas/",
-                params={"include_tables": "true", **pagination.model_dump()},
+                params={**params, **pagination.model_dump()},
             )
         )
         return [CreatedSchema.model_validate(schema) for schema in schema_data]
@@ -657,74 +739,106 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         async with self.manage_sync_item(entity_type, created_entity):
             pass
 
-    async def delete_node(self, created_node: CreatedNode) -> None:
-        """Delete a node from the inventory system.
+    async def retire_node(self, created_node: CreatedNode) -> None:
+        """Retire a node in the inventory system, keeping its row and subtree.
 
-        This method synchronizes the deletion of a node by marking the corresponding
-        SyncItem and performing the deletion via the inventory API.
+        This method synchronizes the retirement of a node by marking the
+        corresponding SyncItem and issuing the retire call to the inventory API.
 
-        :param created_node: The node instance to be deleted.
+        :param created_node: The node instance to be retired.
         """
-        logger.debug("Deleting node %s from inventory", created_node.id)
+        logger.debug("Retiring node %s in inventory", created_node.id)
         async with self.manage_sync_item(
             SyncInventoryEntityTypeEnum.NODE,
             created_node,
         ):
             await self.inventory_api.delete(f"/nodes/{created_node.id}")
 
-    async def delete_service(self, created_service: CreatedService) -> None:
-        """Delete a service from the inventory system.
+    async def retire_service(self, created_service: CreatedService) -> None:
+        """Retire a service in the inventory system, keeping its row and subtree.
 
-        This method synchronizes the deletion of a service by marking the corresponding
-        SyncItem and performing the deletion via the inventory API.
+        This method synchronizes the retirement of a service by marking the
+        corresponding SyncItem and issuing the retire call to the inventory API.
 
-        :param created_service: The service instance to be deleted.
-        :type created_service: CreatedService
+        :param created_service: The service instance to be retired.
         """
-        logger.debug("Deleting service %s from inventory", created_service.id)
+        logger.debug("Retiring service %s in inventory", created_service.id)
         async with self.manage_sync_item(
             SyncInventoryEntityTypeEnum.SERVICE,
             created_service,
         ):
             await self.inventory_api.delete(f"/services/{created_service.id}")
 
-    async def delete_schema(self, created_schema: CreatedSchema) -> None:
-        """Delete a schema from the inventory system.
+    async def retire_schema(self, created_schema: CreatedSchema) -> None:
+        """Retire a schema in the inventory system, keeping its row and tables.
 
-        This method synchronizes the deletion of a schema by marking the corresponding
-        SyncItem and performing the deletion via the inventory API.
+        This method synchronizes the retirement of a schema by marking the
+        corresponding SyncItem and issuing the retire call to the inventory API.
 
-        Parameters
-        ----------
-        created_schema : CreatedSchema
-            The schema instance to be deleted.
-
+        :param created_schema: The schema instance to be retired.
         """
-        logger.debug("Deleting schema %s from inventory", created_schema.id)
+        logger.debug("Retiring schema %s in inventory", created_schema.id)
         async with self.manage_sync_item(
             SyncInventoryEntityTypeEnum.SCHEMA,
             created_schema,
         ):
             await self.inventory_api.delete(f"/schemas/{created_schema.id}")
 
-    async def delete_table(self, created_table: CreatedTable) -> None:
-        """Delete a table from the inventory system.
+    async def retire_table(self, created_table: CreatedTable) -> None:
+        """Retire a table in the inventory system, keeping its row.
 
-        This method synchronizes the deletion of a table by marking the corresponding
-        SyncItem and performing the deletion via the inventory API.
+        This method synchronizes the retirement of a table by marking the
+        corresponding SyncItem and issuing the retire call to the inventory API.
 
-        Parameters
-        ----------
-        created_table : CreatedTable
-            The table instance to be deleted.
-
+        :param created_table: The table instance to be retired.
         """
-        logger.debug("Deleting table %s from inventory", created_table.id)
+        logger.debug("Retiring table %s in inventory", created_table.id)
         async with self.manage_sync_item(
             SyncInventoryEntityTypeEnum.TABLE,
             created_table,
         ):
             await self.inventory_api.delete(f"/tables/{created_table.id}")
+
+    async def _revive_if_retired(
+        self,
+        entity_type: SyncInventoryEntityTypeEnum,
+        created_entity: CreatedEntity,
+    ) -> None:
+        """Revive a tombstoned entity because upstream reported it again.
+
+        Call this only where upstream presence has actually been established —
+        where a match against the local inventory succeeded. A hook further up,
+        in ``sync_node`` and friends, would fire for every entity a syncer merely
+        iterates over, and a syncer that walks the whole inventory would revive
+        every tombstone it visits.
+
+        Presence under the same upstream identity is unambiguous, so revival does
+        not wait for a complete generation the way retirement does: the
+        completeness gate exists to stop retiring on partial evidence, and says
+        nothing about an entity that is demonstrably back.
+
+        The in-memory entity is cleared alongside the remote row because the
+        ``get_inventory_*`` reads are cached per generation and would otherwise
+        keep reporting it retired.
+
+        :param entity_type: The type of the entity that reappeared.
+        :param created_entity: The local entity matched against the upstream report.
+        :raises HTTPConflictException: If an active entity already holds the unique
+            key the revived entity would reclaim. Callers outside a
+            ``manage_sync_item`` block propagate it and abort the whole run rather
+            than failing the one item.
+        """
+        if created_entity.retired_at is None:
+            return
+        logger.info(
+            "Reviving %s %s: reported again by its source",
+            entity_type.name,
+            created_entity.id,
+        )
+        await self.inventory_api.post(
+            f"/{INVENTORY_PATH_SEGMENTS[entity_type]}/{created_entity.id}/revive"
+        )
+        created_entity.retired_at = None
 
     async def sync_inventory(self) -> None:
         """Synchronize the entire inventory.

@@ -17,15 +17,21 @@
 
 import pytest
 from pydantic import ValidationError
+from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.exceptions import HTTPConflictException
 from app.core.utils.date_time import utc_now
+from app.inventory.constants import ACTIVE_RETIREMENT_KEY
+from app.inventory.crud import RetiredInclusiveServiceManager, ServiceManager
 from app.inventory.models import (
     HostSystemObservationWrite,
     NodeWrite,
+    Service,
     ServiceSystemObservationWrite,
     ServiceTypeEnum,
     SourceEnum,
 )
+from tests.app.factories import ServiceWriteFactory
 
 
 class TestNodeBaseValidator:
@@ -130,3 +136,69 @@ class TestServiceTypeEnum:
             "external",
             "valkey",
         }
+
+
+class TestRetirementKeyUniqueness:
+    """Test how ``retirement_key`` scopes the composite unique indexes.
+
+    Uniqueness is enforced twice: by the database index, and by the Python
+    duplicate check ``BaseSQLModelManager.save`` rebuilds from the model's unique
+    indexes. The Python half is guarded by ``all(equal_filters.values())``, so it
+    only keeps running while the discriminator stays truthy — which is why these
+    tests distinguish ``HTTPConflictException`` (Python check) from the
+    ``HTTPBadRequestException`` a bare index violation would produce.
+    """
+
+    @pytest.mark.asyncio
+    async def test_active_service_carries_the_active_sentinel(
+        self, service: Service
+    ) -> None:
+        """Keep the discriminator truthy on an active row."""
+        assert service.retirement_key == ACTIVE_RETIREMENT_KEY
+        assert ACTIVE_RETIREMENT_KEY
+
+    @pytest.mark.asyncio
+    async def test_second_active_service_on_one_key_conflicts(
+        self, session: AsyncSession, service: Service
+    ) -> None:
+        """Reject a second active service on one node and port."""
+        with pytest.raises(HTTPConflictException):
+            await ServiceManager.create(
+                session,
+                ServiceWriteFactory.build(port=service.port),
+                node_id=service.node_id,
+            )
+
+    @pytest.mark.asyncio
+    async def test_replacement_over_a_tombstone_is_admitted(
+        self, session: AsyncSession, service: Service
+    ) -> None:
+        """Admit a replacement on the node and port a tombstone still holds."""
+        await ServiceManager.retire(session, service)
+
+        replacement = await ServiceManager.create(
+            session,
+            ServiceWriteFactory.build(port=service.port),
+            node_id=service.node_id,
+        )
+        assert replacement.id != service.id
+        assert replacement.retirement_key == ACTIVE_RETIREMENT_KEY
+
+    @pytest.mark.asyncio
+    async def test_successive_tombstones_share_one_key(
+        self, session: AsyncSession, service: Service
+    ) -> None:
+        """Let any number of tombstones sit on the same node and port."""
+        await ServiceManager.retire(session, service)
+        replacement = await ServiceManager.create(
+            session,
+            ServiceWriteFactory.build(port=service.port),
+            node_id=service.node_id,
+        )
+        await ServiceManager.retire(session, replacement)
+
+        retired = await RetiredInclusiveServiceManager.list(
+            session, node_id=service.node_id
+        )
+        assert {row.id for row in retired} == {service.id, replacement.id}
+        assert {row.retirement_key for row in retired} == {service.id, replacement.id}

@@ -18,7 +18,7 @@
 from starlette import status
 from starlette.testclient import TestClient
 
-from app.inventory.models import Table
+from app.inventory.models import Node, Table
 
 
 class TestGetSummaryInventory:
@@ -26,6 +26,23 @@ class TestGetSummaryInventory:
 
     def test_summary_empty(self, test_client: TestClient) -> None:
         """Return all zero counts when the database is empty."""
+        response = test_client.get("/summary/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {
+            "nodes": 0,
+            "services": 0,
+            "schemas": 0,
+            "tables": 0,
+        }
+
+    def test_summary_counts_exclude_retired(
+        self, test_client: TestClient, node: Node, table: Table
+    ) -> None:
+        """Drop every retired entity from the four counts."""
+        assert (
+            test_client.delete(f"/nodes/{node.id}").status_code
+            == status.HTTP_204_NO_CONTENT
+        )
         response = test_client.get("/summary/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {

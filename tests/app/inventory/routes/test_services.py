@@ -24,7 +24,13 @@ from starlette.testclient import TestClient
 
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.inventory.crud import SchemaManager
-from app.inventory.models import Node, Schema, Service, ServiceSystemObservation
+from app.inventory.models import (
+    Node,
+    Schema,
+    Service,
+    ServiceSystemObservation,
+    Table,
+)
 from tests.app.factories import (
     NodeWriteFactory,
     SchemaWriteFactory,
@@ -52,6 +58,16 @@ class TestListServices:
         assert data["total"] == 0
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+
+    def test_list_services_excludes_retired(
+        self, test_client: TestClient, retired_service: Service
+    ) -> None:
+        """Omit a retired service from the default list."""
+        response = test_client.get("/services/")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
 
     def test_list_services_rejects_unknown_sort_key(
         self, test_client: TestClient
@@ -213,6 +229,25 @@ class TestRetrieveService:
         response = test_client.get("/services/9999")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    def test_retrieve_service_retired_returns_404(
+        self, test_client: TestClient, retired_service: Service
+    ) -> None:
+        """Hide a retired service from the default read."""
+        response = test_client.get(f"/services/{retired_service.id}")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_retrieve_service_hides_retired_schema_nested_in_active_service(
+        self, test_client: TestClient, retired_schema: Schema
+    ) -> None:
+        """Drop a retired schema from the schemas nested in an active service.
+
+        The sync engine's ``prepare_sync`` recursion reads its schemas from this
+        route, so what it nests decides which entities get a ``SyncItem``.
+        """
+        response = test_client.get(f"/services/{retired_schema.service_id}")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["schemas"] == []
+
 
 class TestUpdateService:
     """Test PUT /services/{service_id} endpoint."""
@@ -339,7 +374,7 @@ class TestDeleteService:
     """Test DELETE /services/{service_id} endpoint."""
 
     def test_delete_service(self, test_client: TestClient, service: Service) -> None:
-        """Delete a service and confirm it is gone."""
+        """Retire a service and confirm the default read no longer resolves it."""
         response = test_client.delete(f"/services/{service.id}")
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
@@ -350,6 +385,83 @@ class TestDeleteService:
         """Return 404 when deleting a nonexistent service."""
         response = test_client.delete("/services/9999")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_delete_service_retires_schemas_and_tables(
+        self,
+        test_client: TestClient,
+        service: Service,
+        schema: Schema,
+        table: Table,
+    ) -> None:
+        """Retire the service's schemas and tables along with it."""
+        response = test_client.delete(f"/services/{service.id}")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+        assert test_client.get(f"/schemas/{schema.id}").status_code == (
+            status.HTTP_404_NOT_FOUND
+        )
+        assert test_client.get(f"/tables/{table.id}").status_code == (
+            status.HTTP_404_NOT_FOUND
+        )
+        retired_table = test_client.get(
+            f"/tables/{table.id}", params={"include_retired": True}
+        )
+        assert retired_table.status_code == status.HTTP_200_OK
+        assert retired_table.json()["retired_at"] is not None
+
+    def test_delete_service_leaves_the_node_active(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Retire downward only: the service's node keeps serving."""
+        assert (
+            test_client.delete(f"/services/{service.id}").status_code
+            == status.HTTP_204_NO_CONTENT
+        )
+        assert test_client.get(f"/nodes/{service.node_id}").status_code == (
+            status.HTTP_200_OK
+        )
+
+
+class TestReviveService:
+    """Test the POST /services/{service_id}/revive endpoint."""
+
+    def test_revive_service_revives_node(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Revive the retired ancestor chain along with the service."""
+        assert (
+            test_client.delete(f"/nodes/{service.node_id}").status_code
+            == status.HTTP_204_NO_CONTENT
+        )
+
+        response = test_client.post(f"/services/{service.id}/revive")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert test_client.get(f"/services/{service.id}").status_code == (
+            status.HTTP_200_OK
+        )
+        assert test_client.get(f"/nodes/{service.node_id}").status_code == (
+            status.HTTP_200_OK
+        )
+
+    def test_revive_service_conflicts_with_active_replacement(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Reject a revive whose unique slot an active replacement now holds."""
+        assert (
+            test_client.delete(f"/services/{service.id}").status_code
+            == status.HTTP_204_NO_CONTENT
+        )
+        replacement = ServiceWriteFactory.build(port=service.port)
+        assert (
+            test_client.post(
+                f"/nodes/{service.node_id}/services/",
+                json=replacement.model_dump(mode="json", exclude={"node_id"}),
+            ).status_code
+            == status.HTTP_201_CREATED
+        )
+
+        response = test_client.post(f"/services/{service.id}/revive")
+        assert response.status_code == status.HTTP_409_CONFLICT
 
 
 class TestListSchemasByService:
@@ -366,6 +478,16 @@ class TestListSchemasByService:
         assert data["total"] == 0
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+
+    def test_list_schemas_by_service_excludes_retired(
+        self, test_client: TestClient, retired_schema: Schema
+    ) -> None:
+        """Omit a retired schema from an active service's schemas."""
+        response = test_client.get(f"/services/{retired_schema.service_id}/schemas/")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
 
     def test_list_schemas_by_service_rejects_unknown_sort_key(
         self, test_client: TestClient, service: Service

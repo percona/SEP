@@ -27,6 +27,7 @@ from app.core.utils.fields import (
     ArbitraryMapping,
     EmptyStrToNone,
     NonEmptyStr,
+    UTCDatetime,
 )
 from app.inventory.models import ServiceTypeEnum, SourceEnum
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -44,33 +45,30 @@ class BaseInventoryModel(BaseModel):
 
 
 class CreatedEntityBase(BaseSQLModel):
-    """Base model for created inventory entities.
+    """Carry the fields every created inventory entity is persisted with.
 
     This model provides common functionality for entities that are persisted
     in the inventory database, including parent-child relationships.
 
     :cvar CHILDREN_FIELD: The field name representing child entities. Defaults to None.
-    :vartype CHILDREN_FIELD: ClassVar[str | None]
     :cvar PARENT_FIELD: The field name representing the parent entity. Defaults to None.
-    :vartype PARENT_FIELD: ClassVar[str | None]
     :param id: The primary key for the table. Auto-incremented and not nullable.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record was last updated.
-    :type updated_at: UTCDatetime | None
+    :param retired_at: When the inventory stopped seeing the entity upstream, or
+        None while it is active.
     """
 
     CHILDREN_FIELD: ClassVar[str | None] = None
     PARENT_FIELD: ClassVar[str | None] = None
+    retired_at: UTCDatetime | None = None
 
     @property
     def children(self) -> list[CreatedEntityBase]:
         """Retrieve the list of child entities associated with the entity.
 
         :return: The children associated with the entity.
-        :rtype: list[CreatedEntityBase]
         """
         if self.CHILDREN_FIELD is None:
             return []
