@@ -209,7 +209,7 @@ class PMMFetchDiagnostics(BaseModel):
         Filtered entities do not count against completeness: an exclusion is an
         intentional operator choice, not a failure to read.
 
-        :return: `True` when nothing was dropped and the two lists agree.
+        :return: ``True`` when nothing was dropped and the two lists agree.
         """
         return not (
             self.invalid_nodes or self.invalid_services or self.orphan_service_node_ids
@@ -991,7 +991,7 @@ class PMMRemoteAPI(RemoteAPI):
                             **node,
                             source=SourceEnum.PMM,
                             type=nodes_type,
-                            services=services_by_node_id[node["node_id"]],
+                            services=services_by_node_id[node_id],
                         )
                     )
                 except ValidationError:
@@ -1003,11 +1003,11 @@ class PMMRemoteAPI(RemoteAPI):
                         nodes_type,
                         node,
                     )
-        diagnostics.orphan_service_node_ids = [
+        diagnostics.orphan_service_node_ids = sorted(
             node_id
             for node_id in service_map_node_ids
             if node_id not in fetched_node_ids
-        ]
+        )
         return PMMInventorySnapshot(nodes=nodes, diagnostics=diagnostics)
 
     async def get_nodes(
