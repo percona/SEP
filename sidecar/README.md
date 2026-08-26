@@ -74,9 +74,13 @@ per-service value for SEP, regardless of ordering.
 `DATABASE__PASSWORD` file.** The settings classes resolve that global name for
 SEP, Inventory, and Tasks alike. Mount a per-service
 `{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` file only when one service needs a
-different password. The `SEP_DB_PASSWORD` shell input remains available: it fans
-out to all three per-service names as environment variables, which is the path
-to avoid when keeping the password out of the process environment.
+different password. Leave the name unset rather than blank: unlike the
+per-service password names, `settings-env.sh` does not clear a blank inherited
+`DATABASE__PASSWORD`, so an empty value outranks the mounted file (see the
+blank-inherited-value note below). The `SEP_DB_PASSWORD` shell input remains
+available: it fans out to all three per-service names as environment variables,
+which is the path to avoid when keeping the password out of the process
+environment.
 
 **Host and port reach every service through the shell inputs, not a global
 name.** `settings-env.sh` reads `SEP_DB_HOST` and `SEP_DB_PORT` (defaulting to

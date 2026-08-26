@@ -226,7 +226,6 @@ def test_all_services_resolve_the_same_database_connection():
     )
 
 
-@pytest.mark.usefixtures("embedded_profile_cwd")
 def test_global_database_password_reaches_every_service(embedded_profile_cwd: Path):
     """Assert one global password file supplies all three services from the profile."""
     secrets_dir = embedded_profile_cwd / "secrets"

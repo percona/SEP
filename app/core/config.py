@@ -283,6 +283,10 @@ class BaseYamlSettings(BaseSettings):
         from the directory ``SECRETS_DIR`` names, keyed by the same canonical
         ``__``-nested variable names their environment twins use.
 
+        Within each of the environment, dotenv and secret-file sources, a name
+        spelled with this class's prefix outranks the unprefixed global spelling
+        of the same destination; the ranking between sources is unaffected.
+
         ``FASTAPI_ENV`` selects the YAML profile block, and is read from the same
         three sources in the same order, so the block loaded always matches the
         value the resolved settings report.

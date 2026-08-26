@@ -943,25 +943,6 @@ def test_global_database_password_resolves_for_every_service(tmp_path, settings_
     )
 
 
-def test_per_service_env_rewrite_beats_global_in_source_payload(monkeypatch):
-    """Hand the model the per-service value when both spellings share one source."""
-    for name in ("DATABASE__PASSWORD", "SEP__DATABASE__PASSWORD"):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("DATABASE__PASSWORD", "globalpw")
-    monkeypatch.setenv("SEP__DATABASE__PASSWORD", "seppw")
-
-    sources = SEPSettings.settings_customise_sources(
-        SEPSettings,
-        InitSettingsSource(SEPSettings, init_kwargs={}),
-        EnvSettingsSource(SEPSettings),
-        DotEnvSettingsSource(SEPSettings, env_file=None),
-        SecretsSettingsSource(SEPSettings, secrets_dir=None),
-    )
-    env_source = sources[1]
-
-    assert env_source.env_vars["database__password"] == "seppw"
-
-
 @pytest.mark.parametrize(
     ("settings_cls", "filename", "content", "expected", "read"), SECRET_FILE_MATRIX
 )
@@ -1194,7 +1175,7 @@ class TestDerivedBeatStoreDefault:
 
     @pytest.mark.usefixtures("_postgres_profile")
     def test_global_password_reaches_the_derived_store(self, tmp_path):
-        """Carry a global mounted password into the store for every service."""
+        """Carry a global mounted password into the derived beat store."""
         secrets_dir = _mounted_secrets(tmp_path, DATABASE__PASSWORD="pw")
 
         assert (

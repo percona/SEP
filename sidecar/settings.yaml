@@ -77,6 +77,11 @@ default:
 
   # One database for all three services: PMM_ENABLE_SEP provisions exactly the
   # `sep` role and `sep` database, so this is defined once and aliased below.
+  # The aliases are required: the YAML source narrows to `default.<PREFIX>`, so a
+  # root-level block is an anchor definition, not a global each service inherits.
+  # The alias is one object, so a second profile block must not override a single
+  # service's DATABASE keys: the profile merge is in-place and would move all three.
+  # test_profile_carries_a_single_default_block keeps this file to one block.
   DATABASE: &shared_database
     ENGINE: postgresql
     HOST: pmm-server
