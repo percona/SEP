@@ -75,6 +75,6 @@ app = BaseApp(
     nav_icon=NavIcon.MONGO,
     api_router=api_router,
     schema=om_inventory_schema,
-    custom_ui=True,
+    custom_ui=False,
     periodic_task_schedules=_om_inventory_periodic_tasks,
 )

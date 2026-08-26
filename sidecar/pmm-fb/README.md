@@ -5,10 +5,10 @@ exposure, secret provisioning and the native `/sep` proxy,
 [Percona-Lab/pmm-submodules#4500] = percona/pmm branch `PMM-15216`, PRs
 [percona/pmm#5653] + [percona/pmm#5700]) with the app-restricted SEP side-car:
 supervisord running the three APIs + Celery worker/beat + bundled Valkey,
-shipping only the `inventory`, `mysql_backups` and `atw` apps. The snippets
-management app is not shipped — the builtin snippet library is ingested and
-auto-approved at boot (SEP-1627) so atw can execute it, with no periodic or
-manual re-sync.
+shipping only the `inventory`, `mysql_backups`, `atw` and `om_inventory` apps.
+The snippets management app is not shipped — the builtin snippet library is
+ingested and auto-approved at boot (SEP-1627) so atw can execute it, with no
+periodic or manual re-sync.
 
 ## Which image to pin
 
