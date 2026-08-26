@@ -78,9 +78,11 @@ def _observed_document_type() -> Any:
     two models -- SQLAlchemy binds a Column to exactly one Table -- which is why the
     freshness mixin below declares types rather than columns.
 
-    :return: ``JSONB`` on PostgreSQL, ``JSON`` elsewhere.
+    :return: ``JSONB`` on PostgreSQL, plain ``JSON`` on every other dialect -- which
+        includes MySQL, not only SQLite: ``JSON`` is the correct default to carve a
+        variant *out of*, since PostgreSQL is the odd one with a dedicated binary type.
     """
-    return postgresql.JSONB(astext_type=Text()).with_variant(JSON(), "sqlite")
+    return JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql")
 
 
 class ProbeRunStatus(StrEnum):
@@ -371,11 +373,14 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
     # ``none_as_null`` on PostgreSQL, so a Python ``None`` lands as the JSON scalar
     # ``null`` and a caller cannot tell "no nodes" from "the column was never set".
     # A run reads its nodes all at once or not at all, and a per-node table would
-    # need its own retention story on top of the run's.
+    # need its own retention story on top of the run's. ``JSON`` is the base type
+    # here, not ``postgresql.JSONB``: PostgreSQL is the dialect that gets a variant
+    # carved out of it, not the default every other dialect (MySQL included) is
+    # made to carve SQLite out of.
     nodes: list[dict[str, Any]] = SQLField(
         default_factory=list,
         sa_column=Column(
-            postgresql.JSONB(astext_type=JSON()).with_variant(JSON(), "sqlite"),
+            JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
             nullable=False,
             server_default="[]",
         ),
@@ -386,11 +391,13 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
     # ``'null'::jsonb`` and `WHERE scope IS NULL` finds none of them -- the Python side
     # reads back ``None`` either way, so nothing complains until someone asks the
     # database which runs were full sweeps. Measured happening before it was set.
+    # ``none_as_null`` is set on both the ``JSON`` base and the ``JSONB`` variant, for
+    # the same reason ``nodes`` above inverts which dialect is the default.
     scope: list[str] | None = SQLField(
         default=None,
         sa_column=Column(
-            postgresql.JSONB(astext_type=JSON(), none_as_null=True).with_variant(
-                JSON(none_as_null=True), "sqlite"
+            JSON(none_as_null=True).with_variant(
+                postgresql.JSONB(astext_type=Text(), none_as_null=True), "postgresql"
             ),
             nullable=True,
         ),

@@ -71,7 +71,9 @@ def _observed_column() -> sa.Column:
     """
     return sa.Column(
         "observed",
-        postgresql.JSONB(astext_type=sa.Text()).with_variant(sa.JSON(), "sqlite"),
+        sa.JSON().with_variant(
+            postgresql.JSONB(astext_type=sa.Text()), "postgresql"
+        ),
         nullable=False,
         server_default="{}",
     )
@@ -225,8 +227,8 @@ def upgrade() -> None:
             sa.Column("hosts_answered", sa.Integer(), nullable=False),
             sa.Column(
                 "nodes",
-                postgresql.JSONB(astext_type=sa.Text()).with_variant(
-                    sa.JSON(), "sqlite"
+                sa.JSON().with_variant(
+                    postgresql.JSONB(astext_type=sa.Text()), "postgresql"
                 ),
                 nullable=False,
                 server_default="[]",
@@ -238,8 +240,9 @@ def upgrade() -> None:
             # JSON scalar ``null``; without it `scope IS NULL` matches nothing.
             sa.Column(
                 "scope",
-                postgresql.JSONB(astext_type=sa.Text(), none_as_null=True).with_variant(
-                    sa.JSON(none_as_null=True), "sqlite"
+                sa.JSON(none_as_null=True).with_variant(
+                    postgresql.JSONB(astext_type=sa.Text(), none_as_null=True),
+                    "postgresql",
                 ),
                 nullable=True,
             ),
