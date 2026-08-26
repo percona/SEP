@@ -251,6 +251,34 @@ def test_plugin_schema_entities_mode_rejects_root_cardinality_rules():
         )
 
 
+def test_plugin_schema_entities_mode_rejects_root_fail_when():
+    """Refuse root-level ``fail_when`` on an entity-style ``AppSchema``."""
+    entity = AppEntitySchema(
+        name="things",
+        display_name="Things",
+        forms=[
+            FormSection(
+                title="T",
+                fields=[StringField(name="title", label="Title", required=True)],
+            )
+        ],
+        list_view=_minimal_list_view(),
+    )
+    with pytest.raises(ValidationError, match=r"Root-level fail_when.*entity-style"):
+        AppSchema(
+            name="multi",
+            display_name="Multi",
+            entities=[entity],
+            fail_when=[
+                FailRule(
+                    fail_when=present("title"),
+                    error_fields=["title"],
+                    message="title must be set",
+                ),
+            ],
+        )
+
+
 def test_plugin_entity_schema_detail_highlights_round_trip():
     """Round-trip detail highlight hints through snake_case JSON (wire format)."""
     entity = AppEntitySchema.model_validate(
