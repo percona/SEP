@@ -70,6 +70,20 @@ def _minimal_list_view() -> ListView:
     return ListView(columns=[Column(key="id", label="ID")])
 
 
+def _minimal_entity_schema() -> AppEntitySchema:
+    return AppEntitySchema(
+        name="things",
+        display_name="Things",
+        forms=[
+            FormSection(
+                title="T",
+                fields=[StringField(name="title", label="Title", required=True)],
+            )
+        ],
+        list_view=_minimal_list_view(),
+    )
+
+
 _CHECKSUMS_LIKE_SCHEMA = AppSchema(
     name="checksums",
     display_name="Checksums",
@@ -177,17 +191,7 @@ def test_plugin_schema_constructs_with_minimal_fields():
 
 def test_plugin_schema_entities_mode_omits_root_list_view():
     """Construct an ``AppSchema`` with ``entities`` set and no root ``list_view``."""
-    entity = AppEntitySchema(
-        name="things",
-        display_name="Things",
-        forms=[
-            FormSection(
-                title="T",
-                fields=[StringField(name="title", label="Title", required=True)],
-            )
-        ],
-        list_view=_minimal_list_view(),
-    )
+    entity = _minimal_entity_schema()
     schema = AppSchema(
         name="multi",
         display_name="Multi",
@@ -198,100 +202,56 @@ def test_plugin_schema_entities_mode_omits_root_list_view():
     assert schema.list_view is None
 
 
-def test_plugin_schema_entities_mode_rejects_root_forms():
-    """Refuse root-level ``forms`` on an entity-style ``AppSchema``."""
-    entity = AppEntitySchema(
-        name="things",
-        display_name="Things",
-        forms=[
-            FormSection(
-                title="T",
-                fields=[StringField(name="title", label="Title", required=True)],
-            )
-        ],
-        list_view=_minimal_list_view(),
-    )
-    with pytest.raises(ValidationError, match=r"Root-level forms.*entity-style"):
-        AppSchema(
-            name="multi",
-            display_name="Multi",
-            entities=[entity],
-            forms=[
+@pytest.mark.parametrize(
+    ("conflict_key", "conflict_value", "match_pattern"),
+    [
+        (
+            "forms",
+            [
                 FormSection(
                     title="Root",
                     fields=[StringField(name="ignored", label="Ignored")],
                 )
             ],
-        )
-
-
-def test_plugin_schema_entities_mode_rejects_root_cardinality_rules():
-    """Refuse root-level ``cardinality_rules`` on an entity-style ``AppSchema``."""
-    entity = AppEntitySchema(
-        name="things",
-        display_name="Things",
-        forms=[
-            FormSection(
-                title="T",
-                fields=[StringField(name="title", label="Title", required=True)],
-            )
-        ],
-        list_view=_minimal_list_view(),
-    )
-    with pytest.raises(
-        ValidationError, match=r"Root-level cardinality_rules.*entity-style"
-    ):
-        AppSchema(
-            name="multi",
-            display_name="Multi",
-            entities=[entity],
-            cardinality_rules=[
-                CardinalityRule(when=None, fields=["title"], min=1),
-            ],
-        )
-
-
-def test_plugin_schema_entities_mode_rejects_root_fail_when():
-    """Refuse root-level ``fail_when`` on an entity-style ``AppSchema``."""
-    entity = AppEntitySchema(
-        name="things",
-        display_name="Things",
-        forms=[
-            FormSection(
-                title="T",
-                fields=[StringField(name="title", label="Title", required=True)],
-            )
-        ],
-        list_view=_minimal_list_view(),
-    )
-    with pytest.raises(ValidationError, match=r"Root-level fail_when.*entity-style"):
-        AppSchema(
-            name="multi",
-            display_name="Multi",
-            entities=[entity],
-            fail_when=[
+            r"Root-level forms.*entity-style",
+        ),
+        (
+            "cardinality_rules",
+            [CardinalityRule(when=None, fields=["title"], min=1)],
+            r"Root-level cardinality_rules.*entity-style",
+        ),
+        (
+            "fail_when",
+            [
                 FailRule(
                     fail_when=present("title"),
                     error_fields=["title"],
                     message="title must be set",
                 ),
             ],
+            r"Root-level fail_when.*entity-style",
+        ),
+    ],
+)
+def test_plugin_schema_entities_mode_rejects_root_form_config_key(
+    conflict_key: str,
+    conflict_value: object,
+    match_pattern: str,
+) -> None:
+    """Refuse a single root form-config key on an entity-style ``AppSchema``."""
+    entity = _minimal_entity_schema()
+    with pytest.raises(ValidationError, match=match_pattern):
+        AppSchema(
+            name="multi",
+            display_name="Multi",
+            entities=[entity],
+            **{conflict_key: conflict_value},
         )
 
 
 def test_plugin_schema_entities_mode_rejects_all_root_form_keys():
     """Refuse all three root form keys at once and name each in the error."""
-    entity = AppEntitySchema(
-        name="things",
-        display_name="Things",
-        forms=[
-            FormSection(
-                title="T",
-                fields=[StringField(name="title", label="Title", required=True)],
-            )
-        ],
-        list_view=_minimal_list_view(),
-    )
+    entity = _minimal_entity_schema()
     with pytest.raises(
         ValidationError,
         match=(
@@ -324,17 +284,7 @@ def test_plugin_schema_entities_mode_rejects_all_root_form_keys():
 
 def test_plugin_schema_entities_mode_duplicate_root_fields_unreachable():
     """Duplicate root field names never surface — root forms are refused first."""
-    entity = AppEntitySchema(
-        name="things",
-        display_name="Things",
-        forms=[
-            FormSection(
-                title="T",
-                fields=[StringField(name="title", label="Title", required=True)],
-            )
-        ],
-        list_view=_minimal_list_view(),
-    )
+    entity = _minimal_entity_schema()
     with pytest.raises(ValidationError, match=r"Root-level forms.*entity-style") as exc:
         AppSchema(
             name="x",
@@ -356,17 +306,7 @@ def test_plugin_schema_entities_mode_duplicate_root_fields_unreachable():
 
 def test_plugin_schema_entities_mode_accepts_empty_root_form_config():
     """Entity-style schemas with empty/omitted root form config still construct."""
-    entity = AppEntitySchema(
-        name="things",
-        display_name="Things",
-        forms=[
-            FormSection(
-                title="T",
-                fields=[StringField(name="title", label="Title", required=True)],
-            )
-        ],
-        list_view=_minimal_list_view(),
-    )
+    entity = _minimal_entity_schema()
     schema = AppSchema(
         name="multi",
         display_name="Multi",

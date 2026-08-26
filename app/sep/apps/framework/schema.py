@@ -1560,8 +1560,10 @@ class AppSchema(SchemaBaseModel):
     :param task_type: Optional task-type identifier used when creating tasks
         via the shared task API. Defaults to ``None``.
     :type task_type: NonEmptyStr | None
-    :param forms: Form sections for single-entity / task plugins. Defaults to
-        an empty list when ``entities`` is used instead.
+    :param forms: Form sections for single-entity / task plugins. When
+        ``entities`` is non-empty, root ``forms`` must be empty (declare
+        forms on each entity instead); non-empty root ``forms`` are rejected
+        at construction. Defaults to an empty list.
     :type forms: list[FormSection]
     :param capabilities: Optional plugin-level feature flags. Defaults to
         ``None``.
@@ -1579,11 +1581,13 @@ class AppSchema(SchemaBaseModel):
         When non-empty, the React shell renders one list/create/detail flow
         per entity. Defaults to ``None`` (legacy single-entity mode).
     :param cardinality_rules: Optional plugin-wide cross-field cardinality
-        constraints (task-style plugins only; ignored when ``entities`` is set).
+        constraints (task-style plugins only). Rejected at construction when
+        ``entities`` is non-empty — declare rules on each entity instead.
         Defaults to ``None``.
     :type cardinality_rules: list[CardinalityRule] | None
     :param fail_when: Optional plugin-wide predicate-only invariants (task-style
-        plugins only; ignored when ``entities`` is set). Defaults to ``None``.
+        plugins only). Rejected at construction when ``entities`` is non-empty —
+        declare rules on each entity instead. Defaults to ``None``.
     :type fail_when: list[FailRule] | None
     :param derived: Optional declarative specs for sibling tasks derived from
         the parent task on cascade. Consumed by
@@ -1766,13 +1770,13 @@ class AppSchema(SchemaBaseModel):
     def _validate_unique_field_names(self) -> Self:
         """Ensure root-level form configuration and entities are mutually exclusive.
 
-        When ``entities`` is set, root ``forms``, ``cardinality_rules``, and
-        ``fail_when`` must be empty — those keys belong on the entity that
-        owns them. If any are set alongside ``entities``, construction fails
-        with a message naming the offending keys.
+        When ``entities`` is non-empty, root ``forms``, ``cardinality_rules``,
+        and ``fail_when`` must be empty — those keys belong on the entity that
+        owns them. If any are set alongside non-empty ``entities``, construction
+        fails with a message naming the offending keys.
 
-        For task-style schemas (no ``entities``), validates field-name
-        uniqueness across root ``forms``.
+        For task-style schemas (``entities`` unset or empty), validates
+        field-name uniqueness across root ``forms``.
 
         :return: The validated plugin schema instance.
         :raises ValueError: If root form config is set on an entity-style
