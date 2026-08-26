@@ -166,7 +166,7 @@ class RetirableManagerMixin(BaseSQLModelManager):
         statements = [
             _retire(cls.Model, col(cls.Model.id) == entity_id, retired_at=retired_at)
         ]
-        parent_ids: SelectOfScalar[int] = select(col(cls.Model.id)).where(
+        parent_ids: SelectOfScalar[int | None] = select(col(cls.Model.id)).where(
             col(cls.Model.id) == entity_id
         )
         for model, foreign_key in cls.retirement_subtree:
@@ -191,7 +191,7 @@ class RetirableManagerMixin(BaseSQLModelManager):
         :return: The UPDATE statements to run in order, in one transaction.
         """
         ancestors: list[Update] = []
-        entity_ids: SelectOfScalar[int] = select(col(cls.Model.id)).where(
+        entity_ids: SelectOfScalar[int | None] = select(col(cls.Model.id)).where(
             col(cls.Model.id) == entity_id
         )
         manager = cls

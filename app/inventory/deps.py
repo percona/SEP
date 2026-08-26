@@ -208,7 +208,7 @@ RetirableTableDep = Annotated[Table, Depends(get_table_including_retired)]
 def make_retirement_scope_dep(
     active: type[RetirableManagerMixin],
     retired_inclusive: type[RetirableManagerMixin],
-) -> Callable[[bool], type[RetirableManagerMixin]]:
+) -> Callable[..., type[RetirableManagerMixin]]:
     """Build the dependency choosing which manager a read goes through.
 
     The opt-in rides the manager class rather than a call argument, so every read
