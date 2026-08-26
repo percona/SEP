@@ -167,6 +167,7 @@ def test_the_service_principal_can_revive_a_service(
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
 
+
 def test_a_gated_mutation_resolves_the_credential_once(
     admin_bearer_client: TestClient, casdoor_mock, mocker: MockerFixture
 ) -> None:
