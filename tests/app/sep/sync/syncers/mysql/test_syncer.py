@@ -973,7 +973,7 @@ class TestStreamsAndParsing:
         """Test parsing an NDJSON object that straddles many chunk boundaries.
 
         A dropped remainder truncates the line into invalid JSON, which this path
-        logs and skips rather than failing on -- so the row would vanish from the
+        logs and skips rather than failing on — so the row would vanish from the
         sync with nothing but a log line to say so.
         """
         row = {"name": "x" * 200}
@@ -1113,6 +1113,27 @@ class TestSplitLinesFromBuffer:
         for payload in payloads:
             list(MySQLSyncer._split_lines_from_buffer(buffer, payload, "utf-8"))
             assert b"\n" not in buffer
+
+    def test_abandoned_generator_leaves_the_buffer_fit_for_the_next_call(
+        self,
+    ) -> None:
+        """Assert stopping mid-iteration strands no terminator in the buffer.
+
+        The trim runs before the first yield, so a consumer that stops early
+        loses the lines it never took rather than leaving a terminator the next
+        call's narrowed search would skip past, gluing two lines into one.
+        """
+        buffer = bytearray()
+        lines = MySQLSyncer._split_lines_from_buffer(buffer, b"a\nb\n", "utf-8")
+
+        assert next(lines) == "a"
+        lines.close()
+        assert b"\n" not in buffer
+
+        yielded, remainder = self._drive([b"c\n"], buffer=buffer)
+
+        assert yielded == [["c"]]
+        assert remainder == b""
 
     def test_straddling_line_keeps_the_carried_remainder(self) -> None:
         """Assert the first line a call completes still carries earlier bytes.
