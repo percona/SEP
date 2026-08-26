@@ -378,6 +378,35 @@ def test_plugin_schema_entities_mode_accepts_empty_root_form_config():
     assert schema.fail_when is None
 
 
+def test_plugin_schema_task_style_root_forms_unaffected():
+    """Task-style schemas keep optional empty forms and duplicate-name validation."""
+    empty = AppSchema(
+        name="minimal",
+        display_name="Minimal",
+        forms=[],
+        list_view=_minimal_list_view(),
+    )
+    assert empty.forms == []
+    assert empty.entities is None
+
+    with pytest.raises(ValidationError, match="duplicate field name"):
+        AppSchema(
+            name="dup",
+            display_name="Dup",
+            forms=[
+                FormSection(
+                    title="A",
+                    fields=[StringField(name="dup", label="D")],
+                ),
+                FormSection(
+                    title="B",
+                    fields=[StringField(name="dup", label="D")],
+                ),
+            ],
+            list_view=_minimal_list_view(),
+        )
+
+
 def test_plugin_entity_schema_detail_highlights_round_trip():
     """Round-trip detail highlight hints through snake_case JSON (wire format)."""
     entity = AppEntitySchema.model_validate(
