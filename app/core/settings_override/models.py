@@ -87,14 +87,12 @@ class SettingClassEnum(StrEnum):
 class _SettingClassString(TypeDecorator):
     """Store the settings-class token as VARCHAR, coercing enum members by name.
 
-    Every production caller already passes a plain string token produced by
-    :func:`setting_class_token`, which owns row-compatibility end-to-end.
-    The enum-coercion branch in :meth:`process_bind_param` exists solely as a
-    guard for any future caller that might pass a raw
-    :class:`SettingClassEnum` member directly — it is not itself a
-    row-compatibility mechanism.  :meth:`SettingOverride._enum_member_to_token`
-    applies the same coercion earlier on the ``model_validate`` path, so an
-    instance built through a CRUD manager already carries the token.
+    The ordinary persistence path passes a plain string token produced by
+    :func:`setting_class_token`. :meth:`process_bind_param` also converts a
+    directly supplied :class:`SettingClassEnum` member to its name, preserving
+    the storage token for direct model construction.
+    :meth:`SettingOverride._enum_member_to_token` applies the same coercion
+    earlier on the ``model_validate`` path.
 
     """
 
