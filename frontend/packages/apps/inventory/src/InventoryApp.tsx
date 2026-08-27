@@ -31,8 +31,9 @@ export interface InventoryAppProps {
 /**
  * Inventory app — browse nodes, services, schemas, and tables with the same drill-down
  * as the legacy UI (node → services → schemas → tables). Entities are browse-only —
- * no create, no edit, no row or header delete — since PMM authors them; syncing and
- * schedule management stay available.
+ * no create, no edit, no row or header delete — since the syncers author them (PMM
+ * supplies nodes and services; the MySQL syncer discovers schemas and tables); syncing
+ * and schedule management stay available.
  */
 export function InventoryApp({ mockSchema, mockEntityItems }: InventoryAppProps) {
   const { data: schema, isLoading, error } = useAppSchema('inventory', mockSchema);

@@ -272,9 +272,11 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    // DELETE: return 204 No Content for any inventory entity delete
+    // The plugin API no longer routes DELETE; the path still matches a GET route, so
+    // the real backend answers 405. Keep the handler so an unexpected delete cannot
+    // fall through to the catch-all 200 below.
     if (req.method() === 'DELETE' && pathname.startsWith('/api/apps/inventory/')) {
-      return route.fulfill({ status: 204 });
+      return route.fulfill({ status: 405 });
     }
 
     return route.fulfill({

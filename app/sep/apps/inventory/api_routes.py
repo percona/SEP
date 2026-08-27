@@ -25,9 +25,10 @@ Proxies read access to nodes, services, schemas, and tables to the inventory
 HTTP API through ``InventoryAPI`` in ``app.sep.deps`` (``RemoteAPI`` toward the
 inventory service). List handlers unwrap paginated ``items`` into a JSON array
 for the schema-driven React client. The four entities are read-only here: no
-handler creates, updates, or deletes one. PMM authors that data, and the
-inventory service remains the canonical CRUD surface at ``/api/inventory/*``,
-which is what the syncers write through.
+handler creates, updates, or deletes one. The syncers author that data — PMM
+supplies nodes and services, while ``MySQLSyncer`` discovers schemas and tables
+from the database itself — and they write through the inventory service, which
+remains the canonical CRUD surface at ``/api/inventory/*``.
 
 Besides those reads, this router mounts the ad-hoc inventory-sync trigger
 (``POST /sync/``) and the running-state polling endpoint
