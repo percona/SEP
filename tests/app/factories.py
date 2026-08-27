@@ -227,16 +227,22 @@ class ServiceSystemObservationWriteFactory(ModelFactory[ServiceSystemObservation
     observed_at = MOCK_OBSERVED_AT
 
 
+# ``retired_at`` is pinned rather than generated: polyfactory fills an optional
+# datetime at random, so an unpinned factory would hand out a tombstone on roughly
+# half its builds and make every consumer's retirement behaviour a coin flip. A
+# test that wants a tombstone sets the field explicitly.
 class CreatedNodeFactory(ModelFactory[CreatedNode]):
     """Define factory for CreatedNode instances."""
 
     id = MOCK_CREATED_NODE_ID
+    retired_at = None
 
 
 class CreatedServiceFactory(ModelFactory[CreatedService]):
     """Define factory for CreatedService instances."""
 
     id = MOCK_CREATED_SERVICE_ID
+    retired_at = None
 
 
 class CreatedSchemaFactory(ModelFactory[CreatedSchema]):
@@ -244,6 +250,7 @@ class CreatedSchemaFactory(ModelFactory[CreatedSchema]):
 
     id = MOCK_CREATED_SCHEMA_ID
     service_id: int = MOCK_CREATED_SERVICE_ID
+    retired_at = None
 
 
 class CreatedTableFactory(ModelFactory[CreatedTable]):
@@ -251,3 +258,4 @@ class CreatedTableFactory(ModelFactory[CreatedTable]):
 
     id = MOCK_CREATED_TABLE_ID
     schema_id: int = MOCK_CREATED_SCHEMA_ID
+    retired_at = None

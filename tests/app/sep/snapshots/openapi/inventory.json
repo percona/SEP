@@ -3946,7 +3946,7 @@
     },
     "/api/apps/inventory/{entity}/{item_id}": {
       "delete": {
-        "description": "Delete an inventory node, service, schema, or table.",
+        "description": "Retire an inventory node, service, schema, or table, and its descendants.\n\nThe row and its subtree survive: they drop out of every active read and stay\nreachable through the Inventory API's ``include_retired`` opt-in.\n\n:param entity: The inventory entity kind addressed by the path.\n:param item_id: The identifier of the entity to retire.\n:param inventory_api: The Inventory API client the call is proxied through.\n:return: An empty 204 response.",
         "operationId": "inventory_inventory_delete_entity_api_apps_inventory__entity___item_id__delete",
         "parameters": [
           {

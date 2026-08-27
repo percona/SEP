@@ -1793,7 +1793,15 @@ export interface paths {
     post?: never;
     /**
      * Inventory Delete Entity
-     * @description Delete an inventory node, service, schema, or table.
+     * @description Retire an inventory node, service, schema, or table, and its descendants.
+     *
+     *     The row and its subtree survive: they drop out of every active read and stay
+     *     reachable through the Inventory API's ``include_retired`` opt-in.
+     *
+     *     :param entity: The inventory entity kind addressed by the path.
+     *     :param item_id: The identifier of the entity to retire.
+     *     :param inventory_api: The Inventory API client the call is proxied through.
+     *     :return: An empty 204 response.
      */
     delete: operations['inventory_inventory_delete_entity_api_apps_inventory__entity___item_id__delete'];
     options?: never;
@@ -3811,19 +3819,16 @@ export interface components {
      * @description Represent a node in the inventory.
      *
      *     :param address: The network address of the node.
-     *     :type address: NonEmptyStr
      *     :param name: The name of the node.
-     *     :type name: NonEmptyStr
      *     :param external_id: An external identifier for the node. Must be unique for source,
      *         as defined by composite index ix_node_external_id_source.
-     *     :type external_id: NonEmptyStr | None
      *     :param source: The source from which the node information is derived. Must be unique
      *         for external_id, as defined by composite index ix_node_external_id_source.
-     *     :type source: SourceEnum | None
      *     :param type: The type of the node (e.g., remote, generic).
-     *     :type type: NonEmptyStr
+     *     :param retired_at: When the node stopped being reported upstream, or None while
+     *         it is active.
+     *     :param retirement_key: The discriminator carried inside every unique index.
      *     :param services: A list of services associated with the node.
-     *     :type services: list[Service]
      */
     Node: {
       /** Address */
@@ -3839,6 +3844,8 @@ export interface components {
       id: number | null;
       /** Name */
       name: string;
+      /** Retired At */
+      retired_at?: string | null;
       source?: components['schemas']['SourceEnum'] | null;
       /**
        * Type
@@ -3944,24 +3951,20 @@ export interface components {
      * @description Represent a database schema within a service.
      *
      *     :param id: The primary key for the table. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param name: The name of the schema. Must be unique for service_id, as defined by
      *         composite index ix_schema_name_service_id.
-     *     :type name: NonEmptyStr
      *     :param service_id: The unique identifier of the service to which the schema belongs.
      *         Must be unique for name, as defined by composite index
      *         ix_schema_name_service_id.
-     *     :type service_id: int
      *     :param service: The service to which the schema is associated.
-     *     :type service: Service
+     *     :param retired_at: When the schema stopped being reported upstream, or None
+     *         while it is active.
+     *     :param retirement_key: The discriminator carried inside every unique index.
      *     :param tables: A list of tables within the schema.
-     *     :type tables: list[Table]
      */
     Schema: {
       /**
@@ -3973,6 +3976,8 @@ export interface components {
       id: number | null;
       /** Name */
       name: string;
+      /** Retired At */
+      retired_at?: string | null;
       /** Service Id */
       service_id: number;
       /** Updated At */
@@ -3989,34 +3994,23 @@ export interface components {
      * @description Define the service API response.
      *
      *     :param id: The primary key for the table. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param external_id: An external identifier for the service.
-     *     :type external_id: NonEmptyStr | None
      *     :param name: The name of the service.
-     *     :type name: NonEmptyStr
      *     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-     *     :type type: ServiceTypeEnum
      *     :param port: The port number on which the service is running.
-     *     :type port: int | None
      *     :param environment: The environment in which the service is running, if set.
-     *     :type environment: str | None
      *     :param cluster: The cluster in which the service is running, if set.
-     *     :type cluster: str | None
      *     :param replication_set: The replication set in which the service is running, if set.
-     *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service, if set.
      *     :param node_id: The unique identifier of the node on which the service is running.
-     *     :type node_id: int
      *     :param schemas: A list of schemas associated with the service.
-     *     :type schemas: list[Schema]
      *     :param node: The node to which the service is associated.
-     *     :type node: Node
+     *     :param retired_at: When the service stopped being reported upstream, or None
+     *         while it is active.
      */
     ServiceResponse: {
       /** Cluster */
@@ -4045,6 +4039,8 @@ export interface components {
       port?: number | null;
       /** Replication Set */
       replication_set?: string | null;
+      /** Retired At */
+      retired_at?: string | null;
       /** Schemas */
       schemas: components['schemas']['Schema'][];
       type: components['schemas']['ServiceTypeEnum'];

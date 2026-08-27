@@ -25,7 +25,43 @@ from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
+from app.core.db.models import DateTimeWithTimezone
 from app.core.utils.fields import ArbitraryMapping, NonEmptyStr, UTCDatetime
+from app.inventory.constants import ACTIVE_RETIREMENT_KEY
+
+
+class RetiredAtBase(SQLModel):
+    """Expose the retirement timestamp of an entity that can be tombstoned.
+
+    :param retired_at: When the entity stopped being reported by its upstream
+        source, or None while it is active.
+    """
+
+    retired_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+
+
+class RetirableSQLModel(RetiredAtBase, BaseSQLModel):
+    """Store the retirement state of a tombstoned entity.
+
+    An entity that vanishes upstream is retired rather than deleted, so the
+    references SEP persisted to it keep resolving. Because a replacement may
+    reuse the retired row's unique key, ``retirement_key`` joins every unique
+    index: it holds :data:`ACTIVE_RETIREMENT_KEY` while the row is active and
+    the row's own primary key once retired, which keeps active rows mutually
+    exclusive while letting any number of tombstones share their key.
+
+    :param retired_at: When the entity stopped being reported by its upstream
+        source, or None while it is active.
+    :param retirement_key: The discriminator carried inside every unique index.
+        Excluded from serialization: the responses nest these table models, and a
+        database-internal discriminator has no business in the published schema.
+    """
+
+    retirement_key: int = SQLField(
+        default=ACTIVE_RETIREMENT_KEY, nullable=False, exclude=True
+    )
 
 
 class SourceEnum(StrEnum):
@@ -112,27 +148,30 @@ class NodeBase(SQLModel):
         return self
 
 
-class Node(NodeBase, BaseSQLModel, table=True):
+class Node(NodeBase, RetirableSQLModel, table=True):
     """Represent a node in the inventory.
 
     :param address: The network address of the node.
-    :type address: NonEmptyStr
     :param name: The name of the node.
-    :type name: NonEmptyStr
     :param external_id: An external identifier for the node. Must be unique for source,
         as defined by composite index ix_node_external_id_source.
-    :type external_id: NonEmptyStr | None
     :param source: The source from which the node information is derived. Must be unique
         for external_id, as defined by composite index ix_node_external_id_source.
-    :type source: SourceEnum | None
     :param type: The type of the node (e.g., remote, generic).
-    :type type: NonEmptyStr
+    :param retired_at: When the node stopped being reported upstream, or None while
+        it is active.
+    :param retirement_key: The discriminator carried inside every unique index.
     :param services: A list of services associated with the node.
-    :type services: list[Service]
     """
 
     __table_args__ = (
-        Index("ix_node_external_id_source", "external_id", "source", unique=True),
+        Index(
+            "ix_node_external_id_source",
+            "external_id",
+            "source",
+            "retirement_key",
+            unique=True,
+        ),
     )
     services: list["Service"] = Relationship(back_populates="node", cascade_delete=True)
 
@@ -141,43 +180,31 @@ class NodeWrite(NodeBase):
     """Define the model for writing node data to the inventory.
 
     :param address: The network address of the node.
-    :type address: NonEmptyStr
     :param name: The name of the node.
-    :type name: NonEmptyStr
     :param external_id: An external identifier for the node, indexed for quick lookup.
         Defaults to None.
-    :type external_id: NonEmptyStr | None
     :param source: The source from which the node information is derived. Indexed for
         quick lookup. Defaults to None.
-    :type source: SourceEnum | None
     :param type: The type of the node (e.g., remote, generic). Defaults to "generic".
-    :type type: NonEmptyStr
     """
 
 
-class NodeResponse(BaseSQLModel, NodeBase):
+class NodeResponse(BaseSQLModel, RetiredAtBase, NodeBase):
     """Represent a node API response.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: UTCDatetime | None
     :param address: The network address of the node.
-    :type address: NonEmptyStr
     :param name: The name of the node.
-    :type name: NonEmptyStr
     :param external_id: An external identifier for the node.
-    :type external_id: NonEmptyStr | None
     :param source: The source from which the node information is derived.
-    :type source: SourceEnum | None
     :param type: The type of the node (e.g., remote, generic).
-    :type type: NonEmptyStr
+    :param retired_at: When the node stopped being reported upstream, or None while
+        it is active.
     :param services: A list of services associated with the node.
-    :type services: list[Service]
     """
 
     services: list["Service"]
@@ -188,23 +215,15 @@ class ServiceBase(SQLModel):
 
     :param external_id: An external identifier for the service, indexed for quick
         lookup. Defaults to None.
-    :type external_id: NonEmptyStr | None
     :param name: The name of the service.
-    :type name: NonEmptyStr
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-    :type type: ServiceTypeEnum
     :param port: The port number on which the service is running. Defaults to None.
-    :type port: int | None
     :param environment: The environment in which the service is running (e.g.,
         production, staging). Defaults to None.
-    :type environment: str | None
     :param cluster: The cluster in which the service is running. Defaults to None.
-    :type cluster: str | None
     :param replication_set: The replication set in which the service is running. Defaults to None.
-    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
     :param node_id: The foreign key referencing the node to which the service belongs.
-    :type node_id: int
     """
 
     external_id: NonEmptyStr | None = SQLField(
@@ -261,48 +280,50 @@ class ServiceWrite(ServiceBase):
     )
 
 
-class Service(BaseSQLModel, ServiceBase, table=True):
+class Service(RetirableSQLModel, ServiceBase, table=True):
     """Represent a service running on a node in the inventory.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: UTCDatetime | None
     :param external_id: An external identifier for the service. Must be unique for
         node_id, as defined by composite index ix_service_external_id_node_id.
-    :type external_id: NonEmptyStr | None
     :param name: The name of the service.
-    :type name: NonEmptyStr
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-    :type type: ServiceTypeEnum
     :param port: The port number on which the service is running. Must be unique for
         node_id, as defined by composite index ix_service_port_node_id.
-    :type port: int | None
     :param environment: The environment in which the service is running, if set.
-    :type environment: str | None
     :param cluster: The cluster in which the service is running, if set.
-    :type cluster: str | None
     :param replication_set: The replication set in which the service is running, if set.
-    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service, if set.
     :param node_id: The unique identifier of the node on which the service is running.
         Must be unique for external_id, as defined by composite index
         ix_service_external_id_node_id, and for port, as defined by composite index
         ix_service_port_node_id.
-    :type node_id: int
     :param node: The node to which the service is associated.
-    :type node: Node
+    :param retired_at: When the service stopped being reported upstream, or None
+        while it is active.
+    :param retirement_key: The discriminator carried inside every unique index.
     :param schemas: A list of schemas associated with the service.
-    :type schemas: list[Schema]
     """
 
     __table_args__ = (
-        Index("ix_service_external_id_node_id", "external_id", "node_id", unique=True),
-        Index("ix_service_port_node_id", "port", "node_id", unique=True),
+        Index(
+            "ix_service_external_id_node_id",
+            "external_id",
+            "node_id",
+            "retirement_key",
+            unique=True,
+        ),
+        Index(
+            "ix_service_port_node_id",
+            "port",
+            "node_id",
+            "retirement_key",
+            unique=True,
+        ),
     )
 
     node: Node = Relationship(back_populates="services")
@@ -312,38 +333,27 @@ class Service(BaseSQLModel, ServiceBase, table=True):
     )
 
 
-class ServiceResponse(BaseSQLModel, ServiceBase):
+class ServiceResponse(BaseSQLModel, RetiredAtBase, ServiceBase):
     """Define the service API response.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: UTCDatetime | None
     :param external_id: An external identifier for the service.
-    :type external_id: NonEmptyStr | None
     :param name: The name of the service.
-    :type name: NonEmptyStr
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-    :type type: ServiceTypeEnum
     :param port: The port number on which the service is running.
-    :type port: int | None
     :param environment: The environment in which the service is running, if set.
-    :type environment: str | None
     :param cluster: The cluster in which the service is running, if set.
-    :type cluster: str | None
     :param replication_set: The replication set in which the service is running, if set.
-    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service, if set.
     :param node_id: The unique identifier of the node on which the service is running.
-    :type node_id: int
     :param schemas: A list of schemas associated with the service.
-    :type schemas: list[Schema]
     :param node: The node to which the service is associated.
-    :type node: Node
+    :param retired_at: When the service stopped being reported upstream, or None
+        while it is active.
     """
 
     schemas: list["Schema"]
@@ -354,34 +364,21 @@ class ServiceDetailResponse(ServiceResponse):
     """Define the service retrieve API response.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: UTCDatetime | None
     :param external_id: An external identifier for the service.
-    :type external_id: NonEmptyStr | None
     :param name: The name of the service.
-    :type name: NonEmptyStr
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-    :type type: ServiceTypeEnum
     :param port: The port number on which the service is running.
-    :type port: int | None
     :param environment: The environment in which the service is running, if set.
-    :type environment: str | None
     :param cluster: The cluster in which the service is running, if set.
-    :type cluster: str | None
     :param replication_set: The replication set in which the service is running, if set.
-    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service, if set.
     :param node_id: The unique identifier of the node on which the service is running.
-    :type node_id: int
     :param schemas: A list of schemas associated with the service.
-    :type schemas: list[Schema]
     :param node: The service's node.
-    :type node: Node
     """
 
     node: Node
@@ -391,42 +388,42 @@ class SchemaBase(SQLModel):
     """Define the base structure for schema-related operations.
 
     :param name: The name of the schema.
-    :type name: NonEmptyStr
     :param service_id: The foreign key referencing the service to which the schema
         belongs.
-    :type service_id: int
     """
 
     name: NonEmptyStr
     service_id: int = SQLField(foreign_key="service.id", index=True, ondelete="CASCADE")
 
 
-class Schema(BaseSQLModel, SchemaBase, table=True):
+class Schema(RetirableSQLModel, SchemaBase, table=True):
     """Represent a database schema within a service.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: UTCDatetime | None
     :param name: The name of the schema. Must be unique for service_id, as defined by
         composite index ix_schema_name_service_id.
-    :type name: NonEmptyStr
     :param service_id: The unique identifier of the service to which the schema belongs.
         Must be unique for name, as defined by composite index
         ix_schema_name_service_id.
-    :type service_id: int
     :param service: The service to which the schema is associated.
-    :type service: Service
+    :param retired_at: When the schema stopped being reported upstream, or None
+        while it is active.
+    :param retirement_key: The discriminator carried inside every unique index.
     :param tables: A list of tables within the schema.
-    :type tables: list[Table]
     """
 
     __table_args__ = (
-        Index("ix_schema_name_service_id", "name", "service_id", unique=True),
+        Index(
+            "ix_schema_name_service_id",
+            "name",
+            "service_id",
+            "retirement_key",
+            unique=True,
+        ),
     )
     service: Service = Relationship(back_populates="schemas")
     tables: list["Table"] = Relationship(back_populates="database", cascade_delete=True)
@@ -450,41 +447,34 @@ class SchemaWrite(SchemaBase):
     )
 
 
-class SchemaCompactResponse(BaseSQLModel, SchemaBase):
+class SchemaCompactResponse(BaseSQLModel, RetiredAtBase, SchemaBase):
     """Define a compact schema response without nested tables.
 
     :param id: The primary key for the schema. Auto-incremented and not nullable.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: UTCDatetime | None
     :param name: The name of the schema.
-    :type name: NonEmptyStr
     :param service_id: The unique identifier of the service to which the schema belongs.
-    :type service_id: int
+    :param retired_at: When the schema stopped being reported upstream, or None while
+        it is active.
     """
 
 
-class SchemaResponse(BaseSQLModel, SchemaBase):
+class SchemaResponse(BaseSQLModel, RetiredAtBase, SchemaBase):
     """Define the schema API response.
 
     :param id: The primary key for the schema. Auto-incremented and not nullable.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: UTCDatetime | None
     :param name: The name of the schema.
-    :type name: NonEmptyStr
     :param service_id: The unique identifier of the service to which the schema belongs.
-    :type service_id: int
+    :param retired_at: When the schema stopped being reported upstream, or None while
+        it is active.
     :param tables: A list of tables within the schema.
-    :type tables: list[Table]
     """
 
     tables: list["Table"]
@@ -494,19 +484,13 @@ class SchemaDetailResponse(SchemaResponse):
     """Define the schema retrieve API response.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: UTCDatetime | None
     :param name: The name of the schema.
-    :type name: NonEmptyStr
     :param service_id: The unique identifier of the service to which the schema belongs.
-    :type service_id: int
     :param service: The schema's service.
-    :type service: Service
     """
 
     service: Service
@@ -516,52 +500,48 @@ class TableBase(SQLModel):
     """Define the base structure for table-related operations.
 
     :param name: The name of the table.
-    :type name: NonEmptyStr
     :param create: The SQL statement used to create the table.
-    :type create: NonEmptyStr
     :param schema_id: The foreign key referencing the schema to which the table belongs.
-    :type schema_id: int
     :param keys: A dictionary containing details about table keys (e.g., primary,
         unique).
-    :type keys: Dict[str, Any]
     """
 
     name: NonEmptyStr
     create: NonEmptyStr = SQLField(sa_type=Text)
     schema_id: int = SQLField(foreign_key="schema.id", index=True, ondelete="CASCADE")
-    # TODO(yan): Make keys a Pydantic model
-    # SEP-203
     keys: dict[str, Any] = SQLField(
         sa_column=Column(JSON, nullable=False),
         schema_extra={"json_schema_extra": {"additionalProperties": True}},
     )
 
 
-class Table(BaseSQLModel, TableBase, table=True):
+class Table(RetirableSQLModel, TableBase, table=True):
     """Represent a table within a schema.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: UTCDatetime | None
     :param name: The name of the table. Must be unique for schema_id, as defined by
         composite index ix_table_name_schema_id.
-    :type name: NonEmptyStr
     :param create: The SQL statement used to create the table.
-    :type create: NonEmptyStr
     :param schema_id: The unique identifier of the schema to which the table belongs.
         Must be unique for name, as defined by composite index ix_table_name_schema_id.
-    :type schema_id: int
+    :param retired_at: When the table stopped being reported upstream, or None while
+        it is active.
+    :param retirement_key: The discriminator carried inside every unique index.
     :param database: The schema to which the table is associated.
-    :type database: Schema
     """
 
     __table_args__ = (
-        Index("ix_table_name_schema_id", "name", "schema_id", unique=True),
+        Index(
+            "ix_table_name_schema_id",
+            "name",
+            "schema_id",
+            "retirement_key",
+            unique=True,
+        ),
     )
     database: Schema = Relationship(back_populates="tables")
 
@@ -570,11 +550,8 @@ class TableWrite(TableBase):
     """Define the model for writing table data to the inventory.
 
     :param name: The name of the table.
-    :type name: NonEmptyStr
     :param create: The SQL statement used to create the table.
-    :type create: NonEmptyStr
     :param schema_id: The foreign key referencing the schema to which the table belongs.
-    :type schema_id: int | None
     """
 
     schema_id: int | None = SQLField(
@@ -585,23 +562,19 @@ class TableWrite(TableBase):
     )
 
 
-class TableResponse(BaseSQLModel, TableBase):
+class TableResponse(BaseSQLModel, RetiredAtBase, TableBase):
     """Define the table API response.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: UTCDatetime | None
     :param name: The name of the table.
-    :type name: NonEmptyStr
     :param create: The SQL statement used to create the table.
-    :type create: NonEmptyStr
     :param schema_id: The foreign key referencing the schema to which the table belongs.
-    :type schema_id: int
+    :param retired_at: When the table stopped being reported upstream, or None while
+        it is active.
     """
 
 
@@ -609,21 +582,14 @@ class TableDetailResponse(TableResponse):
     """Define the schema retrieve API response.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: UTCDatetime | None
     :param name: The name of the table.
-    :type name: NonEmptyStr
     :param create: The SQL statement used to create the table.
-    :type create: NonEmptyStr
     :param schema_id: The foreign key referencing the schema to which the table belongs.
-    :type schema_id: int
     :param database: The table's schema.
-    :type database: Schema
     """
 
     database: Schema
@@ -633,13 +599,10 @@ class HostSystemObservationBase(SQLModel):
     """Define the base structure for host-level system observation data.
 
     :param node_id: The foreign key referencing the node this observation belongs to.
-    :type node_id: int
     :param os_version: The observed operating system version. Defaults to None.
-    :type os_version: str | None
     :param installed_packages: Snapshot of installed packages. Defaults to None.
     :param config: Snapshot of host configuration. Defaults to None.
     :param observed_at: When this observation was collected (domain provenance).
-    :type observed_at: UTCDatetime
     """
 
     node_id: int = SQLField(
@@ -667,7 +630,6 @@ class HostSystemObservationBase(SQLModel):
         ``config`` is provided.
 
         :return: The validated instance.
-        :rtype: Self
         :raises ValueError: If ``os_version``, ``installed_packages``, and ``config``
             are all unset.
         """
@@ -686,22 +648,16 @@ class HostSystemObservation(BaseSQLModel, HostSystemObservationBase, table=True)
     """Store host-level system facts for a node (one snapshot per node).
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: UTCDatetime | None
     :param node_id: The unique identifier of the observed node. At most one observation
         row per node.
-    :type node_id: int
     :param os_version: The observed operating system version, if set.
-    :type os_version: str | None
     :param installed_packages: Snapshot of installed packages, if set.
     :param config: Snapshot of host configuration, if set.
     :param observed_at: When this observation was collected.
-    :type observed_at: UTCDatetime
     """
 
 
@@ -731,11 +687,8 @@ class ServiceSystemObservationBase(SQLModel):
 
     :param service_id: The foreign key referencing the service this observation belongs
         to.
-    :type service_id: int
     :param db_engine_version: The observed database engine version.
-    :type db_engine_version: NonEmptyStr
     :param observed_at: When this observation was collected (domain provenance).
-    :type observed_at: UTCDatetime
     """
 
     service_id: int = SQLField(
@@ -752,20 +705,14 @@ class ServiceSystemObservation(BaseSQLModel, ServiceSystemObservationBase, table
     """Store service-level system facts (one snapshot per service).
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: UTCDatetime | None
     :param service_id: The unique identifier of the observed service. At most one
         observation row per service.
-    :type service_id: int
     :param db_engine_version: The observed database engine version.
-    :type db_engine_version: NonEmptyStr
     :param observed_at: When this observation was collected.
-    :type observed_at: UTCDatetime
     """
 
 

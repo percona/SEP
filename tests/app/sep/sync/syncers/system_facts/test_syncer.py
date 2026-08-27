@@ -695,3 +695,33 @@ class TestPerformInventorySync:
         )
         await mock_syncer.perform_inventory_sync()
         assert sync_node.await_args_list == [call(created_node), call(second_node)]
+
+
+class TestTombstoneBlindness:
+    """Test that this syncer never sees a tombstone, and so never acts on one.
+
+    ``perform_inventory_sync`` walks every inventory node unconditionally and holds
+    no upstream diff, so it has no match site and no evidence that anything
+    reappeared. Opting it into retired reads would only feed a scheduled run
+    entities it cannot judge, driving observation writes at parents whose own
+    active-only dependencies reject them.
+    """
+
+    @pytest.mark.asyncio
+    async def test_inventory_reads_omit_the_opt_in(self, mock_syncer, mock_remote_api):
+        """Ask the inventory for active nodes only."""
+        mock_remote_api.get.return_value = {
+            "items": [],
+            "total": 0,
+            "offset": 0,
+            "limit": 50,
+        }
+
+        await mock_syncer.get_inventory_nodes()
+
+        params = mock_remote_api.get.await_args.kwargs["params"]
+        assert "include_retired" not in params
+
+    def test_no_entity_level_opts_into_retired_reads(self):
+        """Keep every entity level out of retired reads."""
+        assert SystemFactsSyncer.reads_retired_entities == frozenset()
