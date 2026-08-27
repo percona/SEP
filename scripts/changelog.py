@@ -72,7 +72,12 @@ UNRELEASED_COMPARE_RE: re.Pattern[str] = re.compile(
 VERSION_FOOTER_LINE_RE: re.Pattern[str] = re.compile(
     r"^\[v(?P<version>[\w.\-]+)\]: ",
 )
-RESERVED_FILENAMES: frozenset[str] = frozenset({"README.md", ".gitkeep"})
+#: Names in ``changelog.d/`` that are documentation or scaffolding rather than
+#: fragments. ``CLAUDE.md`` is here because a contributor may keep one beside
+#: the README; it is ignored globally on some checkouts, so the validator can
+#: see a file git never will and would otherwise reject it as a malformed
+#: fragment name.
+RESERVED_FILENAMES: frozenset[str] = frozenset({"README.md", "CLAUDE.md", ".gitkeep"})
 CHANGELOG_D: Path = Path("changelog.d")
 CHANGELOG_MD: Path = Path("CHANGELOG.md")
 REPO_COMPARE_URL: str = "https://github.com/percona/SEP/compare"
@@ -83,12 +88,10 @@ class FragmentError(Exception):
 
 
 def _ticket_sort_key(ticket: str) -> int:
-    """Return the numeric sort key for a ticket like ``SEP-503``.
+    """Return the numeric sort key for a ticket key like ``SEP-<n>``.
 
     :param ticket: The ticket key.
-    :type ticket: str
     :return: The integer portion of the ticket key.
-    :rtype: int
     """
     match = TICKET_RE.match(ticket)
     if match is None:
@@ -725,7 +728,7 @@ def ensure_terminal_punctuation(message: str) -> str:
 def cmd_add(ticket: str, section: str, message: str, *, force: bool) -> int:
     """Handle the ``add`` subcommand.
 
-    :param ticket: The ticket key, e.g. ``SEP-503``.
+    :param ticket: The ticket key, e.g. ``SEP-<n>``.
     :param section: The short section name, e.g. ``added``.
     :param message: The single-line description for the fragment.
     :param force: Overwrite an existing fragment when ``True``.
