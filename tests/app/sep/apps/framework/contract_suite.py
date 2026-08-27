@@ -31,6 +31,7 @@ methods request (``contract_client``, ``unauthenticated_contract_client``,
 ``mock_task_api``, ``mock_inventory_api``), each reading ``request.cls.app_def``.
 """
 
+from collections.abc import Iterator
 from types import NoneType, UnionType
 from typing import Any, ClassVar, get_args, get_origin, Union
 from unittest.mock import AsyncMock
@@ -88,6 +89,8 @@ _REF_MOCK_IDS = {
     SchemaRef: MOCK_CREATED_SCHEMA_ID,
     TableRef: MOCK_CREATED_TABLE_ID,
 }
+
+_MOUNTED: dict[int, tuple[TaskExecutionApp, FastAPI]] = {}
 
 
 def app_base_url(app_def: TaskExecutionApp) -> str:
@@ -164,6 +167,55 @@ def mount_app(app_def: TaskExecutionApp) -> FastAPI:
     return app
 
 
+def mount_app_shared(app_def: TaskExecutionApp) -> FastAPI:
+    """Return a per-process cached mount for a long-lived app definition.
+
+    :func:`mount_app` re-derives every route object on each call, which dominates
+    contract-suite setup. Cache the mount per definition so each xdist worker
+    mounts a given definition at most once. The cache entry retains ``app_def``
+    itself, so its ``id()`` can never be recycled onto a different object.
+
+    Only for definitions that outlive a single test — a class attribute or a
+    module constant. A definition built inside a test body must use
+    :func:`mount_app`, which mounts fresh every call.
+
+    Callers borrow the returned app's ``dependency_overrides`` for the duration of
+    one test and must clear them on teardown, since every other test bound to the
+    same definition shares that mapping — see :func:`shared_contract_client`.
+
+    :param app_def: The long-lived app definition to mount.
+    :return: The cached ``FastAPI`` app carrying this definition's routes.
+    """
+    cached = _MOUNTED.get(id(app_def))
+    if cached is None:
+        cached = (app_def, mount_app(app_def))
+        _MOUNTED[id(app_def)] = cached
+    return cached[1]
+
+
+def _install_contract_overrides(
+    app: FastAPI,
+    *,
+    user: CasdoorUser,
+    tasks_api: Any,
+    inventory_api: Any | None,
+) -> TestClient:
+    """Install the boundary overrides on ``app`` and return a client for it.
+
+    :param app: The mounted app whose ``dependency_overrides`` receive the mocks.
+    :param user: The authenticated user the auth dep resolves to.
+    :param tasks_api: The Tasks-API boundary mock installed for ``get_tasks_api``.
+    :param inventory_api: The Inventory-API boundary mock installed for
+        ``get_inventory_api``; omitted when the app resolves no references.
+    :return: A bare ``TestClient`` (never a context manager — lifespan trap).
+    """
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_tasks_api] = lambda: tasks_api
+    if inventory_api is not None:
+        app.dependency_overrides[get_inventory_api] = lambda: inventory_api
+    return TestClient(app, raise_server_exceptions=False)
+
+
 def build_contract_client(
     app_def: TaskExecutionApp,
     *,
@@ -175,7 +227,9 @@ def build_contract_client(
 
     Overrides only boundary deps — never the create-body dep — so the real
     FastAPI body-parsing graph runs for create requests. Each call builds a fresh
-    ``FastAPI``, so the overrides never leak across tests.
+    ``FastAPI``, so the overrides never leak across tests. Use this for a
+    definition built inside the test body; a definition that outlives the test
+    goes through :func:`shared_contract_client` instead.
 
     :param app_def: The app definition to mount.
     :param user: The authenticated user the auth dep resolves to.
@@ -184,12 +238,44 @@ def build_contract_client(
         ``get_inventory_api``; omitted when the app resolves no references.
     :return: A bare ``TestClient`` (never a context manager — lifespan trap).
     """
-    app = mount_app(app_def)
-    app.dependency_overrides[get_current_user] = lambda: user
-    app.dependency_overrides[get_tasks_api] = lambda: tasks_api
-    if inventory_api is not None:
-        app.dependency_overrides[get_inventory_api] = lambda: inventory_api
-    return TestClient(app, raise_server_exceptions=False)
+    return _install_contract_overrides(
+        mount_app(app_def),
+        user=user,
+        tasks_api=tasks_api,
+        inventory_api=inventory_api,
+    )
+
+
+def shared_contract_client(
+    app_def: TaskExecutionApp,
+    *,
+    user: CasdoorUser,
+    tasks_api: Any,
+    inventory_api: Any | None = None,
+) -> Iterator[TestClient]:
+    """Yield a contract client on the cached mount, clearing overrides afterwards.
+
+    The fixture body for a definition that outlives the test: the app object is
+    shared with every sibling test bound to the same definition, so this owns the
+    teardown that :func:`build_contract_client`'s per-test app made unnecessary.
+    Only one client may hold the shared app at a time — a test requesting two
+    fixtures built on the same definition would have the second stomp the first's
+    overrides.
+
+    :param app_def: The long-lived app definition to mount through the cache.
+    :param user: The authenticated user the auth dep resolves to.
+    :param tasks_api: The Tasks-API boundary mock installed for ``get_tasks_api``.
+    :param inventory_api: The Inventory-API boundary mock installed for
+        ``get_inventory_api``; omitted when the app resolves no references.
+    :return: An iterator yielding a bare ``TestClient`` for the cached app.
+    """
+    app = mount_app_shared(app_def)
+    try:
+        yield _install_contract_overrides(
+            app, user=user, tasks_api=tasks_api, inventory_api=inventory_api
+        )
+    finally:
+        app.dependency_overrides.clear()
 
 
 def select_branch(field: FieldInfo) -> type[BaseModel] | None:
@@ -544,7 +630,7 @@ class DerivedRouterContractTests:
             pytest.skip("create capability disabled")
         if self.app_def.create_model is None:
             pytest.skip("no derivable create body (schema= passthrough)")
-        request_body = mount_app(self.app_def).openapi()["paths"][
+        request_body = mount_app_shared(self.app_def).openapi()["paths"][
             f"{app_base_url(self.app_def)}/"
         ]["post"]["requestBody"]
         expected = (

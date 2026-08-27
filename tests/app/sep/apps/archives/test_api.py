@@ -22,7 +22,7 @@ overrides only the Tasks-API / Inventory-API boundaries, never the create-body
 dep) with the collapsed one-of create body.
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 import pytest
@@ -37,6 +37,7 @@ from tests.app.factories import MOCK_DESTINATION_TABLE_ID
 from tests.app.sep.apps.framework.contract_suite import (
     app_base_url,
     build_contract_client,
+    shared_contract_client,
 )
 from tests.app.sep.apps.framework.kit import MockInventoryAPI, MockTaskAPI
 
@@ -67,11 +68,11 @@ def _create_body(**overrides: Any) -> dict[str, Any]:
 
 
 @pytest.fixture
-def client(regular_user: CasdoorUser) -> Any:
+def client(regular_user: CasdoorUser) -> Iterator[Any]:
     """Return an authenticated contract client with a seeded archive task."""
     tasks_api = MockTaskAPI()
     tasks_api.seed_task(_SEEDED, owner="ARCHIVER")
-    return build_contract_client(
+    yield from shared_contract_client(
         archives_app,
         user=regular_user,
         tasks_api=tasks_api,

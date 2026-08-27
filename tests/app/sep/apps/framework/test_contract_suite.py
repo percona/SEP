@@ -53,6 +53,7 @@ from tests.app.sep.apps.framework.contract_suite import (
     build_contract_client,
     build_valid_create_body,
     DerivedRouterContractTests,
+    mount_app_shared,
     ref_overrides,
     select_branch,
 )
@@ -739,3 +740,35 @@ def test_create_response_builder_pins_stable_component(
     assert "owner" not in payload
     assert payload["created_by"] == SYNTH_CREATED_BY_NAME
     assert payload["connectivity_warning"] is not None
+
+
+def _sentinel_dep() -> str:
+    """Serve as an override key no derived route depends on."""
+    return "sentinel"
+
+
+class TestSharedMountOverrideIsolation:
+    """Prove the shared contract mount hands each test a clean override mapping.
+
+    ``contract_client`` mounts through :func:`mount_app_shared`'s per-process
+    cache, so both tests below borrow one ``FastAPI`` and therefore one
+    ``dependency_overrides`` mapping. The first installs a sentinel the second
+    must not see; dropping the fixture's ``.clear()`` teardown turns the second
+    test red.
+    """
+
+    app_def = synth_app()
+
+    @pytest.mark.usefixtures("contract_client")
+    def test_override_installed_on_the_shared_mount(self) -> None:
+        """Install a sentinel override on the app the next test also borrows."""
+        app = mount_app_shared(self.app_def)
+
+        app.dependency_overrides[_sentinel_dep] = lambda: "leaked"
+
+        assert _sentinel_dep in app.dependency_overrides
+
+    @pytest.mark.usefixtures("contract_client")
+    def test_override_does_not_survive_to_the_next_test(self) -> None:
+        """Assert the previous test's sentinel was cleared on fixture teardown."""
+        assert _sentinel_dep not in mount_app_shared(self.app_def).dependency_overrides
