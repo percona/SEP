@@ -43,8 +43,8 @@ def _inventory_collection_schedule() -> SystemPeriodicTaskSchedule | None:
 
     ``inventory-collection`` is a ``Task`` row rather than a Celery function, so
     the entry points at ``execute_task_by_name`` and names the task in
-    ``kwargs`` -- the same indirection an operator-created schedule uses, and
-    the shape that puts it in the Inventory plugin's task list.
+    ``kwargs``. That is the same indirection an operator-created schedule uses,
+    and the shape that puts it in the Inventory plugin's task list.
 
     Unlike ``inventory-sync`` there is no operator-respect lookup: the job is
     off by default because it deletes rows irreversibly, so an unset interval

@@ -106,10 +106,8 @@ def load_fragments(
     :data:`FRAGMENT_RE`, so a typo like ``SEP1892.added.md`` is still reported.
 
     :param changelog_d: The fragments directory.
-    :type changelog_d: Path
     :return: A mapping of display section name to ``(ticket, lines, path)``
         triples sorted by numeric ticket ID.
-    :rtype: dict[str, list[tuple[str, list[str], Path]]]
     :raises FragmentError: If any fragment has an invalid filename, an unknown
         section, or empty/malformed content.
     """
@@ -431,17 +429,15 @@ def _git_ignored_names(path: str) -> frozenset[str]:
     """Return the basenames git ignores under ``path``.
 
     ``changelog.d/`` accumulates untracked files a contributor's own ignore
-    rules cover -- editor swap files, OS metadata, personal notes -- and none of
-    them is a fragment. Skipping whatever git ignores leaves those alone while
+    rules cover: editor swap files, OS metadata, personal notes. None of them is
+    a fragment. Skipping whatever git ignores leaves those alone while
     :func:`load_fragments` still reports a genuinely misnamed fragment, which an
     allowed-pattern filter could not do. Guarded like :func:`_git_ls_tree`, plus
     the missing-executable case, so a checkout without git falls back to
     considering every file.
 
     :param path: The repository-relative directory path (no trailing slash).
-    :type path: str
     :return: The ignored basenames; empty when git cannot answer.
-    :rtype: frozenset[str]
     """
     git_exe = shutil.which("git") or "git"
     try:
