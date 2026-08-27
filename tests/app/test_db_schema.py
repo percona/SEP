@@ -165,6 +165,7 @@ class TestSchemaEquivalence:
         """
         script = capture_ddl(_CELERY_METADATA, _CELERY_TRANSLATE_MAP)
 
+        assert "CREATE TABLE" in script
         assert "celery_schema." not in script
 
 

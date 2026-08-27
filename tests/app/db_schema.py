@@ -49,6 +49,11 @@ def capture_ddl(metadata: MetaData, translate_map: dict[str, str | None] | None)
     mock engine every celery-beat statement comes back carrying a
     ``celery_schema.`` prefix that no SQLite database has.
 
+    Only ``CREATE`` statements are kept. That drops nothing today — both
+    metadatas emit ``CREATE``-only DDL — and the equivalence test compares the
+    resulting ``sqlite_master`` against ``create_all``'s, so anything the filter
+    did drop would surface there rather than silently.
+
     :param metadata: The metadata whose tables and indexes are emitted.
     :param translate_map: The schema translate map to apply while emitting, or
         ``None`` for metadata that declares no schema.

@@ -181,7 +181,9 @@ def mount_app_shared(app_def: TaskExecutionApp) -> FastAPI:
 
     Callers borrow the returned app's ``dependency_overrides`` for the duration of
     one test and must clear them on teardown, since every other test bound to the
-    same definition shares that mapping — see :func:`shared_contract_client`.
+    same definition shares that mapping. :func:`shared_contract_client` does this
+    for the authenticated fixtures; ``unauthenticated_contract_client`` borrows
+    the app directly and clears it itself.
 
     :param app_def: The long-lived app definition to mount.
     :return: The cached ``FastAPI`` app carrying this definition's routes.
