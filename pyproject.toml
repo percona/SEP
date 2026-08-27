@@ -174,9 +174,9 @@ exclude_dirs = [
 # Target the project's minimum supported Python minor version (matches ruff target-version = "py311").
 python-version = "3.11"
 [tool.ty.src]
-# The checked surface is defined here rather than by a path argument: a multi-root
-# argument list makes ty drop diagnostics non-deterministically, so `make typecheck`
-# runs a bare `ty check`. See docs/development/ty-policy.md.
+# The checked surface is defined here rather than by a path argument, so that this
+# list and `make typecheck` cannot drift apart: the target runs a bare `ty check`.
+# See docs/development/ty-policy.md.
 include = [
     "app",
     "tests",

@@ -34,55 +34,61 @@ it is added here**, deliberately.
 ## `[tool.ty.src]` is authoritative, and `make typecheck` passes no paths
 
 `make typecheck` runs a bare `ty check` with no path arguments, so the surface
-comes from `[tool.ty.src]` alone. This is not a stylistic preference — passing
-directory roots as arguments produces **unstable results**.
+comes from `[tool.ty.src]` alone.
 
-Measured at `dafd2df1`, repeating the identical command:
+The reason is that this leaves exactly **one** definition of the surface. A path
+argument in the Makefile and an `include` list in `pyproject.toml` are two places
+that can drift apart, and the requirement this policy has to meet is that a bare
+`ty check` and `make typecheck` read the same trees. With no argument list they
+carry identical inputs by construction, so they cannot disagree — and a developer
+running `ty` directly in an editor or shell gets the same surface the Makefile
+does, without having to know what the recipe passes.
 
-| Invocation | Runs | Diagnostics reported |
-|---|---:|---|
-| `ty check` (bare) | 5 | 3912 every run |
-| `ty check` with `src.include` set | 3 | 3912 every run |
-| `ty check app` | 3 | 949 every run |
-| `ty check tests` | 3 | 2955 every run |
-| `ty check app tests` | 5 | **3694, 3694, 3694, 3694, 3902** |
-| `ty check app tests scripts sidecar` | 5 | **3700, 3700, 3702, 3910, 3700** |
-| `ty check <two explicit .py files>` | 6 | 133 every run |
-
-A single directory root is stable. Two or more directory roots are not: the same
-command swings by about 210 diagnostics between runs. A short list of explicit
-*file* paths is stable, so the instability is tied to walking several overlapping
-directory roots in one invocation, not to argument lists as such.
-
-The swing is not random noise spread across the tree. Diffing a high run against
-a low one, 211 diagnostics appear only in the high run — 208 of them in four
-files under `tests/app/tasks/logs/` — while 2 appear only in the low run:
+In a clean checkout the trees are simply additive, which is what makes the
+argument list redundant rather than wrong:
 
 ```
-app/tasks/logs/log_reader.py:424:26  Expected `int`, found `int | None`
-app/tasks/logs/log_reader.py:433:22  Expected `int`, found `int | None`
+ty check app tests   ->  3918
+        + scripts    ->     5
+        + sidecar    ->     3
+                        ------
+ty check (bare)      ->  3926
 ```
 
-Those two are genuine nullable-primary-key defects. So the two outcomes trade
-against each other: whichever side of `app/tasks/logs/` wins a given run, the
-other side's diagnostics are dropped. **Both outcomes are strict subsets of the
-bare run**, which reports all of them and reports the same number every time.
+### A caveat on measuring this
 
-That is the whole argument for the bare invocation: it is the only form measured
-here that is both stable and complete. Restoring a path argument to the
-`typecheck` target would reintroduce the instability and can silently hide real
-diagnostics.
+Run-to-run instability was observed while preparing this policy: in one
+developer working tree, `ty check` given several directory roots reported about
+208 fewer diagnostics on roughly a fifth of runs, with the missing diagnostics
+concentrated in `tests/app/tasks/logs/`.
+
+That behaviour **did not reproduce** in a `git archive` export of the same
+commit — 24 consecutive runs there returned an identical count — so it is
+recorded here as an environment-dependent observation, not as a property of ty
+and not as part of the argument for this design. The cause was not identified;
+neither the `env/` nor the `.claude/` symlink reproduced it when added to the
+export.
+
+Two things are worth taking from it. First, if you are comparing diagnostic
+counts between invocations, run each more than once before trusting a
+difference. Second, a bare `ty check` was stable in every environment tested
+(the 3926 baseline below reproduced on every run in both the working tree and
+the frozen export), which is a further reason to prefer it as the form this
+project measures against.
 
 ## The recorded baseline
 
 Under the committed configuration, at `dafd2df1` plus this policy:
 
 ```
-make typecheck  ->  Found 3926 diagnostics   (358 error, 3568 warning), exit 1
-ty check        ->  Found 3926 diagnostics
+make typecheck  ->  Found 3926 diagnostics   (358 error, 3568 warning), exit 2
+ty check        ->  Found 3926 diagnostics, exit 1
 ```
 
 The two agree because they now carry identical argument lists — none.
+
+The two exit codes differ because `make` reports its own status: `ty` exits 1
+when it finds diagnostics, and `make` turns any failed recipe into exit 2.
 
 They are **not** guaranteed to be the same binary, and the parity claim carries a
 precondition worth restating whenever it is re-checked: `make typecheck` runs
@@ -174,12 +180,17 @@ Predominantly first-party defects with a fix available here.
 
 ## Sampling record for the high-volume rules
 
-Rules at 50 hits or fewer were read in full — 21 rules, 206 diagnostics. The
+Rules at 50 hits or fewer were read in full — 24 rules, 220 diagnostics. The
 nine rules above 50 hits were sampled by first collapsing each diagnostic to its
 message shape (backtick-quoted spans replaced), then reading a sample spread
 across distinct files and across `app/` and `tests/`. The last two rows are the
 default-off rules set to `ignore`; they are sampled on the same terms, because a
 suppression needs the same evidence as a severity.
+
+Those two counts partition the table: 24 read in full plus 9 sampled is the 33
+entries `[tool.ty.rules]` carries. The 24 include the three default-off rules
+kept at `error` (11 + 2 + 1 diagnostics), which are below the 50-hit threshold
+like the rest.
 
 | Rule | Hits | Shapes | Files | Sampled | Sampled from |
 |---|---:|---:|---:|---:|---|
