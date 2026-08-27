@@ -1518,6 +1518,8 @@ export interface paths {
      *     (``inventory-sync`` and ``inventory-collection``). The shape matches what the
      *     React ``usePluginTasks('inventory')`` hook expects: a list of objects with at
      *     minimum a ``name`` key.
+     *
+     *     :return: The plugin's periodic tasks, each with its name and display name.
      */
     get: operations['inventory_inventory_plugin_tasks_api_apps_inventory__get'];
     put?: never;
