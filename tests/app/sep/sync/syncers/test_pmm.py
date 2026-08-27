@@ -1629,16 +1629,17 @@ class TestTombstoneReconciliation:
         )
 
     @pytest.mark.asyncio
-    async def test_port_fallback_passes_over_a_retired_predecessor(
+    async def test_unmatched_external_id_always_creates(
         self, local_node, owned_pmmsyncer, sync_service
     ):
-        """Create a new service rather than claim a tombstone sharing its port.
+        """Create a new service for an external id that matches no local row.
 
-        The predecessor carries no external id, so retirement is the only reason
-        it stays out of the port map — which is the exclusion this pins.
+        A retired predecessor sharing the incoming service's port is not a
+        match: matching is by external id alone, with no port-based fallback
+        to find a row by.
         """
         predecessor = CreatedServiceFactory.build(id=7)
-        predecessor.external_id = None
+        predecessor.external_id = "svc-old"
         predecessor.port = 3306
         predecessor.node_id = local_node.id
         predecessor.retired_at = utc_now()
@@ -1649,7 +1650,7 @@ class TestTombstoneReconciliation:
 
         await owned_pmmsyncer.perform_node_sync(
             local_node,
-            self._node_reporting(local_node, service_id=None, port=3306),
+            self._node_reporting(local_node, service_id="svc-new", port=3306),
         )
 
         owned_pmmsyncer.inventory_api.post.assert_awaited_once()
@@ -1686,62 +1687,6 @@ class TestTombstoneReconciliation:
         assert owned_pmmsyncer.inventory_api.post.await_args.args[0] == (
             f"/nodes/{local_node.id}/services/"
         )
-
-    @pytest.mark.asyncio
-    async def test_port_fallback_matches_an_unidentified_service(
-        self, local_node, owned_pmmsyncer, sync_service
-    ):
-        """Keep matching a service PMM does not identify to its live row by port."""
-        live = CreatedServiceFactory.build(id=7)
-        live.external_id = None
-        live.port = 3306
-        live.node_id = local_node.id
-        live.retired_at = None
-        local_node.services = [live]
-        owned_pmmsyncer.inventory_api.put.return_value = local_node.model_dump()
-
-        await owned_pmmsyncer.perform_node_sync(
-            local_node,
-            self._node_reporting(local_node, service_id=None, port=3306),
-        )
-
-        owned_pmmsyncer.inventory_api.post.assert_not_awaited()
-        assert sync_service.await_args.args[0].id == live.id
-
-    @pytest.mark.asyncio
-    async def test_port_fallback_never_reaches_an_identified_row(
-        self, local_node, owned_pmmsyncer, sync_service
-    ):
-        """Match the unidentified row when both kinds share a port.
-
-        Storing both kinds on one port is what this change permits, so the port
-        map must hold only the rows the port key still governs. Reaching the
-        identified row instead would PUT the incoming NULL over its external id
-        and strip the identity it is matched by.
-        """
-        identified = CreatedServiceFactory.build(id=7)
-        identified.external_id = "ext-a"
-        identified.port = 5432
-        identified.node_id = local_node.id
-        identified.retired_at = None
-        unidentified = CreatedServiceFactory.build(id=8)
-        unidentified.external_id = None
-        unidentified.port = 5432
-        unidentified.node_id = local_node.id
-        unidentified.retired_at = None
-        # Identified last, so a plain last-write-wins port map would pick it.
-        local_node.services = [unidentified, identified]
-        owned_pmmsyncer.inventory_api.put.return_value = local_node.model_dump()
-
-        await owned_pmmsyncer.perform_node_sync(
-            local_node,
-            self._node_reporting(local_node, service_id=None, port=5432),
-        )
-
-        owned_pmmsyncer.inventory_api.post.assert_not_awaited()
-        assert [call.args[0].id for call in sync_service.await_args_list] == [
-            unidentified.id
-        ]
 
     @pytest.mark.asyncio
     async def test_same_node_same_port_pair_both_sync(
@@ -1787,6 +1732,44 @@ class TestTombstoneReconciliation:
             mirrored.id,
             8,
         }
+
+    @pytest.mark.asyncio
+    async def test_neither_service_of_a_same_port_pair_is_mirrored_yet(
+        self, local_node, owned_pmmsyncer, sync_service
+    ):
+        """Reach SUCCESS with both new same-port services created, not FAILED.
+
+        The reported failure: a node with no local services yet, reporting two
+        services that share a port, failed the whole node sync on every run
+        because the second create was rejected by the port key. Port is no
+        longer a uniqueness key, so both now create cleanly.
+        """
+        local_node.source = SourceEnum.PMM
+        owned_pmmsyncer.inventory_api.put.return_value = local_node.model_dump()
+        owned_pmmsyncer.inventory_api.post.side_effect = [
+            CreatedServiceFactory.build(id=7).model_dump(),
+            CreatedServiceFactory.build(id=8).model_dump(),
+        ]
+
+        await owned_pmmsyncer.sync_node(
+            local_node,
+            self._node_reporting_pair(
+                local_node,
+                {"service_id": "svc-a", "port": 5432},
+                {"service_id": "svc-b", "port": 5432},
+            ),
+        )
+
+        assert {
+            call.kwargs["json"]["external_id"]
+            for call in owned_pmmsyncer.inventory_api.post.await_args_list
+        } == {"svc-a", "svc-b"}
+        assert (
+            owned_pmmsyncer.sync_items[
+                (SyncInventoryEntityTypeEnum.NODE, local_node.id)
+            ].status
+            == SyncStatusEnum.SUCCESS
+        )
 
 
 class TestPMMSyncerKeepalive:

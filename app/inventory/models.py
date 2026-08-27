@@ -256,30 +256,18 @@ class Service(RetirableSQLModel, ServiceBase, table=True):
         node_id, as defined by composite index ix_service_external_id_node_id.
     :param name: The name of the service.
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-    :param port: The port number on which the service is running. Must be unique for
-        node_id, as defined by composite index ix_service_port_node_id, but only
-        among services carrying no external_id.
+    :param port: The port number on which the service is running.
     :param environment: The environment in which the service is running, if set.
     :param cluster: The cluster in which the service is running, if set.
     :param replication_set: The replication set in which the service is running, if set.
     :param custom_labels: Custom labels associated with the service, if set.
     :param node_id: The unique identifier of the node on which the service is running.
         Must be unique for external_id, as defined by composite index
-        ix_service_external_id_node_id, and — among services carrying no external_id
-        — for port, as defined by composite index ix_service_port_node_id.
+        ix_service_external_id_node_id.
     :param node: The node to which the service is associated.
     :param retired_at: When the service stopped being reported upstream, or None
         while it is active.
     :param retirement_key: The discriminator carried inside every unique index.
-    :param port_guard_key: The discriminator confining the port index to services
-        with no external identity. It holds
-        :data:`~app.inventory.constants.UNIDENTIFIED_PORT_GUARD_KEY` on such a
-        service and None on an externally identified one, which both enforcement
-        layers read as "not constrained": several databases behind one server share
-        that server's port, so upstream identity is what tells them apart. Derived
-        from external_id on every write by ServiceManager.save, so the None default
-        below is never the value a stored row carries. Excluded from serialization
-        for the same reason retirement_key is.
     :param schemas: A list of schemas associated with the service.
     """
 
@@ -291,17 +279,7 @@ class Service(RetirableSQLModel, ServiceBase, table=True):
             "retirement_key",
             unique=True,
         ),
-        Index(
-            "ix_service_port_node_id",
-            "port",
-            "node_id",
-            "retirement_key",
-            "port_guard_key",
-            unique=True,
-        ),
     )
-
-    port_guard_key: int | None = SQLField(default=None, exclude=True)
 
     node: Node = Relationship(back_populates="services")
     schemas: list["Schema"] = Relationship(

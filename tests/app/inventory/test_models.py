@@ -17,24 +17,13 @@
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.exceptions import HTTPConflictException
 from app.core.utils.date_time import utc_now
-from app.inventory.constants import (
-    ACTIVE_RETIREMENT_KEY,
-    DEFAULT_POSTGRESQL_PORT,
-    UNIDENTIFIED_PORT_GUARD_KEY,
-)
-from app.inventory.crud import (
-    NodeManager,
-    RetiredInclusiveServiceManager,
-    ServiceManager,
-)
+from app.inventory.constants import ACTIVE_RETIREMENT_KEY
+from app.inventory.crud import RetiredInclusiveServiceManager, ServiceManager
 from app.inventory.models import (
     HostSystemObservationWrite,
-    Node,
     NodeWrite,
     Service,
     ServiceSystemObservationWrite,
@@ -42,7 +31,7 @@ from app.inventory.models import (
     ServiceWrite,
     SourceEnum,
 )
-from tests.app.factories import NodeWriteFactory, ServiceWriteFactory
+from tests.app.factories import ServiceWriteFactory
 
 
 class TestNodeWriteMandatoryOrigin:
@@ -209,16 +198,23 @@ class TestRetirementKeyUniqueness:
         assert ACTIVE_RETIREMENT_KEY
 
     @pytest.mark.asyncio
-    async def test_second_active_service_on_one_key_conflicts(
+    async def test_two_active_services_on_one_port_are_both_admitted(
         self, session: AsyncSession, service: Service
     ) -> None:
-        """Reject a second active service on one node and port."""
-        with pytest.raises(HTTPConflictException):
-            await ServiceManager.create(
-                session,
-                ServiceWriteFactory.build(port=service.port),
-                node_id=service.node_id,
-            )
+        """Admit a second active service sharing a node and port.
+
+        Several databases behind one PostgreSQL or MySQL server legally share
+        that server's port, and every service now carries its own external
+        identity, so nothing about the pair collides.
+        """
+        second = await ServiceManager.create(
+            session,
+            ServiceWriteFactory.build(port=service.port),
+            node_id=service.node_id,
+        )
+        assert second.id != service.id
+        assert second.port == service.port
+        assert second.external_id != service.external_id
 
     @pytest.mark.asyncio
     async def test_replacement_over_a_tombstone_is_admitted(
@@ -253,180 +249,3 @@ class TestRetirementKeyUniqueness:
         )
         assert {row.id for row in retired} == {service.id, replacement.id}
         assert {row.retirement_key for row in retired} == {service.id, replacement.id}
-
-
-class TestPortGuardKeyUniqueness:
-    """Test how ``port_guard_key`` confines the composite port unique index.
-
-    PMM registers several databases behind one server as separate services on
-    that server's shared port, so the port key may only bind the services PMM
-    does not identify for us. The discriminator is NULL on an identified row,
-    which both enforcement layers read as "not constrained": a unique index
-    treats NULLs as distinct, and the ``all(equal_filters.values())`` guard in
-    ``BaseSQLModelManager.save`` skips an index holding a falsy value.
-    """
-
-    @pytest.mark.asyncio
-    async def test_identified_service_carries_no_port_guard(
-        self, session: AsyncSession, node: Node
-    ) -> None:
-        """Leave the guard NULL on a service carrying an external identity."""
-        service = await ServiceManager.create(
-            session,
-            ServiceWriteFactory.build(external_id="svc-identified"),
-            node_id=node.id,
-        )
-        assert service.port_guard_key is None
-
-    @pytest.mark.asyncio
-    async def test_unidentified_service_carries_the_sentinel(
-        self, service: Service
-    ) -> None:
-        """Keep the guard truthy on a service with no external identity."""
-        assert service.port_guard_key == UNIDENTIFIED_PORT_GUARD_KEY
-        assert UNIDENTIFIED_PORT_GUARD_KEY
-
-    @pytest.mark.asyncio
-    async def test_two_identified_services_share_one_port(
-        self, session: AsyncSession, node: Node
-    ) -> None:
-        """Admit two externally identified services on one node and port."""
-        first = await ServiceManager.create(
-            session,
-            ServiceWriteFactory.build(
-                external_id="svc-a", port=DEFAULT_POSTGRESQL_PORT
-            ),
-            node_id=node.id,
-        )
-        second = await ServiceManager.create(
-            session,
-            ServiceWriteFactory.build(
-                external_id="svc-b", port=DEFAULT_POSTGRESQL_PORT
-            ),
-            node_id=node.id,
-        )
-        assert first.id != second.id
-        assert first.port == second.port == DEFAULT_POSTGRESQL_PORT
-
-    @pytest.mark.asyncio
-    async def test_identified_service_reserves_nothing_for_an_unidentified_one(
-        self, session: AsyncSession, node: Node
-    ) -> None:
-        """Admit an unidentified service on a port an identified one holds."""
-        identified = await ServiceManager.create(
-            session,
-            ServiceWriteFactory.build(
-                external_id="svc-identified", port=DEFAULT_POSTGRESQL_PORT
-            ),
-            node_id=node.id,
-        )
-
-        unidentified = await ServiceManager.create(
-            session,
-            ServiceWriteFactory.build(port=DEFAULT_POSTGRESQL_PORT),
-            node_id=node.id,
-        )
-        assert unidentified.id != identified.id
-        assert unidentified.port_guard_key == UNIDENTIFIED_PORT_GUARD_KEY
-
-    @pytest.mark.asyncio
-    async def test_clearing_the_external_id_re_arms_the_port_guard(
-        self, session: AsyncSession, node: Node, service: Service
-    ) -> None:
-        """Refuse an update dropping an identity onto a port already held.
-
-        The refusal comes from the database rather than the Python precheck, and
-        as ``IntegrityError`` rather than the 409 the create path raises: on the
-        update path the instance is already session-attached, so the precheck's
-        own SELECT autoflushes the pending UPDATE and the index rejects it before
-        the duplicate lookup returns. Every update onto a held port has always
-        behaved that way. What this pins is that the guard re-arms at all — a
-        service keeping the NULL guard of its former identity would be admitted.
-        """
-        identified = await ServiceManager.create(
-            session,
-            ServiceWriteFactory.build(external_id="svc-identified", port=service.port),
-            node_id=node.id,
-        )
-
-        with pytest.raises(IntegrityError):
-            await ServiceManager.update(
-                session,
-                identified,
-                ServiceWrite.model_validate(
-                    identified.model_dump() | {"external_id": None}
-                ),
-            )
-
-
-class _PortGuardOnServerEngine:
-    """Test the NULL-distinct claim the port guard rests on, off SQLite.
-
-    The design turns on a unique index treating NULLs as distinct, which the
-    default test lane cannot demonstrate: it runs SQLite only. Each subclass
-    binds ``engine_session`` to one real-engine fixture and carries the marker
-    that puts these cases in that engine's CI lane, where the index is the real
-    one.
-    """
-
-    @pytest.mark.asyncio
-    async def test_two_identified_services_share_one_port(
-        self, engine_session: AsyncSession
-    ) -> None:
-        """Admit two identified services on one node and port on a real engine."""
-        node = await NodeManager.create(engine_session, NodeWriteFactory.build())
-
-        first = await ServiceManager.create(
-            engine_session,
-            ServiceWriteFactory.build(
-                external_id="svc-a", port=DEFAULT_POSTGRESQL_PORT
-            ),
-            node_id=node.id,
-        )
-        second = await ServiceManager.create(
-            engine_session,
-            ServiceWriteFactory.build(
-                external_id="svc-b", port=DEFAULT_POSTGRESQL_PORT
-            ),
-            node_id=node.id,
-        )
-
-        assert first.id != second.id
-        assert first.port_guard_key is second.port_guard_key is None
-
-    @pytest.mark.asyncio
-    async def test_second_active_service_on_one_key_conflicts(
-        self, engine_session: AsyncSession
-    ) -> None:
-        """Keep rejecting two unidentified services on one node and port."""
-        node = await NodeManager.create(engine_session, NodeWriteFactory.build())
-        existing = await ServiceManager.create(
-            engine_session, ServiceWriteFactory.build(), node_id=node.id
-        )
-
-        with pytest.raises(HTTPConflictException):
-            await ServiceManager.create(
-                engine_session,
-                ServiceWriteFactory.build(port=existing.port),
-                node_id=node.id,
-            )
-
-
-@pytest.mark.postgres
-class TestPortGuardOnPostgres(_PortGuardOnServerEngine):
-    """Run the port-guard cases against a real PostgreSQL index."""
-
-    @pytest.fixture
-    def engine_session(self, postgres_session: AsyncSession) -> AsyncSession:
-        """Bind the shared cases to the PostgreSQL session."""
-        return postgres_session
-
-
-@pytest.mark.mysql
-class TestPortGuardOnMySQL(_PortGuardOnServerEngine):
-    """Run the port-guard cases against a real MySQL index."""
-
-    @pytest.fixture
-    def engine_session(self, mysql_session: AsyncSession) -> AsyncSession:
-        """Bind the shared cases to the MySQL session."""
-        return mysql_session

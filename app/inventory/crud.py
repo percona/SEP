@@ -29,10 +29,7 @@ from app.core.db import ListQuerySpec
 from app.core.db.crud import BaseSQLModelChildManager, BaseSQLModelManager, W
 from app.core.exceptions import HTTPConflictException
 from app.core.utils.date_time import utc_now
-from app.inventory.constants import (
-    ACTIVE_RETIREMENT_KEY,
-    UNIDENTIFIED_PORT_GUARD_KEY,
-)
+from app.inventory.constants import ACTIVE_RETIREMENT_KEY
 from app.inventory.models import (
     HostSystemObservation,
     Node,
@@ -294,40 +291,6 @@ class ServiceManager(RetirableManagerMixin, BaseSQLModelChildManager):
         tie_breaker=col(Service.id),
         searchable=[col(Service.name)],
     )
-
-    @classmethod
-    async def save(
-        cls,
-        session: AsyncSession,
-        instance: Service,
-        *,
-        flag_modified_fields: Sequence[str] = (),
-    ) -> Service:
-        """Save a service, deriving the port guard from its external identity.
-
-        The port uniqueness index protects only services PMM does not identify for
-        us, so an externally identified row carries a NULL guard that both
-        enforcement layers read as "not constrained". Deriving it here rather than
-        in a validator or a flush-time event is deliberate: every write that can
-        change ``external_id`` funnels through this method, and the duplicate check
-        in ``BaseSQLModelManager.save`` reads the value before the flush.
-        ``save_batch`` and the raw-UPDATE retirement path bypass it, and neither
-        touches ``external_id``.
-
-        :param session: The SQLAlchemy asynchronous session to use.
-        :param instance: The service to save.
-        :param flag_modified_fields: Fields to be flagged as modified before saving.
-        :return: The saved service.
-        :raises HTTPConflictException: If saving the service would cause a duplicate
-            entry database error.
-        :raises HTTPBadRequestException: If a DatabaseError occurs during commit.
-        """
-        instance.port_guard_key = (
-            None if instance.external_id is not None else UNIDENTIFIED_PORT_GUARD_KEY
-        )
-        return await super().save(
-            session, instance, flag_modified_fields=flag_modified_fields
-        )
 
 
 class SchemaManager(RetirableManagerMixin, BaseSQLModelChildManager):

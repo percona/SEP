@@ -13,14 +13,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Test the port-guard revision's downgrade against a real PostgreSQL database.
+"""Test the dropped port-uniqueness index's downgrade against real PostgreSQL.
 
-Narrowing ``ix_service_port_node_id`` lets two identified services share one
-node and port, so the downgrade has to delete the rows the restored index could
-not hold before it recreates that index. Neither half is checkable on the
-default test lane: SQLite is not the deployment engine, and ``alembic check``
-verifies only that a migration exists, never that its ``downgrade()`` runs
-against the data its ``upgrade()`` admits.
+Dropping ``ix_service_port_node_id`` lets several services share one node and
+port, so the downgrade has to delete the rows the restored index could not
+hold before it recreates that index. Neither half is checkable on the default
+test lane: SQLite is not the deployment engine, and ``alembic check`` verifies
+only that a migration exists, never that its ``downgrade()`` runs against the
+data its ``upgrade()`` admits.
 """
 
 from pathlib import Path
@@ -37,31 +37,26 @@ from app.inventory.config import inventory_settings
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 
-#: The revision immediately below the port-guard one — downgrading to it runs
-#: the deletion and restores the pre-narrowing index.
-_PRE_PORT_GUARD_REVISION = "c7d1e94ab3f2"
+#: The revision immediately below the dropped-index one — downgrading to it
+#: runs the deletion and restores the pre-drop index.
+_PRE_INDEX_DROP_REVISION = "e4b8c2f7a915"
 
 _SEED = """
-INSERT INTO node (address, name, type, retirement_key, created_at, updated_at)
-VALUES ('10.0.0.1', 'n1', 'generic', -1, NOW(), NOW());
+INSERT INTO node
+    (address, name, type, external_id, source, retirement_key, created_at, updated_at)
+VALUES ('10.0.0.1', 'n1', 'generic', 'node-1', 'PMM', -1, NOW(), NOW());
 INSERT INTO service
-    (name, type, port, node_id, external_id, retirement_key, port_guard_key,
-     created_at, updated_at)
-SELECT 'svc-a', 'postgresql', 5432, id, 'ext-a', -1, NULL, NOW(), NOW() FROM node;
+    (name, type, port, node_id, external_id, retirement_key, created_at, updated_at)
+SELECT 'svc-a', 'postgresql', 5432, id, 'ext-a', -1, NOW(), NOW() FROM node;
 INSERT INTO service
-    (name, type, port, node_id, external_id, retirement_key, port_guard_key,
-     created_at, updated_at)
-SELECT 'svc-b', 'postgresql', 5432, id, 'ext-b', -1, NULL, NOW(), NOW() FROM node;
+    (name, type, port, node_id, external_id, retirement_key, created_at, updated_at)
+SELECT 'svc-b', 'postgresql', 5432, id, 'ext-b', -1, NOW(), NOW() FROM node;
 INSERT INTO service
-    (name, type, port, node_id, external_id, retirement_key, port_guard_key,
-     created_at, updated_at)
-SELECT 'svc-noport-a', 'postgresql', NULL, id, 'ext-c', -1, NULL, NOW(), NOW()
-FROM node;
+    (name, type, port, node_id, external_id, retirement_key, created_at, updated_at)
+SELECT 'svc-noport-a', 'postgresql', NULL, id, 'ext-c', -1, NOW(), NOW() FROM node;
 INSERT INTO service
-    (name, type, port, node_id, external_id, retirement_key, port_guard_key,
-     created_at, updated_at)
-SELECT 'svc-noport-b', 'postgresql', NULL, id, 'ext-d', -1, NULL, NOW(), NOW()
-FROM node;
+    (name, type, port, node_id, external_id, retirement_key, created_at, updated_at)
+SELECT 'svc-noport-b', 'postgresql', NULL, id, 'ext-d', -1, NOW(), NOW() FROM node;
 """
 
 
@@ -127,7 +122,7 @@ def test_downgrade_drops_the_extra_same_port_service(inventory_postgres_db):
     finally:
         engine.dispose()
 
-    command.downgrade(config, _PRE_PORT_GUARD_REVISION)
+    command.downgrade(config, _PRE_INDEX_DROP_REVISION)
 
     assert _service_names(inventory_postgres_db) == {
         "svc-a",
@@ -138,7 +133,7 @@ def test_downgrade_drops_the_extra_same_port_service(inventory_postgres_db):
 
 @pytest.mark.xdist_group("shared_postgres_db")
 @pytest.mark.postgres
-def test_port_guard_revision_round_trips(inventory_postgres_db):
+def test_index_drop_revision_round_trips(inventory_postgres_db):
     """Re-apply the revision after a downgrade that had rows to remediate."""
     config = Config(str(ALEMBIC_INI), ini_section="inventory")
     command.upgrade(config, "heads")
@@ -148,7 +143,7 @@ def test_port_guard_revision_round_trips(inventory_postgres_db):
             conn.exec_driver_sql(_SEED)
     finally:
         engine.dispose()
-    command.downgrade(config, _PRE_PORT_GUARD_REVISION)
+    command.downgrade(config, _PRE_INDEX_DROP_REVISION)
 
     command.upgrade(config, "heads")
 

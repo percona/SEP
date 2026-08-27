@@ -489,10 +489,14 @@ class TestReviveService:
             status.HTTP_200_OK
         )
 
-    def test_revive_service_conflicts_with_active_replacement(
+    def test_revive_service_onto_a_port_a_replacement_now_holds(
         self, test_client: TestClient, service: Service
     ) -> None:
-        """Reject a revive whose unique slot an active replacement now holds."""
+        """Admit a revive sharing a port with an active replacement.
+
+        Port is no longer a uniqueness key, so a replacement taking over the
+        retired service's port reserves nothing the revive could collide with.
+        """
         assert (
             test_client.delete(f"/services/{service.id}").status_code
             == status.HTTP_204_NO_CONTENT
@@ -507,7 +511,7 @@ class TestReviveService:
         )
 
         response = test_client.post(f"/services/{service.id}/revive")
-        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.status_code == status.HTTP_204_NO_CONTENT
 
     def test_revive_identified_service_onto_a_live_port(
         self, test_client: TestClient, service: Service
