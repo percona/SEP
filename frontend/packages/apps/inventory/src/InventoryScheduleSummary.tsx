@@ -27,6 +27,8 @@ import {
   useScheduledTasksForApp,
 } from '@sep/framework';
 
+const INVENTORY_SYNC_TASK_NAME = 'inventory-sync';
+
 export interface InventoryScheduleSummaryProps {
   /**
    * Whether scheduling is available for the app. When false the summary
@@ -54,9 +56,15 @@ export function InventoryScheduleSummary({
   schedulingEnabled,
   disablePolling = false,
 }: InventoryScheduleSummaryProps) {
-  const { periodicTasks, isLoading, isError } = useScheduledTasksForApp('inventory', {
-    disablePolling,
-  });
+  const {
+    periodicTasks: allPeriodicTasks,
+    isLoading,
+    isError,
+  } = useScheduledTasksForApp('inventory', { disablePolling });
+  // The Inventory plugin's task list also carries `inventory-collection`
+  // (tombstone cleanup); scope this summary to sync so its cadence never
+  // gets reported as the sync cadence.
+  const periodicTasks = allPeriodicTasks.filter((p) => p.task === INVENTORY_SYNC_TASK_NAME);
 
   // Scheduling off → no schedules can exist; render nothing rather than poll the
   // API and show a misleading empty-state. The hook is still called above to
