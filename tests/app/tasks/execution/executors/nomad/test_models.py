@@ -21,7 +21,7 @@ import logging
 from base64 import b64encode
 from binascii import b2a_base64
 from collections import defaultdict
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from datetime import datetime, UTC
 from typing import Any
 from unittest.mock import AsyncMock, call, MagicMock, patch
@@ -54,7 +54,7 @@ from app.tasks.execution.executors.nomad.models import (
     _alloc_step_state,
     _alloc_task_states,
     _ANONYMIZED_STEPS,
-    _CAPTURE_HOLD_RELEASE_INTERVAL,
+    _CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS,
     _CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS,
     _capture_hold_step_state,
     _detect_capture_hold_ready,
@@ -93,6 +93,19 @@ INITIAL_LOG_OFFSET = 50
 EXPECTED_GET_LOGS_STREAM_CALLS_ONE_READY_STEP = 2
 EXPECTED_HOLD_READS_UNTIL_RUNNING = 3
 EXPECTED_HOLD_READS_MID_POLL_FAILURE = 2
+# A stop reads the allocation itself before the release re-reads it.
+EXPECTED_STOP_ALLOC_READS_UNTIL_RUNNING = 3
+EXPECTED_STOP_ALLOC_READS_ON_DEAD_HOLD = 2
+# The release budget has to hold across every supported drain tuning, since
+# borrowing the drain's is what used to forfeit it.
+DRAIN_SETTINGS_VARIANTS = [
+    pytest.param({}, id="default-drain"),
+    pytest.param({"terminal_log_drain_max_attempts": 0}, id="drain-disabled"),
+    pytest.param(
+        {"terminal_log_drain_max_attempts": 99, "terminal_log_drain_interval": 99},
+        id="drain-inflated",
+    ),
+]
 MOCK_LOG_STREAM_BODY_START_MONOTONIC = 1000.0
 STALENESS_THRESHOLD_OVERRIDE = 300
 MULTI_CHUNK_LOG_FIRST_OFFSET = 17
@@ -5639,8 +5652,17 @@ class TestNomadCaptureHoldDetection:
 class TestNomadCaptureHoldRelease:
     """Cover the hold-release signal and its guards."""
 
+    @pytest.fixture(autouse=True)
+    def mock_sleep(self) -> Iterator[AsyncMock]:
+        """Patch the inter-attempt wait so polling costs no wall-clock time."""
+        with patch(
+            "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as mock:
+            yield mock
+
     @staticmethod
-    def _alloc(hold_state: str | None) -> dict:
+    def _alloc(hold_state: str | None) -> dict[str, Any]:
         """Return an allocation whose hold step carries ``hold_state``."""
         task_states = {"run-script": {"State": "dead"}}
         if hold_state is not None:
@@ -5648,7 +5670,7 @@ class TestNomadCaptureHoldRelease:
         return {"ID": "alloc-1", "TaskStates": task_states}
 
     @classmethod
-    def _backend_serving(cls, mock_nomad_cls, alloc: dict) -> MagicMock:
+    def _backend_serving(cls, mock_nomad_cls, alloc: dict[str, Any]) -> MagicMock:
         """Wire a backend whose allocation re-read returns ``alloc``."""
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
@@ -5670,23 +5692,23 @@ class TestNomadCaptureHoldRelease:
         )
 
     @pytest.mark.asyncio
-    @patch(
-        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
-        new_callable=AsyncMock,
-    )
+    @pytest.mark.parametrize("drain_settings", DRAIN_SETTINGS_VARIANTS)
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_does_not_signal_a_hold_that_stays_pending(
-        self, mock_nomad_cls, mock_sleep
+        self, mock_nomad_cls, mock_sleep, drain_settings: dict[str, float]
     ) -> None:
         """Assert a hold pending for the whole budget is left to expire.
 
         A signal delivered to a pending step is dropped, so spending the budget
         without seeing it start has to stay a non-event: no signal, no raised
-        exception, and the hold's own deadline left as the residency bound.
+        exception, and the hold's own deadline left as the residency bound. The
+        budget bounds an internal Nomad scheduling window, so no drain setting
+        may stretch or shrink it — a derived budget is what let a zeroed drain
+        forfeit the release in the first place.
         """
         alloc = self._alloc("pending")
         mock_backend = self._backend_serving(mock_nomad_cls, alloc)
-        executor = _build_executor()
+        executor = _build_executor(**drain_settings)
 
         await executor._release_capture_hold(alloc)
 
@@ -5694,7 +5716,9 @@ class TestNomadCaptureHoldRelease:
             mock_backend.allocation.get_allocation.call_count
             == _CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS
         )
-        assert mock_sleep.await_count == _CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS - 1
+        assert mock_sleep.await_args_list == [
+            call(_CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS)
+        ] * (_CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS - 1)
         mock_backend.client.allocation.signal_allocation.assert_not_called()
 
     @pytest.mark.asyncio
@@ -5724,19 +5748,18 @@ class TestNomadCaptureHoldRelease:
         mock_backend.client.allocation.signal_allocation.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch(
-        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
-        new_callable=AsyncMock,
-    )
+    @pytest.mark.parametrize("drain_settings", DRAIN_SETTINGS_VARIANTS)
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_polls_until_the_hold_starts(
-        self, mock_nomad_cls, mock_sleep
+        self, mock_nomad_cls, mock_sleep, drain_settings: dict[str, float]
     ) -> None:
         """Assert a hold that has not started yet is waited out, then signalled.
 
         The hold is a poststop step, so it only starts once Nomad has finished
         killing the payload. Reading once inside that window would forfeit the
-        release the method exists to issue.
+        release the method exists to issue. Zeroing the drain is a supported way
+        to keep terminal syncs off the beat's critical path, so it must not cost
+        the release that chance either.
         """
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
@@ -5745,7 +5768,7 @@ class TestNomadCaptureHoldRelease:
             self._alloc("pending"),
             self._alloc("running"),
         ]
-        executor = _build_executor()
+        executor = _build_executor(**drain_settings)
 
         await executor._release_capture_hold(self._alloc("pending"))
 
@@ -5753,15 +5776,12 @@ class TestNomadCaptureHoldRelease:
             mock_backend.allocation.get_allocation.call_count
             == EXPECTED_HOLD_READS_UNTIL_RUNNING
         )
+        assert mock_sleep.await_count == EXPECTED_HOLD_READS_UNTIL_RUNNING - 1
         mock_backend.client.allocation.signal_allocation.assert_called_once_with(
             "alloc-1", "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
         )
 
     @pytest.mark.asyncio
-    @patch(
-        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
-        new_callable=AsyncMock,
-    )
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_stops_polling_early_on_a_dead_hold(
         self, mock_nomad_cls, mock_sleep
@@ -5867,75 +5887,6 @@ class TestNomadCaptureHoldRelease:
         mock_backend.client.allocation.signal_allocation.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch(
-        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
-        new_callable=AsyncMock,
-    )
-    @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    async def test_polls_with_the_terminal_drain_disabled(
-        self, mock_nomad_cls, mock_sleep
-    ) -> None:
-        """Assert disabling the log drain leaves the release budget intact.
-
-        Zeroing the drain is a supported way to keep terminal syncs off the
-        beat's critical path; it must not silently cost the release its only
-        chance to collect the allocation early.
-        """
-        mock_backend = MagicMock()
-        mock_nomad_cls.return_value = mock_backend
-        mock_backend.allocation.get_allocation.side_effect = [
-            self._alloc("pending"),
-            self._alloc("pending"),
-            self._alloc("running"),
-        ]
-        executor = _build_executor(terminal_log_drain_max_attempts=0)
-
-        await executor._release_capture_hold(self._alloc("pending"))
-
-        assert (
-            mock_backend.allocation.get_allocation.call_count
-            == EXPECTED_HOLD_READS_UNTIL_RUNNING
-        )
-        mock_backend.client.allocation.signal_allocation.assert_called_once_with(
-            "alloc-1", "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
-        )
-
-    @pytest.mark.asyncio
-    @patch(
-        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
-        new_callable=AsyncMock,
-    )
-    @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    async def test_drain_settings_do_not_reach_the_release_budget(
-        self, mock_nomad_cls, mock_sleep
-    ) -> None:
-        """Assert the budget is fixed rather than derived from the drain settings.
-
-        The release bounds an internal Nomad scheduling window, so no operator
-        value may stretch or shrink it — a derived budget is what let a zeroed
-        drain forfeit the release in the first place.
-        """
-        alloc = self._alloc("pending")
-        mock_backend = self._backend_serving(mock_nomad_cls, alloc)
-        executor = _build_executor(
-            terminal_log_drain_max_attempts=99, terminal_log_drain_interval=99
-        )
-
-        await executor._release_capture_hold(alloc)
-
-        assert (
-            mock_backend.allocation.get_allocation.call_count
-            == _CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS
-        )
-        assert mock_sleep.await_args_list == [call(_CAPTURE_HOLD_RELEASE_INTERVAL)] * (
-            _CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS - 1
-        )
-
-    @pytest.mark.asyncio
-    @patch(
-        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
-        new_callable=AsyncMock,
-    )
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_a_running_hold_is_signalled_without_waiting(
         self, mock_nomad_cls, mock_sleep
@@ -5959,13 +5910,9 @@ class TestNomadCaptureHoldRelease:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("hold_step", [{"State": None}, {}])
-    @patch(
-        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
-        new_callable=AsyncMock,
-    )
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_an_unreadable_hold_state_costs_a_single_read(
-        self, mock_nomad_cls, mock_sleep, hold_step: dict
+        self, mock_nomad_cls, mock_sleep, hold_step: dict[str, Any]
     ) -> None:
         """Assert a hold whose state cannot be read is never polled for.
 
@@ -5990,10 +5937,6 @@ class TestNomadCaptureHoldRelease:
         mock_backend.client.allocation.signal_allocation.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch(
-        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
-        new_callable=AsyncMock,
-    )
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_a_re_read_failure_mid_poll_does_not_escape(
         self, mock_nomad_cls, mock_sleep
@@ -6020,10 +5963,6 @@ class TestNomadCaptureHoldRelease:
         mock_backend.client.allocation.signal_allocation.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch(
-        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
-        new_callable=AsyncMock,
-    )
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_a_polled_release_failure_does_not_escape(
         self, mock_nomad_cls, mock_sleep
@@ -6301,7 +6240,7 @@ class TestNomadCaptureOutcomes:
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_release_polls_a_pending_hold_with_the_drain_disabled(
         self, mock_nomad_cls, mock_sleep, session, created_task_with_history
-    ):
+    ) -> None:
         """Assert the sync path waits out the hold's start window on its own.
 
         With the drain disabled the sync has no sleeps of its own, so it can
@@ -6333,6 +6272,49 @@ class TestNomadCaptureOutcomes:
         mock_backend.client.allocation.signal_allocation.assert_called_once_with(
             self.HOLD_ALLOC_ID, "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
         )
+        verdicts = await self._verdicts(session, history.id)
+        assert verdicts[("run-script", TaskLogType.STDOUT)] == (
+            LogCaptureStatusEnum.COMPLETE
+        )
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_release_does_not_poll_a_hold_past_signalling(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ) -> None:
+        """Assert a hold that died before the release is due costs a single read.
+
+        Readiness is detected on a snapshot taken before the capture work, so
+        the hold can reach its own deadline in the meantime. Polling one that
+        can never be signalled again would only stretch the beat cycle.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.return_value = ""
+        alloc = self._alloc({"run-script": "dead"})
+        mock_backend.allocation.get_allocation.return_value = self._alloc(
+            {"run-script": "dead"}, hold_state="dead"
+        )
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(terminal_log_drain_max_attempts=0)
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=alloc,
+            previous_allocation_id=self.HOLD_ALLOC_ID,
+            capture_hold_ready=True,
+        )
+
+        assert mock_backend.allocation.get_allocation.call_count == 1
+        mock_sleep.assert_not_awaited()
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
         verdicts = await self._verdicts(session, history.id)
         assert verdicts[("run-script", TaskLogType.STDOUT)] == (
             LogCaptureStatusEnum.COMPLETE
@@ -6819,16 +6801,19 @@ class TestNomadStopReleasesCaptureHold:
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_stop_polls_a_pending_hold_with_the_drain_disabled(
         self, mock_nomad_cls, mock_sleep
-    ):
+    ) -> None:
         """Assert the stop path keeps its polling when the log drain is off.
 
         A stop signals immediately after deregistering, before Nomad has killed
         the payload, so the poststop hold is normally still ``pending`` here —
-        the path most exposed to losing the release.
+        the path most exposed to losing the release. The hold has to stay
+        pending on the release's own first re-read, not just on the read the
+        stop already made, or the poll is never exercised.
         """
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
         mock_backend.allocation.get_allocation.side_effect = [
+            self._alloc("pending"),
             self._alloc("pending"),
             self._alloc("running"),
         ]
@@ -6844,9 +6829,50 @@ class TestNomadStopReleasesCaptureHold:
         await executor._stop_task(queue_item)
 
         mock_backend.job.deregister_job.assert_called_once_with("job-1")
+        assert (
+            mock_backend.allocation.get_allocation.call_count
+            == EXPECTED_STOP_ALLOC_READS_UNTIL_RUNNING
+        )
+        mock_sleep.assert_awaited_once_with(_CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS)
         mock_backend.client.allocation.signal_allocation.assert_called_once_with(
             "alloc-1", "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
         )
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_stop_does_not_poll_a_hold_past_signalling(
+        self, mock_nomad_cls, mock_sleep
+    ) -> None:
+        """Assert a stop is not slowed down by a hold that already expired.
+
+        A stop is interactive, so spending the budget on a hold that can never
+        be signalled again would delay the operator for nothing.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = self._alloc("dead")
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        await executor._stop_task(queue_item)
+
+        mock_backend.job.deregister_job.assert_called_once_with("job-1")
+        assert (
+            mock_backend.allocation.get_allocation.call_count
+            == EXPECTED_STOP_ALLOC_READS_ON_DEAD_HOLD
+        )
+        mock_sleep.assert_not_awaited()
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")

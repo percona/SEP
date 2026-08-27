@@ -103,7 +103,7 @@ _CAPTURE_HOLD_RELEASE_SIGNAL = "SIGTERM"
 # could reach zero would silently forfeit the release, leaving the allocation
 # held until its own deadline.
 _CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS = 5
-_CAPTURE_HOLD_RELEASE_INTERVAL = 0.5
+_CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS = 0.5
 # Internal states returned by :meth:`NomadExecutor._consume_nomad_log_stream` (not Nomad task states).
 _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
@@ -1568,7 +1568,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         has already stamped a terminal status, and the sync sweep only revisits
         ``RUNNING`` histories. So the re-read polls on
         :data:`_CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS` and
-        :data:`_CAPTURE_HOLD_RELEASE_INTERVAL` to wait out the hold's poststop
+        :data:`_CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS` to wait out the hold's poststop
         start window, which both callers can land inside. The budget is only
         ever spent there: a hold already running is signalled on the first read,
         and one past signalling is abandoned on it. A hold still not running
@@ -1585,7 +1585,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         hold_state = None
         for attempt in range(_CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS):
             if attempt:
-                await asyncio.sleep(_CAPTURE_HOLD_RELEASE_INTERVAL)
+                await asyncio.sleep(_CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS)
             try:
                 current = self.backend.allocation.get_allocation(alloc_id)
             except BaseNomadException:
