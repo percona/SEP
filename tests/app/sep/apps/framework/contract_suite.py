@@ -181,9 +181,9 @@ def mount_app_shared(app_def: TaskExecutionApp) -> FastAPI:
 
     Callers borrow the returned app's ``dependency_overrides`` for the duration of
     one test and must clear them on teardown, since every other test bound to the
-    same definition shares that mapping. :func:`shared_contract_client` does this
-    for the authenticated fixtures; ``unauthenticated_contract_client`` borrows
-    the app directly and clears it itself.
+    same definition shares that mapping. Borrow through
+    :func:`borrow_shared_mount` rather than calling this directly, so a second
+    concurrent borrower is rejected instead of stomping the first.
 
     :param app_def: The long-lived app definition to mount.
     :return: The cached ``FastAPI`` app carrying this definition's routes.
@@ -193,6 +193,33 @@ def mount_app_shared(app_def: TaskExecutionApp) -> FastAPI:
         cached = (app_def, mount_app(app_def))
         _MOUNTED[id(app_def)] = cached
     return cached[1]
+
+
+def borrow_shared_mount(app_def: TaskExecutionApp) -> FastAPI:
+    """Return the cached mount for ``app_def``, refusing a second live borrower.
+
+    The shared app carries one ``dependency_overrides`` mapping, so two fixtures
+    holding it in the same test would collide on ``get_current_user`` and the
+    later setup would silently decide what *both* clients authenticate as — an
+    assertion about the 401 path could then pass or fail for the wrong reason.
+    Borrowing through here turns that into a setup-time error instead.
+
+    A populated mapping always means a live borrower, never leftover state: every
+    borrower clears it on teardown, which the override-leak regression test pins.
+
+    :param app_def: The long-lived app definition to mount through the cache.
+    :raises RuntimeError: If the cached app's overrides are already installed.
+    :return: The cached ``FastAPI`` app, with an empty ``dependency_overrides``.
+    """
+    app = mount_app_shared(app_def)
+    if app.dependency_overrides:
+        raise RuntimeError(
+            f"The shared mount for {app_def.key!r} is already lent to another "
+            "contract client in this test; the two would share one "
+            "dependency_overrides mapping. Request only one client fixture, or "
+            "build a per-test app with build_contract_client()."
+        )
+    return app
 
 
 def _install_contract_overrides(
@@ -260,9 +287,8 @@ def shared_contract_client(
     The fixture body for a definition that outlives the test: the app object is
     shared with every sibling test bound to the same definition, so this owns the
     teardown that :func:`build_contract_client`'s per-test app made unnecessary.
-    Only one client may hold the shared app at a time — a test requesting two
-    fixtures built on the same definition would have the second stomp the first's
-    overrides.
+    Only one client may hold the shared app at a time, which
+    :func:`borrow_shared_mount` enforces.
 
     :param app_def: The long-lived app definition to mount through the cache.
     :param user: The authenticated user the auth dep resolves to.
@@ -271,7 +297,7 @@ def shared_contract_client(
         ``get_inventory_api``; omitted when the app resolves no references.
     :return: An iterator yielding a bare ``TestClient`` for the cached app.
     """
-    app = mount_app_shared(app_def)
+    app = borrow_shared_mount(app_def)
     try:
         yield _install_contract_overrides(
             app, user=user, tasks_api=tasks_api, inventory_api=inventory_api

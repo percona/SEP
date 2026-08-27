@@ -50,6 +50,7 @@ from app.tasks.models import LATEST_HISTORY_STATUS_NAMES_MAX, TaskHistoryStatusE
 from tests.app.sep.apps.archives.build_pins import ARCHIVES_ARCHIVE_PINS
 from tests.app.sep.apps.framework.contract_suite import (
     app_base_url,
+    borrow_shared_mount,
     build_contract_client,
     build_valid_create_body,
     DerivedRouterContractTests,
@@ -788,3 +789,28 @@ def test_shared_mount_clears_overrides_between_tests(pytester: pytest.Pytester) 
     result = pytester.runpytest("-p", "no:cacheprovider", "-n0")
 
     result.assert_outcomes(passed=2)
+
+
+def test_borrowing_a_shared_mount_twice_is_rejected() -> None:
+    """Reject a second borrow of one shared mount while the first still holds it.
+
+    ``contract_client`` and ``unauthenticated_contract_client`` both install on
+    the cached app's single ``dependency_overrides`` mapping, so a test
+    requesting both would have the later setup decide what *each* client
+    authenticates as. The borrow has to fail loudly instead.
+    """
+
+    def held_dep() -> str:
+        return "held"
+
+    app_def = synth_app()
+    app = borrow_shared_mount(app_def)
+    app.dependency_overrides[held_dep] = lambda: "held"
+
+    try:
+        with pytest.raises(RuntimeError, match="already lent"):
+            borrow_shared_mount(app_def)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert borrow_shared_mount(app_def) is app

@@ -41,7 +41,7 @@ from app.sep.main import sep_app
 from app.tasks.models import TaskBackendEnum, TaskWrite
 from tests.app.factories import GeneratedTaskFactory
 from tests.app.sep.apps.framework.contract_suite import (
-    mount_app_shared,
+    borrow_shared_mount,
     shared_contract_client,
 )
 from tests.app.sep.apps.framework.kit import (
@@ -170,7 +170,8 @@ def contract_client(
 
     The mounted app is shared across every test bound to the same definition, so
     a test may not also request :func:`unauthenticated_contract_client` — the two
-    would collide on one ``dependency_overrides`` mapping.
+    would collide on one ``dependency_overrides`` mapping. Requesting both raises
+    at setup rather than silently deciding what each client authenticates as.
     """
     yield from shared_contract_client(
         _bound_app_def(request),
@@ -187,9 +188,9 @@ def unauthenticated_contract_client(
     """Return a contract client whose auth dep raises, to exercise the 401 path.
 
     Shares the mounted app with :func:`contract_client`, so the two are mutually
-    exclusive within one test.
+    exclusive within one test; requesting both raises at setup.
     """
-    app = mount_app_shared(_bound_app_def(request))
+    app = borrow_shared_mount(_bound_app_def(request))
     app.dependency_overrides[get_current_user] = _raise_unauthorized
     try:
         yield TestClient(app, raise_server_exceptions=False)
