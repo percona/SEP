@@ -366,15 +366,25 @@ def find_unregistered(processes, targets, matched_pids=frozenset()):
         excluded regardless of what the port filter below would otherwise say.
     :return: The processes that matched no target.
     """
-    registered_ports = {
-        target.get("port") for target in targets if target.get("port") is not None
-    }
-    return [
-        process
-        for process in processes
-        if process.get("pid") not in matched_pids
-        and (process.get("port") is None or process["port"] not in registered_ports)
-    ]
+    # Built with explicit loops rather than comprehensions: python-minifier (the Tasks
+    # layer runs this file through it before dispatch, see build_uri's note above)
+    # mis-renames variables when this function's two comprehensions sit side by side
+    # with hoist_literals + rename_locals + rename_globals all on, aliasing the set
+    # comprehension's loop variable onto the hoisted "pid" literal the list
+    # comprehension reads. The minified build then raises ``UnboundLocalError`` on
+    # every dispatch. Loops don't trigger the collision.
+    registered_ports = set()
+    for target in targets:
+        port = target.get("port")
+        if port is not None:
+            registered_ports.add(port)
+    unregistered = []
+    for process in processes:
+        if process.get("pid") in matched_pids:
+            continue
+        if process.get("port") is None or process["port"] not in registered_ports:
+            unregistered.append(process)
+    return unregistered
 
 
 def collect_binary_version(program=None):
