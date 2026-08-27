@@ -308,9 +308,11 @@ class ServiceManager(RetirableManagerMixin, BaseSQLModelChildManager):
         The port uniqueness index protects only services PMM does not identify for
         us, so an externally identified row carries a NULL guard that both
         enforcement layers read as "not constrained". Deriving it here rather than
-        in a validator or a flush-time event is deliberate: this is the one choke
-        point every write funnels through, and the duplicate check in
-        ``BaseSQLModelManager.save`` reads the value before the flush.
+        in a validator or a flush-time event is deliberate: every write that can
+        change ``external_id`` funnels through this method, and the duplicate check
+        in ``BaseSQLModelManager.save`` reads the value before the flush.
+        ``save_batch`` and the raw-UPDATE retirement path bypass it, and neither
+        touches ``external_id``.
 
         :param session: The SQLAlchemy asynchronous session to use.
         :param instance: The service to save.

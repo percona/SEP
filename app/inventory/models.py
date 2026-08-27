@@ -312,12 +312,12 @@ class Service(RetirableSQLModel, ServiceBase, table=True):
         :data:`~app.inventory.constants.UNIDENTIFIED_PORT_GUARD_KEY` on such a
         service and None on an externally identified one, which both enforcement
         layers read as "not constrained": several databases behind one server share
-        that server's port, so upstream identity is what tells them apart. Excluded
-        from serialization for the same reason retirement_key is.
+        that server's port, so upstream identity is what tells them apart. Derived
+        from external_id on every write by ServiceManager.save, so the None default
+        below is never the value a stored row carries. Excluded from serialization
+        for the same reason retirement_key is.
     :param schemas: A list of schemas associated with the service.
     """
-
-    port_guard_key: int | None = SQLField(default=None, exclude=True)
 
     __table_args__ = (
         Index(
@@ -336,6 +336,8 @@ class Service(RetirableSQLModel, ServiceBase, table=True):
             unique=True,
         ),
     )
+
+    port_guard_key: int | None = SQLField(default=None, exclude=True)
 
     node: Node = Relationship(back_populates="services")
     schemas: list["Schema"] = Relationship(
