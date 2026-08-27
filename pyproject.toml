@@ -199,7 +199,7 @@ all = "error"
 # artifacts of how a dependency is typed, so neither `error` nor `ignore` is
 # honest while those stubs are unshimmed. `warn` still prints every diagnostic.
 invalid-argument-type = "warn"       # 198 hits are the sqlmodel/sqlalchemy AsyncSession split; 325 are genuine `int | None`
-unresolved-attribute = "warn"        # 382 genuine Optional narrowings against test doubles patching private attributes
+unresolved-attribute = "warn"        # 382 of 863 are genuine Optional narrowing; the other 481 are test doubles and stub gaps
 unknown-argument = "warn"            # dominated by pydantic-settings `_env_file` / `_secrets_dir` constructor kwargs
 invalid-assignment = "warn"          # 83 of 187 hits are the pydantic `Field(...)` -> FieldInfo idiom
 missing-argument = "warn"            # `Settings()` fills its required fields from the environment, invisibly to ty
@@ -214,7 +214,7 @@ invalid-return-type = "error"        # nullable returns, generator fixtures anno
 not-subscriptable = "error"          # 57 of 59 hits subscript a value ty knows may be `None`
 invalid-type-form = "error"          # SEP's own dynamic `type[BaseUser]` / `type[BaseModel]` annotations
 unsupported-operator = "error"       # 16 of 22 hits have an un-narrowed `X | None` operand; the rest widen to `object`
-invalid-method-override = "error"    # first-party overrides of first-party bases; these are LSP violations
+invalid-method-override = "error"    # first-party overrides of first-party bases; these are Liskov violations
 not-iterable = "error"               # includes `async for` over a coroutine that was never awaited
 call-top-callable = "error"          # `callable()` narrowing drops the signature; fixable by annotating the attribute
 unbound-type-variable = "error"      # type variables left unbound in the app/core generics
