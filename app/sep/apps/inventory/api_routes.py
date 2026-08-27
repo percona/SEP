@@ -195,6 +195,8 @@ async def inventory_plugin_tasks() -> list[PluginTaskResponse]:
     (``inventory-sync`` and ``inventory-collection``). The shape matches what the
     React ``usePluginTasks('inventory')`` hook expects: a list of objects with at
     minimum a ``name`` key.
+
+    :return: The plugin's periodic tasks, each with its name and display name.
     """
     return [
         PluginTaskResponse(

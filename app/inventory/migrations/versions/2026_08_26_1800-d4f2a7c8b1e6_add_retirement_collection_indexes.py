@@ -35,6 +35,11 @@ dev-sized dataset is acceptable. The models declare the same indexes with
 renders them as plain indexes this revision never creates and ``alembic check``
 proposes adding all four there. That drift is confined to a dev-only engine.
 
+A concurrent build that fails part-way leaves the index behind marked INVALID,
+and the ``IF NOT EXISTS`` above then matches it by name on the retry: the
+migration reports success while the planner keeps ignoring the index. Repair it
+with ``REINDEX INDEX CONCURRENTLY <name>``, or drop it before re-running.
+
 ``schema`` and ``table`` are reserved words, hence the quoted identifiers.
 """
 
