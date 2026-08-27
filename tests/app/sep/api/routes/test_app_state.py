@@ -47,6 +47,7 @@ from app.sep.models import (
     AppState,
     SEPPluginPeriodicTask,
 )
+from tests.app.db_schema import apply_schema
 
 SNIPPETS_TASK = "sep__sync_snippets"
 
@@ -80,7 +81,7 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:

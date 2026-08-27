@@ -35,6 +35,7 @@ from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.main import tasks_app
 from app.tasks.models import TaskHistory, TaskWrite
+from tests.app.db_schema import apply_schema
 from tests.app.factories import build_task_history, TaskFactory
 
 #: The per-task hook-path fields the ``TaskWrite`` allow-list constrains.
@@ -61,7 +62,7 @@ async def session_fixture() -> AsyncSession:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
