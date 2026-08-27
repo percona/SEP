@@ -32,7 +32,7 @@
 | app/core/celery/utils.py                                                                                                     |       31 |        1 |       10 |        1 |     95% |        92 |
 | app/core/config.py                                                                                                           |      254 |        5 |       48 |        4 |     97% |235-\>exit, 537, 756, 832, 845, 883-\>885, 888 |
 | app/core/db/config.py                                                                                                        |       36 |        0 |        6 |        0 |    100% |           |
-| app/core/db/crud.py                                                                                                          |      301 |       21 |       84 |        9 |     91% |197, 250-\>252, 252-\>254, 254-\>256, 263-\>279, 314-331, 349, 354, 371, 485-488, 902, 906, 1197-1198 |
+| app/core/db/crud.py                                                                                                          |      301 |       21 |       84 |       10 |     90% |197, 250-\>252, 252-\>254, 254-\>256, 263-\>279, 314-331, 349, 354, 371, 485-488, 902, 906, 1085-\>1079, 1197-1198 |
 | app/core/db/list\_query.py                                                                                                   |       87 |        0 |       24 |        0 |    100% |           |
 | app/core/db/models.py                                                                                                        |       14 |        0 |        0 |        0 |    100% |           |
 | app/core/db/sql\_types.py                                                                                                    |       37 |        0 |       12 |        0 |    100% |           |
@@ -84,21 +84,23 @@
 | app/inventory/db.py                                                                                                          |        6 |        0 |        0 |        0 |    100% |           |
 | app/inventory/deps.py                                                                                                        |       63 |        9 |        4 |        0 |     81% |63-65, 271-273, 292-294 |
 | app/inventory/main.py                                                                                                        |       44 |        8 |        2 |        1 |     80% |52, 97-98, 130-131, 135-139 |
-| app/inventory/migrations/versions/2024\_09\_24\_1701-8e95b4982efb\_create\_inventory\_tables.py                              |       36 |       26 |        0 |        0 |     28% |39-90, 96-108 |
-| app/inventory/migrations/versions/2024\_10\_15\_1724-6761fa809e84\_create\_unique\_index\_for\_service\_port\_by\_.py        |       12 |        2 |        0 |        0 |     83% |    39, 45 |
-| app/inventory/migrations/versions/2024\_11\_25\_0946-83707159e945\_add\_keys\_field\_for\_table.py                           |       12 |        2 |        0 |        0 |     83% |    39, 45 |
-| app/inventory/migrations/versions/2025\_02\_13\_2052-b422e3cb9b35\_force\_create\_to\_text.py                                |       14 |        4 |        0 |        0 |     71% |39-40, 49-50 |
-| app/inventory/migrations/versions/2025\_02\_14\_1806-4df7d4433322\_update\_servicetypeenum.py                                |       14 |        4 |        0 |        0 |     71% |39-40, 51-52 |
-| app/inventory/migrations/versions/2025\_07\_10\_1811-2f39f63eb355\_make\_servicetypeenum\_non\_native.py                     |       14 |        4 |        0 |        0 |     71% |39-40, 50-51 |
-| app/inventory/migrations/versions/2025\_10\_03\_1531-ceea7494ff83\_add\_new\_pmm\_service\_fields.py                         |       16 |        6 |        0 |        0 |     62% |39-41, 47-49 |
-| app/inventory/migrations/versions/2026\_06\_04\_1005-b73c0110ad55\_add\_system\_observation\_tables.py                       |       18 |        8 |        0 |        0 |     56% |39-69, 80-89 |
-| app/inventory/migrations/versions/2026\_07\_02\_1000-c4d5e6f7a8b9\_add\_setting\_override\_table.py                          |       29 |       16 |        4 |        0 |     39% |60-93, 103-112 |
-| app/inventory/migrations/versions/2026\_08\_08\_0306-34e6108ea194\_drop\_messages\_setting\_overrides.py                     |       27 |       15 |        6 |        0 |     36% |56-66, 90-99 |
-| app/inventory/migrations/versions/2026\_08\_12\_1200-f3a4b5c6d7e8\_extend\_setting\_class\_enum\_health\_report.py           |       27 |       15 |        6 |        0 |     36% |60-69, 89-99 |
-| app/inventory/migrations/versions/2026\_08\_17\_2210-a38607bba456\_drop\_setting\_class\_check\_constraint.py                |        9 |        2 |        0 |        0 |     78% |    45, 50 |
-| app/inventory/migrations/versions/2026\_08\_26\_1030-c7d1e94ab3f2\_add\_retirement\_columns\_to\_inventory\_.py              |       25 |       15 |       10 |        0 |     29% |63-79, 89-97 |
-| app/inventory/models.py                                                                                                      |       98 |        0 |        4 |        0 |    100% |           |
-| app/inventory/routes/nodes.py                                                                                                |       56 |        2 |        4 |        0 |     93% |  202, 204 |
+| app/inventory/migrations/env.py                                                                                              |       35 |        5 |        4 |        2 |     82% |36-\>43, 64-75, 117 |
+| app/inventory/migrations/versions/2024\_09\_24\_1701-8e95b4982efb\_create\_inventory\_tables.py                              |       36 |       13 |        0 |        0 |     64% |    96-108 |
+| app/inventory/migrations/versions/2024\_10\_15\_1724-6761fa809e84\_create\_unique\_index\_for\_service\_port\_by\_.py        |       12 |        1 |        0 |        0 |     92% |        45 |
+| app/inventory/migrations/versions/2024\_11\_25\_0946-83707159e945\_add\_keys\_field\_for\_table.py                           |       12 |        1 |        0 |        0 |     92% |        45 |
+| app/inventory/migrations/versions/2025\_02\_13\_2052-b422e3cb9b35\_force\_create\_to\_text.py                                |       14 |        2 |        0 |        0 |     86% |     49-50 |
+| app/inventory/migrations/versions/2025\_02\_14\_1806-4df7d4433322\_update\_servicetypeenum.py                                |       14 |        2 |        0 |        0 |     86% |     51-52 |
+| app/inventory/migrations/versions/2025\_07\_10\_1811-2f39f63eb355\_make\_servicetypeenum\_non\_native.py                     |       14 |        2 |        0 |        0 |     86% |     50-51 |
+| app/inventory/migrations/versions/2025\_10\_03\_1531-ceea7494ff83\_add\_new\_pmm\_service\_fields.py                         |       16 |        3 |        0 |        0 |     81% |     47-49 |
+| app/inventory/migrations/versions/2026\_06\_04\_1005-b73c0110ad55\_add\_system\_observation\_tables.py                       |       18 |        4 |        0 |        0 |     78% |     80-89 |
+| app/inventory/migrations/versions/2026\_07\_02\_1000-c4d5e6f7a8b9\_add\_setting\_override\_table.py                          |       29 |        9 |        4 |        1 |     64% |63, 103-112 |
+| app/inventory/migrations/versions/2026\_08\_08\_0306-34e6108ea194\_drop\_messages\_setting\_overrides.py                     |       27 |        9 |        6 |        1 |     58% | 61, 90-99 |
+| app/inventory/migrations/versions/2026\_08\_12\_1200-f3a4b5c6d7e8\_extend\_setting\_class\_enum\_health\_report.py           |       27 |        9 |        6 |        2 |     61% |63, 67, 89-99 |
+| app/inventory/migrations/versions/2026\_08\_17\_2210-a38607bba456\_drop\_setting\_class\_check\_constraint.py                |        9 |        1 |        0 |        0 |     89% |        50 |
+| app/inventory/migrations/versions/2026\_08\_26\_1030-c7d1e94ab3f2\_add\_retirement\_columns\_to\_inventory\_.py              |       25 |        9 |       10 |        0 |     57% |     89-97 |
+| app/inventory/migrations/versions/2026\_08\_26\_1730-e4b8c2f7a915\_require\_pmm\_origin\_on\_inventory\_entities.py          |       38 |        0 |        6 |        0 |    100% |           |
+| app/inventory/models.py                                                                                                      |       93 |        0 |        2 |        0 |    100% |           |
+| app/inventory/routes/nodes.py                                                                                                |       53 |        2 |        2 |        0 |     93% |  201, 203 |
 | app/inventory/routes/schemas.py                                                                                              |       38 |        0 |        0 |        0 |    100% |           |
 | app/inventory/routes/services.py                                                                                             |       52 |        3 |        4 |        0 |     88% |163, 165, 201 |
 | app/inventory/routes/tables.py                                                                                               |       30 |        0 |        0 |        0 |    100% |           |
@@ -291,14 +293,14 @@
 | app/sep/bundle\_upload/plan.py                                                                                               |      163 |        1 |       58 |        1 |     99% |       587 |
 | app/sep/bundle\_upload/resolver.py                                                                                           |       46 |        0 |       12 |        0 |    100% |           |
 | app/sep/bundle\_upload/seam.py                                                                                               |       12 |        0 |        0 |        0 |    100% |           |
-| app/sep/clients/pmm.py                                                                                                       |      292 |        2 |       74 |        4 |     98% |574, 576, 981-\>983, 985-\>987 |
+| app/sep/clients/pmm.py                                                                                                       |      292 |        2 |       74 |        3 |     99% |565, 567, 976-\>978 |
 | app/sep/config.py                                                                                                            |      230 |        4 |       54 |        4 |     97% |180, 229, 405, 695 |
 | app/sep/connectivity.py                                                                                                      |       39 |        4 |        2 |        1 |     88% |84, 163-169 |
 | app/sep/crud.py                                                                                                              |      134 |        1 |       22 |        1 |     99% |       365 |
 | app/sep/db/engine.py                                                                                                         |        7 |        0 |        0 |        0 |    100% |           |
 | app/sep/db/seed.py                                                                                                           |       39 |        0 |       12 |        0 |    100% |           |
 | app/sep/deps.py                                                                                                              |      252 |        2 |       48 |        1 |     99% |243, 632-\>637, 653 |
-| app/sep/inventory.py                                                                                                         |      100 |        7 |       12 |        1 |     93% |84, 95, 231, 287, 327, 364, 422 |
+| app/sep/inventory.py                                                                                                         |      100 |        7 |       12 |        1 |     93% |84, 95, 203, 244, 284, 321, 379 |
 | app/sep/main.py                                                                                                              |      121 |       15 |       12 |        2 |     87% |161-163, 293-312, 332-\>341, 466-470 |
 | app/sep/migrations/\_discovery.py                                                                                            |       41 |        2 |       20 |        3 |     92% |65, 97, 133-\>130 |
 | app/sep/migrations/\_orphan\_heads.py                                                                                        |       37 |        0 |        8 |        0 |    100% |           |
@@ -346,10 +348,10 @@
 | app/sep/snippets/script\_source.py                                                                                           |       96 |        1 |       22 |        1 |     98% |       354 |
 | app/sep/snippets/utils.py                                                                                                    |       32 |        0 |       10 |        0 |    100% |           |
 | app/sep/sync/exceptions.py                                                                                                   |       25 |        0 |        0 |        0 |    100% |           |
-| app/sep/sync/models.py                                                                                                       |      394 |       43 |      104 |       16 |     86% |123-132, 146-148, 167, 173-\>175, 176-\>178, 253-\>263, 339-341, 462, 851-\>exit, 869, 883, 903-904, 984, 998, 1020-1021, 1057-\>exit, 1102, 1115, 1139-1141, 1174-\>exit, 1213, 1226, 1283-\>exit, 1322, 1466-1468, 1575-1577, 1582-1588, 1592 |
+| app/sep/sync/models.py                                                                                                       |      394 |       43 |      104 |       17 |     86% |123-132, 146-148, 167, 173-\>175, 176-\>178, 253-\>263, 339-341, 370-\>368, 462, 851-\>exit, 869, 883, 903-904, 984, 998, 1020-1021, 1057-\>exit, 1102, 1115, 1139-1141, 1174-\>exit, 1213, 1226, 1283-\>exit, 1322, 1466-1468, 1575-1577, 1582-1588, 1592 |
 | app/sep/sync/syncers/mysql/payload.py                                                                                        |      175 |       47 |       54 |        5 |     69% |156-\>164, 240-244, 249-254, 267-273, 277-300, 354-\>370, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                                         |      233 |        1 |       90 |        5 |     98% |112, 275-\>277, 279-\>281, 790-\>794, 792-\>791 |
-| app/sep/sync/syncers/pmm.py                                                                                                  |      134 |        1 |       38 |        6 |     96% |94-\>98, 132, 296-\>294, 308-\>309, 429-\>436, 476-\>481 |
+| app/sep/sync/syncers/pmm.py                                                                                                  |      132 |        2 |       34 |        5 |     96% |94-\>98, 132, 306, 425-\>432, 472-\>477 |
 | app/sep/sync/syncers/system\_facts/payload.py                                                                                |      235 |       19 |       78 |       12 |     90% |52-\>58, 147-148, 176, 222-224, 231, 233-\>229, 244-251, 261-\>263, 263-\>265, 265-\>267, 282-284, 290-292, 316, 415-\>417, 417-\>419, 522, 533 |
 | app/sep/sync/syncers/system\_facts/syncer.py                                                                                 |      118 |        7 |       28 |        3 |     93% |104, 169-170, 245, 256-\>254, 310-311, 350 |
 | app/sep/tasks.py                                                                                                             |       31 |        0 |       12 |        2 |     95% |69-\>84, 73-\>76 |
@@ -440,7 +442,7 @@
 | app/tasks/routes.py                                                                                                          |      237 |       20 |       46 |        4 |     91% |153-157, 240-246, 279, 329-335, 342, 432, 475, 490, 650, 664, 672, 698, 706-\>708, 729-730 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **27257** | **1775** | **6772** |  **633** | **92%** |           |
+| **TOTAL**                                                                                                                    | **27320** | **1727** | **6774** |  **639** | **92%** |           |
 
 
 ## Setup coverage badge
