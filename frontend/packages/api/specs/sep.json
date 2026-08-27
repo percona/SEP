@@ -509,16 +509,9 @@
             "type": "string"
           },
           "external_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Id"
+            "minLength": 1,
+            "title": "External Id",
+            "type": "string"
           },
           "id": {
             "anyOf": [
@@ -549,14 +542,7 @@
             "title": "Retired At"
           },
           "source": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SourceEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/SourceEnum"
           },
           "type": {
             "default": "generic",
@@ -580,7 +566,9 @@
         "required": [
           "id",
           "address",
-          "name"
+          "name",
+          "external_id",
+          "source"
         ],
         "title": "Node",
         "type": "object"
@@ -879,16 +867,9 @@
             "title": "Environment"
           },
           "external_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Id"
+            "minLength": 1,
+            "title": "External Id",
+            "type": "string"
           },
           "id": {
             "anyOf": [
@@ -971,6 +952,7 @@
           }
         },
         "required": [
+          "external_id",
           "name",
           "type",
           "node_id",

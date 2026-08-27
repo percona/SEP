@@ -46,12 +46,14 @@ def build_fake_service(
     """Build a fake inventory service dict for use in dipper API tests."""
     return {
         "id": service_id,
+        "service_id": f"/service_id/{service_id}",
         "name": "test-service",
         "type": service_type,
         "port": 3306,
         "node_id": 1,
         "node": {
             "id": 1,
+            "node_id": "/node_id/1",
             "name": "test-node",
             "address": "127.0.0.1",
             "type": "generic",
