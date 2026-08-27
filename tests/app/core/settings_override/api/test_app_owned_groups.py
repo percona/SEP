@@ -36,6 +36,7 @@ from app.core.settings_override.api.routes import (
 from app.core.utils import json_serializer
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
+from tests.app.db_schema import apply_schema
 
 LIST_URL = "/settings/"
 
@@ -62,7 +63,7 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:

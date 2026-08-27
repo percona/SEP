@@ -59,6 +59,7 @@ from tests.app.core.settings_override.conftest import (
     recording_start_refresh_task,
     START_REFRESH_TASK,
 )
+from tests.app.db_schema import apply_schema
 
 SEP_CORE_CLASSES = frozenset(
     {
@@ -97,7 +98,7 @@ def _app_owned_entry(setting_class: str) -> AppOwnedClassEntry:
 async def _create_schema(engine: AsyncEngine) -> None:
     """Create every SQLModel table on ``engine``."""
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
 
 
 async def _upsert_override(
