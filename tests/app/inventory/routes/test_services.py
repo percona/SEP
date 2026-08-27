@@ -276,6 +276,28 @@ class TestUpdateService:
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    def test_update_service_missing_external_id(
+        self, test_client: TestClient, service: Service, node: Node
+    ) -> None:
+        """Return 422 when the update body omits external_id."""
+        data = ServiceWriteFactory.build(node_id=node.id).model_dump(mode="json")
+        del data["external_id"]
+        response = test_client.put(f"/services/{service.id}", json=data)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_update_service_null_external_id_leaves_row_intact(
+        self, test_client: TestClient, service: Service, node: Node
+    ) -> None:
+        """Reject an explicit-null external_id without clearing the stored origin."""
+        data = ServiceWriteFactory.build(node_id=node.id).model_dump(mode="json")
+        data["external_id"] = None
+        response = test_client.put(f"/services/{service.id}", json=data)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+        stored = test_client.get(f"/services/{service.id}")
+        assert stored.status_code == status.HTTP_200_OK
+        assert stored.json()["external_id"] == service.external_id
+
     def test_update_service_invalid_node_id(
         self, test_client: TestClient, service: Service
     ) -> None:
