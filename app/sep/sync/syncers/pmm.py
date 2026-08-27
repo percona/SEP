@@ -117,7 +117,7 @@ class PMMSyncer(BaseSyncer):
         """
         await super().__aexit__(exc_type, exc_val, exc_tb)
         if not self.keepalive_api and self._pmm_api is not None:
-            await self._pmm_api.close()
+            await settings.invalidate_client(str(self._pmm_api.endpoint))
             self._pmm_api = None
 
     @property
@@ -293,10 +293,7 @@ class PMMSyncer(BaseSyncer):
         external_id_to_id: dict[str, int | None] = {}
         for node in await self.get_inventory_nodes():
             syncable_nodes[node.id] = node
-            if node.external_id is not None:
-                claim_identity(
-                    external_id_to_id, node.external_id, node, syncable_nodes
-                )
+            claim_identity(external_id_to_id, node.external_id, node, syncable_nodes)
         logger.debug("Syncable nodes: %s", syncable_nodes)
         snapshot = await self._fetch_snapshot()
         self._generation = snapshot
@@ -384,13 +381,12 @@ class PMMSyncer(BaseSyncer):
         syncable_services: dict[int | None, CreatedService] = {}
         for service in created_node.services:
             syncable_services[service.id] = service
-            if service.external_id is not None:
-                claim_identity(
-                    external_id_to_id,
-                    service.external_id,
-                    service,
-                    syncable_services,
-                )
+            claim_identity(
+                external_id_to_id,
+                service.external_id,
+                service,
+                syncable_services,
+            )
             # Retired services are matchable by external id only. Letting the port
             # fallback reach one would revive a predecessor under a different
             # upstream id, handing an unrelated machine its backup and task history.
@@ -505,7 +501,5 @@ class PMMSyncer(BaseSyncer):
         :rtype: bool
         """
         return (
-            super().can_sync_service(service)
-            and service.node.source == SourceEnum.PMM
-            and service.external_id
+            super().can_sync_service(service) and service.node.source == SourceEnum.PMM
         )

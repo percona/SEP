@@ -108,6 +108,7 @@ export_canonical TASKS__DATABASE__PORT "$SEP_DB_PORT"
 # and for the URL-typed ones an inherited blank fails settings validation
 # outright, so all of them are cleared unconditionally before any guard decides.
 blank_cleared_names=(
+    DATABASE__PASSWORD
     SEP__DATABASE__PASSWORD INVENTORY__DATABASE__PASSWORD TASKS__DATABASE__PASSWORD
     AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN PMM__API_KEY
     PMM__ENDPOINT AUTH__PROVIDER__GRAFANA__ENDPOINT

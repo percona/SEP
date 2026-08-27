@@ -106,46 +106,22 @@ class NodeBase(SQLModel):
     """Define the base structure for node-related operations.
 
     :param address: The network address of the node.
-    :type address: NonEmptyStr
     :param name: The name of the node.
-    :type name: NonEmptyStr
     :param external_id: An external identifier for the node, indexed for quick lookup.
-        Defaults to None.
-    :type external_id: NonEmptyStr | None
     :param source: The source from which the node information is derived. Indexed for
-        quick lookup. Defaults to None.
-    :type source: SourceEnum | None
+        quick lookup.
     :param type: The type of the node (e.g., remote, generic). Defaults to "generic".
-    :type type: NonEmptyStr
     """
 
     address: NonEmptyStr
     name: NonEmptyStr
-    external_id: NonEmptyStr | None = SQLField(default=None, index=True)
-    source: SourceEnum | None = SQLField(
-        default=None,
-        sa_column=Column(EnumField(SourceEnum)),
+    external_id: NonEmptyStr = SQLField(index=True)
+    source: SourceEnum = SQLField(
+        sa_column=Column(EnumField(SourceEnum), nullable=False),
     )
     type: NonEmptyStr = SQLField(
         default="generic"
     )  # TODO: Enum with allowed values  # noqa: TD002, TD003
-
-    @model_validator(mode="after")
-    def validate_external_id_source(self) -> Self:
-        """Ensure that external_id is set only if source is provided.
-
-        Raises
-        ------
-        ValueError
-            If ``external_id`` is provided without a corresponding ``source``.
-
-        :return: The validated instance.
-        :rtype: Self
-
-        """
-        if self.external_id is not None and self.source is None:
-            raise ValueError("Can't set external_id if source is None")
-        return self
 
 
 class Node(NodeBase, RetirableSQLModel, table=True):
@@ -182,9 +158,8 @@ class NodeWrite(NodeBase):
     :param address: The network address of the node.
     :param name: The name of the node.
     :param external_id: An external identifier for the node, indexed for quick lookup.
-        Defaults to None.
     :param source: The source from which the node information is derived. Indexed for
-        quick lookup. Defaults to None.
+        quick lookup.
     :param type: The type of the node (e.g., remote, generic). Defaults to "generic".
     """
 
@@ -214,7 +189,7 @@ class ServiceBase(SQLModel):
     """Define the base structure for service-related operations.
 
     :param external_id: An external identifier for the service, indexed for quick
-        lookup. Defaults to None.
+        lookup.
     :param name: The name of the service.
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
     :param port: The port number on which the service is running. Defaults to None.
@@ -226,10 +201,7 @@ class ServiceBase(SQLModel):
     :param node_id: The foreign key referencing the node to which the service belongs.
     """
 
-    external_id: NonEmptyStr | None = SQLField(
-        default=None,
-        index=True,
-    )  # TODO: validate external_id not null if node source is defined  # noqa: TD002, TD003
+    external_id: NonEmptyStr = SQLField(index=True)
     name: NonEmptyStr
     type: ServiceTypeEnum = SQLField(
         sa_column=Column(EnumField(ServiceTypeEnum, native_enum=False), nullable=False),
@@ -251,25 +223,17 @@ class ServiceWrite(ServiceBase):
     """Define the model for writing service data to the inventory.
 
     :param external_id: An external identifier for the service, indexed for quick
-        lookup. Defaults to None.
-    :type external_id: NonEmptyStr | None
+        lookup.
     :param name: The name of the service.
-    :type name: NonEmptyStr
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-    :type type: ServiceTypeEnum
     :param port: The port number on which the service is running. Defaults to None.
-    :type port: int | None
     :param environment: The environment in which the service is running (e.g.,
         production, staging). Defaults to None.
-    :type environment: str | None
     :param cluster: The cluster in which the service is running. Defaults to None.
-    :type cluster: str | None
     :param replication_set: The replication set in which the service is running. Defaults to None.
-    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
     :param node_id: The foreign key referencing the node to which the service belongs.
         Defaults to None.
-    :type node_id: int | None
     """
 
     node_id: int | None = SQLField(

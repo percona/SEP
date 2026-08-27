@@ -48,6 +48,7 @@ from app.sep.apps.framework.form_backfill_registry import (
 )
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.tasks.models import Task, TaskBackendEnum
+from tests.app.db_schema import apply_schema
 
 
 def _minimal_task(*, data: dict) -> Task:
@@ -93,7 +94,7 @@ async def tasks_session() -> AsyncIterator[AsyncSession]:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with session_maker() as session:

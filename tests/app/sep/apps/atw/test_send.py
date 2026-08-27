@@ -59,6 +59,7 @@ from app.sep.bundle_upload.resolver import DRIFTED_INPUTS_REASON
 from app.sep.bundle_upload.seam import BundleSource, UploadResult
 from app.sep.config import DeliveryPlanInputs, sep_settings
 from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
+from tests.app.db_schema import apply_schema
 
 _UPLOAD_DETAIL: dict[str, Any] = {"result": {"sys_id": "att-9", "size_bytes": 42}}
 _EXPECTED_FILE_COUNT = 4
@@ -244,7 +245,7 @@ async def send_session_fixture(
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     session_maker = get_async_session_maker_from_engine(engine)
     mocker.patch(
         "app.sep.apps.atw.send.get_async_session_maker", return_value=session_maker

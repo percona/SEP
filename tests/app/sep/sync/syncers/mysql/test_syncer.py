@@ -129,7 +129,10 @@ def created_service() -> CreatedService:
     created_service.node_id = MOCK_CREATED_NODE_ID
     created_service.type = ServiceTypeEnum.MYSQL
     created_service.node = CreatedNode(
-        address="localhost", id=MOCK_CREATED_NODE_ID, node_name="localhost"
+        address="localhost",
+        id=MOCK_CREATED_NODE_ID,
+        node_id="/node_id/mock-1",
+        node_name="localhost",
     )
     created_service.port = 8000
     created_service.schemas = []
@@ -590,7 +593,10 @@ class TestPerformMethods:
         second_service.node_id = MOCK_CREATED_NODE_ID
         second_service.type = ServiceTypeEnum.MYSQL
         second_service.node = CreatedNode(
-            address="otherhost", id=MOCK_CREATED_NODE_ID + 1, node_name="otherhost"
+            address="otherhost",
+            id=MOCK_CREATED_NODE_ID + 1,
+            node_id="/node_id/mock-2",
+            node_name="otherhost",
         )
         second_service.port = 8000
         second_service.schemas = []
@@ -978,9 +984,19 @@ class TestModelIteratorsAndGuards:
         node_with_mysql = Node(
             address="x",
             name="x",
-            services=[Service(type=ServiceTypeEnum.MYSQL, port=3306, name="s")],
+            node_id="/node_id/x",
+            services=[
+                Service(
+                    type=ServiceTypeEnum.MYSQL,
+                    port=3306,
+                    name="s",
+                    service_id="/service_id/s",
+                )
+            ],
         )
-        node_without_mysql = Node(address="y", name="y", services=[])
+        node_without_mysql = Node(
+            address="y", name="y", node_id="/node_id/y", services=[]
+        )
         assert mock_mysql_syncer.can_sync_node(node_with_mysql) is True
         assert mock_mysql_syncer.can_sync_node(node_without_mysql) is False
 

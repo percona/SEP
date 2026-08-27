@@ -40,6 +40,7 @@ from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.main import _reseed_system_periodic_tasks
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
+from tests.app.db_schema import apply_schema
 
 SNIPPETS_TASK = "sep__sync_snippets"
 RECONCILER_TASK = "sep__reconcile_disabling_apps"
@@ -57,7 +58,7 @@ async def _override_session_maker() -> async_sessionmaker:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:
@@ -305,7 +306,7 @@ async def _beat_session_maker() -> async_sessionmaker:
     )
     engine = engine.execution_options(schema_translate_map={"celery_schema": None})
     async with engine.begin() as conn:
-        await conn.run_sync(PeriodicTask.__table__.metadata.create_all)
+        await apply_schema(conn, PeriodicTask.__table__.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:

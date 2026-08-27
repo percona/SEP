@@ -17,7 +17,14 @@
 
 import pytest
 
-from tests.app.factories import MOCK_CREATED_TABLE_ID
+from app.core.exceptions import HTTPNotFoundException
+from app.inventory.models import ServiceTypeEnum
+from tests.app.factories import (
+    MOCK_CREATED_NODE_ID,
+    MOCK_CREATED_SCHEMA_ID,
+    MOCK_CREATED_SERVICE_ID,
+    MOCK_CREATED_TABLE_ID,
+)
 from tests.app.sep.apps.framework.kit import MockInventoryAPI
 
 
@@ -42,3 +49,52 @@ class TestMockInventoryAPISeeding:
             f"tbl-{MOCK_CREATED_TABLE_ID}",
             f"tbl-{second_id}",
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("collection", "entity_id"),
+        [
+            ("nodes", MOCK_CREATED_NODE_ID),
+            ("services", MOCK_CREATED_SERVICE_ID),
+            ("schemas", MOCK_CREATED_SCHEMA_ID),
+            ("tables", MOCK_CREATED_TABLE_ID),
+        ],
+    )
+    async def test_default_ids_resolve_without_an_explicit_seed(
+        self, collection: str, entity_id: int
+    ) -> None:
+        """Materialise each default ``MOCK_*_ID`` entity on its first resolution.
+
+        The constructor records the four defaults instead of building them, so
+        every id an app's reference resolution reaches for must still come back.
+        """
+        api = MockInventoryAPI()
+
+        entity = await api.get(f"/{collection}/{entity_id}")
+
+        assert entity["id"] == entity_id
+
+    @pytest.mark.asyncio
+    async def test_explicit_reseed_wins_over_the_lazy_default(self) -> None:
+        """Let a test-supplied seed survive the default that would have replaced it.
+
+        ``backup_pg`` re-seeds the shared service id as PostgreSQL-typed because
+        its single-type ``ServiceRef(POSTGRESQL)`` selector rejects the kit's
+        MySQL default. Resolving the id must not overwrite that with the default.
+        """
+        api = MockInventoryAPI()
+        api.seed_service(
+            MOCK_CREATED_SERVICE_ID, service_type=ServiceTypeEnum.POSTGRESQL
+        )
+
+        service = await api.get(f"/services/{MOCK_CREATED_SERVICE_ID}")
+
+        assert service["type"] == ServiceTypeEnum.POSTGRESQL
+
+    @pytest.mark.asyncio
+    async def test_unseeded_id_still_raises_not_found(self) -> None:
+        """Keep the 404 contract for an id neither seeded nor pending."""
+        api = MockInventoryAPI()
+
+        with pytest.raises(HTTPNotFoundException):
+            await api.get(f"/services/{MOCK_CREATED_SERVICE_ID + 1}")

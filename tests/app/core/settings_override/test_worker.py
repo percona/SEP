@@ -41,6 +41,7 @@ from tests.app.core.settings_override.conftest import (
     recording_start_refresh_task,
     START_REFRESH_TASK,
 )
+from tests.app.db_schema import apply_schema
 
 INTERVAL = timedelta(seconds=30)
 
@@ -113,7 +114,7 @@ def session_maker_fixture(
 
     async def _create_schema() -> None:
         async with engine.begin() as conn:
-            await conn.run_sync(SQLModel.metadata.create_all)
+            await apply_schema(conn, SQLModel.metadata)
 
     loop.run_until_complete(_create_schema())
     yield get_async_session_maker_from_engine(engine)
