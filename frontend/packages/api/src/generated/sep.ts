@@ -1762,11 +1762,7 @@ export interface paths {
      */
     get: operations['inventory_inventory_list_entity_api_apps_inventory__entity___get'];
     put?: never;
-    /**
-     * Inventory Create Entity
-     * @description Create an inventory node, service, schema, or table.
-     */
-    post: operations['inventory_inventory_create_entity_api_apps_inventory__entity___post'];
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1785,25 +1781,9 @@ export interface paths {
      * @description Retrieve a single inventory node, service, schema, or table.
      */
     get: operations['inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get'];
-    /**
-     * Inventory Update Entity
-     * @description Update an inventory node, service, schema, or table.
-     */
-    put: operations['inventory_inventory_update_entity_api_apps_inventory__entity___item_id__put'];
+    put?: never;
     post?: never;
-    /**
-     * Inventory Delete Entity
-     * @description Retire an inventory node, service, schema, or table, and its descendants.
-     *
-     *     The row and its subtree survive: they drop out of every active read and stay
-     *     reachable through the Inventory API's ``include_retired`` opt-in.
-     *
-     *     :param entity: The inventory entity kind addressed by the path.
-     *     :param item_id: The identifier of the entity to retire.
-     *     :param inventory_api: The Inventory API client the call is proxied through.
-     *     :return: An empty 204 response.
-     */
-    delete: operations['inventory_inventory_delete_entity_api_apps_inventory__entity___item_id__delete'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -13102,102 +13082,7 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_create_entity_api_apps_inventory__entity___post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
   inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-        item_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_update_entity_api_apps_inventory__entity___item_id__put: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-        item_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_delete_entity_api_apps_inventory__entity___item_id__delete: {
     parameters: {
       query?: never;
       header?: never;

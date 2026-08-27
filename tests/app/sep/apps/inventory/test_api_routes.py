@@ -65,7 +65,6 @@ _REQUEST_OFFSET = 2
 _REQUEST_LIMIT = 5
 _UPSTREAM_OFFSET = 99
 _UPSTREAM_LIMIT = 1
-_CREATE_SERVICE_TEST_NODE_ID = 7
 
 # The inventory sub-app's uncollected-observation details, pinned verbatim: the proxy
 # must relay them rather than collapse them onto the parent-missing ``Not Found``.
@@ -284,83 +283,6 @@ class TestInventoryGateway:
         response = test_client.get("/api/apps/inventory/unknown/")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_create_service_forwards_to_node_services(
-        self, test_client, mock_inventory_api_dep
-    ):
-        """Ensure POST ``/api/apps/inventory/services/`` maps to ``/nodes/{node_id}/services/`` on inventory."""
-        mock_inventory_api_dep.post.return_value = {"id": 2, "name": "svc"}
-        response = test_client.post(
-            "/api/apps/inventory/services/",
-            json={
-                "node_id": _CREATE_SERVICE_TEST_NODE_ID,
-                "name": "db",
-                "type": ServiceTypeEnum.MYSQL.value,
-            },
-        )
-        assert response.status_code == status.HTTP_200_OK
-        mock_inventory_api_dep.post.assert_awaited_once()
-        call_args = mock_inventory_api_dep.post.await_args
-        assert call_args[0][0] == f"/nodes/{_CREATE_SERVICE_TEST_NODE_ID}/services/"
-        assert call_args[1]["json"]["node_id"] == _CREATE_SERVICE_TEST_NODE_ID
-
-    def test_create_service_invalid_node_id_returns_422(
-        self, test_client, mock_inventory_api_dep
-    ):
-        """Ensure non-numeric ``node_id`` returns HTTP 422 and does not call inventory."""
-        response = test_client.post(
-            "/api/apps/inventory/services/",
-            json={
-                "node_id": "abc",
-                "name": "db",
-                "type": ServiceTypeEnum.MYSQL.value,
-            },
-        )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        mock_inventory_api_dep.post.assert_not_called()
-
-    def test_create_schema_requires_service_id(
-        self, test_client, mock_inventory_api_dep
-    ):
-        """Ensure POST ``/api/apps/inventory/schemas/`` without ``service_id`` returns HTTP 422."""
-        response = test_client.post(
-            "/api/apps/inventory/schemas/",
-            json={"name": "db1"},
-        )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-
-    @pytest.mark.parametrize(
-        ("raw_content", "content_type"),
-        [
-            (b"", "application/json"),
-            (b"{not-json", "application/json"),
-            (b"\xff", "application/json; charset=utf-8"),
-        ],
-    )
-    def test_post_rejects_empty_or_malformed_json_body_with_422(
-        self,
-        test_client,
-        mock_inventory_api_dep,
-        raw_content: bytes,
-        content_type: str,
-    ) -> None:
-        """Ensure invalid JSON on POST returns HTTP 422 and does not call inventory."""
-        response = test_client.post(
-            "/api/apps/inventory/nodes/",
-            content=raw_content,
-            headers={"Content-Type": content_type},
-        )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert response.json()["detail"] == "JSON object body required"
-        mock_inventory_api_dep.post.assert_not_called()
-
-    def test_delete_returns_204(self, test_client, mock_inventory_api_dep):
-        """Ensure DELETE ``/api/apps/inventory/nodes/{id}`` returns HTTP 204 with an empty body."""
-        mock_inventory_api_dep.delete.return_value = None
-        response = test_client.delete("/api/apps/inventory/nodes/3")
-        assert response.status_code == status.HTTP_204_NO_CONTENT
-        assert response.content == b""
-        mock_inventory_api_dep.delete.assert_awaited_once_with("/nodes/3")
-
     @pytest.mark.parametrize(
         ("entity", "item_id", "inventory_path"),
         [
@@ -385,38 +307,6 @@ class TestInventoryGateway:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == payload
         mock_inventory_api_dep.get.assert_awaited_once_with(inventory_path)
-
-    @pytest.mark.parametrize(
-        ("entity", "item_id", "inventory_path"),
-        [
-            ("nodes", 3, "/nodes/3"),
-            ("services", 9, "/services/9"),
-            ("schemas", 11, "/schemas/11"),
-            ("tables", 42, "/tables/42"),
-        ],
-    )
-    def test_put_entity_detail_forwards_inventory_path_and_body(
-        self,
-        test_client,
-        mock_inventory_api_dep,
-        entity: str,
-        item_id: int,
-        inventory_path: str,
-    ):
-        """Ensure PUT ``…/{entity}/{id}`` forwards JSON to the inventory service detail path."""
-        request_body = {"name": "updated"}
-        updated = {"id": item_id, **request_body}
-        mock_inventory_api_dep.put.return_value = updated
-        response = test_client.put(
-            f"/api/apps/inventory/{entity}/{item_id}",
-            json=request_body,
-        )
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == updated
-        mock_inventory_api_dep.put.assert_awaited_once_with(
-            inventory_path,
-            json=request_body,
-        )
 
     def test_get_unknown_entity_detail_returns_404(
         self, test_client, mock_inventory_api_dep
@@ -556,40 +446,46 @@ class TestInventoryBearerGate:
         assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
         mock_run_sync_funcs["inventory"].assert_not_called()
 
+
+class TestInventoryWriteSurfaceRemoved:
+    """Cover the removal of the inventory plugin create/update/delete routes."""
+
     @pytest.mark.parametrize(
         ("method", "path", "json_body"),
         [
-            (
-                "POST",
-                "/api/apps/inventory/services/",
-                {"node_id": 1, "name": "db", "type": "mysql"},
-            ),
+            ("POST", "/api/apps/inventory/services/", {"name": "db"}),
             ("PUT", "/api/apps/inventory/nodes/3", {"name": "x"}),
             ("DELETE", "/api/apps/inventory/nodes/3", None),
+            ("POST", "/api/apps/inventory/unknown/", {"name": "db"}),
         ],
     )
-    def test_inventory_crud_mutations_are_gate_rejected(
+    def test_inventory_write_routes_are_gone(
         self,
-        api_admin_client_no_bearer,
+        test_client,
         mock_inventory_api_dep,
-        mock_run_sync_funcs,
         method: str,
         path: str,
         json_body: dict | None,
     ) -> None:
-        """Every CRUD mutation under inventory 401s before any upstream call.
+        """Assert every removed write verb 405s and never reaches the API.
 
-        Coverage matrix: POST (create), PUT (update), DELETE (destroy) all
-        share the same gate. The inventory API mock must remain untouched.
+        405 rather than 404 because the paths survive for GET: ``/{entity}/``
+        and ``/{entity}/{item_id:int}`` are still registered, so Starlette
+        resolves the path and rejects the method before any handler runs. The
+        unknown-entity case lands the same way: the wildcard ``{entity}``
+        matches any segment, so the verb is rejected before
+        ``require_inventory_plugin_entity`` can raise its 404.
+
+        The client is authenticated on purpose — that the route is gone for an
+        authorized caller is strictly stronger than rejecting an unauthorized
+        one.
         """
         kwargs = {"json": json_body} if json_body is not None else {}
-        response = api_admin_client_no_bearer.request(method, path, **kwargs)
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+        response = test_client.request(method, path, **kwargs)
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
         mock_inventory_api_dep.post.assert_not_called()
         mock_inventory_api_dep.put.assert_not_called()
         mock_inventory_api_dep.delete.assert_not_called()
-        mock_run_sync_funcs["inventory"].assert_not_called()
 
 
 class TestInventorySyncTrigger:
