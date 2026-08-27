@@ -33,14 +33,18 @@ import ast
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 REAL_DB_ENGINES = ("postgres_engine", "mysql_engine")
 
-CONVERTIBLE = "async-sqlite"
-REAL_DB = "real-db"
-SYNC = "sync-sqlite"
-BUCKETS = (CONVERTIBLE, REAL_DB, SYNC)
+
+class Bucket(StrEnum):
+    """Enumerate the engine kinds a ``create_all`` site can bind."""
+
+    CONVERTIBLE = "async-sqlite"
+    REAL_DB = "real-db"
+    SYNC = "sync-sqlite"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,14 +54,14 @@ class Site:
     :param path: The file the call sits in.
     :param line: The 1-indexed line of the call.
     :param func: The enclosing function's name, or ``<module>``.
-    :param bucket: One of :data:`BUCKETS`.
+    :param bucket: The engine kind the enclosing function binds.
     :param why: The signal the classification was drawn from.
     """
 
     path: Path
     line: int
     func: str
-    bucket: str
+    bucket: Bucket
     why: str
 
     def __str__(self) -> str:
@@ -83,7 +87,7 @@ def _enclosing(tree: ast.Module, line: int) -> ast.AST | None:
     return best
 
 
-def _classify(source: str | None) -> tuple[str, str]:
+def _classify(source: str | None) -> tuple[Bucket, str]:
     """Return the bucket and reason for a call whose enclosing source is ``source``.
 
     :param source: The enclosing function's source text, or ``None`` when the
@@ -91,13 +95,13 @@ def _classify(source: str | None) -> tuple[str, str]:
     :return: A ``(bucket, reason)`` pair.
     """
     if source is None:
-        return SYNC, "module level, no engine binding"
+        return Bucket.SYNC, "module level, no engine binding"
     for name in REAL_DB_ENGINES:
         if name in source:
-            return REAL_DB, f"binds {name}"
+            return Bucket.REAL_DB, f"binds {name}"
     if "create_engine(" in source and "create_async_engine(" not in source:
-        return SYNC, "synchronous create_engine"
-    return CONVERTIBLE, "async in-memory SQLite engine"
+        return Bucket.SYNC, "synchronous create_engine"
+    return Bucket.CONVERTIBLE, "async in-memory SQLite engine"
 
 
 def classify_sites(root: Path) -> Iterator[Site]:
@@ -107,7 +111,7 @@ def classify_sites(root: Path) -> Iterator[Site]:
     :return: An iterator over the classified sites, in path order.
     """
     for path in sorted(root.rglob("*.py")):
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         if "create_all" not in text:
             continue
         tree = ast.parse(text)
@@ -132,13 +136,15 @@ def main() -> int:
     :return: ``0`` always — the script reports, it does not gate.
     """
     parser = argparse.ArgumentParser(description="Classify tests/ create_all sites.")
-    parser.add_argument("--bucket", choices=BUCKETS, help="show only this bucket")
+    parser.add_argument(
+        "--bucket", type=Bucket, choices=list(Bucket), help="show only this bucket"
+    )
     parser.add_argument("--root", type=Path, default=Path("tests"))
     args = parser.parse_args()
 
     sites = [s for s in classify_sites(args.root) if args.bucket in (None, s.bucket)]
-    counts = {b: sum(s.bucket == b for s in sites) for b in BUCKETS}
-    tally = " ".join(f"{name}={counts[name]}" for name in BUCKETS)
+    counts = {b: sum(s.bucket == b for s in sites) for b in Bucket}
+    tally = " ".join(f"{bucket}={counts[bucket]}" for bucket in Bucket)
     print("\n".join(str(site) for site in sites))
     print(f"\ntotal={len(sites)} {tally}")
     return 0
