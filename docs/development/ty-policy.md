@@ -15,6 +15,13 @@ All measurements below were taken with **ty 0.0.49**, the version pinned in the
 configuration this policy commits. The counts depend on `[tool.ty.rules]`, so
 they do not reproduce at `dafd2df1` alone.
 
+Every number below — the recorded baseline, the two rule tables, and the
+sampling record — is a snapshot of that one tree at that one version, and is
+**not maintained** against later commits. No decision in this document turns on
+any of those values: severity was chosen from what a rule's diagnostics *say*,
+so a count that has since moved dates the evidence without reopening the call.
+Read the counts as how each call was reached, not as a figure anything checks.
+
 ## The checked surface
 
 `[tool.ty.src].include` names the four first-party trees that are checked:
@@ -278,13 +285,16 @@ report — which is why close calls in this table go to `warn` rather than
 
 ## Changing this policy
 
-- **Moving a rule's severity** — record why in the trailing comment on its entry,
-  and update its row here. A move from `warn` to `error` should be able to point
+- **Moving a rule's severity** — update its row here, and leave a trailing
+  comment on its entry only where the reason is not already carried by the rule
+  name and the severity. A move from `warn` to `error` should be able to point
   at the artifacts that stopped being artifacts.
 - **Adding a tree** — add it to `[tool.ty.src].include` and to the surface table
   above. Nothing checks a tree that is not listed.
 - **Upgrading ty** — new rules arrive at `error` through the `all` baseline, and
   the baseline count will move. Re-measure with a bare `ty check` and update the
-  recorded baseline.
+  recorded baseline. Only that one figure is re-measured: the per-rule hit
+  counts and the sampling record stay as they are, dated evidence for calls
+  already made rather than values to keep current.
 - **Do not add path arguments to the `typecheck` target.** See the stability
   measurements above.
