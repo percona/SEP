@@ -639,7 +639,7 @@
         "type": "string"
       },
       "RetirableEntityName": {
-        "description": "Name the inventory entity types that carry a retirement tombstone.\n\nValues are spelled out rather than derived, because they cross a service\nboundary: SEP names an entity type by these strings when it asks inventory\nto collect. Inventory-local on purpose — SEP's own\n``SyncInventoryEntityTypeEnum`` lives in a package this service must not\nimport.\n\n:cvar NODE: The node entity.\n:cvar SERVICE: The service entity.\n:cvar SCHEMA: The schema entity.\n:cvar TABLE: The table entity.",
+        "description": "Name the inventory entity types that carry a retirement tombstone.\n\nValues are spelled out rather than derived, because they cross a service\nboundary: SEP names an entity type by these strings when it asks inventory\nto collect. Inventory-local on purpose — SEP's own\n``SyncInventoryEntityTypeEnum`` lives in a package this service must not\nimport.",
         "enum": [
           "node",
           "service",

@@ -173,7 +173,8 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     Wired for ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``),
     ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``) and
     ``InventoryAppSettings.COLLECTION_INTERVAL`` (``sep__inventory_collection``,
-    which the rebuild also seeds or drops as the interval is set or cleared).
+    which the rebuild seeds or drops as the interval is set or cleared, since
+    the app's schedule thunk contributes nothing while it is unset).
     Rebuilds the system periodic-task set via
     :func:`app.sep.db.seed.get_system_periodic_tasks` -- which re-reads the now-live
     interval from the refreshed proxy snapshot -- and re-invokes

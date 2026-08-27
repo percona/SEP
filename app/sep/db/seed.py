@@ -15,8 +15,6 @@
 
 """Define the database initial data for the SEP app."""
 
-import json
-
 from sqlmodel import col
 
 from app.core.celery.utils import (
@@ -25,7 +23,6 @@ from app.core.celery.utils import (
     SystemPeriodicTaskSchedule,
 )
 from app.sep.apps.framework.registry import app_celery_module_for, get_app_registry
-from app.sep.apps.inventory.config import inventory_app_settings
 from app.sep.config import sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.db import get_async_session_maker
@@ -33,46 +30,6 @@ from app.sep.deps import PROTECTED_APP_KEYS
 from app.sep.models import AppLifecycleEnum, AppState, AppStateBase
 from app.sep.periodic_tasks import sync_app_periodic_task_gating
 from app.sep.snippets.config import snippets_settings
-from app.tasks.models import INVENTORY_COLLECTION_TASK_NAME
-
-INVENTORY_COLLECTION_SCHEDULE_NAME = "sep__inventory_collection"
-
-
-def _inventory_collection_schedule() -> SystemPeriodicTaskSchedule | None:
-    """Build the tombstone-collection schedule, or ``None`` when unconfigured.
-
-    ``inventory-collection`` is a ``Task`` row rather than a Celery function, so
-    the entry points at ``execute_task_by_name`` and names the task in
-    ``kwargs``. That is the same indirection an operator-created schedule uses,
-    and the shape that puts it in the Inventory plugin's task list.
-
-    Unlike ``inventory-sync`` there is no operator-respect lookup: the job is
-    off by default because it deletes rows irreversibly, so an unset interval
-    means "do not collect" rather than "leave it to whatever an operator
-    attached". An operator-attached schedule firing alongside a seeded one is
-    wasteful but harmless, since a collect call over already-deleted ids matches
-    no rows.
-
-    :return: The schedule to append to the seeded set, or ``None`` when
-        ``COLLECTION_INTERVAL`` is unset.
-    """
-    interval = inventory_app_settings.COLLECTION_INTERVAL
-    if interval is None:
-        return None
-    kwargs = {
-        "task_name": INVENTORY_COLLECTION_TASK_NAME,
-        "periodic_task_name": INVENTORY_COLLECTION_SCHEDULE_NAME,
-    }
-    return SystemPeriodicTaskSchedule(
-        schedule=interval,
-        tasks=[
-            SystemPeriodicTaskData(
-                name=INVENTORY_COLLECTION_SCHEDULE_NAME,
-                task_name="app.tasks.celery.execute_task_by_name",
-                extra_kwargs={"kwargs": json.dumps(kwargs)},
-            ),
-        ],
-    )
 
 
 def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
@@ -98,12 +55,15 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     (``app.sep.snippets.celery``) and is named in ``STATIC_CELERY_INCLUDE``, so it
     registers whether or not the snippets app ships. Its schedule is therefore
     emitted unconditionally against the static path and carries no
-    ``owner_app_key`` -- disabling the snippets app must not gate it.
+    ``owner_app_key``, because disabling the snippets app must not gate it.
 
-    Tombstone collection is emitted outside the registry loop for the same
-    reason read the other way: its beat entry targets ``execute_task_by_name``
-    rather than a function in an app's Celery module, so the loop's
-    ``<celery_module>.<task>`` prefixing would point it at nothing.
+    A ``qualified`` spec names a complete task path and is emitted without that
+    prefixing, so an app may own a schedule for a job the tasks service
+    dispatches through ``execute_task_by_name``. Such an app owns no registered
+    Celery task of its own, which is why the module lookup is scoped to the
+    unqualified specs rather than gating the whole app. A spec whose thunk
+    returns ``None`` contributes nothing this rebuild, which is how a nullable
+    interval setting spells "do not run".
 
     :return: The schedule/task pairs to seed into the Celery beat database.
     """
@@ -131,34 +91,35 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
         ),
     )
 
-    if (inventory_collection := _inventory_collection_schedule()) is not None:
-        system_tasks.append(inventory_collection)
-
     for app in get_app_registry():
         if app.periodic_task_schedules is None:
             continue
         celery_module = app_celery_module_for(app.key)
-        if not celery_module:
-            continue
         specs = (
             app.periodic_task_schedules()
             if callable(app.periodic_task_schedules)
             else app.periodic_task_schedules
         )
-        system_tasks.extend(
-            SystemPeriodicTaskSchedule(
-                schedule=spec.schedule(),
-                tasks=[
-                    SystemPeriodicTaskData(
-                        name=spec.name,
-                        task_name=f"{celery_module}.{spec.task}",
-                        extra_kwargs=spec.extra_kwargs,
-                        owner_app_key=app.key,
-                    ),
-                ],
+        for spec in specs:
+            if not spec.qualified and not celery_module:
+                continue
+            schedule = spec.schedule()
+            if schedule is None:
+                continue
+            task_name = spec.task if spec.qualified else f"{celery_module}.{spec.task}"
+            system_tasks.append(
+                SystemPeriodicTaskSchedule(
+                    schedule=schedule,
+                    tasks=[
+                        SystemPeriodicTaskData(
+                            name=spec.name,
+                            task_name=task_name,
+                            extra_kwargs=spec.extra_kwargs,
+                            owner_app_key=app.key,
+                        ),
+                    ],
+                )
             )
-            for spec in specs
-        )
 
     return system_tasks
 

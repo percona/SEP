@@ -33,6 +33,7 @@ from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.sep import periodic_tasks as periodic_tasks_module
+from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 from app.sep.apps.framework.registry import get_app_registry
 from app.sep.apps.inventory.config import inventory_app_settings
 from app.sep.config import App
@@ -54,6 +55,11 @@ CELERY_RESULT_EXPIRES_SECONDS = 3600
 def _plugin(key: str, *, enabled: bool = True) -> App:
     """Build an ``App`` activation entry for ``key``."""
     return App(module_name=key, enabled=enabled)
+
+
+def _registry_app(key: str, specs: list[AppPeriodicTask]) -> BaseApp:
+    """Build a registry entry contributing ``specs``."""
+    return BaseApp(key=key, name=key, uri_path=f"/{key}", periodic_task_schedules=specs)
 
 
 @pytest.fixture(autouse=True)
@@ -278,7 +284,7 @@ def test_builder_reads_sync_interval_at_call_time() -> None:
 
 
 class TestInventoryCollectionSchedule:
-    """Cover the tombstone-collection beat entry the SEP seeder contributes."""
+    """Cover the tombstone-collection beat entry the Inventory app owns."""
 
     @staticmethod
     def _entries(
@@ -304,7 +310,9 @@ class TestInventoryCollectionSchedule:
         """Point the entry at the SEP task through ``execute_task_by_name``.
 
         ``inventory-collection`` is a ``Task`` row rather than a Celery
-        function, so only this indirection puts it in the plugin task list.
+        function, so only this indirection puts it in the plugin task list. The
+        task path must arrive verbatim: the Inventory app ships no ``celery.py``
+        to prefix it with, and prefixing would point beat at nothing.
         """
         inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": ONE_DAY})
         try:
@@ -315,12 +323,26 @@ class TestInventoryCollectionSchedule:
         assert schedule.schedule == ONE_DAY
         (entry,) = schedule.tasks
         assert entry.task_name == "app.tasks.celery.execute_task_by_name"
-        assert entry.owner_app_key is None
         assert entry.extra_kwargs is not None
         kwargs = json.loads(entry.extra_kwargs["kwargs"])
         assert kwargs["task_name"] == INVENTORY_COLLECTION_TASK_NAME
         assert kwargs["periodic_task_name"] == COLLECTION_TASK
         assert "execution_data" not in kwargs
+
+    def test_the_entry_is_owned_so_app_state_gates_it(self) -> None:
+        """Stamp ``owner_app_key`` so disabling the app stops collection.
+
+        The callable lives in the app package the embedded image strips, so a
+        schedule that outlived its app would fire and fail on every tick.
+        """
+        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": ONE_DAY})
+        try:
+            (schedule,) = self._entries(seed_module.get_system_periodic_tasks())
+        finally:
+            inventory_app_settings._set_snapshot({})
+
+        (entry,) = schedule.tasks
+        assert entry.owner_app_key == "inventory"
 
     def test_the_interval_is_read_at_call_time(self) -> None:
         """Reflect a live override without a restart, and drop the entry when cleared.
@@ -434,6 +456,62 @@ class TestAppScheduleContribution:
             for schedule in schedules
             if any(task.name == task_name for task in schedule.tasks)
         )
+
+    def test_a_qualified_spec_keeps_its_task_path(self, mocker) -> None:
+        """Emit a ``qualified`` spec verbatim, even with no Celery module to prefix.
+
+        The unqualified guard skips a whole app that ships no ``celery.py``,
+        which is right for a spec naming a bare attribute on that module and
+        wrong for one already naming a complete path.
+        """
+        mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("inventory")])
+        spec = AppPeriodicTask(
+            name="sep__qualified_probe",
+            task="app.tasks.celery.execute_task_by_name",
+            schedule=lambda: ONE_DAY,
+            qualified=True,
+        )
+        mocker.patch.object(
+            seed_module,
+            "get_app_registry",
+            return_value=[_registry_app("inventory", [spec])],
+        )
+
+        tasks = self._tasks_by_name(seed_module.get_system_periodic_tasks())
+
+        assert tasks["sep__qualified_probe"].task_name == (
+            "app.tasks.celery.execute_task_by_name"
+        )
+        assert tasks["sep__qualified_probe"].owner_app_key == "inventory"
+
+    def test_a_none_schedule_contributes_nothing(self, mocker) -> None:
+        """Drop a spec whose thunk returns ``None`` rather than seeding it.
+
+        A nullable interval setting spells "do not run" that way, and the
+        per-spec skip must not take the app's other specs down with it.
+        """
+        off = AppPeriodicTask(
+            name="sep__off_probe",
+            task="app.tasks.celery.execute_task_by_name",
+            schedule=lambda: None,
+            qualified=True,
+        )
+        on = AppPeriodicTask(
+            name="sep__on_probe",
+            task="app.tasks.celery.execute_task_by_name",
+            schedule=lambda: ONE_DAY,
+            qualified=True,
+        )
+        mocker.patch.object(
+            seed_module,
+            "get_app_registry",
+            return_value=[_registry_app("inventory", [off, on])],
+        )
+
+        tasks = self._tasks_by_name(seed_module.get_system_periodic_tasks())
+
+        assert "sep__off_probe" not in tasks
+        assert "sep__on_probe" in tasks
 
     def test_contributing_apps_set_owner_and_celery_prefix(self, mocker) -> None:
         """Assert owner keys and Celery task-name prefixes on contributed schedules."""

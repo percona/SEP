@@ -33,8 +33,8 @@ class InventoryAppSettings(BaseYamlSettings):
     """Define the tombstone-collection job's schedule and runtime knobs.
 
     The whole feature configures from this one section: every field below is
-    read by ``app.sep.apps.inventory.collection`` or by the SEP seeder that
-    builds the job's beat entry, and all of them are hot-reloadable.
+    read either by ``app.sep.apps.inventory.collection`` or by the app's own
+    beat-schedule declaration, and all of them are hot-reloadable.
 
     :cvar SETTINGS_PREFIXES: The prefixes for Inventory-app settings in the
         configuration file, placing the section under ``SEP.INVENTORY``.
