@@ -727,6 +727,7 @@ class TestBlankNamesWhoseGuardMightNeverFire:
         "SEP__DATABASE__PASSWORD",
         "INVENTORY__DATABASE__PASSWORD",
         "TASKS__DATABASE__PASSWORD",
+        "DATABASE__PASSWORD",
         "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN",
         "PMM__API_KEY",
         "PMM__ENDPOINT",
