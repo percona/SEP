@@ -25,8 +25,9 @@ for a fraction of the setup.
 The cache is per-process, so each xdist worker captures once and every test in
 that worker replays. It is keyed on the metadata object itself (which keeps the
 object alive, so identity can never be recycled), the connection's
-``schema_translate_map``, and the table count — a metadata that gains a table
-after first capture misses the cache instead of being served a stale schema.
+``schema_translate_map``, and a fingerprint of every table's DDL-bearing parts —
+a metadata mutated after first capture misses the cache instead of being served
+a stale schema.
 """
 
 from collections.abc import Iterable
@@ -35,7 +36,10 @@ from typing import Any
 from sqlalchemy import create_engine, event, MetaData
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-_ScriptKey = tuple[MetaData, tuple[tuple[str, str | None], ...], int]
+_TableShape = tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...]]
+_ScriptKey = tuple[
+    MetaData, tuple[tuple[str, str | None], ...], tuple[_TableShape, ...]
+]
 
 _SCRIPTS: dict[_ScriptKey, str] = {}
 
@@ -89,6 +93,28 @@ def _join(statements: Iterable[str]) -> str:
     return "".join(f"{statement};\n" for statement in statements)
 
 
+def _shape(metadata: MetaData) -> tuple[_TableShape, ...]:
+    """Return the DDL-bearing shape of every table in ``metadata``.
+
+    The cache key's invalidation term. A table count alone tracks only whole
+    tables, so a column, index or constraint appended to an existing one would
+    change the emitted DDL while still hitting the entry captured before it.
+
+    :param metadata: The metadata to fingerprint.
+    :return: One ``(table, columns, indexes, constraints)`` entry per table, in
+        name order, each inner tuple carrying names only.
+    """
+    return tuple(
+        (
+            name,
+            tuple(column.name for column in table.columns),
+            tuple(sorted(index.name or "" for index in table.indexes)),
+            tuple(sorted(str(c.name) if c.name else "" for c in table.constraints)),
+        )
+        for name, table in sorted(metadata.tables.items())
+    )
+
+
 async def apply_schema(conn: AsyncConnection, metadata: MetaData) -> None:
     """Create every table in ``metadata`` on ``conn``, from a cached DDL script.
 
@@ -112,7 +138,7 @@ async def apply_schema(conn: AsyncConnection, metadata: MetaData) -> None:
     key = (
         metadata,
         tuple(sorted((translate_map or {}).items(), key=lambda kv: str(kv[0]))),
-        len(metadata.tables),
+        _shape(metadata),
     )
     script = _SCRIPTS.get(key)
     if script is None:

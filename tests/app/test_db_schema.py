@@ -24,7 +24,7 @@ shortcut the whole approach exists to avoid — turns them red.
 """
 
 import pytest
-from sqlalchemy import Column, func, Integer, MetaData, select, Table, text
+from sqlalchemy import Column, func, Index, Integer, MetaData, select, Table, text
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
     AsyncEngine,
@@ -250,8 +250,9 @@ class TestScriptCache:
     async def test_metadata_that_gains_a_table_is_recaptured(self) -> None:
         """Assert a table added after the first capture still gets created.
 
-        The table count is part of the cache key precisely so a metadata object
-        mutated between calls misses instead of replaying the older schema.
+        The metadata's table fingerprint is part of the cache key precisely so a
+        metadata object mutated between calls misses instead of replaying the
+        older schema.
         """
         metadata = MetaData()
         Table("first_probe", metadata, Column("id", Integer, primary_key=True))
@@ -264,6 +265,28 @@ class TestScriptCache:
             "first_probe",
             "second_probe",
         }
+
+    @pytest.mark.asyncio
+    async def test_metadata_that_gains_an_index_is_recaptured(self) -> None:
+        """Assert an index added after the first capture still gets created.
+
+        The mutation that keeps the table count unchanged: appending an index to
+        an existing table changes the DDL without adding a table, so the key has
+        to reach inside each table rather than counting them.
+        """
+        metadata = MetaData()
+        table = Table(
+            "indexed_probe",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("label", Integer),
+        )
+        await _rows_after_apply_schema(metadata)
+        Index("ix_indexed_probe_label", table.c.label)
+
+        rows = await _rows_after_apply_schema(metadata)
+
+        assert "ix_indexed_probe_label" in {name for _type, name, *_rest in rows}
 
     @pytest.mark.asyncio
     async def test_equal_sized_metadata_objects_do_not_share_an_entry(self) -> None:
