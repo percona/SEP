@@ -117,7 +117,7 @@ class PMMSyncer(BaseSyncer):
         """
         await super().__aexit__(exc_type, exc_val, exc_tb)
         if not self.keepalive_api and self._pmm_api is not None:
-            await self._pmm_api.close()
+            await settings.invalidate_client(str(self._pmm_api.endpoint))
             self._pmm_api = None
 
     @property
