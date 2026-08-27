@@ -136,9 +136,11 @@ class TasksSettings(BaseYamlAppSettings):
         runtime-overridable). Defaults to ``None``.
     :param INVENTORY_COLLECTION_INTERVAL: The schedule on which the
         inventory-collection task runs. ``None`` disables seeding the schedule
-        entirely, which is the default: collection deletes rows irreversibly, so
-        no existing deployment starts doing so on upgrade. Read at startup (not
-        runtime-overridable). Defaults to ``None``.
+        entirely, which is the shipped default: collection deletes rows
+        irreversibly, so a deployment carrying that default does not start doing
+        so on upgrade. The PMM sidecar profile overrides it to ``1 days``, so a
+        PMM-embedded deployment does. Read at startup (not runtime-overridable).
+        Defaults to ``None``.
     :param INVENTORY_SYNC_SYNCER: The fully qualified syncer
         (``"module.ClassName"``, matching ``BaseSyncer.get_name()``) the seeded
         schedule targets; ``None`` runs every configured syncer. Must be a

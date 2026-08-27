@@ -169,14 +169,6 @@ def sep_database(mocker: MockerFixture, session: AsyncSession) -> None:
     )
 
 
-@pytest.fixture
-def one_syncer(mocker: MockerFixture) -> None:
-    """Configure exactly one syncer so the ledger clear has a key to use."""
-    mocker.patch.object(
-        collection.sep_settings, "SYNCERS", [type("Opt", (), {"syncer": SYNCER})()]
-    )
-
-
 def _install_client(
     mocker: MockerFixture, client: RecordingInventoryClient
 ) -> RecordingInventoryClient:
@@ -191,7 +183,7 @@ def _install_client(
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("no_providers", "task_databases", "sep_database", "one_syncer")
+@pytest.mark.usefixtures("no_providers", "task_databases", "sep_database")
 class TestRunInventoryCollection:
     """Cover the batching, ordering and cutoff discipline of one run."""
 
@@ -268,7 +260,7 @@ class TestRunInventoryCollection:
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("no_providers", "task_databases", "sep_database", "one_syncer")
+@pytest.mark.usefixtures("no_providers", "task_databases", "sep_database")
 async def test_the_ledger_is_cleared_before_the_delete(
     mocker: MockerFixture, session: AsyncSession
 ) -> None:
@@ -301,7 +293,7 @@ async def test_the_ledger_is_cleared_before_the_delete(
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("task_databases", "sep_database", "one_syncer")
+@pytest.mark.usefixtures("task_databases", "sep_database")
 async def test_a_raising_provider_deletes_nothing(mocker: MockerFixture) -> None:
     """Abort the run instead of deleting against a partial retained set."""
 
@@ -322,7 +314,7 @@ async def test_a_raising_provider_deletes_nothing(mocker: MockerFixture) -> None
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("task_databases", "sep_database", "one_syncer")
+@pytest.mark.usefixtures("task_databases", "sep_database")
 async def test_an_empty_provider_result_is_not_a_skip(
     mocker: MockerFixture,
 ) -> None:
@@ -344,7 +336,7 @@ async def test_an_empty_provider_result_is_not_a_skip(
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("task_databases", "sep_database", "one_syncer")
+@pytest.mark.usefixtures("task_databases", "sep_database")
 async def test_provider_ids_are_sent_as_keep(mocker: MockerFixture) -> None:
     """Forward every declared reference into the retained set."""
 
@@ -362,7 +354,7 @@ async def test_provider_ids_are_sent_as_keep(mocker: MockerFixture) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("task_databases", "sep_database", "one_syncer")
+@pytest.mark.usefixtures("task_databases", "sep_database")
 async def test_a_run_recorded_after_the_dry_run_still_survives(
     mocker: MockerFixture, session: AsyncSession
 ) -> None:
@@ -370,8 +362,8 @@ async def test_a_run_recorded_after_the_dry_run_still_survives(
 
     The retained set is computed once, before the dry run, and the catalog is
     still empty at that point — so the id can only be retained by the ``Task``
-    envelope scan. A recorder can fire only for a task that already existed
-    then, which is what closes the window without a lease.
+    envelope scan. This is the half of the window the module docstring calls
+    closed: the recorder fires for a task the scan had already read.
     """
     await TaskManager.save(
         session,
@@ -409,14 +401,29 @@ async def test_a_run_recorded_after_the_dry_run_still_survives(
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("no_providers", "task_databases", "sep_database")
-async def test_no_configured_syncer_still_deletes(mocker: MockerFixture) -> None:
-    """Collect normally when there is no absence ledger to clear."""
-    mocker.patch.object(collection.sep_settings, "SYNCERS", [])
+async def test_the_clear_reaches_a_syncer_no_longer_configured(
+    mocker: MockerFixture, session: AsyncSession
+) -> None:
+    """Clear the ledger row of a syncer the deployment has since dropped.
+
+    A row outlives the configuration that wrote it, so a delete scoped to
+    ``SEP.SYNCERS`` would strand it permanently: the entity it names is gone and
+    no configured syncer carries its key any more.
+    """
+    await SyncEntityAbsenceManager.create(
+        session,
+        SyncEntityAbsenceWrite(
+            syncer="app.sep.sync.syncers.legacy.LegacySyncer",
+            entity_type=SyncInventoryEntityTypeEnum.NODE,
+            entity_id=1,
+        ),
+    )
     client = _install_client(mocker, RecordingInventoryClient([_batch([1])]))
 
     await run_inventory_collection(API_KEY)
 
     assert len(client.real_calls) == 1
+    assert await SyncEntityAbsenceManager.list(session) == []
 
 
 @pytest.mark.asyncio
@@ -429,7 +436,7 @@ async def test_a_missing_internal_token_is_refused(mocker: MockerFixture) -> Non
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("no_providers", "task_databases", "sep_database", "one_syncer")
+@pytest.mark.usefixtures("no_providers", "task_databases", "sep_database")
 async def test_the_configured_token_reaches_the_api(mocker: MockerFixture) -> None:
     """Authenticate the scheduled run with the configured internal token."""
     mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(API_KEY))
@@ -441,7 +448,7 @@ async def test_the_configured_token_reaches_the_api(mocker: MockerFixture) -> No
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("no_providers", "task_databases", "sep_database", "one_syncer")
+@pytest.mark.usefixtures("no_providers", "task_databases", "sep_database")
 async def test_clearing_one_entity_type_leaves_a_colliding_id_alone(
     mocker: MockerFixture, session: AsyncSession
 ) -> None:
@@ -469,7 +476,7 @@ async def test_clearing_one_entity_type_leaves_a_colliding_id_alone(
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("no_providers", "task_databases", "sep_database", "one_syncer")
+@pytest.mark.usefixtures("no_providers", "task_databases", "sep_database")
 async def test_the_real_call_asks_for_a_delete_explicitly(
     mocker: MockerFixture,
 ) -> None:

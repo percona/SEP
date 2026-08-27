@@ -261,6 +261,11 @@ async def test_beat_schedule_kwargs_is_retained(
         pytest.param("not json", id="malformed"),
         pytest.param("[]", id="not-an-object"),
         pytest.param('{"execution_data": "nope"}', id="execution-data-not-a-mapping"),
+        pytest.param(_beat_kwargs({SERVICE_ID_META_KEY: []}), id="unhashable-list-id"),
+        pytest.param(
+            _beat_kwargs({SERVICE_ID_META_KEY: {"nested": 1}}),
+            id="unhashable-object-id",
+        ),
     ],
 )
 async def test_malformed_beat_kwargs_is_skipped(

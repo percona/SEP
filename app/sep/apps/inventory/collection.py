@@ -36,11 +36,20 @@ row later changes nothing. An *in-flight* history is not historical and does
 block, because it can still complete and write a new ``MysqlBackupRun`` row
 naming the id.
 
-The scan and the delete are not one transaction, and the window between them
-cannot strand a new reference: ``app/tasks/run_result.py`` resolves a recorder
-off the live ``Task`` row, so either the task existed when the scan ran — and its
-id is retained — or no recorder can fire for it afterwards. That argument is why
-the ``Task`` scan reads every row rather than only the active ones.
+The scan and the delete are not one transaction. For every holder that already
+existed when the scan ran the window is closed: ``app/tasks/run_result.py``
+resolves a recorder off the live ``Task`` row, so a recorder firing mid-window
+belongs to a task the scan already read — which is why the ``Task`` scan reads
+every row rather than only the active ones.
+
+A holder persisted *during* the window is not covered. The Tasks API takes
+arbitrary envelope meta, so a task or beat schedule created between a batch's
+dry run and its delete can name an id that batch removes, and a later run of it
+would record a backup run pointing at a service the catalog can no longer
+resolve. Fencing that off needs a lease or epoch spanning four databases; it is
+left open instead, bounded by how narrow it is — the id has to have been
+tombstoned for at least ``COLLECTION_RETENTION``, and the write has to land
+between two consecutive calls of one batch.
 """
 
 import json
@@ -56,7 +65,6 @@ from app.sep.apps.framework.registry import collect_inventory_reference_provider
 from app.sep.apps.inventory.config import inventory_app_settings
 from app.sep.apps.inventory.deps import get_inventory_api_standalone
 from app.sep.apps.meta_keys import SERVICE_ID_META_KEY
-from app.sep.config import sep_settings
 from app.sep.crud import SyncEntityAbsenceManager
 from app.sep.db import get_async_session_maker as get_sep_session_maker
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -111,7 +119,9 @@ def _beat_kwargs_service_ids(payloads: Iterable[str | None]) -> set[int]:
     ``sqlalchemy-celery-beat``, so the payload is parsed in Python rather than by
     a JSON operator. Every level is ``isinstance``-guarded: the column is
     operator-populated free text, so a malformed row is skipped rather than
-    raised on.
+    raised on. The extracted leaves are gathered into a list rather than a set
+    for the same reason — the value is unconstrained JSON and may be unhashable,
+    and judging it is :func:`_positive_ids`'s job.
 
     Only the rows :class:`PeriodicTaskManager` surfaces reach here, which is the
     ``execute_task_by_name`` indirection. That is the sole beat shape carrying an
@@ -121,7 +131,7 @@ def _beat_kwargs_service_ids(payloads: Iterable[str | None]) -> set[int]:
     :param payloads: The raw ``kwargs`` strings of the beat schedules.
     :return: The service ids named by their envelopes.
     """
-    ids: set[Any] = set()
+    ids: list[Any] = []
     for payload in payloads:
         if not payload:
             continue
@@ -135,7 +145,7 @@ def _beat_kwargs_service_ids(payloads: Iterable[str | None]) -> set[int]:
         execution_data = decoded.get("execution_data")
         meta = execution_data.get("meta") if isinstance(execution_data, dict) else None
         if isinstance(meta, dict) and SERVICE_ID_META_KEY in meta:
-            ids.add(meta[SERVICE_ID_META_KEY])
+            ids.append(meta[SERVICE_ID_META_KEY])
     return _positive_ids(ids)
 
 
@@ -200,23 +210,25 @@ async def clear_absence_ledger(
     already-retired entity before it can record a fresh absence, so an early
     clear cannot be undone, and clearing a superset is harmless.
 
+    Cleared for every syncer rather than the configured ones, which is the same
+    licence read the other way: a ledger row outlives the configuration that
+    wrote it, so scoping the delete to ``SEP.SYNCERS`` would leave the rows of a
+    syncer since removed or renamed behind permanently, with the entity they
+    name gone and nothing left that could ever reach them.
+
     :param collected: The ids the dry run reported, per entity type.
     """
-    syncers = [option.syncer for option in sep_settings.SYNCERS]
-    if not syncers:
-        return
     sep_session_maker = get_sep_session_maker()
     async with sep_session_maker() as session:
         for entity_name, entity_ids in collected.items():
             if not entity_ids:
                 continue
-            for syncer in syncers:
-                await SyncEntityAbsenceManager.clear(
-                    session,
-                    syncer,
-                    _LEDGER_ENTITY_TYPES[entity_name],
-                    *entity_ids,
-                )
+            await SyncEntityAbsenceManager.clear(
+                session,
+                None,
+                _LEDGER_ENTITY_TYPES[entity_name],
+                *entity_ids,
+            )
 
 
 def _parse_batch(
