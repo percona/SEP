@@ -119,7 +119,11 @@ class Node(BaseInventoryModel):
     :param address: The network address of the node.
     :param name: The name of the node, aliased as "node_name".
     :param external_id: The external identifier for the node, aliased as "node_id".
-    :param source: The source of the node information. Defaults to None.
+    :param source: The source of the node information. Defaults to None. Left
+        optional deliberately, unlike ``external_id``: both construction sites
+        inject :attr:`SourceEnum.PMM` unconditionally, so narrowing it here
+        would turn the syncer's ``source == SourceEnum.PMM`` check into
+        provably dead code rather than a real boundary.
     :param type: The type of the node (e.g., "generic"), aliased as "node_type".
         Defaults to "generic".
     :param services: The services associated with the node.

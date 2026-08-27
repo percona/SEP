@@ -41,14 +41,13 @@ because all three supported engines are reachable here and each step diverges on
 at least one of them: ``schema``'s child table is named ``table``, a reserved
 word MySQL quotes with backticks and the others with double quotes; string
 concatenation is ``||`` on SQLite and PostgreSQL but ``CONCAT()`` on MySQL,
-where ``||`` is boolean OR under the default SQL mode; and ``CAST`` targets
+where ``||`` is boolean OR under the default SQL mode; ``CAST`` targets
 ``VARCHAR`` on SQLite and PostgreSQL but ``CHAR`` on MySQL; and MySQL rejects an
 ``UPDATE`` whose subquery reads the table being updated (error 1093), so the two
 cascade steps that would otherwise select their own primary keys carry their
-predicate directly. The source label is
-the one deliberate exception, kept as an inline literal so PostgreSQL coerces it
-to ``sourceenum`` — asyncpg sends a bound parameter as typed text, which it
-refuses to assign to an enum column.
+predicate directly. The source label is the one deliberate exception, kept as an
+inline literal so PostgreSQL coerces it to ``sourceenum`` — asyncpg sends a
+bound parameter as typed text, which it refuses to assign to an enum column.
 
 Downgrade restores nullability and touches no data. Stripping the synthetic
 identifiers by matching the ``sep-legacy:`` prefix would treat it as a reserved
@@ -79,6 +78,7 @@ _LEGACY_PREFIX = "sep-legacy:"
 #: ``sa.Enum(SourceEnum)`` persists the member *name*, so the stored label is
 #: uppercase ``PMM`` even though ``SourceEnum.PMM.value`` is lowercase.
 _SOURCE_LABEL = "PMM"
+
 
 def _retirable(name: str, *columns: sa.ColumnClause) -> sa.TableClause:
     """Build a lightweight table clause carrying the retirement columns.
