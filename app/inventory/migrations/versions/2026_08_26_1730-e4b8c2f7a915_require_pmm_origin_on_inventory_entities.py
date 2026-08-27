@@ -42,7 +42,10 @@ at least one of them: ``schema``'s child table is named ``table``, a reserved
 word MySQL quotes with backticks and the others with double quotes; string
 concatenation is ``||`` on SQLite and PostgreSQL but ``CONCAT()`` on MySQL,
 where ``||`` is boolean OR under the default SQL mode; and ``CAST`` targets
-``VARCHAR`` on SQLite and PostgreSQL but ``CHAR`` on MySQL. The source label is
+``VARCHAR`` on SQLite and PostgreSQL but ``CHAR`` on MySQL; and MySQL rejects an
+``UPDATE`` whose subquery reads the table being updated (error 1093), so the two
+cascade steps that would otherwise select their own primary keys carry their
+predicate directly. The source label is
 the one deliberate exception, kept as an inline literal so PostgreSQL coerces it
 to ``sourceenum`` — asyncpg sends a bound parameter as typed text, which it
 refuses to assign to an enum column.
@@ -109,15 +112,15 @@ _SERVICE = _retirable(
 _SCHEMA = _retirable("schema", sa.column("service_id", sa.Integer()))
 _TABLE = _retirable("table", sa.column("schema_id", sa.Integer()))
 
-_ORIGIN_LESS_NODES = sa.select(_NODE.c.id).where(
-    sa.or_(_NODE.c.external_id.is_(None), _NODE.c.source.is_(None))
+_NODE_LACKS_ORIGIN = sa.or_(
+    _NODE.c.external_id.is_(None), _NODE.c.source.is_(None)
 )
-_DOOMED_SERVICES = sa.select(_SERVICE.c.id).where(
-    sa.or_(
-        _SERVICE.c.external_id.is_(None),
-        _SERVICE.c.node_id.in_(_ORIGIN_LESS_NODES),
-    )
+_ORIGIN_LESS_NODES = sa.select(_NODE.c.id).where(_NODE_LACKS_ORIGIN)
+_SERVICE_IS_DOOMED = sa.or_(
+    _SERVICE.c.external_id.is_(None),
+    _SERVICE.c.node_id.in_(_ORIGIN_LESS_NODES),
 )
+_DOOMED_SERVICES = sa.select(_SERVICE.c.id).where(_SERVICE_IS_DOOMED)
 _DOOMED_SCHEMAS = sa.select(_SCHEMA.c.id).where(
     _SCHEMA.c.service_id.in_(_DOOMED_SERVICES)
 )
@@ -127,8 +130,8 @@ _DOOMED_SCHEMAS = sa.select(_SCHEMA.c.id).where(
 _RETIREMENT_CASCADE = (
     (_TABLE, _TABLE.c.schema_id.in_(_DOOMED_SCHEMAS)),
     (_SCHEMA, _SCHEMA.c.service_id.in_(_DOOMED_SERVICES)),
-    (_SERVICE, _SERVICE.c.id.in_(_DOOMED_SERVICES)),
-    (_NODE, _NODE.c.id.in_(_ORIGIN_LESS_NODES)),
+    (_SERVICE, _SERVICE_IS_DOOMED),
+    (_NODE, _NODE_LACKS_ORIGIN),
 )
 
 #: ``(table, column, type)`` for each column the constraints land on. The types
@@ -166,7 +169,7 @@ def upgrade() -> None:
     # constraint.
     op.execute(
         sa.update(_NODE)
-        .where(sa.or_(_NODE.c.external_id.is_(None), _NODE.c.source.is_(None)))
+        .where(_NODE_LACKS_ORIGIN)
         .values(
             external_id=sa.func.coalesce(
                 _NODE.c.external_id, _legacy_external_id(_NODE)
