@@ -17,8 +17,8 @@
 
 Replaces the hand-written ``api_routes`` tests: the model-first
 ``TaskExecutionApp`` derives the schema / list / detail / create / update / delete
-routes, so these tests drive them through ``build_contract_client`` (which
-overrides only the Tasks-API / Inventory-API boundaries, never the create-body
+routes, so these tests drive them through the contract-client helpers (which
+override only the Tasks-API / Inventory-API boundaries, never the create-body
 dep) with the collapsed one-of create body.
 """
 

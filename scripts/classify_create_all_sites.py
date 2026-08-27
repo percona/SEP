@@ -69,7 +69,9 @@ class Site:
         return f"{self.path}:{self.line}  [{self.bucket}]  {self.func} — {self.why}"
 
 
-def _enclosing(tree: ast.Module, line: int) -> ast.AST | None:
+def _enclosing(
+    tree: ast.Module, line: int
+) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
     """Return the innermost function containing ``line``.
 
     :param tree: The parsed module.
@@ -124,7 +126,7 @@ def classify_sites(root: Path) -> Iterator[Site]:
             yield Site(
                 path=path,
                 line=node.lineno,
-                func=getattr(enclosing, "name", "<module>"),
+                func=enclosing.name if enclosing else "<module>",
                 bucket=bucket,
                 why=why,
             )

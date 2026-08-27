@@ -25,9 +25,10 @@ for a fraction of the setup.
 The cache is per-process, so each xdist worker captures once and every test in
 that worker replays. It is keyed on the metadata object itself (which keeps the
 object alive, so identity can never be recycled), the connection's
-``schema_translate_map``, and a fingerprint of every table's DDL-bearing parts —
-a metadata mutated after first capture misses the cache instead of being served
-a stale schema.
+``schema_translate_map``, and a fingerprint of every table's column, index and
+constraint *names* — a metadata that gains or loses any of them after first
+capture misses the cache instead of being served a stale schema. A change that
+leaves the name set intact, such as retyping a column in place, does not.
 """
 
 from collections.abc import Iterable
@@ -129,11 +130,16 @@ async def apply_schema(conn: AsyncConnection, metadata: MetaData) -> None:
     any transaction already open on ``conn`` — writes issued after it in the same
     ``engine.begin()`` block still commit normally.
 
+    The replayed statements carry no ``IF NOT EXISTS``, so unlike ``create_all``
+    — which defaults to ``checkfirst=True`` — this is not idempotent: a second
+    call against the same database raises ``OperationalError``. Call it once per
+    database, which every call site does by building its own engine.
+
     :param conn: The async SQLite connection the schema is created on.
     :param metadata: The metadata whose tables and indexes are created.
     """
-    translate_map = conn.sync_connection.get_execution_options().get(
-        "schema_translate_map"
+    translate_map: dict[str, str | None] | None = (
+        conn.sync_connection.get_execution_options().get("schema_translate_map")
     )
     key = (
         metadata,
