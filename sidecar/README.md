@@ -110,10 +110,7 @@ file, since a blank environment variable still counts as supplied, so the
 script clears the blank for every canonical name it manages — `SECRET_KEY`,
 every name it derives, and every name a `SEP_*` guard would otherwise leave
 untouched when that guard is inactive (`PMM__API_KEY` with no
-`SEP_GRAFANA_TOKEN` set, say). The global `DATABASE__PASSWORD` name is outside
-that list: a blank inherited value there resolves as an empty password rather
-than deferring to a mounted file. Unset is still the clearer choice for a
-deployment that writes its own compose file or job template.
+`SEP_GRAFANA_TOKEN` set, say).
 
 ### App set
 
