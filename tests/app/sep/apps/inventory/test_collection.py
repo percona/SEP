@@ -19,9 +19,10 @@ import re
 from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -424,6 +425,36 @@ async def test_the_clear_reaches_a_syncer_no_longer_configured(
 
     assert len(client.real_calls) == 1
     assert await SyncEntityAbsenceManager.list(session) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(["nope"], id="body-is-not-an-object"),
+        pytest.param({"deleted": ["node"], "remaining": False}, id="deleted-is-a-list"),
+        pytest.param(
+            {"deleted": {"widget": [1]}, "remaining": False}, id="unknown-entity-type"
+        ),
+        pytest.param({"deleted": {}}, id="remaining-absent"),
+    ],
+)
+@pytest.mark.usefixtures("no_providers", "task_databases", "sep_database")
+async def test_an_undocumented_collect_response_aborts_the_run(
+    mocker: MockerFixture, body: object
+) -> None:
+    """Refuse a response body that is not the documented object.
+
+    The dry run is the first call of every batch, so a body this job cannot read
+    must stop the run before the real delete rather than be read past.
+    """
+    client = _install_client(mocker, RecordingInventoryClient([_batch([1])]))
+    mocker.patch.object(client, "post", AsyncMock(return_value=body))
+
+    with pytest.raises(ValidationError):
+        await run_inventory_collection(API_KEY)
+
+    assert client.real_calls == []
 
 
 @pytest.mark.asyncio

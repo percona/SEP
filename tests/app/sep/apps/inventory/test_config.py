@@ -25,7 +25,7 @@ from app.sep.apps.inventory.config import inventory_app_settings, InventoryAppSe
 DEFAULT_RETENTION_DAYS = 30
 
 
-def test_collection_is_off_by_default_at_a_month_of_retention() -> None:
+def test_the_default_retention_is_a_month() -> None:
     """Keep a tombstone for a month before it becomes eligible."""
     assert (
         timedelta(days=DEFAULT_RETENTION_DAYS)

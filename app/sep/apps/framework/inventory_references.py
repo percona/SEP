@@ -53,4 +53,3 @@ class InventoryReferenceProvider(Protocol):
         :param session: The asynchronous SEP database session.
         :return: The referenced ids, keyed by inventory entity type.
         """
-        ...

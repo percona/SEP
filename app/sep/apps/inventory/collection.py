@@ -61,6 +61,7 @@ from app.core.celery.db import get_async_session_maker as get_beat_session_maker
 from app.core.security import get_internal_token
 from app.core.utils.date_time import utc_now
 from app.inventory.constants import RetirableEntityName
+from app.inventory.models import InventoryCollectResponse
 from app.sep.apps.framework.registry import collect_inventory_reference_providers
 from app.sep.apps.inventory.config import inventory_app_settings
 from app.sep.apps.inventory.deps import get_inventory_api_standalone
@@ -236,22 +237,16 @@ def _parse_batch(
 ) -> tuple[dict[RetirableEntityName, list[int]], bool]:
     """Read one collection response into its collected ids and remaining flag.
 
+    Parsed through the response model the Inventory API answers with, so every
+    level of the body is checked rather than only its outermost type.
+
     :param payload: The decoded JSON body the Inventory API answered with.
     :return: The collected ids per entity type, and whether more are waiting.
-    :raises TypeError: If the body is not the documented object.
-    :raises ValueError: If the body names an entity type this service does not
-        know.
+    :raises ValidationError: If the body is not the documented object, or names
+        an entity type this service does not know.
     """
-    if not isinstance(payload, dict):
-        raise TypeError(
-            f"Inventory API returned {type(payload).__name__} for a collect call,"
-            " expected an object."
-        )
-    deleted = payload.get("deleted") or {}
-    return (
-        {RetirableEntityName(name): ids for name, ids in deleted.items()},
-        bool(payload.get("remaining")),
-    )
+    parsed = InventoryCollectResponse.model_validate(payload)
+    return parsed.deleted, parsed.remaining
 
 
 async def run_inventory_collection(api_key: str) -> None:
@@ -266,9 +261,9 @@ async def run_inventory_collection(api_key: str) -> None:
     :raises HTTPException: Whatever :meth:`RemoteAPI.post` raises for a non-2xx
         answer from the Inventory API — an expired token or a restarting service
         is the likeliest runtime failure of this job.
-    :raises TypeError: If the Inventory API answers a collect call with something
-        other than the documented object.
-    :raises ValueError: If a collect response names an unknown entity type.
+    :raises ValidationError: If the Inventory API answers a collect call with
+        something other than the documented object, or names an unknown entity
+        type.
     :raises Exception: Whatever computing the retained set raises, unchanged —
         deleting against a partial retained set is the failure this prevents.
     """
@@ -310,11 +305,10 @@ async def run_inventory_collection(api_key: str) -> None:
 async def run_scheduled_inventory_collection() -> None:
     """Run inventory collection using the configured internal token.
 
-    :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is not configured, or if a
-        collect response names an unknown entity type.
+    :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is not configured.
     :raises HTTPException: Whatever the Inventory API's non-2xx answers raise.
-    :raises TypeError: If the Inventory API answers a collect call with something
-        other than the documented object.
+    :raises ValidationError: If the Inventory API answers a collect call with
+        something other than the documented object.
     :raises Exception: Whatever computing the retained set raises, unchanged.
         Every failure is logged and re-raised so the Celery run records it and
         the task's failure alert fires; aborting deletes nothing, except in the

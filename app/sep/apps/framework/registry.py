@@ -553,7 +553,7 @@ def collect_inventory_reference_providers(
     :return: The declared providers.
     :raises TypeError: If a module's declaration is not a list of callables.
     """
-    activation = list(plugins if plugins is not None else sep_settings.APPS)
+    activation = plugins if plugins is not None else sep_settings.APPS
     providers: list[InventoryReferenceProvider] = []
     for plugin in activation:
         declared = getattr(
