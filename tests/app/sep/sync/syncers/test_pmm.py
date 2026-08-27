@@ -1737,7 +1737,7 @@ class TestTombstoneReconciliation:
     async def test_neither_service_of_a_same_port_pair_is_mirrored_yet(
         self, local_node, owned_pmmsyncer, sync_service
     ):
-        """Reach SUCCESS with both new same-port services created, not FAILED.
+        """Create both new same-port services and reach SUCCESS, not FAILED.
 
         The reported failure: a node with no local services yet, reporting two
         services that share a port, failed the whole node sync on every run
