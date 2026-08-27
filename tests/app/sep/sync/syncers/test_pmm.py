@@ -1739,6 +1739,7 @@ class TestTombstoneReconciliation:
             8,
         }
 
+
 class TestPMMSyncerKeepalive:
     """Verify ``PMMSyncer.__aexit__`` handles keepalive_api correctly."""
 
