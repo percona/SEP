@@ -10,8 +10,10 @@ Type checking is opt-in and local-only. It is deliberately not part of `lint`,
 pre-commit, or CI, and `make typecheck` exits non-zero today because of an
 existing backlog of diagnostics. That is the expected state, not a regression.
 
-All measurements below were taken at commit `dafd2df1` with **ty 0.0.49**, the
-version pinned in the `typecheck` Poetry group.
+All measurements below were taken with **ty 0.0.49**, the version pinned in the
+`typecheck` Poetry group, on branch commit `3eede0dd3` — `dafd2df1` plus the
+configuration this policy commits. The counts depend on `[tool.ty.rules]`, so
+they do not reproduce at `dafd2df1` alone.
 
 ## The checked surface
 
@@ -78,7 +80,7 @@ project measures against.
 
 ## The recorded baseline
 
-Under the committed configuration, at `dafd2df1` plus this policy:
+Under the committed configuration, at `3eede0dd3` (`dafd2df1` plus this policy):
 
 ```
 make typecheck  ->  Found 3926 diagnostics   (358 error, 3568 warning), exit 2
@@ -92,8 +94,12 @@ when it finds diagnostics, and `make` turns any failed recipe into exit 2.
 
 They are **not** guaranteed to be the same binary, and the parity claim carries a
 precondition worth restating whenever it is re-checked: `make typecheck` runs
-`"${VENV_BIN}"/ty`, resolved from `VIRTUAL_ENV` (or from `poetry env info
---path`), while a bare `ty check` runs whatever `ty` is first on `PATH`. The
+`"${VENV_BIN}"/ty`, and the Makefile resolves `VENV_BIN` three ways, in
+precedence order — from `$(POETRY) env info --path` when `POETRY` is set, from
+`VIRTUAL_ENV` when it is not, and otherwise from the repository-local
+`venv/bin`. That last case is the default for a developer who sets neither
+variable. A bare `ty check`, by contrast, runs whatever `ty` is first on
+`PATH`. The
 `ty = "0.0.49"` pin governs only the former. Before treating agreeing counts as
 evidence, confirm `command -v ty` resolves to the same `${VENV_BIN}/ty` and that
 `ty --version` reports the pinned version — otherwise the two numbers describe
