@@ -36,6 +36,7 @@ from app.sep.config import App
 from app.sep.crud import AppStateManager, SEPPluginPeriodicTaskManager
 from app.sep.db import seed as seed_module
 from app.sep.models import AppLifecycleEnum, AppState, SEPPluginPeriodicTask
+from tests.app.db_schema import apply_schema
 
 SNIPPETS_TASK = "sep__sync_snippets"
 ALERTS_TASK = "sep__backup_alert_config"
@@ -67,7 +68,7 @@ async def seed_maker_fixture() -> AsyncIterator:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:
@@ -482,7 +483,7 @@ async def beat_maker_fixture() -> AsyncIterator:
     )
     engine = engine.execution_options(schema_translate_map={"celery_schema": None})
     async with engine.begin() as conn:
-        await conn.run_sync(PeriodicTask.__table__.metadata.create_all)
+        await apply_schema(conn, PeriodicTask.__table__.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:

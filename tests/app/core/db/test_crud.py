@@ -32,6 +32,7 @@ from app.core.db.models import BaseUUIDSQLModel
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT, PaginatedResponse, Pagination
 from app.core.utils import json_serializer
+from tests.app.db_schema import apply_schema
 
 MATCHING_ITEM_TOTAL = 3
 SELECT_RELATED_PAGE_LIMIT = 2
@@ -145,7 +146,7 @@ async def session_fixture() -> AsyncSession:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:

@@ -35,6 +35,7 @@ from app.core.utils import json_serializer
 from app.tasks.deps import get_session as get_tasks_session
 from app.tasks.main import tasks_app
 from tests.app.conftest import postgres_worker_schema
+from tests.app.db_schema import apply_schema
 
 CELERY_TASK_NAME = "app.tasks.celery.execute_task_by_name"
 
@@ -51,7 +52,7 @@ async def celery_beat_session_fixture() -> AsyncSession:
     engine = engine.execution_options(schema_translate_map={"celery_schema": None})
     metadata = PeriodicTask.__table__.metadata
     async with engine.begin() as conn:
-        await conn.run_sync(metadata.create_all)
+        await apply_schema(conn, metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
@@ -95,7 +96,7 @@ async def tasks_session_fixture() -> AsyncSession:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
