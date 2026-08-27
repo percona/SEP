@@ -23,20 +23,26 @@ from typing import Annotated, ClassVar
 from annotated_types import Gt
 from pydantic import PositiveInt
 
+from app.core.celery.models import IntervalSchedule
 from app.core.config import BaseYamlSettings
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import hot_field
 
 
 class InventoryAppSettings(BaseYamlSettings):
-    """Define the runtime knobs of the tombstone-collection job.
+    """Define the tombstone-collection job's schedule and runtime knobs.
 
-    The job's *schedule* lives in ``tasks_settings`` because that is where the
-    seeder reads it; the knobs below govern behaviour and are read on each run,
-    so they live with the code that reads them and stay hot-reloadable.
+    The whole feature configures from this one section: every field below is
+    read by ``app.sep.apps.inventory.collection`` or by the SEP seeder that
+    builds the job's beat entry, and all of them are hot-reloadable.
 
     :cvar SETTINGS_PREFIXES: The prefixes for Inventory-app settings in the
         configuration file, placing the section under ``SEP.INVENTORY``.
+    :param COLLECTION_INTERVAL: The schedule on which the collection job runs.
+        ``None`` seeds no beat entry, which is the shipped default: collection
+        deletes rows irreversibly, so a deployment carrying that default does
+        not start doing so on upgrade. The PMM sidecar profile overrides it to
+        ``1 days``, so a PMM-embedded deployment does.
     :param COLLECTION_RETENTION: How long a tombstone is kept before it becomes
         eligible for deletion. The positive lower bound is load-bearing: a
         non-positive retention would put the cutoff at or after the present and
@@ -50,6 +56,7 @@ class InventoryAppSettings(BaseYamlSettings):
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "INVENTORY"]
+    COLLECTION_INTERVAL: IntervalSchedule | None = hot_field(None)
     COLLECTION_RETENTION: Annotated[timedelta, Gt(timedelta(0))] = hot_field(
         timedelta(days=30)
     )

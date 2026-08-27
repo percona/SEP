@@ -15,6 +15,7 @@
 
 """Cover SEP database seeding and system periodic-task contributions."""
 
+import json
 from collections.abc import AsyncIterator
 
 import pytest
@@ -26,19 +27,25 @@ from sqlalchemy_celery_beat.models import Period, PeriodicTask
 from sqlmodel import SQLModel
 
 from app.core.celery.crud import BasePeriodicTaskManager
+from app.core.celery.models import IntervalSchedule as CoreIntervalSchedule
 from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSchedule
 from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.sep import periodic_tasks as periodic_tasks_module
 from app.sep.apps.framework.registry import get_app_registry
+from app.sep.apps.inventory.config import inventory_app_settings
 from app.sep.config import App
 from app.sep.crud import AppStateManager, SEPPluginPeriodicTaskManager
 from app.sep.db import seed as seed_module
 from app.sep.models import AppLifecycleEnum, AppState, SEPPluginPeriodicTask
+from app.tasks.models import INVENTORY_COLLECTION_TASK_NAME
 
 SNIPPETS_TASK = "sep__sync_snippets"
 ALERTS_TASK = "sep__backup_alert_config"
+COLLECTION_TASK = "sep__inventory_collection"
+ONE_DAY = CoreIntervalSchedule(every=1, period=Period.DAYS)
+SIX_HOURS = CoreIntervalSchedule(every=6, period=Period.HOURS)
 REPORT_PURGE_TASK = "sep__purge_report_artifacts"
 ATW_PURGE_TASK = "sep__purge_atw_bundles"
 CELERY_RESULT_EXPIRES_SECONDS = 3600
@@ -268,6 +275,86 @@ def test_builder_reads_sync_interval_at_call_time() -> None:
         assert schedule.schedule == CoreIntervalSchedule(every=5, period=Period.MINUTES)
     finally:
         snippets_settings._set_snapshot({})
+
+
+class TestInventoryCollectionSchedule:
+    """Cover the tombstone-collection beat entry the SEP seeder contributes."""
+
+    @staticmethod
+    def _entries(
+        tasks: list[SystemPeriodicTaskSchedule],
+    ) -> list[SystemPeriodicTaskSchedule]:
+        """Return the schedules carrying the collection task."""
+        return [
+            schedule
+            for schedule in tasks
+            for task in schedule.tasks
+            if task.name == COLLECTION_TASK
+        ]
+
+    def test_no_entry_while_the_interval_is_unset(self) -> None:
+        """Seed no schedule on the shipped default, so nothing is ever deleted."""
+        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": None})
+        try:
+            assert self._entries(seed_module.get_system_periodic_tasks()) == []
+        finally:
+            inventory_app_settings._set_snapshot({})
+
+    def test_builds_the_execute_by_name_entry(self) -> None:
+        """Point the entry at the SEP task through ``execute_task_by_name``.
+
+        ``inventory-collection`` is a ``Task`` row rather than a Celery
+        function, so only this indirection puts it in the plugin task list.
+        """
+        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": ONE_DAY})
+        try:
+            (schedule,) = self._entries(seed_module.get_system_periodic_tasks())
+        finally:
+            inventory_app_settings._set_snapshot({})
+
+        assert schedule.schedule == ONE_DAY
+        (entry,) = schedule.tasks
+        assert entry.task_name == "app.tasks.celery.execute_task_by_name"
+        assert entry.owner_app_key is None
+        assert entry.extra_kwargs is not None
+        kwargs = json.loads(entry.extra_kwargs["kwargs"])
+        assert kwargs["task_name"] == INVENTORY_COLLECTION_TASK_NAME
+        assert kwargs["periodic_task_name"] == COLLECTION_TASK
+        assert "execution_data" not in kwargs
+
+    def test_the_interval_is_read_at_call_time(self) -> None:
+        """Reflect a live override without a restart, and drop the entry when cleared.
+
+        The whole reason the schedule is built here rather than by the tasks
+        seeder: ``get_system_periodic_tasks`` re-reads the proxy snapshot on
+        every call, so the override refresh callback re-seeds beat in place.
+        """
+        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": ONE_DAY})
+        try:
+            (schedule,) = self._entries(seed_module.get_system_periodic_tasks())
+            assert schedule.schedule == ONE_DAY
+
+            inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": SIX_HOURS})
+            (schedule,) = self._entries(seed_module.get_system_periodic_tasks())
+            assert schedule.schedule == SIX_HOURS
+
+            inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": None})
+            assert self._entries(seed_module.get_system_periodic_tasks()) == []
+        finally:
+            inventory_app_settings._set_snapshot({})
+
+    def test_repeated_calls_do_not_accumulate_the_entry(self) -> None:
+        """Build a fresh set per call, so repeated boots do not duplicate it."""
+        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": ONE_DAY})
+        try:
+            first = seed_module.get_system_periodic_tasks()
+            second = seed_module.get_system_periodic_tasks()
+        finally:
+            inventory_app_settings._set_snapshot({})
+
+        assert len(self._entries(first)) == 1
+        assert len(self._entries(second)) == 1
+        assert len(first) == len(second)
 
 
 class TestAppOwnedScheduleGating:

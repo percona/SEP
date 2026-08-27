@@ -586,9 +586,6 @@ if _log_purge_schedule is not None:
 
 SYSTEM_PERIODIC_TASK_PREFIX = "tasks__"
 INVENTORY_SYNC_SCHEDULE_NAME = f"{SYSTEM_PERIODIC_TASK_PREFIX}inventory_sync"
-INVENTORY_COLLECTION_SCHEDULE_NAME = (
-    f"{SYSTEM_PERIODIC_TASK_PREFIX}inventory_collection"
-)
 
 
 def _inventory_sync_schedule() -> SystemPeriodicTaskSchedule | None:
@@ -717,40 +714,6 @@ async def _default_inventory_sync_schedule() -> SystemPeriodicTaskSchedule | Non
     return schedule
 
 
-def _inventory_collection_schedule() -> SystemPeriodicTaskSchedule | None:
-    """Build the inventory-collection schedule, or ``None`` when unconfigured.
-
-    Like ``inventory-sync`` this is a ``Task`` row rather than a Celery function,
-    so the entry points at ``execute_task_by_name`` and names the SEP task in
-    ``kwargs``. It does *not* copy that entry's operator-respect lookup: the job
-    is off by default because it deletes rows irreversibly, so an unset interval
-    means "do not collect" rather than "leave it to whatever an operator
-    attached". An operator-attached schedule firing alongside a seeded one is
-    wasteful but harmless, since a collect call over already-deleted ids matches
-    no rows.
-
-    :return: The schedule to append to the seeded set, or ``None`` when
-        ``INVENTORY_COLLECTION_INTERVAL`` is unset.
-    """
-    interval = tasks_settings.INVENTORY_COLLECTION_INTERVAL
-    if interval is None:
-        return None
-    kwargs = {
-        "task_name": INVENTORY_COLLECTION_TASK_NAME,
-        "periodic_task_name": INVENTORY_COLLECTION_SCHEDULE_NAME,
-    }
-    return SystemPeriodicTaskSchedule(
-        schedule=interval,
-        tasks=[
-            SystemPeriodicTaskData(
-                name=INVENTORY_COLLECTION_SCHEDULE_NAME,
-                task_name="app.tasks.celery.execute_task_by_name",
-                extra_kwargs={"kwargs": json.dumps(kwargs)},
-            ),
-        ],
-    )
-
-
 async def seed_system_periodic_tasks() -> None:
     """Seed the tasks-service periodic tasks, including the conditional default.
 
@@ -762,8 +725,6 @@ async def seed_system_periodic_tasks() -> None:
     periodic_tasks = list(SYSTEM_PERIODIC_TASKS)
     if (inventory_sync := await _default_inventory_sync_schedule()) is not None:
         periodic_tasks.append(inventory_sync)
-    if (inventory_collection := _inventory_collection_schedule()) is not None:
-        periodic_tasks.append(inventory_collection)
     await init_periodic_tasks_db(periodic_tasks, SYSTEM_PERIODIC_TASK_PREFIX)
 
 

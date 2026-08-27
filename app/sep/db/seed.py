@@ -15,6 +15,8 @@
 
 """Define the database initial data for the SEP app."""
 
+import json
+
 from sqlmodel import col
 
 from app.core.celery.utils import (
@@ -23,6 +25,7 @@ from app.core.celery.utils import (
     SystemPeriodicTaskSchedule,
 )
 from app.sep.apps.framework.registry import app_celery_module_for, get_app_registry
+from app.sep.apps.inventory.config import inventory_app_settings
 from app.sep.config import sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.db import get_async_session_maker
@@ -30,6 +33,46 @@ from app.sep.deps import PROTECTED_APP_KEYS
 from app.sep.models import AppLifecycleEnum, AppState, AppStateBase
 from app.sep.periodic_tasks import sync_app_periodic_task_gating
 from app.sep.snippets.config import snippets_settings
+from app.tasks.models import INVENTORY_COLLECTION_TASK_NAME
+
+INVENTORY_COLLECTION_SCHEDULE_NAME = "sep__inventory_collection"
+
+
+def _inventory_collection_schedule() -> SystemPeriodicTaskSchedule | None:
+    """Build the tombstone-collection schedule, or ``None`` when unconfigured.
+
+    ``inventory-collection`` is a ``Task`` row rather than a Celery function, so
+    the entry points at ``execute_task_by_name`` and names the task in
+    ``kwargs`` -- the same indirection an operator-created schedule uses, and
+    the shape that puts it in the Inventory plugin's task list.
+
+    Unlike ``inventory-sync`` there is no operator-respect lookup: the job is
+    off by default because it deletes rows irreversibly, so an unset interval
+    means "do not collect" rather than "leave it to whatever an operator
+    attached". An operator-attached schedule firing alongside a seeded one is
+    wasteful but harmless, since a collect call over already-deleted ids matches
+    no rows.
+
+    :return: The schedule to append to the seeded set, or ``None`` when
+        ``COLLECTION_INTERVAL`` is unset.
+    """
+    interval = inventory_app_settings.COLLECTION_INTERVAL
+    if interval is None:
+        return None
+    kwargs = {
+        "task_name": INVENTORY_COLLECTION_TASK_NAME,
+        "periodic_task_name": INVENTORY_COLLECTION_SCHEDULE_NAME,
+    }
+    return SystemPeriodicTaskSchedule(
+        schedule=interval,
+        tasks=[
+            SystemPeriodicTaskData(
+                name=INVENTORY_COLLECTION_SCHEDULE_NAME,
+                task_name="app.tasks.celery.execute_task_by_name",
+                extra_kwargs={"kwargs": json.dumps(kwargs)},
+            ),
+        ],
+    )
 
 
 def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
@@ -57,6 +100,11 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     emitted unconditionally against the static path and carries no
     ``owner_app_key`` -- disabling the snippets app must not gate it.
 
+    Tombstone collection is emitted outside the registry loop for the same
+    reason read the other way: its beat entry targets ``execute_task_by_name``
+    rather than a function in an app's Celery module, so the loop's
+    ``<celery_module>.<task>`` prefixing would point it at nothing.
+
     :return: The schedule/task pairs to seed into the Celery beat database.
     """
     system_tasks = [
@@ -82,6 +130,9 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
             ],
         ),
     )
+
+    if (inventory_collection := _inventory_collection_schedule()) is not None:
+        system_tasks.append(inventory_collection)
 
     for app in get_app_registry():
         if app.periodic_task_schedules is None:

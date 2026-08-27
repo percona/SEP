@@ -170,9 +170,11 @@ def _make_remote_api_rebinder(
 async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     """Re-seed the SEP beat schedule after a hot interval override.
 
-    Wired for both ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``) and
-    ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``). Rebuilds the
-    system periodic-task set via
+    Wired for ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``),
+    ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``) and
+    ``InventoryAppSettings.COLLECTION_INTERVAL`` (``sep__inventory_collection``,
+    which the rebuild also seeds or drops as the interval is set or cleared).
+    Rebuilds the system periodic-task set via
     :func:`app.sep.db.seed.get_system_periodic_tasks` -- which re-reads the now-live
     interval from the refreshed proxy snapshot -- and re-invokes
     :func:`app.core.celery.utils.init_periodic_tasks_db` under the ``sep__`` prefix.
@@ -218,6 +220,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # the Celery include list, and importing an app's config at import time
     # pulls the app tree in alongside the ``celery.py`` modules loaded from it.
     from app.sep.apps.alerts.config import AlertsSettings
+    from app.sep.apps.inventory.config import InventoryAppSettings
 
     callbacks: CallbackRegistry = {
         (
@@ -250,6 +253,10 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         (
             AlertsSettings.__name__,
             "BACKUP_INTERVAL",
+        ): _reseed_system_periodic_tasks,
+        (
+            InventoryAppSettings.__name__,
+            "COLLECTION_INTERVAL",
         ): _reseed_system_periodic_tasks,
         (
             SettingClassEnum.SEP_SETTINGS,

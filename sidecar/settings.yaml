@@ -153,6 +153,11 @@ default:
           - mysql
           - information_schema
       - SYNCER: SystemFactsSyncer
+    INVENTORY:
+      # PMM re-emits its whole inventory on every sync, so a tombstone here is a
+      # genuine removal rather than a gap in a partial feed. Collect daily; the
+      # 30-day default retention still applies before anything is deleted.
+      COLLECTION_INTERVAL: 1 days
 
   INVENTORY:
     DATABASE: *shared_database
@@ -176,6 +181,5 @@ default:
       SSL_KEYFILE: null
     INVENTORY_SYNC_INTERVAL: 15 minutes
     INVENTORY_SYNC_SYNCER: app.sep.sync.syncers.pmm.PMMSyncer
-    INVENTORY_COLLECTION_INTERVAL: 1 days
     SSL_CERTFILE: null
     SSL_KEYFILE: null

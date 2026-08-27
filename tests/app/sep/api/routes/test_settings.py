@@ -2066,6 +2066,7 @@ class TestSepOverridesLifespanWiring:
                 (SettingClassEnum.SETTINGS, "LOGGING"),
                 (SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"),
                 ("AlertsSettings", "BACKUP_INTERVAL"),
+                ("InventoryAppSettings", "COLLECTION_INTERVAL"),
                 (SettingClassEnum.SEP_SETTINGS, "APP_DRAIN"),
             }
         finally:
