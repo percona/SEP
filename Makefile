@@ -88,7 +88,7 @@ ruff: venv
 # pre-commit, or CI: a non-zero exit from the existing type-error backlog is expected and
 # must not gate any automated check.
 typecheck: venv
-	@"${VENV_BIN}"/ty check app
+	@"${VENV_BIN}"/ty check
 
 lint: ruff
 

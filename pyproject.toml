@@ -174,11 +174,72 @@ exclude_dirs = [
 # Target the project's minimum supported Python minor version (matches ruff target-version = "py311").
 python-version = "3.11"
 [tool.ty.src]
+# The checked surface is defined here rather than by a path argument: a multi-root
+# argument list makes ty drop diagnostics non-deterministically, so `make typecheck`
+# runs a bare `ty check`. See docs/development/ty-policy.md.
+include = [
+    "app",
+    "tests",
+    "scripts",
+    "sidecar",
+]
 # Exclude generated / non-checkable trees. Alembic migrations live under app/*/migrations/.
 exclude = [
     "**/migrations/**",
     "frontend/**",
 ]
+
+[tool.ty.rules]
+# Severity policy. Rationale, sample counts and per-rule justification live in
+# docs/development/ty-policy.md. An unlisted rule is an error, so a rule that
+# starts firing after a code change or a ty upgrade arrives loud by design.
+all = "error"
+
+# Softened to `warn`: sampling found each of these mixes genuine defects with
+# artifacts of how a dependency is typed, so neither `error` nor `ignore` is
+# honest while those stubs are unshimmed. `warn` still prints every diagnostic.
+invalid-argument-type = "warn"       # 198 hits are the sqlmodel/sqlalchemy AsyncSession split; 325 are genuine `int | None`
+unresolved-attribute = "warn"        # 382 genuine Optional narrowings against test doubles patching private attributes
+unknown-argument = "warn"            # dominated by pydantic-settings `_env_file` / `_secrets_dir` constructor kwargs
+invalid-assignment = "warn"          # 83 of 187 hits are the pydantic `Field(...)` -> FieldInfo idiom
+missing-argument = "warn"            # `Settings()` fills its required fields from the environment, invisibly to ty
+call-non-callable = "warn"           # subscripted generics and `object`-typed fixtures, mixed with real `None` calls
+no-matching-overload = "warn"        # third-party overload sets: `AsyncSession.exec`, `select`, `create_model`
+unresolved-import = "warn"           # 8 of 11 hits are golden-app templates scaffolded at test time
+invalid-parameter-default = "warn"   # 4 of 6 hits are the FastAPI `Query(...)` default idiom
+
+# Confirmed at `error`: predominantly first-party annotation defects with a fix
+# available in this repository.
+invalid-return-type = "error"        # nullable returns, generator fixtures annotated as the yielded type
+not-subscriptable = "error"          # 57 of 59 hits subscript a value ty knows may be `None`
+invalid-type-form = "error"          # SEP's own dynamic `type[BaseUser]` / `type[BaseModel]` annotations
+unsupported-operator = "error"       # 16 of 22 hits have an un-narrowed `X | None` operand; the rest widen to `object`
+invalid-method-override = "error"    # first-party overrides of first-party bases; these are LSP violations
+not-iterable = "error"               # includes `async for` over a coroutine that was never awaited
+call-top-callable = "error"          # `callable()` narrowing drops the signature; fixable by annotating the attribute
+unbound-type-variable = "error"      # type variables left unbound in the app/core generics
+invalid-paramspec = "error"          # `*args: P.args` without the matching `**kwargs: P.kwargs`
+invalid-context-manager = "error"    # an `__aexit__` signature that prevents `async with`
+empty-body = "error"                 # implicit `None` return against a non-`None` annotation
+redundant-cast = "error"             # a `cast` the inferred type already satisfies
+possibly-missing-submodule = "error" # submodule referenced without being imported
+mismatched-type-name = "error"       # `StrEnum` name does not match the variable it is assigned to
+invalid-yield = "error"              # the yielded value is optional, the annotation is not
+invalid-key = "error"                # unknown key on a TypedDict
+invalid-base = "error"               # class base is not a valid type
+invalid-attribute-access = "error"   # assignment to a `ClassVar` through an instance
+deprecated = "error"                 # calls a symbol its own library marks deprecated
+
+# ty ships these five disabled by default, so `all = "error"` is what switches
+# them on. The three kept are latent-bug detectors. The two dropped are
+# annotation and style conventions this project has not adopted, and neither was
+# reported before this table existed, so ignoring them loses no signal that was
+# previously available.
+possibly-unresolved-reference = "error" # a name read on a path where it may never have been bound
+possibly-missing-attribute = "error"    # attribute read through a partially-narrowed union
+unsupported-dynamic-base = "error"      # class base computed at runtime, so the hierarchy is unknown
+missing-type-argument = "ignore"        # bare generics are widespread and intended; parameterizing all 559 is its own decision
+missing-override-decorator = "ignore"   # PEP 698 `@override` is not a convention this project has adopted
 
 [tool.ruff]
 fix = true
