@@ -31,10 +31,10 @@
               "type": "string"
             },
             {
-              "description": "Optional external identifier (requires a source).",
+              "description": "Identifier of the entity in PMM.",
               "label": "External ID",
               "name": "external_id",
-              "required": false,
+              "required": true,
               "type": "string"
             },
             {
@@ -46,7 +46,7 @@
               ],
               "label": "Source",
               "name": "source",
-              "required": false,
+              "required": true,
               "type": "choice"
             },
             {
@@ -174,7 +174,7 @@
             {
               "label": "External ID",
               "name": "external_id",
-              "required": false,
+              "required": true,
               "type": "string"
             },
             {
