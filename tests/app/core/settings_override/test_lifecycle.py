@@ -48,6 +48,7 @@ from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.execution.nomad_lifecycle import NomadLifecycle
 from app.tasks.main import _reconcile_nomad, tasks_app
 from tests.app.core.settings_override.conftest import hanging_session_maker_factory
+from tests.app.db_schema import apply_schema
 
 
 @pytest_asyncio.fixture(name="session_maker")
@@ -60,7 +61,7 @@ async def session_maker_fixture() -> async_sessionmaker:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:

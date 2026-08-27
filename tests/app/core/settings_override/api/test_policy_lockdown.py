@@ -43,6 +43,7 @@ from app.inventory.config import inventory_settings, InventorySettings
 from app.sep.config import sep_settings, SEPSettings
 from app.tasks.config import tasks_settings, TasksSettings
 from tests.app.core.settings_override.conftest import insert_override_row
+from tests.app.db_schema import apply_schema
 
 ANNOTATIONS_KEY = "Settings.PMM__annotations_enabled"
 LOGGING_KEY = "Settings.LOGGING"
@@ -62,7 +63,7 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:

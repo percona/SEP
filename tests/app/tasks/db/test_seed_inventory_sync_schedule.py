@@ -41,6 +41,7 @@ from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.tasks.config import tasks_settings
 from app.tasks.models import INVENTORY_SYNC_TASK_NAME
+from tests.app.db_schema import apply_schema
 
 PMM_SYNCER = "app.sep.sync.syncers.pmm.PMMSyncer"
 MYSQL_SYNCER = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
@@ -59,7 +60,7 @@ async def beat_maker_fixture() -> AsyncIterator[async_sessionmaker[AsyncSession]
     )
     engine = engine.execution_options(schema_translate_map={"celery_schema": None})
     async with engine.begin() as conn:
-        await conn.run_sync(PeriodicTask.__table__.metadata.create_all)
+        await apply_schema(conn, PeriodicTask.__table__.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:
@@ -76,7 +77,7 @@ async def tasks_maker_fixture() -> AsyncIterator[async_sessionmaker[AsyncSession
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:

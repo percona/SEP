@@ -69,6 +69,7 @@ from app.sep.main import sep_app
 from app.sep.snippets.config import snippets_settings
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
+from tests.app.db_schema import apply_schema
 from tests.app.factories import (
     CasdoorUserFactory,
     CreatedNodeFactory,
@@ -648,7 +649,7 @@ async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
@@ -672,7 +673,7 @@ async def celery_beat_session_fixture() -> AsyncSession:
     engine = engine.execution_options(schema_translate_map={"celery_schema": None})
     metadata = PeriodicTask.__table__.metadata
     async with engine.begin() as conn:
-        await conn.run_sync(metadata.create_all)
+        await apply_schema(conn, metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
