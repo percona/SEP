@@ -1657,3 +1657,63 @@ class TestTombstoneReconciliation:
 
         owned_pmmsyncer.inventory_api.post.assert_not_awaited()
         assert sync_service.await_args.args[0].id == live.id
+
+
+class TestPMMSyncerKeepalive:
+    """Verify ``PMMSyncer.__aexit__`` handles keepalive_api correctly."""
+
+    @pytest.mark.asyncio
+    async def test_aexit_keepalive_false_invalidates_client(
+        self, mock_pmm_api, mock_remote_api, mocker
+    ):
+        """When keepalive_api is False, evict the client from the registry."""
+        syncer = PMMSyncer(
+            pmm={"endpoint": "http://localhost", "api_key": "test-key"},
+            inventory_api=mock_remote_api,
+            keepalive_api=False,
+        )
+        syncer._pmm_api = mock_pmm_api
+        mock_pmm_api.endpoint = "http://localhost"
+
+        invalidate = mocker.patch(
+            "app.core.config.Settings.invalidate_client",
+            new_callable=AsyncMock,
+        )
+        mocker.patch.object(
+            type(syncer).__mro__[1],
+            "__aexit__",
+            new_callable=AsyncMock,
+        )
+
+        await syncer.__aexit__(None, None, None)
+
+        invalidate.assert_awaited_once_with("http://localhost")
+        mock_pmm_api.close.assert_not_awaited()
+        assert syncer._pmm_api is None
+
+    @pytest.mark.asyncio
+    async def test_aexit_keepalive_true_does_not_invalidate(
+        self, mock_pmm_api, mock_remote_api, mocker
+    ):
+        """When keepalive_api is True (default), the client stays cached."""
+        syncer = PMMSyncer(
+            pmm={"endpoint": "http://localhost", "api_key": "test-key"},
+            inventory_api=mock_remote_api,
+        )
+        syncer._pmm_api = mock_pmm_api
+        mock_pmm_api.endpoint = "http://localhost"
+
+        invalidate = mocker.patch(
+            "app.core.config.Settings.invalidate_client",
+            new_callable=AsyncMock,
+        )
+        mocker.patch.object(
+            type(syncer).__mro__[1],
+            "__aexit__",
+            new_callable=AsyncMock,
+        )
+
+        await syncer.__aexit__(None, None, None)
+
+        invalidate.assert_not_awaited()
+        assert syncer._pmm_api is mock_pmm_api
