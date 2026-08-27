@@ -20,6 +20,7 @@ implemented in ``app.sep.apps.inventory.deps``; see
 ``tests/app/sep/apps/inventory/test_deps.py`` for direct unit coverage.
 """
 
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -465,7 +466,7 @@ class TestInventoryWriteSurfaceRemoved:
         mock_inventory_api_dep,
         method: str,
         path: str,
-        json_body: dict | None,
+        json_body: dict[str, Any] | None,
     ) -> None:
         """Assert every removed write verb 405s and never reaches the API.
 
@@ -771,7 +772,7 @@ class TestInventorySystemObservation:
         mock_inventory_api_dep,
         url: str,
         inventory_path: str,
-        payload: dict,
+        payload: dict[str, Any],
     ):
         """Ensure a present observation proxies through with HTTP 200 and forwards the sub-resource path."""
         mock_inventory_api_dep.get.return_value = payload
