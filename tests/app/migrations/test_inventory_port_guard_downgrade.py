@@ -23,7 +23,6 @@ verifies only that a migration exists, never that its ``downgrade()`` runs
 against the data its ``upgrade()`` admits.
 """
 
-import os
 from pathlib import Path
 
 import pytest
@@ -31,14 +30,12 @@ from alembic import command
 from alembic.config import Config
 from pydantic import SecretStr
 from sqlalchemy import create_engine
-from sqlalchemy.engine import make_url
 
 from app.core.utils.fields import AsyncDatabaseEngine
 from app.inventory.config import inventory_settings
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
-POSTGRES_DSN_ENV = "SEP_TEST_POSTGRES_DSN"
 
 #: The revision immediately below the port-guard one — downgrading to it runs
 #: the deletion and restores the pre-narrowing index.
@@ -66,15 +63,6 @@ INSERT INTO service
 SELECT 'svc-noport-b', 'postgresql', NULL, id, 'ext-d', -1, NULL, NOW(), NOW()
 FROM node;
 """
-
-
-@pytest.fixture
-def postgres_sync_url():
-    """Return the psycopg2 URL for the configured test PostgreSQL, or skip."""
-    dsn = os.environ.get(POSTGRES_DSN_ENV)
-    if not dsn:
-        pytest.skip(f"{POSTGRES_DSN_ENV} not set; skipping real-PostgreSQL tests")
-    return make_url(dsn).set(drivername="postgresql+psycopg2")
 
 
 @pytest.fixture
