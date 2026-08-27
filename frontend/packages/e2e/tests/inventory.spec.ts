@@ -384,13 +384,11 @@ test.describe('Inventory app smoke', () => {
 
     const po = new InventoryAppPage(page);
 
-    // Top-level nodes list: rows render, no row action.
     await po.goto();
     await expect(po.cell('node-1')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole('button', { name: 'Delete' })).toHaveCount(0);
     await expect(page.getByRole('columnheader', { name: 'Actions' })).toHaveCount(0);
 
-    // Nested services list on a node detail page: same.
     await po.gotoNodeDetail(NODE_ID);
     await expect(page.getByText('Services on this node')).toBeVisible({ timeout: 10_000 });
     await expect(po.cell('mysql-service')).toBeVisible({ timeout: 10_000 });
