@@ -16,6 +16,7 @@
 """Tests for the ``scripts/changelog.py`` CLI."""
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 
@@ -273,6 +274,61 @@ def test_check_ignores_readme(repo):
     )
     (repo / "changelog.d" / "SEP-503.added.md").write_text("Fix\n", encoding="utf-8")
     assert changelog.main(["check"]) == 0
+
+
+def test_check_ignores_git_ignored_files(tmp_path, monkeypatch):
+    """``check`` skips a file git ignores instead of calling it malformed.
+
+    Uses a real repository so the ``git ls-files`` invocation itself is
+    exercised, not a stand-in for it.
+
+    :param tmp_path: pytest's per-test temporary directory.
+    :type tmp_path: pathlib.Path
+    :param monkeypatch: pytest monkeypatch fixture.
+    :type monkeypatch: pytest.MonkeyPatch
+    """
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text("notes.md\n", encoding="utf-8")
+    (tmp_path / "changelog.d").mkdir()
+    (tmp_path / "changelog.d" / "notes.md").write_text("scratch\n", encoding="utf-8")
+    (tmp_path / "changelog.d" / "SEP-503.added.md").write_text(
+        "Fix\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    assert changelog.main(["check"]) == 0
+
+
+def test_check_still_reports_a_typo_git_does_not_ignore(tmp_path, monkeypatch):
+    """A misnamed fragment git tracks is still an error.
+
+    The ignore skip must not degrade into "accept anything that misses
+    ``FRAGMENT_RE``", which is the check this command exists for.
+
+    :param tmp_path: pytest's per-test temporary directory.
+    :type tmp_path: pathlib.Path
+    :param monkeypatch: pytest monkeypatch fixture.
+    :type monkeypatch: pytest.MonkeyPatch
+    """
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "changelog.d").mkdir()
+    (tmp_path / "changelog.d" / "SEP1892.added.md").write_text(
+        "Typo\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    assert changelog.main(["check"]) == 1
+
+
+def test_check_considers_every_file_without_git(repo, capsys):
+    """Outside a repository the ignore lookup falls back to the old behaviour.
+
+    :param repo: Test repo fixture (a plain directory, not a git checkout).
+    :type repo: pathlib.Path
+    :param capsys: pytest stdout/stderr capture fixture.
+    :type capsys: pytest.CaptureFixture
+    """
+    (repo / "changelog.d" / "notes.md").write_text("scratch\n", encoding="utf-8")
+    assert changelog.main(["check"]) == 1
+    assert "notes.md: invalid filename" in capsys.readouterr().err
 
 
 # --- list subcommand -------------------------------------------------------
