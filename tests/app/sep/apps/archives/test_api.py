@@ -27,6 +27,7 @@ from typing import Any
 
 import pytest
 from fastapi import status
+from fastapi.testclient import TestClient
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.archives import app as archives_app
@@ -68,7 +69,7 @@ def _create_body(**overrides: Any) -> dict[str, Any]:
 
 
 @pytest.fixture
-def client(regular_user: CasdoorUser) -> Iterator[Any]:
+def client(regular_user: CasdoorUser) -> Iterator[TestClient]:
     """Return an authenticated contract client with a seeded archive task."""
     tasks_api = MockTaskAPI()
     tasks_api.seed_task(_SEEDED, owner="ARCHIVER")
