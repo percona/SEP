@@ -46,16 +46,29 @@ carry identical inputs by construction, so they cannot disagree — and a develo
 running `ty` directly in an editor or shell gets the same surface the Makefile
 does, without having to know what the recipe passes.
 
-In a clean checkout the trees are simply additive, which is what makes the
-argument list redundant rather than wrong:
+The trees are additive only when each is checked on its own. Measured one root
+at a time, they sum to exactly what a bare `ty check` reports:
 
 ```
-ty check app tests   ->  3918
-        + scripts    ->     5
-        + sidecar    ->     3
+ty check app         ->   961
+ty check tests       ->  2957
+ty check scripts     ->     5
+ty check sidecar     ->     3
                         ------
-ty check (bare)      ->  3926
+             summed      3926   == ty check (bare)
+
+ty check app tests   ->  3916   != 961 + 2957
 ```
+
+Passed together as an argument list they do not. `ty check app tests` reports
+3916, two short of `app` plus `tests`, and the two it drops are real
+`invalid-argument-type` diagnostics in `app/tasks/logs/log_reader.py` (lines 424
+and 433) that `ty check app` on its own reports. Longer root lists diverge
+further, in the same direction — see the caveat below.
+
+So an argument list does not merely restate what `[tool.ty.src]` already says.
+It silently loses genuine diagnostics, which makes it wrong rather than
+redundant, and only the bare invocation accounts for all 3926.
 
 ### A caveat on measuring this
 
