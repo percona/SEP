@@ -71,7 +71,8 @@ docker compose up -d                          # pmm-server + sep-sidecar
 
 That is the whole prerequisite list. PMM publishes the four secrets SEP reads
 from disk and the side-car mints its own Grafana token, so nothing has to be
-chosen or seeded in advance.
+chosen or seeded in advance. The topology does require an x86-64 runtime; arm64
+hosts need x86-64 emulation — see [Caveats](#caveats).
 
 `./bootstrap.sh` is needed **only** for the `mysql` profile, whose three
 test-fixture passwords are the only thing the generated `.env` still holds:
@@ -209,6 +210,19 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
 
 ## Caveats
 
+- **The topology is `linux/amd64` throughout, and every service pins it.** No
+  arm64 variant is published for the pmm-server or pmm-client feature builds,
+  for the released `percona/pmm-server`, or for the side-car image — whose
+  manifest carries no platform index at all. On an Apple Silicon or other arm64
+  host the pins are what let the harness come up, under emulation, rather than
+  failing the pull. `sep-mysql` is the one that needs its pin most: that service
+  is *built*, and `oraclelinux:9` is the one base here that does ship arm64, so
+  without the pin an arm64 host builds natively and succeeds — having copied the
+  pmm-client stage's amd64 binaries into an image that cannot execute them. Keep
+  all three pins across a repin. And treat an emulated run as evidence for
+  functional behaviour only: nothing timing-shaped survives QEMU, so backup and
+  restore durations, the start periods set here, and any Nomad scheduling race
+  are not measurable on such a host.
 - **pmm-server's start period is set by this compose file, not by the image.**
   The image ships 25 s with 3 retries at 4 s, so it is marked `unhealthy` around
   37 s while a cold start needs appreciably longer to first pass `readyz` — and

@@ -28,6 +28,13 @@
 # No per-deployment credentials are committed: bootstrap.sh generates those
 # into the gitignored .env; see README.md. The one credential spelled out below
 # is PMM's stock admin:admin, which the feature build ships.
+#
+# Every service pins linux/amd64. Nothing this topology runs publishes an arm64
+# variant — not the pmm-server and pmm-client feature builds, not the released
+# percona/pmm-server, and not the side-car image, whose manifest carries no
+# platform index at all. The pins state that constraint instead of leaving an
+# arm64 host to discover it, as a pull failure for the two images and as a
+# quietly mis-built one for sep-mysql.
 
 name: sep-pmm-fb
 
@@ -39,6 +46,7 @@ services:
   pmm-server:
     # Default repeated on sep-mysql's PMM_FB_TAG build arg — a repin edits both
     image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-a2f83c2}
+    platform: linux/amd64
     # The image ships start_period 25s with 3 retries at 4s, so it is marked
     # unhealthy around 37s while a cold start needs appreciably longer to first
     # pass readyz — and sep-sidecar's service_healthy dependency turns that into
@@ -67,6 +75,7 @@ services:
 
   sep-sidecar:
     image: docker.io/percona/percona-sep:249f6738ae7a4ba495b34f6ccc5edf0cad4db5c3
+    platform: linux/amd64
     # service_healthy, not service_started: SEP builds its settings once, at
     # process start, so a side-car released before pmm-server has written the
     # four secret files exits on the missing SECRET_KEY. Health is what says they
@@ -102,6 +111,11 @@ services:
 
   sep-mysql:
     profiles: ["mysql"]
+    # Pinned for a different reason than the two above: this service is built,
+    # and its oraclelinux base is the one image here that does ship arm64. An
+    # arm64 host therefore builds natively and succeeds, having copied the
+    # pmm-client stage's amd64 binaries into an image that cannot run them.
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Containerfile.mysql
