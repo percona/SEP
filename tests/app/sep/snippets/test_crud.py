@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import col, select
+from sqlmodel import col
 
 from app.core.db.list_query import build_search_predicate, ListQuery
 from app.core.pagination import PaginatedResponse, Pagination

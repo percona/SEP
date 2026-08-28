@@ -191,9 +191,7 @@ class TestNullsLastOrdering:
 
         rendered = _compile(query, postgresql.dialect())
 
-        assert rendered.endswith(
-            "ORDER BY item.parent_id DESC NULLS LAST, item.id ASC"
-        )
+        assert rendered.endswith("ORDER BY item.parent_id DESC NULLS LAST, item.id ASC")
 
     def test_nulls_last_ordering_is_cacheable(self, ordering_table):
         """Produce a real cache key that discriminates both column and direction."""
@@ -231,9 +229,7 @@ class TestNullsLastOrdering:
             dialect=postgresql.dialect(), compile_kwargs={"render_postcompile": True}
         )
 
-        assert str(executed).endswith(
-            "ORDER BY item.meta ->> 'title' ASC NULLS LAST"
-        )
+        assert str(executed).endswith("ORDER BY item.meta ->> 'title' ASC NULLS LAST")
         assert executed.params == {}
 
     def test_raw_string_column_becomes_a_bound_parameter(self, ordering_table):

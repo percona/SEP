@@ -18,7 +18,6 @@
 import random
 from unittest.mock import MagicMock
 
-import pytest
 from sqlalchemy import JSON
 from sqlalchemy.dialects.postgresql import JSONB
 
