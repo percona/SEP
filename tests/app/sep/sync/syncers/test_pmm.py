@@ -1014,6 +1014,55 @@ class TestGetInventorySnapshot:
         assert [node.external_id for node in snapshot.nodes] == ["good"]
 
     @pytest.mark.asyncio
+    async def test_records_node_with_no_upstream_id(self, snapshot_api, mock_request):
+        """Drop an id-less node into the diagnostics rather than POSTing it onward.
+
+        Without an ``external_id`` the node cannot be written to the now-strict
+        inventory API, and the sync run has no ``except`` around that POST — so
+        counting it here is what keeps one malformed payload from aborting the
+        whole generation.
+        """
+        mock_request.side_effect = [
+            {},
+            {
+                "Generic": [
+                    {"node_id": "good", "name": "Good", "address": "localhost"},
+                    {"name": "Anonymous", "address": "localhost"},
+                ]
+            },
+        ]
+
+        snapshot = await snapshot_api.get_inventory_snapshot()
+
+        assert snapshot.diagnostics.invalid_nodes == 1
+        assert snapshot.diagnostics.is_complete is False
+        assert [node.external_id for node in snapshot.nodes] == ["good"]
+
+    @pytest.mark.asyncio
+    async def test_records_service_with_blank_upstream_id(
+        self, snapshot_api, mock_request
+    ):
+        """Count a blank ``service_id`` as a drop instead of silencing it to None."""
+        mock_request.side_effect = [
+            {
+                "mysql": [
+                    {
+                        "service_id": "",
+                        "service_name": "Blank",
+                        "service_type": "mysql",
+                        "node_id": "node-1",
+                    }
+                ]
+            },
+            {"Generic": [{"node_id": "node-1", "name": "N1", "address": "localhost"}]},
+        ]
+
+        snapshot = await snapshot_api.get_inventory_snapshot()
+
+        assert snapshot.diagnostics.invalid_services == 1
+        assert snapshot.diagnostics.is_complete is False
+
+    @pytest.mark.asyncio
     async def test_flags_orphan_services(self, snapshot_api, mock_request):
         """Flag a service whose node never appeared in the node list as orphaned."""
         mock_request.side_effect = [
@@ -1608,3 +1657,63 @@ class TestTombstoneReconciliation:
 
         owned_pmmsyncer.inventory_api.post.assert_not_awaited()
         assert sync_service.await_args.args[0].id == live.id
+
+
+class TestPMMSyncerKeepalive:
+    """Verify ``PMMSyncer.__aexit__`` handles keepalive_api correctly."""
+
+    @pytest.mark.asyncio
+    async def test_aexit_keepalive_false_invalidates_client(
+        self, mock_pmm_api, mock_remote_api, mocker
+    ):
+        """When keepalive_api is False, evict the client from the registry."""
+        syncer = PMMSyncer(
+            pmm={"endpoint": "http://localhost", "api_key": "test-key"},
+            inventory_api=mock_remote_api,
+            keepalive_api=False,
+        )
+        syncer._pmm_api = mock_pmm_api
+        mock_pmm_api.endpoint = "http://localhost"
+
+        invalidate = mocker.patch(
+            "app.core.config.Settings.invalidate_client",
+            new_callable=AsyncMock,
+        )
+        mocker.patch.object(
+            type(syncer).__mro__[1],
+            "__aexit__",
+            new_callable=AsyncMock,
+        )
+
+        await syncer.__aexit__(None, None, None)
+
+        invalidate.assert_awaited_once_with("http://localhost")
+        mock_pmm_api.close.assert_not_awaited()
+        assert syncer._pmm_api is None
+
+    @pytest.mark.asyncio
+    async def test_aexit_keepalive_true_does_not_invalidate(
+        self, mock_pmm_api, mock_remote_api, mocker
+    ):
+        """When keepalive_api is True (default), the client stays cached."""
+        syncer = PMMSyncer(
+            pmm={"endpoint": "http://localhost", "api_key": "test-key"},
+            inventory_api=mock_remote_api,
+        )
+        syncer._pmm_api = mock_pmm_api
+        mock_pmm_api.endpoint = "http://localhost"
+
+        invalidate = mocker.patch(
+            "app.core.config.Settings.invalidate_client",
+            new_callable=AsyncMock,
+        )
+        mocker.patch.object(
+            type(syncer).__mro__[1],
+            "__aexit__",
+            new_callable=AsyncMock,
+        )
+
+        await syncer.__aexit__(None, None, None)
+
+        invalidate.assert_not_awaited()
+        assert syncer._pmm_api is mock_pmm_api
