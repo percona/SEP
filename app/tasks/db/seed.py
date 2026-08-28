@@ -47,6 +47,7 @@ from app.tasks.execution.executors.nomad.steps import (
     RUN_SCRIPT_OUTPUT_FILES_PATH,
 )
 from app.tasks.models import (
+    INVENTORY_COLLECTION_TASK_NAME,
     INVENTORY_SYNC_TASK_NAME,
     SYNC_RUNNING_TASKS_TASK_NAME,
     SYSTEM_USER,
@@ -524,6 +525,19 @@ SYSTEM_TASKS = [
         },
         backend=TaskBackendEnum.CELERY,
         protected=True,
+        created_by=SYSTEM_USER,
+    ),
+    Task(
+        name=INVENTORY_COLLECTION_TASK_NAME,
+        data={
+            "callable": (
+                "app.sep.apps.inventory.collection.run_scheduled_inventory_collection"
+            ),
+            "target": "local",
+        },
+        backend=TaskBackendEnum.CELERY,
+        protected=True,
+        alert_on_fail=True,
         created_by=SYSTEM_USER,
     ),
 ]

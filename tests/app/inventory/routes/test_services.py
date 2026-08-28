@@ -332,6 +332,30 @@ class TestUpdateService:
         assert data["name"] == "renamed-service"
         assert data["node_id"] == node.id
 
+    def test_update_setting_external_id_releases_the_port(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Admit a move onto a held port when the mover gains an identity."""
+        incumbent = test_client.post(
+            f"/nodes/{service.node_id}/services/",
+            json=ServiceWriteFactory.build().model_dump(
+                mode="json", exclude={"node_id"}
+            ),
+        )
+        assert incumbent.status_code == status.HTTP_201_CREATED
+
+        response = test_client.put(
+            f"/services/{service.id}",
+            json=ServiceWriteFactory.build(
+                node_id=service.node_id,
+                port=incumbent.json()["port"],
+                external_id="svc-identified",
+            ).model_dump(mode="json"),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["port"] == incumbent.json()["port"]
+
     def test_update_service_change_node_id_to_valid_parent(
         self, test_client: TestClient, service: Service
     ) -> None:
@@ -465,10 +489,14 @@ class TestReviveService:
             status.HTTP_200_OK
         )
 
-    def test_revive_service_conflicts_with_active_replacement(
+    def test_revive_service_onto_a_port_a_replacement_now_holds(
         self, test_client: TestClient, service: Service
     ) -> None:
-        """Reject a revive whose unique slot an active replacement now holds."""
+        """Admit a revive sharing a port with an active replacement.
+
+        Port is no longer a uniqueness key, so a replacement taking over the
+        retired service's port reserves nothing the revive could collide with.
+        """
         assert (
             test_client.delete(f"/services/{service.id}").status_code
             == status.HTTP_204_NO_CONTENT
@@ -483,7 +511,47 @@ class TestReviveService:
         )
 
         response = test_client.post(f"/services/{service.id}/revive")
-        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    def test_revive_identified_service_onto_a_live_port(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Admit a revive whose port an identified replacement holds."""
+        assert (
+            test_client.put(
+                f"/services/{service.id}",
+                json=ServiceWriteFactory.build(
+                    node_id=service.node_id, external_id="svc-retired"
+                ).model_dump(mode="json"),
+            ).status_code
+            == status.HTTP_200_OK
+        )
+        assert (
+            test_client.delete(f"/services/{service.id}").status_code
+            == status.HTTP_204_NO_CONTENT
+        )
+        replacement = test_client.post(
+            f"/nodes/{service.node_id}/services/",
+            json=ServiceWriteFactory.build(port=service.port).model_dump(
+                mode="json", exclude={"node_id"}
+            ),
+        )
+        assert replacement.status_code == status.HTTP_201_CREATED
+        assert (
+            test_client.put(
+                f"/services/{replacement.json()['id']}",
+                json=ServiceWriteFactory.build(
+                    node_id=service.node_id,
+                    port=service.port,
+                    external_id="svc-replacement",
+                ).model_dump(mode="json"),
+            ).status_code
+            == status.HTTP_200_OK
+        )
+
+        response = test_client.post(f"/services/{service.id}/revive")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
 
 
 class TestListSchemasByService:

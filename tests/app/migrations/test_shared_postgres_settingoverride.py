@@ -24,7 +24,6 @@ cross-track scenario; the SQLite cases pin the two cross-dialect helpers the
 guards rely on.
 """
 
-import os
 from pathlib import Path
 
 import pytest
@@ -44,7 +43,6 @@ from sqlalchemy import (
 from sqlalchemy import (
     Enum as EnumField,
 )
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 
 from app.core.db.utils import (
@@ -59,7 +57,6 @@ from app.tasks.config import tasks_settings
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
-POSTGRES_DSN_ENV = "SEP_TEST_POSTGRES_DSN"
 _SETTING_CLASS_VARCHAR_LENGTH = 255
 
 # The SEP and Tasks revisions immediately below ``add_setting_override_table``
@@ -295,19 +292,6 @@ def test_advisory_lock_is_noop_off_postgres():
             )
     finally:
         engine.dispose()
-
-
-@pytest.fixture
-def postgres_sync_url():
-    """Return a sync (``psycopg2``) URL to the real-PostgreSQL test database.
-
-    Skip when ``$SEP_TEST_POSTGRES_DSN`` is unset (local runs without
-    PostgreSQL); the dedicated ``test_postgres`` CI job supplies it.
-    """
-    dsn = os.environ.get(POSTGRES_DSN_ENV)
-    if not dsn:
-        pytest.skip(f"{POSTGRES_DSN_ENV} not set; skipping real-PostgreSQL tests")
-    return make_url(dsn).set(drivername="postgresql+psycopg2")
 
 
 @pytest.fixture

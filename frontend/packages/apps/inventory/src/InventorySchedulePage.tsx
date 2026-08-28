@@ -66,6 +66,17 @@ import {
 import { useAvailableSyncers, type Syncer } from './hooks';
 import { isCronExpressionValid } from './cronValidation';
 
+const INVENTORY_SYNC_TASK_NAME = 'inventory-sync';
+
+interface TaskOption {
+  name: string;
+  display_name?: string;
+}
+
+function resolveTaskDisplayName(taskName: string, availableTasks: TaskOption[]): string {
+  return availableTasks.find((t) => t.name === taskName)?.display_name ?? taskName;
+}
+
 // ─── Timezone helpers (mirrors ScheduledTaskForm.tsx) ───────────────────────
 
 const TIMEZONES = (() => {
@@ -159,7 +170,8 @@ type IntervalPeriod = 'minutes' | 'hours' | 'days';
 interface SyncScheduleFormProps {
   mode: 'create' | 'edit';
   initialTask?: PeriodicTaskResponse;
-  taskName: string;
+  availableTasks: TaskOption[];
+  defaultTaskName?: string;
   availableSyncers: Syncer[];
   onSubmit: (body: PeriodicTaskCreate | PeriodicTaskUpdate, taskName: string) => Promise<void>;
   onCancel: () => void;
@@ -170,7 +182,8 @@ interface SyncScheduleFormProps {
 function SyncScheduleForm({
   mode,
   initialTask,
-  taskName,
+  availableTasks,
+  defaultTaskName,
   availableSyncers,
   onSubmit,
   onCancel,
@@ -179,6 +192,11 @@ function SyncScheduleForm({
 }: SyncScheduleFormProps) {
   const initialMeta = initialTask?.execute_request?.meta;
   const initialSyncer = typeof initialMeta?.syncer === 'string' ? initialMeta.syncer : '';
+
+  const [selectedTaskName, setSelectedTaskName] = useState(
+    initialTask?.task ?? defaultTaskName ?? '',
+  );
+  const isSyncTask = selectedTaskName === INVENTORY_SYNC_TASK_NAME;
 
   const [syncerName, setSyncerName] = useState(initialSyncer);
   const [scheduleMode, setScheduleMode] = useState<'interval' | 'crontab'>(
@@ -228,15 +246,17 @@ function SyncScheduleForm({
       }
     }
 
-    const execute_request: PeriodicTaskExecuteRequest = {
-      meta: syncerName ? { syncer: syncerName } : {},
-      chain_task_names: initialTask?.execute_request?.chain_task_names ?? [],
-      chain_on_failure: initialTask?.execute_request?.chain_on_failure ?? false,
-    };
+    const execute_request: PeriodicTaskExecuteRequest | null = isSyncTask
+      ? {
+          meta: syncerName ? { syncer: syncerName } : {},
+          chain_task_names: initialTask?.execute_request?.chain_task_names ?? [],
+          chain_on_failure: initialTask?.execute_request?.chain_on_failure ?? false,
+        }
+      : null;
 
     const body: PeriodicTaskCreate | PeriodicTaskUpdate = {
       name: initialTask?.name ?? '',
-      task: initialTask?.task ?? taskName,
+      task: initialTask?.task ?? selectedTaskName,
       enabled,
       description: initialTask?.description ?? '',
       kwargs: '{}',
@@ -249,7 +269,7 @@ function SyncScheduleForm({
       execute_request,
     };
 
-    await onSubmit(body, initialTask?.task ?? taskName);
+    await onSubmit(body, initialTask?.task ?? selectedTaskName);
   };
 
   const displayError = errorMessage ?? localError;
@@ -267,7 +287,28 @@ function SyncScheduleForm({
         </Alert>
       )}
 
-      {mode === 'create' && (
+      {mode === 'create' && availableTasks.length > 1 && (
+        <FormControl sx={{ mb: 2 }}>
+          <FormLabel>Task</FormLabel>
+          <RadioGroup
+            row
+            value={selectedTaskName}
+            onChange={(e) => setSelectedTaskName(e.target.value)}
+            data-testid="inv-sched-task-group"
+          >
+            {availableTasks.map((t) => (
+              <FormControlLabel
+                key={t.name}
+                value={t.name}
+                control={<Radio size="small" />}
+                label={t.display_name ?? t.name}
+              />
+            ))}
+          </RadioGroup>
+        </FormControl>
+      )}
+
+      {mode === 'create' && isSyncTask && (
         <FormControl sx={{ mb: 2 }}>
           <FormLabel>Syncer</FormLabel>
           <RadioGroup
@@ -402,12 +443,12 @@ function SyncScheduleForm({
 
 // ─── Row ────────────────────────────────────────────────────────────────────
 
-const ROW_COLUMNS = 7;
+const ROW_COLUMNS = 8;
 
 interface ScheduleRowProps {
   task: PeriodicTaskResponse;
   availableSyncers: Syncer[];
-  taskName: string;
+  availableTasks: TaskOption[];
   isEditing: boolean;
   onStartEdit: () => void;
   onCancelEdit: () => void;
@@ -422,7 +463,7 @@ interface ScheduleRowProps {
 function InventoryScheduleRow({
   task,
   availableSyncers,
-  taskName,
+  availableTasks,
   isEditing,
   onStartEdit,
   onCancelEdit,
@@ -434,7 +475,9 @@ function InventoryScheduleRow({
   errorMessage,
 }: ScheduleRowProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const label = syncerLabel(task, availableSyncers);
+  const isSyncTask = task.task === INVENTORY_SYNC_TASK_NAME;
+  const taskLabel = resolveTaskDisplayName(task.task, availableTasks);
+  const identityLabel = isSyncTask ? syncerLabel(task, availableSyncers) : taskLabel;
   const period = describePeriod(task);
 
   if (isEditing) {
@@ -444,7 +487,7 @@ function InventoryScheduleRow({
           <SyncScheduleForm
             mode="edit"
             initialTask={task}
-            taskName={taskName}
+            availableTasks={availableTasks}
             availableSyncers={availableSyncers}
             onCancel={onCancelEdit}
             onSubmit={async (body) => onSubmitEdit(body)}
@@ -459,7 +502,8 @@ function InventoryScheduleRow({
   return (
     <>
       <TableRow data-testid={`inv-sched-row-${task.id}`}>
-        <TableCell>{label}</TableCell>
+        <TableCell>{taskLabel}</TableCell>
+        <TableCell>{isSyncTask ? identityLabel : '—'}</TableCell>
         <TableCell>
           {period.tooltip ? (
             <Tooltip title={period.tooltip}>
@@ -477,7 +521,7 @@ function InventoryScheduleRow({
             checked={task.enabled}
             disabled={toggling}
             onChange={(_, checked) => onToggleEnabled(task, checked)}
-            slotProps={{ input: { 'aria-label': `Enable schedule for ${label}` } }}
+            slotProps={{ input: { 'aria-label': `Enable schedule for ${identityLabel}` } }}
           />
         </TableCell>
         <TableCell>
@@ -486,7 +530,7 @@ function InventoryScheduleRow({
               <IconButton
                 size="small"
                 onClick={onStartEdit}
-                aria-label={`Edit schedule for ${label}`}
+                aria-label={`Edit schedule for ${identityLabel}`}
                 data-testid={`inv-sched-edit-${task.id}`}
               >
                 <EditOutlinedIcon fontSize="small" />
@@ -496,7 +540,7 @@ function InventoryScheduleRow({
               <IconButton
                 size="small"
                 onClick={() => setConfirmOpen(true)}
-                aria-label={`Clear schedule for ${label}`}
+                aria-label={`Clear schedule for ${identityLabel}`}
                 data-testid={`inv-sched-delete-${task.id}`}
               >
                 <DeleteOutlineIcon fontSize="small" />
@@ -514,7 +558,7 @@ function InventoryScheduleRow({
         <DialogTitle id={`inv-sched-delete-title-${task.id}`}>Clear schedule</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            {`Clear the inventory-sync schedule for "${label}"? The inventory-sync task itself is not deleted.`}
+            {`Clear the ${taskLabel} schedule${isSyncTask ? ` for "${identityLabel}"` : ''}? The ${task.task} task itself is not deleted.`}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
@@ -549,7 +593,7 @@ export function InventorySchedulePage({ schedulingEnabled }: InventorySchedulePa
   const syncersQuery = useAvailableSyncers();
   const availableSyncers = syncersQuery.data ?? [];
 
-  const taskName = appTasks[0]?.name ?? '';
+  const defaultTaskName = appTasks[0]?.name;
 
   const createMut = useCreateScheduledTask();
   const updateMut = useUpdateScheduledTask();
@@ -644,7 +688,7 @@ export function InventorySchedulePage({ schedulingEnabled }: InventorySchedulePa
         <IconButton onClick={() => navigate('..')} aria-label="Back to list">
           <ArrowBackIcon />
         </IconButton>
-        <Typography variant="h4">Inventory Sync Schedules</Typography>
+        <Typography variant="h4">Inventory Schedules</Typography>
       </Box>
 
       {!schedulingEnabled && (
@@ -657,7 +701,7 @@ export function InventorySchedulePage({ schedulingEnabled }: InventorySchedulePa
       <Paper variant="outlined" data-testid="inv-sched-panel">
         <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
           <ScheduleIcon fontSize="small" />
-          <Typography variant="h6">Sync Schedules</Typography>
+          <Typography variant="h6">Schedules</Typography>
         </Box>
 
         {actionError && (
@@ -674,7 +718,7 @@ export function InventorySchedulePage({ schedulingEnabled }: InventorySchedulePa
         {isEmpty ? (
           <Box sx={{ p: 3, textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary">
-              No inventory-sync schedules configured.
+              No schedules configured.
             </Typography>
           </Box>
         ) : (
@@ -682,6 +726,7 @@ export function InventorySchedulePage({ schedulingEnabled }: InventorySchedulePa
             <Table size="small">
               <TableHead>
                 <TableRow>
+                  <TableCell>Task</TableCell>
                   <TableCell>Syncer</TableCell>
                   <TableCell>Period</TableCell>
                   <TableCell>Last Run</TableCell>
@@ -697,7 +742,7 @@ export function InventorySchedulePage({ schedulingEnabled }: InventorySchedulePa
                     key={task.id}
                     task={task}
                     availableSyncers={availableSyncers}
-                    taskName={taskName}
+                    availableTasks={appTasks}
                     isEditing={editingId === task.id}
                     onStartEdit={() => startEdit(task.id)}
                     onCancelEdit={() => setEditingId(null)}
@@ -718,7 +763,8 @@ export function InventorySchedulePage({ schedulingEnabled }: InventorySchedulePa
           <Box sx={{ borderTop: 1, borderColor: 'divider' }}>
             <SyncScheduleForm
               mode="create"
-              taskName={taskName}
+              availableTasks={appTasks}
+              defaultTaskName={defaultTaskName}
               availableSyncers={availableSyncers}
               onCancel={() => setCreating(false)}
               onSubmit={handleCreate}
@@ -737,7 +783,7 @@ export function InventorySchedulePage({ schedulingEnabled }: InventorySchedulePa
             <Button
               startIcon={<AddIcon />}
               onClick={startCreate}
-              disabled={!taskName}
+              disabled={appTasks.length === 0}
               data-testid="inv-sched-attach"
             >
               Attach schedule

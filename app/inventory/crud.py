@@ -15,21 +15,21 @@
 
 """Define database operations for the Inventory API."""
 
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime
 from typing import Any, ClassVar, TYPE_CHECKING
 
-from sqlalchemy import Update, update
+from sqlalchemy import literal, Update, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.sql import ColumnExpressionArgument
-from sqlmodel import col, select
+from sqlalchemy.sql import ColumnElement, ColumnExpressionArgument
+from sqlmodel import col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import ListQuerySpec
 from app.core.db.crud import BaseSQLModelChildManager, BaseSQLModelManager, W
 from app.core.exceptions import HTTPConflictException
 from app.core.utils.date_time import utc_now
-from app.inventory.constants import ACTIVE_RETIREMENT_KEY
+from app.inventory.constants import ACTIVE_RETIREMENT_KEY, RetirableEntityName
 from app.inventory.models import (
     HostSystemObservation,
     Node,
@@ -76,6 +76,66 @@ def _revive(
         update(model)
         .where(col(model.retired_at).is_not(None), *whereclause)
         .values(retired_at=None, retirement_key=ACTIVE_RETIREMENT_KEY)
+    )
+
+
+def _retained(
+    model: type[RetirableSQLModel],
+    retired_before: datetime,
+    keep_ids: Collection[int],
+) -> ColumnElement[bool]:
+    """Build the predicate matching rows collection must leave in place.
+
+    A row is retained when it is still active, when its tombstone has not aged
+    past the cutoff, or when the caller declared something still resolves it.
+
+    :param model: The table to build the predicate against.
+    :param retired_before: The cutoff a tombstone must predate to be collectible.
+    :param keep_ids: The ids the caller declared still referenced.
+    :return: The predicate matching this table's retained rows.
+    """
+    clauses = [
+        col(model.retired_at).is_(None),
+        col(model.retired_at) >= retired_before,
+    ]
+    if keep_ids:
+        clauses.append(col(model.id).in_(keep_ids))
+    return or_(*clauses)
+
+
+def _retained_descendant_exists(
+    subtree: Sequence[tuple[type[RetirableSQLModel], str]],
+    parent_id: ColumnElement,
+    retired_before: datetime,
+    keep_by_model: Mapping[type[RetirableSQLModel], Collection[int]],
+) -> ColumnElement[bool] | None:
+    """Build the predicate matching an ancestor some descendant still pins.
+
+    The subtree is a linear descent, so each level correlates on its own parent
+    and nests the level below it. Expressing the descent in SQL rather than
+    materializing the retained ids keeps the scan independent of how large the
+    active inventory is.
+
+    :param subtree: The descendant models, nearest first, each paired with the
+        foreign key naming its own parent.
+    :param parent_id: The primary-key column the nearest descendant correlates on.
+    :param retired_before: The cutoff a tombstone must predate to be collectible.
+    :param keep_by_model: The ids the caller declared still referenced, per table.
+    :return: The predicate, or None when the subtree is empty.
+    """
+    if not subtree:
+        return None
+    (model, foreign_key), rest = subtree[0], subtree[1:]
+    retained = [_retained(model, retired_before, keep_by_model.get(model, ()))]
+    deeper = _retained_descendant_exists(
+        rest, col(model.id), retired_before, keep_by_model
+    )
+    if deeper is not None:
+        retained.append(deeper)
+    return (
+        select(literal(1))
+        .where(col(getattr(model, foreign_key)) == parent_id, or_(*retained))
+        .exists()
     )
 
 
@@ -238,6 +298,71 @@ class RetirableManagerMixin(BaseSQLModelManager):
                 "holds its unique key."
             ) from None
 
+    @classmethod
+    async def collectible_ids(
+        cls,
+        session: AsyncSession,
+        *,
+        retired_before: datetime,
+        keep_by_model: Mapping[type[RetirableSQLModel], Collection[int]],
+        limit: int,
+    ) -> list[int]:
+        """Return the ids of this table's tombstones eligible for deletion.
+
+        A tombstone is eligible when it aged past ``retired_before``, no caller
+        declared it referenced, and nothing in its subtree is retained. Only
+        reachable through the retired-inclusive subclasses: the default managers'
+        ``retired_at IS NULL`` guard makes the underlying read match nothing.
+
+        :param session: The asynchronous database session to use.
+        :param retired_before: The cutoff a tombstone must predate.
+        :param keep_by_model: The ids a caller declared still referenced, per table.
+        :param limit: The most ids to return.
+        :return: The eligible ids, lowest first.
+        """
+        whereclause = [
+            col(cls.Model.retired_at).is_not(None),
+            col(cls.Model.retired_at) < retired_before,
+        ]
+        if keep_ids := keep_by_model.get(cls.Model, ()):
+            whereclause.append(col(cls.Model.id).not_in(keep_ids))
+        if (
+            pinned := _retained_descendant_exists(
+                cls.retirement_subtree,
+                col(cls.Model.id),
+                retired_before,
+                keep_by_model,
+            )
+        ) is not None:
+            whereclause.append(~pinned)
+        query = cls._filter_query(select(col(cls.Model.id)), *whereclause)
+        result = await cls._exec(
+            session, query.order_by(col(cls.Model.id)).limit(limit)
+        )
+        return list(result.all())
+
+    @classmethod
+    async def collect(cls, session: AsyncSession, entity_ids: Collection[int]) -> int:
+        """Delete the named tombstones, leaving any active row among them alone.
+
+        The ``retired_at IS NOT NULL`` filter is a guard, not an optimization: a
+        caller that miscomputed its closure must not be able to hard-delete a
+        live row through this method. An id that no longer exists simply matches
+        nothing, so re-running an already-collected batch is a zero-row no-op.
+
+        :param session: The asynchronous database session to use.
+        :param entity_ids: The ids to delete.
+        :return: The number of rows deleted.
+        """
+        if not entity_ids:
+            return 0
+        result = await cls.delete_where(
+            session,
+            col(cls.Model.id).in_(entity_ids),
+            col(cls.Model.retired_at).is_not(None),
+        )
+        return result.rowcount
+
 
 class NodeManager(RetirableManagerMixin, BaseSQLModelManager):
     """Manage Node operations, including retrieval, listing, and retirement.
@@ -383,6 +508,21 @@ class RetiredInclusiveTableManager(TableManager):
     """
 
     include_retired = True
+
+
+#: The order collection walks the retirable entities in, deepest first, paired
+#: with the entity name SEP addresses each type by. Deleting a descendant before
+#: its ancestor mirrors :meth:`RetirableManagerMixin._retirement_statements`, so
+#: an interrupted run can only ever leave deleted descendants under a surviving
+#: ancestor — never an orphan, and never a live row beneath a deleted ancestor.
+COLLECTION_ORDER: tuple[
+    tuple[RetirableEntityName, type[RetirableManagerMixin]], ...
+] = (
+    (RetirableEntityName.TABLE, RetiredInclusiveTableManager),
+    (RetirableEntityName.SCHEMA, RetiredInclusiveSchemaManager),
+    (RetirableEntityName.SERVICE, RetiredInclusiveServiceManager),
+    (RetirableEntityName.NODE, RetiredInclusiveNodeManager),
+)
 
 
 class HostSystemObservationManager(BaseSQLModelChildManager):
