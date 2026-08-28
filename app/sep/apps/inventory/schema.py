@@ -15,61 +15,21 @@
 
 """Define the AppSchema for the Inventory plugin."""
 
-from app.core.utils.fields import TCP_PORT_MAX, TCP_PORT_MIN
-from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.schema import (
     AppEntitySchema,
     AppSchema,
     Capabilities,
-    Choice,
-    ChoiceField,
     Column,
     ColumnFormat,
     DetailHighlightLanguage,
-    FormSection,
-    IntegerField,
     ListView,
-    StringField,
-    TextAreaField,
-    YamlField,
 )
-
-_SERVICE_TYPE_CHOICES = [
-    Choice(label=t.value.replace("_", " ").title(), value=t.value)
-    for t in ServiceTypeEnum
-]
 
 _nodes_entity = AppEntitySchema(
     name="nodes",
     display_name="Nodes",
     description="Physical or logical hosts tracked in inventory.",
-    forms=[
-        FormSection(
-            title="Node",
-            fields=[
-                StringField(name="address", label="Address", required=True),
-                StringField(name="name", label="Name", required=True),
-                StringField(
-                    name="external_id",
-                    label="External ID",
-                    required=True,
-                    description="Identifier of the entity in PMM.",
-                ),
-                ChoiceField(
-                    name="source",
-                    label="Source",
-                    required=True,
-                    choices=[Choice(label="PMM", value="pmm")],
-                ),
-                StringField(
-                    name="type",
-                    label="Type",
-                    default="generic",
-                    description="Node classification (for example generic, remote).",
-                ),
-            ],
-        ),
-    ],
+    forms=[],
     list_view=ListView(
         columns=[
             Column(key="name", label="Name", sortable=True),
@@ -77,11 +37,6 @@ _nodes_entity = AppEntitySchema(
             Column(key="type", label="Type", format=ColumnFormat.CHIP),
             Column(key="source", label="Source", format=ColumnFormat.CHIP),
             Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
-            Column(
-                key="_actions",
-                label="Actions",
-                format=ColumnFormat.ACTIONS,
-            ),
         ],
         default_sort="-created_at",
         server_side_query=True,
@@ -92,33 +47,7 @@ _services_entity = AppEntitySchema(
     name="services",
     display_name="Services",
     description="Database services attached to nodes.",
-    forms=[
-        FormSection(
-            title="Service",
-            fields=[
-                IntegerField(name="node_id", label="Node ID", required=True, ge=1),
-                StringField(name="name", label="Name", required=True),
-                ChoiceField(
-                    name="type",
-                    label="Service type",
-                    required=True,
-                    choices=_SERVICE_TYPE_CHOICES,
-                ),
-                IntegerField(
-                    name="port", label="Port", ge=TCP_PORT_MIN, le=TCP_PORT_MAX
-                ),
-                StringField(name="external_id", label="External ID", required=True),
-                StringField(name="environment", label="Environment"),
-                StringField(name="cluster", label="Cluster"),
-                StringField(name="replication_set", label="Replication set"),
-                YamlField(
-                    name="custom_labels",
-                    label="Custom labels",
-                    description="Optional YAML/JSON object of labels.",
-                ),
-            ],
-        ),
-    ],
+    forms=[],
     list_view=ListView(
         columns=[
             Column(key="name", label="Name", sortable=True),
@@ -127,11 +56,6 @@ _services_entity = AppEntitySchema(
             Column(key="environment", label="Environment"),
             Column(key="cluster", label="Cluster"),
             Column(key="replication_set", label="Replication set"),
-            Column(
-                key="_actions",
-                label="Actions",
-                format=ColumnFormat.ACTIONS,
-            ),
         ],
         default_sort="-name",
         server_side_query=True,
@@ -142,27 +66,12 @@ _schemas_entity = AppEntitySchema(
     name="schemas",
     display_name="Schemas",
     description="Database schemas within a service.",
-    forms=[
-        FormSection(
-            title="Schema",
-            fields=[
-                IntegerField(
-                    name="service_id", label="Service ID", required=True, ge=1
-                ),
-                StringField(name="name", label="Schema name", required=True),
-            ],
-        ),
-    ],
+    forms=[],
     list_view=ListView(
         columns=[
             Column(key="name", label="Name", sortable=True),
             Column(key="service_id", label="Service ID", sortable=True),
             Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
-            Column(
-                key="_actions",
-                label="Actions",
-                format=ColumnFormat.ACTIONS,
-            ),
         ],
         default_sort="-created_at",
         server_side_query=True,
@@ -173,38 +82,12 @@ _tables_entity = AppEntitySchema(
     name="tables",
     display_name="Tables",
     description="Tables within a schema.",
-    forms=[
-        FormSection(
-            title="Table",
-            fields=[
-                IntegerField(name="schema_id", label="Schema ID", required=True, ge=1),
-                StringField(name="name", label="Table name", required=True),
-                TextAreaField(
-                    name="create",
-                    label="CREATE statement",
-                    required=True,
-                    rows=6,
-                    description="DDL used to define the table.",
-                ),
-                YamlField(
-                    name="keys",
-                    label="Keys",
-                    required=True,
-                    description="JSON describing primary / unique keys.",
-                ),
-            ],
-        ),
-    ],
+    forms=[],
     list_view=ListView(
         columns=[
             Column(key="name", label="Name", sortable=True),
             Column(key="schema_id", label="Schema ID", sortable=True),
             Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
-            Column(
-                key="_actions",
-                label="Actions",
-                format=ColumnFormat.ACTIONS,
-            ),
         ],
         default_sort="-created_at",
         server_side_query=True,

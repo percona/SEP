@@ -175,6 +175,44 @@ def test_resolve_service_id_returns_none_for_ambiguous_address():
     )
 
 
+def test_ambiguous_address_does_not_fall_back_to_name():
+    """Leave a task unstamped when its address is shared, even by a named service.
+
+    Two databases behind one PostgreSQL server share that server's port, so the
+    address key is genuinely ambiguous. ``resolve`` fails closed on it and never
+    reaches the name lookup, which keeps the task's raw host/port metadata rather
+    than stamping an arbitrary one of two real services.
+    """
+    lookup = ServiceIdLookup.from_services(
+        [
+            _service(
+                1,
+                service_type=ServiceTypeEnum.POSTGRESQL,
+                name="pg-orders",
+                address="10.0.0.9",
+                port=5432,
+            ),
+            _service(
+                2,
+                service_type=ServiceTypeEnum.POSTGRESQL,
+                name="pg-billing",
+                address="10.0.0.9",
+                port=5432,
+            ),
+        ]
+    )
+
+    assert (
+        lookup.resolve(
+            service_type=ServiceTypeEnum.POSTGRESQL,
+            host="10.0.0.9",
+            port=5432,
+            service_name="pg-billing",
+        )
+        is None
+    )
+
+
 def test_meta_service_hints_prefers_connectivity_keys():
     """Read host/port from framework connectivity metadata before legacy stamps."""
     expected_port = 3307
