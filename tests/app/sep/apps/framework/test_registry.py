@@ -54,6 +54,7 @@ from app.sep.apps.report.config import health_report_settings, HealthReportSetti
 from app.sep.apps.tasks.schema import TASKS_PLUGIN_SCHEMA
 from app.sep.config import App, sep_settings
 from app.sep.models import AppLifecycleEnum, AppState
+from tests.app.db_schema import apply_schema
 from tests.app.sep.conftest import REDUCED_ACTIVATION
 
 
@@ -615,7 +616,7 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:

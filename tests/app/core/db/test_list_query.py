@@ -46,6 +46,7 @@ from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.pagination.deps import pagination_dep
 from app.core.utils import json_serializer
+from tests.app.db_schema import apply_schema
 
 RESOLVED_ORDER_BY_LENGTH = 2
 SEED_NAMES = ("alpha", "bravo", "charlie")
@@ -418,7 +419,7 @@ async def lq_session_fixture() -> AsyncSession:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:

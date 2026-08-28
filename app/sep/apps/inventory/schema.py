@@ -52,11 +52,13 @@ _nodes_entity = AppEntitySchema(
                 StringField(
                     name="external_id",
                     label="External ID",
-                    description="Optional external identifier (requires a source).",
+                    required=True,
+                    description="Identifier of the entity in PMM.",
                 ),
                 ChoiceField(
                     name="source",
                     label="Source",
+                    required=True,
                     choices=[Choice(label="PMM", value="pmm")],
                 ),
                 StringField(
@@ -105,7 +107,7 @@ _services_entity = AppEntitySchema(
                 IntegerField(
                     name="port", label="Port", ge=TCP_PORT_MIN, le=TCP_PORT_MAX
                 ),
-                StringField(name="external_id", label="External ID"),
+                StringField(name="external_id", label="External ID", required=True),
                 StringField(name="environment", label="Environment"),
                 StringField(name="cluster", label="Cluster"),
                 StringField(name="replication_set", label="Replication set"),

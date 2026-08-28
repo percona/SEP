@@ -135,7 +135,12 @@ def test_the_service_principal_can_still_update_a_node(
 
     response = bearer_client.put(
         f"/nodes/{node.id}",
-        json={"name": "renamed-by-sync", "address": node.address},
+        json={
+            "name": "renamed-by-sync",
+            "address": node.address,
+            "external_id": node.external_id,
+            "source": node.source,
+        },
         headers={"Authorization": f"Bearer {SERVICE_TOKEN}"},
     )
 

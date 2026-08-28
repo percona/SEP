@@ -3841,14 +3841,14 @@ export interface components {
        */
       created_at?: string;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
-      source?: components['schemas']['SourceEnum'] | null;
+      source: components['schemas']['SourceEnum'];
       /**
        * Type
        * @default generic
@@ -4029,7 +4029,7 @@ export interface components {
       /** Environment */
       environment?: string | null;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */

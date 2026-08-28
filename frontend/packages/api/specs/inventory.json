@@ -243,16 +243,9 @@
             "type": "string"
           },
           "external_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Id"
+            "minLength": 1,
+            "title": "External Id",
+            "type": "string"
           },
           "id": {
             "anyOf": [
@@ -283,14 +276,7 @@
             "title": "Retired At"
           },
           "source": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SourceEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/SourceEnum"
           },
           "type": {
             "default": "generic",
@@ -314,7 +300,9 @@
         "required": [
           "id",
           "address",
-          "name"
+          "name",
+          "external_id",
+          "source"
         ],
         "title": "Node",
         "type": "object"
@@ -333,16 +321,9 @@
             "type": "string"
           },
           "external_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Id"
+            "minLength": 1,
+            "title": "External Id",
+            "type": "string"
           },
           "id": {
             "anyOf": [
@@ -380,14 +361,7 @@
             "type": "array"
           },
           "source": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SourceEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/SourceEnum"
           },
           "type": {
             "default": "generic",
@@ -411,6 +385,8 @@
         "required": [
           "address",
           "name",
+          "external_id",
+          "source",
           "id",
           "services"
         ],
@@ -418,7 +394,7 @@
         "type": "object"
       },
       "NodeWrite": {
-        "description": "Define the model for writing node data to the inventory.\n\n:param address: The network address of the node.\n:param name: The name of the node.\n:param external_id: An external identifier for the node, indexed for quick lookup.\n    Defaults to None.\n:param source: The source from which the node information is derived. Indexed for\n    quick lookup. Defaults to None.\n:param type: The type of the node (e.g., remote, generic). Defaults to \"generic\".",
+        "description": "Define the model for writing node data to the inventory.\n\n:param address: The network address of the node.\n:param name: The name of the node.\n:param external_id: An external identifier for the node, indexed for quick lookup.\n:param source: The source from which the node information is derived. Indexed for\n    quick lookup.\n:param type: The type of the node (e.g., remote, generic). Defaults to \"generic\".",
         "properties": {
           "address": {
             "minLength": 1,
@@ -426,16 +402,9 @@
             "type": "string"
           },
           "external_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Id"
+            "minLength": 1,
+            "title": "External Id",
+            "type": "string"
           },
           "name": {
             "minLength": 1,
@@ -443,14 +412,7 @@
             "type": "string"
           },
           "source": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SourceEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/SourceEnum"
           },
           "type": {
             "default": "generic",
@@ -461,7 +423,9 @@
         },
         "required": [
           "address",
-          "name"
+          "name",
+          "external_id",
+          "source"
         ],
         "title": "NodeWrite",
         "type": "object"
@@ -982,16 +946,9 @@
             "title": "Environment"
           },
           "external_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Id"
+            "minLength": 1,
+            "title": "External Id",
+            "type": "string"
           },
           "id": {
             "anyOf": [
@@ -1064,6 +1021,7 @@
           }
         },
         "required": [
+          "external_id",
           "name",
           "type",
           "node_id",
@@ -1115,16 +1073,9 @@
             "title": "Environment"
           },
           "external_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Id"
+            "minLength": 1,
+            "title": "External Id",
+            "type": "string"
           },
           "id": {
             "anyOf": [
@@ -1207,6 +1158,7 @@
           }
         },
         "required": [
+          "external_id",
           "name",
           "type",
           "node_id",
@@ -1260,16 +1212,9 @@
             "title": "Environment"
           },
           "external_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Id"
+            "minLength": 1,
+            "title": "External Id",
+            "type": "string"
           },
           "id": {
             "anyOf": [
@@ -1352,6 +1297,7 @@
           }
         },
         "required": [
+          "external_id",
           "name",
           "type",
           "node_id",
@@ -1464,7 +1410,7 @@
         "type": "string"
       },
       "ServiceWrite": {
-        "description": "Define the model for writing service data to the inventory.\n\n:param external_id: An external identifier for the service, indexed for quick\n    lookup. Defaults to None.\n:type external_id: NonEmptyStr | None\n:param name: The name of the service.\n:type name: NonEmptyStr\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:type type: ServiceTypeEnum\n:param port: The port number on which the service is running. Defaults to None.\n:type port: int | None\n:param environment: The environment in which the service is running (e.g.,\n    production, staging). Defaults to None.\n:type environment: str | None\n:param cluster: The cluster in which the service is running. Defaults to None.\n:type cluster: str | None\n:param replication_set: The replication set in which the service is running. Defaults to None.\n:type replication_set: str | None\n:param custom_labels: Custom labels associated with the service. Defaults to None.\n:param node_id: The foreign key referencing the node to which the service belongs.\n    Defaults to None.\n:type node_id: int | None",
+        "description": "Define the model for writing service data to the inventory.\n\n:param external_id: An external identifier for the service, indexed for quick\n    lookup.\n:param name: The name of the service.\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:param port: The port number on which the service is running. Defaults to None.\n:param environment: The environment in which the service is running (e.g.,\n    production, staging). Defaults to None.\n:param cluster: The cluster in which the service is running. Defaults to None.\n:param replication_set: The replication set in which the service is running. Defaults to None.\n:param custom_labels: Custom labels associated with the service. Defaults to None.\n:param node_id: The foreign key referencing the node to which the service belongs.\n    Defaults to None.",
         "properties": {
           "cluster": {
             "anyOf": [
@@ -1501,16 +1447,9 @@
             "title": "Environment"
           },
           "external_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "External Id"
+            "minLength": 1,
+            "title": "External Id",
+            "type": "string"
           },
           "name": {
             "minLength": 1,
@@ -1555,6 +1494,7 @@
           }
         },
         "required": [
+          "external_id",
           "name",
           "type"
         ],

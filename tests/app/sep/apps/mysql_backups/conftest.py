@@ -77,6 +77,7 @@ def service_payload(
     """Build a minimal inventory service payload a service-resolving route accepts."""
     return {
         "id": service_id,
+        "service_id": f"/service_id/{service_id}",
         "name": name,
         "type": service_type.value,
         "node_id": 1,

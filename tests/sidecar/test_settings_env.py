@@ -720,13 +720,15 @@ class TestBlankNamesWhoseGuardMightNeverFire:
     ``export_canonical`` only clears a blank when it actually runs, and four
     guards skip calling it whenever their raw input is absent. Two more names
     -- ``SEP_INTERNAL_TOKEN`` and ``BASE_URL`` -- have no guard at all and are
-    never touched by the script. All ten have to clear regardless.
+    never touched by the script. Every canonical name the script manages must
+    clear blanks unconditionally so a mounted secret file is never shadowed.
     """
 
     ALL_BLANK_CLEARED_NAMES: tuple[str, ...] = (
         "SEP__DATABASE__PASSWORD",
         "INVENTORY__DATABASE__PASSWORD",
         "TASKS__DATABASE__PASSWORD",
+        "DATABASE__PASSWORD",
         "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN",
         "PMM__API_KEY",
         "PMM__ENDPOINT",
