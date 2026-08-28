@@ -26,7 +26,7 @@ from app.inventory.crud import (
     RetiredInclusiveServiceManager,
     ServiceManager,
 )
-from app.inventory.models import Node, ServiceTypeEnum
+from app.inventory.models import Node, ServiceTypeEnum, SourceEnum
 from app.sep.apps.framework.form_backfill_inventory import (
     default_port_for_service_type,
     load_service_id_lookup,
@@ -364,7 +364,15 @@ async def test_collecting_a_service_leaves_the_legacy_backfill_unchanged(session
     introduces no new degradation here, which is why
     ``resolve_mysql_service``'s contract needed no amendment either.
     """
-    node = await NodeManager.create(session, Node(address="10.0.0.7", name="db-node"))
+    node = await NodeManager.create(
+        session,
+        Node(
+            address="10.0.0.7",
+            name="db-node",
+            external_id="node-10-0-0-7",
+            source=SourceEnum.PMM,
+        ),
+    )
     service = await ServiceManager.create(
         session,
         ServiceWriteFactory.build(type=ServiceTypeEnum.MYSQL, port=3306),
