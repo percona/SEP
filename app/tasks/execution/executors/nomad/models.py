@@ -97,6 +97,13 @@ NOMAD_DEAD_JOB_STATUS = "dead"
 NOMAD_DEAD_TASK_STATE = "dead"
 NOMAD_RUNNING_TASK_STATE = "running"
 _CAPTURE_HOLD_RELEASE_SIGNAL = "SIGTERM"
+# The hold is a poststop step, so it stays ``pending`` for a sub-second after
+# Nomad kills the payload, and a signal delivered then is dropped. These bound
+# that start window and are deliberately not operator-settable: a budget that
+# could reach zero would silently forfeit the release, leaving the allocation
+# held until its own deadline.
+_CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS = 5
+_CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS = 0.5
 # Internal states returned by :meth:`NomadExecutor._consume_nomad_log_stream` (not Nomad task states).
 _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
@@ -964,11 +971,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         allocation: the job goes ``dead`` while the allocation stays ``running``
         for the rest of the hold's deadline. Nothing is being captured on this
         path — the stop route persists no logs — so the hold is released
-        explicitly. The release polls for the hold to start, because the
-        poststop step only runs once Nomad has finished killing the payload:
-        signalling straight after the deregister would almost always find it
-        still ``pending``. A hold that never starts within that window still
-        expires on its own deadline.
+        explicitly. Signalling straight after the deregister would almost always
+        find the poststop step still ``pending``, which is why
+        :meth:`_release_capture_hold` polls for it to start. A hold that never
+        starts within that budget still expires on its own deadline.
 
         :param queue_item: The task history record for tracking this execution.
         :raises ValueError: When the task history carries no Nomad job id.
@@ -985,7 +991,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 queue_item.id,
             )
             return
-        await self._release_capture_hold(alloc, await_hold_start=True)
+        await self._release_capture_hold(alloc)
 
     def _fetch_step_log_delta(
         self,
@@ -1553,42 +1559,33 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     producer_epoch=alloc_epoch,
                 )
 
-    async def _release_capture_hold(
-        self, alloc: dict[str, Any], *, await_hold_start: bool = False
-    ) -> None:
+    async def _release_capture_hold(self, alloc: dict[str, Any]) -> None:
         """Signal the log-capture-hold step so Nomad may collect the allocation.
 
         Re-reads the allocation first, because ``alloc`` is stale by the time a
         release is due and the hold only reaches ``running`` shortly after the
         last producing step dies. This is the only chance to release: the caller
         has already stamped a terminal status, and the sync sweep only revisits
-        ``RUNNING`` histories. A hold still not running when the attempts run out
-        keeps the allocation until its own deadline, which is the bound the
-        design accepts.
-
-        How much slack the re-read needs differs by caller, which is what
-        ``await_hold_start`` selects. The sync path arrives after the terminal
-        drain's sleeps, so one read almost always finds the hold running. A stop
-        arrives immediately after deregistering, *before* Nomad has killed the
-        payload, so the poststop hold is typically still ``pending`` and a single
-        read would forfeit the release it exists to issue.
+        ``RUNNING`` histories. So the re-read polls on
+        :data:`_CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS` and
+        :data:`_CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS` to wait out the hold's poststop
+        start window, which both callers can land inside. The budget is only
+        ever spent there: a hold already running is signalled on the first read,
+        and one past signalling is abandoned on it. A hold still not running
+        when the attempts run out keeps the allocation until its own deadline,
+        which is the bound the design accepts.
 
         A failed release is not a failed capture. The bytes are already
         persisted by the time this runs, and the step self-expires at its
         deadline, so the failure is logged and the verdicts stand.
 
         :param alloc: The Nomad allocation dict read at the start of the sync.
-        :param await_hold_start: Whether to poll for a hold that has not started
-            yet, on the terminal drain's cadence. ``False`` reads once.
         """
         alloc_id = alloc["ID"]
-        attempts = (
-            max(1, self.terminal_log_drain_max_attempts) if await_hold_start else 1
-        )
         hold_state = None
-        for attempt in range(attempts):
+        for attempt in range(_CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS):
             if attempt:
-                await asyncio.sleep(self.terminal_log_drain_interval)
+                await asyncio.sleep(_CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS)
             try:
                 current = self.backend.allocation.get_allocation(alloc_id)
             except BaseNomadException:
