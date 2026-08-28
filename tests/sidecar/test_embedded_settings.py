@@ -74,7 +74,7 @@ past, so the block is matched by its container instead.
 SHARED_DATABASE_NAME = "sep"
 """The one database PMM's ``PMM_ENABLE_SEP`` provisions for all three services."""
 
-ALLOWLIST_SIZE = 12
+ALLOWLIST_SIZE = 13
 
 #: The inventory-sync cadence the baked profile provisions.
 EMBEDDED_INVENTORY_SYNC_MINUTES = 15

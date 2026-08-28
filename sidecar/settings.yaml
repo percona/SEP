@@ -45,6 +45,7 @@ default:
       - AnonymizerSettings.DEFAULT_ENTITIES
       - TasksSettings.PRE_EXECUTION_CONNECTIVITY_CHECK
       - TasksSettings.LOG_RETENTION_DAYS
+      - TasksSettings.PENDING_ALLOCATION_TIMEOUT_SECONDS
 
   AUTH:
     PROVIDER:
