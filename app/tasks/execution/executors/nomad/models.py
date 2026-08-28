@@ -1436,6 +1436,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         """
         if queue_item.started_at is None:
             return False
+        # Lazy import keeps app.tasks.config out of the nomad.models import
+        # chain (config imports NomadExecutor back from this package).
         from app.tasks import config as tasks_config
 
         bound = tasks_config.tasks_settings.PENDING_ALLOCATION_TIMEOUT_SECONDS
