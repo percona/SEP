@@ -281,3 +281,72 @@ class TestListForServiceKey:
 
         assert page.total == 0
         assert page.items == []
+
+
+class TestReferencedServiceIds:
+    """Cover the inventory ids the catalog declares as still resolvable."""
+
+    @pytest.mark.asyncio
+    async def test_returns_the_distinct_recorded_ids(self, session) -> None:
+        """Collapse repeated runs of one service to a single id."""
+        for task_history_id, service_id in ((1, 7), (2, 7), (3, 9)):
+            await MysqlBackupRunManager.save(
+                session,
+                MysqlBackupRun(
+                    task_history_id=task_history_id,
+                    service_name="svc-a",
+                    service_id=service_id,
+                    backup_type="M",
+                ),
+            )
+
+        assert await MysqlBackupRunManager.referenced_service_ids(session) == {7, 9}
+
+    @pytest.mark.asyncio
+    async def test_drops_rows_recorded_without_an_id(self, session) -> None:
+        """Skip a pre-snapshot row that carries only the service name."""
+        await MysqlBackupRunManager.save(
+            session,
+            MysqlBackupRun(
+                task_history_id=1,
+                service_name="svc-a",
+                service_id=None,
+                backup_type="M",
+            ),
+        )
+
+        assert await MysqlBackupRunManager.referenced_service_ids(session) == set()
+
+    @pytest.mark.asyncio
+    async def test_empty_catalog_references_nothing(self, session) -> None:
+        """Return an empty set rather than raising when no run was recorded."""
+        assert await MysqlBackupRunManager.referenced_service_ids(session) == set()
+
+    @pytest.mark.asyncio
+    async def test_a_referenced_service_still_resolves_after_collection(
+        self, session
+    ) -> None:
+        """Keep the catalog answering for a service collection had to retain.
+
+        The catalog's contract is that a retired service still resolves, because
+        the catalog is a historical record. Collection upholds it by retaining
+        any service a run points at rather than by amending the contract, so the
+        id the catalog queries by must survive a run that collected its peers.
+        """
+        await MysqlBackupRunManager.save(
+            session,
+            MysqlBackupRun(
+                task_history_id=1,
+                service_name="svc-a",
+                service_id=7,
+                backup_type="M",
+            ),
+        )
+        retained = await MysqlBackupRunManager.referenced_service_ids(session)
+        assert retained == {7}
+
+        page = await MysqlBackupRunManager.list_for_service(
+            session, _key("svc-a", 7), pagination=_PAGE
+        )
+
+        assert [run.service_id for run in page.items] == [7]

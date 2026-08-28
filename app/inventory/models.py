@@ -18,8 +18,8 @@
 from enum import auto, StrEnum
 from typing import Any, Self
 
-from pydantic import model_validator
-from sqlalchemy import Column, Index, JSON, Text
+from pydantic import BaseModel, ConfigDict, model_validator, PositiveInt
+from sqlalchemy import Column, Index, JSON, Text, text
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
@@ -27,7 +27,12 @@ from sqlmodel import Relationship, SQLModel
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
 from app.core.utils.fields import ArbitraryMapping, NonEmptyStr, UTCDatetime
-from app.inventory.constants import ACTIVE_RETIREMENT_KEY
+from app.inventory.constants import ACTIVE_RETIREMENT_KEY, RetirableEntityName
+
+#: Predicate narrowing the collection-scan indexes to the tombstones alone.
+#: Active rows are the overwhelming majority and can never be returned by that
+#: scan, so keeping them out holds the index size to the retired set.
+RETIRED_ROWS_ONLY = text("retired_at IS NOT NULL")
 
 
 class RetiredAtBase(SQLModel):
@@ -106,46 +111,22 @@ class NodeBase(SQLModel):
     """Define the base structure for node-related operations.
 
     :param address: The network address of the node.
-    :type address: NonEmptyStr
     :param name: The name of the node.
-    :type name: NonEmptyStr
     :param external_id: An external identifier for the node, indexed for quick lookup.
-        Defaults to None.
-    :type external_id: NonEmptyStr | None
     :param source: The source from which the node information is derived. Indexed for
-        quick lookup. Defaults to None.
-    :type source: SourceEnum | None
+        quick lookup.
     :param type: The type of the node (e.g., remote, generic). Defaults to "generic".
-    :type type: NonEmptyStr
     """
 
     address: NonEmptyStr
     name: NonEmptyStr
-    external_id: NonEmptyStr | None = SQLField(default=None, index=True)
-    source: SourceEnum | None = SQLField(
-        default=None,
-        sa_column=Column(EnumField(SourceEnum)),
+    external_id: NonEmptyStr = SQLField(index=True)
+    source: SourceEnum = SQLField(
+        sa_column=Column(EnumField(SourceEnum), nullable=False),
     )
     type: NonEmptyStr = SQLField(
         default="generic"
     )  # TODO: Enum with allowed values  # noqa: TD002, TD003
-
-    @model_validator(mode="after")
-    def validate_external_id_source(self) -> Self:
-        """Ensure that external_id is set only if source is provided.
-
-        Raises
-        ------
-        ValueError
-            If ``external_id`` is provided without a corresponding ``source``.
-
-        :return: The validated instance.
-        :rtype: Self
-
-        """
-        if self.external_id is not None and self.source is None:
-            raise ValueError("Can't set external_id if source is None")
-        return self
 
 
 class Node(NodeBase, RetirableSQLModel, table=True):
@@ -172,6 +153,12 @@ class Node(NodeBase, RetirableSQLModel, table=True):
             "retirement_key",
             unique=True,
         ),
+        Index(
+            "ix_node_retired_at_not_null",
+            "retired_at",
+            postgresql_where=RETIRED_ROWS_ONLY,
+            sqlite_where=RETIRED_ROWS_ONLY,
+        ),
     )
     services: list["Service"] = Relationship(back_populates="node", cascade_delete=True)
 
@@ -182,9 +169,8 @@ class NodeWrite(NodeBase):
     :param address: The network address of the node.
     :param name: The name of the node.
     :param external_id: An external identifier for the node, indexed for quick lookup.
-        Defaults to None.
     :param source: The source from which the node information is derived. Indexed for
-        quick lookup. Defaults to None.
+        quick lookup.
     :param type: The type of the node (e.g., remote, generic). Defaults to "generic".
     """
 
@@ -214,7 +200,7 @@ class ServiceBase(SQLModel):
     """Define the base structure for service-related operations.
 
     :param external_id: An external identifier for the service, indexed for quick
-        lookup. Defaults to None.
+        lookup.
     :param name: The name of the service.
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
     :param port: The port number on which the service is running. Defaults to None.
@@ -226,10 +212,7 @@ class ServiceBase(SQLModel):
     :param node_id: The foreign key referencing the node to which the service belongs.
     """
 
-    external_id: NonEmptyStr | None = SQLField(
-        default=None,
-        index=True,
-    )  # TODO: validate external_id not null if node source is defined  # noqa: TD002, TD003
+    external_id: NonEmptyStr = SQLField(index=True)
     name: NonEmptyStr
     type: ServiceTypeEnum = SQLField(
         sa_column=Column(EnumField(ServiceTypeEnum, native_enum=False), nullable=False),
@@ -251,25 +234,17 @@ class ServiceWrite(ServiceBase):
     """Define the model for writing service data to the inventory.
 
     :param external_id: An external identifier for the service, indexed for quick
-        lookup. Defaults to None.
-    :type external_id: NonEmptyStr | None
+        lookup.
     :param name: The name of the service.
-    :type name: NonEmptyStr
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-    :type type: ServiceTypeEnum
     :param port: The port number on which the service is running. Defaults to None.
-    :type port: int | None
     :param environment: The environment in which the service is running (e.g.,
         production, staging). Defaults to None.
-    :type environment: str | None
     :param cluster: The cluster in which the service is running. Defaults to None.
-    :type cluster: str | None
     :param replication_set: The replication set in which the service is running. Defaults to None.
-    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
     :param node_id: The foreign key referencing the node to which the service belongs.
         Defaults to None.
-    :type node_id: int | None
     """
 
     node_id: int | None = SQLField(
@@ -292,16 +267,14 @@ class Service(RetirableSQLModel, ServiceBase, table=True):
         node_id, as defined by composite index ix_service_external_id_node_id.
     :param name: The name of the service.
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-    :param port: The port number on which the service is running. Must be unique for
-        node_id, as defined by composite index ix_service_port_node_id.
+    :param port: The port number on which the service is running.
     :param environment: The environment in which the service is running, if set.
     :param cluster: The cluster in which the service is running, if set.
     :param replication_set: The replication set in which the service is running, if set.
     :param custom_labels: Custom labels associated with the service, if set.
     :param node_id: The unique identifier of the node on which the service is running.
         Must be unique for external_id, as defined by composite index
-        ix_service_external_id_node_id, and for port, as defined by composite index
-        ix_service_port_node_id.
+        ix_service_external_id_node_id.
     :param node: The node to which the service is associated.
     :param retired_at: When the service stopped being reported upstream, or None
         while it is active.
@@ -318,11 +291,10 @@ class Service(RetirableSQLModel, ServiceBase, table=True):
             unique=True,
         ),
         Index(
-            "ix_service_port_node_id",
-            "port",
-            "node_id",
-            "retirement_key",
-            unique=True,
+            "ix_service_retired_at_not_null",
+            "retired_at",
+            postgresql_where=RETIRED_ROWS_ONLY,
+            sqlite_where=RETIRED_ROWS_ONLY,
         ),
     )
 
@@ -423,6 +395,12 @@ class Schema(RetirableSQLModel, SchemaBase, table=True):
             "service_id",
             "retirement_key",
             unique=True,
+        ),
+        Index(
+            "ix_schema_retired_at_not_null",
+            "retired_at",
+            postgresql_where=RETIRED_ROWS_ONLY,
+            sqlite_where=RETIRED_ROWS_ONLY,
         ),
     )
     service: Service = Relationship(back_populates="schemas")
@@ -541,6 +519,12 @@ class Table(RetirableSQLModel, TableBase, table=True):
             "schema_id",
             "retirement_key",
             unique=True,
+        ),
+        Index(
+            "ix_table_retired_at_not_null",
+            "retired_at",
+            postgresql_where=RETIRED_ROWS_ONLY,
+            sqlite_where=RETIRED_ROWS_ONLY,
         ),
     )
     database: Schema = Relationship(back_populates="tables")
@@ -771,3 +755,44 @@ class ServiceSystemObservationResponse(BaseSQLModel, ServiceSystemObservationBas
     :param observed_at: When this observation was collected.
     :type observed_at: UTCDatetime
     """
+
+
+class InventoryCollectWrite(BaseModel):
+    """Ask the inventory service to collect the tombstones nothing resolves.
+
+    Unknown fields are rejected with HTTP 422. This request deletes rows
+    irreversibly, so a client typo must never be read as an omitted field: a
+    misspelled ``keep`` would otherwise arrive as an empty retained set and a
+    misspelled ``dry_run`` as a real delete.
+
+    :param retired_before: The cutoff a tombstone must predate to be eligible.
+        The caller pins one value for a whole run so successive batches cannot
+        drift into collecting a tombstone that was too young a moment earlier.
+    :param keep: The ids the caller knows are still referenced, per entity type.
+        Ancestors of a kept entity are retained without being listed.
+    :param limit: The most entities to collect per type in this call.
+    :param dry_run: Whether to report the eligible ids without deleting them.
+        Defaults to reporting: on an irreversible endpoint the mode a caller
+        reaches by omission is the one that cannot destroy anything.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    retired_before: UTCDatetime
+    keep: dict[RetirableEntityName, list[int]] = {}
+    limit: PositiveInt = 500
+    dry_run: bool = True
+
+
+class InventoryCollectResponse(BaseModel):
+    """Report what a collection call deleted, or would have deleted.
+
+    :param deleted: The collected ids per entity type, exhaustive for this
+        call. On a dry run these are the ids the equivalent real call would
+        delete. A type the walk stopped before reporting is empty rather than
+        absent.
+    :param remaining: Whether any entity type filled its ``limit``, meaning more
+        tombstones are waiting for the next batch.
+    """
+
+    deleted: dict[RetirableEntityName, list[int]]
+    remaining: bool

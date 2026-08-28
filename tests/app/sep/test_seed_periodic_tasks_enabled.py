@@ -37,6 +37,7 @@ from app.core.celery.utils import (
 )
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
+from tests.app.db_schema import apply_schema
 
 TASK_NAME = "sep__sync_snippets"
 
@@ -52,7 +53,7 @@ async def beat_maker_fixture():
     )
     engine = engine.execution_options(schema_translate_map={"celery_schema": None})
     async with engine.begin() as conn:
-        await conn.run_sync(PeriodicTask.__table__.metadata.create_all)
+        await apply_schema(conn, PeriodicTask.__table__.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:

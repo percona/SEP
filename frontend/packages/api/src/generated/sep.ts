@@ -1514,10 +1514,12 @@ export interface paths {
      * Inventory Plugin Tasks
      * @description Return the list of periodic task names for the Inventory plugin.
      *
-     *     Hard-coded because the Inventory plugin has exactly one periodic task
-     *     (``inventory-sync``). The shape matches what the React
-     *     ``usePluginTasks('inventory')`` hook expects: a list of objects with at
+     *     Hard-coded because the Inventory plugin's periodic tasks are a fixed pair
+     *     (``inventory-sync`` and ``inventory-collection``). The shape matches what the
+     *     React ``usePluginTasks('inventory')`` hook expects: a list of objects with at
      *     minimum a ``name`` key.
+     *
+     *     :return: The plugin's periodic tasks, each with its name and display name.
      */
     get: operations['inventory_inventory_plugin_tasks_api_apps_inventory__get'];
     put?: never;
@@ -1762,11 +1764,7 @@ export interface paths {
      */
     get: operations['inventory_inventory_list_entity_api_apps_inventory__entity___get'];
     put?: never;
-    /**
-     * Inventory Create Entity
-     * @description Create an inventory node, service, schema, or table.
-     */
-    post: operations['inventory_inventory_create_entity_api_apps_inventory__entity___post'];
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1785,25 +1783,9 @@ export interface paths {
      * @description Retrieve a single inventory node, service, schema, or table.
      */
     get: operations['inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get'];
-    /**
-     * Inventory Update Entity
-     * @description Update an inventory node, service, schema, or table.
-     */
-    put: operations['inventory_inventory_update_entity_api_apps_inventory__entity___item_id__put'];
+    put?: never;
     post?: never;
-    /**
-     * Inventory Delete Entity
-     * @description Retire an inventory node, service, schema, or table, and its descendants.
-     *
-     *     The row and its subtree survive: they drop out of every active read and stay
-     *     reachable through the Inventory API's ``include_retired`` opt-in.
-     *
-     *     :param entity: The inventory entity kind addressed by the path.
-     *     :param item_id: The identifier of the entity to retire.
-     *     :param inventory_api: The Inventory API client the call is proxied through.
-     *     :return: An empty 204 response.
-     */
-    delete: operations['inventory_inventory_delete_entity_api_apps_inventory__entity___item_id__delete'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -3839,14 +3821,14 @@ export interface components {
        */
       created_at?: string;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
-      source?: components['schemas']['SourceEnum'] | null;
+      source: components['schemas']['SourceEnum'];
       /**
        * Type
        * @default generic
@@ -4027,7 +4009,7 @@ export interface components {
       /** Environment */
       environment?: string | null;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
@@ -13102,102 +13084,7 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_create_entity_api_apps_inventory__entity___post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
   inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-        item_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_update_entity_api_apps_inventory__entity___item_id__put: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-        item_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_delete_entity_api_apps_inventory__entity___item_id__delete: {
     parameters: {
       query?: never;
       header?: never;

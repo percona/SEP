@@ -19,7 +19,6 @@ import pytest
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.exceptions import HTTPConflictException
 from app.core.utils.date_time import utc_now
 from app.inventory.constants import ACTIVE_RETIREMENT_KEY
 from app.inventory.crud import RetiredInclusiveServiceManager, ServiceManager
@@ -29,17 +28,38 @@ from app.inventory.models import (
     Service,
     ServiceSystemObservationWrite,
     ServiceTypeEnum,
+    ServiceWrite,
     SourceEnum,
 )
 from tests.app.factories import ServiceWriteFactory
 
 
-class TestNodeBaseValidator:
-    """Test the NodeBase.validate_external_id_source model validator."""
+class TestNodeWriteMandatoryOrigin:
+    """Test that NodeWrite requires a PMM origin."""
 
-    def test_external_id_without_source_raises(self) -> None:
-        """Raise ValidationError when external_id is set without source."""
+    def test_missing_external_id_raises(self) -> None:
+        """Raise ValidationError when external_id is absent."""
         with pytest.raises(ValidationError, match="external_id"):
+            NodeWrite(address="10.0.0.1", name="node1", source=SourceEnum.PMM)
+
+    def test_missing_source_raises(self) -> None:
+        """Raise ValidationError when source is absent."""
+        with pytest.raises(ValidationError, match="source"):
+            NodeWrite(address="10.0.0.1", name="node1", external_id="abc")
+
+    def test_null_external_id_raises(self) -> None:
+        """Raise ValidationError when external_id is explicitly None."""
+        with pytest.raises(ValidationError, match="external_id"):
+            NodeWrite(
+                address="10.0.0.1",
+                name="node1",
+                external_id=None,
+                source=SourceEnum.PMM,
+            )
+
+    def test_null_source_raises(self) -> None:
+        """Raise ValidationError when source is explicitly None."""
+        with pytest.raises(ValidationError, match="source"):
             NodeWrite(
                 address="10.0.0.1",
                 name="node1",
@@ -47,8 +67,8 @@ class TestNodeBaseValidator:
                 source=None,
             )
 
-    def test_external_id_with_source_succeeds(self) -> None:
-        """Accept external_id when source is also provided."""
+    def test_full_origin_succeeds(self) -> None:
+        """Accept a node carrying both external_id and source."""
         node = NodeWrite(
             address="10.0.0.1",
             name="node1",
@@ -58,14 +78,34 @@ class TestNodeBaseValidator:
         assert node.external_id == "abc"
         assert node.source == SourceEnum.PMM
 
-    def test_no_external_id_no_source_succeeds(self) -> None:
-        """Accept when neither external_id nor source is set."""
-        node = NodeWrite(
-            address="10.0.0.1",
-            name="node1",
+
+class TestServiceWriteMandatoryOrigin:
+    """Test that ServiceWrite requires an external_id."""
+
+    def test_missing_external_id_raises(self) -> None:
+        """Raise ValidationError when external_id is absent."""
+        with pytest.raises(ValidationError, match="external_id"):
+            ServiceWrite(name="svc", type=ServiceTypeEnum.MYSQL, node_id=1)
+
+    def test_null_external_id_raises(self) -> None:
+        """Raise ValidationError when external_id is explicitly None."""
+        with pytest.raises(ValidationError, match="external_id"):
+            ServiceWrite(
+                external_id=None,
+                name="svc",
+                type=ServiceTypeEnum.MYSQL,
+                node_id=1,
+            )
+
+    def test_full_origin_succeeds(self) -> None:
+        """Accept a service carrying an external_id."""
+        service = ServiceWrite(
+            external_id="svc-1",
+            name="svc",
+            type=ServiceTypeEnum.MYSQL,
+            node_id=1,
         )
-        assert node.external_id is None
-        assert node.source is None
+        assert service.external_id == "svc-1"
 
 
 class TestHostSystemObservationBaseValidator:
@@ -158,16 +198,23 @@ class TestRetirementKeyUniqueness:
         assert ACTIVE_RETIREMENT_KEY
 
     @pytest.mark.asyncio
-    async def test_second_active_service_on_one_key_conflicts(
+    async def test_two_active_services_on_one_port_are_both_admitted(
         self, session: AsyncSession, service: Service
     ) -> None:
-        """Reject a second active service on one node and port."""
-        with pytest.raises(HTTPConflictException):
-            await ServiceManager.create(
-                session,
-                ServiceWriteFactory.build(port=service.port),
-                node_id=service.node_id,
-            )
+        """Admit a second active service sharing a node and port.
+
+        Several databases behind one PostgreSQL or MySQL server legally share
+        that server's port, and every service now carries its own external
+        identity, so nothing about the pair collides.
+        """
+        second = await ServiceManager.create(
+            session,
+            ServiceWriteFactory.build(port=service.port),
+            node_id=service.node_id,
+        )
+        assert second.id != service.id
+        assert second.port == service.port
+        assert second.external_id != service.external_id
 
     @pytest.mark.asyncio
     async def test_replacement_over_a_tombstone_is_admitted(

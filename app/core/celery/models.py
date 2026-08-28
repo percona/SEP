@@ -15,10 +15,16 @@
 
 """Define models for Celery periodic tasks and schedules."""
 
-from typing import Any
+from typing import Annotated, Any
 from zoneinfo import available_timezones
 
-from pydantic import BaseModel, field_validator, model_validator, PositiveInt
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    field_validator,
+    model_validator,
+    PositiveInt,
+)
 from sqlalchemy_celery_beat import CrontabSchedule as BaseCrontabSchedule
 from sqlalchemy_celery_beat.models import Period
 
@@ -71,6 +77,42 @@ class IntervalSchedule(BaseModel):
         if self.every == 1:
             return str_schedule[:-1]
         return str_schedule
+
+
+#: The periods an operator-settable interval may use. The periodic-task write
+#: path enforces a one-minute floor, so a shorter period seeds a beat row the UI
+#: can then neither toggle nor edit. Narrower than :class:`Period` on purpose:
+#: an internally seeded schedule may still run sub-minute (``sync_running_tasks``
+#: does), which is why the bound lives here rather than on
+#: :class:`IntervalSchedule` itself.
+MANAGEABLE_PERIODS: frozenset[Period] = frozenset(
+    {Period.DAYS, Period.HOURS, Period.MINUTES}
+)
+
+
+def reject_unmanageable_period(value: IntervalSchedule) -> IntervalSchedule:
+    """Reject an interval whose period the periodic-task write path refuses.
+
+    :param value: The interval schedule to check.
+    :return: The unchanged schedule.
+    :raises ValueError: If the period is outside :data:`MANAGEABLE_PERIODS`.
+    """
+    if value.period not in MANAGEABLE_PERIODS:
+        valid = ", ".join(
+            f"'{period.value}'" for period in Period if period in MANAGEABLE_PERIODS
+        )
+        raise ValueError(
+            f"Invalid period '{value.period}' for IntervalSchedule. Valid periods"
+            f" are: {valid}."
+        )
+    return value
+
+
+#: An :class:`IntervalSchedule` an operator may also manage from the UI. Use it
+#: for any settings field naming a seeded schedule's cadence.
+ManageableInterval = Annotated[
+    IntervalSchedule, AfterValidator(reject_unmanageable_period)
+]
 
 
 class CrontabSchedule(BaseModel):

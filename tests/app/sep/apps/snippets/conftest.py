@@ -35,6 +35,7 @@ from app.sep.deps import (
 )
 from app.sep.main import sep_app
 from app.sep.snippets.config import snippets_settings
+from tests.app.db_schema import apply_schema
 
 
 @pytest_asyncio.fixture(name="session")
@@ -46,7 +47,7 @@ async def session_fixture() -> AsyncSession:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:

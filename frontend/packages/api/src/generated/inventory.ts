@@ -148,6 +148,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/collection/collect': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Collect Retired Entities
+     * @description Delete the tombstones the caller's retained set does not cover.
+     *
+     *     Entities are walked deepest-first — table, schema, service, node — so an
+     *     interrupted run can only leave deleted descendants under a surviving
+     *     ancestor rather than an orphan.
+     *
+     *     A type that fills its ``limit`` ends the walk. Deleting an ancestor cascades
+     *     to descendants the cap had excluded, and those ids would then be missing from
+     *     ``deleted`` — leaving the caller unable to clear their bookkeeping and making
+     *     the reported set a false record of what was removed. Stopping keeps
+     *     ``deleted`` exhaustive; the ancestors are collected on the next batch, which
+     *     ``remaining`` asks for.
+     *
+     *     :param session: The asynchronous database session.
+     *     :param body: The cutoff, the retained ids, and the batch controls.
+     *     :return: The collected ids per entity type, and whether more are waiting.
+     */
+    post: operations['collection_collect_retired_entities_collection_collect_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/nodes/': {
     parameters: {
       query?: never;
@@ -751,6 +786,68 @@ export interface components {
       /** Os Version */
       os_version?: string | null;
     };
+    /**
+     * InventoryCollectResponse
+     * @description Report what a collection call deleted, or would have deleted.
+     *
+     *     :param deleted: The collected ids per entity type, exhaustive for this
+     *         call. On a dry run these are the ids the equivalent real call would
+     *         delete. A type the walk stopped before reporting is empty rather than
+     *         absent.
+     *     :param remaining: Whether any entity type filled its ``limit``, meaning more
+     *         tombstones are waiting for the next batch.
+     */
+    InventoryCollectResponse: {
+      /** Deleted */
+      deleted: {
+        [key: string]: number[];
+      };
+      /** Remaining */
+      remaining: boolean;
+    };
+    /**
+     * InventoryCollectWrite
+     * @description Ask the inventory service to collect the tombstones nothing resolves.
+     *
+     *     Unknown fields are rejected with HTTP 422. This request deletes rows
+     *     irreversibly, so a client typo must never be read as an omitted field: a
+     *     misspelled ``keep`` would otherwise arrive as an empty retained set and a
+     *     misspelled ``dry_run`` as a real delete.
+     *
+     *     :param retired_before: The cutoff a tombstone must predate to be eligible.
+     *         The caller pins one value for a whole run so successive batches cannot
+     *         drift into collecting a tombstone that was too young a moment earlier.
+     *     :param keep: The ids the caller knows are still referenced, per entity type.
+     *         Ancestors of a kept entity are retained without being listed.
+     *     :param limit: The most entities to collect per type in this call.
+     *     :param dry_run: Whether to report the eligible ids without deleting them.
+     *         Defaults to reporting: on an irreversible endpoint the mode a caller
+     *         reaches by omission is the one that cannot destroy anything.
+     */
+    InventoryCollectWrite: {
+      /**
+       * Dry Run
+       * @default true
+       */
+      dry_run: boolean;
+      /**
+       * Keep
+       * @default {}
+       */
+      keep: {
+        [key: string]: number[];
+      };
+      /**
+       * Limit
+       * @default 500
+       */
+      limit: number;
+      /**
+       * Retired Before
+       * Format: date-time
+       */
+      retired_before: string;
+    };
     JsonValue: unknown;
     /**
      * Node
@@ -777,14 +874,14 @@ export interface components {
        */
       created_at?: string;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
-      source?: components['schemas']['SourceEnum'] | null;
+      source: components['schemas']['SourceEnum'];
       /**
        * Type
        * @default generic
@@ -820,7 +917,7 @@ export interface components {
        */
       created_at?: string;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
@@ -829,7 +926,7 @@ export interface components {
       retired_at?: string | null;
       /** Services */
       services: components['schemas']['Service'][];
-      source?: components['schemas']['SourceEnum'] | null;
+      source: components['schemas']['SourceEnum'];
       /**
        * Type
        * @default generic
@@ -845,19 +942,18 @@ export interface components {
      *     :param address: The network address of the node.
      *     :param name: The name of the node.
      *     :param external_id: An external identifier for the node, indexed for quick lookup.
-     *         Defaults to None.
      *     :param source: The source from which the node information is derived. Indexed for
-     *         quick lookup. Defaults to None.
+     *         quick lookup.
      *     :param type: The type of the node (e.g., remote, generic). Defaults to "generic".
      */
     NodeWrite: {
       /** Address */
       address: string;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Name */
       name: string;
-      source?: components['schemas']['SourceEnum'] | null;
+      source: components['schemas']['SourceEnum'];
       /**
        * Type
        * @default generic
@@ -942,6 +1038,18 @@ export interface components {
      * @enum {string}
      */
     ReloadClassification: 'hot' | 'nested_only' | 'not_overridable';
+    /**
+     * RetirableEntityName
+     * @description Name the inventory entity types that carry a retirement tombstone.
+     *
+     *     Values are spelled out rather than derived, because they cross a service
+     *     boundary: SEP names an entity type by these strings when it asks inventory
+     *     to collect. Inventory-local on purpose — SEP's own
+     *     ``SyncInventoryEntityTypeEnum`` lives in a package this service must not
+     *     import.
+     * @enum {string}
+     */
+    RetirableEntityName: 'node' | 'service' | 'schema' | 'table';
     /**
      * Schema
      * @description Represent a database schema within a service.
@@ -1106,16 +1214,14 @@ export interface components {
      *         node_id, as defined by composite index ix_service_external_id_node_id.
      *     :param name: The name of the service.
      *     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-     *     :param port: The port number on which the service is running. Must be unique for
-     *         node_id, as defined by composite index ix_service_port_node_id.
+     *     :param port: The port number on which the service is running.
      *     :param environment: The environment in which the service is running, if set.
      *     :param cluster: The cluster in which the service is running, if set.
      *     :param replication_set: The replication set in which the service is running, if set.
      *     :param custom_labels: Custom labels associated with the service, if set.
      *     :param node_id: The unique identifier of the node on which the service is running.
      *         Must be unique for external_id, as defined by composite index
-     *         ix_service_external_id_node_id, and for port, as defined by composite index
-     *         ix_service_port_node_id.
+     *         ix_service_external_id_node_id.
      *     :param node: The node to which the service is associated.
      *     :param retired_at: When the service stopped being reported upstream, or None
      *         while it is active.
@@ -1137,7 +1243,7 @@ export interface components {
       /** Environment */
       environment?: string | null;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
@@ -1190,7 +1296,7 @@ export interface components {
       /** Environment */
       environment?: string | null;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
@@ -1248,7 +1354,7 @@ export interface components {
       /** Environment */
       environment?: string | null;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
@@ -1360,25 +1466,17 @@ export interface components {
      * @description Define the model for writing service data to the inventory.
      *
      *     :param external_id: An external identifier for the service, indexed for quick
-     *         lookup. Defaults to None.
-     *     :type external_id: NonEmptyStr | None
+     *         lookup.
      *     :param name: The name of the service.
-     *     :type name: NonEmptyStr
      *     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-     *     :type type: ServiceTypeEnum
      *     :param port: The port number on which the service is running. Defaults to None.
-     *     :type port: int | None
      *     :param environment: The environment in which the service is running (e.g.,
      *         production, staging). Defaults to None.
-     *     :type environment: str | None
      *     :param cluster: The cluster in which the service is running. Defaults to None.
-     *     :type cluster: str | None
      *     :param replication_set: The replication set in which the service is running. Defaults to None.
-     *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service. Defaults to None.
      *     :param node_id: The foreign key referencing the node to which the service belongs.
      *         Defaults to None.
-     *     :type node_id: int | None
      */
     ServiceWrite: {
       /** Cluster */
@@ -1390,7 +1488,7 @@ export interface components {
       /** Environment */
       environment?: string | null;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Name */
       name: string;
       /** Node Id */
@@ -1817,6 +1915,39 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  collection_collect_retired_entities_collection_collect_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['InventoryCollectWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InventoryCollectResponse'];
+        };
       };
       /** @description Validation Error */
       422: {

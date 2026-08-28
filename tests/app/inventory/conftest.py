@@ -27,7 +27,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 from starlette.testclient import TestClient
 
-from app.api.deps import get_current_user, require_minimum_role_for_unsafe_methods
+from app.api.deps import (
+    get_current_service_principal,
+    get_current_user,
+    require_minimum_role_for_unsafe_methods,
+)
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
@@ -51,6 +55,7 @@ from app.inventory.models import (
     ServiceSystemObservation,
     Table,
 )
+from tests.app.db_schema import apply_schema
 from tests.app.factories import (
     HostSystemObservationWriteFactory,
     NodeWriteFactory,
@@ -79,7 +84,7 @@ async def session_fixture() -> AsyncSession:
         dbapi_connection.execute("PRAGMA foreign_keys=ON")
 
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
@@ -93,12 +98,20 @@ def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
     """Create an authenticated test client for the inventory app.
 
     Mirrors the SEP ``test_client``'s ``require_minimum_role_for_unsafe_methods``
-    override so the non-admin fixture user can exercise a mutating route.
+    override so the non-admin fixture user can exercise a mutating route, and
+    overrides ``get_current_service_principal`` for the same reason: it is the
+    outer dependency on the node and service writes, so overriding
+    ``get_current_user`` alone leaves it resolving the fixture user and refusing
+    it. Authorization itself is covered by ``test_role_gate.py``, which drives a
+    real credential chain.
     """
     inventory_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
         lambda: None
     )
     inventory_app.dependency_overrides[get_current_user] = lambda: regular_user
+    inventory_app.dependency_overrides[get_current_service_principal] = (
+        lambda: regular_user
+    )
     inventory_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(inventory_app)
     inventory_app.dependency_overrides = {}
