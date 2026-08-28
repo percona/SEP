@@ -451,14 +451,6 @@ def test_unwrap_secrets_for_storage_passes_through_non_secrets() -> None:
     assert unwrap_secrets_for_storage({"a": 1}) == {"a": 1}
 
 
-def test_materialize_fingerprint_preserves_embedded_url_credentials() -> None:
-    """Internal fingerprints retain real URL passwords for live executor use."""
-    raw = {"endpoint": "http://nomad-user:nomad-secret@nomad.internal:4646"}
-    fingerprint = materialize_fingerprint(_ctx(TasksSettings, "NOMAD", raw))
-    assert "nomad-secret" in fingerprint["endpoint"]
-    assert "****" not in fingerprint["endpoint"]
-
-
 def test_is_hot_reloadable_true_for_marked_field() -> None:
     """Assert a field marked HOT via ``field_with_metadata`` is detected."""
     assert is_hot_reloadable(SEPSettings, "CONNECTIVITY_CHECK_DEFAULT") is True

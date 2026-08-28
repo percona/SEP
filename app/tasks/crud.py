@@ -765,11 +765,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
 
         On PostgreSQL the inner selection takes ``FOR UPDATE ... SKIP LOCKED``
         on the log rows so concurrent workers never contend on or double-delete
-        the same batch; other dialects (SQLite in tests) omit the clause. On
-        MySQL the limited selection is wrapped in a derived table because MySQL
-        rejects ``LIMIT`` inside an ``IN (SELECT ...)`` subquery (error 1235)
-        and deleting from a table referenced in its own subquery (error 1093);
-        the derived table sidesteps both while keeping the batch semantics.
+        the same batch; other dialects (SQLite in tests) omit the clause.
 
         :param session: The async session bound to the Tasks database.
         :param cutoff: The age boundary; rows with an effective completion time
