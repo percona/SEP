@@ -221,7 +221,7 @@ default:
     #     stale_send_after: 3600           # seconds a send may stall before it is failed;
     #                                      # must exceed the slowest legitimate send
     DATABASE:
-      ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
+      ENGINE: sqlite  # Database engine: sqlite, postgresql
       USER: null
       PASSWORD: null
       HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
