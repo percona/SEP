@@ -26,6 +26,7 @@ from pydantic import SecretStr
 from app.api.deps import (
     authenticate_bearer_token,
     get_current_admin,
+    get_current_service_principal,
     get_current_user,
     require_minimum_role_for_unsafe_methods,
     SERVICE_PRINCIPAL_ID,
@@ -178,6 +179,32 @@ async def test_get_current_admin_non_admin_user(casdoor_mock, valid_username):
     user.role = UserRole.VIEWER
     with pytest.raises(HTTPForbiddenException):
         await get_current_admin(user)
+
+
+@pytest.mark.asyncio
+async def test_get_current_service_principal_admits_the_principal(mocker):
+    """Test get_current_service_principal returns the principal itself."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    principal = await authenticate_bearer_token(SERVICE_TOKEN)
+
+    assert await get_current_service_principal(principal) is principal
+
+
+@pytest.mark.asyncio
+async def test_get_current_service_principal_refuses_an_admin(
+    casdoor_mock, valid_username
+):
+    """Test get_current_service_principal raises on the highest human rank.
+
+    Identity is the criterion rather than rank, so an admin — the only identity
+    the app-level role gate still admits to these routes — is refused here.
+    """
+    user = await authenticate_bearer_token("valid_admin_token")
+    user.role = UserRole.ADMIN
+
+    assert user.id != SERVICE_PRINCIPAL_ID
+    with pytest.raises(HTTPForbiddenException):
+        await get_current_service_principal(user)
 
 
 class TestAuthenticateBearerTokenTypes:

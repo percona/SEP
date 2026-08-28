@@ -19,7 +19,7 @@ import logging
 
 from fastapi import APIRouter, status
 
-from app.api.deps import IsAuthenticatedDep
+from app.api.deps import IsAuthenticatedDep, IsServicePrincipalDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import (
@@ -98,7 +98,7 @@ async def retrieve_service(
     )
 
 
-@router.put("/{service_id}", dependencies=[IsAuthenticatedDep])
+@router.put("/{service_id}", dependencies=[IsServicePrincipalDep])
 async def update_service(
     session: SessionDep,
     existing_service: ServiceDep,
@@ -111,7 +111,7 @@ async def update_service(
 
 @router.delete(
     "/{service_id}",
-    dependencies=[IsAuthenticatedDep],
+    dependencies=[IsServicePrincipalDep],
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def retire_service(session: SessionDep, service: RetirableServiceDep) -> None:
@@ -126,7 +126,7 @@ async def retire_service(session: SessionDep, service: RetirableServiceDep) -> N
 
 @router.post(
     "/{service_id}/revive",
-    dependencies=[IsAuthenticatedDep],
+    dependencies=[IsServicePrincipalDep],
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def revive_service(session: SessionDep, service: RetirableServiceDep) -> None:
