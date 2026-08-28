@@ -175,6 +175,26 @@ async def get_current_admin(current_user: CurrentUser) -> User:
 
 IsAdminDep = Depends(get_current_admin)
 
+
+async def get_current_service_principal(current_user: CurrentUser) -> User:
+    """Return the authenticated caller only when it is the service principal.
+
+    Gates writes whose rows a syncer owns: those writes authenticate with
+    ``SEP_INTERNAL_TOKEN``, so a human credential is refused on identity rather
+    than ranked. Composing this with :func:`get_current_admin` would refuse the
+    principal too, which holds ``UserRole.VIEWER``.
+
+    :param current_user: The current logged-in user.
+    :return: The service principal.
+    :raises HTTPForbiddenException: If the caller is not the service principal.
+    """
+    if current_user.id != SERVICE_PRINCIPAL_ID:
+        raise HTTPForbiddenException
+    return current_user
+
+
+IsServicePrincipalDep = Depends(get_current_service_principal)
+
 F = TypeVar("F", bound=Callable[..., Any])
 
 #: The rank an unsafe route requires when nothing registers a lower one, so a

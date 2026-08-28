@@ -19,7 +19,7 @@ import logging
 
 from fastapi import APIRouter, status
 
-from app.api.deps import IsAuthenticatedDep
+from app.api.deps import IsAuthenticatedDep, IsServicePrincipalDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.core.utils.fields import NonEmptyStr
@@ -116,7 +116,7 @@ async def retrieve_node(
 
 
 @router.post(
-    "/", dependencies=[IsAuthenticatedDep], status_code=status.HTTP_201_CREATED
+    "/", dependencies=[IsServicePrincipalDep], status_code=status.HTTP_201_CREATED
 )
 async def create_node(session: SessionDep, node: NodeWrite) -> Node:
     """Create Node."""
@@ -124,7 +124,7 @@ async def create_node(session: SessionDep, node: NodeWrite) -> Node:
     return await NodeManager.create(session, node)
 
 
-@router.put("/{node_id}", dependencies=[IsAuthenticatedDep])
+@router.put("/{node_id}", dependencies=[IsServicePrincipalDep])
 async def update_node(
     session: SessionDep,
     existing_node: NodeDep,
@@ -143,7 +143,7 @@ async def update_node(
 
 @router.delete(
     "/{node_id}",
-    dependencies=[IsAuthenticatedDep],
+    dependencies=[IsServicePrincipalDep],
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def retire_node(session: SessionDep, node: RetirableNodeDep) -> None:
@@ -158,7 +158,7 @@ async def retire_node(session: SessionDep, node: RetirableNodeDep) -> None:
 
 @router.post(
     "/{node_id}/revive",
-    dependencies=[IsAuthenticatedDep],
+    dependencies=[IsServicePrincipalDep],
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def revive_node(session: SessionDep, node: RetirableNodeDep) -> None:
@@ -230,7 +230,7 @@ async def list_services_by_node(
 
 @router.post(
     "/{node_id}/services/",
-    dependencies=[IsAuthenticatedDep],
+    dependencies=[IsServicePrincipalDep],
     status_code=status.HTTP_201_CREATED,
 )
 async def create_service_for_node(
