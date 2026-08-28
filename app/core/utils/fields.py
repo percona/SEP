@@ -346,11 +346,11 @@ class DatabaseDialect(EnumFieldMixin, StrEnum):
 
 
 class DatabaseEngine(EnumFieldMixin, StrEnum):
-    """Enum representing supported database engines.
+    """Represent supported database engines.
 
     :cvar SQLITE: SQLite engine string.
     :vartype SQLITE: str
-    :cvar POSTGRESQL: PostgreSQL engine string, using the `psycopg2` driver.
+    :cvar POSTGRESQL: PostgreSQL engine string, using the ``psycopg2`` driver.
     :vartype POSTGRESQL: str
     """
 
@@ -359,11 +359,11 @@ class DatabaseEngine(EnumFieldMixin, StrEnum):
 
 
 class AsyncDatabaseEngine(EnumFieldMixin, StrEnum):
-    """Enum representing supported async database engines.
+    """Represent supported async database engines.
 
-    :cvar SQLITE: SQLite engine string, using the `aiosqlite` driver.
+    :cvar SQLITE: SQLite engine string, using the ``aiosqlite`` driver.
     :vartype SQLITE: str
-    :cvar POSTGRESQL: PostgreSQL engine string, using the `asyncpg` driver.
+    :cvar POSTGRESQL: PostgreSQL engine string, using the ``asyncpg`` driver.
     :vartype POSTGRESQL: str
     """
 

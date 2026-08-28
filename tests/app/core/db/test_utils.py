@@ -216,7 +216,7 @@ class TestNullsLastOrdering:
         """Render the ``literal_execute`` JSON path inline in the single ordering term.
 
         ``func_json_extract`` builds its path with ``literal_execute``, so the
-        dialect's literal processor -- not a bound parameter -- emits it at
+        dialect's literal processor — not a bound parameter — emits it at
         execution. The value is a code constant inlined into the one
         ``NULLS LAST`` term the standard hook renders.
         """

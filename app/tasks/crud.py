@@ -758,14 +758,14 @@ class TaskHistoryLogManager(BaseSQLModelManager):
 
         Select up to ``batch_size`` ``taskhistory_log`` rows whose parent
         ``TaskHistory`` is no longer active (any status except ``PENDING`` /
-        ``RUNNING``) and whose effective completion time --
-        ``COALESCE(finished_at, started_at, created_at)`` -- is strictly older
+        ``RUNNING``) and whose effective completion time —
+        ``COALESCE(finished_at, started_at, created_at)`` — is strictly older
         than ``cutoff``, then delete them in a single committed statement. The
         parent ``taskhistory`` audit row is never touched.
 
         On PostgreSQL the inner selection takes ``FOR UPDATE ... SKIP LOCKED``
         on the log rows so concurrent workers never contend on or double-delete
-        the same batch; other dialects (SQLite in tests) omit the clause.
+        the same batch; SQLite omits the clause.
 
         :param session: The async session bound to the Tasks database.
         :param cutoff: The age boundary; rows with an effective completion time
