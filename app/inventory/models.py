@@ -18,8 +18,8 @@
 from enum import auto, StrEnum
 from typing import Any, Self
 
-from pydantic import model_validator
-from sqlalchemy import Column, Index, JSON, Text
+from pydantic import BaseModel, ConfigDict, model_validator, PositiveInt
+from sqlalchemy import Column, Index, JSON, Text, text
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
@@ -27,7 +27,12 @@ from sqlmodel import Relationship, SQLModel
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
 from app.core.utils.fields import ArbitraryMapping, NonEmptyStr, UTCDatetime
-from app.inventory.constants import ACTIVE_RETIREMENT_KEY
+from app.inventory.constants import ACTIVE_RETIREMENT_KEY, RetirableEntityName
+
+#: Predicate narrowing the collection-scan indexes to the tombstones alone.
+#: Active rows are the overwhelming majority and can never be returned by that
+#: scan, so keeping them out holds the index size to the retired set.
+RETIRED_ROWS_ONLY = text("retired_at IS NOT NULL")
 
 
 class RetiredAtBase(SQLModel):
@@ -147,6 +152,12 @@ class Node(NodeBase, RetirableSQLModel, table=True):
             "source",
             "retirement_key",
             unique=True,
+        ),
+        Index(
+            "ix_node_retired_at_not_null",
+            "retired_at",
+            postgresql_where=RETIRED_ROWS_ONLY,
+            sqlite_where=RETIRED_ROWS_ONLY,
         ),
     )
     services: list["Service"] = Relationship(back_populates="node", cascade_delete=True)
@@ -279,6 +290,12 @@ class Service(RetirableSQLModel, ServiceBase, table=True):
             "retirement_key",
             unique=True,
         ),
+        Index(
+            "ix_service_retired_at_not_null",
+            "retired_at",
+            postgresql_where=RETIRED_ROWS_ONLY,
+            sqlite_where=RETIRED_ROWS_ONLY,
+        ),
     )
 
     node: Node = Relationship(back_populates="services")
@@ -378,6 +395,12 @@ class Schema(RetirableSQLModel, SchemaBase, table=True):
             "service_id",
             "retirement_key",
             unique=True,
+        ),
+        Index(
+            "ix_schema_retired_at_not_null",
+            "retired_at",
+            postgresql_where=RETIRED_ROWS_ONLY,
+            sqlite_where=RETIRED_ROWS_ONLY,
         ),
     )
     service: Service = Relationship(back_populates="schemas")
@@ -496,6 +519,12 @@ class Table(RetirableSQLModel, TableBase, table=True):
             "schema_id",
             "retirement_key",
             unique=True,
+        ),
+        Index(
+            "ix_table_retired_at_not_null",
+            "retired_at",
+            postgresql_where=RETIRED_ROWS_ONLY,
+            sqlite_where=RETIRED_ROWS_ONLY,
         ),
     )
     database: Schema = Relationship(back_populates="tables")
@@ -726,3 +755,44 @@ class ServiceSystemObservationResponse(BaseSQLModel, ServiceSystemObservationBas
     :param observed_at: When this observation was collected.
     :type observed_at: UTCDatetime
     """
+
+
+class InventoryCollectWrite(BaseModel):
+    """Ask the inventory service to collect the tombstones nothing resolves.
+
+    Unknown fields are rejected with HTTP 422. This request deletes rows
+    irreversibly, so a client typo must never be read as an omitted field: a
+    misspelled ``keep`` would otherwise arrive as an empty retained set and a
+    misspelled ``dry_run`` as a real delete.
+
+    :param retired_before: The cutoff a tombstone must predate to be eligible.
+        The caller pins one value for a whole run so successive batches cannot
+        drift into collecting a tombstone that was too young a moment earlier.
+    :param keep: The ids the caller knows are still referenced, per entity type.
+        Ancestors of a kept entity are retained without being listed.
+    :param limit: The most entities to collect per type in this call.
+    :param dry_run: Whether to report the eligible ids without deleting them.
+        Defaults to reporting: on an irreversible endpoint the mode a caller
+        reaches by omission is the one that cannot destroy anything.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    retired_before: UTCDatetime
+    keep: dict[RetirableEntityName, list[int]] = {}
+    limit: PositiveInt = 500
+    dry_run: bool = True
+
+
+class InventoryCollectResponse(BaseModel):
+    """Report what a collection call deleted, or would have deleted.
+
+    :param deleted: The collected ids per entity type, exhaustive for this
+        call. On a dry run these are the ids the equivalent real call would
+        delete. A type the walk stopped before reporting is empty rather than
+        absent.
+    :param remaining: Whether any entity type filled its ``limit``, meaning more
+        tombstones are waiting for the next batch.
+    """
+
+    deleted: dict[RetirableEntityName, list[int]]
+    remaining: bool

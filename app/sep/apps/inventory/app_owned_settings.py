@@ -13,7 +13,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from app.sep.apps.inventory.app import app
-from app.sep.apps.inventory.app_owned_settings import APP_OWNED_SETTINGS_CLASSES
+"""Declare the Inventory app's own settings class."""
 
-__all__ = ["APP_OWNED_SETTINGS_CLASSES", "app"]
+from app.core.settings_override.api.routes import AppOwnedClassEntry
+from app.sep.apps.inventory.config import inventory_app_settings, InventoryAppSettings
+
+APP_OWNED_SETTINGS_CLASSES: list[AppOwnedClassEntry] = [
+    AppOwnedClassEntry(
+        setting_class=InventoryAppSettings.__name__,
+        settings_cls=InventoryAppSettings,
+        proxy=inventory_app_settings,
+        app_key="inventory",
+    ),
+]

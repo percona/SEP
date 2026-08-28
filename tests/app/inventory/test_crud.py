@@ -26,6 +26,7 @@ from app.inventory.crud import (
     HostSystemObservationManager,
     NodeManager,
     RetiredInclusiveNodeManager,
+    RetiredInclusiveTableManager,
     SchemaManager,
     ServiceManager,
     ServiceSystemObservationManager,
@@ -190,3 +191,220 @@ async def test_dangling_fk_rejected_by_database(session: AsyncSession) -> None:
     """
     with pytest.raises(HTTPBadRequestException):
         await ServiceManager.create(session, ServiceWriteFactory.build(), node_id=9999)
+
+
+RETIRED_AT = datetime(2026, 1, 1, tzinfo=UTC)
+CUTOFF = datetime(2026, 2, 1, tzinfo=UTC)
+
+
+class TestCollectibleIds:
+    """Test how the retirable managers select tombstones for deletion."""
+
+    @pytest.mark.asyncio
+    async def test_default_manager_selects_nothing(
+        self, session: AsyncSession, table: Table
+    ) -> None:
+        """Match no row through a default manager, whose reads hide tombstones."""
+        await retire_in_place(session, table, retired_at=RETIRED_AT)
+
+        assert (
+            await TableManager.collectible_ids(
+                session, retired_before=CUTOFF, keep_by_model={}, limit=10
+            )
+            == []
+        )
+
+    @pytest.mark.asyncio
+    async def test_retired_inclusive_manager_selects_the_tombstone(
+        self, session: AsyncSession, table: Table
+    ) -> None:
+        """Match the tombstone through the retired-inclusive sibling."""
+        await retire_in_place(session, table, retired_at=RETIRED_AT)
+
+        assert await RetiredInclusiveTableManager.collectible_ids(
+            session, retired_before=CUTOFF, keep_by_model={}, limit=10
+        ) == [table.id]
+
+    @pytest.mark.asyncio
+    async def test_active_row_is_never_selected(
+        self, session: AsyncSession, table: Table
+    ) -> None:
+        """Leave a row that was never retired out of the candidate set."""
+        assert (
+            await RetiredInclusiveTableManager.collectible_ids(
+                session, retired_before=CUTOFF, keep_by_model={}, limit=10
+            )
+            == []
+        )
+
+    @pytest.mark.asyncio
+    async def test_cutoff_is_strict(self, session: AsyncSession, table: Table) -> None:
+        """Keep a row retired exactly at the cutoff, collecting it only later."""
+        await retire_in_place(session, table, retired_at=RETIRED_AT)
+
+        assert (
+            await RetiredInclusiveTableManager.collectible_ids(
+                session, retired_before=RETIRED_AT, keep_by_model={}, limit=10
+            )
+            == []
+        )
+
+    @pytest.mark.asyncio
+    async def test_keep_ids_are_excluded(
+        self, session: AsyncSession, table: Table
+    ) -> None:
+        """Skip a tombstone a caller declared still referenced."""
+        await retire_in_place(session, table, retired_at=RETIRED_AT)
+
+        assert (
+            await RetiredInclusiveTableManager.collectible_ids(
+                session,
+                retired_before=CUTOFF,
+                keep_by_model={Table: {table.id}},
+                limit=10,
+            )
+            == []
+        )
+
+    @pytest.mark.asyncio
+    async def test_active_descendant_blocks_its_ancestor(
+        self, session: AsyncSession, node: Node, table: Table
+    ) -> None:
+        """Keep a node whose subtree still holds an active row."""
+        await retire_in_place(session, node, retired_at=RETIRED_AT)
+
+        assert (
+            await RetiredInclusiveNodeManager.collectible_ids(
+                session, retired_before=CUTOFF, keep_by_model={}, limit=10
+            )
+            == []
+        )
+
+    @pytest.mark.asyncio
+    async def test_kept_descendant_blocks_its_ancestor(
+        self,
+        session: AsyncSession,
+        node: Node,
+        service: Service,
+        schema: Schema,
+        table: Table,
+    ) -> None:
+        """Keep the ancestors of a service a caller declared still referenced."""
+        for entity in (table, schema, service, node):
+            await retire_in_place(session, entity, retired_at=RETIRED_AT)
+
+        assert (
+            await RetiredInclusiveNodeManager.collectible_ids(
+                session,
+                retired_before=CUTOFF,
+                keep_by_model={Service: {service.id}},
+                limit=10,
+            )
+            == []
+        )
+
+    @pytest.mark.asyncio
+    async def test_young_descendant_blocks_its_ancestor(
+        self,
+        session: AsyncSession,
+        node: Node,
+        service: Service,
+        schema: Schema,
+        table: Table,
+    ) -> None:
+        """Keep a node whose subtree holds a tombstone younger than the cutoff."""
+        for entity in (schema, service, node):
+            await retire_in_place(session, entity, retired_at=RETIRED_AT)
+        await retire_in_place(
+            session, table, retired_at=datetime(2026, 3, 1, tzinfo=UTC)
+        )
+
+        assert (
+            await RetiredInclusiveNodeManager.collectible_ids(
+                session, retired_before=CUTOFF, keep_by_model={}, limit=10
+            )
+            == []
+        )
+
+    @pytest.mark.asyncio
+    async def test_fully_retired_subtree_is_collectible(
+        self,
+        session: AsyncSession,
+        node: Node,
+        service: Service,
+        schema: Schema,
+        table: Table,
+    ) -> None:
+        """Collect a node whose whole subtree is a tombstone past the cutoff."""
+        for entity in (table, schema, service, node):
+            await retire_in_place(session, entity, retired_at=RETIRED_AT)
+
+        assert await RetiredInclusiveNodeManager.collectible_ids(
+            session, retired_before=CUTOFF, keep_by_model={}, limit=10
+        ) == [node.id]
+
+    @pytest.mark.asyncio
+    async def test_limit_caps_the_batch(
+        self, session: AsyncSession, table: Table, second_table: Table
+    ) -> None:
+        """Return no more ids than the caller's batch size."""
+        await retire_in_place(session, table, retired_at=RETIRED_AT)
+        await retire_in_place(session, second_table, retired_at=RETIRED_AT)
+
+        assert await RetiredInclusiveTableManager.collectible_ids(
+            session, retired_before=CUTOFF, keep_by_model={}, limit=1
+        ) == [table.id]
+
+
+class TestCollect:
+    """Test how the retirable managers delete the tombstones they are given."""
+
+    @pytest.mark.asyncio
+    async def test_deletes_the_given_tombstones(
+        self, session: AsyncSession, retired_table: Table
+    ) -> None:
+        """Delete a tombstone and report the row count."""
+        assert (
+            await RetiredInclusiveTableManager.collect(session, [retired_table.id]) == 1
+        )
+        assert await RetiredInclusiveTableManager.count(session) == 0
+
+    @pytest.mark.asyncio
+    async def test_refuses_an_active_row(
+        self, session: AsyncSession, table: Table
+    ) -> None:
+        """Leave an active row alone even when a caller names its id."""
+        assert await RetiredInclusiveTableManager.collect(session, [table.id]) == 0
+        assert await RetiredInclusiveTableManager.count(session) == 1
+
+    @pytest.mark.asyncio
+    async def test_empty_id_list_is_a_no_op(
+        self, session: AsyncSession, retired_table: Table
+    ) -> None:
+        """Delete nothing when handed no ids, rather than every row."""
+        assert await RetiredInclusiveTableManager.collect(session, []) == 0
+        assert await RetiredInclusiveTableManager.count(session) == 1
+
+    @pytest.mark.asyncio
+    async def test_re_running_a_collected_batch_deletes_nothing(
+        self, session: AsyncSession, retired_table: Table
+    ) -> None:
+        """Report zero rows on a second pass over an already-collected batch."""
+        await RetiredInclusiveTableManager.collect(session, [retired_table.id])
+
+        assert (
+            await RetiredInclusiveTableManager.collect(session, [retired_table.id]) == 0
+        )
+
+    @pytest.mark.asyncio
+    async def test_deleting_a_node_cascades_to_its_observation(
+        self,
+        session: AsyncSession,
+        node: Node,
+        host_observation: HostSystemObservation,
+    ) -> None:
+        """Take an observation row with the node it belongs to."""
+        await retire_in_place(session, node)
+
+        assert await RetiredInclusiveNodeManager.collect(session, [node.id]) == 1
+        assert await HostSystemObservationManager.count(session) == 0

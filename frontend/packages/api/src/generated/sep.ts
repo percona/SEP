@@ -1514,10 +1514,12 @@ export interface paths {
      * Inventory Plugin Tasks
      * @description Return the list of periodic task names for the Inventory plugin.
      *
-     *     Hard-coded because the Inventory plugin has exactly one periodic task
-     *     (``inventory-sync``). The shape matches what the React
-     *     ``usePluginTasks('inventory')`` hook expects: a list of objects with at
+     *     Hard-coded because the Inventory plugin's periodic tasks are a fixed pair
+     *     (``inventory-sync`` and ``inventory-collection``). The shape matches what the
+     *     React ``usePluginTasks('inventory')`` hook expects: a list of objects with at
      *     minimum a ``name`` key.
+     *
+     *     :return: The plugin's periodic tasks, each with its name and display name.
      */
     get: operations['inventory_inventory_plugin_tasks_api_apps_inventory__get'];
     put?: never;

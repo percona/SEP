@@ -43,6 +43,7 @@ from app.tasks.execution.executors.nomad.constants import (
 from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.models import (
     INTERNAL_TASK_NAMES,
+    INVENTORY_COLLECTION_TASK_NAME,
     INVENTORY_SYNC_TASK_NAME,
     SYNC_RUNNING_TASKS_TASK_NAME,
     TaskBackendEnum,
@@ -377,7 +378,7 @@ class TestStalenessPreambleShell:
 
 
 def test_internal_task_names_membership_is_exact() -> None:
-    """Assert INTERNAL_TASK_NAMES holds exactly the three maintenance-task constants.
+    """Assert INTERNAL_TASK_NAMES holds exactly the maintenance-task constants.
 
     Locks the dashboard ``exclude_internal`` filter's scope: adding or removing a
     name (e.g. leaking a generic root task like ``run-python``) fails here, forcing
@@ -387,6 +388,7 @@ def test_internal_task_names_membership_is_exact() -> None:
         frozenset(
             {
                 INVENTORY_SYNC_TASK_NAME,
+                INVENTORY_COLLECTION_TASK_NAME,
                 SYNC_RUNNING_TASKS_TASK_NAME,
                 CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
             }
@@ -570,3 +572,21 @@ def test_schedule_covers_syncer(
     row = PeriodicTask(name="run_inventory-sync_15_minutes", kwargs=kwargs)
 
     assert seed_module._schedule_covers_syncer(row, configured_syncer) is expected
+
+
+class TestInventoryCollectionTask:
+    """Test the inventory-collection system task row."""
+
+    def test_the_task_row_is_always_seeded(self) -> None:
+        """Seed the collection ``Task`` row regardless of the schedule.
+
+        The interval decides whether a *schedule* fires, and it lives on the SEP
+        side; the task itself must exist either way so an operator can attach a
+        schedule from the UI.
+        """
+        task = next(t for t in SYSTEM_TASKS if t.name == INVENTORY_COLLECTION_TASK_NAME)
+
+        assert task.data["callable"] == (
+            "app.sep.apps.inventory.collection.run_scheduled_inventory_collection"
+        )
+        assert task.protected is True
