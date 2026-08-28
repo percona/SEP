@@ -179,11 +179,10 @@ IsAdminDep = Depends(get_current_admin)
 async def get_current_service_principal(current_user: CurrentUser) -> User:
     """Return the authenticated caller only when it is the service principal.
 
-    Gates the inventory writes PMM owns: those rows are written by the syncers,
-    which authenticate with ``SEP_INTERNAL_TOKEN``, so a human credential is
-    refused on identity rather than ranked. Composing this with
-    :func:`get_current_admin` would refuse the principal too, which holds
-    ``UserRole.VIEWER``.
+    Gates writes whose rows a syncer owns: those writes authenticate with
+    ``SEP_INTERNAL_TOKEN``, so a human credential is refused on identity rather
+    than ranked. Composing this with :func:`get_current_admin` would refuse the
+    principal too, which holds ``UserRole.VIEWER``.
 
     :param current_user: The current logged-in user.
     :return: The service principal.
