@@ -231,14 +231,14 @@
 | app/sep/apps/framework/script\_source.py                                                                                     |       63 |        0 |       14 |        0 |    100% |           |
 | app/sep/apps/framework/spec.py                                                                                               |      151 |        0 |       68 |        0 |    100% |           |
 | app/sep/apps/framework/task\_status.py                                                                                       |       44 |        0 |       14 |        0 |    100% |           |
-| app/sep/apps/inventory/api\_routes.py                                                                                        |       81 |        0 |        0 |        0 |    100% |           |
+| app/sep/apps/inventory/api\_routes.py                                                                                        |       67 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/inventory/app.py                                                                                                |        4 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/inventory/connectivity.py                                                                                       |       42 |        0 |        6 |        0 |    100% |           |
 | app/sep/apps/inventory/constants.py                                                                                          |        2 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/inventory/deps.py                                                                                               |      140 |       13 |       54 |        3 |     90% |278-302, 414-419, 462, 469 |
+| app/sep/apps/inventory/deps.py                                                                                               |       92 |        7 |       26 |        0 |     92% |   276-300 |
 | app/sep/apps/inventory/list\_query.py                                                                                        |       29 |        1 |        4 |        1 |     94% |       118 |
 | app/sep/apps/inventory/models.py                                                                                             |       31 |        7 |        8 |        3 |     69% |109, 111, 112-\>114, 130-138 |
-| app/sep/apps/inventory/schema.py                                                                                             |        9 |        0 |        0 |        0 |    100% |           |
+| app/sep/apps/inventory/schema.py                                                                                             |        6 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/inventory/sync.py                                                                                               |       30 |        0 |       12 |        0 |    100% |           |
 | app/sep/apps/labels.py                                                                                                       |        1 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/meta\_keys.py                                                                                                   |        2 |        0 |        0 |        0 |    100% |           |
@@ -442,7 +442,7 @@
 | app/tasks/routes.py                                                                                                          |      237 |       20 |       46 |        4 |     91% |153-157, 240-246, 279, 329-335, 342, 432, 475, 490, 650, 664, 672, 698, 706-\>708, 729-730 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **27320** | **1727** | **6774** |  **639** | **92%** |           |
+| **TOTAL**                                                                                                                    | **27255** | **1721** | **6746** |  **636** | **92%** |           |
 
 
 ## Setup coverage badge
