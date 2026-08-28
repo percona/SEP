@@ -47,15 +47,15 @@ def test_database_options_url_with_empty_host():
 def test_database_options_url_with_host():
     """Test DatabaseOptions URL construction with actual HOST."""
     db_options = DatabaseOptions(
-        ENGINE=AsyncDatabaseEngine.MYSQL,
+        ENGINE=AsyncDatabaseEngine.POSTGRESQL,
         HOST="localhost",
-        PORT=3306,
+        PORT=5432,
         USER="user",
         PASSWORD="pass",
         NAME="testdb",
     )
 
-    expected_url = "mysql+aiomysql://user:pass@localhost:3306/testdb"
+    expected_url = "postgresql+asyncpg://user:pass@localhost:5432/testdb"
     assert expected_url == db_options.URL
 
 
@@ -107,7 +107,7 @@ def test_database_options_url_round_trips_a_user_with_reserved_characters():
 def test_database_options_password_masked_in_repr():
     """Test that PASSWORD is masked in repr output."""
     db_options = DatabaseOptions(
-        ENGINE=AsyncDatabaseEngine.MYSQL,
+        ENGINE=AsyncDatabaseEngine.POSTGRESQL,
         HOST="localhost",
         USER="user",
         PASSWORD="supersecret",

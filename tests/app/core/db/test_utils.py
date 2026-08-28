@@ -206,17 +206,17 @@ class TestNullsLastOrdering:
 
         assert rendered == expected
 
-    def test_tie_breaker_remains_final_order_by_term_on_mysql(self, ordering_table):
-        """Keep the tie-breaker final on MySQL even though the hook prepends a term."""
+    def test_tie_breaker_remains_final_order_by_term(self, ordering_table):
+        """Keep the tie-breaker as the final ``ORDER BY`` term."""
         query = select(ordering_table.c.id).order_by(
             NullsLastOrdering(ordering_table.c.parent_id, descending=True),
             ordering_table.c.id.asc(),
         )
 
-        rendered = _compile(query, mysql.dialect())
+        rendered = _compile(query, postgresql.dialect())
 
         assert rendered.endswith(
-            "ORDER BY ISNULL(item.parent_id) ASC, item.parent_id DESC, item.id ASC"
+            "ORDER BY item.parent_id DESC NULLS LAST, item.id ASC"
         )
 
     def test_nulls_last_ordering_is_cacheable(self, ordering_table):
@@ -239,25 +239,24 @@ class TestNullsLastOrdering:
     def test_wrapped_expression_inlines_only_its_code_constant_path(
         self, ordering_table
     ):
-        """Render the ``literal_execute`` JSON path inline, identically in both terms.
+        """Render the ``literal_execute`` JSON path inline in the single ordering term.
 
         ``func_json_extract`` builds its path with ``literal_execute``, so the
         dialect's literal processor -- not a bound parameter -- emits it at
-        execution. The value is a code constant, and the wrapper renders the
-        expression once and reuses it, so both terms carry the same text.
+        execution. The value is a code constant inlined into the one
+        ``NULLS LAST`` term the standard hook renders.
         """
         extract = func_json_extract(
-            DatabaseDialect.MYSQL, ordering_table.c.meta, "title"
+            DatabaseDialect.POSTGRESQL, ordering_table.c.meta, "title"
         )
         query = select(ordering_table.c.id).order_by(NullsLastOrdering(extract))
 
         executed = query.compile(
-            dialect=mysql.dialect(), compile_kwargs={"render_postcompile": True}
+            dialect=postgresql.dialect(), compile_kwargs={"render_postcompile": True}
         )
 
         assert str(executed).endswith(
-            "ORDER BY ISNULL(json_extract(item.meta, '$.title')) ASC, "
-            "json_extract(item.meta, '$.title') ASC"
+            "ORDER BY item.meta ->> 'title' ASC NULLS LAST"
         )
         assert executed.params == {}
 
@@ -268,7 +267,7 @@ class TestNullsLastOrdering:
         compiled = (
             select(ordering_table.c.id)
             .order_by(NullsLastOrdering(injected))
-            .compile(dialect=mysql.dialect())
+            .compile(dialect=postgresql.dialect())
         )
 
         assert "DROP TABLE" not in str(compiled)
