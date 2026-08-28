@@ -41,7 +41,7 @@ const MOCK_SCHEMA = {
     {
       name: 'nodes',
       display_name: 'Nodes',
-      forms: [{ title: 'N', fields: [{ name: 'name', label: 'Name', type: 'string' }] }],
+      forms: [],
       list_view: { columns: [{ key: 'id', label: 'ID' }] },
     },
   ],
