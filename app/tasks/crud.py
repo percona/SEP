@@ -797,8 +797,6 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         dialect = session.get_bind().name
         if dialect == DatabaseDialect.POSTGRESQL:
             doomed = doomed.with_for_update(skip_locked=True, of=TaskHistoryLog)
-        elif dialect == DatabaseDialect.MYSQL:
-            doomed = select(doomed.subquery().c.id)
 
         result = await cls.delete_where(session, col(TaskHistoryLog.id).in_(doomed))
         return result.rowcount

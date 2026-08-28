@@ -91,13 +91,6 @@ class TestIdempotentInsert:
                 nullcontext(),
             ),
             (
-                "mysql",
-                mysql.dialect(),
-                mysql.Insert,
-                "INSERT IGNORE",
-                nullcontext(),
-            ),
-            (
                 "oracle",
                 None,
                 None,
@@ -105,7 +98,7 @@ class TestIdempotentInsert:
                 pytest.raises(NotImplementedError, match="oracle"),
             ),
         ],
-        ids=["postgresql", "sqlite", "mysql", "unknown_dialect_raises"],
+        ids=["postgresql", "sqlite", "unknown_dialect_raises"],
     )
     def test_idempotent_insert_dispatch(
         self,
@@ -118,8 +111,8 @@ class TestIdempotentInsert:
     ):
         """Assert dialect dispatch produces the right idempotent insert, or raises for unknown dialects.
 
-        PostgreSQL and SQLite emit ``ON CONFLICT DO NOTHING``; MySQL emits
-        ``INSERT IGNORE``; an unsupported dialect raises ``NotImplementedError``.
+        PostgreSQL and SQLite emit ``ON CONFLICT DO NOTHING``; an unsupported
+        dialect raises ``NotImplementedError``.
         """
         with expectation:
             stmt = idempotent_insert(dialect_name, sample_table)
@@ -168,7 +161,7 @@ def ordering_table():
 
 
 class TestNullsLastOrdering:
-    """Cover the dialect-aware ``NullsLastOrdering`` construct and its two hooks."""
+    """Cover the ``NullsLastOrdering`` construct and its compiler hook."""
 
     @pytest.mark.parametrize(
         "dialect",
@@ -188,23 +181,6 @@ class TestNullsLastOrdering:
         )
 
         assert rendered == _compile(baseline.nulls_last(), dialect)
-
-    @pytest.mark.parametrize(
-        ("descending", "expected"),
-        [
-            (False, "ISNULL(item.parent_id) ASC, item.parent_id ASC"),
-            (True, "ISNULL(item.parent_id) ASC, item.parent_id DESC"),
-        ],
-        ids=["asc", "desc"],
-    )
-    def test_renders_isnull_prefix_on_mysql(self, ordering_table, descending, expected):
-        """Pin NULLs last on MySQL through a leading ``ISNULL(<expr>) ASC`` term."""
-        rendered = _compile(
-            NullsLastOrdering(ordering_table.c.parent_id, descending=descending),
-            mysql.dialect(),
-        )
-
-        assert rendered == expected
 
     def test_tie_breaker_remains_final_order_by_term(self, ordering_table):
         """Keep the tie-breaker as the final ``ORDER BY`` term."""

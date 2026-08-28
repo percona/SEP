@@ -169,11 +169,6 @@ def test_pool_engine_kwargs_respects_pre_ping_opt_out():
             {"connect_args": {"timeout": 2.5}},
             id="asyncpg-timeout",
         ),
-        pytest.param(
-            AsyncDatabaseEngine.MYSQL,
-            {"connect_args": {"connect_timeout": 2.5}},
-            id="aiomysql-connect-timeout",
-        ),
         pytest.param(AsyncDatabaseEngine.SQLITE, {}, id="sqlite-omitted"),
     ],
 )

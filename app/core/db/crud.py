@@ -51,7 +51,6 @@ from app.core.pagination import (
     PaginatedResponse,
     Pagination,
 )
-from app.core.utils.fields import DatabaseDialect
 
 logger = logging.getLogger(__name__)
 
@@ -297,40 +296,6 @@ class BaseManager:
         return result
 
     @classmethod
-    async def _mutate_where_returning_with_for_update(
-        cls,
-        session: AsyncSession,
-        builder: _QueryBuilder,
-        *whereclause: ColumnExpressionArgument[bool],
-        returning: Iterable[str] | bool,
-        **equal_filters: Any,
-    ) -> list[Any]:
-        """Execute a DML statement with `FOR UPDATE`.
-
-        This method is a workaround for MySQL, which does not support `RETURNING` in
-        UPDATE/DELETE statements. It first selects the rows with `FOR UPDATE`, then
-        executes the DML statement, and finally returns the selected rows.
-        """
-        query = cls._build_query(
-            *whereclause, builder=_select_builder(col(cls.Model.id)), **equal_filters
-        ).with_for_update()
-        result = await cls._exec(session, query)
-
-        if row_ids := result.all():
-            ids_filter = col(cls.Model.id).in_(row_ids)
-            await cls._mutate_where(session, builder, ids_filter, returning=False)
-        else:
-            return []
-
-        if returning is True:
-            return await cls.list(session, ids_filter)
-
-        if set(returning) == {"id"}:
-            return row_ids
-
-        return await cls.values_list(session, returning, ids_filter)
-
-    @classmethod
     async def _dml_where(
         cls,
         session: AsyncSession,
@@ -342,21 +307,11 @@ class BaseManager:
         """Execute a DML statement (UPDATE or DELETE) with the specified filters.
 
         This method ensures that at least one filter is provided to avoid unintentional
-        mass updates or deletions, and checks for database dialect-specific handling of
-        the `RETURNING` clause.
+        mass updates or deletions.
         """
         if not whereclause and not equal_filters:
             raise ValueError(
                 "You must specify at least one filter in *whereclause or **equal_filters"
-            )
-
-        if returning and session.get_bind().name == DatabaseDialect.MYSQL:
-            return await cls._mutate_where_returning_with_for_update(
-                session,
-                builder,
-                *whereclause,
-                returning=returning,
-                **equal_filters,
             )
 
         result = await cls._mutate_where(

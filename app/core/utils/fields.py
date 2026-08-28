@@ -342,7 +342,6 @@ class DatabaseDialect(EnumFieldMixin, StrEnum):
     """Enum representing supported database dialect names."""
 
     SQLITE = "sqlite"
-    MYSQL = "mysql"
     POSTGRESQL = "postgresql"
 
 
@@ -351,14 +350,11 @@ class DatabaseEngine(EnumFieldMixin, StrEnum):
 
     :cvar SQLITE: SQLite engine string.
     :vartype SQLITE: str
-    :cvar MYSQL: MySQL engine string, using the `pymysql` driver.
-    :vartype MYSQL: str
     :cvar POSTGRESQL: PostgreSQL engine string, using the `psycopg2` driver.
     :vartype POSTGRESQL: str
     """
 
     SQLITE = "sqlite"
-    MYSQL = "mysql+pymysql"
     POSTGRESQL = "postgresql+psycopg2"
 
 
@@ -367,14 +363,11 @@ class AsyncDatabaseEngine(EnumFieldMixin, StrEnum):
 
     :cvar SQLITE: SQLite engine string, using the `aiosqlite` driver.
     :vartype SQLITE: str
-    :cvar MYSQL: MySQL engine string, using the `aiomysql` driver.
-    :vartype MYSQL: str
     :cvar POSTGRESQL: PostgreSQL engine string, using the `asyncpg` driver.
     :vartype POSTGRESQL: str
     """
 
     SQLITE = "sqlite+aiosqlite"
-    MYSQL = "mysql+aiomysql"
     POSTGRESQL = "postgresql+asyncpg"
 
 
