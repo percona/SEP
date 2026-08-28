@@ -23,7 +23,7 @@ from typing import Annotated, ClassVar
 from annotated_types import Gt
 from pydantic import PositiveInt
 
-from app.core.celery.models import IntervalSchedule
+from app.core.celery.models import ManageableInterval
 from app.core.config import BaseYamlSettings
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import hot_field
@@ -42,7 +42,10 @@ class InventoryAppSettings(BaseYamlSettings):
         ``None`` seeds no beat entry, which is the shipped default: collection
         deletes rows irreversibly, so a deployment carrying that default does
         not start doing so on upgrade. The PMM sidecar profile overrides it to
-        ``1 days``, so a PMM-embedded deployment does.
+        ``1 days``, so a PMM-embedded deployment does. Sub-minute periods are
+        rejected here rather than at first use: the periodic-task write path
+        enforces a one-minute floor, so a shorter cadence would seed a running
+        schedule the operator could then neither toggle nor edit.
     :param COLLECTION_RETENTION: How long a tombstone is kept before it becomes
         eligible for deletion. The positive lower bound is load-bearing: a
         non-positive retention would put the cutoff at or after the present and
@@ -56,7 +59,7 @@ class InventoryAppSettings(BaseYamlSettings):
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "INVENTORY"]
-    COLLECTION_INTERVAL: IntervalSchedule | None = hot_field(None)
+    COLLECTION_INTERVAL: ManageableInterval | None = hot_field(None)
     COLLECTION_RETENTION: Annotated[timedelta, Gt(timedelta(0))] = hot_field(
         timedelta(days=30)
     )
