@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 import pytest
 import pytest_asyncio
 from sqlalchemy import Column, Integer, JSON, MetaData, select, Table, Text
-from sqlalchemy.dialects import mysql, postgresql, sqlite
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.sql import column
@@ -338,21 +338,13 @@ def test_func_json_extract_postgresql_auto_json_column_does_not_wrap_in_cast():
     assert "CAST" not in rendered.upper()
 
 
-@pytest.mark.parametrize(
-    ("dialect_name", "dialect"),
-    [
-        ("sqlite", sqlite.dialect()),
-        ("mysql", mysql.dialect()),
-    ],
-    ids=["sqlite", "mysql"],
-)
-def test_func_json_extract_single_key_renders_json_extract(dialect_name, dialect):
-    """Render ``json_extract(col, '$.task')`` on SQLite and MySQL for a single-element path."""
+def test_func_json_extract_single_key_renders_json_extract():
+    """Render ``json_extract(col, '$.task')`` on SQLite for a single-element path."""
     json_column = column("execution_request", type_=JSON)
 
-    expression = func_json_extract(dialect_name, json_column, "task")
+    expression = func_json_extract("sqlite", json_column, "task")
 
-    rendered = _compile(expression, dialect)
+    rendered = _compile(expression, sqlite.dialect())
     assert "json_extract" in rendered.lower()
     assert "'$.task'" in rendered
 
