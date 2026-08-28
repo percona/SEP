@@ -71,8 +71,8 @@ docker compose up -d                          # pmm-server + sep-sidecar
 
 That is the whole prerequisite list. PMM publishes the four secrets SEP reads
 from disk and the side-car mints its own Grafana token, so nothing has to be
-chosen or seeded in advance. The one thing it assumes is an x86-64 host — see
-[Caveats](#caveats) if yours is arm64.
+chosen or seeded in advance. The topology does require an x86-64 runtime; arm64
+hosts need x86-64 emulation — see [Caveats](#caveats).
 
 `./bootstrap.sh` is needed **only** for the `mysql` profile, whose three
 test-fixture passwords are the only thing the generated `.env` still holds:
