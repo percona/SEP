@@ -1047,11 +1047,6 @@ export interface components {
      *     to collect. Inventory-local on purpose — SEP's own
      *     ``SyncInventoryEntityTypeEnum`` lives in a package this service must not
      *     import.
-     *
-     *     :cvar NODE: The node entity.
-     *     :cvar SERVICE: The service entity.
-     *     :cvar SCHEMA: The schema entity.
-     *     :cvar TABLE: The table entity.
      * @enum {string}
      */
     RetirableEntityName: 'node' | 'service' | 'schema' | 'table';
