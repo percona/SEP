@@ -151,6 +151,7 @@ class TestAdvancedMarkers:
         [
             "SYNC_LOCK_TTL",
             "STALENESS_THRESHOLD_SECONDS",
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
             "LOG_RETENTION_DAYS",
             "LOG_PURGE_BATCH_SIZE",
             "LOG_STREAM_CAP_BYTES",
