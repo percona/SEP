@@ -15,12 +15,15 @@
 
 """Test inventory CRUD manager database-layer behavior."""
 
+import asyncio
 from datetime import datetime, UTC
 
 import pytest
 from pytest_mock import MockerFixture
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
@@ -1228,6 +1231,88 @@ class TestUnlinkNodeIdentity:
         )
 
 
+class TestChainedIdentityLinks:
+    """Test a row that is a predecessor in one link and a successor in the next."""
+
+    @staticmethod
+    async def _chain(
+        session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> tuple[Node, Node, Node]:
+        """Confirm a twice-re-registered node newest pair first, as the list offers.
+
+        While the middle row is the newest active one it is the only successor a
+        pairing can name, so the operator confirms it first and only then is the
+        oldest row's pairing surfaced. That order is what leaves the middle row a
+        predecessor in one link and a successor in the next.
+        """
+        oldest, middle = split_nodes
+        newest = await NodeManager.create(
+            session,
+            NodeWriteFactory.build(name=oldest.name, address=oldest.address),
+        )
+        await NodeManager.confirm_identity_link(
+            session, middle, newest.id, principal=PRINCIPAL
+        )
+        await NodeManager.confirm_identity_link(
+            session, oldest, middle.id, principal=PRINCIPAL
+        )
+        return oldest, middle, newest
+
+    @pytest.mark.asyncio
+    async def test_every_identifier_in_the_chain_resolves_to_the_survivor(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Answer for the identifiers the chain absorbed, not just the transferred one.
+
+        A confirmation moves only the identifier its successor currently holds,
+        so the middle row's *own* identifier is the one no link rewrites. Reading
+        the newest binding alone would hand it back a tombstone.
+        """
+        identifiers = [split_nodes[0].external_id, split_nodes[1].external_id]
+        oldest, _, newest = await self._chain(session, split_nodes)
+        identifiers.append(newest.external_id)
+
+        for external_id in identifiers:
+            assert (
+                await ExternalIdentityAliasManager.resolve_entity_id(
+                    session, RetirableEntityName.NODE, SourceEnum.PMM, external_id
+                )
+                == oldest.id
+            )
+
+    @pytest.mark.asyncio
+    async def test_reversing_the_newer_link_hands_the_chain_back(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Stop following a confirmation the operator retracted.
+
+        Resolution follows the decision log rather than a rewritten binding, so a
+        reversal restores the earlier answers by retracting the link — nothing
+        has to be un-rewritten.
+        """
+        oldest_id = split_nodes[0].external_id
+        middle_id = split_nodes[1].external_id
+        oldest, middle, newest = await self._chain(session, split_nodes)
+        newest_id = newest.external_id
+
+        await NodeManager.unlink_identity(
+            session, oldest, middle.id, principal=PRINCIPAL
+        )
+
+        resolutions = {
+            external_id: await ExternalIdentityAliasManager.resolve_entity_id(
+                session, RetirableEntityName.NODE, SourceEnum.PMM, external_id
+            )
+            for external_id in (oldest_id, middle_id, newest_id)
+        }
+
+        assert resolutions == {
+            oldest_id: oldest.id,
+            middle_id: middle.id,
+            newest_id: middle.id,
+        }
+
+
 class TestIdentityLinkAndCollection:
     """Test how a standing link interacts with tombstone collection."""
 
@@ -1271,6 +1356,58 @@ class TestIdentityLinkAndCollection:
         )
 
         assert successor.id in collectible
+
+    @pytest.mark.asyncio
+    async def test_a_service_under_a_linked_successor_node_is_not_collectible(
+        self,
+        session: AsyncSession,
+        split_nodes_with_services: tuple[Node, Node, Service, Service],
+    ) -> None:
+        """Keep the services a node confirmation retired within the link's reach.
+
+        Confirming a node retires the successor *with its subtree*, and those
+        services carry no service decision of their own, so the shared pin does
+        not reach them. Collection walks services before nodes, which means the
+        very rows the node link exists to surface as candidates in turn would age
+        out from under it while the link still stands.
+        """
+        predecessor, successor, _, successor_service = split_nodes_with_services
+        await NodeManager.confirm_identity_link(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        collectible = await RetiredInclusiveServiceManager.collectible_ids(
+            session,
+            retired_before=datetime(2999, 1, 1, tzinfo=UTC),
+            keep_by_model={},
+            limit=10,
+        )
+
+        assert successor_service.id not in collectible
+
+    @pytest.mark.asyncio
+    async def test_a_service_under_an_unlinked_node_becomes_collectible_again(
+        self,
+        session: AsyncSession,
+        split_nodes_with_services: tuple[Node, Node, Service, Service],
+    ) -> None:
+        """Release the widened pin with the node link that justified it."""
+        predecessor, successor, _, successor_service = split_nodes_with_services
+        await NodeManager.confirm_identity_link(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+        await NodeManager.unlink_identity(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        collectible = await RetiredInclusiveServiceManager.collectible_ids(
+            session,
+            retired_before=datetime(2999, 1, 1, tzinfo=UTC),
+            keep_by_model={},
+            limit=10,
+        )
+
+        assert successor_service.id in collectible
 
     @pytest.mark.asyncio
     async def test_an_ordinary_tombstone_stays_collectible(
@@ -1632,3 +1769,65 @@ class TestConfirmedLinkNeedsNoSyncerChange:
 
         assert matched is not None
         assert matched.id == predecessor.id
+
+
+class TestIdentityLinkLockingOnPostgreSQL:
+    """Test the pairing row lock against a server that honours row locks.
+
+    The SQLite race tests above inject the competing decision through the same
+    session, which exercises the application-level re-check and nothing else —
+    they pass with ``with_for_update()`` removed. Two genuinely concurrent
+    sessions on real PostgreSQL is the only place the lock half of the design is
+    observable, so the skip contract of ``postgres_engine`` applies: the case is
+    silent locally and runs in the ``test_postgres`` CI job.
+    """
+
+    @staticmethod
+    async def _confirm(
+        maker: async_sessionmaker[AsyncSession],
+        predecessor_id: int,
+        successor_id: int,
+        principal: str,
+    ) -> None:
+        """Confirm one pairing in a session of its own, as a second caller would."""
+        async with maker() as session:
+            predecessor = await RetiredInclusiveNodeManager.get_or_404(
+                session, id=predecessor_id
+            )
+            await NodeManager.confirm_identity_link(
+                session, predecessor, successor_id, principal=principal
+            )
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_two_sessions_confirming_one_pairing_append_one_decision(
+        self, postgres_engine: AsyncEngine, postgres_session: AsyncSession
+    ) -> None:
+        """Serialize two overlapping confirmations onto a single decision row.
+
+        Counting the appends is what catches a lost race: the row mutations are
+        individually idempotent, so a second confirmation that slipped through
+        would leave the nodes looking right and the audit trail claiming the
+        machine was reconciled twice.
+        """
+        predecessor = await NodeManager.create(
+            postgres_session, NodeWriteFactory.build()
+        )
+        successor = await NodeManager.create(
+            postgres_session,
+            NodeWriteFactory.build(name=predecessor.name, address=predecessor.address),
+        )
+        maker = get_async_session_maker_from_engine(postgres_engine)
+
+        outcomes = await asyncio.gather(
+            self._confirm(maker, predecessor.id, successor.id, "first-operator"),
+            self._confirm(maker, predecessor.id, successor.id, "second-operator"),
+            return_exceptions=True,
+        )
+
+        assert [type(outcome) for outcome in outcomes].count(HTTPConflictException) == 1
+        async with maker() as reader:
+            assert await IdentityLinkDecisionManager.count(reader) == 1
+            assert (
+                await ExternalIdentityAliasManager.count(reader) == CONFIRM_ALIAS_COUNT
+            )

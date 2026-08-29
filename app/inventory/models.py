@@ -618,19 +618,24 @@ class ExternalIdentityAliasBase(SQLModel):
 
     entity_type: RetirableEntityName = SQLField(
         sa_column=Column(
-            EnumField(RetirableEntityName, native_enum=False), nullable=False
+            EnumField(RetirableEntityName, native_enum=False, create_constraint=True),
+            nullable=False,
         )
     )
     entity_id: int
     source: SourceEnum = SQLField(
-        sa_column=Column(EnumField(SourceEnum, native_enum=False), nullable=False)
+        sa_column=Column(
+            EnumField(SourceEnum, native_enum=False, create_constraint=True),
+            nullable=False,
+        )
     )
     external_id: NonEmptyStr
     valid_from: UTCDatetime = SQLField(sa_type=DateTimeWithTimezone)
     valid_to: UTCDatetime | None = SQLField(default=None, sa_type=DateTimeWithTimezone)
     linkage_method: LinkageMethodEnum = SQLField(
         sa_column=Column(
-            EnumField(LinkageMethodEnum, native_enum=False), nullable=False
+            EnumField(LinkageMethodEnum, native_enum=False, create_constraint=True),
+            nullable=False,
         )
     )
     principal: NonEmptyStr
@@ -642,9 +647,13 @@ class ExternalIdentityAlias(ExternalIdentityAliasBase, BaseSQLModel, table=True)
     Append-only. A binding that is open at write time carries ``valid_to = None``
     and is closed by appending a superseding record rather than by an update, so
     a confirmation and its reversal both stay readable afterwards. An identifier
-    resolves to the row named by its record with the greatest
-    ``(valid_from, id)``; an identifier with no record at all resolves by the
-    ``external_id`` column, which is the overwhelming majority.
+    is bound to the row named by its record with the greatest
+    ``(valid_from, id)``, and then resolves to whichever row has since absorbed
+    that one through a standing confirmation — a confirmation transfers only the
+    identifier its successor currently holds, so the rest of that successor's
+    bindings stay where they are and are followed rather than rewritten. An
+    identifier with no record at all resolves by the ``external_id`` column,
+    which is the overwhelming majority.
 
     ``entity_id`` carries no foreign key on purpose: the column is polymorphic
     over ``node`` and ``service``, so no single target exists, and its absence
@@ -712,14 +721,18 @@ class IdentityLinkDecisionBase(SQLModel):
 
     entity_type: RetirableEntityName = SQLField(
         sa_column=Column(
-            EnumField(RetirableEntityName, native_enum=False), nullable=False
+            EnumField(RetirableEntityName, native_enum=False, create_constraint=True),
+            nullable=False,
         )
     )
     predecessor_id: int
     successor_id: int
     decision: IdentityLinkDecisionEnum = SQLField(
         sa_column=Column(
-            EnumField(IdentityLinkDecisionEnum, native_enum=False), nullable=False
+            EnumField(
+                IdentityLinkDecisionEnum, native_enum=False, create_constraint=True
+            ),
+            nullable=False,
         )
     )
     principal: NonEmptyStr

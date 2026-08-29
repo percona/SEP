@@ -35,9 +35,13 @@ unique index and would refuse the second, legitimate row.
 and ``service``, and because the audit trail must outlive a row the tombstone
 collection deletes.
 
-Every enum column is non-native, so a future member needs no PostgreSQL type
-alteration and none of them shares a type object with the ``node.source``
-column.
+Every enum column is non-native and carries its own CHECK, so a future member
+needs no PostgreSQL type alteration and none of them shares a type object with
+the ``node.source`` column. ``create_constraint=True`` is what emits the CHECK
+at all: SQLAlchemy does not derive one from ``native_enum=False`` alone, so
+omitting it would leave the columns accepting arbitrary strings. Both tables
+declare an ``entity_type`` CHECK under the same ``retirableentityname`` name,
+which is legal because a CHECK name is scoped to its table.
 
 Additive throughout: no existing table is touched, and there is no data
 migration, so the downgrade simply drops both tables.
@@ -71,13 +75,19 @@ def upgrade() -> None:
                 "TABLE",
                 name="retirableentityname",
                 native_enum=False,
+                create_constraint=True,
             ),
             nullable=False,
         ),
         sa.Column("entity_id", sa.Integer(), nullable=False),
         sa.Column(
             "source",
-            sa.Enum("PMM", name="sourceenum", native_enum=False),
+            sa.Enum(
+                "PMM",
+                name="sourceenum",
+                native_enum=False,
+                create_constraint=True,
+            ),
             nullable=False,
         ),
         sa.Column("external_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
@@ -90,6 +100,7 @@ def upgrade() -> None:
                 "OPERATOR_UNLINK",
                 name="linkagemethodenum",
                 native_enum=False,
+                create_constraint=True,
             ),
             nullable=False,
         ),
@@ -122,6 +133,7 @@ def upgrade() -> None:
                 "TABLE",
                 name="retirableentityname",
                 native_enum=False,
+                create_constraint=True,
             ),
             nullable=False,
         ),
@@ -135,6 +147,7 @@ def upgrade() -> None:
                 "UNLINKED",
                 name="identitylinkdecisionenum",
                 native_enum=False,
+                create_constraint=True,
             ),
             nullable=False,
         ),

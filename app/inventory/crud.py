@@ -475,6 +475,15 @@ class ExternalIdentityAliasManager(BaseSQLModelManager):
         been through a link carry any history, and every other one keeps
         resolving by the ``external_id`` column as before.
 
+        The newest record names the row the identifier was last *bound* to, which
+        is not the same question as which row answers for it now: a later
+        confirmation may have absorbed that row without touching this
+        identifier's records, because a confirmation transfers only the one
+        identifier its successor currently holds. So the binding is followed
+        through :meth:`IdentityLinkDecisionManager.surviving_entity_id`, and a
+        reversal makes the hop stop by retracting the confirmation rather than by
+        rewriting any binding.
+
         :param session: The asynchronous database session to use.
         :param entity_type: The inventory entity type the identifier names.
         :param source: The upstream system the identifier belongs to, or None to
@@ -498,7 +507,12 @@ class ExternalIdentityAliasManager(BaseSQLModelManager):
         result = await cls._exec(  # call-shape-dup-ok: _exec already names the intent
             session, query
         )
-        return result.first()
+        bound_to = result.first()
+        if bound_to is None:
+            return None
+        return await IdentityLinkDecisionManager.surviving_entity_id(
+            session, entity_type, bound_to
+        )
 
 
 class IdentityLinkDecisionManager(BaseSQLModelManager):
@@ -542,24 +556,25 @@ class IdentityLinkDecisionManager(BaseSQLModelManager):
         )
 
     @classmethod
-    def confirmed_link_exists(
+    def _standing_confirmation(
         cls,
         entity_type: RetirableEntityName,
         *,
         predecessor_id: Any = None,
         successor_id: Any = None,
-    ) -> ColumnElement[bool]:
-        """Return the predicate matching a pairing whose standing decision confirms it.
+    ) -> tuple[Any, list[ColumnElement[bool]]]:
+        """Return the decision alias and the clauses selecting a standing confirmation.
 
-        Either endpoint may be left unconstrained, which then matches any pairing
-        holding the other one.
+        Callers that only need to know whether such a decision exists take
+        :meth:`confirmed_link_exists`; the alias is handed back for the one
+        caller that needs a column off the row itself.
 
         :param entity_type: The inventory entity type the pairing names.
         :param predecessor_id: The column or value the older row must equal, or
             None to leave it unconstrained.
         :param successor_id: The column or value the newer row must equal, or
             None to leave it unconstrained.
-        :return: The ``EXISTS`` predicate.
+        :return: The aliased decision model, and the clauses to be ANDed together.
         """
         decision = aliased(cls.Model)
         newest = aliased(cls.Model)
@@ -581,7 +596,71 @@ class IdentityLinkDecisionManager(BaseSQLModelManager):
             clauses.append(col(decision.predecessor_id) == predecessor_id)
         if successor_id is not None:
             clauses.append(col(decision.successor_id) == successor_id)
+        return decision, clauses
+
+    @classmethod
+    def confirmed_link_exists(
+        cls,
+        entity_type: RetirableEntityName,
+        *,
+        predecessor_id: Any = None,
+        successor_id: Any = None,
+    ) -> ColumnElement[bool]:
+        """Return the predicate matching a pairing whose standing decision confirms it.
+
+        Either endpoint may be left unconstrained, which then matches any pairing
+        holding the other one.
+
+        :param entity_type: The inventory entity type the pairing names.
+        :param predecessor_id: The column or value the older row must equal, or
+            None to leave it unconstrained.
+        :param successor_id: The column or value the newer row must equal, or
+            None to leave it unconstrained.
+        :return: The ``EXISTS`` predicate.
+        """
+        _, clauses = cls._standing_confirmation(
+            entity_type, predecessor_id=predecessor_id, successor_id=successor_id
+        )
         return select(literal(1)).where(*clauses).exists()
+
+    @classmethod
+    async def surviving_entity_id(
+        cls,
+        session: AsyncSession,
+        entity_type: RetirableEntityName,
+        entity_id: int,
+    ) -> int:
+        """Follow the standing confirmations that absorbed a row into its survivor.
+
+        A row confirmed away is retired and its identifier moved onto the
+        predecessor, so anything still naming it means the predecessor. Absorbing
+        composes: a machine re-registered twice is reconciled newest pair first,
+        which leaves the middle row a predecessor in one link and a successor in
+        the next, and only walking the chain to its end answers for the
+        identifiers it held along the way.
+
+        The walk terminates without a visited set because every confirmation
+        passes the structural predicate's ``predecessor.id < successor.id``, so
+        each hop strictly decreases and no cycle can be recorded.
+
+        :param session: The asynchronous database session to use.
+        :param entity_type: The inventory entity type the row belongs to.
+        :param entity_id: The row to start from.
+        :return: The row that answers for it, which is ``entity_id`` itself when
+            no confirmation stands over it.
+        """
+        while True:
+            decision, clauses = cls._standing_confirmation(
+                entity_type, successor_id=entity_id
+            )
+            result = await cls._exec(
+                session,
+                select(col(decision.predecessor_id)).where(*clauses).limit(1),
+            )
+            predecessor_id = result.first()
+            if predecessor_id is None:
+                return entity_id
+            entity_id = predecessor_id
 
     @classmethod
     async def latest_for_pairing(
@@ -712,12 +791,16 @@ class AliasableManagerMixin(RetirableManagerMixin):
         """
 
     @classmethod
-    def _identity_link_pin(cls) -> ColumnElement[bool] | None:
+    def _identity_link_pin(cls) -> ColumnElement[bool]:
         """Return the predicate matching a row a standing identity link pins.
 
         A confirmed link's successor is a tombstone nothing references any more,
         so collection would otherwise age it out and make the reversal
         permanently impossible with no signal.
+
+        Narrowed from the base's optional return: an aliasable entity always has
+        a pin, which is what lets a subclass widen this one by ``or_``-ing onto
+        ``super()`` without re-testing for None.
 
         :return: The ``EXISTS`` predicate.
         """
@@ -1468,6 +1551,27 @@ class ServiceManager(AliasableManagerMixin, BaseSQLModelChildManager):
             )
             .exists(),
         ]
+
+    @classmethod
+    def _identity_link_pin(cls) -> ColumnElement[bool]:
+        """Cover the services a standing node link retired, beyond the shared pin.
+
+        Confirming a node pairing retires the successor node *with its subtree*,
+        so its services become tombstones carrying no service decision of their
+        own. The shared pin does not reach them, and collection walks services
+        before nodes, so the very rows
+        :meth:`_structural_pairing_clauses` keeps surfacing as candidates would
+        age out from under the standing node link — taking the reversal's
+        subtree with them.
+
+        :return: The ``EXISTS`` predicate.
+        """
+        return or_(
+            super()._identity_link_pin(),
+            IdentityLinkDecisionManager.confirmed_link_exists(
+                RetirableEntityName.NODE, successor_id=col(cls.Model.node_id)
+            ),
+        )
 
     @classmethod
     async def _identity_source(cls, session: AsyncSession, entity: Any) -> SourceEnum:
