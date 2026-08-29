@@ -18,11 +18,15 @@
 import logging
 
 from fastapi import APIRouter, status
+from sqlmodel import col
 
-from app.api.deps import IsAuthenticatedDep, IsServicePrincipalDep
+from app.api.deps import CurrentUserID, IsAuthenticatedDep, IsServicePrincipalDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
+from app.core.utils.fields import NonEmptyStr
+from app.inventory.constants import RetirableEntityName
 from app.inventory.crud import (
+    ExternalIdentityAliasManager,
     SchemaManager,
     ServiceManager,
     ServiceSystemObservationManager,
@@ -38,12 +42,16 @@ from app.inventory.deps import (
     SessionDep,
 )
 from app.inventory.models import (
+    ExternalIdentityAlias,
+    ExternalIdentityAliasResponse,
+    IdentityLinkDecisionWrite,
     Schema,
     SchemaCompactResponse,
     SchemaResponse,
     SchemaWrite,
     Service,
     ServiceDetailResponse,
+    ServiceIdentityCandidateResponse,
     ServiceResponse,
     ServiceSystemObservationResponse,
     ServiceSystemObservationWrite,
@@ -62,6 +70,7 @@ async def list_services(
     pagination: PaginationDep,
     list_query: ServiceListQueryDep,
     manager: ServiceScopeDep,
+    external_id: NonEmptyStr | None = None,
     service_type: ServiceTypeEnum | None = None,
 ) -> PaginatedResponse[ServiceResponse]:
     """List Services.
@@ -70,16 +79,70 @@ async def list_services(
     :param pagination: Validated offset/limit query parameters.
     :param list_query: The resolved sort/search produced at the request boundary.
     :param manager: The service manager the request's retirement scope selected.
+    :param external_id: Return only the service carrying this upstream identifier,
+        resolved through any identity alias recorded for it.
     :param service_type: Return only services of this type.
     :return: A paginated response of service responses.
     """
     logger.debug("Listing services for type '%s'", service_type or "all")
+    resolved_id = (
+        None
+        if external_id is None
+        else await ExternalIdentityAliasManager.resolve_entity_id(
+            session, RetirableEntityName.SERVICE, None, external_id
+        )
+    )
+    if resolved_id is not None:
+        return await manager.list_query_paginated(
+            session,
+            list_query=list_query,
+            select_related=[Service.schemas, Service.node],
+            pagination=pagination,
+            id=resolved_id,
+            type=service_type,
+        )
     return await manager.list_query_paginated(
         session,
         list_query=list_query,
         select_related=[Service.schemas, Service.node],
         pagination=pagination,
+        external_id=external_id,
         type=service_type,
+    )
+
+
+@router.get("/identity-candidates", dependencies=[IsAuthenticatedDep])
+async def list_service_identity_candidates(
+    session: SessionDep, pagination: PaginationDep
+) -> PaginatedResponse[ServiceIdentityCandidateResponse]:
+    """List service pairings a PMM re-registration may have split.
+
+    Declared above ``GET /{service_id}``: FastAPI matches path operations in
+    declaration order, so the parameterized route would claim this path first and
+    answer 422 on the unparseable identifier rather than 404.
+
+    :param session: The async database session.
+    :param pagination: Validated offset/limit query parameters.
+    :return: A paginated response of candidate pairings.
+    """
+    candidates, total = await ServiceManager.identity_candidates(
+        session, pagination=pagination
+    )
+    return PaginatedResponse.from_pagination(
+        [
+            ServiceIdentityCandidateResponse(
+                predecessor=ServiceResponse.model_validate(
+                    candidate.predecessor, from_attributes=True
+                ),
+                successor=ServiceResponse.model_validate(
+                    candidate.successor, from_attributes=True
+                ),
+                matched_on=candidate.matched_on,
+            )
+            for candidate in candidates
+        ],
+        total,
+        pagination,
     )
 
 
@@ -222,3 +285,57 @@ async def create_schema_for_service(
     """Create Schema for Service."""
     logger.debug("Creating schema for service %s: %s", service.id, schema)
     return await SchemaManager.create(session, schema, service_id=service.id)
+
+
+@router.post(
+    "/{service_id}/identity-link",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def decide_service_identity_link(
+    session: SessionDep,
+    service: RetirableServiceDep,
+    decision: IdentityLinkDecisionWrite,
+    principal: CurrentUserID,
+) -> None:
+    """Confirm, reject or reverse a candidate service pairing.
+
+    The path names the **predecessor** — the survivor of a confirmation.
+
+    Carries ``IsAuthenticatedDep`` and deliberately not ``IsServicePrincipalDep``:
+    an identity link is an operator judgement, not a row the syncer owns.
+
+    :param session: The async database session.
+    :param service: The predecessor addressed by the path, retired or not.
+    :param decision: What the operator decided, and about which successor.
+    :param principal: The caller recorded on the resulting records.
+    :raises HTTPBadRequestException: If the body names the service itself, or both
+        rows already hold one identifier.
+    :raises HTTPNotFoundException: If no service carries the named successor id.
+    :raises HTTPConflictException: If the decision does not apply to the pairing
+        as it currently stands.
+    """
+    logger.debug("Deciding %s on service %s", decision.decision, service.id)
+    await ServiceManager.decide_identity_link(
+        session, service, decision, principal=principal
+    )
+
+
+@router.get("/{service_id}/identity-aliases", dependencies=[IsAuthenticatedDep])
+async def list_service_identity_aliases(
+    session: SessionDep, service: RetirableServiceDep, pagination: PaginationDep
+) -> PaginatedResponse[ExternalIdentityAliasResponse]:
+    """List the upstream identifiers this service has answered for, oldest first.
+
+    :param session: The async database session.
+    :param service: The service addressed by the path, retired or not.
+    :param pagination: Validated offset/limit query parameters.
+    :return: A paginated response of the service's binding records, oldest first.
+    """
+    return await ExternalIdentityAliasManager.list_paginated(
+        session,
+        order_by=[col(ExternalIdentityAlias.id)],
+        pagination=pagination,
+        entity_type=RetirableEntityName.SERVICE,
+        entity_id=service.id,
+    )

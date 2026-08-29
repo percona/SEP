@@ -1,6 +1,91 @@
 {
   "components": {
     "schemas": {
+      "ExternalIdentityAliasResponse": {
+        "description": "Define the external-identity alias API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:param created_at: The timestamp when the record is created. Defaults to the\n    current time in UTC.\n:param updated_at: The timestamp when the record is last updated.\n    Automatically updated on changes.\n:param entity_type: The inventory entity type the binding names.\n:param entity_id: The primary key of the row the upstream id resolves to.\n:param source: The upstream system the identifier belongs to.\n:param external_id: The upstream identifier being bound.\n:param valid_from: When the binding took effect.\n:param valid_to: When the binding stopped applying, or None while it stands.\n:param linkage_method: How the binding came to be recorded.\n:param principal: The caller that recorded the binding.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "integer"
+          },
+          "entity_type": {
+            "$ref": "#/components/schemas/RetirableEntityName"
+          },
+          "external_id": {
+            "minLength": 1,
+            "title": "External Id",
+            "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "linkage_method": {
+            "$ref": "#/components/schemas/LinkageMethodEnum"
+          },
+          "principal": {
+            "minLength": 1,
+            "title": "Principal",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceEnum"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "valid_from": {
+            "format": "date-time",
+            "title": "Valid From",
+            "type": "string"
+          },
+          "valid_to": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid To"
+          }
+        },
+        "required": [
+          "entity_type",
+          "entity_id",
+          "source",
+          "external_id",
+          "valid_from",
+          "linkage_method",
+          "principal",
+          "id"
+        ],
+        "title": "ExternalIdentityAliasResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -165,6 +250,34 @@
         "title": "HostSystemObservationWrite",
         "type": "object"
       },
+      "IdentityLinkDecisionEnum": {
+        "description": "Enumerate the decisions an operator may record against a candidate pairing.\n\n:cvar CONFIRMED: The pairing names one machine, and the link stands.\n:cvar REJECTED: The pairing names two machines, so stop suggesting it.\n:cvar UNLINKED: A standing confirmation was reversed.",
+        "enum": [
+          "confirmed",
+          "rejected",
+          "unlinked"
+        ],
+        "title": "IdentityLinkDecisionEnum",
+        "type": "string"
+      },
+      "IdentityLinkDecisionWrite": {
+        "description": "Define the request body recording one operator decision over a pairing.\n\n:param successor_id: The row the addressed predecessor is being paired with.\n:param decision: What the operator decided.",
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/IdentityLinkDecisionEnum"
+          },
+          "successor_id": {
+            "title": "Successor Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "successor_id",
+          "decision"
+        ],
+        "title": "IdentityLinkDecisionWrite",
+        "type": "object"
+      },
       "InventoryCollectResponse": {
         "description": "Report what a collection call deleted, or would have deleted.\n\n:param deleted: The collected ids per entity type, exhaustive for this\n    call. On a dry run these are the ids the equivalent real call would\n    delete. A type the walk stopped before reporting is empty rather than\n    absent.\n:param remaining: Whether any entity type filled its ``limit``, meaning more\n    tombstones are waiting for the next batch.",
         "properties": {
@@ -229,6 +342,15 @@
         "type": "object"
       },
       "JsonValue": {},
+      "LinkageMethodEnum": {
+        "description": "Enumerate how an external-identity binding came to be recorded.\n\n:cvar OPERATOR_CONFIRMATION: An operator confirmed a candidate pairing.\n:cvar OPERATOR_UNLINK: An operator reversed a confirmed pairing.",
+        "enum": [
+          "operator_confirmation",
+          "operator_unlink"
+        ],
+        "title": "LinkageMethodEnum",
+        "type": "string"
+      },
       "Node": {
         "description": "Represent a node in the inventory.\n\n:param address: The network address of the node.\n:param name: The name of the node.\n:param external_id: An external identifier for the node. Must be unique for source,\n    as defined by composite index ix_node_external_id_source.\n:param source: The source from which the node information is derived. Must be unique\n    for external_id, as defined by composite index ix_node_external_id_source.\n:param type: The type of the node (e.g., remote, generic).\n:param retired_at: When the node stopped being reported upstream, or None while\n    it is active.\n:param retirement_key: The discriminator carried inside every unique index.\n:param services: A list of services associated with the node.",
         "properties": {
@@ -305,6 +427,31 @@
           "source"
         ],
         "title": "Node",
+        "type": "object"
+      },
+      "NodeIdentityCandidateResponse": {
+        "description": "Pair a node with the successor a re-registration may have split it into.\n\n:param predecessor: The older row — the one every SEP reference persisted\n    before the re-registration resolves through, and so the one a\n    confirmation keeps.\n:param successor: The newer row PMM created when the node re-registered.\n:param matched_on: The signals that agreed, informational only. Detection\n    never requires an address match, because PMM discards the address on a\n    non-``--force`` re-registration.",
+        "properties": {
+          "matched_on": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Matched On",
+            "type": "array"
+          },
+          "predecessor": {
+            "$ref": "#/components/schemas/NodeResponse"
+          },
+          "successor": {
+            "$ref": "#/components/schemas/NodeResponse"
+          }
+        },
+        "required": [
+          "predecessor",
+          "successor",
+          "matched_on"
+        ],
+        "title": "NodeIdentityCandidateResponse",
         "type": "object"
       },
       "NodeResponse": {
@@ -430,6 +577,68 @@
         "title": "NodeWrite",
         "type": "object"
       },
+      "PaginatedResponse_ExternalIdentityAliasResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalIdentityAliasResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[ExternalIdentityAliasResponse]",
+        "type": "object"
+      },
+      "PaginatedResponse_NodeIdentityCandidateResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NodeIdentityCandidateResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[NodeIdentityCandidateResponse]",
+        "type": "object"
+      },
       "PaginatedResponse_NodeResponse_": {
         "properties": {
           "items": {
@@ -490,6 +699,37 @@
           "limit"
         ],
         "title": "PaginatedResponse[SchemaResponse]",
+        "type": "object"
+      },
+      "PaginatedResponse_ServiceIdentityCandidateResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceIdentityCandidateResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[ServiceIdentityCandidateResponse]",
         "type": "object"
       },
       "PaginatedResponse_ServiceResponse_": {
@@ -1167,6 +1407,31 @@
           "node"
         ],
         "title": "ServiceDetailResponse",
+        "type": "object"
+      },
+      "ServiceIdentityCandidateResponse": {
+        "description": "Pair a service with the successor a re-registration may have split it into.\n\n:param predecessor: The older row a confirmation keeps.\n:param successor: The newer row PMM created.\n:param matched_on: The signals that agreed, informational only.",
+        "properties": {
+          "matched_on": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Matched On",
+            "type": "array"
+          },
+          "predecessor": {
+            "$ref": "#/components/schemas/ServiceResponse"
+          },
+          "successor": {
+            "$ref": "#/components/schemas/ServiceResponse"
+          }
+        },
+        "required": [
+          "predecessor",
+          "successor",
+          "matched_on"
+        ],
+        "title": "ServiceIdentityCandidateResponse",
         "type": "object"
       },
       "ServiceResponse": {
@@ -2473,6 +2738,68 @@
         ]
       }
     },
+    "/nodes/identity-candidates": {
+      "get": {
+        "description": "List node pairings a PMM re-registration may have split.\n\nDeclared above ``GET /{node_id}``: FastAPI matches path operations in\ndeclaration order, so the parameterized route would claim this path first and\nanswer 422 on the unparseable identifier rather than 404.\n\nBuilt through :meth:`PaginatedResponse.from_pagination` rather than\n``list_query_paginated``, the item being a pair of rows and not a single\nmodel.\n\n:param session: The async database session.\n:param pagination: Validated offset/limit query parameters.\n:return: A paginated response of candidate pairings.",
+        "operationId": "nodes_list_node_identity_candidates_nodes_identity_candidates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_NodeIdentityCandidateResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Node Identity Candidates",
+        "tags": [
+          "nodes"
+        ]
+      }
+    },
     "/nodes/{node_id}": {
       "delete": {
         "description": "Retire Node and everything below it, keeping the rows resolvable.\n\n:param session: The asynchronous database session.\n:param node: The node to retire, retired or not.",
@@ -2621,6 +2948,128 @@
           }
         ],
         "summary": "Update Node",
+        "tags": [
+          "nodes"
+        ]
+      }
+    },
+    "/nodes/{node_id}/identity-aliases": {
+      "get": {
+        "description": "List the upstream identifiers this node has answered for, oldest first.\n\nA node no link has ever touched has no records, which is an empty page rather\nthan a 404.\n\n:param session: The async database session.\n:param node: The node addressed by the path, retired or not.\n:param pagination: Validated offset/limit query parameters.\n:return: A paginated response of the node's binding records, oldest first.",
+        "operationId": "nodes_list_node_identity_aliases_nodes__node_id__identity_aliases_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_ExternalIdentityAliasResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Node Identity Aliases",
+        "tags": [
+          "nodes"
+        ]
+      }
+    },
+    "/nodes/{node_id}/identity-link": {
+      "post": {
+        "description": "Confirm, reject or reverse a candidate node pairing.\n\nThe path names the **predecessor** — the survivor of a confirmation, and the\nrow the operator is acting on in all three decisions.\n\nCarries ``IsAuthenticatedDep`` and deliberately not ``IsServicePrincipalDep``:\nan identity link is an operator judgement, not a row the syncer owns. The\napp-wide unsafe-method gate already makes the route admin-only for a human\nwhile admitting the principal by identity.\n\n:param session: The async database session.\n:param node: The predecessor addressed by the path, retired or not.\n:param decision: What the operator decided, and about which successor.\n:param principal: The caller recorded on the resulting records.\n:raises HTTPBadRequestException: If the body names the node itself, or both\n    rows already hold one identifier.\n:raises HTTPNotFoundException: If no node carries the named successor id.\n:raises HTTPConflictException: If the decision does not apply to the pairing\n    as it currently stands.",
+        "operationId": "nodes_decide_node_identity_link_nodes__node_id__identity_link_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityLinkDecisionWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Decide Node Identity Link",
         "tags": [
           "nodes"
         ]
@@ -3441,9 +3890,26 @@
     },
     "/services/": {
       "get": {
-        "description": "List Services.\n\n:param session: The async database session.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request boundary.\n:param manager: The service manager the request's retirement scope selected.\n:param service_type: Return only services of this type.\n:return: A paginated response of service responses.",
+        "description": "List Services.\n\n:param session: The async database session.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request boundary.\n:param manager: The service manager the request's retirement scope selected.\n:param external_id: Return only the service carrying this upstream identifier,\n    resolved through any identity alias recorded for it.\n:param service_type: Return only services of this type.\n:return: A paginated response of service responses.",
         "operationId": "services_list_services_services__get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "external_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "External Id"
+            }
+          },
           {
             "in": "query",
             "name": "service_type",
@@ -3558,6 +4024,68 @@
           }
         ],
         "summary": "List Services",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/services/identity-candidates": {
+      "get": {
+        "description": "List service pairings a PMM re-registration may have split.\n\nDeclared above ``GET /{service_id}``: FastAPI matches path operations in\ndeclaration order, so the parameterized route would claim this path first and\nanswer 422 on the unparseable identifier rather than 404.\n\n:param session: The async database session.\n:param pagination: Validated offset/limit query parameters.\n:return: A paginated response of candidate pairings.",
+        "operationId": "services_list_service_identity_candidates_services_identity_candidates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_ServiceIdentityCandidateResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Service Identity Candidates",
         "tags": [
           "services"
         ]
@@ -3711,6 +4239,128 @@
           }
         ],
         "summary": "Update Service",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/services/{service_id}/identity-aliases": {
+      "get": {
+        "description": "List the upstream identifiers this service has answered for, oldest first.\n\n:param session: The async database session.\n:param service: The service addressed by the path, retired or not.\n:param pagination: Validated offset/limit query parameters.\n:return: A paginated response of the service's binding records, oldest first.",
+        "operationId": "services_list_service_identity_aliases_services__service_id__identity_aliases_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "title": "Service Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_ExternalIdentityAliasResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Service Identity Aliases",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/services/{service_id}/identity-link": {
+      "post": {
+        "description": "Confirm, reject or reverse a candidate service pairing.\n\nThe path names the **predecessor** — the survivor of a confirmation.\n\nCarries ``IsAuthenticatedDep`` and deliberately not ``IsServicePrincipalDep``:\nan identity link is an operator judgement, not a row the syncer owns.\n\n:param session: The async database session.\n:param service: The predecessor addressed by the path, retired or not.\n:param decision: What the operator decided, and about which successor.\n:param principal: The caller recorded on the resulting records.\n:raises HTTPBadRequestException: If the body names the service itself, or both\n    rows already hold one identifier.\n:raises HTTPNotFoundException: If no service carries the named successor id.\n:raises HTTPConflictException: If the decision does not apply to the pairing\n    as it currently stands.",
+        "operationId": "services_decide_service_identity_link_services__service_id__identity_link_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "title": "Service Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityLinkDecisionWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Decide Service Identity Link",
         "tags": [
           "services"
         ]

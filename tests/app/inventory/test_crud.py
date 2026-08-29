@@ -21,11 +21,20 @@ import pytest
 from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.exceptions import HTTPBadRequestException
+from app.core.exceptions import (
+    HTTPBadRequestException,
+    HTTPConflictException,
+    HTTPNotFoundException,
+)
+from app.core.pagination import Pagination
+from app.inventory.constants import ACTIVE_RETIREMENT_KEY, RetirableEntityName
 from app.inventory.crud import (
+    ExternalIdentityAliasManager,
     HostSystemObservationManager,
+    IdentityLinkDecisionManager,
     NodeManager,
     RetiredInclusiveNodeManager,
+    RetiredInclusiveServiceManager,
     RetiredInclusiveTableManager,
     SchemaManager,
     ServiceManager,
@@ -34,14 +43,31 @@ from app.inventory.crud import (
 )
 from app.inventory.models import (
     HostSystemObservation,
+    IdentityLinkDecision,
+    IdentityLinkDecisionEnum,
     Node,
     Schema,
     Service,
     ServiceSystemObservation,
+    SourceEnum,
     Table,
 )
-from tests.app.factories import ServiceWriteFactory
+from tests.app.factories import NodeWriteFactory, ServiceWriteFactory
 from tests.app.inventory.conftest import retire_in_place
+
+PAGE = Pagination(offset=0, limit=50)
+
+#: A confirmation appends one closed binding per row of the pairing plus the
+#: predecessor's newly opened one, and a reversal appends the mirror image.
+CONFIRM_ALIAS_COUNT = 3
+CONFIRM_AND_REVERSAL_ALIAS_COUNT = 6
+#: A pairing carrying a confirmation and the reversal that followed it.
+CONFIRM_AND_REVERSAL_DECISION_COUNT = 2
+#: Same-name pairs seeded for the pagination assertions, and the window read back.
+BULK_SPLIT_PAIRS = 6
+BULK_PAGE_SIZE = 3
+#: Three rows sharing one name pair up three ways.
+THREE_GENERATION_PAIRINGS = 3
 
 
 def test_schema_and_table_sortable_allowlists_include_parent_ids() -> None:
@@ -408,3 +434,989 @@ class TestCollect:
 
         assert await RetiredInclusiveNodeManager.collect(session, [node.id]) == 1
         assert await HostSystemObservationManager.count(session) == 0
+
+
+class TestNodeIdentityCandidates:
+    """Test which node pairings the candidate derivation surfaces."""
+
+    @pytest.mark.asyncio
+    async def test_a_tombstoned_predecessor_is_paired_with_its_successor(
+        self, session: AsyncSession, tombstoned_split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Pair a tombstoned node with the active node sharing its name."""
+        predecessor, successor = tombstoned_split_nodes
+
+        candidates, total = await RetiredInclusiveNodeManager.identity_candidates(
+            session, pagination=PAGE
+        )
+
+        assert total == 1
+        assert candidates[0].predecessor.id == predecessor.id
+        assert candidates[0].successor.id == successor.id
+
+    @pytest.mark.asyncio
+    async def test_an_active_but_absent_predecessor_is_still_paired(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Pair two active same-name nodes, the older one being the predecessor.
+
+        PMM enforces global name uniqueness on create, so two synced rows sharing
+        a name means one is no longer reported upstream — the AC's
+        active-but-absent case, which inventory cannot see directly.
+        """
+        predecessor, successor = split_nodes
+
+        candidates, total = await RetiredInclusiveNodeManager.identity_candidates(
+            session, pagination=PAGE
+        )
+
+        assert total == 1
+        assert candidates[0].predecessor.id == predecessor.id
+        assert candidates[0].successor.id == successor.id
+
+    @pytest.mark.asyncio
+    async def test_rows_sharing_an_upstream_id_are_not_a_candidate(
+        self, session: AsyncSession, node: Node
+    ) -> None:
+        """Raise nothing for a tombstone whose replacement reuses its upstream id."""
+        await retire_in_place(session, node)
+        await NodeManager.create(
+            session,
+            NodeWriteFactory.build(name=node.name, external_id=node.external_id),
+        )
+
+        _, total = await RetiredInclusiveNodeManager.identity_candidates(
+            session, pagination=PAGE
+        )
+
+        assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_differing_names_are_not_a_candidate(
+        self, session: AsyncSession, node: Node
+    ) -> None:
+        """Raise nothing for two nodes that never shared a name."""
+        await NodeManager.create(session, NodeWriteFactory.build())
+
+        _, total = await RetiredInclusiveNodeManager.identity_candidates(
+            session, pagination=PAGE
+        )
+
+        assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_a_mismatched_address_does_not_suppress_the_pairing(
+        self, session: AsyncSession, node: Node
+    ) -> None:
+        """Raise the pairing anyway when only the name agrees.
+
+        PMM discards the address on a non-``--force`` re-registration and ships
+        no node update path, so a stored address is routinely stale for a node
+        that never moved.
+        """
+        await NodeManager.create(
+            session,
+            NodeWriteFactory.build(name=node.name, address="10.9.9.9"),
+        )
+
+        candidates, total = await RetiredInclusiveNodeManager.identity_candidates(
+            session, pagination=PAGE
+        )
+
+        assert total == 1
+        assert candidates[0].matched_on == ["name"]
+
+    @pytest.mark.asyncio
+    async def test_a_matching_address_is_reported_as_a_signal(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Report the address alongside the name when both agree."""
+        candidates, _ = await RetiredInclusiveNodeManager.identity_candidates(
+            session, pagination=PAGE
+        )
+
+        assert candidates[0].matched_on == ["name", "address"]
+
+    @pytest.mark.asyncio
+    async def test_no_split_raises_no_candidate(
+        self, session: AsyncSession, node: Node
+    ) -> None:
+        """Return an empty page when nothing was split."""
+        candidates, total = await RetiredInclusiveNodeManager.identity_candidates(
+            session, pagination=PAGE
+        )
+
+        assert candidates == []
+        assert total == 0
+
+
+class TestExternalIdentityAliasResolution:
+    """Test how an upstream id resolves through the alias records."""
+
+    @pytest.mark.asyncio
+    async def test_an_id_with_no_history_resolves_to_nothing(
+        self, session: AsyncSession, node: Node
+    ) -> None:
+        """Return None for an id no link has ever touched, so callers fall back."""
+        resolved = await ExternalIdentityAliasManager.resolve_entity_id(
+            session,
+            RetirableEntityName.NODE,
+            SourceEnum.PMM,
+            node.external_id,
+        )
+
+        assert resolved is None
+
+
+PRINCIPAL = "operator@example.com"
+
+
+async def confirmed_split(
+    session: AsyncSession, pair: tuple[Node, Node]
+) -> tuple[Node, Node]:
+    """Confirm a node pairing and hand both rows back as they now stand."""
+    predecessor, successor = pair
+    await NodeManager.confirm_identity_link(
+        session, predecessor, successor.id, principal=PRINCIPAL
+    )
+    await session.refresh(predecessor)
+    await session.refresh(successor)
+    return predecessor, successor
+
+
+class TestConfirmNodeIdentityLink:
+    """Test transferring a successor's upstream identity onto its predecessor."""
+
+    @pytest.mark.asyncio
+    async def test_the_predecessor_takes_the_successors_identifier(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Leave the surviving row holding the identifier PMM now reports."""
+        predecessor, successor = split_nodes
+        transferred = successor.external_id
+
+        predecessor, successor = await confirmed_split(session, split_nodes)
+
+        assert predecessor.external_id == transferred
+        assert predecessor.retired_at is None
+        assert successor.retired_at is not None
+
+    @pytest.mark.asyncio
+    async def test_a_tombstoned_predecessor_is_revived(
+        self, session: AsyncSession, tombstoned_split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Bring the predecessor back, it being the row every reference resolves to."""
+        predecessor, successor = await confirmed_split(session, tombstoned_split_nodes)
+
+        assert predecessor.retired_at is None
+        assert predecessor.retirement_key == ACTIVE_RETIREMENT_KEY
+        assert successor.retired_at is not None
+
+    @pytest.mark.asyncio
+    async def test_three_alias_records_are_appended(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Close both rows' own bindings and open the predecessor's new one."""
+        original_predecessor_id = split_nodes[0].external_id
+        transferred = split_nodes[1].external_id
+        predecessor, successor = await confirmed_split(session, split_nodes)
+
+        aliases = await ExternalIdentityAliasManager.list(session)
+
+        assert len(aliases) == CONFIRM_ALIAS_COUNT
+        open_records = [alias for alias in aliases if alias.valid_to is None]
+        assert len(open_records) == 1
+        assert open_records[0].entity_id == predecessor.id
+        assert open_records[0].external_id == transferred
+        closed = {(alias.entity_id, alias.external_id) for alias in aliases} - {
+            (predecessor.id, transferred)
+        }
+        assert closed == {
+            (predecessor.id, original_predecessor_id),
+            (successor.id, transferred),
+        }
+
+    @pytest.mark.asyncio
+    async def test_both_identifiers_resolve_to_the_survivor(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Keep the superseded identifier resolvable, which is the point of the alias."""
+        superseded = split_nodes[0].external_id
+        transferred = split_nodes[1].external_id
+        predecessor, _ = await confirmed_split(session, split_nodes)
+
+        assert (
+            await ExternalIdentityAliasManager.resolve_entity_id(
+                session, RetirableEntityName.NODE, SourceEnum.PMM, superseded
+            )
+            == predecessor.id
+        )
+        assert (
+            await ExternalIdentityAliasManager.resolve_entity_id(
+                session, RetirableEntityName.NODE, SourceEnum.PMM, transferred
+            )
+            == predecessor.id
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_confirmed_pairing_leaves_the_candidate_list(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Stop offering a pairing an operator has already acted on."""
+        await confirmed_split(session, split_nodes)
+
+        _, total = await NodeManager.identity_candidates(session, pagination=PAGE)
+
+        assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_a_second_confirmation_conflicts_and_appends_nothing(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Refuse the second of two confirmations rather than logging one event twice.
+
+        Counting the rows is what catches a double append: the entity mutations
+        are individually idempotent, so a second run would leave the rows right
+        and the audit trail wrong.
+        """
+        predecessor, successor = await confirmed_split(session, split_nodes)
+
+        with pytest.raises(HTTPConflictException):
+            await NodeManager.confirm_identity_link(
+                session, predecessor, successor.id, principal=PRINCIPAL
+            )
+
+        assert await IdentityLinkDecisionManager.count(session) == 1
+        assert await ExternalIdentityAliasManager.count(session) == CONFIRM_ALIAS_COUNT
+
+    @pytest.mark.asyncio
+    async def test_a_pairing_created_between_the_check_and_the_lock_conflicts(
+        self,
+        session: AsyncSession,
+        split_nodes: tuple[Node, Node],
+        mocker: MockerFixture,
+    ) -> None:
+        """Refuse a confirmation another caller won while this one waited on the lock.
+
+        The re-check has to read the decision log *after* the lock is held. Doing
+        it before is the whole concurrency bug: both callers pass, both append,
+        and nothing fails loudly because the row mutations are idempotent.
+        """
+        predecessor, successor = split_nodes
+        real_lock = NodeManager._lock_pairing
+
+        async def lock_then_lose_the_race(
+            locked: AsyncSession, predecessor_id: int, successor_id: int
+        ) -> None:
+            await real_lock(locked, predecessor_id, successor_id)
+            session.add(
+                IdentityLinkDecision(
+                    entity_type=RetirableEntityName.NODE,
+                    predecessor_id=predecessor_id,
+                    successor_id=successor_id,
+                    decision=IdentityLinkDecisionEnum.CONFIRMED,
+                    principal="the-other-operator",
+                    predecessor_external_id=predecessor.external_id,
+                )
+            )
+            await session.commit()
+
+        mocker.patch.object(
+            NodeManager, "_lock_pairing", side_effect=lock_then_lose_the_race
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await NodeManager.confirm_identity_link(
+                session, predecessor, successor.id, principal=PRINCIPAL
+            )
+
+        assert await IdentityLinkDecisionManager.count(session) == 1
+        assert await ExternalIdentityAliasManager.count(session) == 0
+
+    @pytest.mark.asyncio
+    async def test_pairing_a_row_with_itself_is_refused(
+        self, session: AsyncSession, node: Node
+    ) -> None:
+        """Refuse a body naming the row the path already addresses."""
+        with pytest.raises(HTTPBadRequestException):
+            await NodeManager.confirm_identity_link(
+                session, node, node.id, principal=PRINCIPAL
+            )
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_successor_is_not_found(
+        self, session: AsyncSession, node: Node
+    ) -> None:
+        """Refuse a body naming a row that does not exist."""
+        with pytest.raises(HTTPNotFoundException):
+            await NodeManager.confirm_identity_link(
+                session, node, node.id + 1000, principal=PRINCIPAL
+            )
+
+    @pytest.mark.asyncio
+    async def test_rows_already_sharing_an_identifier_are_refused(
+        self, session: AsyncSession, node: Node
+    ) -> None:
+        """Refuse a pairing with nothing to transfer."""
+        await retire_in_place(session, node)
+        twin = await NodeManager.create(
+            session,
+            NodeWriteFactory.build(name=node.name, external_id=node.external_id),
+        )
+
+        with pytest.raises(HTTPBadRequestException):
+            await NodeManager.confirm_identity_link(
+                session, node, twin.id, principal=PRINCIPAL
+            )
+
+    @pytest.mark.asyncio
+    async def test_an_unrelated_pairing_is_refused(
+        self, session: AsyncSession, node: Node
+    ) -> None:
+        """Refuse two rows the derivation would never have surfaced together."""
+        unrelated = await NodeManager.create(session, NodeWriteFactory.build())
+
+        with pytest.raises(HTTPConflictException):
+            await NodeManager.confirm_identity_link(
+                session, node, unrelated.id, principal=PRINCIPAL
+            )
+
+
+class TestRejectNodeIdentityLink:
+    """Test recording that a candidate pairing names two machines."""
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_pairing_leaves_the_candidate_list(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Stop re-surfacing a pairing on the next sync once it is rejected."""
+        predecessor, successor = split_nodes
+
+        await NodeManager.reject_identity_link(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        _, total = await NodeManager.identity_candidates(session, pagination=PAGE)
+        assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_a_rejection_does_not_block_confirming_the_same_pairing(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Let an operator correct a mistaken rejection by confirming explicitly.
+
+        Rejection suppresses the suggestion, not the operation — otherwise a
+        misclick is permanent and the failure is invisible, the pairing simply
+        never appearing again.
+        """
+        predecessor, successor = split_nodes
+        transferred = successor.external_id
+        await NodeManager.reject_identity_link(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        await NodeManager.confirm_identity_link(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        await session.refresh(predecessor)
+        assert predecessor.external_id == transferred
+
+    @pytest.mark.asyncio
+    async def test_an_unrelated_pairing_is_refused(
+        self, session: AsyncSession, node: Node
+    ) -> None:
+        """Refuse to reject two rows that were never a pairing."""
+        unrelated = await NodeManager.create(session, NodeWriteFactory.build())
+
+        with pytest.raises(HTTPConflictException):
+            await NodeManager.reject_identity_link(
+                session, node, unrelated.id, principal=PRINCIPAL
+            )
+
+
+class TestUnlinkNodeIdentity:
+    """Test reversing a standing confirmation."""
+
+    @pytest.mark.asyncio
+    async def test_an_active_predecessor_is_restored_to_its_own_identifier(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Give each row back the identifier it held before the confirmation."""
+        own_identifier = split_nodes[0].external_id
+        transferred = split_nodes[1].external_id
+        predecessor, successor = await confirmed_split(session, split_nodes)
+
+        await NodeManager.unlink_identity(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        await session.refresh(predecessor)
+        await session.refresh(successor)
+        assert predecessor.external_id == own_identifier
+        assert predecessor.retired_at is None
+        assert successor.external_id == transferred
+        assert successor.retired_at is None
+
+    @pytest.mark.asyncio
+    async def test_a_tombstoned_predecessor_is_re_retired_at_its_original_time(
+        self, session: AsyncSession, tombstoned_split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Restore the tombstone the confirmation revived, retention age included."""
+        retired_at = tombstoned_split_nodes[0].retired_at
+        predecessor, successor = await confirmed_split(session, tombstoned_split_nodes)
+
+        await NodeManager.unlink_identity(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        await session.refresh(predecessor)
+        await session.refresh(successor)
+        assert predecessor.retired_at == retired_at
+        assert successor.retired_at is None
+
+    @pytest.mark.asyncio
+    async def test_the_confirmation_records_survive_the_reversal(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Append the reversal rather than editing what the confirmation wrote."""
+        predecessor, successor = await confirmed_split(session, split_nodes)
+        confirmation_ids = {
+            alias.id for alias in await ExternalIdentityAliasManager.list(session)
+        }
+
+        await NodeManager.unlink_identity(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        aliases = await ExternalIdentityAliasManager.list(session)
+        assert confirmation_ids <= {alias.id for alias in aliases}
+        assert len(aliases) == CONFIRM_AND_REVERSAL_ALIAS_COUNT
+        assert (
+            await IdentityLinkDecisionManager.count(session)
+            == CONFIRM_AND_REVERSAL_DECISION_COUNT
+        )
+
+    @pytest.mark.asyncio
+    async def test_each_identifier_resolves_to_its_own_row_again(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Undo the resolution change, which is what makes the link reversible."""
+        own_identifier = split_nodes[0].external_id
+        transferred = split_nodes[1].external_id
+        predecessor, successor = await confirmed_split(session, split_nodes)
+
+        await NodeManager.unlink_identity(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        assert (
+            await ExternalIdentityAliasManager.resolve_entity_id(
+                session, RetirableEntityName.NODE, SourceEnum.PMM, own_identifier
+            )
+            == predecessor.id
+        )
+        assert (
+            await ExternalIdentityAliasManager.resolve_entity_id(
+                session, RetirableEntityName.NODE, SourceEnum.PMM, transferred
+            )
+            == successor.id
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_second_confirmation_after_a_reversal_lands_the_same_state(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Leave the rows where the first confirmation left them, cycle after cycle."""
+        transferred = split_nodes[1].external_id
+        predecessor, successor = await confirmed_split(session, split_nodes)
+        await NodeManager.unlink_identity(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        predecessor, successor = await confirmed_split(
+            session, (predecessor, successor)
+        )
+
+        assert predecessor.external_id == transferred
+        assert predecessor.retired_at is None
+        assert successor.retired_at is not None
+
+    @pytest.mark.asyncio
+    async def test_a_pairing_that_was_never_confirmed_is_refused(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Refuse to reverse a link that never stood."""
+        predecessor, successor = split_nodes
+
+        with pytest.raises(HTTPConflictException):
+            await NodeManager.unlink_identity(
+                session, predecessor, successor.id, principal=PRINCIPAL
+            )
+
+    @pytest.mark.asyncio
+    async def test_a_second_reversal_is_refused(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Refuse the second of two reversals, one link being reversible once."""
+        predecessor, successor = await confirmed_split(session, split_nodes)
+        await NodeManager.unlink_identity(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await NodeManager.unlink_identity(
+                session, predecessor, successor.id, principal=PRINCIPAL
+            )
+
+        assert (
+            await IdentityLinkDecisionManager.count(session)
+            == CONFIRM_AND_REVERSAL_DECISION_COUNT
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_collected_successor_leaves_the_link_irreversible(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Say so plainly when the row a reversal needs is gone, writing nothing."""
+        predecessor, successor = await confirmed_split(session, split_nodes)
+        successor_id = successor.id
+        await session.delete(successor)
+        await session.commit()
+
+        with pytest.raises(HTTPConflictException):
+            await NodeManager.unlink_identity(
+                session, predecessor, successor_id, principal=PRINCIPAL
+            )
+
+        assert await ExternalIdentityAliasManager.count(session) == CONFIRM_ALIAS_COUNT
+
+    @pytest.mark.asyncio
+    async def test_a_reclaimed_predecessor_identifier_rolls_the_reversal_back(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Refuse a reversal an active row's unique key blocks, leaving both rows alone.
+
+        The predecessor's own identifier is released by the confirmation, so a
+        later sync tick can legitimately hand it to a new node.
+        """
+        own_identifier = split_nodes[0].external_id
+        transferred = split_nodes[1].external_id
+        predecessor, successor = await confirmed_split(session, split_nodes)
+        await NodeManager.create(
+            session, NodeWriteFactory.build(external_id=own_identifier)
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await NodeManager.unlink_identity(
+                session, predecessor, successor.id, principal=PRINCIPAL
+            )
+
+        await session.refresh(predecessor)
+        await session.refresh(successor)
+        assert predecessor.external_id == transferred
+        assert successor.retired_at is not None
+
+    @pytest.mark.asyncio
+    async def test_a_reversal_created_between_the_check_and_the_lock_conflicts(
+        self,
+        session: AsyncSession,
+        split_nodes: tuple[Node, Node],
+        mocker: MockerFixture,
+    ) -> None:
+        """Refuse a reversal another caller won while this one waited on the lock."""
+        predecessor, successor = await confirmed_split(session, split_nodes)
+        real_lock = NodeManager._lock_pairing
+
+        async def lock_then_lose_the_race(
+            locked: AsyncSession, predecessor_id: int, successor_id: int
+        ) -> None:
+            await real_lock(locked, predecessor_id, successor_id)
+            session.add(
+                IdentityLinkDecision(
+                    entity_type=RetirableEntityName.NODE,
+                    predecessor_id=predecessor_id,
+                    successor_id=successor_id,
+                    decision=IdentityLinkDecisionEnum.UNLINKED,
+                    principal="the-other-operator",
+                )
+            )
+            await session.commit()
+
+        mocker.patch.object(
+            NodeManager, "_lock_pairing", side_effect=lock_then_lose_the_race
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await NodeManager.unlink_identity(
+                session, predecessor, successor.id, principal=PRINCIPAL
+            )
+
+        assert (
+            await IdentityLinkDecisionManager.count(session)
+            == CONFIRM_AND_REVERSAL_DECISION_COUNT
+        )
+
+
+class TestIdentityLinkAndCollection:
+    """Test how a standing link interacts with tombstone collection."""
+
+    @pytest.mark.asyncio
+    async def test_a_linked_successor_is_not_collectible(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Keep a confirmed link reversible for as long as it stands.
+
+        Without this the successor tombstone — which by construction nothing
+        references after a confirmation — ages past the retention window and is
+        deleted, making the reversal permanently impossible with no signal.
+        """
+        _, successor = await confirmed_split(session, split_nodes)
+
+        collectible = await RetiredInclusiveNodeManager.collectible_ids(
+            session,
+            retired_before=datetime(2999, 1, 1, tzinfo=UTC),
+            keep_by_model={},
+            limit=10,
+        )
+
+        assert successor.id not in collectible
+
+    @pytest.mark.asyncio
+    async def test_an_unlinked_successor_becomes_collectible_again(
+        self, session: AsyncSession, tombstoned_split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Release the pin once the link no longer stands."""
+        predecessor, successor = await confirmed_split(session, tombstoned_split_nodes)
+        await NodeManager.unlink_identity(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+        await retire_in_place(session, successor)
+
+        collectible = await RetiredInclusiveNodeManager.collectible_ids(
+            session,
+            retired_before=datetime(2999, 1, 1, tzinfo=UTC),
+            keep_by_model={},
+            limit=10,
+        )
+
+        assert successor.id in collectible
+
+    @pytest.mark.asyncio
+    async def test_an_ordinary_tombstone_stays_collectible(
+        self, session: AsyncSession, node: Node
+    ) -> None:
+        """Leave collection's reach over unlinked tombstones exactly as it was."""
+        await retire_in_place(session, node)
+
+        collectible = await RetiredInclusiveNodeManager.collectible_ids(
+            session,
+            retired_before=datetime(2999, 1, 1, tzinfo=UTC),
+            keep_by_model={},
+            limit=10,
+        )
+
+        assert collectible == [node.id]
+
+
+class TestServiceIdentityCandidates:
+    """Test which service pairings the candidate derivation surfaces."""
+
+    @pytest.mark.asyncio
+    async def test_a_same_node_split_is_paired(
+        self, session: AsyncSession, split_services: tuple[Service, Service]
+    ) -> None:
+        """Pair two same-name services sitting on one node."""
+        predecessor, successor = split_services
+
+        candidates, total = await ServiceManager.identity_candidates(
+            session, pagination=PAGE
+        )
+
+        assert total == 1
+        assert candidates[0].predecessor.id == predecessor.id
+        assert candidates[0].successor.id == successor.id
+        assert candidates[0].matched_on == ["name", "port"]
+
+    @pytest.mark.asyncio
+    async def test_services_on_unrelated_nodes_are_not_paired(
+        self,
+        session: AsyncSession,
+        split_nodes_with_services: tuple[Node, Node, Service, Service],
+    ) -> None:
+        """Leave two same-name services alone while their nodes are unrelated.
+
+        Sharing a name across two nodes nobody has linked is ordinary — one PMM
+        estate routinely runs a service of the same name on many machines.
+        """
+        _, total = await ServiceManager.identity_candidates(session, pagination=PAGE)
+
+        assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_confirming_a_node_surfaces_its_services_in_turn(
+        self,
+        session: AsyncSession,
+        split_nodes_with_services: tuple[Node, Node, Service, Service],
+    ) -> None:
+        """Raise the service pairing a confirmed node pairing implies.
+
+        The node confirmation retires the successor node with its subtree, so the
+        successor service is a tombstone by the time this runs and has to count
+        as a successor anyway.
+        """
+        predecessor_node, successor_node, predecessor, successor = (
+            split_nodes_with_services
+        )
+        await NodeManager.confirm_identity_link(
+            session, predecessor_node, successor_node.id, principal=PRINCIPAL
+        )
+
+        candidates, total = await ServiceManager.identity_candidates(
+            session, pagination=PAGE
+        )
+
+        assert total == 1
+        assert candidates[0].predecessor.id == predecessor.id
+        assert candidates[0].successor.id == successor.id
+
+    @pytest.mark.asyncio
+    async def test_confirming_a_node_links_no_service(
+        self,
+        session: AsyncSession,
+        split_nodes_with_services: tuple[Node, Node, Service, Service],
+    ) -> None:
+        """Leave every service holding its own identifier, each link being its own act."""
+        predecessor_node, successor_node, predecessor, successor = (
+            split_nodes_with_services
+        )
+        identifiers = (predecessor.external_id, successor.external_id)
+
+        await NodeManager.confirm_identity_link(
+            session, predecessor_node, successor_node.id, principal=PRINCIPAL
+        )
+
+        await session.refresh(predecessor)
+        await session.refresh(successor)
+        assert (predecessor.external_id, successor.external_id) == identifiers
+        assert await IdentityLinkDecisionManager.count(session) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_pairing_the_uniqueness_index_would_reject_is_withheld(
+        self,
+        session: AsyncSession,
+        split_nodes_with_services: tuple[Node, Node, Service, Service],
+    ) -> None:
+        """Withhold a pairing whose confirmation the uniqueness index would refuse.
+
+        Once a sync tick runs after a node confirmation, the syncer recreates the
+        successor's service on the surviving node, and the cross-node candidate
+        would then collide with it.
+        """
+        predecessor_node, successor_node, _, successor = split_nodes_with_services
+        await NodeManager.confirm_identity_link(
+            session, predecessor_node, successor_node.id, principal=PRINCIPAL
+        )
+        await ServiceManager.create(
+            session,
+            ServiceWriteFactory.build(
+                name="recreated-by-sync", external_id=successor.external_id
+            ),
+            node_id=predecessor_node.id,
+        )
+
+        _, total = await ServiceManager.identity_candidates(session, pagination=PAGE)
+
+        assert total == 0
+
+
+class TestConfirmServiceIdentityLink:
+    """Test transferring a successor service's upstream identity."""
+
+    @pytest.mark.asyncio
+    async def test_the_predecessor_takes_the_successors_identifier(
+        self, session: AsyncSession, split_services: tuple[Service, Service]
+    ) -> None:
+        """Leave the surviving service holding the identifier PMM now reports."""
+        predecessor, successor = split_services
+        transferred = successor.external_id
+
+        await ServiceManager.confirm_identity_link(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        await session.refresh(predecessor)
+        await session.refresh(successor)
+        assert predecessor.external_id == transferred
+        assert predecessor.retired_at is None
+        assert successor.retired_at is not None
+
+    @pytest.mark.asyncio
+    async def test_the_alias_records_carry_the_source_of_the_parent_node(
+        self, session: AsyncSession, split_services: tuple[Service, Service]
+    ) -> None:
+        """Store provenance on a service alias, ``Service`` carrying no source column."""
+        predecessor, successor = split_services
+
+        await ServiceManager.confirm_identity_link(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        aliases = await ExternalIdentityAliasManager.list(session)
+        assert {alias.source for alias in aliases} == {SourceEnum.PMM}
+        assert {alias.entity_type for alias in aliases} == {RetirableEntityName.SERVICE}
+
+    @pytest.mark.asyncio
+    async def test_both_identifiers_resolve_to_the_surviving_service(
+        self, session: AsyncSession, split_services: tuple[Service, Service]
+    ) -> None:
+        """Keep a superseded service identifier resolvable after the transfer."""
+        predecessor, successor = split_services
+        superseded = predecessor.external_id
+        transferred = successor.external_id
+
+        await ServiceManager.confirm_identity_link(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        assert (
+            await ExternalIdentityAliasManager.resolve_entity_id(
+                session, RetirableEntityName.SERVICE, SourceEnum.PMM, superseded
+            )
+            == predecessor.id
+        )
+        assert (
+            await ExternalIdentityAliasManager.resolve_entity_id(
+                session, RetirableEntityName.SERVICE, SourceEnum.PMM, transferred
+            )
+            == predecessor.id
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_node_pairing_is_not_reachable_through_the_service_manager(
+        self, session: AsyncSession, split_services: tuple[Service, Service]
+    ) -> None:
+        """Record a service decision under the service entity type, not the node's."""
+        predecessor, successor = split_services
+
+        await ServiceManager.confirm_identity_link(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        assert (
+            await IdentityLinkDecisionManager.latest_for_pairing(
+                session, RetirableEntityName.NODE, predecessor.id, successor.id
+            )
+            is None
+        )
+        assert (
+            await IdentityLinkDecisionManager.latest_for_pairing(
+                session, RetirableEntityName.SERVICE, predecessor.id, successor.id
+            )
+            is not None
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_retired_service_is_collectible_once_its_link_is_reversed(
+        self, session: AsyncSession, split_services: tuple[Service, Service]
+    ) -> None:
+        """Pin a linked service tombstone exactly as a linked node tombstone is pinned."""
+        predecessor, successor = split_services
+        await ServiceManager.confirm_identity_link(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        collectible = await RetiredInclusiveServiceManager.collectible_ids(
+            session,
+            retired_before=datetime(2999, 1, 1, tzinfo=UTC),
+            keep_by_model={},
+            limit=10,
+        )
+
+        assert successor.id not in collectible
+
+
+class TestIdentityCandidatePagination:
+    """Test that the candidate page and its total answer the same predicate."""
+
+    @pytest.mark.asyncio
+    async def test_the_total_counts_every_pairing_the_page_windows(
+        self, session: AsyncSession
+    ) -> None:
+        """Report the whole matching set while returning only the requested window."""
+        for index in range(BULK_SPLIT_PAIRS):
+            name = f"bulk-reregistered-{index}"
+            await NodeManager.create(session, NodeWriteFactory.build(name=name))
+            await NodeManager.create(session, NodeWriteFactory.build(name=name))
+
+        candidates, total = await NodeManager.identity_candidates(
+            session, pagination=Pagination(offset=2, limit=BULK_PAGE_SIZE)
+        )
+
+        assert total == BULK_SPLIT_PAIRS
+        assert len(candidates) == BULK_PAGE_SIZE
+
+    @pytest.mark.asyncio
+    async def test_three_generations_pair_against_the_surviving_row(
+        self, session: AsyncSession, node: Node
+    ) -> None:
+        """Raise every pairing among three same-name rows, each confirmable alone."""
+        second = await NodeManager.create(
+            session, NodeWriteFactory.build(name=node.name)
+        )
+        third = await NodeManager.create(
+            session, NodeWriteFactory.build(name=node.name)
+        )
+
+        candidates, total = await NodeManager.identity_candidates(
+            session, pagination=PAGE
+        )
+
+        assert total == THREE_GENERATION_PAIRINGS
+        assert {(pair.predecessor.id, pair.successor.id) for pair in candidates} == {
+            (node.id, second.id),
+            (node.id, third.id),
+            (second.id, third.id),
+        }
+
+
+class TestConfirmedLinkNeedsNoSyncerChange:
+    """Test the inventory-side property the next sync tick relies on.
+
+    ``claim_identity`` (``app/sep/sync/models.py``) resolves an upstream id to
+    the **active** row when a tombstone shares it, and the syncer matches by
+    upstream id alone. So a confirmation needs no syncer change provided it
+    leaves exactly one active row holding the transferred id — the predecessor.
+    That precondition is what this pins, tested in the service that owns it
+    rather than through the syncer's mocks.
+    """
+
+    @pytest.mark.asyncio
+    async def test_one_active_row_holds_the_transferred_identifier(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Leave the predecessor as the only active holder of the identifier."""
+        transferred = split_nodes[1].external_id
+        predecessor, successor = await confirmed_split(session, split_nodes)
+
+        holders = await RetiredInclusiveNodeManager.list(
+            session, external_id=transferred
+        )
+
+        assert {holder.id for holder in holders} == {predecessor.id, successor.id}
+        assert [holder.id for holder in holders if holder.retired_at is None] == [
+            predecessor.id
+        ]
+
+    @pytest.mark.asyncio
+    async def test_the_default_manager_serves_the_survivor_for_that_identifier(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Answer the syncer's own tombstone-excluding read with the survivor."""
+        transferred = split_nodes[1].external_id
+        predecessor, _ = await confirmed_split(session, split_nodes)
+
+        matched = await NodeManager.first(session, external_id=transferred)
+
+        assert matched is not None
+        assert matched.id == predecessor.id
