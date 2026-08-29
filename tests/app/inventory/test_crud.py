@@ -834,9 +834,179 @@ class TestRejectNodeIdentityLink:
                 session, node, unrelated.id, principal=PRINCIPAL
             )
 
+    @pytest.mark.asyncio
+    async def test_a_second_rejection_conflicts_and_appends_nothing(
+        self, session: AsyncSession, split_nodes: tuple[Node, Node]
+    ) -> None:
+        """Refuse the second of two rejections rather than logging one event twice.
+
+        Counting is what catches it: a rejection mutates no row, so a duplicate
+        leaves the entities indistinguishable from the single-rejection case and
+        shows up only in the decision log.
+        """
+        predecessor, successor = split_nodes
+        await NodeManager.reject_identity_link(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await NodeManager.reject_identity_link(
+                session, predecessor, successor.id, principal=PRINCIPAL
+            )
+
+        assert await IdentityLinkDecisionManager.count(session) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_rejection_created_between_the_check_and_the_lock_conflicts(
+        self,
+        session: AsyncSession,
+        split_nodes: tuple[Node, Node],
+        mocker: MockerFixture,
+    ) -> None:
+        """Refuse a rejection another caller won while this one waited on the lock."""
+        predecessor, successor = split_nodes
+        real_lock = NodeManager._lock_pairing
+
+        async def lock_then_lose_the_race(
+            locked: AsyncSession, predecessor_id: int, successor_id: int
+        ) -> None:
+            await real_lock(locked, predecessor_id, successor_id)
+            session.add(
+                IdentityLinkDecision(
+                    entity_type=RetirableEntityName.NODE,
+                    predecessor_id=predecessor_id,
+                    successor_id=successor_id,
+                    decision=IdentityLinkDecisionEnum.REJECTED,
+                    principal="the-other-operator",
+                )
+            )
+            await session.commit()
+
+        mocker.patch.object(
+            NodeManager, "_lock_pairing", side_effect=lock_then_lose_the_race
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await NodeManager.reject_identity_link(
+                session, predecessor, successor.id, principal=PRINCIPAL
+            )
+
+        assert await IdentityLinkDecisionManager.count(session) == 1
+
 
 class TestUnlinkNodeIdentity:
     """Test reversing a standing confirmation."""
+
+    @pytest.mark.asyncio
+    async def test_a_superseded_link_is_not_reversible_on_its_own(
+        self, session: AsyncSession, node: Node
+    ) -> None:
+        """Refuse to reverse a link a later confirmation has already built on.
+
+        The older decision records the identifier its predecessor held at the
+        time, which the later confirmation has since replaced. Restoring from it
+        would put back a superseded identifier and hand the older successor one
+        that is not the one it lost, leaving both rows and the alias history
+        describing different identities.
+        """
+        second = await NodeManager.create(
+            session, NodeWriteFactory.build(name=node.name)
+        )
+        third = await NodeManager.create(
+            session, NodeWriteFactory.build(name=node.name)
+        )
+        await NodeManager.confirm_identity_link(
+            session, node, second.id, principal=PRINCIPAL
+        )
+        await NodeManager.confirm_identity_link(
+            session, node, third.id, principal=PRINCIPAL
+        )
+
+        with pytest.raises(HTTPConflictException):
+            await NodeManager.unlink_identity(
+                session, node, second.id, principal=PRINCIPAL
+            )
+
+    @pytest.mark.asyncio
+    async def test_stacked_links_reverse_in_the_opposite_order(
+        self, session: AsyncSession, node: Node
+    ) -> None:
+        """Return all three rows to their own identifiers, newest link first."""
+        second = await NodeManager.create(
+            session, NodeWriteFactory.build(name=node.name)
+        )
+        third = await NodeManager.create(
+            session, NodeWriteFactory.build(name=node.name)
+        )
+        own = {
+            node.id: node.external_id,
+            second.id: second.external_id,
+            third.id: third.external_id,
+        }
+        await NodeManager.confirm_identity_link(
+            session, node, second.id, principal=PRINCIPAL
+        )
+        await NodeManager.confirm_identity_link(
+            session, node, third.id, principal=PRINCIPAL
+        )
+
+        await NodeManager.unlink_identity(session, node, third.id, principal=PRINCIPAL)
+        await session.refresh(node)
+        await NodeManager.unlink_identity(session, node, second.id, principal=PRINCIPAL)
+
+        for entity_id, identifier in own.items():
+            assert (
+                await ExternalIdentityAliasManager.resolve_entity_id(
+                    session, RetirableEntityName.NODE, SourceEnum.PMM, identifier
+                )
+                == entity_id
+            )
+
+    @pytest.mark.asyncio
+    async def test_a_stacked_confirmation_closes_the_interval_it_actually_opened(
+        self, session: AsyncSession, node: Node, mocker: MockerFixture
+    ) -> None:
+        """Close a superseded binding at the confirmation that opened it.
+
+        The predecessor's second confirmation supersedes an identifier it took
+        at the first one, not one it was created with, so closing that binding
+        at the row's creation time would report an interval overlapping the
+        identifier it held before that. The stamps are pinned because the column
+        keeps whole seconds, and a test writing all three inside one second
+        cannot tell the two candidate answers apart.
+        """
+        second = await NodeManager.create(
+            session, NodeWriteFactory.build(name=node.name)
+        )
+        third = await NodeManager.create(
+            session, NodeWriteFactory.build(name=node.name)
+        )
+        transferred_first = second.external_id
+        pinned = datetime(2026, 1, 1, tzinfo=UTC)
+        mocker.patch(
+            "app.inventory.crud.utc_now",
+            side_effect=[pinned, datetime(2026, 2, 2, tzinfo=UTC)],
+        )
+        await NodeManager.confirm_identity_link(
+            session, node, second.id, principal=PRINCIPAL
+        )
+        await NodeManager.confirm_identity_link(
+            session, node, third.id, principal=PRINCIPAL
+        )
+
+        aliases = await ExternalIdentityAliasManager.list(session)
+
+        records = [
+            alias
+            for alias in aliases
+            if alias.entity_id == node.id and alias.external_id == transferred_first
+        ]
+        opened = [alias for alias in records if alias.valid_to is None]
+        closed = [alias for alias in records if alias.valid_to is not None]
+        assert len(opened) == 1
+        assert len(closed) == 1
+        assert closed[0].valid_from == opened[0].valid_from
+        assert closed[0].valid_from != node.created_at
 
     @pytest.mark.asyncio
     async def test_an_active_predecessor_is_restored_to_its_own_identifier(
@@ -1334,6 +1504,48 @@ class TestConfirmServiceIdentityLink:
         )
 
         assert successor.id not in collectible
+
+    @pytest.mark.asyncio
+    async def test_a_service_waits_for_its_nodes_link_to_reverse_first(
+        self,
+        session: AsyncSession,
+        split_nodes_with_services: tuple[Node, Node, Service, Service],
+    ) -> None:
+        """Reverse the service link only once its node's link is reversed.
+
+        Reviving a service revives its node first, so a live row never sits under
+        a tombstone. While the node link stands, the surviving node holds the
+        identifier that revival would reclaim and only one active row may carry
+        it — so the service reversal has to wait rather than half-apply.
+        """
+        pred_node, succ_node, predecessor, successor = split_nodes_with_services
+        await NodeManager.confirm_identity_link(
+            session, pred_node, succ_node.id, principal=PRINCIPAL
+        )
+        await session.refresh(predecessor)
+        await ServiceManager.confirm_identity_link(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+        await session.refresh(predecessor)
+        own_identifier = successor.external_id
+
+        with pytest.raises(HTTPConflictException):
+            await ServiceManager.unlink_identity(
+                session, predecessor, successor.id, principal=PRINCIPAL
+            )
+
+        await session.refresh(pred_node)
+        await NodeManager.unlink_identity(
+            session, pred_node, succ_node.id, principal=PRINCIPAL
+        )
+        await session.refresh(predecessor)
+        await ServiceManager.unlink_identity(
+            session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        await session.refresh(successor)
+        assert successor.external_id == own_identifier
+        assert successor.retired_at is None
 
 
 class TestIdentityCandidatePagination:

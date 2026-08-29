@@ -55,12 +55,3 @@ class RetirableEntityName(StrEnum):
     SERVICE = "service"
     SCHEMA = "schema"
     TABLE = "table"
-
-
-#: The entity types that carry an external identity and can therefore be linked
-#: across a re-registration. Schemas and tables are keyed by name within their
-#: parent and sourced by the MySQL syncer, so no upstream identity changes under
-#: them.
-ALIASABLE_ENTITY_NAMES: Final = frozenset(
-    {RetirableEntityName.NODE, RetirableEntityName.SERVICE}
-)

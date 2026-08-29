@@ -333,7 +333,9 @@ async def decide_node_identity_link(
     :param principal: The caller recorded on the resulting records.
     :raises HTTPBadRequestException: If the body names the node itself, or both
         rows already hold one identifier.
-    :raises HTTPNotFoundException: If no node carries the named successor id.
+    :raises HTTPNotFoundException: If a confirmation or rejection names a
+        successor that does not exist. A reversal reports the same absence as a
+        conflict, the pairing it would reverse no longer being reversible.
     :raises HTTPConflictException: If the decision does not apply to the pairing
         as it currently stands.
     """

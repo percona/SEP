@@ -426,6 +426,41 @@ class ExternalIdentityAliasManager(BaseSQLModelManager):
     Model = ExternalIdentityAlias
 
     @classmethod
+    async def binding_started_at(
+        cls,
+        session: AsyncSession,
+        entity_type: RetirableEntityName,
+        entity_id: int,
+        external_id: str,
+    ) -> datetime | None:
+        """Return when a row's current binding to an identifier took effect.
+
+        None means no record binds them yet, which is the ordinary case for a
+        row still holding the identifier it was created with — nothing writes an
+        alias record on ordinary sync creation.
+
+        :param session: The asynchronous database session to use.
+        :param entity_type: The inventory entity type the row belongs to.
+        :param entity_id: The row the identifier currently resolves to.
+        :param external_id: The upstream identifier.
+        :return: The start of the standing binding, or None when none is recorded.
+        """
+        query = (
+            select(col(cls.Model.valid_from))
+            .where(
+                col(cls.Model.entity_type) == entity_type,
+                col(cls.Model.entity_id) == entity_id,
+                col(cls.Model.external_id) == external_id,
+            )
+            .order_by(col(cls.Model.valid_from).desc(), col(cls.Model.id).desc())
+            .limit(1)
+        )
+        result = await cls._exec(  # call-shape-dup-ok: _exec already names the intent
+            session, query
+        )
+        return result.first()
+
+    @classmethod
     async def resolve_entity_id(
         cls,
         session: AsyncSession,
@@ -577,6 +612,31 @@ class IdentityLinkDecisionManager(BaseSQLModelManager):
         result = await cls._exec(session, query)
         return result.first()
 
+    @classmethod
+    async def confirms_successor(
+        cls,
+        session: AsyncSession,
+        entity_type: RetirableEntityName,
+        entity_id: int,
+    ) -> bool:
+        """Return whether a standing confirmation holds this row as its successor.
+
+        Such a row is retired by an operator decision rather than by absence, so
+        its tombstone is load-bearing: the link that put it there is still
+        reversible, and reviving it early would strand the identifier its
+        predecessor now carries.
+
+        :param session: The asynchronous database session to use.
+        :param entity_type: The inventory entity type the row belongs to.
+        :param entity_id: The row to test.
+        :return: True when a confirmation stands over it.
+        """
+        result = await cls._exec(
+            session,
+            select(cls.confirmed_link_exists(entity_type, successor_id=entity_id)),
+        )
+        return bool(result.one())
+
 
 class AliasableManagerMixin(RetirableManagerMixin):
     """Confine identity-link operations to the entities carrying an external id.
@@ -635,6 +695,21 @@ class AliasableManagerMixin(RetirableManagerMixin):
             its own provenance is read from.
         """
         raise NotImplementedError
+
+    @classmethod
+    async def _require_revivable(
+        cls,
+        session: AsyncSession,
+        successor: RetirableSQLModel,
+    ) -> None:
+        """Refuse a reversal whose successor cannot legally come back yet.
+
+        A top-level entity has no ancestor to obstruct it, so the default admits
+        every reversal and the child managers narrow it.
+
+        :param session: The asynchronous database session to use.
+        :param successor: The row a reversal would revive.
+        """
 
     @classmethod
     def _identity_link_pin(cls) -> ColumnElement[bool] | None:
@@ -798,21 +873,24 @@ class AliasableManagerMixin(RetirableManagerMixin):
         successor_id: int,
         *,
         missing_successor: HTTPException,
-    ) -> tuple[Any, Any]:
-        """Lock a pairing and hand back both rows as they stand under the lock.
+    ) -> tuple[Any, Any, IdentityLinkDecision | None]:
+        """Lock a pairing and read back both rows and the decision governing them.
 
         Re-reading here is the whole of the concurrency design: checking
-        eligibility against rows read before the lock lets two callers both pass
+        eligibility against state read before the lock lets two callers both pass
         and both append, and because the row mutations are individually
         idempotent nothing fails loudly — only the decision log records one event
-        twice.
+        twice. The rows and the decision are read together because they are one
+        piece of state for that purpose; each operation then applies its own
+        eligibility rule to the decision it gets back.
 
         :param session: The asynchronous database session to use.
         :param predecessor: The row addressed by the path.
         :param successor_id: The row named by the request body.
         :param missing_successor: What to raise when no row carries
             ``successor_id``.
-        :return: The freshly-read predecessor and successor.
+        :return: The freshly-read predecessor and successor, and the decision
+            standing over the pairing, if one does.
         :raises HTTPBadRequestException: If the body names the predecessor itself.
         :raises HTTPException: The ``missing_successor`` argument, when no row
             carries ``successor_id``.
@@ -826,7 +904,10 @@ class AliasableManagerMixin(RetirableManagerMixin):
         locked_successor = await cls._read_including_retired(session, successor_id)
         if locked_predecessor is None or locked_successor is None:
             raise missing_successor
-        return locked_predecessor, locked_successor
+        standing = await IdentityLinkDecisionManager.latest_for_pairing(
+            session, cls.entity_name, locked_predecessor.id, locked_successor.id
+        )
+        return locked_predecessor, locked_successor, standing
 
     @classmethod
     async def _require_pairable(
@@ -1002,16 +1083,13 @@ class AliasableManagerMixin(RetirableManagerMixin):
         :raises HTTPConflictException: If the pairing is not a candidate, is
             already confirmed, or the transfer would collide with an active row.
         """
-        predecessor, successor = await cls._open_operation(
+        predecessor, successor, standing = await cls._open_operation(
             session,
             predecessor,
             successor_id,
             missing_successor=HTTPNotFoundException(
                 detail=f"{cls.Model.__name__} {successor_id} not found."
             ),
-        )
-        standing = await IdentityLinkDecisionManager.latest_for_pairing(
-            session, cls.entity_name, predecessor.id, successor.id
         )
         if standing is not None and (
             standing.decision is IdentityLinkDecisionEnum.CONFIRMED
@@ -1024,6 +1102,12 @@ class AliasableManagerMixin(RetirableManagerMixin):
         source = await cls._identity_source(session, predecessor)
         superseded_external_id = predecessor.external_id
         predecessor_retired_at = predecessor.retired_at
+        superseded_since = await ExternalIdentityAliasManager.binding_started_at(
+            session, cls.entity_name, predecessor.id, superseded_external_id
+        )
+        transferred_since = await ExternalIdentityAliasManager.binding_started_at(
+            session, cls.entity_name, successor.id, successor.external_id
+        )
         confirmed_at = utc_now()
         statements = [
             *cls._retirement_statements(successor.id, confirmed_at),
@@ -1037,7 +1121,7 @@ class AliasableManagerMixin(RetirableManagerMixin):
                 entity_id=predecessor.id,
                 source=source,
                 external_id=superseded_external_id,
-                valid_from=predecessor.created_at,
+                valid_from=superseded_since or predecessor.created_at,
                 valid_to=confirmed_at,
                 linkage_method=LinkageMethodEnum.OPERATOR_CONFIRMATION,
                 principal=principal,
@@ -1046,7 +1130,7 @@ class AliasableManagerMixin(RetirableManagerMixin):
                 entity_id=successor.id,
                 source=source,
                 external_id=successor.external_id,
-                valid_from=successor.created_at,
+                valid_from=transferred_since or successor.created_at,
                 valid_to=confirmed_at,
                 linkage_method=LinkageMethodEnum.OPERATOR_CONFIRMATION,
                 principal=principal,
@@ -1092,9 +1176,10 @@ class AliasableManagerMixin(RetirableManagerMixin):
         :raises HTTPBadRequestException: If the body names the predecessor itself,
             or both rows already hold one identifier.
         :raises HTTPNotFoundException: If no row carries ``successor_id``.
-        :raises HTTPConflictException: If the pairing is not a candidate.
+        :raises HTTPConflictException: If the pairing is not a candidate, or a
+            decision already stands over it.
         """
-        predecessor, successor = await cls._open_operation(
+        predecessor, successor, standing = await cls._open_operation(
             session,
             predecessor,
             successor_id,
@@ -1102,6 +1187,11 @@ class AliasableManagerMixin(RetirableManagerMixin):
                 detail=f"{cls.Model.__name__} {successor_id} not found."
             ),
         )
+        if standing is not None and standing.decision in SUPPRESSING_DECISIONS:
+            raise HTTPConflictException(
+                f"{cls.Model.__name__} {predecessor.id} already carries a "
+                f"standing decision over {successor.id}."
+            )
         await cls._require_pairable(session, predecessor, successor)
         session.add(
             IdentityLinkDecision(
@@ -1132,16 +1222,25 @@ class AliasableManagerMixin(RetirableManagerMixin):
         tombstone it was, retention age included, rather than to an
         approximation of it.
 
+        Reversal is last-in-first-out. A predecessor may absorb several
+        successors, each confirmed on its own, and every confirmation records the
+        identifier the predecessor held before it. Those records only compose
+        back in reverse: reversing an older link first would restore an
+        identifier a later confirmation has since superseded, and hand the older
+        successor back an identifier that is no longer the one it lost. So a link
+        is reversible only while the predecessor still holds what it transferred.
+
         :param session: The asynchronous database session to use.
         :param predecessor: The row addressed by the path.
         :param successor_id: The row named by the request body.
         :param principal: The caller recording the reversal.
         :raises HTTPBadRequestException: If the body names the predecessor itself.
         :raises HTTPConflictException: If no confirmation stands over the pairing,
-            the successor row is gone, or the reversal would collide with an
-            active row.
+            the successor row is gone, a later confirmation supersedes this one,
+            the successor cannot be revived under a retired ancestor, or the
+            reversal would collide with an active row.
         """
-        predecessor, successor = await cls._open_operation(
+        predecessor, successor, standing = await cls._open_operation(
             session,
             predecessor,
             successor_id,
@@ -1149,9 +1248,6 @@ class AliasableManagerMixin(RetirableManagerMixin):
                 f"{cls.Model.__name__} {predecessor.id} cannot be unlinked: row "
                 f"{successor_id} no longer exists."
             ),
-        )
-        standing = await IdentityLinkDecisionManager.latest_for_pairing(
-            session, cls.entity_name, predecessor.id, successor.id
         )
         if (
             standing is None
@@ -1162,6 +1258,13 @@ class AliasableManagerMixin(RetirableManagerMixin):
                 f"{cls.Model.__name__} {predecessor.id} is not linked to "
                 f"{successor.id}."
             )
+        if predecessor.external_id != successor.external_id:
+            raise HTTPConflictException(
+                f"{cls.Model.__name__} {predecessor.id} no longer holds the "
+                f"identifier its link to {successor.id} transferred. Reverse the "
+                f"later link first."
+            )
+        await cls._require_revivable(session, successor)
         source = await cls._identity_source(session, predecessor)
         transferred_external_id = predecessor.external_id
         unlinked_at = utc_now()
@@ -1272,12 +1375,12 @@ class NodeManager(AliasableManagerMixin, BaseSQLModelManager):
     @classmethod
     async def _identity_source(
         cls,
-        session: AsyncSession,  # noqa: ARG003
+        _session: AsyncSession,
         entity: Any,
     ) -> SourceEnum:
         """Return the node's own source, which needs no lookup.
 
-        :param session: The asynchronous database session to use.
+        :param _session: Unused; a node carries its own provenance.
         :param entity: The node whose provenance is wanted.
         :return: The source.
         """
@@ -1382,6 +1485,41 @@ class ServiceManager(AliasableManagerMixin, BaseSQLModelChildManager):
             select(col(Node.source)).where(col(Node.id) == entity.node_id),
         )
         return result.one()
+
+    @classmethod
+    async def _require_revivable(
+        cls,
+        session: AsyncSession,
+        successor: RetirableSQLModel,
+    ) -> None:
+        """Refuse a reversal while the successor's node is retired by its own link.
+
+        Reviving a service revives its node first, so that a live row never sits
+        under a tombstone. A node retired by a standing confirmation cannot come
+        back that way: the surviving node holds the identifier it would reclaim,
+        and only one active row may carry it. The node link is what has to be
+        reversed first, so say that rather than surfacing the uniqueness
+        collision it would otherwise become.
+
+        :param session: The asynchronous database session to use.
+        :param successor: The service a reversal would revive.
+        :raises HTTPConflictException: If the successor's node is retired by a
+            confirmation of its own.
+        """
+        result = await cls._exec(
+            session,
+            select(col(Node.retired_at)).where(col(Node.id) == successor.node_id),
+        )
+        if result.one() is None:
+            return
+        if await IdentityLinkDecisionManager.confirms_successor(
+            session, RetirableEntityName.NODE, successor.node_id
+        ):
+            raise HTTPConflictException(
+                f"Service {successor.id} cannot be revived while node "
+                f"{successor.node_id} is retired by a standing identity link. "
+                f"Reverse the node link first."
+            )
 
 
 class SchemaManager(RetirableManagerMixin, BaseSQLModelChildManager):
