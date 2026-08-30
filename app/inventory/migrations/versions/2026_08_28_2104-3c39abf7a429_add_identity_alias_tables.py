@@ -39,9 +39,17 @@ Every enum column is non-native and carries its own CHECK, so a future member
 needs no PostgreSQL type alteration and none of them shares a type object with
 the ``node.source`` column. ``create_constraint=True`` is what emits the CHECK
 at all: SQLAlchemy does not derive one from ``native_enum=False`` alone, so
-omitting it would leave the columns accepting arbitrary strings. Both tables
-declare an ``entity_type`` CHECK under the same ``retirableentityname`` name,
-which is legal because a CHECK name is scoped to its table.
+omitting it would leave the columns accepting arbitrary strings.
+
+Each CHECK carries an explicit, table-qualified name rather than the one
+SQLAlchemy derives from the enum class. MySQL scopes CHECK constraint names to
+the **schema**, not the table, so the derived name would have both tables
+declaring ``retirableentityname`` over their ``entity_type`` column and the
+second ``CREATE TABLE`` would fail with error 3822. PostgreSQL and SQLite scope
+the name per table and accept the collision, which is why it has to be reasoned
+about here rather than discovered from the suite. Naming them explicitly also
+keeps ``alias_source`` clear of ``node.source``, which would collide the same
+way if it were ever given the CHECK it should have.
 
 Additive throughout: no existing table is touched, and there is no data
 migration, so the downgrade simply drops both tables.
@@ -73,7 +81,7 @@ def upgrade() -> None:
                 "SERVICE",
                 "SCHEMA",
                 "TABLE",
-                name="retirableentityname",
+                name="alias_entity_type",
                 native_enum=False,
                 create_constraint=True,
             ),
@@ -84,7 +92,7 @@ def upgrade() -> None:
             "source",
             sa.Enum(
                 "PMM",
-                name="sourceenum",
+                name="alias_source",
                 native_enum=False,
                 create_constraint=True,
             ),
@@ -98,7 +106,7 @@ def upgrade() -> None:
             sa.Enum(
                 "OPERATOR_CONFIRMATION",
                 "OPERATOR_UNLINK",
-                name="linkagemethodenum",
+                name="alias_linkage_method",
                 native_enum=False,
                 create_constraint=True,
             ),
@@ -131,7 +139,7 @@ def upgrade() -> None:
                 "SERVICE",
                 "SCHEMA",
                 "TABLE",
-                name="retirableentityname",
+                name="link_decision_entity_type",
                 native_enum=False,
                 create_constraint=True,
             ),
@@ -145,7 +153,7 @@ def upgrade() -> None:
                 "CONFIRMED",
                 "REJECTED",
                 "UNLINKED",
-                name="identitylinkdecisionenum",
+                name="link_decision_decision",
                 native_enum=False,
                 create_constraint=True,
             ),

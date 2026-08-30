@@ -588,7 +588,16 @@ async def confirmed_split(
 
 
 class TestConfirmNodeIdentityLink:
-    """Test transferring a successor's upstream identity onto its predecessor."""
+    """Test transferring a successor's upstream identity onto its predecessor.
+
+    The lost-race cases here patch ``_lock_pairing`` on the manager under test,
+    which the usual guidance forbids. It is deliberate and narrow: the competing
+    decision has to land between the lock and the re-check, and on SQLite there
+    is no other seam at that point. The real method still runs inside the patch
+    and the assertions count committed rows rather than calls, so the test fails
+    on behaviour rather than on call shape. The lock itself is covered without a
+    patch by ``TestIdentityLinkLockingOnPostgreSQL``.
+    """
 
     @pytest.mark.asyncio
     async def test_the_predecessor_takes_the_successors_identifier(
@@ -1831,3 +1840,69 @@ class TestIdentityLinkLockingOnPostgreSQL:
             assert (
                 await ExternalIdentityAliasManager.count(reader) == CONFIRM_ALIAS_COUNT
             )
+
+
+@pytest.mark.mysql
+class TestIdentitySurfacesOnMySQL:
+    """Drive the identity schema and every new query shape against real MySQL.
+
+    MySQL is the strictest of the three supported engines and the only one that
+    scopes CHECK constraint names to the schema rather than the table, so the
+    SQLite suite and the PostgreSQL cases above can both be green while
+    ``CREATE TABLE`` fails here. Until this class existed the only thing
+    exercising the inventory schema on MySQL was an unrelated pagination test's
+    fixture, which reported the collision far from the tables that caused it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_identity_schema_and_queries_run_on_mysql(
+        self, mysql_session: AsyncSession
+    ) -> None:
+        """Create both tables, then confirm, resolve and reverse a node pairing.
+
+        Every construct this branch added is on the path: the correlated
+        ``ORDER BY ... LIMIT 1`` candidate subquery, the correlated ``MAX(id)``
+        the collection pins read, the ``FOR UPDATE`` pairing lock, and the
+        chain walk behind identifier resolution.
+        """
+        predecessor = await NodeManager.create(mysql_session, NodeWriteFactory.build())
+        successor = await NodeManager.create(
+            mysql_session,
+            NodeWriteFactory.build(name=predecessor.name, address=predecessor.address),
+        )
+        superseded = predecessor.external_id
+        transferred = successor.external_id
+
+        _, total = await NodeManager.identity_candidates(mysql_session, pagination=PAGE)
+        assert total == 1
+
+        await NodeManager.confirm_identity_link(
+            mysql_session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        for external_id in (superseded, transferred):
+            assert (
+                await ExternalIdentityAliasManager.resolve_entity_id(
+                    mysql_session,
+                    RetirableEntityName.NODE,
+                    SourceEnum.PMM,
+                    external_id,
+                )
+                == predecessor.id
+            )
+
+        collectible = await RetiredInclusiveNodeManager.collectible_ids(
+            mysql_session,
+            retired_before=datetime(2999, 1, 1, tzinfo=UTC),
+            keep_by_model={},
+            limit=10,
+        )
+        assert successor.id not in collectible
+
+        await NodeManager.unlink_identity(
+            mysql_session, predecessor, successor.id, principal=PRINCIPAL
+        )
+
+        assert (
+            await NodeManager.first(mysql_session, external_id=superseded)
+        ).id == predecessor.id

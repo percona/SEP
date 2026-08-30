@@ -79,7 +79,8 @@ async def list_nodes(
     :param pagination: Validated offset/limit query parameters.
     :param list_query: The resolved sort/search produced at the request boundary.
     :param manager: The node manager the request's retirement scope selected.
-    :param external_id: Return only the node carrying this upstream identifier.
+    :param external_id: Return only the node carrying this upstream identifier,
+        resolved through any identity alias recorded for it.
     :param source: Return only nodes discovered by this source.
     :param node_type: Return only nodes of this type.
     :return: A paginated response of node responses.
@@ -89,31 +90,22 @@ async def list_nodes(
         source or "all",
         node_type or "all",
     )
-    resolved_id = (
-        None
-        if external_id is None
-        else await ExternalIdentityAliasManager.resolve_entity_id(
+    resolved_id: int | None = None
+    if external_id is not None:
+        resolved_id = await ExternalIdentityAliasManager.resolve_entity_id(
             session, RetirableEntityName.NODE, source, external_id
         )
+    identity_filter = (
+        {"id": resolved_id} if resolved_id is not None else {"external_id": external_id}
     )
-    if resolved_id is not None:
-        return await manager.list_query_paginated(
-            session,
-            list_query=list_query,
-            select_related=[Node.services],
-            pagination=pagination,
-            id=resolved_id,
-            source=source,
-            type=node_type,
-        )
     return await manager.list_query_paginated(
         session,
         list_query=list_query,
         select_related=[Node.services],
         pagination=pagination,
-        external_id=external_id,
         source=source,
         type=node_type,
+        **identity_filter,
     )
 
 

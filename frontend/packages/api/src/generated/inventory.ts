@@ -198,7 +198,8 @@ export interface paths {
      *     :param pagination: Validated offset/limit query parameters.
      *     :param list_query: The resolved sort/search produced at the request boundary.
      *     :param manager: The node manager the request's retirement scope selected.
-     *     :param external_id: Return only the node carrying this upstream identifier.
+     *     :param external_id: Return only the node carrying this upstream identifier,
+     *         resolved through any identity alias recorded for it.
      *     :param source: Return only nodes discovered by this source.
      *     :param node_type: Return only nodes of this type.
      *     :return: A paginated response of node responses.
@@ -1112,8 +1113,8 @@ export interface components {
      * LinkageMethodEnum
      * @description Enumerate how an external-identity binding came to be recorded.
      *
-     *     :cvar OPERATOR_CONFIRMATION: An operator confirmed a candidate pairing.
-     *     :cvar OPERATOR_UNLINK: An operator reversed a confirmed pairing.
+     *     Every member names an operator action: nothing here records a binding the
+     *     syncer made on its own, because ordinary sync creation writes no alias row.
      * @enum {string}
      */
     LinkageMethodEnum: 'operator_confirmation' | 'operator_unlink';

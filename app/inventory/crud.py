@@ -533,9 +533,12 @@ class IdentityLinkDecisionManager(BaseSQLModelManager):
     ) -> ScalarSelect:
         """Return a correlated subquery yielding a pairing's most recent decision.
 
-        A correlated ``ORDER BY … LIMIT 1`` rather than a window function: the
-        suite runs on SQLite while production is PostgreSQL, and this shape is
-        identical on both.
+        A correlated ``ORDER BY … LIMIT 1`` rather than a window function, which
+        renders identically on all three supported engines. MySQL is the one
+        that constrains the shape — it rejects ``LIMIT`` in a subquery that is
+        the *argument* of ``IN``/``ALL``/``ANY`` (error 1235) — and this
+        subquery is the left operand of the comparison instead, which it
+        accepts; exercised end to end by the MySQL case in the crud tests.
 
         :param entity_type: The inventory entity type the pairing names.
         :param predecessor_id: The column or value naming the older row.
@@ -723,6 +726,12 @@ class AliasableManagerMixin(RetirableManagerMixin):
     Schemas and tables are keyed by name within their parent, so no upstream
     identity changes under them and they keep the plain retirable mixin.
 
+    The overridable hooks below annotate their entity argument ``Any`` rather
+    than ``RetirableSQLModel``. The subclasses read columns the shared base does
+    not declare — ``external_id`` and ``name`` on both, ``node_id`` on services —
+    so the narrower annotation would promise a shape none of them actually
+    receives.
+
     Every read here lifts the tombstone filter by building its own statement
     rather than going through ``_filter_query``: a predecessor is routinely a
     tombstone, and so is a successor whose node was linked before it. Building
@@ -779,7 +788,7 @@ class AliasableManagerMixin(RetirableManagerMixin):
     async def _require_revivable(
         cls,
         session: AsyncSession,
-        successor: RetirableSQLModel,
+        successor: Any,
     ) -> None:
         """Refuse a reversal whose successor cannot legally come back yet.
 
@@ -1594,7 +1603,7 @@ class ServiceManager(AliasableManagerMixin, BaseSQLModelChildManager):
     async def _require_revivable(
         cls,
         session: AsyncSession,
-        successor: RetirableSQLModel,
+        successor: Any,
     ) -> None:
         """Refuse a reversal while the successor's node is retired by its own link.
 

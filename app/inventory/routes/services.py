@@ -85,29 +85,21 @@ async def list_services(
     :return: A paginated response of service responses.
     """
     logger.debug("Listing services for type '%s'", service_type or "all")
-    resolved_id = (
-        None
-        if external_id is None
-        else await ExternalIdentityAliasManager.resolve_entity_id(
+    resolved_id: int | None = None
+    if external_id is not None:
+        resolved_id = await ExternalIdentityAliasManager.resolve_entity_id(
             session, RetirableEntityName.SERVICE, None, external_id
         )
+    identity_filter = (
+        {"id": resolved_id} if resolved_id is not None else {"external_id": external_id}
     )
-    if resolved_id is not None:
-        return await manager.list_query_paginated(
-            session,
-            list_query=list_query,
-            select_related=[Service.schemas, Service.node],
-            pagination=pagination,
-            id=resolved_id,
-            type=service_type,
-        )
     return await manager.list_query_paginated(
         session,
         list_query=list_query,
         select_related=[Service.schemas, Service.node],
         pagination=pagination,
-        external_id=external_id,
         type=service_type,
+        **identity_filter,
     )
 
 

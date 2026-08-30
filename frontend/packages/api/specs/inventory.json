@@ -343,7 +343,7 @@
       },
       "JsonValue": {},
       "LinkageMethodEnum": {
-        "description": "Enumerate how an external-identity binding came to be recorded.\n\n:cvar OPERATOR_CONFIRMATION: An operator confirmed a candidate pairing.\n:cvar OPERATOR_UNLINK: An operator reversed a confirmed pairing.",
+        "description": "Enumerate how an external-identity binding came to be recorded.\n\nEvery member names an operator action: nothing here records a binding the\nsyncer made on its own, because ordinary sync creation writes no alias row.",
         "enum": [
           "operator_confirmation",
           "operator_unlink"
@@ -2537,7 +2537,7 @@
     },
     "/nodes/": {
       "get": {
-        "description": "List Nodes from Inventory.\n\n:param session: The async database session.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request boundary.\n:param manager: The node manager the request's retirement scope selected.\n:param external_id: Return only the node carrying this upstream identifier.\n:param source: Return only nodes discovered by this source.\n:param node_type: Return only nodes of this type.\n:return: A paginated response of node responses.",
+        "description": "List Nodes from Inventory.\n\n:param session: The async database session.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request boundary.\n:param manager: The node manager the request's retirement scope selected.\n:param external_id: Return only the node carrying this upstream identifier,\n    resolved through any identity alias recorded for it.\n:param source: Return only nodes discovered by this source.\n:param node_type: Return only nodes of this type.\n:return: A paginated response of node responses.",
         "operationId": "nodes_list_nodes_nodes__get",
         "parameters": [
           {

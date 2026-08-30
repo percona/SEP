@@ -110,8 +110,8 @@ class ServiceTypeEnum(StrEnum):
 class LinkageMethodEnum(StrEnum):
     """Enumerate how an external-identity binding came to be recorded.
 
-    :cvar OPERATOR_CONFIRMATION: An operator confirmed a candidate pairing.
-    :cvar OPERATOR_UNLINK: An operator reversed a confirmed pairing.
+    Every member names an operator action: nothing here records a binding the
+    syncer made on its own, because ordinary sync creation writes no alias row.
     """
 
     OPERATOR_CONFIRMATION = auto()
@@ -618,14 +618,24 @@ class ExternalIdentityAliasBase(SQLModel):
 
     entity_type: RetirableEntityName = SQLField(
         sa_column=Column(
-            EnumField(RetirableEntityName, native_enum=False, create_constraint=True),
+            EnumField(
+                RetirableEntityName,
+                native_enum=False,
+                create_constraint=True,
+                name="alias_entity_type",
+            ),
             nullable=False,
         )
     )
     entity_id: int
     source: SourceEnum = SQLField(
         sa_column=Column(
-            EnumField(SourceEnum, native_enum=False, create_constraint=True),
+            EnumField(
+                SourceEnum,
+                native_enum=False,
+                create_constraint=True,
+                name="alias_source",
+            ),
             nullable=False,
         )
     )
@@ -634,7 +644,12 @@ class ExternalIdentityAliasBase(SQLModel):
     valid_to: UTCDatetime | None = SQLField(default=None, sa_type=DateTimeWithTimezone)
     linkage_method: LinkageMethodEnum = SQLField(
         sa_column=Column(
-            EnumField(LinkageMethodEnum, native_enum=False, create_constraint=True),
+            EnumField(
+                LinkageMethodEnum,
+                native_enum=False,
+                create_constraint=True,
+                name="alias_linkage_method",
+            ),
             nullable=False,
         )
     )
@@ -702,47 +717,7 @@ class ExternalIdentityAliasResponse(BaseSQLModel, ExternalIdentityAliasBase):
     """
 
 
-class IdentityLinkDecisionBase(SQLModel):
-    """Define the base structure for an operator decision over a candidate pairing.
-
-    :param entity_type: The inventory entity type the pairing names.
-    :param predecessor_id: The older row of the pairing, the one a confirmation
-        keeps.
-    :param successor_id: The newer row of the pairing.
-    :param decision: What the operator decided.
-    :param principal: The caller that recorded the decision.
-    :param predecessor_external_id: The identifier the predecessor held before a
-        confirmation transferred the successor's onto it, or None on a decision
-        that transferred nothing.
-    :param predecessor_retired_at: The predecessor's retirement timestamp before
-        a confirmation revived it, or None when it was active or nothing was
-        revived.
-    """
-
-    entity_type: RetirableEntityName = SQLField(
-        sa_column=Column(
-            EnumField(RetirableEntityName, native_enum=False, create_constraint=True),
-            nullable=False,
-        )
-    )
-    predecessor_id: int
-    successor_id: int
-    decision: IdentityLinkDecisionEnum = SQLField(
-        sa_column=Column(
-            EnumField(
-                IdentityLinkDecisionEnum, native_enum=False, create_constraint=True
-            ),
-            nullable=False,
-        )
-    )
-    principal: NonEmptyStr
-    predecessor_external_id: NonEmptyStr | None = SQLField(default=None)
-    predecessor_retired_at: UTCDatetime | None = SQLField(
-        default=None, sa_type=DateTimeWithTimezone
-    )
-
-
-class IdentityLinkDecision(IdentityLinkDecisionBase, BaseSQLModel, table=True):
+class IdentityLinkDecision(BaseSQLModel, table=True):
     """Record one operator decision over one candidate pairing, append-only.
 
     A pairing's current state is its most recent row, so nothing is ever updated
@@ -779,6 +754,36 @@ class IdentityLinkDecision(IdentityLinkDecisionBase, BaseSQLModel, table=True):
             "successor_id",
         ),
         Index("ix_link_decision_successor", "entity_type", "successor_id"),
+    )
+
+    entity_type: RetirableEntityName = SQLField(
+        sa_column=Column(
+            EnumField(
+                RetirableEntityName,
+                native_enum=False,
+                create_constraint=True,
+                name="link_decision_entity_type",
+            ),
+            nullable=False,
+        )
+    )
+    predecessor_id: int
+    successor_id: int
+    decision: IdentityLinkDecisionEnum = SQLField(
+        sa_column=Column(
+            EnumField(
+                IdentityLinkDecisionEnum,
+                native_enum=False,
+                create_constraint=True,
+                name="link_decision_decision",
+            ),
+            nullable=False,
+        )
+    )
+    principal: NonEmptyStr
+    predecessor_external_id: NonEmptyStr | None = SQLField(default=None)
+    predecessor_retired_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
     )
 
 
