@@ -786,7 +786,9 @@ class TestConfirmNodeIdentityLink:
         self, session: AsyncSession, node: Node
     ) -> None:
         """Refuse two rows the derivation would never have surfaced together."""
-        unrelated = await NodeManager.create(session, NodeWriteFactory.build())
+        unrelated = await NodeManager.create(
+            session, NodeWriteFactory.build(name=f"not-{node.name}")
+        )
 
         with pytest.raises(HTTPConflictException):
             await NodeManager.confirm_identity_link(
@@ -839,7 +841,9 @@ class TestRejectNodeIdentityLink:
         self, session: AsyncSession, node: Node
     ) -> None:
         """Refuse to reject two rows that were never a pairing."""
-        unrelated = await NodeManager.create(session, NodeWriteFactory.build())
+        unrelated = await NodeManager.create(
+            session, NodeWriteFactory.build(name=f"not-{node.name}")
+        )
 
         with pytest.raises(HTTPConflictException):
             await NodeManager.reject_identity_link(
