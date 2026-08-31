@@ -29,25 +29,28 @@ from app.core.celery.crud import (
 )
 from app.core.celery.db import get_async_session_maker
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
+from app.core.utils.date_time import utc_now
 
 
 class SystemPeriodicTaskData(NamedTuple):
     """Define structure to hold information about system periodic tasks.
 
     :param name: Name of the periodic task.
-    :type name: str
     :param task_name: Name of the Celery task.
-    :type task_name: str
     :param extra_kwargs: Optional keyword arguments for the periodic task.
-    :type extra_kwargs: dict[str, Any] | None
     :param owner_app_key: Key of the app that owns this schedule, or ``None`` for
         platform tasks not gated by app state.
+    :param due_on_first_seed: Whether a newly created row is marked due
+        immediately, so beat dispatches it on the first load rather than one
+        interval later. Applied on creation only, so an operator who clears the
+        marker is not overridden on the next boot.
     """
 
     name: str
     task_name: str
     extra_kwargs: dict[str, Any] | None = None
     owner_app_key: str | None = None
+    due_on_first_seed: bool = False
 
 
 class SystemPeriodicTaskSchedule(NamedTuple):
@@ -75,10 +78,12 @@ async def init_periodic_tasks_db(
     based on the provided periodic tasks dictionary. It also removes any orphaned tasks
     that match the prefix filter.
 
+    An entry's ``due_on_first_seed`` marker is honoured only where the row is
+    created, so an upgrade writes nothing to a schedule that already exists and
+    an operator who cleared the marker is not overridden on the next boot.
+
     :param periodic_tasks: A list of schedule/task pairs to seed.
-    :type periodic_tasks: list[SystemPeriodicTaskSchedule]
     :param prefix_filter: Prefix to filter tasks for deletion.
-    :type prefix_filter: str
     """
     celery_beat_async_session = get_async_session_maker()
     system_task_names: list[str] = [
@@ -96,25 +101,27 @@ async def init_periodic_tasks_db(
                 created_schedule, _ = await IntervalScheduleManager.get_or_create(
                     celery_beat_session, schedule
                 )
-            for periodic_task_name, task_name, optional_extra_kwargs, *_ in tasks:
-                extra_kwargs = optional_extra_kwargs or {}
-                system_task_names.append(task_name)
-                seeded_names.append(periodic_task_name)
+            for task in tasks:
+                extra_kwargs = task.extra_kwargs or {}
+                system_task_names.append(task.task_name)
+                seeded_names.append(task.name)
                 if (
                     periodic_task := (
                         await BasePeriodicTaskManager.first(
-                            celery_beat_session, name=periodic_task_name
+                            celery_beat_session, name=task.name
                         )
                     )
                 ) is None:
                     periodic_task = PeriodicTask(
-                        name=periodic_task_name,
-                        task=task_name,
+                        name=task.name,
+                        task=task.task_name,
                         schedule_model=created_schedule,
                         **extra_kwargs,
                     )
+                    if task.due_on_first_seed:
+                        periodic_task.start_time = utc_now()
                 else:
-                    periodic_task.task = task_name
+                    periodic_task.task = task.task_name
                     periodic_task.schedule_model = created_schedule
                     for key, value in extra_kwargs.items():
                         setattr(periodic_task, key, value)
