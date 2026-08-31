@@ -379,9 +379,12 @@ The fingerprint manifest is a build artifact, not a committed file, so the claim
 above is checkable rather than asserted:
 
 ```bash
+# Capture the base run first: the classifier does not exist at the merge base.
 git switch --detach $(git merge-base HEAD origin/main)
-python3 scripts/classify_ty_diagnostics.py baseline --out /tmp/ty-baseline.json
+ty check --output-format concise > /tmp/ty-base.txt
 git switch -
+python3 scripts/classify_ty_diagnostics.py baseline --from /tmp/ty-base.txt \
+    --out /tmp/ty-baseline.json
 python3 scripts/classify_ty_diagnostics.py check --baseline /tmp/ty-baseline.json
 ```
 
@@ -396,9 +399,11 @@ costs the check no precision and lets it survive the reformatting the comments
 provoke, which would otherwise report every diagnostic below an edited line as
 newly suppressed.
 
-`report` prints the same tables from a live run, flags any group whose predicate
-has gone stale, and names any line holding both an artifact and a first-party
-diagnostic of the same rule.
+`report` prints the same tables from a live run and names any line holding both
+an artifact and a first-party diagnostic of the same rule. It does not flag a
+group with no hits: on a neutralized tree every group reaches zero by design.
+`check` raises that instead, against the baseline — the only run in which a group
+matching nothing means its predicate has gone stale rather than done its job.
 
 ## Rules ty disables by default
 

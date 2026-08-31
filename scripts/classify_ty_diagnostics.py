@@ -138,7 +138,7 @@ class Group:
     paths: tuple[str, ...]
     discriminant: str
 
-    def claims(self, fingerprint: "Fingerprint") -> bool:
+    def claims(self, fingerprint: Fingerprint) -> bool:
         """Return whether this group claims ``fingerprint``.
 
         :param fingerprint: The ``(path, rule, message)`` identity to test.
@@ -405,20 +405,34 @@ def _collisions(diagnostics: Sequence[Diagnostic]) -> list[tuple[str, int, str]]
     return sorted(key for key, seen in verdicts.items() if seen == {True, False})
 
 
-def _print_groups(diagnostics: Sequence[Diagnostic]) -> None:
-    """Print the per-group hit counts, flagging any group that matched nothing.
+def group_hits(diagnostics: Sequence[Diagnostic]) -> Counter[str]:
+    """Return each group's hit count over ``diagnostics``, zeros included.
 
-    :param diagnostics: The run to summarize.
+    :param diagnostics: The run to tally.
+    :return: A counter carrying a key for every group in :data:`GROUPS`.
     """
-    hits: Counter[str] = Counter()
+    hits: Counter[str] = Counter({group.name: 0 for group in GROUPS})
     for diagnostic in diagnostics:
         group = classify(diagnostic.fingerprint)
         if group is not None:
             hits[group.name] += 1
+    return hits
+
+
+def _print_groups(diagnostics: Sequence[Diagnostic]) -> None:
+    """Print the per-group hit counts, zero rows included.
+
+    A zero is not a staleness signal here: on a neutralized tree every group
+    reaches zero by design. Staleness is raised by ``check`` instead, against the
+    baseline, which is the only run where a group matching nothing means its
+    predicate has gone stale.
+
+    :param diagnostics: The run to summarize.
+    """
+    hits = group_hits(diagnostics)
     print("\nArtifact groups")
     for group in GROUPS:
-        stale = "" if hits[group.name] else "   STALE — the predicate matched nothing"
-        print(f"  {hits[group.name]:5d}  {group.name}{stale}")
+        print(f"  {hits[group.name]:5d}  {group.name}")
         print(f"         {' | '.join(sorted(group.rules))} — {group.discriminant}")
         if group.paths:
             print(f"         confined to: {', '.join(group.paths)}")
@@ -631,6 +645,11 @@ def cmd_check(args: argparse.Namespace) -> int:
     print(f"  {'rule':32s} {'artifacts':>9s} {'remaining':>9s}")
     for rule in sorted(before, key=lambda name: (-before[name], name)):
         print(f"  {rule:32s} {before[rule]:9d} {after[rule]:9d}")
+
+    stale = [name for name, count in sorted(group_hits(baseline).items()) if not count]
+    print(f"\nSTALE groups (matched nothing in the baseline): {len(stale)}")
+    for name in stale:
+        print(f"  {name}")
     _print_retained()
 
     if failures:

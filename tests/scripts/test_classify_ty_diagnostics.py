@@ -254,14 +254,28 @@ def test_check_fails_when_a_retained_entry_no_longer_matches(
     assert "app/gone.py" in capsys.readouterr().out
 
 
-def test_report_warns_that_a_group_matching_nothing_is_stale(tmp_path, capsys):
-    """Print a zero row and a stale warning for a group the run no longer matches."""
+def test_report_prints_a_zero_row_for_a_group_with_no_hits(tmp_path, capsys):
+    """Print a zero row, not a stale warning, for a group the run does not match.
+
+    Every group reaches zero on a neutralized tree, so a zero in ``report`` is the
+    expected end state rather than a signal.
+    """
     source = _write(tmp_path, "run.txt", _output(FIRST_PARTY_ROW))
 
     assert classify_ty_diagnostics.main(["report", "--from", str(source)]) == 0
     out = capsys.readouterr().out
-    assert "pydantic-settings-private-kwargs" in out
-    assert "STALE" in out
+    assert "    0  pydantic-settings-private-kwargs" in out
+    assert "STALE" not in out
+
+
+def test_check_names_a_group_that_matched_nothing_in_the_baseline(tmp_path, capsys):
+    """Raise staleness against the baseline, the only run where a zero means drift."""
+    manifest = _manifest(tmp_path, _output(ARTIFACT_ROW, FIRST_PARTY_ROW))
+
+    assert _check(tmp_path, manifest, _output(FIRST_PARTY_ROW)) == 0
+    out = capsys.readouterr().out
+    assert "STALE groups (matched nothing in the baseline): 10" in out
+    assert "pydantic-settings-private-kwargs" not in out.split("STALE groups")[1]
 
 
 def test_report_flags_a_line_holding_an_artifact_and_a_first_party_hit(
