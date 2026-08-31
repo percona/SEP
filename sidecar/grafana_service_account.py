@@ -528,9 +528,18 @@ async def resolve_token() -> str | None:
                 provider, persisted
             ):
                 return persisted
-            token, _reused = await mint_with_retry(
+            token, reused = await mint_with_retry(
                 provider, admin_credentials(), deadline
             )
+            if reused:
+                probe = await validate_token(provider, token)
+                if probe is TokenStateEnum.FORBIDDEN:
+                    warn(
+                        f"Grafana accepts the freshly minted token but the "
+                        f"{SERVICE_ACCOUNT_NAME!r} service account ranks below "
+                        f"{SERVICE_ACCOUNT_ROLE} in its org; a re-mint would carry "
+                        "the same role, so the token is kept."
+                    )
     write_persisted_token(directory, token)
     return token
 
