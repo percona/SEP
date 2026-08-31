@@ -160,10 +160,24 @@ def test_classify_splits_a_mixed_unknown_argument_shape():
         _output(ARTIFACT_ROW, FIRST_PARTY_ROW)
     )
 
-    assert classify_ty_diagnostics.classify(artifact.rule, artifact.message) is not None
-    assert (
-        classify_ty_diagnostics.classify(first_party.rule, first_party.message) is None
+    assert classify_ty_diagnostics.classify(artifact.fingerprint) is not None
+    assert classify_ty_diagnostics.classify(first_party.fingerprint) is None
+
+
+def test_classify_confines_absent_modules_to_the_scaffolded_paths():
+    """Treat an unresolvable import outside the known paths as a first-party defect."""
+    scaffolded, mistyped = classify_ty_diagnostics.parse_diagnostics(
+        _output(
+            "tests/app/sep/apps/framework/golden/task/app.py:9:20: "
+            "warning[unresolved-import] Cannot resolve imported module "
+            "`app.sep.apps.golden_task.models`",
+            "app/sep/routes/reports.py:9:20: warning[unresolved-import] "
+            "Cannot resolve imported module `app.sep.reprots`",
+        )
     )
+
+    assert classify_ty_diagnostics.classify(scaffolded.fingerprint) is not None
+    assert classify_ty_diagnostics.classify(mistyped.fingerprint) is None
 
 
 def test_check_passes_when_only_artifacts_were_removed(tmp_path, capsys):

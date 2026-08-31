@@ -284,6 +284,15 @@ first-party `PMM` kwarg differ only in the symbol the message names, and
 | `pygments-textlexer` | `unresolved-import` | 2 | 2 | 0 |
 | **Total** | | **446** | **264** | **182** |
 
+One group is additionally confined to a set of paths. `Cannot resolve imported
+module` reads identically for a golden-app module scaffolded at test time and for
+a first-party import someone mistyped, so the message alone cannot establish the
+verdict; `absent-modules` therefore matches only under
+`tests/app/sep/apps/framework/golden/` and at
+`app/sep/sync/syncers/system_facts/payload.py`, and a mistyped import anywhere
+else stays a first-party defect. Every other group's message carries the evidence
+on its own and matches at any path.
+
 ### Two mechanisms, chosen per (file, rule) pair
 
 A `[[tool.ty.overrides]]` entry in `pyproject.toml` covers the 59 pairs whose
@@ -381,10 +390,11 @@ and fails unless **every** diagnostic that stopped reporting is one the
 classification marks as an artifact. That is what a count comparison cannot
 establish: a suppression that hides one artifact *and* one first-party
 diagnostic, while some unrelated new diagnostic appears, reconciles to the
-expected total. Position is deliberately not part of the fingerprint —
-`classify` is a pure function of `(rule, message)`, so diagnostics sharing a
-fingerprint share a verdict, and folding position away costs no precision while
-letting the check survive the reformatting the comments provoke.
+expected total. The fingerprint is exactly what `classify` reads, so two
+diagnostics sharing one always share a verdict; folding the line and column away
+costs the check no precision and lets it survive the reformatting the comments
+provoke, which would otherwise report every diagnostic below an edited line as
+newly suppressed.
 
 `report` prints the same tables from a live run, flags any group whose predicate
 has gone stale, and names any line holding both an artifact and a first-party

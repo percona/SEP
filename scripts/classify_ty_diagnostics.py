@@ -98,12 +98,11 @@ class Diagnostic:
     def fingerprint(self) -> Fingerprint:
         """Return the identity a baseline manifest is reconciled on.
 
-        Position is deliberately excluded. :func:`classify` is a pure function of
-        ``(rule, message)``, so every diagnostic sharing this identity shares its
-        verdict, and folding away the line and column costs the reconciliation no
-        precision, while making it survive the reformatting that appending a
-        suppression comment provokes. Keying on position instead would report
-        every diagnostic below an edited line as newly suppressed.
+        This tuple is exactly :func:`classify`'s input, so two diagnostics sharing
+        it always share a verdict and folding away the line and column costs the
+        reconciliation no precision — while making it survive the reformatting
+        that appending a suppression comment provokes. Keying on position instead
+        would report every diagnostic below an edited line as newly suppressed.
         """
         return (self.path, self.rule, self.message)
 
@@ -123,6 +122,12 @@ class Group:
     :param rules: The ty rules the group's diagnostics report under.
     :param pattern: The message pattern that separates the group from first-party
         diagnostics sharing those rules.
+    :param paths: Path prefixes the group is confined to, empty for a group whose
+        message alone establishes the verdict. Needed where it does not:
+        ``Cannot resolve imported module`` reads identically for a golden-app
+        module scaffolded at test time and for a first-party import someone
+        mistyped, so without a prefix that typo would classify as an artifact and
+        ``check`` would demand its suppression.
     :param discriminant: A prose statement of what ``pattern`` keys on, for the
         report and the policy document.
     """
@@ -130,7 +135,21 @@ class Group:
     name: str
     rules: frozenset[str]
     pattern: re.Pattern[str]
+    paths: tuple[str, ...]
     discriminant: str
+
+    def claims(self, fingerprint: "Fingerprint") -> bool:
+        """Return whether this group claims ``fingerprint``.
+
+        :param fingerprint: The ``(path, rule, message)`` identity to test.
+        :return: ``True`` when rule, message and path all match.
+        """
+        path, rule, message = fingerprint
+        return (
+            rule in self.rules
+            and bool(self.pattern.search(message))
+            and (not self.paths or path.startswith(self.paths))
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,19 +171,23 @@ class Retained:
     reason: str
 
 
-def _group(name: str, rules: str, pattern: str, discriminant: str) -> Group:
+def _group(
+    name: str, rules: str, pattern: str, discriminant: str, paths: str = ""
+) -> Group:
     """Build a :class:`Group` from its space-separated rule list and raw pattern.
 
     :param name: The group's identifier.
     :param rules: Space-separated ty rule names.
     :param pattern: The message regex, matched with :meth:`re.Pattern.search`.
     :param discriminant: Prose statement of what the pattern keys on.
+    :param paths: Space-separated path prefixes to confine the group to.
     :return: The assembled group.
     """
     return Group(
         name=name,
         rules=frozenset(rules.split()),
         pattern=re.compile(pattern),
+        paths=tuple(paths.split()),
         discriminant=discriminant,
     )
 
@@ -223,6 +246,8 @@ GROUPS: tuple[Group, ...] = (
         r"^Cannot resolve imported module `",
         "the module does not exist at check time: golden apps are scaffolded by "
         "the test run, and the system-facts payload runs on the host",
+        paths="tests/app/sep/apps/framework/golden/ "
+        "app/sep/sync/syncers/system_facts/payload.py",
     ),
     _group(
         "subscripted-generics-called",
@@ -291,15 +316,14 @@ def parse_diagnostics(text: str) -> list[Diagnostic]:
     return diagnostics
 
 
-def classify(rule: str, message: str) -> Group | None:
+def classify(fingerprint: Fingerprint) -> Group | None:
     """Return the artifact group a diagnostic falls in, or ``None`` if first-party.
 
-    :param rule: The ty rule the diagnostic reports under.
-    :param message: The diagnostic's rendered message.
+    :param fingerprint: The diagnostic's ``(path, rule, message)`` identity.
     :return: The matching group, or ``None`` when no group claims the diagnostic.
     """
     for group in GROUPS:
-        if rule in group.rules and group.pattern.search(message):
+        if group.claims(fingerprint):
             return group
     return None
 
@@ -310,7 +334,7 @@ def _is_artifact(diagnostic: Diagnostic) -> bool:
     :param diagnostic: The diagnostic to classify.
     :return: ``True`` when a group claims it.
     """
-    return classify(diagnostic.rule, diagnostic.message) is not None
+    return classify(diagnostic.fingerprint) is not None
 
 
 def _render(fingerprint: Fingerprint) -> str:
@@ -388,7 +412,7 @@ def _print_groups(diagnostics: Sequence[Diagnostic]) -> None:
     """
     hits: Counter[str] = Counter()
     for diagnostic in diagnostics:
-        group = classify(diagnostic.rule, diagnostic.message)
+        group = classify(diagnostic.fingerprint)
         if group is not None:
             hits[group.name] += 1
     print("\nArtifact groups")
@@ -396,6 +420,8 @@ def _print_groups(diagnostics: Sequence[Diagnostic]) -> None:
         stale = "" if hits[group.name] else "   STALE — the predicate matched nothing"
         print(f"  {hits[group.name]:5d}  {group.name}{stale}")
         print(f"         {' | '.join(sorted(group.rules))} — {group.discriminant}")
+        if group.paths:
+            print(f"         confined to: {', '.join(group.paths)}")
     print(f"  total artifacts: {sum(hits.values())}")
 
 
@@ -486,7 +512,7 @@ def _drop_failures(
     """
     expected: Counter[str] = Counter()
     for fingerprint, count in before.items():
-        if classify(fingerprint[1], fingerprint[2]) is not None:
+        if classify(fingerprint) is not None:
             expected[fingerprint[1]] += count
     for entry in retained:
         expected[entry.fingerprint[1]] -= before[entry.fingerprint]
@@ -521,7 +547,7 @@ def check_manifest(
     failures = [
         f"suppressed a first-party diagnostic (x{count}): {_render(fingerprint)}"
         for fingerprint, count in sorted(removed.items())
-        if classify(fingerprint[1], fingerprint[2]) is None
+        if classify(fingerprint) is None
     ]
     failures.extend(
         f"artifact still reports: {diagnostic}"
