@@ -75,14 +75,16 @@ async def init_periodic_tasks_db(
     """Initialize the database with required periodic tasks.
 
     This function creates or updates periodic tasks in the Celery beat database
-    based on the provided periodic tasks dictionary. It also removes any orphaned tasks
+    based on the provided schedule/task pairs. It also removes any orphaned tasks
     that match the prefix filter.
 
-    An entry's ``due_on_first_seed`` marker is honoured only where the row is
-    created. An existing row still has its task name, schedule and extra fields
-    reconciled on every seed, but never its timing, so an upgrade does not shift
-    when that schedule next runs and an operator who cleared the marker is not
-    overridden on the next boot.
+    An entry's ``due_on_first_seed`` marker is a ``start_time`` stamp, which the
+    beat scheduler treats as overdue on a row it has no recorded run for. It is
+    written only where the row is created. An existing row is still reconciled
+    against its entry, including its task name, its schedule and every
+    ``extra_kwargs`` field, but never acquires the marker, so an upgrade does not
+    move an existing schedule's next run and an operator who cleared the marker
+    is not overridden on the next boot.
 
     :param periodic_tasks: A list of schedule/task pairs to seed.
     :param prefix_filter: Prefix to filter tasks for deletion.
