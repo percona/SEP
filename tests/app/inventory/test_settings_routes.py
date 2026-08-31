@@ -28,15 +28,12 @@ from app.api.deps import get_current_user, require_minimum_role_for_unsafe_metho
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import (
-    setting_class_token,
-    SettingClassEnum,
-    SettingOverride,
-)
+from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.inventory.config import inventory_settings, InventorySettings
 from app.inventory.deps import get_session
 from app.inventory.main import inventory_app
+from tests.app.core.settings_override.conftest import INVENTORY_SETTINGS_TOKEN
 
 
 @pytest.fixture(name="admin_client")
@@ -93,7 +90,7 @@ class TestInventorySettingsBootstrap:
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=setting_class_token(InventorySettings),
+                setting_class=INVENTORY_SETTINGS_TOKEN,
                 key="UVICORN_PORT",
                 value=9999,
                 is_active=True,

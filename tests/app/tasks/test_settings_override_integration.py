@@ -25,17 +25,14 @@ from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import (
-    setting_class_token,
-    SettingClassEnum,
-    SettingOverride,
-)
+from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.utils import json_serializer
 from app.tasks.config import (
     PreExecutionCheckMode,
     tasks_settings,
     TasksSettings,
 )
+from tests.app.core.settings_override.conftest import TASKS_SETTINGS_TOKEN
 from tests.app.db_schema import apply_schema
 
 
@@ -72,7 +69,7 @@ async def test_pre_execution_connectivity_check_override(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=setting_class_token(TasksSettings),
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="PRE_EXECUTION_CONNECTIVITY_CHECK",
                 value="block",
             ),
@@ -96,7 +93,7 @@ async def test_staleness_threshold_override(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=setting_class_token(TasksSettings),
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="STALENESS_THRESHOLD_SECONDS",
                 value=_OVERRIDE_STALENESS_SECONDS,
             ),
@@ -126,7 +123,7 @@ async def test_tasks_proxy_visible_after_refresh(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=setting_class_token(TasksSettings),
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="PRE_EXECUTION_CONNECTIVITY_CHECK",
                 value=target,
             ),
@@ -144,7 +141,7 @@ async def test_log_retention_days_override_applies_at_runtime(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=setting_class_token(TasksSettings),
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="LOG_RETENTION_DAYS",
                 value=_OVERRIDE_LOG_RETENTION_DAYS,
             ),
@@ -165,7 +162,7 @@ async def test_log_retention_days_invalid_override_falls_back(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=setting_class_token(TasksSettings),
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="LOG_RETENTION_DAYS",
                 value=invalid_value,
             ),
@@ -190,7 +187,7 @@ async def test_restricted_deployment_filters_withheld_rows(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=setting_class_token(TasksSettings),
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="STALENESS_THRESHOLD_SECONDS",
                 value=_OVERRIDE_STALENESS_SECONDS,
             ),
@@ -198,7 +195,7 @@ async def test_restricted_deployment_filters_withheld_rows(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=setting_class_token(TasksSettings),
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="LOG_RETENTION_DAYS",
                 value=_OVERRIDE_LOG_RETENTION_DAYS,
             ),
@@ -218,7 +215,7 @@ async def test_inactive_override_falls_back_to_yaml_default(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=setting_class_token(TasksSettings),
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="STALENESS_THRESHOLD_SECONDS",
                 value=_OVERRIDE_STALENESS_SECONDS,
             ),
@@ -230,7 +227,7 @@ async def test_inactive_override_falls_back_to_yaml_default(
         await SettingsOverrideManager.update_where(
             session,
             {"is_active": False},
-            setting_class=setting_class_token(TasksSettings),
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="STALENESS_THRESHOLD_SECONDS",
         )
     await refresh_all(lambda: override_session_maker, _tasks_proxies())

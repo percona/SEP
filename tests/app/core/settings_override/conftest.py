@@ -26,15 +26,30 @@ from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
-from app.core.config import settings
+from app.core.alerts.config import AlertSettings
+from app.core.config import Settings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingOverride
+from app.core.settings_override.models import setting_class_token, SettingOverride
 from app.core.utils import json_serializer
+from app.inventory.config import InventorySettings
+from app.sep.config import SEPSettings
+from app.sep.snippets.config import SnippetsSettings
+from app.tasks.anonymizer.config import AnonymizerSettings
+from app.tasks.config import TasksSettings
 from tests.app.db_schema import apply_schema
 
 #: Importable path patched when tests replace ``start_refresh_task``.
 START_REFRESH_TASK = "app.core.settings_override.worker.start_refresh_task"
+
+#: Storage tokens for ``SettingOverride.setting_class`` (SCREAMING_SNAKE).
+ALERT_SETTINGS_TOKEN = setting_class_token(AlertSettings)
+ANONYMIZER_SETTINGS_TOKEN = setting_class_token(AnonymizerSettings)
+INVENTORY_SETTINGS_TOKEN = setting_class_token(InventorySettings)
+SEP_SETTINGS_TOKEN = setting_class_token(SEPSettings)
+SETTINGS_TOKEN = setting_class_token(Settings)
+SNIPPETS_SETTINGS_TOKEN = setting_class_token(SnippetsSettings)
+TASKS_SETTINGS_TOKEN = setting_class_token(TasksSettings)
 
 
 async def insert_override_row(

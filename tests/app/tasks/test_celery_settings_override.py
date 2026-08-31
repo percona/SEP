@@ -34,11 +34,7 @@ from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import (
-    setting_class_token,
-    SettingClassEnum,
-    SettingOverride,
-)
+from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.worker import SEED_TIMEOUT_FRACTION
 from app.core.utils import json_serializer
@@ -59,9 +55,11 @@ from app.tasks.models import (
     TaskWrite,
 )
 from tests.app.core.settings_override.conftest import (
+    ANONYMIZER_SETTINGS_TOKEN,
     HangingSession,
     recording_start_refresh_task,
     START_REFRESH_TASK,
+    TASKS_SETTINGS_TOKEN,
 )
 from tests.app.db_schema import apply_schema
 from tests.app.factories import TaskFactory
@@ -231,7 +229,7 @@ class TestAnonymizerDefaultEntitiesOverride:
         """Resolve each override shape to the value the owning model produces."""
         await _seed_override(
             override_session_maker,
-            setting_class=setting_class_token(AnonymizerSettings),
+            setting_class=ANONYMIZER_SETTINGS_TOKEN,
             key="DEFAULT_ENTITIES",
             value=raw,
         )
@@ -257,7 +255,7 @@ class TestSyncLockTtlPositivityGuard:
         baseline = tasks_settings.SYNC_LOCK_TTL
         await _seed_override(
             override_session_maker,
-            setting_class=setting_class_token(TasksSettings),
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="SYNC_LOCK_TTL",
             value=0,
         )
@@ -273,7 +271,7 @@ class TestSyncLockTtlPositivityGuard:
         override = timedelta(minutes=10)
         await _seed_override(
             override_session_maker,
-            setting_class=setting_class_token(TasksSettings),
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="SYNC_LOCK_TTL",
             value=int(override.total_seconds()),
         )
@@ -336,7 +334,7 @@ class TestWorkerRefresherHandlers:
         loop.run_until_complete(
             _seed_override(
                 maker,
-                setting_class=setting_class_token(TasksSettings),
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="STALENESS_THRESHOLD_SECONDS",
                 value=baseline + 1234,
             )
@@ -410,7 +408,7 @@ class TestSyncRunningItemsRespectsOverriddenTtl:
         loop.run_until_complete(
             _seed_override(
                 maker,
-                setting_class=setting_class_token(TasksSettings),
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="SYNC_LOCK_TTL",
                 value=int(override_ttl.total_seconds()),
             )
@@ -451,19 +449,19 @@ class TestCheckNomadCertExpiryWithOverride:
         _write_cert(client, not_valid_after=ANCHOR + timedelta(days=30))
         await _seed_override(
             override_session_maker,
-            setting_class=setting_class_token(TasksSettings),
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="NOMAD__ssl_cafile",
             value=str(ca),
         )
         await _seed_override(
             override_session_maker,
-            setting_class=setting_class_token(TasksSettings),
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="NOMAD__ssl_certfile",
             value=str(client),
         )
         await _seed_override(
             override_session_maker,
-            setting_class=setting_class_token(TasksSettings),
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="NOMAD__cert_expiry_warn_days",
             value=7,
         )
