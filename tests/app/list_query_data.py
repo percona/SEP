@@ -15,10 +15,10 @@
 
 """Provide the row type and specs the in-memory list-query suites drive.
 
-Shared rather than copied per module because three suites across two trees exercise
-the same declaration — the applier's, its dependency's, and the app framework's
-adapter — and a spec that drifts in one copy leaves the others asserting a contract
-the subject no longer has.
+Shared rather than copied per module because every suite exercising the applier, its
+dependency, or an adapter over it must assert against the same declaration; a spec
+that drifts in one copy leaves the others asserting a contract the subject no longer
+has.
 """
 
 from __future__ import annotations
