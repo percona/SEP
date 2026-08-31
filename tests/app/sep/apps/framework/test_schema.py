@@ -1483,6 +1483,33 @@ class TestSchemaTier2ReferenceResolution:
                 list_view=_minimal_list_view(),
             )
 
+    def test_bracket_indexed_field_in_rule_rejected(self) -> None:
+        """Reject a bracket-indexed reference; no form field name carries one.
+
+        Declaring ``items`` does not make ``items[0]`` rule-referenceable.
+        """
+        with pytest.raises(ValidationError, match=r"unknown field 'items\[0\]'"):
+            AppSchema(
+                name="t",
+                display_name="T",
+                forms=[
+                    FormSection(
+                        title="S",
+                        fields=[
+                            StringField(name="items", label="I"),
+                            StringField(
+                                name="x",
+                                label="X",
+                                requires=[
+                                    FieldGate(when=F("items[0]") == "v"),
+                                ],
+                            ),
+                        ],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+            )
+
     def test_existing_unique_field_check_still_fires(self) -> None:
         """Edge case #7 — duplicate-name check runs alongside the new resolver."""
         with pytest.raises(ValidationError, match="duplicate field name"):
