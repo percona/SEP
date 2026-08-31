@@ -41,6 +41,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.celery.config import STATIC_CELERY_INCLUDE
 from app.core.settings_override.api.models import SettingClassAppMetadata
 from app.core.settings_override.api.routes import AppOwnedClassEntry
+from app.core.settings_override.registry import is_hot_reloadable
 from app.core.utils import import_var
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.inventory_references import InventoryReferenceProvider
@@ -486,7 +487,11 @@ def collect_app_owned_settings_classes(
     Each plugin may export ``APP_OWNED_SETTINGS_CLASSES`` as a list of
     :class:`~app.core.settings_override.api.routes.AppOwnedClassEntry` values.
     Entries are returned in activation-list order; duplicate
-    ``setting_class`` values or unknown ``app_key`` references fail fast.
+    ``setting_class`` values or unknown ``app_key`` references fail fast. Each
+    entry's ``reseed_keys`` is checked against its own ``settings_cls`` with
+    the policy gate off, so a misspelled or renamed field -- or one that
+    exists but is not marked HOT -- fails fast at collection time rather than
+    silently registering a beat-reseed callback that never fires.
 
     :param plugins: The ``SEP.APPS`` activation entries to scan. Defaults to
         ``sep_settings.APPS``.
@@ -494,8 +499,9 @@ def collect_app_owned_settings_classes(
     :rtype: list[AppOwnedClassEntry]
     :raises TypeError: If a module's declaration is not a list of
         :class:`AppOwnedClassEntry` instances.
-    :raises ValueError: If a setting class is declared more than once or
-        references an unknown app key.
+    :raises ValueError: If a setting class is declared more than once,
+        references an unknown app key, or declares a ``reseed_keys`` entry
+        that is not a hot-reloadable field on its ``settings_cls``.
     """
     activation = list(plugins if plugins is not None else sep_settings.APPS)
     registry = build_app_registry(activation)
@@ -532,6 +538,15 @@ def collect_app_owned_settings_classes(
                     f"App-owned settings class {class_id!r}"
                     f" references unknown app key {entry.app_key!r}.",
                 )
+            for key in sorted(entry.reseed_keys):
+                if not is_hot_reloadable(
+                    entry.settings_cls, key, include_policy_gate=False
+                ):
+                    raise ValueError(
+                        f"App module {plugin.module_name!r}: reseed key"
+                        f" {key!r} on {class_id!r} is not a hot-reloadable"
+                        " field.",
+                    )
             seen_classes.add(class_id)
             entries.append(entry)
     return entries

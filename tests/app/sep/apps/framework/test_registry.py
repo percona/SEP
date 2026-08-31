@@ -28,6 +28,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
 from app.core.celery.config import STATIC_CELERY_INCLUDE
+from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.api.routes import AppOwnedClassEntry
 from app.core.utils import json_serializer
@@ -637,6 +638,7 @@ class TestCollectAppOwnedSettingsClasses:
         assert entry.app_key == "alerts"
         assert entry.settings_cls is AlertsSettings
         assert entry.proxy is alerts_settings
+        assert entry.reseed_keys == frozenset({"BACKUP_INTERVAL"})
 
     def test_collects_report_declaration(self) -> None:
         """Return the report app's own ``HealthReportSettings`` entry."""
@@ -647,6 +649,7 @@ class TestCollectAppOwnedSettingsClasses:
         assert entry.app_key == "report"
         assert entry.settings_cls is HealthReportSettings
         assert entry.proxy is health_report_settings
+        assert entry.reseed_keys == frozenset()
 
     def test_reduced_activation_declares_no_alerts_entry(self) -> None:
         """Return no alerts entry under the PMM-embedded activation list."""
@@ -769,6 +772,89 @@ class TestCollectAppOwnedSettingsClasses:
         )
         with pytest.raises(TypeError, match="AppOwnedClassEntry"):
             collect_app_owned_settings_classes([App(module_name="checksums")])
+
+    def test_rejects_unknown_reseed_key(self, mocker: MockerFixture) -> None:
+        """Fail when ``reseed_keys`` names a field absent from ``settings_cls``.
+
+        A typo'd or renamed field must fail collection rather than silently
+        registering a beat-reseed callback that can never fire.
+        """
+        fake_entry = AppOwnedClassEntry(
+            setting_class=AlertsSettings.__name__,
+            settings_cls=AlertsSettings,
+            proxy=alerts_settings,
+            app_key="checksums",
+            reseed_keys=frozenset({"BACKUP_INTERVL"}),
+        )
+        fake_module = mocker.MagicMock()
+        fake_module.APP_OWNED_SETTINGS_CLASSES = [fake_entry]
+        real_checksums = importlib.import_module("app.sep.apps.checksums")
+        import_calls = {"count": 0}
+
+        def import_side_effect(name: str):
+            if name == "app.sep.apps.checksums":
+                import_calls["count"] += 1
+                if import_calls["count"] == 1:
+                    return real_checksums
+                return fake_module
+            return importlib.import_module(name)
+
+        mocker.patch(
+            "app.sep.apps.framework.registry.import_module",
+            side_effect=import_side_effect,
+        )
+        with pytest.raises(ValueError, match="not a hot-reloadable field"):
+            collect_app_owned_settings_classes([App(module_name="checksums")])
+
+    def test_rejects_non_hot_reseed_key(self, mocker: MockerFixture) -> None:
+        """Fail when ``reseed_keys`` names a real field that is not marked HOT.
+
+        ``cleanup_interval`` exists on ``HealthReportSettings`` but carries no
+        HOT marker, pinning the HOT half of the check separately from the
+        field-existence half covered by ``test_rejects_unknown_reseed_key``.
+        """
+        fake_entry = AppOwnedClassEntry(
+            setting_class=HealthReportSettings.__name__,
+            settings_cls=HealthReportSettings,
+            proxy=health_report_settings,
+            app_key="checksums",
+            reseed_keys=frozenset({"cleanup_interval"}),
+        )
+        fake_module = mocker.MagicMock()
+        fake_module.APP_OWNED_SETTINGS_CLASSES = [fake_entry]
+        real_checksums = importlib.import_module("app.sep.apps.checksums")
+        import_calls = {"count": 0}
+
+        def import_side_effect(name: str):
+            if name == "app.sep.apps.checksums":
+                import_calls["count"] += 1
+                if import_calls["count"] == 1:
+                    return real_checksums
+                return fake_module
+            return importlib.import_module(name)
+
+        mocker.patch(
+            "app.sep.apps.framework.registry.import_module",
+            side_effect=import_side_effect,
+        )
+        with pytest.raises(ValueError, match="not a hot-reloadable field"):
+            collect_app_owned_settings_classes([App(module_name="checksums")])
+
+    def test_accepts_reseed_key_withheld_by_the_allowlist(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Accept a ``reseed_keys`` entry the runtime allowlist would withhold.
+
+        Collection-time validation reads the static declaration only
+        (``include_policy_gate=False``): a deployment that narrows
+        ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` so it no longer names
+        ``AlertsSettings.BACKUP_INTERVAL`` must not fail startup.
+        """
+        mocker.patch.object(
+            settings.SETTINGS_OVERRIDE, "ALLOWED_KEYS", {"SEPSettings.APP_DRAIN"}
+        )
+        entries = collect_app_owned_settings_classes([App(module_name="alerts")])
+        assert entries[0].reseed_keys == frozenset({"BACKUP_INTERVAL"})
 
 
 @pytest.mark.asyncio
