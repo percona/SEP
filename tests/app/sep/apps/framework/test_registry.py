@@ -18,6 +18,7 @@
 import importlib
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -626,6 +627,38 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
         await engine.dispose()
 
 
+def _checksums_declaring(mocker: MockerFixture, declared: Any) -> None:
+    """Make the ``checksums`` app declare ``declared`` on its second import.
+
+    ``collect_app_owned_settings_classes`` imports each activated module twice:
+    once through ``build_app_registry`` and once to read the declaration. The
+    first import must return the real package so the app resolves and registers
+    its key; only the second is swapped for a stub carrying ``declared``.
+
+    :param mocker: The ``pytest-mock`` fixture used to patch the import.
+    :param declared: The value the stub exposes as
+        ``APP_OWNED_SETTINGS_CLASSES`` -- a list of entries, or a malformed
+        value when the test drives a rejection path.
+    """
+    fake_module = mocker.MagicMock()
+    fake_module.APP_OWNED_SETTINGS_CLASSES = declared
+    real_checksums = importlib.import_module("app.sep.apps.checksums")
+    import_calls = {"count": 0}
+
+    def import_side_effect(name: str):
+        if name == "app.sep.apps.checksums":
+            import_calls["count"] += 1
+            if import_calls["count"] == 1:
+                return real_checksums
+            return fake_module
+        return importlib.import_module(name)
+
+    mocker.patch(
+        "app.sep.apps.framework.registry.import_module",
+        side_effect=import_side_effect,
+    )
+
+
 class TestCollectAppOwnedSettingsClasses:
     """Tests for ``collect_app_owned_settings_classes``."""
 
@@ -679,23 +712,7 @@ class TestCollectAppOwnedSettingsClasses:
             proxy=alerts_settings,
             app_key="checksums",
         )
-        fake_module = mocker.MagicMock()
-        fake_module.APP_OWNED_SETTINGS_CLASSES = [dup_entry]
-        real_checksums = importlib.import_module("app.sep.apps.checksums")
-        import_calls = {"count": 0}
-
-        def import_side_effect(name: str):
-            if name == "app.sep.apps.checksums":
-                import_calls["count"] += 1
-                if import_calls["count"] == 1:
-                    return real_checksums
-                return fake_module
-            return importlib.import_module(name)
-
-        mocker.patch(
-            "app.sep.apps.framework.registry.import_module",
-            side_effect=import_side_effect,
-        )
+        _checksums_declaring(mocker, [dup_entry])
         with pytest.raises(ValueError, match="more than one app-owned"):
             collect_app_owned_settings_classes(
                 [App(module_name="alerts"), App(module_name="checksums")],
@@ -709,67 +726,19 @@ class TestCollectAppOwnedSettingsClasses:
             proxy=alerts_settings,
             app_key="ghost",
         )
-        fake_module = mocker.MagicMock()
-        fake_module.APP_OWNED_SETTINGS_CLASSES = [fake_entry]
-        real_checksums = importlib.import_module("app.sep.apps.checksums")
-        import_calls = {"count": 0}
-
-        def import_side_effect(name: str):
-            if name == "app.sep.apps.checksums":
-                import_calls["count"] += 1
-                if import_calls["count"] == 1:
-                    return real_checksums
-                return fake_module
-            return importlib.import_module(name)
-
-        mocker.patch(
-            "app.sep.apps.framework.registry.import_module",
-            side_effect=import_side_effect,
-        )
+        _checksums_declaring(mocker, [fake_entry])
         with pytest.raises(ValueError, match="unknown app key 'ghost'"):
             collect_app_owned_settings_classes([App(module_name="checksums")])
 
     def test_rejects_non_list_declaration(self, mocker: MockerFixture) -> None:
         """Fail when ``APP_OWNED_SETTINGS_CLASSES`` is not a list."""
-        fake_module = mocker.MagicMock()
-        fake_module.APP_OWNED_SETTINGS_CLASSES = "not-a-list"
-        real_checksums = importlib.import_module("app.sep.apps.checksums")
-        import_calls = {"count": 0}
-
-        def import_side_effect(name: str):
-            if name == "app.sep.apps.checksums":
-                import_calls["count"] += 1
-                if import_calls["count"] == 1:
-                    return real_checksums
-                return fake_module
-            return importlib.import_module(name)
-
-        mocker.patch(
-            "app.sep.apps.framework.registry.import_module",
-            side_effect=import_side_effect,
-        )
+        _checksums_declaring(mocker, "not-a-list")
         with pytest.raises(TypeError, match="must be a list"):
             collect_app_owned_settings_classes([App(module_name="checksums")])
 
     def test_rejects_non_entry_list_items(self, mocker: MockerFixture) -> None:
         """Fail when list items are not ``AppOwnedClassEntry`` instances."""
-        fake_module = mocker.MagicMock()
-        fake_module.APP_OWNED_SETTINGS_CLASSES = ["not-an-entry"]
-        real_checksums = importlib.import_module("app.sep.apps.checksums")
-        import_calls = {"count": 0}
-
-        def import_side_effect(name: str):
-            if name == "app.sep.apps.checksums":
-                import_calls["count"] += 1
-                if import_calls["count"] == 1:
-                    return real_checksums
-                return fake_module
-            return importlib.import_module(name)
-
-        mocker.patch(
-            "app.sep.apps.framework.registry.import_module",
-            side_effect=import_side_effect,
-        )
+        _checksums_declaring(mocker, ["not-an-entry"])
         with pytest.raises(TypeError, match="AppOwnedClassEntry"):
             collect_app_owned_settings_classes([App(module_name="checksums")])
 
@@ -786,23 +755,7 @@ class TestCollectAppOwnedSettingsClasses:
             app_key="checksums",
             reseed_keys=frozenset({"BACKUP_INTERVL"}),
         )
-        fake_module = mocker.MagicMock()
-        fake_module.APP_OWNED_SETTINGS_CLASSES = [fake_entry]
-        real_checksums = importlib.import_module("app.sep.apps.checksums")
-        import_calls = {"count": 0}
-
-        def import_side_effect(name: str):
-            if name == "app.sep.apps.checksums":
-                import_calls["count"] += 1
-                if import_calls["count"] == 1:
-                    return real_checksums
-                return fake_module
-            return importlib.import_module(name)
-
-        mocker.patch(
-            "app.sep.apps.framework.registry.import_module",
-            side_effect=import_side_effect,
-        )
+        _checksums_declaring(mocker, [fake_entry])
         with pytest.raises(ValueError, match="not a hot-reloadable field"):
             collect_app_owned_settings_classes([App(module_name="checksums")])
 
@@ -820,23 +773,7 @@ class TestCollectAppOwnedSettingsClasses:
             app_key="checksums",
             reseed_keys=frozenset({"cleanup_interval"}),
         )
-        fake_module = mocker.MagicMock()
-        fake_module.APP_OWNED_SETTINGS_CLASSES = [fake_entry]
-        real_checksums = importlib.import_module("app.sep.apps.checksums")
-        import_calls = {"count": 0}
-
-        def import_side_effect(name: str):
-            if name == "app.sep.apps.checksums":
-                import_calls["count"] += 1
-                if import_calls["count"] == 1:
-                    return real_checksums
-                return fake_module
-            return importlib.import_module(name)
-
-        mocker.patch(
-            "app.sep.apps.framework.registry.import_module",
-            side_effect=import_side_effect,
-        )
+        _checksums_declaring(mocker, [fake_entry])
         with pytest.raises(ValueError, match="not a hot-reloadable field"):
             collect_app_owned_settings_classes([App(module_name="checksums")])
 
@@ -859,7 +796,7 @@ class TestCollectAppOwnedSettingsClasses:
 
 @pytest.mark.asyncio
 class TestResolveAppSettingsMetadata:
-    """Tests for ``resolve_app_settings_metadata``."""
+    """Test ``resolve_app_settings_metadata``."""
 
     async def test_returns_alerts_identity(
         self, override_session: AsyncSession
