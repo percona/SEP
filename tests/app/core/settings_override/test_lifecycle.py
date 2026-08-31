@@ -75,7 +75,7 @@ async def session_maker_fixture() -> async_sessionmaker:
 def _make_proxies() -> tuple[OverridableSettingsProxy, dict]:
     """Construct an SEP proxy and a registry mapping for refresh tests."""
     proxy: OverridableSettingsProxy = OverridableSettingsProxy(
-        SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+        SEPSettings, setting_class=SEPSettings.__name__
     )
     registry = {
         SettingClassEnum.SEP_SETTINGS: ProxyEntry(proxy, SEPSettings),
@@ -216,10 +216,10 @@ async def test_refresh_all_rolls_back_session_between_proxies(
     its row from the DB.
     """
     sep_proxy: OverridableSettingsProxy = OverridableSettingsProxy(
-        SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+        SEPSettings, setting_class=SEPSettings.__name__
     )
     tasks_proxy: OverridableSettingsProxy = OverridableSettingsProxy(
-        TasksSettings, setting_class=SettingClassEnum.TASKS_SETTINGS
+        TasksSettings, setting_class=TasksSettings.__name__
     )
     registry = {
         SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_proxy, SEPSettings),
