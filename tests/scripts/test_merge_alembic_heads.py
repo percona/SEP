@@ -331,6 +331,7 @@ def test_merge_revision_declares_no_branch_label(tmp_path):
     merge_alembic_heads.merge_forked_heads(ini_path)
     merge_path = _assert_merge_file(versions_dir, parents={"left", "right"})
     text = merge_path.read_text(encoding="utf-8")
+    assert "down_revision: Union[str, Sequence[str], None]" in text
     assert "branch_labels: Union[str, Sequence[str], None] = None" in text
 
     script = _script_directory(ini_path, "sep")
