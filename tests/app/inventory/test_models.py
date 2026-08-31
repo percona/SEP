@@ -23,7 +23,9 @@ from app.core.utils.date_time import utc_now
 from app.inventory.constants import ACTIVE_RETIREMENT_KEY
 from app.inventory.crud import RetiredInclusiveServiceManager, ServiceManager
 from app.inventory.models import (
+    ExternalIdentityAlias,
     HostSystemObservationWrite,
+    IdentityLinkDecision,
     NodeWrite,
     Service,
     ServiceSystemObservationWrite,
@@ -249,3 +251,25 @@ class TestRetirementKeyUniqueness:
         )
         assert {row.id for row in retired} == {service.id, replacement.id}
         assert {row.retirement_key for row in retired} == {service.id, replacement.id}
+
+
+class TestIdentityTablesCarryNoUniqueIndex:
+    """Test that the append-only identity tables declare no unique index.
+
+    ``BaseSQLModelManager.save`` rebuilds equality filters from every unique
+    index and refuses a row matching one, so a unique index here would reject
+    the superseding record that closes a binding — which is how this design
+    expresses closure.
+    """
+
+    def test_alias_table_has_no_unique_index(self) -> None:
+        """Leave every external-identity alias index non-unique."""
+        indexes = ExternalIdentityAlias.__table__.indexes
+        assert indexes
+        assert not any(index.unique for index in indexes)
+
+    def test_decision_table_has_no_unique_index(self) -> None:
+        """Leave every identity-link decision index non-unique."""
+        indexes = IdentityLinkDecision.__table__.indexes
+        assert indexes
+        assert not any(index.unique for index in indexes)

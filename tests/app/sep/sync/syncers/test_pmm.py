@@ -1771,6 +1771,34 @@ class TestTombstoneReconciliation:
             == SyncStatusEnum.SUCCESS
         )
 
+    @pytest.mark.asyncio
+    async def test_a_matching_service_name_does_not_claim_the_local_row(
+        self, local_node, owned_pmmsyncer, sync_service
+    ):
+        """Create a second service for a new upstream id sharing an existing name.
+
+        The service level has no name-based fallback either: matching is by
+        upstream id alone, so a same-named predecessor is a candidate for an
+        operator to confirm and never an automatic match.
+        """
+        predecessor = CreatedServiceFactory.build(id=7)
+        predecessor.external_id = "svc-old"
+        predecessor.name = "reported"
+        predecessor.node_id = local_node.id
+        local_node.services = [predecessor]
+        replacement = CreatedServiceFactory.build(id=8)
+        owned_pmmsyncer.inventory_api.put.return_value = local_node.model_dump()
+        owned_pmmsyncer.inventory_api.post.return_value = replacement.model_dump()
+
+        await owned_pmmsyncer.perform_node_sync(
+            local_node, self._node_reporting(local_node, service_id="svc-new")
+        )
+
+        owned_pmmsyncer.inventory_api.post.assert_awaited_once()
+        assert owned_pmmsyncer.inventory_api.post.await_args.args[0] == (
+            f"/nodes/{local_node.id}/services/"
+        )
+
 
 class TestPMMSyncerKeepalive:
     """Verify ``PMMSyncer.__aexit__`` handles keepalive_api correctly."""
@@ -1830,3 +1858,69 @@ class TestPMMSyncerKeepalive:
 
         invalidate.assert_not_awaited()
         assert syncer._pmm_api is mock_pmm_api
+
+
+class TestNodeIdentityIsNeverInferredFromANaturalKey:
+    """Test that a re-registered node is never auto-linked by name or address.
+
+    Automatic natural-key linking is out of the question by design: contemporaneous
+    uniqueness is not historical identity, and a false-positive link silently
+    attaches one machine's backup and task history to another. The recovery path
+    is an operator confirmation through the inventory identity-link routes, so the
+    syncer must keep creating a second row and leave the pairing to be surfaced as
+    a candidate. These tests fail if any name- or address-based fallback is ever
+    reintroduced at the node level.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_matching_name_does_not_claim_the_local_row(
+        self, local_node, owned_pmmsyncer
+    ):
+        """Create a second node for a new upstream id sharing an existing name."""
+        owned_pmmsyncer.inventory_api.get.side_effect = [
+            _local_nodes_payload(local_node)
+        ]
+        reregistered = _remote_node(local_node)
+        reregistered.external_id = "pmm-node-1-reregistered"
+        replacement = CreatedNodeFactory.build(id=local_node.id + 1)
+        replacement.services = []
+        owned_pmmsyncer.inventory_api.post.return_value = replacement.model_dump()
+        owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(
+            return_value=_snapshot(reregistered)
+        )
+
+        await owned_pmmsyncer.perform_inventory_sync()
+
+        created = owned_pmmsyncer.inventory_api.post.await_args_list[0]
+        assert created.args[0] == "/nodes/"
+        assert created.kwargs["json"]["external_id"] == "pmm-node-1-reregistered"
+
+    @pytest.mark.asyncio
+    async def test_a_matching_name_and_address_does_not_claim_the_local_row(
+        self, local_node, owned_pmmsyncer
+    ):
+        """Create a second node even when the address agrees as well.
+
+        A rebuilt machine reusing a name and address is indistinguishable from
+        the same machine re-registered, which is exactly why detection precision
+        is not where this design's safety lives.
+        """
+        local_node.address = "10.0.0.1"
+        owned_pmmsyncer.inventory_api.get.side_effect = [
+            _local_nodes_payload(local_node)
+        ]
+        reregistered = _remote_node(local_node)
+        reregistered.external_id = "pmm-node-1-reregistered"
+        reregistered.address = "10.0.0.1"
+        replacement = CreatedNodeFactory.build(id=local_node.id + 1)
+        replacement.services = []
+        owned_pmmsyncer.inventory_api.post.return_value = replacement.model_dump()
+        owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(
+            return_value=_snapshot(reregistered)
+        )
+
+        await owned_pmmsyncer.perform_inventory_sync()
+
+        assert (
+            owned_pmmsyncer.inventory_api.post.await_args_list[0].args[0] == "/nodes/"
+        )
