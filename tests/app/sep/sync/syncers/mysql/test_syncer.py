@@ -77,7 +77,9 @@ RETIRED_INCLUSIVE_PARAMS = {"include_retired": "true"}
 @pytest.fixture
 def mock_mysql_syncer(mock_remote_api) -> MySQLSyncer:
     """Test fixture: return a MySQLSyncer with mocked APIs."""
-    return MySQLSyncer(tasks_api=mock_remote_api, inventory_api=mock_remote_api)
+    return MySQLSyncer(  # ty: ignore[missing-argument]
+        tasks_api=mock_remote_api, inventory_api=mock_remote_api
+    )
 
 
 @pytest_asyncio.fixture
@@ -92,7 +94,7 @@ async def bound_mysql_syncer(session, mock_remote_api) -> MySQLSyncer:
         session,
         SyncInstanceWrite(syncer=MySQLSyncer.get_name()),
     )
-    syncer = MySQLSyncer(
+    syncer = MySQLSyncer(  # ty: ignore[missing-argument]
         tasks_api=mock_remote_api,
         inventory_api=mock_remote_api,
         sync_instance=sync_instance,
@@ -258,7 +260,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_strict_raises_on_no_match(self, mock_remote_api):
         """Assert ``ExecutorHostNotFoundError`` is raised when strict and no match."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,
@@ -279,7 +281,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_strict_name_matches(self, mock_remote_api):
         """Assert matched name is returned when strict and name is in hosts."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,
@@ -294,7 +296,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_strict_address_matches(self, mock_remote_api):
         """Assert matched target is returned when strict and address matches."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,
@@ -309,7 +311,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_non_strict_fallback(self, mock_remote_api):
         """Assert first host is returned as fallback when non-strict and no match."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
         )
@@ -323,7 +325,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_force_overrides_strict(self, mock_remote_api):
         """Assert ``force_executor_host`` takes priority over strict matching."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,

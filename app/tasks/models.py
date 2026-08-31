@@ -460,7 +460,7 @@ class Task(TaskBase, BaseSQLModel, table=True):
     )
     history: list["TaskHistory"] = Relationship(back_populates="task")
     deleted_at: UTCDatetime | None = SQLField(
-        sa_type=DateTimeWithTimezone,
+        sa_type=DateTimeWithTimezone,  # ty: ignore[invalid-argument-type]
         default=None,
         index=True,
     )
@@ -704,10 +704,12 @@ class TaskHistoryBase(SQLModel):
         ),
     )
     started_at: UTCDatetime | None = SQLField(
-        default=None, sa_type=DateTimeWithTimezone
+        default=None,
+        sa_type=DateTimeWithTimezone,  # ty: ignore[invalid-argument-type]
     )
     finished_at: UTCDatetime | None = SQLField(
-        default=None, sa_type=DateTimeWithTimezone
+        default=None,
+        sa_type=DateTimeWithTimezone,  # ty: ignore[invalid-argument-type]
     )
     anonymize_mask: AnonymizeMask | None = None
     executed_by: str | None = None
@@ -759,7 +761,7 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     task: Task = Relationship(back_populates="history")
     sync_in_progress_started_at: UTCDatetime | None = SQLField(
         default=None,
-        sa_type=DateTimeWithTimezone,
+        sa_type=DateTimeWithTimezone,  # ty: ignore[invalid-argument-type]
     )
     log_producer_epoch: int = SQLField(
         sa_column=Column(

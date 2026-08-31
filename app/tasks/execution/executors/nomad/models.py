@@ -539,22 +539,38 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     # ``FieldInfo`` and force ``frozen=True`` repeated. ``endpoint`` left unmarked.
     # Reuses the shared TLS overlay so every remote-api model marks these the same.
     INHERITED_MARKERS: ClassVar[InheritedMarkers] = REMOTE_API_TLS_MARKERS
-    secure: bool = hot_field(default=False, advanced=True)
-    timeout: int = hot_field(10, advanced=True)
-    minify_payload: bool = hot_field(default=True, advanced=True)
-    log_socket_read_timeout: int = hot_field(10, advanced=True)
-    cert_expiry_warn_days: int = hot_field(7, ge=1, advanced=True)
-    terminal_log_drain_max_attempts: int = hot_field(5, ge=0, advanced=True)
-    terminal_log_drain_interval: float = hot_field(0.5, gt=0, advanced=True)
-    log_anonymization_max_withheld_bytes: int = hot_field(
-        _ONE_MEBIBYTE, gt=0, advanced=True
+    secure: bool = hot_field(  # ty: ignore[invalid-assignment]
+        default=False, advanced=True
     )
-    log_capture_hold_seconds: int = hot_field(
+    timeout: int = hot_field(10, advanced=True)  # ty: ignore[invalid-assignment]
+    minify_payload: bool = hot_field(  # ty: ignore[invalid-assignment]
+        default=True, advanced=True
+    )
+    log_socket_read_timeout: int = hot_field(  # ty: ignore[invalid-assignment]
+        10, advanced=True
+    )
+    cert_expiry_warn_days: int = hot_field(  # ty: ignore[invalid-assignment]
+        7, ge=1, advanced=True
+    )
+    terminal_log_drain_max_attempts: int = hot_field(  # ty: ignore[invalid-assignment]
+        5, ge=0, advanced=True
+    )
+    terminal_log_drain_interval: float = hot_field(  # ty: ignore[invalid-assignment]
+        0.5, gt=0, advanced=True
+    )
+    log_anonymization_max_withheld_bytes: int = (  # ty: ignore[invalid-assignment]
+        hot_field(_ONE_MEBIBYTE, gt=0, advanced=True)
+    )
+    log_capture_hold_seconds: int = hot_field(  # ty: ignore[invalid-assignment]
         LOG_CAPTURE_HOLD_DEFAULT_SECONDS, ge=1, advanced=True
     )
-    check_cert_expiry_interval: IntervalSchedule | None = field_with_metadata(
-        metadata={"reload": ReloadClassification.HOT, "advanced": True},
-        default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
+    check_cert_expiry_interval: (
+        IntervalSchedule | None
+    ) = (  # ty: ignore[invalid-assignment]
+        field_with_metadata(
+            metadata={"reload": ReloadClassification.HOT, "advanced": True},
+            default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
+        )
     )
 
     @cached_property
