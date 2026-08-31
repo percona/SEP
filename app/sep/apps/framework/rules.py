@@ -1743,6 +1743,20 @@ def _validate_plan_against_model_fields(
     model_fields = set(cls.model_fields)
 
     def _declared_on_model(name: str) -> bool:
+        """Return whether ``name``'s leading segment is declared on the model.
+
+        Deliberately not :func:`~app.sep.apps.framework.responses.root_segment`,
+        which strips a ``[N]`` index: that helper serves callers resolving paths
+        against serialized rows, where an index is a real segment. Rule
+        references are instead walked by :func:`_resolve_field`'s dotted-only
+        ``getattr`` traversal, which has no index support, so an indexed
+        segment can never resolve to anything but ``None``. Rejecting it here
+        keeps the mistake an import-time error rather than a silent no-op on
+        every request.
+
+        :param name: A rule's field reference — a plain name or dotted path.
+        :return: Whether the reference's leading segment is a model field.
+        """
         if name in model_fields:
             return True
         if "." not in name:

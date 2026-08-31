@@ -73,6 +73,11 @@ def serialized_field_names(model: type[BaseModel]) -> frozenset[str]:
 def root_segment(path: str) -> str:
     """Return the leading field name of a dotted/indexed view path.
 
+    Stripping the index is only sound for paths resolved against serialized
+    rows, where ``[N]`` is a real segment. Conditional-rule references are not
+    such paths — see ``_declared_on_model`` in ``rules.py``, which keeps its own
+    index-rejecting split on purpose.
+
     :param path: A list-view column key or detail-view field path (for example
         ``"target.service"`` or ``"data.meta[0]"``).
     :return: The path's first segment, stripped of any ``[N]`` index.
