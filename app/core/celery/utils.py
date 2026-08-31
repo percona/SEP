@@ -79,8 +79,10 @@ async def init_periodic_tasks_db(
     that match the prefix filter.
 
     An entry's ``due_on_first_seed`` marker is honoured only where the row is
-    created, so an upgrade writes nothing to a schedule that already exists and
-    an operator who cleared the marker is not overridden on the next boot.
+    created. An existing row still has its task name, schedule and extra fields
+    reconciled on every seed, but never its timing, so an upgrade does not shift
+    when that schedule next runs and an operator who cleared the marker is not
+    overridden on the next boot.
 
     :param periodic_tasks: A list of schedule/task pairs to seed.
     :param prefix_filter: Prefix to filter tasks for deletion.

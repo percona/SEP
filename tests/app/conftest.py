@@ -666,7 +666,7 @@ async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest_asyncio.fixture(name="beat_maker")
-async def beat_maker_fixture() -> AsyncIterator[async_sessionmaker]:
+async def beat_maker_fixture() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     """Provide a session maker bound to an in-memory celery-beat DB.
 
     The celery-beat tables are owned by ``sqlalchemy-celery-beat`` and live in
@@ -692,7 +692,7 @@ async def beat_maker_fixture() -> AsyncIterator[async_sessionmaker]:
 
 @pytest_asyncio.fixture(name="celery_beat_session")
 async def celery_beat_session_fixture(
-    beat_maker: async_sessionmaker,
+    beat_maker: async_sessionmaker[AsyncSession],
 ) -> AsyncIterator[AsyncSession]:
     """Create an async db session backed by the celery-beat tables."""
     async with beat_maker() as session:
