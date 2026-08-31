@@ -341,9 +341,10 @@ async def test_a_mint_creates_the_account_then_a_token_on_it(
 ):
     """Find nothing, create the account, then create a token on the new account."""
     async with provider:
-        token = await helper.mint(provider, helper.admin_credentials())
+        token, reused = await helper.mint(provider, helper.admin_credentials())
 
     assert token == MINTED_TOKEN
+    assert not reused
     assert [request.route for request in grafana_stub.requests] == [
         StubRoute.SEARCH,
         StubRoute.CREATE_ACCOUNT,
@@ -415,8 +416,10 @@ async def test_an_existing_account_is_reused_rather_than_duplicated(
     )
 
     async with provider:
-        await helper.mint(provider, helper.admin_credentials())
+        token, reused = await helper.mint(provider, helper.admin_credentials())
 
+    assert token == MINTED_TOKEN
+    assert reused
     assert not grafana_stub.calls(StubRoute.CREATE_ACCOUNT)
     assert grafana_stub.calls(StubRoute.CREATE_TOKEN)[0].path.endswith(
         f"/serviceaccounts/{ACCOUNT_ID}/tokens"
@@ -477,9 +480,10 @@ async def test_a_lost_account_creation_race_mints_on_the_winner(
     )
 
     async with provider:
-        token = await helper.mint(provider, helper.admin_credentials())
+        token, reused = await helper.mint(provider, helper.admin_credentials())
 
     assert token == MINTED_TOKEN
+    assert reused
     assert grafana_stub.calls(StubRoute.CREATE_TOKEN)[0].path.endswith(
         f"/serviceaccounts/{ACCOUNT_ID}/tokens"
     )
@@ -612,13 +616,14 @@ async def test_a_starting_grafana_is_retried_until_it_answers(
     )
 
     async with provider:
-        token = await helper.mint_with_retry(
+        token, reused = await helper.mint_with_retry(
             provider,
             helper.admin_credentials(),
             time.monotonic() + PATIENT_BOUND_SECONDS,
         )
 
     assert token == MINTED_TOKEN
+    assert not reused
     assert len(grafana_stub.calls(StubRoute.SEARCH)) == EXPECTED_SEARCH_ATTEMPTS
 
 
@@ -705,9 +710,10 @@ async def test_the_minted_token_reaches_no_log_record(
 
     with caplog.at_level(logging.DEBUG):
         async with provider:
-            token = await helper.mint(provider, helper.admin_credentials())
+            token, reused = await helper.mint(provider, helper.admin_credentials())
 
     assert token == MINTED_TOKEN
+    assert not reused
     assert not [
         record for record in caplog.records if MINTED_TOKEN in record.getMessage()
     ]
