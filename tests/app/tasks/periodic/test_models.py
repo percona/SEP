@@ -90,6 +90,18 @@ class TestPeriodicTaskExecuteRequest:
         req = PeriodicTaskExecuteRequest(eta="", meta={})
         assert req.eta is None
 
+    @pytest.mark.parametrize(
+        "meta_value",
+        ["oops", ["a"], None],
+        ids=["string", "list", "null"],
+    )
+    def test_populate_meta_rejects_non_mapping(self, meta_value):
+        """Assert non-mapping meta alongside a meta_ key raises ValidationError."""
+        with pytest.raises(ValidationError):
+            PeriodicTaskExecuteRequest.model_validate(
+                {"meta": meta_value, "meta_x": 1}
+            )
+
 
 class TestBasePeriodicTask:
     """Test the BasePeriodicTask model."""

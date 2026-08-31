@@ -512,6 +512,21 @@ class TestTaskExecuteRequest:
         )
         assert req.meta == {"existing": "val", "new": "val2"}
 
+    @pytest.mark.parametrize(
+        "meta_value",
+        ["oops", ["a"], None],
+        ids=["string", "list", "null"],
+    )
+    def test_populate_meta_rejects_non_mapping(self, meta_value: Any) -> None:
+        """Assert non-mapping meta alongside a meta_ key raises ValidationError."""
+        with pytest.raises(ValidationError):
+            TaskExecuteRequest.model_validate({"meta": meta_value, "meta_x": 1})
+
+    def test_populate_meta_rejects_non_mapping_without_meta_key(self) -> None:
+        """Assert non-mapping meta without meta_ keys still raises ValidationError."""
+        with pytest.raises(ValidationError):
+            TaskExecuteRequest.model_validate({"meta": "oops"})
+
     def test_empty_str_to_none_for_eta(self) -> None:
         """Assert empty string for eta is converted to None."""
         req = TaskExecuteRequest.model_validate({"eta": ""})

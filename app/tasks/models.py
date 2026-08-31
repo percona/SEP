@@ -666,6 +666,9 @@ class TaskExecuteRequest(BaseModel):
         """
         if isinstance(data, dict):
             meta = data.get("meta", {})
+            if not isinstance(meta, dict):
+                msg = "meta must be a mapping"
+                raise ValueError(msg)
             for key, value in data.items():
                 if key.startswith("meta_"):
                     meta[key.replace("meta_", "")] = value
