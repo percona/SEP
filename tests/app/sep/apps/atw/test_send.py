@@ -40,7 +40,7 @@ from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPConflictException
 from app.core.requests import RemoteAPI
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import setting_class_token, SettingOverride
 from app.core.utils import json_serializer
 from app.core.utils.date_time import utc_now
 from app.sep.apps.atw.crud import AtwIncidentManager, AtwSendLogManager
@@ -57,7 +57,7 @@ from app.sep.apps.atw.send import (
 from app.sep.bundle_upload.plan import DeliveryPlan, DeliveryPlanError, StepRecord
 from app.sep.bundle_upload.resolver import DRIFTED_INPUTS_REASON
 from app.sep.bundle_upload.seam import BundleSource, UploadResult
-from app.sep.config import DeliveryPlanInputs, sep_settings
+from app.sep.config import DeliveryPlanInputs, sep_settings, SEPSettings
 from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 from tests.app.db_schema import apply_schema
 
@@ -355,7 +355,7 @@ async def _seed_delivery_inputs(
     await SettingsOverrideManager.create(
         session,
         SettingOverride(
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=setting_class_token(SEPSettings),
             key="DIAGNOSTICS_DELIVERY_INPUTS",
             value=value,
         ),
