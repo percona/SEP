@@ -523,9 +523,12 @@ class TestTaskExecuteRequest:
             TaskExecuteRequest.model_validate({"meta": meta_value, "meta_x": 1})
 
     def test_populate_meta_rejects_non_mapping_without_meta_key(self) -> None:
-        """Assert non-mapping meta without meta_ keys still raises ValidationError."""
-        with pytest.raises(ValidationError):
+        """Assert bare non-mapping meta keeps Pydantic's field-scoped error."""
+        with pytest.raises(ValidationError) as exc_info:
             TaskExecuteRequest.model_validate({"meta": "oops"})
+        errors = exc_info.value.errors()
+        assert errors[0]["loc"] == ("meta",)
+        assert errors[0]["type"] == "dict_type"
 
     def test_empty_str_to_none_for_eta(self) -> None:
         """Assert empty string for eta is converted to None."""

@@ -663,16 +663,22 @@ class TaskExecuteRequest(BaseModel):
         :type data: Any
         :return: The modified data with the meta field populated.
         :rtype: Any
+        :raises ValueError: If ``meta_``-prefixed keys are present but ``meta``
+            is not a mapping, so Pydantic reports a 422 instead of a 500.
         """
         if isinstance(data, dict):
-            meta = data.get("meta", {})
-            if not isinstance(meta, dict):
-                msg = "meta must be a mapping"
-                raise ValueError(msg)
-            for key, value in data.items():
-                if key.startswith("meta_"):
-                    meta[key.replace("meta_", "")] = value
-            data["meta"] = meta
+            prefixed = {
+                key.replace("meta_", ""): value
+                for key, value in data.items()
+                if key.startswith("meta_")
+            }
+            if prefixed:
+                meta = data.get("meta", {})
+                if not isinstance(meta, dict):
+                    msg = "meta must be a mapping"
+                    raise ValueError(msg)
+                meta.update(prefixed)
+                data["meta"] = meta
         return data
 
 
