@@ -489,14 +489,13 @@ def collect_app_owned_settings_classes(
     Entries are returned in activation-list order; duplicate
     ``setting_class`` values or unknown ``app_key`` references fail fast. Each
     entry's ``reseed_keys`` is checked against its own ``settings_cls`` with
-    the policy gate off, so a misspelled or renamed field -- or one that
-    exists but is not marked HOT -- fails fast at collection time rather than
-    silently registering a beat-reseed callback that never fires.
+    the policy gate off, so a misspelled or renamed field, or one that exists
+    but is not marked HOT, fails fast at collection time rather than silently
+    registering a beat-reseed callback that never fires.
 
     :param plugins: The ``SEP.APPS`` activation entries to scan. Defaults to
         ``sep_settings.APPS``.
     :return: The merged app-owned settings entries.
-    :rtype: list[AppOwnedClassEntry]
     :raises TypeError: If a module's declaration is not a list of
         :class:`AppOwnedClassEntry` instances.
     :raises ValueError: If a setting class is declared more than once,

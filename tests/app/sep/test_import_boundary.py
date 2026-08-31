@@ -509,7 +509,7 @@ def test_deferred_violations_over_a_synthetic_tree(
     """Reject a deferred edge driven over a synthetic tree attributed to a real path.
 
     Each source is parsed as if it were the module at ``importer``, so both the
-    owner exemption and the rendered path come from that real path -- mirroring
+    owner exemption and the rendered path come from that real path, mirroring
     :func:`test_import_time_edges_ignore_a_modules_own_app_package`. The first two
     cases pin the function-body and ``TYPE_CHECKING`` shapes this guard exists to
     catch; the function-body case also pins the ``(path, line)`` dedup, since
