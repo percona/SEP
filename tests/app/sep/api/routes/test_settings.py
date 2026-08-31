@@ -30,16 +30,16 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
 from app.api.deps import require_minimum_role_for_unsafe_methods
-from app.core.alerts.config import alert_settings
+from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.auth.providers.casdoor.models import CasdoorUser
-from app.core.config import PMMSettings, settings
+from app.core.config import PMMSettings, Settings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
 from app.core.settings_override.api import build_settings_router
 from app.core.settings_override.api import routes as settings_routes
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.models import setting_class_token, SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification, SECRET_STR_MASK
 from app.core.utils import json_serializer
 from app.sep.api.routes.settings import SEP_ADMIN_SETTINGS_CLASSES
@@ -63,6 +63,7 @@ from app.sep.snippets.config import (
     SnippetFilter,
     SnippetFilterType,
     snippets_settings,
+    SnippetsSettings,
 )
 from tests.app.db_schema import apply_schema
 from tests.app.sep.conftest import REDUCED_ACTIVATION
@@ -630,7 +631,7 @@ class TestSepSettingsPatch:
 
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=setting_class_token(SEPSettings),
         )
         assert len(rows) == 1
         assert rows[0].key == "SYNC_REFRESH_TIME"
@@ -668,7 +669,7 @@ class TestSepSettingsPatch:
 
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=setting_class_token(SEPSettings),
             key="FOOTER_TEMPLATE",
         )
         assert len(rows) == 1
@@ -712,7 +713,7 @@ class TestSepSettingsPatch:
         )
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=setting_class_token(SEPSettings),
             key="SYNC_REFRESH_TIME",
         )
         assert len(rows) == 1
@@ -764,7 +765,7 @@ class TestSepSettingsPatch:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+            override_session, setting_class=setting_class_token(SEPSettings)
         )
         assert rows == []
 
@@ -849,7 +850,7 @@ class TestSepSettingsPatch:
         )
 
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+            override_session, setting_class=setting_class_token(SEPSettings)
         )
         assert rows == []
 
@@ -885,7 +886,7 @@ class TestSepSettingsPatch:
 
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=setting_class_token(SEPSettings),
             key=_DELIVERY_INPUTS_KEY,
         )
         assert len(rows) == 1
@@ -919,7 +920,7 @@ class TestSepSettingsPatch:
 
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=setting_class_token(SEPSettings),
             key=_DELIVERY_INPUTS_KEY,
         )
         assert rows[0].value["endpoint"] == endpoint
@@ -958,7 +959,7 @@ class TestSepSettingsPatch:
             for entry in detail
         )
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+            override_session, setting_class=setting_class_token(SEPSettings)
         )
         assert rows == []
 
@@ -1012,7 +1013,7 @@ class TestSepSettingsPatch:
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=setting_class_token(SEPSettings),
             key=_DELIVERY_INPUTS_KEY,
         )
         assert rows[0].value["secrets"] == _DELIVERY_INPUTS_SECRETS
@@ -1072,7 +1073,7 @@ class TestSepSettingsPatch:
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=setting_class_token(SEPSettings),
             key=_DELIVERY_INPUTS_KEY,
         )
         assert "sn-secret" in rows[0].value["endpoint"]
@@ -1099,7 +1100,7 @@ class TestSepSettingsPatch:
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=setting_class_token(SEPSettings),
             key=_DELIVERY_INPUTS_KEY,
         )
         assert len(rows) == 1
@@ -1171,7 +1172,7 @@ class TestSepSettingsPatch:
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=setting_class_token(SEPSettings),
             key=_DELIVERY_INPUTS_KEY,
         )
         assert rows[0].value["secrets"] == {
@@ -1191,7 +1192,7 @@ class TestSepSettingsPatch:
         )
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+            override_session, setting_class=setting_class_token(SEPSettings)
         )
         assert [r.key for r in rows] == ["APP_DRAIN__stale_task_ttl"]
 
@@ -1207,7 +1208,7 @@ class TestSepSettingsPatch:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+            override_session, setting_class=setting_class_token(SEPSettings)
         )
         assert rows == []
 
@@ -1233,7 +1234,7 @@ class TestSepSettingsPatch:
         )
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SNIPPETS_SETTINGS
+            override_session, setting_class=setting_class_token(SnippetsSettings)
         )
         assert [r.key for r in rows] == ["SNIPPETS_BASE_URL"]
 
@@ -1250,7 +1251,7 @@ class TestSepSettingsPatch:
         try:
             assert response.status_code == status.HTTP_200_OK
             rows = await SettingsOverrideManager.list(
-                override_session, setting_class=SettingClassEnum.SNIPPETS_SETTINGS
+                override_session, setting_class=setting_class_token(SnippetsSettings)
             )
             assert [r.key for r in rows] == ["SYNC_FILTER"]
             assert {
@@ -1271,7 +1272,7 @@ class TestSepSettingsPatch:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SNIPPETS_SETTINGS
+            override_session, setting_class=setting_class_token(SnippetsSettings)
         )
         assert rows == []
 
@@ -1297,7 +1298,7 @@ class TestSepSettingsPatch:
         assert any("greater_than" in t for t in types)
 
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+            override_session, setting_class=setting_class_token(SEPSettings)
         )
         assert rows == []
 
@@ -1338,7 +1339,7 @@ class TestSepSettingsPatch:
         assert spy.call_count == expected_call_count
 
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+            override_session, setting_class=setting_class_token(SEPSettings)
         )
         assert len(rows) == 1
         assert rows[0].value == new_value
@@ -1365,7 +1366,7 @@ class TestSepSettingsDelete:
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+            override_session, setting_class=setting_class_token(SEPSettings)
         )
         assert rows == []
 
@@ -1778,7 +1779,7 @@ class TestSepSettingsAlertSettings:
             )
             assert response.status_code == status.HTTP_200_OK
             rows = await SettingsOverrideManager.list(
-                override_session, setting_class=SettingClassEnum.ALERT_SETTINGS
+                override_session, setting_class=setting_class_token(AlertSettings)
             )
             providers_row = next(row for row in rows if row.key == "PROVIDERS")
             assert providers_row.value[0]["routing_key"] == secret
@@ -1836,7 +1837,7 @@ class TestSepSettingsAlertSettings:
             )
             assert response.status_code == status.HTTP_200_OK
             rows = await SettingsOverrideManager.list(
-                override_session, setting_class=SettingClassEnum.ALERT_SETTINGS
+                override_session, setting_class=setting_class_token(AlertSettings)
             )
             providers_row = next(row for row in rows if row.key == "PROVIDERS")
             by_endpoint = {
@@ -2095,7 +2096,7 @@ class TestGlobalSettingsClass:
         )
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SETTINGS
+            override_session, setting_class=setting_class_token(Settings)
         )
         assert [r.key for r in rows] == ["PMM__verify_ssl"]
 
@@ -2112,7 +2113,7 @@ class TestGlobalSettingsClass:
             assert response.status_code == status.HTTP_200_OK
             assert response.json()[0]["value"] == "**********"
             rows = await SettingsOverrideManager.list(
-                override_session, setting_class=SettingClassEnum.SETTINGS
+                override_session, setting_class=setting_class_token(Settings)
             )
             assert len(rows) == 1
             assert rows[0].key == "PMM__api_key"
@@ -2140,7 +2141,7 @@ class TestGlobalSettingsClass:
             assert response.status_code == status.HTTP_200_OK
             assert response.json()[0]["value"] == "**********"
             rows = await SettingsOverrideManager.list(
-                override_session, setting_class=SettingClassEnum.SETTINGS
+                override_session, setting_class=setting_class_token(Settings)
             )
             assert len(rows) == 1
             assert rows[0].value == secret
@@ -2157,7 +2158,7 @@ class TestGlobalSettingsClass:
         )
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SETTINGS
+            override_session, setting_class=setting_class_token(Settings)
         )
         assert [r.key for r in rows] == ["LOGGING"]
 
@@ -2211,7 +2212,7 @@ class TestGlobalSettingsClass:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SETTINGS
+            override_session, setting_class=setting_class_token(Settings)
         )
         assert rows == []
 

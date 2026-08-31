@@ -45,7 +45,11 @@ from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import (
+    setting_class_token,
+    SettingClassEnum,
+    SettingOverride,
+)
 from app.core.utils import json_serializer
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import (
@@ -86,7 +90,7 @@ def _sep_proxies() -> dict:
 
 async def _insert_override(
     session_maker: async_sessionmaker,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     key: str,
     value: object,
 ) -> None:
@@ -141,7 +145,7 @@ async def test_snippets_refresh_route_observes_enable_manual_sync_override(
 
         await _insert_override(
             override_session_maker,
-            SettingClassEnum.SNIPPETS_SETTINGS,
+            setting_class_token(SnippetsSettings),
             "ENABLE_MANUAL_SYNC",
             value=False,
         )
@@ -172,7 +176,7 @@ async def test_sep_proxy_visible_after_refresh(
     override_value = not yaml_default
     await _insert_override(
         override_session_maker,
-        SettingClassEnum.SEP_SETTINGS,
+        setting_class_token(SEPSettings),
         "CONNECTIVITY_CHECK_DEFAULT",
         value=override_value,
     )
