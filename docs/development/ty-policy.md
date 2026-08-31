@@ -109,6 +109,10 @@ ty check        ->  Found 3926 diagnostics, exit 1
 
 The two agree because they now carry identical argument lists — none.
 
+That figure predates the artifact suppressions. Under the configuration as it
+now stands the same command reports **3,626**; the before/after split and what
+moved between them are in *Neutralized dependency-typing artifacts* below.
+
 The two exit codes differ because `make` reports its own status: `ty` exits 1
 when it finds diagnostics, and `make` turns any failed recipe into exit 2.
 
@@ -244,6 +248,148 @@ silencing the rule. If it ever turns out that no such mechanism can work, that i
 a finding to raise against the parent epic — not a reason to ignore the rule
 here.
 
+## Neutralized dependency-typing artifacts
+
+The section above promises that the stub noise mixed into the `warn` rules is
+addressed by neutralizing it rather than by silencing the rule. This is that
+work. **No severity changed here** — `[tool.ty.rules]` is untouched; what changed
+is that 446 diagnostics which describe how a *dependency* is typed no longer
+report, leaving a first-party remainder that can be sized and fixed.
+
+Measured at `8ab18007e` with ty 0.0.49 via a bare `ty check`: 4,072 diagnostics
+before (366 error, 3,706 warning), 3,626 after. Every one of the 446 removed is a
+warning, and all 366 errors are untouched.
+
+### The groups, and the discriminant each is classified on
+
+`scripts/classify_ty_diagnostics.py` holds these as executable predicates; the
+table is its `report` output, not a parallel record. The discriminant column is
+the load-bearing one, because most groups share a rule with genuine defects —
+under `unknown-argument`, the pydantic-settings `_secrets_dir` kwarg and a
+first-party `PMM` kwarg differ only in the symbol the message names, and
+`tests/app/sep/test_config.py` holds both.
+
+| Group | Rule(s) | Hits | via override | via comment |
+|---|---|---:|---:|---:|
+| `settings-subclass-attributes` | `unresolved-attribute` | 137 | 51 | 86 |
+| `pydantic-fieldinfo` | `invalid-argument-type` / `invalid-assignment` | 87 | 29 | 58 |
+| `env-populated-required-params` | `missing-argument` | 70 | 63 | 7 |
+| `pydantic-settings-private-kwargs` | `unknown-argument` | 63 | 58 | 5 |
+| `celery-app-attributes` | `unresolved-attribute` | 31 | 10 | 21 |
+| `third-party-overload-sets` | `no-matching-overload` | 18 | 18 | 0 |
+| `sa-type-typedecorator` | `invalid-argument-type` | 16 | 11 | 5 |
+| `absent-modules` | `unresolved-import` | 9 | 9 | 0 |
+| `subscripted-generics-called` | `call-non-callable` | 9 | 9 | 0 |
+| `fastapi-query-default` | `invalid-parameter-default` | 4 | 4 | 0 |
+| `pygments-textlexer` | `unresolved-import` | 2 | 2 | 0 |
+| **Total** | | **446** | **264** | **182** |
+
+### Two mechanisms, chosen per (file, rule) pair
+
+A `[[tool.ty.overrides]]` entry in `pyproject.toml` covers the 59 pairs whose
+*every* hit of that rule in that file is an artifact — 264 hits. Each entry names
+explicit file paths, never a directory wildcard, so it cannot silently widen as
+files are added, and softens only the one rule it exists for. Overlapping entries
+merge their rule tables, so a file legitimately appears in several.
+
+The 27 pairs that mix take a per-site `# ty: ignore[rule]` comment instead — 182
+of them across 27 files. A file-level mechanism cannot discriminate within a
+file, and an override there would suppress the genuine defects alongside.
+
+**The two mechanisms are never both applied to one (file, rule) pair.**
+`unused-ignore-comment` is unlisted in `[tool.ty.rules]` and so inherits
+`all = "error"`; an override makes any comment for the same rule in the same file
+unused, which is a new error. The same property makes the suppressions
+self-cleaning in the desirable direction: a comment that goes stale as the tree
+drifts becomes a build error rather than lingering silently.
+
+Two mechanical constraints govern where a comment may sit:
+
+- **The comment must be on the exact line ty reports**, which is often a
+  continuation line inside a multi-line call. On the opening line or the closing
+  paren it produces `unused-ignore-comment` *and* leaves the diagnostic firing.
+- **`ruff format` relocates a comment that pushes its line past the line
+  length** — it explodes the call and re-attaches the comment to the closing
+  paren, which is the failing placement above. So placement has to be re-derived
+  from ty's output *after* formatting, not before; the tree here is at that
+  fixpoint.
+
+### What was *not* neutralized, and why
+
+The sqlmodel-vs-sqlalchemy `AsyncSession` mismatch (201 hits of
+`invalid-argument-type`, expecting `sqlmodel.ext.asyncio.session.AsyncSession`
+and finding the `sqlalchemy` one) is **first-party, not an artifact**. The two
+classes are not parallel declarations by two libraries: the sqlmodel class is a
+*subclass* of the sqlalchemy one, adding `exec`, and `app/core/db/crud.py`
+imports the subclass and calls `session.exec(...)`. A value typed as the
+supertype genuinely cannot satisfy a parameter requiring the subtype, so ty is
+right and every hit arises where a test file or helper annotates its own
+`session` parameter with the sqlalchemy import. Those hits stay reportable and
+belong to the first-party remainder.
+
+Recorded while probing that group, and left for the remainder: `app/core/db/utils.py`
+declares `-> async_sessionmaker` while returning the *synchronous*
+`sessionmaker` from `sqlalchemy.orm`. Parameterizing the return type surfaces a
+latent `invalid-return-type` in the same function. The bare annotation is
+repeated in four wrappers — `app/inventory/db.py`, `app/sep/db/engine.py`,
+`app/tasks/db/engine.py`, `app/core/celery/db.py`. Fixing the factory and all
+four does **not** clear the group (measured: 201 hits before, 202 after), because
+the test files' own parameter annotations drive it.
+
+There are no retained exceptions: the script's `RETAINED` list is empty, and
+`check` prints it on every run so it cannot grow unnoticed. One site needed the
+expression split so that an artifact and a first-party diagnostic of the same
+rule stopped sharing a line — `_override_nomad` in
+`tests/app/tasks/execution/test_nomad_lifecycle.py`.
+
+### The remainder, as a baseline
+
+Per-rule residual under the committed configuration, measured at `8ab18007e`.
+Only the nine `warn` rules had artifacts; the `error` rules are listed together
+because none did. This residual is the baseline the follow-up work on the
+first-party typing defects is sized and tracked against — dated evidence for
+that commit, like the per-rule tables above, not a figure to keep current.
+
+| Rule | Before | Artifacts | Residual |
+|---|---:|---:|---:|
+| `invalid-argument-type` | 2212 | 16 | 2196 |
+| `unresolved-attribute` | 885 | 168 | 717 |
+| `unknown-argument` | 205 | 63 | 142 |
+| `invalid-assignment` | 194 | 87 | 107 |
+| `missing-argument` | 119 | 70 | 49 |
+| `call-non-callable` | 38 | 9 | 29 |
+| `no-matching-overload` | 36 | 18 | 18 |
+| `unresolved-import` | 11 | 11 | 0 |
+| `invalid-parameter-default` | 6 | 4 | 2 |
+| every rule at `error` | 366 | 0 | 366 |
+| **Total** | **4072** | **446** | **3626** |
+
+### Reproducing the split
+
+The fingerprint manifest is a build artifact, not a committed file, so the claim
+above is checkable rather than asserted:
+
+```bash
+git switch --detach $(git merge-base HEAD origin/main)
+python3 scripts/classify_ty_diagnostics.py baseline --out /tmp/ty-baseline.json
+git switch -
+python3 scripts/classify_ty_diagnostics.py check --baseline /tmp/ty-baseline.json
+```
+
+`check` takes the multiset difference over `(path, rule, message)` fingerprints
+and fails unless **every** diagnostic that stopped reporting is one the
+classification marks as an artifact. That is what a count comparison cannot
+establish: a suppression that hides one artifact *and* one first-party
+diagnostic, while some unrelated new diagnostic appears, reconciles to the
+expected total. Position is deliberately not part of the fingerprint —
+`classify` is a pure function of `(rule, message)`, so diagnostics sharing a
+fingerprint share a verdict, and folding position away costs no precision while
+letting the check survive the reformatting the comments provoke.
+
+`report` prints the same tables from a live run, flags any group whose predicate
+has gone stale, and names any line holding both an artifact and a first-party
+diagnostic of the same rule.
+
 ## Rules ty disables by default
 
 Because `all = "error"` switches on every rule ty knows, including those it ships
@@ -296,5 +442,10 @@ report — which is why close calls in this table go to `warn` rather than
   recorded baseline. Only that one figure is re-measured: the per-rule hit
   counts and the sampling record stay as they are, dated evidence for calls
   already made rather than values to keep current.
+- **Adding or removing a suppression** — never by hand. Add the shape to
+  `GROUPS` in `scripts/classify_ty_diagnostics.py` with the discriminant it
+  classifies on, then let `report` say which (file, rule) pairs take an override
+  and which take per-site comments. `check` against a baseline from the merge
+  base is what establishes that no first-party diagnostic went with it.
 - **Do not add path arguments to the `typecheck` target.** See the stability
   measurements above.
