@@ -185,6 +185,10 @@ checkmigrations: migrate
 	fi
 	@echo "All migration checks passed."
 
+mergemigrations: venv alembic.ini
+	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
+	@"${VENV_BIN}"/python scripts/merge_alembic_heads.py
+
 test: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --dist ${PYTEST_DIST} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
 
@@ -364,4 +368,4 @@ lint-pipelines:
 	done; \
 	if [ "$${failures}" -ne 0 ]; then exit 1; fi
 
-.PHONY: venv build pack builder image format ruff typecheck lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image format ruff typecheck lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations mergemigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check
