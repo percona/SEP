@@ -112,10 +112,17 @@ class LinkageMethodEnum(StrEnum):
 
     Every member names an operator action: nothing here records a binding the
     syncer made on its own, because ordinary sync creation writes no alias row.
+
+    Values are spelled out rather than derived with ``auto()``. The column
+    persists the member *name*, but the API serializes the *value*, so under
+    ``auto()`` the two move in opposite ways when a member is renamed: the
+    stored form follows the rename while the published one silently changes
+    with it. Pinning the value holds the wire contract — this enum reaches the
+    generated API client — and leaves a rename a database concern alone.
     """
 
-    OPERATOR_CONFIRMATION = auto()
-    OPERATOR_UNLINK = auto()
+    OPERATOR_CONFIRMATION = "operator_confirmation"
+    OPERATOR_UNLINK = "operator_unlink"
 
 
 class IdentityLinkDecisionEnum(StrEnum):
@@ -124,11 +131,16 @@ class IdentityLinkDecisionEnum(StrEnum):
     :cvar CONFIRMED: The pairing names one machine, and the link stands.
     :cvar REJECTED: The pairing names two machines, so stop suggesting it.
     :cvar UNLINKED: A standing confirmation was reversed.
+
+    Values are spelled out for the reason given on
+    :class:`LinkageMethodEnum`, and it binds harder here: this enum is also a
+    *request* body field, so a rename would reject the payloads callers were
+    already sending.
     """
 
-    CONFIRMED = auto()
-    REJECTED = auto()
-    UNLINKED = auto()
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+    UNLINKED = "unlinked"
 
 
 class NodeBase(SQLModel):

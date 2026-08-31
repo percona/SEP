@@ -251,7 +251,7 @@
         "type": "object"
       },
       "IdentityLinkDecisionEnum": {
-        "description": "Enumerate the decisions an operator may record against a candidate pairing.\n\n:cvar CONFIRMED: The pairing names one machine, and the link stands.\n:cvar REJECTED: The pairing names two machines, so stop suggesting it.\n:cvar UNLINKED: A standing confirmation was reversed.",
+        "description": "Enumerate the decisions an operator may record against a candidate pairing.\n\n:cvar CONFIRMED: The pairing names one machine, and the link stands.\n:cvar REJECTED: The pairing names two machines, so stop suggesting it.\n:cvar UNLINKED: A standing confirmation was reversed.\n\nValues are spelled out for the reason given on\n:class:`LinkageMethodEnum`, and it binds harder here: this enum is also a\n*request* body field, so a rename would reject the payloads callers were\nalready sending.",
         "enum": [
           "confirmed",
           "rejected",
@@ -343,7 +343,7 @@
       },
       "JsonValue": {},
       "LinkageMethodEnum": {
-        "description": "Enumerate how an external-identity binding came to be recorded.\n\nEvery member names an operator action: nothing here records a binding the\nsyncer made on its own, because ordinary sync creation writes no alias row.",
+        "description": "Enumerate how an external-identity binding came to be recorded.\n\nEvery member names an operator action: nothing here records a binding the\nsyncer made on its own, because ordinary sync creation writes no alias row.\n\nValues are spelled out rather than derived with ``auto()``. The column\npersists the member *name*, but the API serializes the *value*, so under\n``auto()`` the two move in opposite ways when a member is renamed: the\nstored form follows the rename while the published one silently changes\nwith it. Pinning the value holds the wire contract — this enum reaches the\ngenerated API client — and leaves a rename a database concern alone.",
         "enum": [
           "operator_confirmation",
           "operator_unlink"
