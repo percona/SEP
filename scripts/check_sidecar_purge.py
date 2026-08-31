@@ -26,10 +26,11 @@ import re
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CONTAINERFILE = PROJECT_ROOT / "sidecar" / "Containerfile.sidecar"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+CONTAINERFILE = REPO_ROOT / "sidecar" / "Containerfile.sidecar"
 
-PURGE_MARKER = "dpkg --purge --force-remove-essential"
+PURGE_FLAG = "--force-remove-essential"
+PURGE_MARKER = f"dpkg --purge {PURGE_FLAG}"
 
 #: Program-name stems whose family breaks once debconf is gone. A token counts as
 #: an invocation when its basename is one of these or begins with one plus a
@@ -53,7 +54,14 @@ def parse_instructions(path: Path) -> list[tuple[int, str]]:
 
     :param path: Containerfile to parse.
     :return: ``(line_number, body)`` per instruction, in file order.
+    :raises SystemExit: When ``path`` does not exist.
     """
+    if not path.is_file():
+        raise SystemExit(
+            f"No Containerfile at {path}. Run this from a checkout where "
+            "sidecar/Containerfile.sidecar exists."
+        )
+
     instructions: list[tuple[int, str]] = []
     start_line = 0
     parts: list[str] = []
@@ -111,7 +119,7 @@ def purged_packages(instructions: list[tuple[int, str]]) -> list[str]:
     :raises SystemExit: When the purge instruction is absent or appears twice.
     """
     _, body = instructions[purge_index(instructions)]
-    _, _, tail = body.partition("--force-remove-essential")
+    _, _, tail = body.partition(PURGE_FLAG)
     return [token for token in tail.split() if not token.startswith("-")]
 
 
@@ -153,6 +161,8 @@ def main(argv: list[str] | None = None) -> int:
 
     :param argv: CLI arguments (defaults to ``sys.argv[1:]``).
     :return: Process exit code.
+    :raises SystemExit: When the Containerfile is absent, or its purge
+        instruction is missing or duplicated.
     """
     parser = argparse.ArgumentParser(
         description="Check the side-car purge layer's ordering invariant.",
@@ -179,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
 
     offenders = check_ordering(instructions)
     if offenders:
-        rel = CONTAINERFILE.relative_to(PROJECT_ROOT)
+        rel = CONTAINERFILE.relative_to(REPO_ROOT)
         print(
             "ERROR: package-manager instruction(s) follow the forced-purge layer, "
             "which breaks debconf and leaves apt/dpkg unusable:"

@@ -136,8 +136,11 @@ def test_duplicate_purge_instructions_are_a_hard_failure(tmp_path):
         check_sidecar_purge.purged_packages(instructions)
 
 
-def test_print_packages_output(capsys):
+def test_print_packages_output(tmp_path, monkeypatch, capsys):
     """Print one purged package name per line, in recipe order, and exit 0."""
+    path = _write_recipe(tmp_path, f"{RECIPE_PREFIX}{PURGE_LAYER}")
+    monkeypatch.setattr(check_sidecar_purge, "CONTAINERFILE", path)
+    monkeypatch.setattr(check_sidecar_purge, "REPO_ROOT", tmp_path)
     assert check_sidecar_purge.main(["--print-packages"]) == 0
     assert capsys.readouterr().out.splitlines() == PURGED_PACKAGES
 
@@ -147,15 +150,18 @@ def test_main_reports_offenders_and_returns_one(tmp_path, monkeypatch, capsys):
     body = f"{RECIPE_PREFIX}{PURGE_LAYER}\nRUN apt-get install -y foo\n"
     path = _write_recipe(tmp_path, body)
     monkeypatch.setattr(check_sidecar_purge, "CONTAINERFILE", path)
-    monkeypatch.setattr(check_sidecar_purge, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(check_sidecar_purge, "REPO_ROOT", tmp_path)
     assert check_sidecar_purge.main(["--check-ordering"]) == 1
     out = capsys.readouterr().out
     assert "Containerfile.sidecar:" in out
     assert "RUN apt-get install -y foo" in out
 
 
-def test_main_defaults_to_the_ordering_check():
+def test_main_defaults_to_the_ordering_check(tmp_path, monkeypatch):
     """Run the ordering check when neither flag is passed."""
+    path = _write_recipe(tmp_path, f"{RECIPE_PREFIX}{PURGE_LAYER}")
+    monkeypatch.setattr(check_sidecar_purge, "CONTAINERFILE", path)
+    monkeypatch.setattr(check_sidecar_purge, "REPO_ROOT", tmp_path)
     assert check_sidecar_purge.main([]) == 0
 
 
