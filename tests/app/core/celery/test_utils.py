@@ -20,21 +20,18 @@ assert on the persisted row rather than the object the helper staged: the
 ``due_on_first_seed`` marker exists precisely because a value that is only ever
 held in memory is lost before beat reads it.
 
-The last two cases assert due-ness against the library instead of a column, and
-build their :class:`~sqlalchemy_celery_beat.models.PeriodicTask` in memory
+The three closing cases assert due-ness against the library instead of a column,
+and build their :class:`~sqlalchemy_celery_beat.models.PeriodicTask` in memory
 because :class:`~sqlalchemy_celery_beat.schedulers.ModelEntry` resolves
 ``schedule_model`` eagerly, which raises ``MissingGreenlet`` against the async
-harness above.
+``beat_maker`` harness the other cases use.
 """
 
-from collections.abc import AsyncIterator
 from datetime import datetime, timedelta, UTC
 
 import pytest
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 from sqlalchemy_celery_beat.models import IntervalSchedule, Period, PeriodicTask
 from sqlalchemy_celery_beat.schedulers import ModelEntry
 
@@ -48,39 +45,13 @@ from app.core.celery.utils import (
     SystemPeriodicTaskData,
     SystemPeriodicTaskSchedule,
 )
-from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.utils import json_serializer
 from app.core.utils.date_time import make_datetime_utc, utc_now
-from tests.app.db_schema import apply_schema
 
 SEEDED_PREFIX = "test__"
 MARKED_NAME = f"{SEEDED_PREFIX}marked"
 PLAIN_NAME = f"{SEEDED_PREFIX}plain"
 TASK_NAME = "app.tasks.celery.execute_task_by_name"
 FIFTEEN_MINUTES = IntervalScheduleOption(every=15, period=Period.MINUTES)
-
-
-@pytest_asyncio.fixture(name="beat_maker")
-# scaffolding-dup-ok: the same bootstrap exists in tests/app/sep/db/test_seed.py
-# and tests/app/tasks/db/test_seed_inventory_sync_schedule.py; their nearest
-# common home is the global tests/app/conftest.py, so promoting a beat-store
-# engine there is a test-infrastructure change of its own rather than this
-# ticket's.
-async def beat_maker_fixture() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """Provide a session maker bound to an in-memory celery-beat DB."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        json_serializer=json_serializer,
-        poolclass=StaticPool,
-    )
-    engine = engine.execution_options(schema_translate_map={"celery_schema": None})
-    async with engine.begin() as conn:
-        await apply_schema(conn, PeriodicTask.__table__.metadata)
-    try:
-        yield get_async_session_maker_from_engine(engine)
-    finally:
-        await engine.dispose()
 
 
 @pytest.fixture(name="seeding_against_beat_db")

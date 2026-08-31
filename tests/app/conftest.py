@@ -19,7 +19,7 @@ import inspect
 import os
 import socket
 import threading
-from collections.abc import AsyncGenerator, Callable, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
 from typing import Any
@@ -36,7 +36,11 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from itsdangerous import URLSafeTimedSerializer
 from pytest_mock import MockerFixture
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    async_sessionmaker,
+    AsyncEngine,
+    create_async_engine,
+)
 from sqlalchemy.pool import StaticPool
 from sqlalchemy_celery_beat.models import PeriodicTask
 from sqlmodel import SQLModel
@@ -661,9 +665,16 @@ async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
         await engine.dispose()
 
 
-@pytest_asyncio.fixture(name="celery_beat_session")
-async def celery_beat_session_fixture() -> AsyncSession:
-    """Create an async db session backed by the celery-beat tables."""
+@pytest_asyncio.fixture(name="beat_maker")
+async def beat_maker_fixture() -> AsyncIterator[async_sessionmaker]:
+    """Provide a session maker bound to an in-memory celery-beat DB.
+
+    The celery-beat tables are owned by ``sqlalchemy-celery-beat`` and live in
+    their own schema, so they are created from that metadata rather than
+    ``SQLModel``'s, and the schema is translated away for SQLite.
+
+    :return: A session maker bound to a fresh beat store.
+    """
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -671,15 +682,21 @@ async def celery_beat_session_fixture() -> AsyncSession:
         poolclass=StaticPool,
     )
     engine = engine.execution_options(schema_translate_map={"celery_schema": None})
-    metadata = PeriodicTask.__table__.metadata
     async with engine.begin() as conn:
-        await apply_schema(conn, metadata)
-    async_session_maker = get_async_session_maker_from_engine(engine)
+        await apply_schema(conn, PeriodicTask.__table__.metadata)
     try:
-        async with async_session_maker() as session:
-            yield session
+        yield get_async_session_maker_from_engine(engine)
     finally:
         await engine.dispose()
+
+
+@pytest_asyncio.fixture(name="celery_beat_session")
+async def celery_beat_session_fixture(
+    beat_maker: async_sessionmaker,
+) -> AsyncIterator[AsyncSession]:
+    """Create an async db session backed by the celery-beat tables."""
+    async with beat_maker() as session:
+        yield session
 
 
 @pytest.fixture

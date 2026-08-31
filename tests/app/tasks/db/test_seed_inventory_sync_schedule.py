@@ -51,24 +51,6 @@ FIFTEEN_MINUTES = IntervalScheduleOption(every=15, period=Period.MINUTES)
 OPERATOR_TASK_NAME = "run_inventory-sync_15_minutes"
 
 
-@pytest_asyncio.fixture(name="beat_maker")
-async def beat_maker_fixture() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """Provide a session maker bound to an in-memory celery-beat DB."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        json_serializer=json_serializer,
-        poolclass=StaticPool,
-    )
-    engine = engine.execution_options(schema_translate_map={"celery_schema": None})
-    async with engine.begin() as conn:
-        await apply_schema(conn, PeriodicTask.__table__.metadata)
-    try:
-        yield get_async_session_maker_from_engine(engine)
-    finally:
-        await engine.dispose()
-
-
 @pytest_asyncio.fixture(name="tasks_maker")
 async def tasks_maker_fixture() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     """Provide a session maker bound to an in-memory tasks DB."""
