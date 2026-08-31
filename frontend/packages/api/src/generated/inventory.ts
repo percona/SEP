@@ -198,7 +198,8 @@ export interface paths {
      *     :param pagination: Validated offset/limit query parameters.
      *     :param list_query: The resolved sort/search produced at the request boundary.
      *     :param manager: The node manager the request's retirement scope selected.
-     *     :param external_id: Return only the node carrying this upstream identifier.
+     *     :param external_id: Return only the node carrying this upstream identifier,
+     *         resolved through any identity alias recorded for it.
      *     :param source: Return only nodes discovered by this source.
      *     :param node_type: Return only nodes of this type.
      *     :return: A paginated response of node responses.
@@ -210,6 +211,38 @@ export interface paths {
      * @description Create Node.
      */
     post: operations['nodes_create_node_nodes__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/nodes/identity-candidates': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Node Identity Candidates
+     * @description List node pairings a PMM re-registration may have split.
+     *
+     *     Declared above ``GET /{node_id}``: FastAPI matches path operations in
+     *     declaration order, so the parameterized route would claim this path first and
+     *     answer 422 on the unparseable identifier rather than 404.
+     *
+     *     Built through :meth:`PaginatedResponse.from_pagination` rather than
+     *     ``list_query_paginated``, the item being a pair of rows and not a single
+     *     model.
+     *
+     *     :param session: The async database session.
+     *     :param pagination: Validated offset/limit query parameters.
+     *     :return: A paginated response of candidate pairings.
+     */
+    get: operations['nodes_list_node_identity_candidates_nodes_identity_candidates_get'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -253,6 +286,74 @@ export interface paths {
      *     :param node: The node to retire, retired or not.
      */
     delete: operations['nodes_retire_node_nodes__node_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/nodes/{node_id}/identity-aliases': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Node Identity Aliases
+     * @description List the upstream identifiers this node has answered for, oldest first.
+     *
+     *     A node no link has ever touched has no records, which is an empty page rather
+     *     than a 404.
+     *
+     *     :param session: The async database session.
+     *     :param node: The node addressed by the path, retired or not.
+     *     :param pagination: Validated offset/limit query parameters.
+     *     :return: A paginated response of the node's binding records, oldest first.
+     */
+    get: operations['nodes_list_node_identity_aliases_nodes__node_id__identity_aliases_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/nodes/{node_id}/identity-link': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Decide Node Identity Link
+     * @description Confirm, reject or reverse a candidate node pairing.
+     *
+     *     The path names the **predecessor** — the survivor of a confirmation, and the
+     *     row the operator is acting on in all three decisions.
+     *
+     *     Carries ``IsAuthenticatedDep`` and deliberately not ``IsServicePrincipalDep``:
+     *     an identity link is an operator judgement, not a row the syncer owns. The
+     *     app-wide unsafe-method gate already makes the route admin-only for a human
+     *     while admitting the principal by identity.
+     *
+     *     :param session: The async database session.
+     *     :param node: The predecessor addressed by the path, retired or not.
+     *     :param decision: What the operator decided, and about which successor.
+     *     :param principal: The caller recorded on the resulting records.
+     *     :raises HTTPBadRequestException: If the body names the node itself, or both
+     *         rows already hold one identifier.
+     *     :raises HTTPNotFoundException: If a confirmation or rejection names a
+     *         successor that does not exist. A reversal reports the same absence as a
+     *         conflict, the pairing it would reverse no longer being reversible.
+     *     :raises HTTPConflictException: If the decision does not apply to the pairing
+     *         as it currently stands.
+     */
+    post: operations['nodes_decide_node_identity_link_nodes__node_id__identity_link_post'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -463,10 +564,40 @@ export interface paths {
      *     :param pagination: Validated offset/limit query parameters.
      *     :param list_query: The resolved sort/search produced at the request boundary.
      *     :param manager: The service manager the request's retirement scope selected.
+     *     :param external_id: Return only the service carrying this upstream identifier,
+     *         resolved through any identity alias recorded for it.
      *     :param service_type: Return only services of this type.
      *     :return: A paginated response of service responses.
      */
     get: operations['services_list_services_services__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/services/identity-candidates': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Service Identity Candidates
+     * @description List service pairings a PMM re-registration may have split.
+     *
+     *     Declared above ``GET /{service_id}``: FastAPI matches path operations in
+     *     declaration order, so the parameterized route would claim this path first and
+     *     answer 422 on the unparseable identifier rather than 404.
+     *
+     *     :param session: The async database session.
+     *     :param pagination: Validated offset/limit query parameters.
+     *     :return: A paginated response of candidate pairings.
+     */
+    get: operations['services_list_service_identity_candidates_services_identity_candidates_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -501,6 +632,68 @@ export interface paths {
      *     :param service: The service to retire, retired or not.
      */
     delete: operations['services_retire_service_services__service_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/services/{service_id}/identity-aliases': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Service Identity Aliases
+     * @description List the upstream identifiers this service has answered for, oldest first.
+     *
+     *     :param session: The async database session.
+     *     :param service: The service addressed by the path, retired or not.
+     *     :param pagination: Validated offset/limit query parameters.
+     *     :return: A paginated response of the service's binding records, oldest first.
+     */
+    get: operations['services_list_service_identity_aliases_services__service_id__identity_aliases_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/services/{service_id}/identity-link': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Decide Service Identity Link
+     * @description Confirm, reject or reverse a candidate service pairing.
+     *
+     *     The path names the **predecessor** — the survivor of a confirmation.
+     *
+     *     Carries ``IsAuthenticatedDep`` and deliberately not ``IsServicePrincipalDep``:
+     *     an identity link is an operator judgement, not a row the syncer owns.
+     *
+     *     :param session: The async database session.
+     *     :param service: The predecessor addressed by the path, retired or not.
+     *     :param decision: What the operator decided, and about which successor.
+     *     :param principal: The caller recorded on the resulting records.
+     *     :raises HTTPBadRequestException: If the body names the service itself, or both
+     *         rows already hold one identifier.
+     *     :raises HTTPNotFoundException: If a confirmation or rejection names a
+     *         successor that does not exist. A reversal reports the same absence as a
+     *         conflict, the pairing it would reverse no longer being reversible.
+     *     :raises HTTPConflictException: If the decision does not apply to the pairing
+     *         as it currently stands.
+     */
+    post: operations['services_decide_service_identity_link_services__service_id__identity_link_post'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -698,6 +891,51 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /**
+     * ExternalIdentityAliasResponse
+     * @description Define the external-identity alias API response.
+     *
+     *     :param id: The primary key for the table. Auto-incremented and not nullable.
+     *     :param created_at: The timestamp when the record is created. Defaults to the
+     *         current time in UTC.
+     *     :param updated_at: The timestamp when the record is last updated.
+     *         Automatically updated on changes.
+     *     :param entity_type: The inventory entity type the binding names.
+     *     :param entity_id: The primary key of the row the upstream id resolves to.
+     *     :param source: The upstream system the identifier belongs to.
+     *     :param external_id: The upstream identifier being bound.
+     *     :param valid_from: When the binding took effect.
+     *     :param valid_to: When the binding stopped applying, or None while it stands.
+     *     :param linkage_method: How the binding came to be recorded.
+     *     :param principal: The caller that recorded the binding.
+     */
+    ExternalIdentityAliasResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /** Entity Id */
+      entity_id: number;
+      entity_type: components['schemas']['RetirableEntityName'];
+      /** External Id */
+      external_id: string;
+      /** Id */
+      id: number | null;
+      linkage_method: components['schemas']['LinkageMethodEnum'];
+      /** Principal */
+      principal: string;
+      source: components['schemas']['SourceEnum'];
+      /** Updated At */
+      updated_at?: string | null;
+      /**
+       * Valid From
+       * Format: date-time
+       */
+      valid_from: string;
+      /** Valid To */
+      valid_to?: string | null;
+    };
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -787,6 +1025,33 @@ export interface components {
       os_version?: string | null;
     };
     /**
+     * IdentityLinkDecisionEnum
+     * @description Enumerate the decisions an operator may record against a candidate pairing.
+     *
+     *     :cvar CONFIRMED: The pairing names one machine, and the link stands.
+     *     :cvar REJECTED: The pairing names two machines, so stop suggesting it.
+     *     :cvar UNLINKED: A standing confirmation was reversed.
+     *
+     *     Values are spelled out for the reason given on
+     *     :class:`LinkageMethodEnum`, and it binds harder here: this enum is also a
+     *     *request* body field, so a rename would reject the payloads callers were
+     *     already sending.
+     * @enum {string}
+     */
+    IdentityLinkDecisionEnum: 'confirmed' | 'rejected' | 'unlinked';
+    /**
+     * IdentityLinkDecisionWrite
+     * @description Define the request body recording one operator decision over a pairing.
+     *
+     *     :param successor_id: The row the addressed predecessor is being paired with.
+     *     :param decision: What the operator decided.
+     */
+    IdentityLinkDecisionWrite: {
+      decision: components['schemas']['IdentityLinkDecisionEnum'];
+      /** Successor Id */
+      successor_id: number;
+    };
+    /**
      * InventoryCollectResponse
      * @description Report what a collection call deleted, or would have deleted.
      *
@@ -850,6 +1115,22 @@ export interface components {
     };
     JsonValue: unknown;
     /**
+     * LinkageMethodEnum
+     * @description Enumerate how an external-identity binding came to be recorded.
+     *
+     *     Every member names an operator action: nothing here records a binding the
+     *     syncer made on its own, because ordinary sync creation writes no alias row.
+     *
+     *     Values are spelled out rather than derived with ``auto()``. The column
+     *     persists the member *name*, but the API serializes the *value*, so under
+     *     ``auto()`` the two move in opposite ways when a member is renamed: the
+     *     stored form follows the rename while the published one silently changes
+     *     with it. Pinning the value holds the wire contract — this enum reaches the
+     *     generated API client — and leaves a rename a database concern alone.
+     * @enum {string}
+     */
+    LinkageMethodEnum: 'operator_confirmation' | 'operator_unlink';
+    /**
      * Node
      * @description Represent a node in the inventory.
      *
@@ -889,6 +1170,24 @@ export interface components {
       type: string;
       /** Updated At */
       updated_at?: string | null;
+    };
+    /**
+     * NodeIdentityCandidateResponse
+     * @description Pair a node with the successor a re-registration may have split it into.
+     *
+     *     :param predecessor: The older row — the one every SEP reference persisted
+     *         before the re-registration resolves through, and so the one a
+     *         confirmation keeps.
+     *     :param successor: The newer row PMM created when the node re-registered.
+     *     :param matched_on: The signals that agreed, informational only. Detection
+     *         never requires an address match, because PMM discards the address on a
+     *         non-``--force`` re-registration.
+     */
+    NodeIdentityCandidateResponse: {
+      /** Matched On */
+      matched_on: string[];
+      predecessor: components['schemas']['NodeResponse'];
+      successor: components['schemas']['NodeResponse'];
     };
     /**
      * NodeResponse
@@ -960,6 +1259,28 @@ export interface components {
        */
       type: string;
     };
+    /** PaginatedResponse[ExternalIdentityAliasResponse] */
+    PaginatedResponse_ExternalIdentityAliasResponse_: {
+      /** Items */
+      items: components['schemas']['ExternalIdentityAliasResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[NodeIdentityCandidateResponse] */
+    PaginatedResponse_NodeIdentityCandidateResponse_: {
+      /** Items */
+      items: components['schemas']['NodeIdentityCandidateResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[NodeResponse] */
     PaginatedResponse_NodeResponse_: {
       /** Items */
@@ -975,6 +1296,17 @@ export interface components {
     PaginatedResponse_SchemaResponse_: {
       /** Items */
       items: components['schemas']['SchemaResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[ServiceIdentityCandidateResponse] */
+    PaginatedResponse_ServiceIdentityCandidateResponse_: {
+      /** Items */
+      items: components['schemas']['ServiceIdentityCandidateResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -1315,6 +1647,20 @@ export interface components {
       type: components['schemas']['ServiceTypeEnum'];
       /** Updated At */
       updated_at?: string | null;
+    };
+    /**
+     * ServiceIdentityCandidateResponse
+     * @description Pair a service with the successor a re-registration may have split it into.
+     *
+     *     :param predecessor: The older row a confirmation keeps.
+     *     :param successor: The newer row PMM created.
+     *     :param matched_on: The signals that agreed, informational only.
+     */
+    ServiceIdentityCandidateResponse: {
+      /** Matched On */
+      matched_on: string[];
+      predecessor: components['schemas']['ServiceResponse'];
+      successor: components['schemas']['ServiceResponse'];
     };
     /**
      * ServiceResponse
@@ -2033,6 +2379,38 @@ export interface operations {
       };
     };
   };
+  nodes_list_node_identity_candidates_nodes_identity_candidates_get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_NodeIdentityCandidateResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   nodes_retrieve_node_nodes__node_id__get: {
     parameters: {
       query?: {
@@ -2111,6 +2489,73 @@ export interface operations {
       cookie?: never;
     };
     requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  nodes_list_node_identity_aliases_nodes__node_id__identity_aliases_get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        node_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_ExternalIdentityAliasResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  nodes_decide_node_identity_link_nodes__node_id__identity_link_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['IdentityLinkDecisionWrite'];
+      };
+    };
     responses: {
       /** @description Successful Response */
       204: {
@@ -2540,6 +2985,7 @@ export interface operations {
   services_list_services_services__get: {
     parameters: {
       query?: {
+        external_id?: string | null;
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
         offset?: number;
         limit?: number;
@@ -2562,6 +3008,38 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['PaginatedResponse_ServiceResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  services_list_service_identity_candidates_services_identity_candidates_get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_ServiceIdentityCandidateResponse_'];
         };
       };
       /** @description Validation Error */
@@ -2653,6 +3131,73 @@ export interface operations {
       cookie?: never;
     };
     requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  services_list_service_identity_aliases_services__service_id__identity_aliases_get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_ExternalIdentityAliasResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  services_decide_service_identity_link_services__service_id__identity_link_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['IdentityLinkDecisionWrite'];
+      };
+    };
     responses: {
       /** @description Successful Response */
       204: {
