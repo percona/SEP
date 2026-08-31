@@ -907,7 +907,10 @@ async def test_a_reused_account_at_admin_probes_without_warning(
     assert run.returncode == 0, run.stderr
     assert run.token == MINTED_TOKEN
     assert helper.read_persisted_token(state_dir) == MINTED_TOKEN
-    assert grafana_stub.calls(StubRoute.VALIDATE)
+    assert (
+        grafana_stub.calls(StubRoute.VALIDATE)[0].headers["Authorization"]
+        == f"Bearer {MINTED_TOKEN}"
+    )
     assert "ranks below" not in run.stderr
 
 
@@ -939,7 +942,10 @@ async def test_a_reused_account_below_admin_warns_after_mint(
     assert run.returncode == 0, run.stderr
     assert run.token == MINTED_TOKEN
     assert helper.read_persisted_token(state_dir) == MINTED_TOKEN
-    assert grafana_stub.calls(StubRoute.VALIDATE)
+    assert (
+        grafana_stub.calls(StubRoute.VALIDATE)[0].headers["Authorization"]
+        == f"Bearer {MINTED_TOKEN}"
+    )
     assert f"{helper.SERVICE_ACCOUNT_NAME!r}" in run.stderr
     assert helper.SERVICE_ACCOUNT_ROLE in run.stderr
     assert "ranks below" in run.stderr
@@ -976,7 +982,10 @@ async def test_a_race_recovery_reuse_probes_the_minted_token(
     assert run.returncode == 0, run.stderr
     assert run.token == MINTED_TOKEN
     assert helper.read_persisted_token(state_dir) == MINTED_TOKEN
-    assert grafana_stub.calls(StubRoute.VALIDATE)
+    assert (
+        grafana_stub.calls(StubRoute.VALIDATE)[0].headers["Authorization"]
+        == f"Bearer {MINTED_TOKEN}"
+    )
     assert "ranks below" in run.stderr
     assert helper.SERVICE_ACCOUNT_ROLE in run.stderr
 
