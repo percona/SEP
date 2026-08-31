@@ -98,9 +98,7 @@ class TestPeriodicTaskExecuteRequest:
     def test_populate_meta_rejects_non_mapping(self, meta_value):
         """Assert non-mapping meta alongside a meta_ key raises ValidationError."""
         with pytest.raises(ValidationError):
-            PeriodicTaskExecuteRequest.model_validate(
-                {"meta": meta_value, "meta_x": 1}
-            )
+            PeriodicTaskExecuteRequest.model_validate({"meta": meta_value, "meta_x": 1})
 
 
 class TestBasePeriodicTask:
