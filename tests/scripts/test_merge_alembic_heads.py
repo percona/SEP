@@ -507,3 +507,44 @@ def test_message_uses_branch_label_when_present(tmp_path):
     actions = merge_alembic_heads.plan_merges(ini_path, "sep")
     assert len(actions) == 1
     assert actions[0].message == "merge sep_main migration heads"
+
+
+def test_partial_merge_reports_already_written_files(tmp_path, capsys, monkeypatch):
+    """On mid-run failure, report merge files already written for earlier tracks."""
+    widget_loc = _script_location(tmp_path, "widget_migrations")
+    gadget_loc = _script_location(tmp_path, "gadget_migrations")
+    widget_versions = widget_loc / "versions"
+    gadget_versions = gadget_loc / "versions"
+    _write_revision(widget_versions, "wa", None)
+    _write_revision(widget_versions, "wb", "wa")
+    _write_revision(widget_versions, "wc", "wa")
+    _write_revision(gadget_versions, "ga", None)
+    _write_revision(gadget_versions, "gb", "ga")
+    _write_revision(gadget_versions, "gc", "ga")
+    ini_path = _write_ini(
+        tmp_path,
+        databases="widget, gadget",
+        sections={
+            "widget": {"script_location": str(widget_loc)},
+            "gadget": {"script_location": str(gadget_loc)},
+        },
+    )
+
+    real_merge = merge_alembic_heads.command.merge
+    call_count = {"n": 0}
+
+    def flaky_merge(config, revisions, message=None, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] > 1:
+            raise merge_alembic_heads.CommandError("simulated merge failure")
+        return real_merge(config, revisions=revisions, message=message, **kwargs)
+
+    monkeypatch.setattr(merge_alembic_heads.command, "merge", flaky_merge)
+
+    assert merge_alembic_heads.main(["--ini", str(ini_path)]) == 1
+    err = capsys.readouterr().err
+    assert "Error after creating 1 merge revision(s)" in err
+    assert "working tree may contain new migration files" in err
+    assert "widget" in err
+    assert list(widget_versions.glob("*merge*.py"))
+    assert not list(gadget_versions.glob("*merge*.py"))

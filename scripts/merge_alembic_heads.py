@@ -36,8 +36,11 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.util.exc import CommandError
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_INI = REPO_ROOT / "alembic.ini"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.alembic_tracks import add_ini_argument, list_track_names  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -58,20 +61,17 @@ class MergeAction:
     revision: str | None = None
 
 
-def list_track_names(ini_path: Path) -> tuple[str, ...]:
-    """Return named Alembic configs listed in ``[alembic] databases``.
+class PartialMergeError(Exception):
+    """Signal that some merge files were written before a later failure.
 
-    :param ini_path: Path to ``alembic.ini``.
-    :return: Track names in declaration order.
-    :raises ValueError: If ``databases`` is missing or empty.
+    :param cause: The exception that stopped the remaining merges.
+    :param applied: Merge actions already written to disk.
     """
-    cfg = Config(str(ini_path))
-    databases = cfg.get_main_option("databases") or ""
-    names = tuple(part.strip() for part in databases.split(",") if part.strip())
-    if not names:
-        msg = f"{ini_path}: [alembic] databases is missing or empty"
-        raise ValueError(msg)
-    return names
+
+    def __init__(self, cause: BaseException, applied: tuple[MergeAction, ...]) -> None:
+        self.cause = cause
+        self.applied = applied
+        super().__init__(str(cause))
 
 
 def map_head_to_root(script: ScriptDirectory, head: str) -> str:
@@ -184,21 +184,50 @@ def apply_merges(ini_path: Path, actions: tuple[MergeAction, ...]) -> tuple[Merg
     return tuple(applied)
 
 
-def merge_forked_heads(ini_path: Path) -> tuple[MergeAction, ...]:
+def _format_merge_line(action: MergeAction) -> str:
+    """Format one merge action for stdout or stderr.
+
+    :param action: A completed (or partially recorded) merge action.
+    :return: A single human-readable line.
+    """
+    parents = ", ".join(action.heads)
+    rev = action.revision or "?"
+    return (
+        f"Merged {action.track!r} branch rooted at {action.root}: "
+        f"created {rev} from parents [{parents}] ({action.message!r})."
+    )
+
+
+def merge_forked_heads(
+    ini_path: Path,
+    tracks: tuple[str, ...] | None = None,
+) -> tuple[MergeAction, ...]:
     """Merge forked heads on every track listed in ``ini_path``.
 
     A fork in one track does not prevent merges on the others: each track is
-    planned and applied independently.
+    planned and applied independently. When a later track fails after earlier
+    merges have already been written, raises :class:`PartialMergeError` so
+    callers can report which files are already on disk.
 
     :param ini_path: Path to ``alembic.ini``.
+    :param tracks: Track names to process; defaults to ``[alembic] databases``.
     :return: Every merge revision that was created.
+    :raises PartialMergeError: When at least one merge file was written before
+        a subsequent track failed.
     """
+    if tracks is None:
+        tracks = list_track_names(ini_path)
     applied: list[MergeAction] = []
-    for track in list_track_names(ini_path):
-        actions = plan_merges(ini_path, track)
-        if not actions:
-            continue
-        applied.extend(apply_merges(ini_path, actions))
+    try:
+        for track in tracks:
+            actions = plan_merges(ini_path, track)
+            if not actions:
+                continue
+            applied.extend(apply_merges(ini_path, actions))
+    except (ValueError, OSError, CommandError) as exc:
+        if applied:
+            raise PartialMergeError(exc, tuple(applied)) from exc
+        raise
     return tuple(applied)
 
 
@@ -210,18 +239,20 @@ def main(argv: list[str] | None = None) -> int:
         ``1`` when the ini cannot be read or a track section is misconfigured.
     """
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--ini",
-        type=Path,
-        default=DEFAULT_INI,
-        help="path to alembic.ini (default: repo-root alembic.ini). "
-        "Must be run from the repository root so relative script_location "
-        "paths in the ini resolve correctly.",
-    )
+    add_ini_argument(parser)
     args = parser.parse_args(argv)
     try:
         tracks = list_track_names(args.ini)
-        applied = merge_forked_heads(args.ini)
+        applied = merge_forked_heads(args.ini, tracks=tracks)
+    except PartialMergeError as exc:
+        print(
+            f"Error after creating {len(exc.applied)} merge revision(s); "
+            f"working tree may contain new migration files: {exc.cause}",
+            file=sys.stderr,
+        )
+        for action in exc.applied:
+            print(_format_merge_line(action), file=sys.stderr)
+        return 1
     except (ValueError, OSError, CommandError) as exc:
         print(exc, file=sys.stderr)
         return 1
@@ -232,12 +263,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     for action in applied:
-        parents = ", ".join(action.heads)
-        rev = action.revision or "?"
-        print(
-            f"Merged {action.track!r} branch rooted at {action.root}: "
-            f"created {rev} from parents [{parents}] ({action.message!r})."
-        )
+        print(_format_merge_line(action))
     return 0
 
 

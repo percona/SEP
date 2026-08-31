@@ -27,8 +27,11 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.util.exc import CommandError
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_INI = REPO_ROOT / "alembic.ini"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.alembic_tracks import add_ini_argument, list_track_names  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -51,22 +54,6 @@ class TrackTree:
         :return: ``True`` when the tree has more heads than roots.
         """
         return len(self.heads) > len(self.roots)
-
-
-def list_track_names(ini_path: Path) -> tuple[str, ...]:
-    """Return named Alembic configs listed in ``[alembic] databases``.
-
-    :param ini_path: Path to ``alembic.ini``.
-    :return: Track names in declaration order.
-    :raises ValueError: If ``databases`` is missing or empty.
-    """
-    cfg = Config(str(ini_path))
-    databases = cfg.get_main_option("databases") or ""
-    names = tuple(part.strip() for part in databases.split(",") if part.strip())
-    if not names:
-        msg = f"{ini_path}: [alembic] databases is missing or empty"
-        raise ValueError(msg)
-    return names
 
 
 def inspect_track(ini_path: Path, name: str) -> TrackTree:
@@ -116,14 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         or the ini cannot be read or a track section is misconfigured.
     """
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--ini",
-        type=Path,
-        default=DEFAULT_INI,
-        help="path to alembic.ini (default: repo-root alembic.ini). "
-        "Must be run from the repository root so relative script_location "
-        "paths in the ini resolve correctly.",
-    )
+    add_ini_argument(parser)
     args = parser.parse_args(argv)
     try:
         trees = inspect_revision_trees(args.ini)
