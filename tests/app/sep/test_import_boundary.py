@@ -369,11 +369,16 @@ def _app_package_of(module: str, app_packages: set[str]) -> str | None:
 def _violations() -> list[str]:
     """Collect every import-time edge into an app package other than the owner's.
 
+    Deduplicated by ``(path, line, target)``, on the same reasoning as
+    :func:`_deferred_violations`: the line collapses a statement's base module
+    and its aliases, and the resolved package keeps a statement reaching two of
+    them from collapsing to whichever resolved first.
+
     :return: One ``path:line -> module`` entry per violating import.
     """
     app_packages = _app_package_names(APPS_ROOT)
     found: list[str] = []
-    seen: set[tuple[Path, int]] = set()
+    seen: set[tuple[Path, int, str]] = set()
     for path in _guarded_module_paths():
         owner = _owning_app_package(path, app_packages)
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -381,9 +386,9 @@ def _violations() -> list[str]:
             target = _app_package_of(module, app_packages)
             if target is None or target == owner:
                 continue
-            if (path, lineno) in seen:
+            if (path, lineno, target) in seen:
                 continue
-            seen.add((path, lineno))
+            seen.add((path, lineno, target))
             found.append(f"{path.relative_to(BASE_DIR)}:{lineno} -> {module}")
     return found
 
@@ -416,11 +421,15 @@ def _deferred_violations(
     :func:`_import_time_imports` does not: a function-body import, or one
     under ``TYPE_CHECKING``.
 
-    Deduplicated by ``(path, line)``, exactly as :func:`_violations` is: a
-    ``from ... import`` yields the base module *and* one path per alias, so a
-    single statement would otherwise be reported once per name it binds. The
-    base module is the spelling that renders, because
-    :func:`_direct_import_edges` yields it before the aliases.
+    Deduplicated by ``(path, line, target)``: a ``from ... import`` yields the
+    base module *and* one path per alias, so a single statement would otherwise
+    be reported once per name it binds. Keying on the line alone would also
+    collapse a statement reaching *two* app packages (``from app.sep.apps
+    import alerts, dipper``) down to whichever resolved first, so the resolved
+    package is part of the key. Within one package the earliest spelling
+    renders, because :func:`_direct_import_edges` yields the base module before
+    the aliases. A base module resolving to no app package is skipped outright,
+    which is what lets the multi-package form report each package it names.
 
     :param modules: The ``(path, tree)`` pairs to scan. Defaults to the whole
         guarded tree parsed from disk (:func:`_parsed_guarded_modules`).
@@ -430,7 +439,7 @@ def _deferred_violations(
     """
     app_packages = _app_package_names(APPS_ROOT)
     found: list[str] = []
-    seen: set[tuple[Path, int]] = set()
+    seen: set[tuple[Path, int, str]] = set()
     for path, tree in modules if modules is not None else _parsed_guarded_modules():
         owner = _owning_app_package(path, app_packages)
         package = package_of(path, BASE_DIR)
@@ -441,9 +450,9 @@ def _deferred_violations(
             target = _app_package_of(module, app_packages)
             if target is None or target == owner:
                 continue
-            if (path, lineno) in seen:
+            if (path, lineno, target) in seen:
                 continue
-            seen.add((path, lineno))
+            seen.add((path, lineno, target))
             found.append(f"{path.relative_to(BASE_DIR)}:{lineno} -> {module}")
     return found
 
@@ -501,6 +510,15 @@ def test_no_module_defers_an_import_into_another_app_package() -> None:
             [],
             id="own-package-edge-exempt",
         ),
+        pytest.param(
+            "app/sep/main.py",
+            "def _lazy():\n    from app.sep.apps import alerts, dipper\n",
+            [
+                "app/sep/main.py:2 -> app.sep.apps.alerts",
+                "app/sep/main.py:2 -> app.sep.apps.dipper",
+            ],
+            id="two-packages-on-one-line-both-reported",
+        ),
     ],
 )
 def test_deferred_violations_over_a_synthetic_tree(
@@ -512,12 +530,14 @@ def test_deferred_violations_over_a_synthetic_tree(
     owner exemption and the rendered path come from that real path, mirroring
     :func:`test_import_time_edges_ignore_a_modules_own_app_package`. The first two
     cases pin the function-body and ``TYPE_CHECKING`` shapes this guard exists to
-    catch; the function-body case also pins the ``(path, line)`` dedup, since
-    :func:`_direct_import_edges` yields the base module and the alias path for one
-    statement. The last three cases pin what the guard must NOT report: an
-    import-time edge (``_violations``' business, not this guard's), a
-    function-body edge the module reaches at import through a call, and an edge
-    into the importer's own app package.
+    catch; the function-body case also pins the dedup collapsing one statement,
+    since :func:`_direct_import_edges` yields the base module and the alias path
+    for it. Three cases pin what the guard must NOT report: an import-time edge
+    (``_violations``' business, not this guard's), a function-body edge the
+    module reaches at import through a call, and an edge into the importer's own
+    app package. The last case pins the other half of the dedup -- one statement
+    reaching two app packages reports both, which keying on ``(path, line)``
+    alone would collapse to whichever resolved first.
     """
     path = BASE_DIR / importer
     assert _deferred_violations([(path, ast.parse(source))]) == expected
