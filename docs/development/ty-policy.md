@@ -325,12 +325,15 @@ The recovery is to re-derive the split rather than to trust the entry. Stripping
 every `[[tool.ty.overrides]]` block from `pyproject.toml` and re-running restores
 the suppressed rows, and `report` re-partitions them:
 
+The edit is in place and `git checkout` is the restore, so an interrupted run
+leaves nothing to reconstruct by hand:
+
 ```bash
 python3 - <<'EOF'
 import pathlib
 p = pathlib.Path("pyproject.toml")
-lines, out, skip = p.read_text().splitlines(keepends=True), [], False
-for line in lines:
+out, skip = [], False
+for line in p.read_text().splitlines(keepends=True):
     if line.startswith("[[tool.ty.overrides]]"):
         skip = True
         continue
@@ -338,12 +341,10 @@ for line in lines:
         skip = False
     if not skip:
         out.append(line)
-pathlib.Path("/tmp/pyproject-no-overrides.toml").write_text("".join(out))
+p.write_text("".join(out))
 EOF
-cp pyproject.toml /tmp/pyproject-orig.toml
-cp /tmp/pyproject-no-overrides.toml pyproject.toml
 ty check --output-format concise > /tmp/ty-unsuppressed.txt
-cp /tmp/pyproject-orig.toml pyproject.toml
+git checkout -- pyproject.toml
 python3 scripts/classify_ty_diagnostics.py report --from /tmp/ty-unsuppressed.txt
 ```
 
