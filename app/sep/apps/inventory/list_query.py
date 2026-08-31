@@ -41,14 +41,14 @@ from typing import Annotated
 from fastapi import Depends, Query
 from sqlalchemy import column
 
+from app.core.db.in_memory_list_query import (
+    build_in_memory_list_query,
+    InMemoryListQuery,
+)
 from app.core.db.list_query import (
     ListQuerySpec,
     search_query_param,
     SORT_PARAM_DESCRIPTION,
-)
-from app.sep.apps.framework.list_query import (
-    build_in_memory_list_query,
-    InMemoryListQuery,
 )
 from app.sep.apps.inventory.deps import require_inventory_plugin_entity
 

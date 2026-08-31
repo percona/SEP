@@ -22,11 +22,11 @@ import inspect
 import pytest
 from fastapi import status
 
+from app.core.db.in_memory_list_query import InMemoryListQuery
 from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
-from app.sep.apps.framework.list_query import InMemoryListQuery
 from app.sep.apps.inventory.list_query import (
     ENTITY_LIST_QUERY_SPECS,
     inventory_list_query,
