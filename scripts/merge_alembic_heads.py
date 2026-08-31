@@ -42,6 +42,9 @@ if str(_REPO_ROOT) not in sys.path:
 
 from scripts.alembic_tracks import add_ini_argument, list_track_names  # noqa: E402
 
+# A branch is forked when more than one head shares the same root.
+_MIN_FORK_HEADS = 2
+
 
 @dataclass(frozen=True)
 class MergeAction:
@@ -105,9 +108,7 @@ def group_heads_by_root(script: ScriptDirectory) -> dict[str, tuple[str, ...]]:
     return {root: tuple(sorted(heads)) for root, heads in groups.items()}
 
 
-def _merge_message(
-    track: str, heads: tuple[str, ...], script: ScriptDirectory
-) -> str:
+def _merge_message(track: str, heads: tuple[str, ...], script: ScriptDirectory) -> str:
     """Build a non-interactive merge message from the branch, when known.
 
     Prefer a single inherited branch label shared by the forked heads; fall
@@ -143,7 +144,7 @@ def plan_merges(ini_path: Path, track: str) -> tuple[MergeAction, ...]:
     script = ScriptDirectory.from_config(cfg)
     actions: list[MergeAction] = []
     for root, heads in sorted(group_heads_by_root(script).items()):
-        if len(heads) < 2:
+        if len(heads) < _MIN_FORK_HEADS:
             continue
         actions.append(
             MergeAction(
@@ -156,7 +157,9 @@ def plan_merges(ini_path: Path, track: str) -> tuple[MergeAction, ...]:
     return tuple(actions)
 
 
-def apply_merges(ini_path: Path, actions: tuple[MergeAction, ...]) -> tuple[MergeAction, ...]:
+def apply_merges(
+    ini_path: Path, actions: tuple[MergeAction, ...]
+) -> tuple[MergeAction, ...]:
     """Create merge revision files for each planned action.
 
     :param ini_path: Path to ``alembic.ini``.

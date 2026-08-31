@@ -21,7 +21,7 @@ import shutil
 
 import pytest
 
-from tests.scripts import PROJECT_ROOT, load_script
+from tests.scripts import load_script, PROJECT_ROOT
 from tests.scripts.alembic_tree import (
     dummy_script_location,
     write_ini,

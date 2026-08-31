@@ -17,10 +17,13 @@
 
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from alembic.config import Config
+
+if TYPE_CHECKING:
+    import argparse
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INI = REPO_ROOT / "alembic.ini"

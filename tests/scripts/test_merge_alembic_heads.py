@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -29,6 +29,9 @@ from tests.scripts.alembic_tree import (
     write_ini,
     write_revision,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 merge_alembic_heads = load_script("merge_alembic_heads")
 check_alembic_revision_tree = load_script("check_alembic_revision_tree")
@@ -140,7 +143,8 @@ def test_merges_simple_two_head_fork(tmp_path, capsys):
 
     assert merge_alembic_heads.main(["--ini", str(ini_path)]) == 0
     out = capsys.readouterr().out
-    assert "bbbb" in out and "cccc" in out
+    assert "bbbb" in out
+    assert "cccc" in out
 
     script = _script_directory(ini_path, "widget")
     assert len(script.get_heads()) == 1
@@ -205,9 +209,10 @@ def test_merges_only_forked_branch_in_multibranch_track(tmp_path):
     heads = set(script.get_heads())
     bases = set(script.get_bases())
     assert bases == {"r1", "r2"}
-    assert len(heads) == 2
+    assert len(heads) == 2  # noqa: PLR2004
     assert "h2" in heads
-    assert "h1a" not in heads and "h1b" not in heads
+    assert "h1a" not in heads
+    assert "h1b" not in heads
     _assert_merge_file(versions_main, parents={"h1a", "h1b"})
     assert _revision_files(versions_plugin) == plugin_before
 
@@ -243,14 +248,14 @@ def test_merges_two_forked_branches_separately(tmp_path):
     )
 
     actions = merge_alembic_heads.merge_forked_heads(ini_path)
-    assert len(actions) == 2
+    assert len(actions) == 2  # noqa: PLR2004
     assert {frozenset(action.heads) for action in actions} == {
         frozenset({"ha1", "ha2"}),
         frozenset({"hb1", "hb2"}),
     }
 
     script = _script_directory(ini_path, "widget")
-    assert len(script.get_heads()) == 2
+    assert len(script.get_heads()) == 2  # noqa: PLR2004
     assert set(script.get_bases()) == {"ra", "rb"}
     _assert_merge_file(versions_a, parents={"ha1", "ha2"})
     _assert_merge_file(versions_b, parents={"hb1", "hb2"})
@@ -305,7 +310,8 @@ def test_fork_in_one_track_does_not_block_another(tmp_path, capsys):
 
     assert merge_alembic_heads.main(["--ini", str(ini_path)]) == 0
     out = capsys.readouterr().out
-    assert "widget" in out and "gadget" in out
+    assert "widget" in out
+    assert "gadget" in out
 
     widget = _script_directory(ini_path, "widget")
     gadget = _script_directory(ini_path, "gadget")

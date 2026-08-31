@@ -18,9 +18,12 @@
 from __future__ import annotations
 
 import shutil
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from tests.scripts import PROJECT_ROOT
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 MAKO_TEMPLATE = PROJECT_ROOT / "app" / "tasks" / "migrations" / "script.py.mako"
 
