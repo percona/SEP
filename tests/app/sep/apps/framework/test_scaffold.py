@@ -1178,9 +1178,10 @@ def test_makefile_forwards_quoted_values(tmp_path: Path) -> None:
             or f"description={description!r}" in rendered
         )
         assert f"MODULE_NAME: {name}" in settings_copy.read_text()
-        assert f"MODULE_NAME: {name}" not in (
-            scaffold._REPO_ROOT / "settings.yaml"
-        ).read_text()
+        assert (
+            f"MODULE_NAME: {name}"
+            not in (scaffold._REPO_ROOT / "settings.yaml").read_text()
+        )
     finally:
         _cleanup(name)
 
@@ -1224,8 +1225,9 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
         ).read_text() == "#!/usr/bin/env bash\necho hi\n"
         assert not (snippets_dir / "sample.sh").exists()
         assert f"MODULE_NAME: {name}" in settings_copy.read_text()
-        assert f"MODULE_NAME: {name}" not in (
-            scaffold._REPO_ROOT / "settings.yaml"
-        ).read_text()
+        assert (
+            f"MODULE_NAME: {name}"
+            not in (scaffold._REPO_ROOT / "settings.yaml").read_text()
+        )
     finally:
         _cleanup(name)
