@@ -227,8 +227,8 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :raises TypeError: Propagates from ``collect_app_owned_settings_classes``
         when an app's ``APP_OWNED_SETTINGS_CLASSES`` declaration is malformed.
     :raises ValueError: Propagates from ``collect_app_owned_settings_classes``
-        when two apps declare the same class, or one references an unknown app
-        key.
+        when an activated app's declaration is invalid; that function
+        enumerates the cases.
     """
     callbacks: CallbackRegistry = {
         (entry.setting_class, key): _reseed_system_periodic_tasks
