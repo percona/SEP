@@ -43,6 +43,7 @@ from app.core.settings_override.api.models import SettingClassAppMetadata
 from app.core.settings_override.api.routes import AppOwnedClassEntry
 from app.core.utils import import_var
 from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.framework.inventory_references import InventoryReferenceProvider
 from app.sep.config import App, sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.deps import PROTECTED_APP_KEYS
@@ -534,6 +535,48 @@ def collect_app_owned_settings_classes(
             seen_classes.add(class_id)
             entries.append(entry)
     return entries
+
+
+def collect_inventory_reference_providers(
+    plugins: Iterable[App] | None = None,
+) -> list[InventoryReferenceProvider]:
+    """Collect inventory-reference providers declared by activated plugins.
+
+    Each plugin may export ``INVENTORY_REFERENCE_PROVIDERS`` as a list of
+    :class:`~app.sep.apps.framework.inventory_references.InventoryReferenceProvider`
+    callables. Providers are returned in activation-list order. Unlike the
+    app-owned settings classes there is no registry to collide with, so a
+    duplicate declaration is simply unioned by the caller rather than rejected.
+
+    :param plugins: The ``SEP.APPS`` activation entries to scan. Defaults to
+        ``sep_settings.APPS``.
+    :return: The declared providers.
+    :raises TypeError: If a module's declaration is not a list of callables.
+    """
+    activation = plugins if plugins is not None else sep_settings.APPS
+    providers: list[InventoryReferenceProvider] = []
+    for plugin in activation:
+        declared = getattr(
+            import_module(plugin.module_name),
+            "INVENTORY_REFERENCE_PROVIDERS",
+            None,
+        )
+        if declared is None:
+            continue
+        if not isinstance(declared, list):
+            raise TypeError(
+                f"App module {plugin.module_name!r}: INVENTORY_REFERENCE_PROVIDERS"
+                f" must be a list, got {type(declared).__name__}.",
+            )
+        for provider in declared:
+            if not callable(provider):
+                raise TypeError(
+                    f"App module {plugin.module_name!r}: every"
+                    " INVENTORY_REFERENCE_PROVIDERS entry must be callable, got"
+                    f" {type(provider).__name__}.",
+                )
+            providers.append(provider)
+    return providers
 
 
 async def resolve_app_settings_metadata(

@@ -318,6 +318,33 @@ class TaskManager(BaseSQLModelManager):
             return await cls.retrieve_by_name(session=session, name=task.data["task"])
         return task
 
+    @classmethod
+    async def envelope_meta_values(
+        cls, session: AsyncSession, meta_key: str
+    ) -> list[str]:  # pagination-ok: an exhaustive read is the contract
+        """Return every value tasks carry under ``data["meta"][meta_key]``.
+
+        Deliberately unfiltered by ``deleted_at``: a soft-deleted task still
+        satisfies ``TaskHistory.task``, so its envelope can still be read back by
+        a run-result recorder, and a caller asking what the envelopes still name
+        needs those rows too.
+
+        Unpaginated for the same reason. A caller asks this to learn what it must
+        *not* act on, so a truncated answer is not a shorter list but a wrong one.
+        The result is distinct values of one meta key, bounded by how many
+        distinct ids the fleet ever stamped.
+
+        :param session: The SQLAlchemy asynchronous session to use.
+        :param meta_key: The envelope ``meta`` key to read.
+        :return: The distinct values present under that key.
+        """
+        extracted = func_json_extract(
+            session.get_bind().name, Task.data, "meta", meta_key
+        )
+        query = cls._filter_query(select(extracted).distinct(), extracted.is_not(None))
+        result = await cls._exec(session, query)
+        return list(result.all())
+
 
 class TaskHistoryManager(BaseSQLModelManager):
     """Manage task history operations, including listing task histories by task name.
@@ -340,6 +367,39 @@ class TaskHistoryManager(BaseSQLModelManager):
         tie_breaker=col(TaskHistory.id),
         searchable=[col(TaskHistory.executed_by)],
     )
+
+    @classmethod
+    async def in_flight_meta_values(
+        cls, session: AsyncSession, meta_key: str
+    ) -> list[str]:  # pagination-ok: an exhaustive read is the contract
+        """Return the values in-flight executions carry under that ``meta`` key.
+
+        Scoped to :meth:`TaskHistoryStatusEnum.active_statuses` rather than a
+        literal status set, so a future non-terminal status is picked up by
+        adding it there. A terminal execution is history and is deliberately
+        excluded: it can no longer produce a write.
+
+        Unpaginated: a caller asks this to learn what it must *not* act on, so a
+        truncated answer is wrong rather than short. In-flight executions are
+        bounded by concurrency, not by history.
+
+        :param session: The SQLAlchemy asynchronous session to use.
+        :param meta_key: The execution-request ``meta`` key to read.
+        :return: The distinct values present under that key.
+        """
+        extracted = func_json_extract(
+            session.get_bind().name,
+            col(TaskHistory.execution_request),
+            "meta",
+            meta_key,
+        )
+        query = cls._filter_query(
+            select(extracted).distinct(),
+            extracted.is_not(None),
+            col(TaskHistory.status).in_(TaskHistoryStatusEnum.active_statuses()),
+        )
+        result = await cls._exec(session, query)
+        return list(result.all())
 
     @classmethod
     async def get_log_producer_epoch(

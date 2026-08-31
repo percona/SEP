@@ -43,7 +43,7 @@ function makePeriodic(overrides: Partial<PeriodicTaskResponse> = {}): PeriodicTa
   return {
     id: 1,
     name: 'periodic-1',
-    task: 'inventory.sync',
+    task: 'inventory-sync',
     enabled: true,
     description: '',
     start_time: null,
@@ -132,6 +132,48 @@ describe('InventoryScheduleSummary', () => {
     const scheduled = screen.getByTestId('inv-schedule-summary-scheduled');
     expect(scheduled).toHaveTextContent('every 2 hours');
     expect(scheduled).not.toHaveTextContent('next run');
+  });
+
+  it('ignores an inventory-collection schedule entirely, even alone', () => {
+    setup([
+      makePeriodic({
+        id: 3,
+        task: 'inventory-collection',
+        interval: { every: 1, period: 'minutes' },
+        period: 'every 1 minutes',
+      }),
+    ]);
+    render(<InventoryScheduleSummary schedulingEnabled disablePolling />);
+
+    expect(screen.getByTestId('inv-schedule-summary-empty')).toHaveTextContent(
+      'No inventory-sync schedules configured',
+    );
+    expect(screen.queryByTestId('inv-schedule-summary-scheduled')).not.toBeInTheDocument();
+  });
+
+  it('reports the sync cadence, not the collection cadence, when both schedules exist', () => {
+    setup([
+      makePeriodic({
+        id: 1,
+        task: 'inventory-collection',
+        interval: { every: 1, period: 'minutes' },
+        period: 'every 1 minutes',
+        next_run_at: '2026-06-18T12:00:30Z',
+      }),
+      makePeriodic({
+        id: 2,
+        task: 'inventory-sync',
+        interval: { every: 5, period: 'minutes' },
+        period: 'every 5 minutes',
+        next_run_at: '2026-06-18T12:05:00Z',
+      }),
+    ]);
+    render(<InventoryScheduleSummary schedulingEnabled disablePolling />);
+
+    const scheduled = screen.getByTestId('inv-schedule-summary-scheduled');
+    expect(scheduled).toHaveTextContent('every 5 minutes');
+    expect(scheduled).not.toHaveTextContent('every 1 minutes');
+    expect(scheduled).not.toHaveTextContent('more');
   });
 
   it('shows a loading state while schedules are being fetched', () => {
