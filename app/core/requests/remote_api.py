@@ -206,9 +206,7 @@ def _raise_stream_line_too_big(size: int, path: str) -> NoReturn:
     """Raise :class:`ValueError` for a stream line larger than the cap.
 
     :param size: Size in bytes of the offending line or pending buffer.
-    :type size: int
     :param path: The stream path, included in the error message.
-    :type path: str
     :raises ValueError: Always — this function never returns.
     """
     msg = (
@@ -229,36 +227,43 @@ async def _iter_lines_from_chunks(
     line larger than ``_MAX_STREAM_LINE_BYTES`` to protect consumers from a
     runaway producer.
 
+    Every chunk consumes the newlines it introduced and drops what precedes
+    them, so the carried remainder is newline-free when the next chunk arrives.
+    Searching only the arriving bytes therefore finds exactly what a search from
+    the front finds, at a cost proportional to the chunk rather than to the
+    remainder behind it.
+
     :param chunks: An async iterator producing byte chunks (e.g. from
         ``aiohttp`` ``StreamReader.iter_any()``).
-    :type chunks: AsyncIterator[bytes]
     :param path: The stream path, included in the error message when a single
         line exceeds the cap.
-    :type path: str
     :yield: Each line as ``bytes`` with its trailing newline preserved; the
         final unterminated chunk is also yielded when the stream ends without
         a newline.
-    :rtype: AsyncGenerator[bytes, None]
     :raises ValueError: If a single line exceeds ``_MAX_STREAM_LINE_BYTES``.
     """
     buffer = bytearray()
     async for chunk in chunks:
         if not chunk:
             continue
+        # Two cursors, not one: the terminator can only be in the arriving
+        # bytes, but the line it ends begins at the front of the buffer, where
+        # the remainder carried from earlier chunks sits.
+        search_from = len(buffer)
         buffer.extend(chunk)
-        offset = 0
+        line_start = 0
         while True:
-            newline_pos = buffer.find(b"\n", offset)
+            newline_pos = buffer.find(b"\n", search_from)
             if newline_pos == -1:
                 break
             line_end = newline_pos + 1
-            line_size = line_end - offset
+            line_size = line_end - line_start
             if line_size > _MAX_STREAM_LINE_BYTES:
                 _raise_stream_line_too_big(line_size, path)
-            yield bytes(buffer[offset:line_end])
-            offset = line_end
-        if offset:
-            del buffer[:offset]
+            yield bytes(buffer[line_start:line_end])
+            line_start = search_from = line_end
+        if line_start:
+            del buffer[:line_start]
         if len(buffer) > _MAX_STREAM_LINE_BYTES:
             _raise_stream_line_too_big(len(buffer), path)
     if buffer:
