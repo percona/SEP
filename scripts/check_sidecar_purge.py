@@ -39,9 +39,11 @@ PURGE_MARKER = f"dpkg --purge {PURGE_FLAG}"
 #: while leaving a path such as ``/etc/apt/apt.conf.d/99x`` alone.
 PACKAGE_MANAGER_STEMS = ("apt", "dpkg")
 
-#: Split an instruction body on whitespace and the shell operators that separate
-#: commands, so an operator butted against a program name still isolates it.
-_TOKEN_RE = re.compile(r"[^\s;&|()<>]+")
+#: Split an instruction body on whitespace, the shell operators that separate
+#: commands, and the quoting and bracket punctuation of Dockerfile exec form, so
+#: an operator butted against a program name still isolates it and
+#: ``RUN ["apt-get", "update"]`` yields a bare ``apt-get``.
+_TOKEN_RE = re.compile(r"[^\s;&|()<>\[\],\"']+")
 
 
 def parse_instructions(path: Path) -> list[tuple[int, str]]:

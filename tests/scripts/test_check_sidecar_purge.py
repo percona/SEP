@@ -196,3 +196,10 @@ def test_path_segment_named_apt_is_not_an_invocation(tmp_path):
     """Leave a post-purge path containing an apt segment alone; it invokes nothing."""
     body = f"{RECIPE_PREFIX}{PURGE_LAYER}\nCOPY foo /etc/apt/apt.conf.d/99local\n"
     assert check_sidecar_purge.check_ordering(_instructions(tmp_path, body)) == []
+
+
+def test_exec_form_instruction_after_purge_is_reported(tmp_path):
+    """Report an exec-form RUN, whose JSON-array punctuation must not mask the program."""
+    body = f'{RECIPE_PREFIX}{PURGE_LAYER}\nRUN ["apt-get", "install", "-y", "foo"]\n'
+    offenders = check_sidecar_purge.check_ordering(_instructions(tmp_path, body))
+    assert [b for _, b in offenders] == ['RUN ["apt-get", "install", "-y", "foo"]']

@@ -22,23 +22,29 @@ vulnerabilities:
       - pkg:deb/debian/libsqlite3-0
     statement: >-
       libsqlite3-0. Arbitrary code execution via crafted FTS5 full-text search
-      data, CVSS 7.8 AV:L/AC:L/PR:N/UI:R. Reaching it requires executing SQL
-      against a SQLite database. The side-car configures PostgreSQL for all
-      three services and exposes no input that overrides the engine, nothing
-      under app/ imports sqlite3 or aiosqlite, and no SEP code creates an FTS5
-      table. libsqlite3-0 is present only because CPython's stdlib sqlite3
-      extension links it. No upstream fix. Remove when Debian ships one, or if
-      anything in the image starts opening a SQLite database.
+      data, CVSS 7.8 AV:L/AC:L/PR:N/UI:R. Reaching it requires querying an FTS5
+      table, and SEP declares none: no model, migration or raw statement in the
+      tree creates an FTS5 virtual table, so the vector is absent on every
+      engine. The engine is deliberately not the argument here — the baked
+      profile points all three services at PostgreSQL, but a deployment can
+      still select SQLite by setting DATABASE__ENGINE in the environment or by
+      bind-mounting a replacement settings.yaml, so an engine-based exception
+      would not hold for every supported configuration. No upstream fix. Remove
+      when Debian ships one, or if SEP starts declaring FTS5 tables.
     expired_at: 2027-02-19
   - id: CVE-2026-11824
     purls:
       - pkg:deb/debian/libsqlite3-0
     statement: >-
       libsqlite3-0. Arbitrary code execution and crash via a heap-based buffer
-      overflow, CVSS 7.8 AV:L/AC:L/PR:N/UI:R. Unreachable for the same reason as
-      CVE-2026-11822 — the image opens no SQLite database, and libsqlite3-0 is
-      present only because CPython's stdlib sqlite3 extension links it. No
-      upstream fix. Remove when Debian ships one.
+      overflow, CVSS 7.8 AV:L/AC:L/PR:N/UI:R. The local, user-interaction vector
+      is opening a crafted database file. Nothing in the tree opens a SQLite
+      path taken from request data, an upload or any other caller-supplied
+      value; under the SQLite engine the only file opened is the one SEP's own
+      migrations create inside the container. This is scoped by that provenance
+      rather than by the engine, because CVE-2026-11822's FTS5 argument does not
+      apply. No upstream fix. Remove when Debian ships one, or if SEP starts
+      opening a SQLite file supplied from outside the container.
     expired_at: 2027-02-19
 
   # --- ncurses (libtinfo6) ----------------------------------------------------
