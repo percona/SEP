@@ -16,7 +16,9 @@
 """Build a settings REST API router parameterised by sub-app wiring."""
 
 __all__ = [
+    "apply_class_overrides",
     "AppOwnedClassEntry",
+    "clear_class_override",
     "ClassEntry",
     "RemoteClassEntry",
     "build_settings_router",
@@ -1027,29 +1029,15 @@ def build_settings_router(
                 remote_api, remote_lookup[setting_class], setting_class, body
             )
         settings_cls, proxy = _resolve(setting_class)
-        to_apply = _validate_patch_body(
-            settings_cls=settings_cls, proxy=proxy, body=body
-        )
-        await _persist_overrides(
+        return await apply_class_overrides(
+            request=request,
             session=session,
+            setting_class=setting_class,
             settings_cls=settings_cls,
-            to_apply=to_apply,
+            proxy=proxy,
+            body=body,
+            applicability=applicability,
         )
-        previous = proxy.get_snapshot()
-        await publish_snapshot(proxy, session, settings_cls)
-        await _fire_inline_rebind_callbacks(request, setting_class, proxy, previous)
-        field_meta_by_key = _applied_field_meta(settings_cls, to_apply)
-        return [
-            _settings_response_from_field(
-                setting_class=setting_class,
-                settings_cls=settings_cls,
-                proxy=proxy,
-                field_meta=field_meta_by_key[key],
-                has_override=True,
-                applicability=applicability,
-            )
-            for key, _ in to_apply
-        ]
 
     @router.delete(
         "/{setting_class}/{key}",
@@ -1108,20 +1096,14 @@ def build_settings_router(
             )
             return
         settings_cls, proxy = _resolve(setting_class)
-        key = canonical_override_key(settings_cls, key)
-        field_meta = _field_meta_or_404(settings_cls, key)
-        token = setting_class_token(settings_cls)
-        rows = await override_rows_for_key(
-            session,
+        await clear_class_override(
+            request=request,
+            session=session,
+            setting_class=setting_class,
             settings_cls=settings_cls,
-            setting_class=token,
+            proxy=proxy,
             key=key,
         )
-        _assert_key_deletable(settings_cls, field_meta, has_override_row=bool(rows))
-        await _delete_override_rows(session, token, rows)
-        previous = proxy.get_snapshot()
-        await publish_snapshot(proxy, session, settings_cls)
-        await _fire_inline_rebind_callbacks(request, setting_class, proxy, previous)
 
     return router
 
@@ -1384,3 +1366,113 @@ async def _stage_and_commit_overrides(
         keep.is_active = True
         session.add(keep)
     await session.commit()
+
+
+async def apply_class_overrides(
+    *,
+    request: Request,
+    session: AsyncSession,
+    setting_class: str,
+    settings_cls: type[BaseYamlSettings],
+    proxy: OverridableSettingsProxy,
+    body: SettingsPatch,
+    applicability: ApplicabilityPredicate | None = None,
+) -> list[SettingResponse]:
+    """Validate, persist and publish a batch of overrides for one local class.
+
+    The whole of ``PATCH /{setting_class}`` for a locally-wired class, minus the
+    routing and the remote-class branch. It exists as a function -- not only
+    inlined in :func:`build_settings_router`'s ``patch_settings`` closure --
+    because an app that owns its settings class (:class:`AppOwnedClassEntry`)
+    may also need to serve its *own* narrower ``/config`` endpoint: the shared
+    settings router is admin-gated, and not every caller of an app's
+    configuration is a SEP admin (e.g. PMM's ``--sep-token`` principal). A
+    second implementation of "validate the batch, write it atomically,
+    republish the snapshot, rebind" is exactly the kind of duplicate that
+    drifts into two different validation rules.
+
+    Phase A validates every key -- existence on the class, HOT classification,
+    type and constraint coercion -- and rejects the whole batch on any failure,
+    so a partial write is not a state this can reach. Phase B persists, publishes
+    the new snapshot inline, and fires the rebind callbacks for the changed keys
+    so a hot target rebinds without waiting for the background refresher.
+
+    :param request: The incoming request; its ``app.state`` carries the sub-app's
+        rebind-callback registry.
+    :param session: The sub-app's database session.
+    :param setting_class: The settings class the override targets.
+    :param settings_cls: The Pydantic settings class being overridden.
+    :param proxy: The proxy wrapping it.
+    :param body: The batch of ``{key: value, ...}`` overrides.
+    :param applicability: Optional predicate driving ``is_applicable`` on the
+        returned rows; ``None`` marks every field applicable.
+    :return: One :class:`SettingResponse` per applied key, in input order.
+    :raises HTTPUnprocessableEntityException: If any key fails validation; no
+        rows are written.
+    """
+    to_apply = _validate_patch_body(settings_cls=settings_cls, proxy=proxy, body=body)
+    await _persist_overrides(
+        session=session, settings_cls=settings_cls, to_apply=to_apply
+    )
+    previous = proxy.get_snapshot()
+    await publish_snapshot(proxy, session, settings_cls)
+    await _fire_inline_rebind_callbacks(request, setting_class, proxy, previous)
+    field_meta_by_key = _applied_field_meta(settings_cls, to_apply)
+    return [
+        _settings_response_from_field(
+            setting_class=setting_class,
+            settings_cls=settings_cls,
+            proxy=proxy,
+            field_meta=field_meta_by_key[key],
+            has_override=True,
+            applicability=applicability,
+        )
+        for key, _ in to_apply
+    ]
+
+
+async def clear_class_override(
+    *,
+    request: Request,
+    session: AsyncSession,
+    setting_class: str,
+    settings_cls: type[BaseYamlSettings],
+    proxy: OverridableSettingsProxy,
+    key: str,
+) -> None:
+    """Revert one override row for a local class to its YAML/env value.
+
+    The counterpart to :func:`apply_class_overrides`, extracted for the same
+    reason: an app serving its own ``/config`` needs "put this back the way the
+    deployment configured it", and without it an operator who once set a value can
+    only ever set another one -- "no override" stops being reachable.
+
+    Idempotent: clearing a key with no row succeeds. A ``NOT_OVERRIDABLE`` field
+    with no row answers 409, because the intent cannot be satisfied rather than
+    having already been satisfied.
+
+    :param request: The incoming request; its ``app.state`` carries the sub-app's
+        rebind-callback registry.
+    :param session: The sub-app's database session.
+    :param setting_class: The settings class the field belongs to.
+    :param settings_cls: The Pydantic settings class being reverted.
+    :param proxy: The proxy wrapping it.
+    :param key: The field name, or a ``__``-delimited nested key.
+    :raises HTTPNotFoundException: If ``key`` is not a field on the class.
+    :raises HTTPConflictException: If the field is NOT_OVERRIDABLE and has no row.
+    :raises HTTPUnprocessableEntityException: If ``key`` names a NESTED_ONLY parent.
+    """
+    key = canonical_override_key(settings_cls, key)
+    field_meta = _field_meta_or_404(settings_cls, key)
+    token = setting_class_token(settings_cls)
+    rows = await override_rows_for_key(
+        session,
+        settings_cls=settings_cls,
+        setting_class=token,
+        key=key,
+    )
+    _assert_key_deletable(settings_cls, field_meta, has_override_row=bool(rows))
+    await _delete_override_rows(session, token, rows)
+    previous = proxy.get_snapshot()
+    await publish_snapshot(proxy, session, settings_cls)
+    await _fire_inline_rebind_callbacks(request, setting_class, proxy, previous)
