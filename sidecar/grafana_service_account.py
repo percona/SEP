@@ -300,9 +300,7 @@ async def find_or_create_account(provider: GrafanaSDK) -> tuple[int, bool]:
     duplicate-name status varies by release.
 
     The second element is ``True`` when the id came from a search (initial or
-    race-recovery) rather than a create this call performed. Callers that mint
-    a token onto a reused account can then probe it for an org role below
-    ``Admin``, which this create path cannot leave behind.
+    race-recovery) rather than a create this call performed.
 
     :param provider: The open Grafana client, authenticated as the admin.
     :return: The service account's id, and whether it was reused rather than
@@ -511,6 +509,11 @@ async def keep_persisted_token(provider: GrafanaSDK, token: str) -> bool:
 
 async def resolve_token() -> str | None:
     """Resolve the token for the three ranks below the mounted secrets channel.
+
+    When a token is minted onto a reused service account, the token is probed
+    with :func:`validate_token`. A ``FORBIDDEN`` answer means the account's
+    org role ranks below ``Admin``; a diagnostic is written and the token is
+    still returned, because a re-mint cannot raise the role.
 
     :return: The resolved token, or ``None`` when there is nothing to resolve.
     :raises MintError: When a token is needed and cannot be minted.
