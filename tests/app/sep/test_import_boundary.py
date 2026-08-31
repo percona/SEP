@@ -48,10 +48,13 @@ Two limitations are deliberate, so the guard is not mistaken for a total one:
   the intra-module form does not.
 
 A second walker, :func:`_declared_imports`, counts every import including
-``TYPE_CHECKING`` blocks. It pins two form-backfill edges the import-time
-rule cannot see: nothing under ``app/sep/apps/`` may import the
-``form_backfill`` orchestrator, and ``form_backfill_inventory`` may not
-import ``form_backfill_registry``.
+``TYPE_CHECKING`` blocks and function bodies. It pins three edges the
+import-time rule cannot see: nothing under ``app/sep/apps/`` may import the
+``form_backfill`` orchestrator, ``form_backfill_inventory`` may not import
+``form_backfill_registry``, and no module may *defer* an edge into another
+app package into a function body. Deferring does not remove the edge. In the
+image that strips the package it relocates the failure into a lifespan or a
+request, which is how the side-car shipped unable to serve its main API.
 """
 
 import ast
@@ -392,6 +395,58 @@ def test_no_module_imports_another_app_package() -> None:
         "no module may import an activatable app package other than the one it"
         " lives in at import time (the PMM-embedded image strips them):\n"
         + "\n".join(violations)
+    )
+
+
+def _deferred_violations() -> list[str]:
+    """Collect every deferred edge into an app package other than the owner's.
+
+    A deferred edge is one :func:`_declared_imports` sees and
+    :func:`_import_time_imports` does not: a function-body import, or one
+    under ``TYPE_CHECKING``.
+
+    Deduplicated by ``(path, line)``, exactly as :func:`_violations` is: a
+    ``from ... import`` yields the base module *and* one path per alias, so a
+    single statement would otherwise be reported once per name it binds. The
+    base module is the spelling that renders, because
+    :func:`_direct_import_edges` yields it before the aliases.
+
+    :return: One ``path:line -> module`` entry per violating import.
+    """
+    app_packages = _app_package_names(APPS_ROOT)
+    found: list[str] = []
+    seen: set[tuple[Path, int]] = set()
+    for path in _guarded_module_paths():
+        owner = _owning_app_package(path, app_packages)
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        package = package_of(path, BASE_DIR)
+        at_import = set(_import_time_imports(tree, package))
+        for module, lineno in _declared_imports(tree, package):
+            if (module, lineno) in at_import:
+                continue
+            target = _app_package_of(module, app_packages)
+            if target is None or target == owner:
+                continue
+            if (path, lineno) in seen:
+                continue
+            seen.add((path, lineno))
+            found.append(f"{path.relative_to(BASE_DIR)}:{lineno} -> {module}")
+    return found
+
+
+def test_no_module_defers_an_import_into_another_app_package() -> None:
+    """Reject a deferred edge into an app package other than the owner's.
+
+    The PMM-embedded image strips the package from disk, so deferring the import
+    into a function body postpones the failure into a lifespan or a request
+    rather than removing it, which is how the side-car shipped unable to serve
+    its main API.
+    """
+    violations = _deferred_violations()
+    assert not violations, (
+        "no module may import an activatable app package other than the one it"
+        " lives in, even from a function body (the PMM-embedded image strips"
+        " them):\n" + "\n".join(violations)
     )
 
 
