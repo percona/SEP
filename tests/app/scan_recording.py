@@ -36,7 +36,7 @@ class ScanRecordingBytearray(bytearray):
         super().__init__(*args)
         self.scans: list[tuple[int, int]] = []
 
-    def find(self, sub: bytes, start: int = 0, *args: int) -> int:
+    def find(self, sub: bytes, start: int = 0, /, *args: int) -> int:
         """Log the scan window and delegate to ``bytearray.find``.
 
         :param sub: The byte sequence to search for.

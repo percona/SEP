@@ -287,9 +287,6 @@ class MySQLSyncer(BaseTaskSyncer):
             newline_pos = buffer.find(b"\n", search_from)
             if newline_pos == -1:
                 break
-            # Slicing already copies, so collecting the lines costs no copy the
-            # per-line yield did not; it only defers the decode until after the
-            # buffer is consistent.
             lines.append(buffer[line_start:newline_pos])
             line_start = search_from = newline_pos + 1
         del buffer[:line_start]
