@@ -637,24 +637,6 @@ def test_celery_result_expires_configured() -> None:
     assert settings.CELERY.result_expires == CELERY_RESULT_EXPIRES_SECONDS
 
 
-@pytest_asyncio.fixture(name="beat_maker")
-async def beat_maker_fixture() -> AsyncIterator:
-    """Provide a session maker bound to an in-memory celery-beat DB."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        json_serializer=json_serializer,
-        poolclass=StaticPool,
-    )
-    engine = engine.execution_options(schema_translate_map={"celery_schema": None})
-    async with engine.begin() as conn:
-        await apply_schema(conn, PeriodicTask.__table__.metadata)
-    try:
-        yield get_async_session_maker_from_engine(engine)
-    finally:
-        await engine.dispose()
-
-
 @pytest.mark.asyncio
 class TestInitSepDbPeriodicTaskGating:
     """Tests for the periodic-task gating wired into ``init_sep_db``."""
