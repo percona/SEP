@@ -548,3 +548,46 @@ def test_partial_merge_reports_already_written_files(tmp_path, capsys, monkeypat
     assert "widget" in err
     assert list(widget_versions.glob("*merge*.py"))
     assert not list(gadget_versions.glob("*merge*.py"))
+
+
+def test_partial_merge_reports_same_track_second_branch(tmp_path, capsys, monkeypatch):
+    """Report the first merge when a later forked root on the same track fails."""
+    script_location = _script_location(tmp_path)
+    versions_a = (tmp_path / "chain_a" / "versions").resolve()
+    versions_b = (tmp_path / "chain_b" / "versions").resolve()
+    _write_revision(versions_a, "ra", None, branch_labels=("branch_a",))
+    _write_revision(versions_a, "ha1", "ra")
+    _write_revision(versions_a, "ha2", "ra")
+    _write_revision(versions_b, "rb", None, branch_labels=("branch_b",))
+    _write_revision(versions_b, "hb1", "rb")
+    _write_revision(versions_b, "hb2", "rb")
+    ini_path = _write_ini(
+        tmp_path,
+        databases="widget",
+        sections={
+            "widget": {
+                "script_location": str(script_location),
+                "version_locations": f"{versions_a}:{versions_b}",
+            },
+        },
+    )
+
+    real_merge = merge_alembic_heads.command.merge
+    call_count = {"n": 0}
+
+    def flaky_merge(config, revisions, message=None, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] > 1:
+            raise merge_alembic_heads.CommandError("simulated same-track failure")
+        return real_merge(config, revisions=revisions, message=message, **kwargs)
+
+    monkeypatch.setattr(merge_alembic_heads.command, "merge", flaky_merge)
+
+    assert merge_alembic_heads.main(["--ini", str(ini_path)]) == 1
+    err = capsys.readouterr().err
+    assert "Error after creating 1 merge revision(s)" in err
+    assert "working tree may contain new migration files" in err
+    assert "simulated same-track failure" in err
+    # plan_merges sorts by root id; "ra" precedes "rb", so chain_a is merged first.
+    assert list(versions_a.glob("*merge*.py"))
+    assert not list(versions_b.glob("*merge*.py"))

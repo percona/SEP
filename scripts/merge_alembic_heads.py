@@ -205,25 +205,26 @@ def merge_forked_heads(
     """Merge forked heads on every track listed in ``ini_path``.
 
     A fork in one track does not prevent merges on the others: each track is
-    planned and applied independently. When a later track fails after earlier
-    merges have already been written, raises :class:`PartialMergeError` so
-    callers can report which files are already on disk.
+    planned and applied independently. Merges are applied one action at a
+    time so that if a later action fails — including a second forked root on
+    the same track — earlier merge files are still reported via
+    :class:`PartialMergeError`.
 
     :param ini_path: Path to ``alembic.ini``.
     :param tracks: Track names to process; defaults to ``[alembic] databases``.
     :return: Every merge revision that was created.
     :raises PartialMergeError: When at least one merge file was written before
-        a subsequent track failed.
+        a subsequent action failed.
     """
     if tracks is None:
         tracks = list_track_names(ini_path)
     applied: list[MergeAction] = []
     try:
         for track in tracks:
-            actions = plan_merges(ini_path, track)
-            if not actions:
-                continue
-            applied.extend(apply_merges(ini_path, actions))
+            for action in plan_merges(ini_path, track):
+                # Apply one action at a time so a failure mid-track still
+                # leaves earlier successful merges in ``applied``.
+                applied.extend(apply_merges(ini_path, (action,)))
     except (ValueError, OSError, CommandError) as exc:
         if applied:
             raise PartialMergeError(exc, tuple(applied)) from exc
