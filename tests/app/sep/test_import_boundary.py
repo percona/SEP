@@ -535,7 +535,7 @@ def test_deferred_violations_over_a_synthetic_tree(
     for it. Three cases pin what the guard must NOT report: an import-time edge
     (``_violations``' business, not this guard's), a function-body edge the
     module reaches at import through a call, and an edge into the importer's own
-    app package. The last case pins the other half of the dedup -- one statement
+    app package. The last case pins the other half of the dedup: one statement
     reaching two app packages reports both, which keying on ``(path, line)``
     alone would collapse to whichever resolved first.
     """

@@ -637,7 +637,7 @@ def _checksums_declaring(mocker: MockerFixture, declared: Any) -> None:
 
     :param mocker: The ``pytest-mock`` fixture used to patch the import.
     :param declared: The value the stub exposes as
-        ``APP_OWNED_SETTINGS_CLASSES`` -- a list of entries, or a malformed
+        ``APP_OWNED_SETTINGS_CLASSES``: a list of entries, or a malformed
         value when the test drives a rejection path.
     """
     fake_module = mocker.MagicMock()
