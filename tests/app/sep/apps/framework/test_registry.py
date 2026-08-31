@@ -42,10 +42,14 @@ from app.sep.apps.framework.registry import (
     build_app_registry,
     build_celery_include,
     collect_app_owned_settings_classes,
+    collect_inventory_reference_providers,
     get_app_registry,
     resolve_app_settings_metadata,
 )
 from app.sep.apps.inventory.schema import inventory_schema
+from app.sep.apps.mysql_backups.inventory_references import (
+    referenced_inventory_entities,
+)
 from app.sep.apps.report.config import health_report_settings, HealthReportSettings
 from app.sep.apps.tasks.schema import TASKS_PLUGIN_SCHEMA
 from app.sep.config import App, sep_settings
@@ -1310,3 +1314,49 @@ class TestChildApps:
         registry = build_app_registry([_parent_plugin(enabled=False)])
 
         assert registry.get("parent_app/restore").enabled is False
+
+
+class TestCollectInventoryReferenceProviders:
+    """Cover the inventory-reference providers activated apps declare."""
+
+    def test_collects_the_mysql_backups_declaration(self) -> None:
+        """Return the backup catalog's declared provider."""
+        providers = collect_inventory_reference_providers(
+            [App(module_name="mysql_backups")]
+        )
+        assert providers == [referenced_inventory_entities]
+
+    def test_skips_plugins_without_declaration(self) -> None:
+        """Ignore activation entries exporting no ``INVENTORY_REFERENCE_PROVIDERS``."""
+        assert (
+            collect_inventory_reference_providers([App(module_name="checksums")]) == []
+        )
+
+    def test_preserves_activation_order(self) -> None:
+        """Return providers in the order the activation list declares them."""
+        providers = collect_inventory_reference_providers(
+            [App(module_name="checksums"), App(module_name="mysql_backups")]
+        )
+        assert providers == [referenced_inventory_entities]
+
+    def test_rejects_a_non_list_declaration(self, mocker: MockerFixture) -> None:
+        """Fail fast when an app exports the wrong container type."""
+        fake_module = mocker.MagicMock()
+        fake_module.INVENTORY_REFERENCE_PROVIDERS = referenced_inventory_entities
+        mocker.patch(
+            "app.sep.apps.framework.registry.import_module", return_value=fake_module
+        )
+
+        with pytest.raises(TypeError, match="must be a list"):
+            collect_inventory_reference_providers([App(module_name="mysql_backups")])
+
+    def test_rejects_a_non_callable_entry(self, mocker: MockerFixture) -> None:
+        """Fail fast when a declared entry cannot be invoked as a provider."""
+        fake_module = mocker.MagicMock()
+        fake_module.INVENTORY_REFERENCE_PROVIDERS = ["not-a-callable"]
+        mocker.patch(
+            "app.sep.apps.framework.registry.import_module", return_value=fake_module
+        )
+
+        with pytest.raises(TypeError, match="must be callable"):
+            collect_inventory_reference_providers([App(module_name="mysql_backups")])

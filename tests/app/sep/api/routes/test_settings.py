@@ -342,6 +342,7 @@ class TestSepSettingsList:
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             "AlertsSettings",
             "HealthReportSettings",
+            "InventoryAppSettings",
             SettingClassEnum.SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
             SettingClassEnum.ALERT_SETTINGS.value,
@@ -2066,6 +2067,7 @@ class TestSepOverridesLifespanWiring:
                 (SettingClassEnum.SETTINGS, "LOGGING"),
                 (SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"),
                 ("AlertsSettings", "BACKUP_INTERVAL"),
+                ("InventoryAppSettings", "COLLECTION_INTERVAL"),
                 (SettingClassEnum.SEP_SETTINGS, "APP_DRAIN"),
             }
         finally:

@@ -19,7 +19,6 @@ import pytest
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.exceptions import HTTPConflictException
 from app.core.utils.date_time import utc_now
 from app.inventory.constants import ACTIVE_RETIREMENT_KEY
 from app.inventory.crud import RetiredInclusiveServiceManager, ServiceManager
@@ -199,16 +198,23 @@ class TestRetirementKeyUniqueness:
         assert ACTIVE_RETIREMENT_KEY
 
     @pytest.mark.asyncio
-    async def test_second_active_service_on_one_key_conflicts(
+    async def test_two_active_services_on_one_port_are_both_admitted(
         self, session: AsyncSession, service: Service
     ) -> None:
-        """Reject a second active service on one node and port."""
-        with pytest.raises(HTTPConflictException):
-            await ServiceManager.create(
-                session,
-                ServiceWriteFactory.build(port=service.port),
-                node_id=service.node_id,
-            )
+        """Admit a second active service sharing a node and port.
+
+        Several databases behind one PostgreSQL or MySQL server legally share
+        that server's port, and every service now carries its own external
+        identity, so nothing about the pair collides.
+        """
+        second = await ServiceManager.create(
+            session,
+            ServiceWriteFactory.build(port=service.port),
+            node_id=service.node_id,
+        )
+        assert second.id != service.id
+        assert second.port == service.port
+        assert second.external_id != service.external_id
 
     @pytest.mark.asyncio
     async def test_replacement_over_a_tombstone_is_admitted(

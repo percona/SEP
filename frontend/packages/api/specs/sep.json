@@ -17475,7 +17475,7 @@
     },
     "/api/apps/inventory/": {
       "get": {
-        "description": "Return the list of periodic task names for the Inventory plugin.\n\nHard-coded because the Inventory plugin has exactly one periodic task\n(``inventory-sync``). The shape matches what the React\n``usePluginTasks('inventory')`` hook expects: a list of objects with at\nminimum a ``name`` key.",
+        "description": "Return the list of periodic task names for the Inventory plugin.\n\nHard-coded because the Inventory plugin's periodic tasks are a fixed pair\n(``inventory-sync`` and ``inventory-collection``). The shape matches what the\nReact ``usePluginTasks('inventory')`` hook expects: a list of objects with at\nminimum a ``name`` key.\n\n:return: The plugin's periodic tasks, each with its name and display name.",
         "operationId": "inventory_inventory_plugin_tasks_api_apps_inventory__get",
         "responses": {
           "200": {
@@ -17850,98 +17850,9 @@
         "tags": [
           "inventory"
         ]
-      },
-      "post": {
-        "description": "Create an inventory node, service, schema, or table.",
-        "operationId": "inventory_inventory_create_entity_api_apps_inventory__entity___post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "entity",
-            "required": true,
-            "schema": {
-              "title": "Entity",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Inventory Inventory Create Entity Api Apps Inventory  Entity   Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Inventory Create Entity",
-        "tags": [
-          "inventory"
-        ]
       }
     },
     "/api/apps/inventory/{entity}/{item_id}": {
-      "delete": {
-        "description": "Retire an inventory node, service, schema, or table, and its descendants.\n\nThe row and its subtree survive: they drop out of every active read and stay\nreachable through the Inventory API's ``include_retired`` opt-in.\n\n:param entity: The inventory entity kind addressed by the path.\n:param item_id: The identifier of the entity to retire.\n:param inventory_api: The Inventory API client the call is proxied through.\n:return: An empty 204 response.",
-        "operationId": "inventory_inventory_delete_entity_api_apps_inventory__entity___item_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "entity",
-            "required": true,
-            "schema": {
-              "title": "Entity",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "item_id",
-            "required": true,
-            "schema": {
-              "title": "Item Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Inventory Delete Entity",
-        "tags": [
-          "inventory"
-        ]
-      },
       "get": {
         "description": "Retrieve a single inventory node, service, schema, or table.",
         "operationId": "inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get",
@@ -17988,56 +17899,6 @@
           }
         },
         "summary": "Inventory Get Entity",
-        "tags": [
-          "inventory"
-        ]
-      },
-      "put": {
-        "description": "Update an inventory node, service, schema, or table.",
-        "operationId": "inventory_inventory_update_entity_api_apps_inventory__entity___item_id__put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "entity",
-            "required": true,
-            "schema": {
-              "title": "Entity",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "item_id",
-            "required": true,
-            "schema": {
-              "title": "Item Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Inventory Inventory Update Entity Api Apps Inventory  Entity   Item Id  Put"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Inventory Update Entity",
         "tags": [
           "inventory"
         ]

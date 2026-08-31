@@ -16,6 +16,7 @@
 """Tests for the ``scripts/changelog.py`` CLI."""
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 
@@ -273,6 +274,55 @@ def test_check_ignores_readme(repo):
     )
     (repo / "changelog.d" / "SEP-503.added.md").write_text("Fix\n", encoding="utf-8")
     assert changelog.main(["check"]) == 0
+
+
+def test_check_ignores_git_ignored_files(tmp_path, monkeypatch):
+    """Skip a file git ignores instead of calling it a malformed fragment.
+
+    Runs against a real repository so the ``git ls-files`` invocation itself is
+    exercised, not a stand-in for it.
+
+    :param tmp_path: pytest's per-test temporary directory.
+    :param monkeypatch: pytest monkeypatch fixture.
+    """
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text("notes.md\n", encoding="utf-8")
+    (tmp_path / "changelog.d").mkdir()
+    (tmp_path / "changelog.d" / "notes.md").write_text("scratch\n", encoding="utf-8")
+    (tmp_path / "changelog.d" / "SEP-503.added.md").write_text(
+        "Fix\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    assert changelog.main(["check"]) == 0
+
+
+def test_check_still_reports_a_typo_git_does_not_ignore(tmp_path, monkeypatch):
+    """Report a misnamed fragment git does not ignore.
+
+    The ignore skip must not degrade into "accept anything that misses
+    ``FRAGMENT_RE``", which is the check this command exists for.
+
+    :param tmp_path: pytest's per-test temporary directory.
+    :param monkeypatch: pytest monkeypatch fixture.
+    """
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "changelog.d").mkdir()
+    (tmp_path / "changelog.d" / "SEP1892.added.md").write_text(
+        "Typo\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    assert changelog.main(["check"]) == 1
+
+
+def test_check_considers_every_file_without_git(repo, capsys):
+    """Report an unmatched name when git cannot answer which files are ignored.
+
+    :param repo: Test repo fixture (a plain directory, not a git checkout).
+    :param capsys: pytest stdout/stderr capture fixture.
+    """
+    (repo / "changelog.d" / "notes.md").write_text("scratch\n", encoding="utf-8")
+    assert changelog.main(["check"]) == 1
+    assert "notes.md: invalid filename" in capsys.readouterr().err
 
 
 # --- list subcommand -------------------------------------------------------
@@ -895,11 +945,11 @@ def test_resolve_backmerge_prunes_multiple_fragments_for_one_ticket(
     repo,
     monkeypatch,
 ):
-    """When one ticket has multiple fragments, all are pruned together.
+    """Prune every fragment belonging to one ticket together.
 
-    Both ``SEP-200.added.md`` and ``SEP-200.fixed.md`` disappear from the
-    release branch's ``changelog.d/`` after ``cmd_assemble``, so the
-    directory diff catches both.
+    Both of the ticket's fragments disappear from the release branch's
+    ``changelog.d/`` after ``cmd_assemble``, so the directory diff catches
+    both.
     """
     repo.joinpath("changelog.d", "SEP-200.added.md").write_text(
         "Feature\n",
@@ -943,14 +993,15 @@ def test_resolve_backmerge_prunes_multiple_fragments_for_one_ticket(
 
 
 def test_resolve_backmerge_preserves_post_scope_lock_fragments(repo, monkeypatch):
-    """Fragments added to main AFTER scope-lock are NOT pruned.
+    """Preserve the fragments main added after scope-lock.
 
     Scenario:
-    - Merge-base (scope-lock) had SEP-200.added.md and SEP-201.added.md.
-    - Release branch consumed both via cmd_assemble; MERGE_HEAD has only README.
-    - Main added SEP-400.added.md and SEP-401.fixed.md after scope-lock.
-    - The resolver must delete only SEP-200/201 (consumed), preserving
-      SEP-400/401 (post-scope-lock additions).
+    - The merge-base (scope-lock) carried two fragments.
+    - The release branch consumed both via ``cmd_assemble``; ``MERGE_HEAD``
+      has only the README.
+    - Main added two further fragments after scope-lock.
+    - The resolver must delete only the consumed pair, preserving the
+      post-scope-lock additions.
     """
     for ticket, section in [
         ("SEP-200", "added"),

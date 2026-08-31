@@ -30,7 +30,7 @@ const mockSchema: AppSchema = {
     {
       name: 'nodes',
       display_name: 'Nodes',
-      forms: [{ title: 'N', fields: [{ name: 'name', label: 'Name', type: 'string' }] }],
+      forms: [],
       list_view: { columns: [{ key: 'id', label: 'ID' }] },
     },
   ],
@@ -44,7 +44,7 @@ const inventoryNestedMockSchema: AppSchema = {
     {
       name: 'nodes',
       display_name: 'Nodes',
-      forms: [{ title: 'N', fields: [{ name: 'name', label: 'Name', type: 'string' }] }],
+      forms: [],
       list_view: {
         columns: [
           { key: 'id', label: 'ID' },
@@ -55,7 +55,7 @@ const inventoryNestedMockSchema: AppSchema = {
     {
       name: 'services',
       display_name: 'Services',
-      forms: [{ title: 'S', fields: [{ name: 'name', label: 'Name', type: 'string' }] }],
+      forms: [],
       list_view: {
         columns: [
           { key: 'id', label: 'ID' },
@@ -69,7 +69,7 @@ const inventoryNestedMockSchema: AppSchema = {
     {
       name: 'schemas',
       display_name: 'Schemas',
-      forms: [{ title: 'Sch', fields: [{ name: 'name', label: 'Name', type: 'string' }] }],
+      forms: [],
       list_view: {
         columns: [
           { key: 'id', label: 'ID' },
@@ -81,7 +81,7 @@ const inventoryNestedMockSchema: AppSchema = {
     {
       name: 'tables',
       display_name: 'Tables',
-      forms: [{ title: 'T', fields: [{ name: 'name', label: 'Name', type: 'string' }] }],
+      forms: [],
       list_view: {
         columns: [
           { key: 'name', label: 'Name' },
