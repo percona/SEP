@@ -180,6 +180,42 @@ def test_classify_confines_absent_modules_to_the_scaffolded_paths():
     assert classify_ty_diagnostics.classify(mistyped.fingerprint) is None
 
 
+def test_classify_names_the_proxy_installed_settings_helpers():
+    """Treat a misspelled attribute on a ``*Settings`` receiver as first-party.
+
+    The receiver alone cannot carry the verdict: the proxy installs four helpers
+    and every other absent attribute on the same object is an ordinary typo.
+    """
+    helper, typo = classify_ty_diagnostics.parse_diagnostics(
+        _output(
+            "tests/app/sep/routes/test_stream_logs.py:325:5: "
+            "warning[unresolved-attribute] Object of type `SEPSettings` has no "
+            "attribute `_set_snapshot`",
+            "tests/app/sep/routes/test_stream_logs.py:326:5: "
+            "warning[unresolved-attribute] Object of type `SEPSettings` has no "
+            "attribute `PMM_typo`",
+        )
+    )
+
+    assert classify_ty_diagnostics.classify(helper.fingerprint) is not None
+    assert classify_ty_diagnostics.classify(typo.fingerprint) is None
+
+
+def test_classify_names_the_runtime_installed_celery_attribute():
+    """Treat a misspelled attribute on a ``Celery`` receiver as first-party."""
+    installed, typo = classify_ty_diagnostics.parse_diagnostics(
+        _output(
+            "app/sep/apps/alerts/celery.py:58:5: warning[unresolved-attribute] "
+            "Object of type `Celery` has no attribute `loop`",
+            "app/sep/apps/alerts/celery.py:59:5: warning[unresolved-attribute] "
+            "Object of type `Celery` has no attribute `brokr_url`",
+        )
+    )
+
+    assert classify_ty_diagnostics.classify(installed.fingerprint) is not None
+    assert classify_ty_diagnostics.classify(typo.fingerprint) is None
+
+
 def test_check_passes_when_only_artifacts_were_removed(tmp_path, capsys):
     """Accept a run whose every dropped fingerprint is classified as an artifact."""
     manifest = _manifest(tmp_path, _output(ARTIFACT_ROW, FIRST_PARTY_ROW))
@@ -269,12 +305,17 @@ def test_report_prints_a_zero_row_for_a_group_with_no_hits(tmp_path, capsys):
 
 
 def test_check_names_a_group_that_matched_nothing_in_the_baseline(tmp_path, capsys):
-    """Raise staleness against the baseline, the only run where a zero means drift."""
+    """Name a stale group against the baseline without failing an otherwise clean run.
+
+    The baseline is the only run where a zero means drift rather than a group
+    doing its job, and naming it is the whole effect: a retired artifact class
+    loses no first-party diagnostic, so there is nothing for the gate to reject.
+    """
     manifest = _manifest(tmp_path, _output(ARTIFACT_ROW, FIRST_PARTY_ROW))
 
     assert _check(tmp_path, manifest, _output(FIRST_PARTY_ROW)) == 0
     out = capsys.readouterr().out
-    assert "STALE groups (matched nothing in the baseline): 10" in out
+    assert "STALE groups (matched nothing in the baseline, advisory): 10" in out
     assert "pydantic-settings-private-kwargs" not in out.split("STALE groups")[1]
 
 

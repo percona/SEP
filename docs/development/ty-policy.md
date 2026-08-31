@@ -312,6 +312,46 @@ unused, which is a new error. The same property makes the suppressions
 self-cleaning in the desirable direction: a comment that goes stale as the tree
 drifts becomes a build error rather than lingering silently.
 
+**The asymmetry runs the other way for overrides, and that is the cost of the
+mechanism.** A comment suppresses one site; an override suppresses its rule
+across the whole file, so a *future* first-party diagnostic of that rule written
+into one of those files is never emitted, and `check` cannot recover it — the
+gate reconciles against a baseline captured before the file changed, and a
+diagnostic that was never emitted leaves no row to go missing. The pairs listed
+were chosen because every hit in them was an artifact at `8ab18007e`, which is a
+statement about that commit and not a property the entry maintains.
+
+The recovery is to re-derive the split rather than to trust the entry. Stripping
+every `[[tool.ty.overrides]]` block from `pyproject.toml` and re-running restores
+the suppressed rows, and `report` re-partitions them:
+
+```bash
+python3 - <<'EOF'
+import pathlib
+p = pathlib.Path("pyproject.toml")
+lines, out, skip = p.read_text().splitlines(keepends=True), [], False
+for line in lines:
+    if line.startswith("[[tool.ty.overrides]]"):
+        skip = True
+        continue
+    if skip and line.startswith("[") and not line.startswith("[tool.ty.overrides.rules]"):
+        skip = False
+    if not skip:
+        out.append(line)
+pathlib.Path("/tmp/pyproject-no-overrides.toml").write_text("".join(out))
+EOF
+cp pyproject.toml /tmp/pyproject-orig.toml
+cp /tmp/pyproject-no-overrides.toml pyproject.toml
+ty check --output-format concise > /tmp/ty-unsuppressed.txt
+cp /tmp/pyproject-orig.toml pyproject.toml
+python3 scripts/classify_ty_diagnostics.py report --from /tmp/ty-unsuppressed.txt
+```
+
+Any pair the report now shows as *mixed* has acquired a first-party diagnostic
+since the entry was written, and belongs on per-site comments instead. Run this
+before widening an existing entry's `include` list, and when a listed file grows
+substantially.
+
 Two mechanical constraints govern where a comment may sit:
 
 - **The comment must be on the exact line ty reports**, which is often a
@@ -402,8 +442,14 @@ newly suppressed.
 `report` prints the same tables from a live run and names any line holding both
 an artifact and a first-party diagnostic of the same rule. It does not flag a
 group with no hits: on a neutralized tree every group reaches zero by design.
-`check` raises that instead, against the baseline — the only run in which a group
-matching nothing means its predicate has gone stale rather than done its job.
+`check` names them instead, against the baseline — the only run in which a group
+matching nothing means its predicate has gone stale rather than done its job. That
+list is advisory and does not move `check`'s exit status: a group matching nothing
+is either drift, in which case the diagnostics it used to claim are unclassified
+and suppressing them fails the reconciliation on its own, or an artifact class a
+dependency upgrade retired, which leaves a run that lost no first-party diagnostic
+and so has nothing to fail. Naming the group points at the override or comments to
+remove; failing on it would red a clean run.
 
 ## Rules ty disables by default
 

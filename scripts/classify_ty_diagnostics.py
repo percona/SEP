@@ -196,8 +196,11 @@ GROUPS: tuple[Group, ...] = (
     _group(
         "settings-subclass-attributes",
         "unresolved-attribute",
-        r"^Object of type `\w*Settings` has no attribute `",
-        "receiver is a `*Settings` subclass whose proxy installs the attribute",
+        r"^Object of type `\w*Settings` has no attribute "
+        r"`(_set_snapshot|get_snapshot|_resolve|_setting_class)`$",
+        "the attribute is one of the four helpers the settings-override proxy "
+        "installs on a `*Settings` subclass; naming them is what keeps an "
+        "ordinary misspelled attribute on the same receiver first-party",
     ),
     _group(
         "pydantic-fieldinfo",
@@ -224,8 +227,10 @@ GROUPS: tuple[Group, ...] = (
     _group(
         "celery-app-attributes",
         "unresolved-attribute",
-        r"^Object of type `Celery` has no attribute `",
-        "receiver is `Celery`, whose attributes are installed at runtime",
+        r"^Object of type `Celery` has no attribute `loop`$",
+        "the attribute is `loop`, which this project installs on the `Celery` "
+        "instance at runtime; naming it is what keeps an ordinary misspelled "
+        "attribute on the same receiver first-party",
     ),
     _group(
         "third-party-overload-sets",
@@ -423,7 +428,7 @@ def _print_groups(diagnostics: Sequence[Diagnostic]) -> None:
     """Print the per-group hit counts, zero rows included.
 
     A zero is not a staleness signal here: on a neutralized tree every group
-    reaches zero by design. Staleness is raised by ``check`` instead, against the
+    reaches zero by design. ``check`` names the stale groups instead, against the
     baseline, which is the only run where a group matching nothing means its
     predicate has gone stale.
 
@@ -631,6 +636,14 @@ def cmd_baseline(args: argparse.Namespace) -> int:
 def cmd_check(args: argparse.Namespace) -> int:
     """Report the verdict of reconciling a run against its baseline manifest.
 
+    The STALE list is advisory and does not move the exit status. A group that
+    matches nothing in the baseline is either drift — in which case the
+    diagnostics it used to claim are unclassified, and suppressing them already
+    fails the reconciliation below — or an artifact class a dependency upgrade
+    retired, which leaves a run that lost no first-party diagnostic and so has
+    nothing to fail. Naming the group is what points at the mechanism to remove;
+    failing on it would red a clean run.
+
     :param args: Parsed arguments carrying ``source`` and ``baseline``.
     :return: ``0`` when the run reconciles, ``1`` otherwise.
     :raises ReconciliationError: When the ty run cannot be trusted.
@@ -647,7 +660,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"  {rule:32s} {before[rule]:9d} {after[rule]:9d}")
 
     stale = [name for name, count in sorted(group_hits(baseline).items()) if not count]
-    print(f"\nSTALE groups (matched nothing in the baseline): {len(stale)}")
+    print(f"\nSTALE groups (matched nothing in the baseline, advisory): {len(stale)}")
     for name in stale:
         print(f"  {name}")
     _print_retained()
