@@ -19,7 +19,7 @@ import re
 
 import pytest
 
-from tests.scripts import load_script
+from tests.scripts import load_script, write_file
 
 classify_ty_diagnostics = load_script("classify_ty_diagnostics")
 
@@ -57,19 +57,6 @@ def _output(*rows, total=None):
     return f"{body}Found {count} diagnostics\n"
 
 
-def _write(tmp_path, name, text):
-    """Write ``text`` to ``tmp_path/name`` and return the path.
-
-    :param tmp_path: pytest's per-test temporary directory.
-    :param name: The filename to create under ``tmp_path``.
-    :param text: UTF-8 contents to write.
-    :return: The newly-written path.
-    """
-    path = tmp_path / name
-    path.write_text(text, encoding="utf-8")
-    return path
-
-
 def _manifest(tmp_path, before_text):
     """Emit a baseline manifest from ``before_text`` and return its path.
 
@@ -77,7 +64,7 @@ def _manifest(tmp_path, before_text):
     :param before_text: ty concise output to capture as the baseline.
     :return: The path the manifest was written to.
     """
-    source = _write(tmp_path, "before.txt", before_text)
+    source = write_file(tmp_path, "before.txt", before_text)
     manifest = tmp_path / "baseline.json"
     assert (
         classify_ty_diagnostics.main(
@@ -96,7 +83,7 @@ def _check(tmp_path, manifest, after_text):
     :param after_text: ty concise output for the post-suppression run.
     :return: The CLI exit status.
     """
-    source = _write(tmp_path, "after.txt", after_text)
+    source = write_file(tmp_path, "after.txt", after_text)
     return classify_ty_diagnostics.main(
         ["check", "--from", str(source), "--baseline", str(manifest)]
     )
@@ -322,7 +309,7 @@ def test_report_prints_a_zero_row_for_a_group_with_no_hits(tmp_path, capsys):
     Every group reaches zero on a neutralized tree, so a zero in ``report`` is the
     expected end state rather than a signal.
     """
-    source = _write(tmp_path, "run.txt", _output(FIRST_PARTY_ROW))
+    source = write_file(tmp_path, "run.txt", _output(FIRST_PARTY_ROW))
 
     assert classify_ty_diagnostics.main(["report", "--from", str(source)]) == 0
     out = capsys.readouterr().out
@@ -353,7 +340,7 @@ def test_report_flags_a_line_holding_an_artifact_and_a_first_party_hit(
         "tests/app/sep/test_config.py:145:40: warning[unknown-argument] "
         "Argument `_env_file` does not match any known parameter"
     )
-    source = _write(tmp_path, "run.txt", _output(FIRST_PARTY_ROW, collision))
+    source = write_file(tmp_path, "run.txt", _output(FIRST_PARTY_ROW, collision))
 
     assert classify_ty_diagnostics.main(["report", "--from", str(source)]) == 0
     out = capsys.readouterr().out
