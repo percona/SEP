@@ -215,6 +215,11 @@ def merge_forked_heads(
     :return: Every merge revision that was created.
     :raises PartialMergeError: When at least one merge file was written before
         a subsequent action failed.
+    :raises ValueError: When the ini cannot be read or a track is misconfigured
+        and no merge files have been written yet.
+    :raises OSError: When a filesystem error occurs before any merge is written.
+    :raises CommandError: When Alembic rejects a merge and nothing was applied
+        yet.
     """
     if tracks is None:
         tracks = list_track_names(ini_path)
