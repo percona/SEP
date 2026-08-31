@@ -796,10 +796,10 @@ class BaseManager:
         instance exists, it returns it. Otherwise, it creates and saves a new one.
 
         The creation step is conflict-tolerant: it uses a dialect-aware idempotent
-        insert (``INSERT ... ON CONFLICT DO NOTHING`` / ``INSERT IGNORE``) so that two
-        calls racing to create the same row do not surface a duplicate-key error. The
-        losing call no-ops on the insert and refetches the winning row with
-        ``created=False``. ``created`` is ``True`` only for the call whose insert
+        insert (``INSERT ... ON CONFLICT DO NOTHING`` on PostgreSQL and SQLite) so
+        that two calls racing to create the same row do not surface a duplicate-key
+        error. The losing call no-ops on the insert and refetches the winning row
+        with ``created=False``. ``created`` is ``True`` only for the call whose insert
         actually landed.
 
         :param session: The SQLAlchemy asynchronous session to use for database
