@@ -39,7 +39,11 @@ from app.core.settings_override.lifecycle import (
     start_refresh_task,
 )
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import (
+    setting_class_token,
+    SettingClassEnum,
+    SettingOverride,
+)
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.utils import json_serializer
 from app.sep.config import SEPSettings
@@ -123,7 +127,7 @@ async def test_refresh_all_swaps_snapshot(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=setting_class_token(SEPSettings),
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -148,7 +152,7 @@ async def test_refresh_all_skips_unregistered_class_row(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=setting_class_token(SEPSettings),
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -170,7 +174,7 @@ async def test_refresh_all_skips_unregistered_class_row(
             session, setting_class="UNREGISTERED_SETTINGS"
         )
         wired = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.SEP_SETTINGS
+            session, setting_class=setting_class_token(SEPSettings)
         )
     assert len(leftover) == 1
     assert leftover[0].key == "WHATEVER"
@@ -226,7 +230,7 @@ async def test_refresh_all_rolls_back_session_between_proxies(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=setting_class_token(TasksSettings),
                 key="STALENESS_THRESHOLD_SECONDS",
                 value=tasks_override,
             ),
@@ -277,7 +281,7 @@ async def test_start_refresh_task_runs_initial_load(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=setting_class_token(SEPSettings),
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -337,7 +341,7 @@ async def test_start_refresh_task_without_seed_timeout_awaits_the_seed(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=setting_class_token(SEPSettings),
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -390,7 +394,7 @@ async def _seed_nomad_timeout_override(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=setting_class_token(TasksSettings),
                 key="NOMAD__TIMEOUT",
                 value=value,
             ),
@@ -405,7 +409,7 @@ async def _seed_connectivity_override(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=setting_class_token(SEPSettings),
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=value,
             ),
@@ -674,7 +678,7 @@ async def test_refresh_picks_up_changes_on_next_cycle(
             await SettingsOverrideManager.create(
                 session,
                 SettingOverride(
-                    setting_class=SettingClassEnum.SEP_SETTINGS,
+                    setting_class=setting_class_token(SEPSettings),
                     key="CONNECTIVITY_CHECK_DEFAULT",
                     value=override_value,
                 ),
