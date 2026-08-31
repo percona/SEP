@@ -490,3 +490,31 @@ def test_partial_merge_reports_same_track_second_branch(tmp_path, capsys, monkey
     # plan_merges sorts by root id; "ra" precedes "rb", so chain_a is merged first.
     assert list(versions_a.glob("*merge*.py"))
     assert not list(versions_b.glob("*merge*.py"))
+
+
+def test_first_merge_failure_reports_plain_error(tmp_path, capsys, monkeypatch):
+    """Return 1 with the cause only when the first merge fails before any write."""
+    script_location = script_location_with_mako(tmp_path)
+    versions_dir = script_location / "versions"
+    write_revision(versions_dir, "aaaa", None)
+    write_revision(versions_dir, "bbbb", "aaaa")
+    write_revision(versions_dir, "cccc", "aaaa")
+    before = _revision_files(versions_dir)
+    ini_path = write_ini(
+        tmp_path,
+        databases="widget",
+        sections={"widget": {"script_location": str(script_location)}},
+    )
+
+    def failing_merge(config, revisions, message=None, **kwargs):
+        raise merge_alembic_heads.CommandError("simulated first merge failure")
+
+    monkeypatch.setattr(merge_alembic_heads.command, "merge", failing_merge)
+
+    assert merge_alembic_heads.main(["--ini", str(ini_path)]) == 1
+    err = capsys.readouterr().err
+    assert "simulated first merge failure" in err
+    assert "Error after creating" not in err
+    assert "working tree may contain new migration files" not in err
+    assert _revision_files(versions_dir) == before
+    assert not list(versions_dir.glob("*merge*.py"))
