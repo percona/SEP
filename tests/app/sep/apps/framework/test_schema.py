@@ -1486,12 +1486,7 @@ class TestSchemaTier2ReferenceResolution:
     def test_bracket_indexed_field_in_rule_rejected(self) -> None:
         """Reject a bracket-indexed reference; no form field name carries one.
 
-        The decoration-time gate in ``rules.py`` rejects an indexed reference
-        too, on purpose. This pins the outer half of that pair — were the
-        schema to start accepting one, that gate would become the only thing
-        between an indexed reference and a silent per-request no-op, since
-        rule references are resolved by dotted ``getattr`` with no index
-        support.
+        Declaring ``items`` does not make ``items[0]`` rule-referenceable.
         """
         with pytest.raises(ValidationError, match=r"unknown field 'items\[0\]'"):
             AppSchema(

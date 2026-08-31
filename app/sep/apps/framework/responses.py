@@ -75,8 +75,9 @@ def root_segment(path: str) -> str:
 
     Stripping the index is only sound for paths resolved against serialized
     rows, where ``[N]`` is a real segment. Conditional-rule references are not
-    such paths — see ``_declared_on_model`` in ``rules.py``, which keeps its own
-    index-rejecting split on purpose.
+    such paths — the decoration-time gate in
+    :func:`~app.sep.apps.framework.rules._validate_plan_against_model_fields`
+    keeps its own index-rejecting split on purpose.
 
     :param path: A list-view column key or detail-view field path (for example
         ``"target.service"`` or ``"data.meta[0]"``).

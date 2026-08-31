@@ -998,16 +998,15 @@ def _cardinality_plan(name: str) -> RulePlan:
 class TestDeclaredOnModelIndexHandling:
     """Pin the decoration-time gate's rejection of bracket-indexed references.
 
-    These drive ``_validate_plan_against_model_fields`` directly instead of
-    going through :func:`apply_conditional_rules`, because ``AppSchema``
-    validates every rule reference against its declared field names and those
-    names admit no brackets — an indexed reference cannot reach the gate
-    through a schema that validates
-    (``TestSchemaTier2ReferenceResolution.test_bracket_indexed_field_in_rule_rejected``
-    in ``test_schema.py`` pins that outer half). The gate rejects one anyway,
-    and must keep doing so: ``_resolve_field`` walks paths with plain dotted
-    ``getattr``, so an indexed segment allowed through here would silently
-    evaluate to ``None`` on every request rather than failing at import.
+    A rule reference reaches this gate only after ``AppSchema`` has matched it
+    against the form tree's declared field names, and those names admit no
+    brackets, so an indexed reference cannot arrive through a schema that
+    validates — ``test_bracket_indexed_field_in_rule_rejected`` pins that outer
+    half. These cases therefore drive ``_validate_plan_against_model_fields``
+    directly. The gate rejects an indexed reference anyway, and must keep doing
+    so: ``_resolve_field`` walks paths with plain dotted ``getattr``, so one
+    allowed through here would silently evaluate to ``None`` on every request
+    rather than failing at import.
 
     ``test_unknown_attribute_on_write_model_raises_at_import`` covers the
     decoration route that feeds this gate its reference strings.

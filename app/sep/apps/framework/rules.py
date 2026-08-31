@@ -1749,10 +1749,11 @@ def _validate_plan_against_model_fields(
         which strips a ``[N]`` index: that helper serves callers resolving paths
         against serialized rows, where an index is a real segment. Rule
         references are instead walked by :func:`_resolve_field`'s dotted-only
-        ``getattr`` traversal, which has no index support, so an indexed
-        segment can never resolve to anything but ``None``. Rejecting it here
-        keeps the mistake an import-time error rather than a silent no-op on
-        every request.
+        ``getattr`` traversal. An indexed segment therefore resolves only
+        when the model declares that exact name as an attribute — the case the
+        first branch below accepts. Every other indexed reference resolves to
+        ``None``, so rejecting it here keeps the mistake an import-time error
+        rather than a silent no-op on every request.
 
         :param name: A rule's field reference — a plain name or dotted path.
         :return: Whether the reference's leading segment is a model field.
