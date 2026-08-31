@@ -36,7 +36,7 @@ from app.core.config import Settings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.api.routes import build_settings_router
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.models import setting_class_token, SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
 from app.core.utils import json_serializer
 from app.inventory.config import inventory_settings, InventorySettings
@@ -363,7 +363,7 @@ class TestDeleteGate:
         """Assert a stale row for a now-locked key is removable."""
         await insert_override_row(
             override_session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=setting_class_token(SEPSettings),
             key="INVENTORY_ENDPOINT",
             value="https://stale.example.com",
             is_active=True,
@@ -374,7 +374,7 @@ class TestDeleteGate:
         assert (
             await SettingsOverrideManager.count(
                 override_session,
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=setting_class_token(SEPSettings),
                 key="INVENTORY_ENDPOINT",
             )
             == 0
@@ -408,7 +408,7 @@ class TestDeleteGate:
         """Assert a stale leaf row survives its parent becoming unaddressable."""
         await insert_override_row(
             override_session,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=setting_class_token(TasksSettings),
             key="NOMAD__timeout",
             value=30,
             is_active=True,
@@ -419,7 +419,7 @@ class TestDeleteGate:
         assert (
             await SettingsOverrideManager.count(
                 override_session,
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=setting_class_token(TasksSettings),
                 key="NOMAD__timeout",
             )
             == 0
@@ -442,7 +442,7 @@ class TestDeleteGate:
         """Assert a whole-parent row survives every leaf beneath it being withheld."""
         await insert_override_row(
             override_session,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=setting_class_token(TasksSettings),
             key="NOMAD",
             value={"timeout": 30},
             is_active=True,
@@ -453,7 +453,7 @@ class TestDeleteGate:
         assert (
             await SettingsOverrideManager.count(
                 override_session,
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=setting_class_token(TasksSettings),
                 key="NOMAD",
             )
             == 0
@@ -499,7 +499,7 @@ class TestLegacyCasedOverrideRows:
         """Assert DELETE of the canonical key removes a mixed-case stored row."""
         await insert_override_row(
             override_session,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=setting_class_token(TasksSettings),
             key=self._LEGACY_NESTED,
             value=30,
             is_active=True,
@@ -509,7 +509,7 @@ class TestLegacyCasedOverrideRows:
         assert (
             await SettingsOverrideManager.count(
                 override_session,
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=setting_class_token(TasksSettings),
             )
             == 0
         )
@@ -524,7 +524,7 @@ class TestLegacyCasedOverrideRows:
         """Assert a withheld field's legacy row is still found and deleted."""
         await insert_override_row(
             override_session,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=setting_class_token(TasksSettings),
             key=self._LEGACY_NESTED,
             value=30,
             is_active=True,
@@ -535,7 +535,7 @@ class TestLegacyCasedOverrideRows:
         assert (
             await SettingsOverrideManager.count(
                 override_session,
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=setting_class_token(TasksSettings),
             )
             == 0
         )
@@ -549,14 +549,14 @@ class TestLegacyCasedOverrideRows:
         """Assert DELETE of the canonical key removes every matching stored row."""
         await insert_override_row(
             override_session,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=setting_class_token(TasksSettings),
             key=self._LEGACY_NESTED,
             value=30,
             is_active=True,
         )
         await insert_override_row(
             override_session,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=setting_class_token(TasksSettings),
             key=self._CANONICAL_NESTED,
             value=45,
             is_active=True,
@@ -566,7 +566,7 @@ class TestLegacyCasedOverrideRows:
         assert (
             await SettingsOverrideManager.count(
                 override_session,
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=setting_class_token(TasksSettings),
             )
             == 0
         )
@@ -584,7 +584,7 @@ class TestLegacyCasedOverrideRows:
         """
         await insert_override_row(
             override_session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=setting_class_token(SEPSettings),
             key=self._LEGACY_TOP,
             value="https://stale.example.com",
             is_active=True,
@@ -594,7 +594,7 @@ class TestLegacyCasedOverrideRows:
         assert (
             await SettingsOverrideManager.count(
                 override_session,
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=setting_class_token(SEPSettings),
             )
             == 0
         )
@@ -609,7 +609,7 @@ class TestLegacyCasedOverrideRows:
         """Assert a withheld top-level legacy row is still found and deleted."""
         await insert_override_row(
             override_session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=setting_class_token(SEPSettings),
             key=self._LEGACY_TOP,
             value="https://stale.example.com",
             is_active=True,
@@ -620,7 +620,7 @@ class TestLegacyCasedOverrideRows:
         assert (
             await SettingsOverrideManager.count(
                 override_session,
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=setting_class_token(SEPSettings),
             )
             == 0
         )
@@ -634,7 +634,7 @@ class TestLegacyCasedOverrideRows:
         """Assert PATCH heals a legacy nested key to the canonical spelling."""
         await insert_override_row(
             override_session,
-            setting_class=SettingClassEnum.SETTINGS,
+            setting_class=setting_class_token(Settings),
             key=self._LEGACY_PMM,
             value="https://stale.example.com",
             is_active=True,
@@ -643,7 +643,7 @@ class TestLegacyCasedOverrideRows:
         response = client.patch(SETTINGS_URL, json={self._CANONICAL_PMM: new_value})
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SETTINGS
+            override_session, setting_class=setting_class_token(Settings)
         )
         assert len(rows) == 1
         assert rows[0].key == self._CANONICAL_PMM
@@ -659,14 +659,14 @@ class TestLegacyCasedOverrideRows:
         """Assert PATCH collapses duplicate case-variants to one canonical row."""
         await insert_override_row(
             override_session,
-            setting_class=SettingClassEnum.SETTINGS,
+            setting_class=setting_class_token(Settings),
             key=self._LEGACY_PMM,
             value="https://legacy.example.com",
             is_active=True,
         )
         await insert_override_row(
             override_session,
-            setting_class=SettingClassEnum.SETTINGS,
+            setting_class=setting_class_token(Settings),
             key=self._CANONICAL_PMM,
             value="https://canonical.example.com",
             is_active=True,
@@ -675,7 +675,7 @@ class TestLegacyCasedOverrideRows:
         response = client.patch(SETTINGS_URL, json={self._CANONICAL_PMM: new_value})
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SETTINGS
+            override_session, setting_class=setting_class_token(Settings)
         )
         assert len(rows) == 1
         assert rows[0].key == self._CANONICAL_PMM
@@ -695,7 +695,7 @@ class TestLegacyCasedOverrideRows:
         """
         await insert_override_row(
             override_session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=setting_class_token(SEPSettings),
             key=self._LEGACY_TOP,
             value="https://stale.example.com",
             is_active=True,
@@ -708,7 +708,7 @@ class TestLegacyCasedOverrideRows:
         assert applied["value"] == new_value
         assert applied["has_override"] is True
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+            override_session, setting_class=setting_class_token(SEPSettings)
         )
         assert len(rows) == 1
         assert rows[0].key == self._CANONICAL_TOP
