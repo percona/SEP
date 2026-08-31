@@ -339,7 +339,7 @@ async def find_or_create_account(provider: GrafanaSDK) -> tuple[int, bool]:
     return account_id, False
 
 
-async def mint(provider: GrafanaSDK, credentials: str) -> str:
+async def mint(provider: GrafanaSDK, credentials: str) -> tuple[str, bool]:
     """Obtain a fresh service-account token from Grafana in one attempt.
 
     ``secondsToLive`` is left out of the request: Grafana reads its absence as
@@ -348,7 +348,7 @@ async def mint(provider: GrafanaSDK, credentials: str) -> str:
 
     :param provider: The open Grafana client.
     :param credentials: The Base64 admin pair to authenticate with.
-    :return: The minted token.
+    :return: The minted token, and whether it was minted onto a reused account.
     :raises MintError: When Grafana answers a token response carrying no key, or
         creates an account but answers no id.
     :raises HTTPException: When Grafana answers an error status.
@@ -358,7 +358,7 @@ async def mint(provider: GrafanaSDK, credentials: str) -> str:
         provider.auth(credentials, auth_scheme="Basic"),
         quiet_client_logging(provider, logging.INFO),
     ):
-        account_id, _reused = await find_or_create_account(provider)
+        account_id, reused = await find_or_create_account(provider)
         created = await provider.post(
             f"{SERVICE_ACCOUNTS_PATH}/{account_id}/tokens", json={"name": token_name()}
         )
@@ -369,12 +369,12 @@ async def mint(provider: GrafanaSDK, credentials: str) -> str:
             f"service account {account_id}; the response was a "
             f"{type(created).__name__}."
         )
-    return token.strip()
+    return token.strip(), reused
 
 
 async def mint_with_retry(
     provider: GrafanaSDK, credentials: str, deadline: float
-) -> str:
+) -> tuple[str, bool]:
     """Mint a token, retrying only what a still-starting Grafana explains.
 
     Each attempt carries its own timeout off ``deadline``: the client's session
@@ -385,7 +385,7 @@ async def mint_with_retry(
     :param provider: The open Grafana client.
     :param credentials: The Base64 admin pair to authenticate with.
     :param deadline: The :func:`time.monotonic` reading to give up at.
-    :return: The minted token.
+    :return: The minted token, and whether it was minted onto a reused account.
     :raises MintError: When Grafana answers a fault no retry can clear, or when
         the deadline passes first.
     """
@@ -528,7 +528,9 @@ async def resolve_token() -> str | None:
                 provider, persisted
             ):
                 return persisted
-            token = await mint_with_retry(provider, admin_credentials(), deadline)
+            token, _reused = await mint_with_retry(
+                provider, admin_credentials(), deadline
+            )
     write_persisted_token(directory, token)
     return token
 
