@@ -891,6 +891,38 @@ async def test_a_newly_created_account_skips_the_post_mint_probe(
 
 
 @pytest.mark.asyncio
+async def test_a_reused_account_at_admin_probes_without_warning(
+    grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
+):
+    """Probe a reused account that already holds Admin, and stay quiet on ACCEPTED.
+
+    Guards the FORBIDDEN-only warn: a flipped guard would emit a false role-gap
+    diagnostic on every healthy reuse.
+    """
+    grafana_stub.queue(
+        StubRoute.SEARCH,
+        StubResponse(
+            {
+                "totalCount": 1,
+                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "sep"}],
+            }
+        ),
+    )
+
+    run = await run_helper(
+        profile_cwd(tmp_path),
+        AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
+        SEP_STATE_DIR=str(state_dir),
+    )
+
+    assert run.returncode == 0, run.stderr
+    assert run.token == MINTED_TOKEN
+    assert helper.read_persisted_token(state_dir) == MINTED_TOKEN
+    assert grafana_stub.calls(StubRoute.VALIDATE)
+    assert "ranks below" not in run.stderr
+
+
+@pytest.mark.asyncio
 async def test_a_reused_account_below_admin_warns_after_mint(
     grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
 ):
