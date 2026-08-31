@@ -53,6 +53,7 @@ __all__ = [
     "nested_overridable_field_names",
     "not_overridable_field",
     "override_keys_for_rows",
+    "override_rows_for_key",
     "preserve_patch_credential_url_value",
     "rendered_leaf_keys",
     "resolve_nested_field",
@@ -74,7 +75,8 @@ from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter, WrapSeriali
 from pydantic.errors import PydanticSchemaGenerationError
 from pydantic_core import PydanticUndefined
 
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.manager import SettingsOverrideManager
+from app.core.settings_override.models import SettingOverride
 from app.core.settings_override.policy import (
     has_allowed_key_under,
     is_key_allowed,
@@ -93,6 +95,7 @@ from app.core.utils.pydantic import (
 
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
+    from sqlmodel.ext.asyncio.session import AsyncSession
 
     # Imported only for annotations: the override substrate must not depend on
     # the concrete settings classes at runtime, which lets ``app.core.config``
@@ -315,24 +318,14 @@ def _effective_field_markers(
     return {**entry, **markers}
 
 
-def _setting_class_or_none(settings_cls: type[BaseModel]) -> SettingClassEnum | None:
-    """Return the override-table identifier for a settings class, if it has one.
-
-    Every class a settings router exposes is an enum member, so ``None`` means
-    the class can carry no override row at all. Each policy gate reads that as
-    "withhold", closing rather than widening the overridable surface.
-
-    :param settings_cls: The Pydantic settings class to identify.
-    :return: The matching enum member, or ``None`` when the class has none.
-    """
-    try:
-        return SettingClassEnum(settings_cls.__name__)
-    except ValueError:
-        return None
-
-
 def _policy_locked(settings_cls: type[BaseModel], canonical_key: str) -> bool:
     """Return whether ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withholds one canonical key.
+
+    Keys the allowlist on ``settings_cls.__name__``, the same token
+    ``ALLOWED_KEYS`` entries use. A class that is not a
+    :class:`~app.core.settings_override.models.SettingClassEnum` member is
+    therefore still reachable when the allowlist names it, and still withheld
+    when it does not.
 
     :param settings_cls: The top-level Pydantic settings class owning the key.
     :param canonical_key: The canonical override key: a top-level field name or
@@ -341,10 +334,7 @@ def _policy_locked(settings_cls: type[BaseModel], canonical_key: str) -> bool:
     """
     if not is_restriction_active():
         return False
-    setting_class = _setting_class_or_none(settings_cls)
-    if setting_class is None:
-        return True
-    return not is_key_allowed(setting_class, canonical_key)
+    return not is_key_allowed(settings_cls.__name__, canonical_key)
 
 
 def is_hot_reloadable(
@@ -782,10 +772,7 @@ def is_nested_overridable_parent(
         return False
     if not include_policy_gate or not is_restriction_active():
         return True
-    setting_class = _setting_class_or_none(settings_cls)
-    if setting_class is None:
-        return False
-    return has_allowed_key_under(setting_class, field_name)
+    return has_allowed_key_under(settings_cls.__name__, field_name)
 
 
 def nested_overridable_field_names(
@@ -1151,6 +1138,69 @@ def override_keys_for_rows(
         for i in range(1, len(chain) + 1):
             keys.add("__".join(chain[:i]))
     return keys
+
+
+def _stored_key_matches_override_key(
+    settings_cls: type[BaseModel],
+    stored_key: str,
+    key: str,
+) -> bool:
+    """Return whether a stored override key resolves to the same field as ``key``.
+
+    Nested keys go through :func:`canonical_override_key`. Top-level keys also
+    match case-insensitively: the previous SQL ``WHERE key = ...`` lookup
+    inherited MySQL's ``utf8mb4_0900_ai_ci`` collation, so moving the filter
+    into Python must not drop a mixed-case top-level row that DELETE/PATCH
+    used to find. Snapshot application still ignores unknown casing via
+    :func:`app.core.settings_override.cache._apply_top_level_row`; DELETE
+    removes those inert rows, and PATCH heals their stored key to the
+    canonical spelling so the next snapshot can read them.
+
+    :param settings_cls: The Pydantic settings class the rows belong to.
+    :param stored_key: The key column value from an override row.
+    :param key: The canonical override key requested by the caller.
+    :return: ``True`` when ``stored_key`` should be treated as the same override.
+    """
+    if canonical_override_key(settings_cls, stored_key) == key:
+        return True
+    if "__" in key or "__" in stored_key:
+        return False
+    return stored_key.casefold() == key.casefold()
+
+
+async def override_rows_for_key(
+    session: AsyncSession,
+    *,
+    settings_cls: type[BaseModel],
+    setting_class: str,
+    key: str,
+) -> list[SettingOverride]:
+    """Return the :class:`SettingOverride` rows whose stored key resolves to ``key``.
+
+    Lists every row for ``setting_class`` and keeps those whose stored ``key``
+    matches via :func:`_stored_key_matches_override_key`. That makes a legacy
+    non-canonically-cased nested or top-level row visible to DELETE and PATCH,
+    which previously matched the stored column with dialect-dependent SQL
+    equality and, after the filter moved into Python, missed mixed-case
+    top-level rows on MySQL.
+
+    Inactive rows are included: both write paths currently match on
+    ``(setting_class, key)`` alone, so an inactive row stays deletable and
+    re-activatable.
+
+    :param session: The sub-app's database session.
+    :param settings_cls: The Pydantic settings class the rows belong to.
+    :param setting_class: The class identifier used to filter override rows.
+    :param key: The canonical override key to resolve against.
+    :return: Every matching row, in the order :meth:`SettingsOverrideManager.list`
+        returns them.
+    """
+    rows = await SettingsOverrideManager.list(session, setting_class=setting_class)
+    return [
+        row
+        for row in rows
+        if _stored_key_matches_override_key(settings_cls, row.key, key)
+    ]
 
 
 def _clear_cached_properties(instance: BaseModel) -> None:

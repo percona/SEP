@@ -26,7 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
-from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.api.models import SettingClassAppMetadata
 from app.core.settings_override.api.routes import (
@@ -34,9 +33,10 @@ from app.core.settings_override.api.routes import (
     build_settings_router,
     ClassEntry,
 )
-from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
+from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
+from tests.app.db_schema import apply_schema
 
 LIST_URL = "/settings/"
 
@@ -63,7 +63,7 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
@@ -89,16 +89,16 @@ def app_owned_client_fixture(
 
     core_classes: list[ClassEntry] = [
         (
-            SettingClassEnum.SNIPPETS_SETTINGS,
+            SnippetsSettings.__name__,
             SnippetsSettings,
             snippets_settings,
         ),
     ]
     app_owned: list[AppOwnedClassEntry] = [
         AppOwnedClassEntry(
-            setting_class=SettingClassEnum.ALERT_SETTINGS,
-            settings_cls=AlertSettings,
-            proxy=alert_settings,
+            setting_class=AlertsSettings.__name__,
+            settings_cls=AlertsSettings,
+            proxy=alerts_settings,
             app_key="alerts",
         ),
     ]
@@ -132,7 +132,7 @@ def core_only_client_fixture(
     router = build_settings_router(
         classes=[
             (
-                SettingClassEnum.SNIPPETS_SETTINGS,
+                SnippetsSettings.__name__,
                 SnippetsSettings,
                 snippets_settings,
             ),
@@ -156,14 +156,14 @@ class TestBuildSettingsRouterAppOwned:
         assert response.status_code == status.HTTP_200_OK
         groups = {group["setting_class"]: group for group in response.json()["groups"]}
         assert set(groups) == {
-            SettingClassEnum.SNIPPETS_SETTINGS.value,
-            SettingClassEnum.ALERT_SETTINGS.value,
+            SnippetsSettings.__name__,
+            AlertsSettings.__name__,
         }
-        core = groups[SettingClassEnum.SNIPPETS_SETTINGS.value]
+        core = groups[SnippetsSettings.__name__]
         assert core["is_app_owned"] is False
         assert core["app_id"] is None
 
-        alert = groups[SettingClassEnum.ALERT_SETTINGS.value]
+        alert = groups[AlertsSettings.__name__]
         assert alert["is_app_owned"] is True
         assert alert["app_id"] == "alerts"
         assert alert["app_display_name"] == "Test Alerts"
@@ -176,7 +176,7 @@ class TestBuildSettingsRouterAppOwned:
         response = core_only_client.get(LIST_URL)
         assert response.status_code == status.HTTP_200_OK
         group = response.json()["groups"][0]
-        assert group["setting_class"] == SettingClassEnum.SNIPPETS_SETTINGS.value
+        assert group["setting_class"] == SnippetsSettings.__name__
         assert group["is_app_owned"] is False
         assert group["app_id"] is None
         assert group["app_display_name"] is None
@@ -194,9 +194,9 @@ class TestBuildSettingsRouterAppOwned:
                 admin_dep=Depends(lambda: None),
                 app_owned_classes=[
                     AppOwnedClassEntry(
-                        setting_class=SettingClassEnum.ALERT_SETTINGS,
-                        settings_cls=AlertSettings,
-                        proxy=alert_settings,
+                        setting_class=AlertsSettings.__name__,
+                        settings_cls=AlertsSettings,
+                        proxy=alerts_settings,
                         app_key="alerts",
                     ),
                 ],
@@ -208,18 +208,18 @@ class TestBuildSettingsRouterAppOwned:
             build_settings_router(
                 classes=[
                     (
-                        SettingClassEnum.ALERT_SETTINGS,
-                        AlertSettings,
-                        alert_settings,
+                        AlertsSettings.__name__,
+                        AlertsSettings,
+                        alerts_settings,
                     ),
                 ],
                 session_dep=Annotated[AsyncSession, Depends(lambda: None)],
                 admin_dep=Depends(lambda: None),
                 app_owned_classes=[
                     AppOwnedClassEntry(
-                        setting_class=SettingClassEnum.ALERT_SETTINGS,
-                        settings_cls=AlertSettings,
-                        proxy=alert_settings,
+                        setting_class=AlertsSettings.__name__,
+                        settings_cls=AlertsSettings,
+                        proxy=alerts_settings,
                         app_key="alerts",
                     ),
                 ],

@@ -18,26 +18,26 @@
 Mounted at ``/api/apps/inventory/`` via ``apps_router`` in
 ``app/sep/api/router.py``. Like other plugin proxies, these routes rely on the
 parent ``api_router`` for API authentication. The ``schema_endpoint`` helper
-additionally attaches ``IsApiAuthenticated`` to the schema route only; list,
-detail, create, update, and delete handlers do not duplicate that dependency.
+additionally attaches ``IsApiAuthenticated`` to the schema route only; the list
+and detail handlers do not duplicate that dependency.
 
-Proxies CRUD for nodes, services, schemas, and tables to the inventory HTTP API
-through ``InventoryAPI`` in ``app.sep.deps`` (``RemoteAPI`` toward the
+Proxies read access to nodes, services, schemas, and tables to the inventory
+HTTP API through ``InventoryAPI`` in ``app.sep.deps`` (``RemoteAPI`` toward the
 inventory service). List handlers unwrap paginated ``items`` into a JSON array
-for the schema-driven React client. POST and PUT bodies are parsed with the
-``InventoryPluginJsonObjectBody`` in ``app.sep.apps.inventory.deps`` (see
-``inventory_plugin_json_object_body``) so non-object JSON consistently yields
-HTTP 422.
+for the schema-driven React client. The four entities are read-only here: no
+handler creates, updates, or deletes one. The syncers author that data — PMM
+supplies nodes and services, while ``MySQLSyncer`` discovers schemas and tables
+from the database itself — and they write through the inventory service, which
+remains the canonical CRUD surface at ``/api/inventory/*``.
 
-In addition to CRUD, this router mounts the ad-hoc inventory-sync trigger
+Besides those reads, this router mounts the ad-hoc inventory-sync trigger
 (``POST /sync/``) and the running-state polling endpoint
 (``GET /sync/status/``) consumed by the React inventory sync control. Schedule
 discovery (``GET /``) and available-syncers (``GET /available-syncers/``) are
 also mounted here so the React schedule UI can fetch its data
 through the plugin API gateway. Periodic-task CRUD remains delegated to
 ``/api/tasks/periodic/*`` as the single source of truth; this router does not
-duplicate that surface. The inventory service remains the canonical CRUD
-surface at ``/api/inventory/*``.
+duplicate that surface.
 """
 
 from __future__ import annotations
@@ -45,6 +45,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Body, Request, Response, status
+from sqlmodel import col
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.pagination import (
@@ -59,12 +60,10 @@ from app.sep.apps.inventory.deps import (
     filter_syncers_by_name,
     InternalTokenDep,
     inventory_plugin_query_params,
-    inventory_service_create_path,
     inventory_service_detail_path,
     inventory_service_list_path,
     inventory_system_observation_path,
     InventoryAvailableSyncersDep,
-    InventoryPluginJsonObjectBody,
     InventorySyncStatusResponse,
     InventorySyncTriggerWrite,
     require_inventory_plugin_entity,
@@ -79,10 +78,11 @@ from app.sep.apps.inventory.list_query import (
 from app.sep.apps.inventory.models import (
     INVENTORY_SYNC_TASK_NAME,
     PluginTaskResponse,
+    SyncRunSummary,
 )
 from app.sep.apps.inventory.schema import inventory_schema
 from app.sep.apps.inventory.sync import run_inventory_sync
-from app.sep.crud import SyncItemManager
+from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.deps import (
     CreatedServiceDep,
     InventoryAPI,
@@ -90,8 +90,9 @@ from app.sep.deps import (
     SessionDep,
     TaskAPI,
 )
-from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.models import SyncInstance, SyncInventoryEntityTypeEnum
 from app.tasks.connectivity.models import ConnectivityCheckResponse
+from app.tasks.models import INVENTORY_COLLECTION_TASK_NAME
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=inventory_schema)
@@ -99,6 +100,7 @@ schema_endpoint(router=router, plugin_schema=inventory_schema)
 # Module-level singleton avoids the B008 lint warning about function calls in
 # argument defaults; the optional-body semantics are unchanged.
 _OPTIONAL_TRIGGER_BODY = Body(default=None)
+_SYNC_RUN_HISTORY_LIMIT = 10
 
 
 @router.post("/sync/", status_code=status.HTTP_202_ACCEPTED, response_class=Response)
@@ -147,35 +149,61 @@ async def inventory_sync_trigger(
 
 @router.get("/sync/status/")
 async def inventory_sync_status(session: SessionDep) -> InventorySyncStatusResponse:
-    """Return whether an inventory-wide sync is currently running.
+    """Return whether an inventory-wide sync is running, plus recent run outcomes.
 
     Replaces the server-rendered ``sync_is_running`` template variable
     used by the Jinja2 inventory page so the React control can poll the
     same state without scraping HTML.
 
     :param session: SQLModel async session.
-    :type session: SessionDep
-    :return: ``{"is_running": <bool>}``.
-    :rtype: InventorySyncStatusResponse
+    :return: The running flag and the most recent runs, newest first.
     """
     is_running = await SyncItemManager.sync_is_running(
         session,
         SyncInventoryEntityTypeEnum.INVENTORY,
     )
-    return InventorySyncStatusResponse(is_running=is_running)
+    runs = await SyncInstanceManager.list(
+        session,
+        order_by=[
+            col(SyncInstance.created_at).desc(),
+            col(SyncInstance.id).desc(),
+        ],
+        limit=_SYNC_RUN_HISTORY_LIMIT,
+    )
+    return InventorySyncStatusResponse(
+        is_running=is_running,
+        last_runs=[
+            SyncRunSummary(
+                syncer=run.syncer,
+                started_at=run.created_at,
+                finished_at=run.updated_at,
+                status=run.status,
+                snapshot_complete=run.snapshot_complete,
+            )
+            for run in runs
+        ],
+    )
 
 
 @router.get("/")
 async def inventory_plugin_tasks() -> list[PluginTaskResponse]:
     """Return the list of periodic task names for the Inventory plugin.
 
-    Hard-coded because the Inventory plugin has exactly one periodic task
-    (``inventory-sync``). The shape matches what the React
-    ``usePluginTasks('inventory')`` hook expects: a list of objects with at
+    Hard-coded because the Inventory plugin's periodic tasks are a fixed pair
+    (``inventory-sync`` and ``inventory-collection``). The shape matches what the
+    React ``usePluginTasks('inventory')`` hook expects: a list of objects with at
     minimum a ``name`` key.
+
+    :return: The plugin's periodic tasks, each with its name and display name.
     """
     return [
-        PluginTaskResponse(name=INVENTORY_SYNC_TASK_NAME, display_name="Inventory Sync")
+        PluginTaskResponse(
+            name=INVENTORY_SYNC_TASK_NAME, display_name="Inventory Sync"
+        ),
+        PluginTaskResponse(
+            name=INVENTORY_COLLECTION_TASK_NAME,
+            display_name="Inventory Collection",
+        ),
     ]
 
 
@@ -223,18 +251,6 @@ async def inventory_list_entity(
     items = unwrap_inventory_plugin_list_payload(data)
     envelope = data if isinstance(data, dict) else {}
     return build_proxied_page(items, envelope, pagination, client_side_filtered=False)
-
-
-@router.post("/{entity}/")
-async def inventory_create_entity(
-    entity: str,
-    inventory_api: InventoryAPI,
-    body: InventoryPluginJsonObjectBody,
-) -> Any:
-    """Create an inventory node, service, schema, or table."""
-    entity = require_inventory_plugin_entity(entity)
-    inv_path = inventory_service_create_path(entity, body)
-    return await inventory_api.post(inv_path, json=body)
 
 
 @router.get(f"/nodes/{{node_id:int}}/{SYSTEM_OBSERVATION_SEGMENT}")
@@ -319,29 +335,3 @@ async def inventory_get_entity(
     """Retrieve a single inventory node, service, schema, or table."""
     entity = require_inventory_plugin_entity(entity)
     return await inventory_api.get(inventory_service_detail_path(entity, item_id))
-
-
-@router.put("/{entity}/{item_id:int}")
-async def inventory_update_entity(
-    entity: str,
-    item_id: int,
-    inventory_api: InventoryAPI,
-    body: InventoryPluginJsonObjectBody,
-) -> Any:
-    """Update an inventory node, service, schema, or table."""
-    entity = require_inventory_plugin_entity(entity)
-    return await inventory_api.put(
-        inventory_service_detail_path(entity, item_id), json=body
-    )
-
-
-@router.delete("/{entity}/{item_id:int}")
-async def inventory_delete_entity(
-    entity: str,
-    item_id: int,
-    inventory_api: InventoryAPI,
-) -> Response:
-    """Delete an inventory node, service, schema, or table."""
-    entity = require_inventory_plugin_entity(entity)
-    await inventory_api.delete(inventory_service_detail_path(entity, item_id))
-    return Response(status_code=status.HTTP_204_NO_CONTENT)

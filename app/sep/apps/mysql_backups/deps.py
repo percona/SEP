@@ -91,12 +91,18 @@ async def resolve_mysql_service(
     id, so serving a non-MySQL service would let it leak the runs of a MySQL
     service that happens to share its name.
 
+    Retired services resolve too: the catalog is a historical record, and a service
+    the inventory stopped seeing upstream is exactly the one whose past runs are
+    still wanted.
+
     :param service_id: The inventory id of the service to resolve.
     :param inventory_api: The Inventory API client used to resolve the service.
     :return: The resolved service.
     :raises HTTPNotFoundException: When the resolved service is not a MySQL service.
     """
-    service_data = await inventory_api.get(f"/services/{service_id}")
+    service_data = await inventory_api.get(
+        f"/services/{service_id}", params={"include_retired": "true"}
+    )
     service = CreatedService.model_validate(service_data)
     if service.type is not ServiceTypeEnum.MYSQL:
         raise HTTPNotFoundException(detail="Service not found")

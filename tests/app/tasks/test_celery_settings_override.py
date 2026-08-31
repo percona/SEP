@@ -59,6 +59,7 @@ from tests.app.core.settings_override.conftest import (
     recording_start_refresh_task,
     START_REFRESH_TASK,
 )
+from tests.app.db_schema import apply_schema
 from tests.app.factories import TaskFactory
 
 ANCHOR = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
@@ -92,7 +93,7 @@ async def _override_session_maker() -> async_sessionmaker:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:
@@ -130,7 +131,7 @@ def worker_loop_env(monkeypatch):
 async def _create_schema(engine) -> None:
     """Create every SQLModel table on ``engine``."""
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
 
 
 async def _seed_override(maker, *, setting_class, key, value) -> None:

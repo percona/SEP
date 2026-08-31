@@ -45,7 +45,7 @@ from app.core.settings_override.worker import SEED_TIMEOUT_FRACTION
 from app.core.utils import json_serializer
 from app.sep import settings_override as sep_worker
 from app.sep.config import sep_settings
-from app.sep.deps import get_pmm_api
+from app.sep.deps import resolve_pmm_api
 from app.sep.settings_override import (
     build_sep_override_proxies,
     republish_sep_settings_snapshot,
@@ -59,6 +59,7 @@ from tests.app.core.settings_override.conftest import (
     recording_start_refresh_task,
     START_REFRESH_TASK,
 )
+from tests.app.db_schema import apply_schema
 
 SEP_CORE_CLASSES = frozenset(
     {
@@ -84,7 +85,7 @@ class _AppOwnedSettings(BaseYamlSettings):
     LABEL: str = hot_field("default")
 
 
-def _app_owned_entry(setting_class: SettingClassEnum) -> AppOwnedClassEntry:
+def _app_owned_entry(setting_class: str) -> AppOwnedClassEntry:
     """Build an app-owned registration for ``setting_class``."""
     return AppOwnedClassEntry(
         setting_class=setting_class,
@@ -97,7 +98,7 @@ def _app_owned_entry(setting_class: SettingClassEnum) -> AppOwnedClassEntry:
 async def _create_schema(engine: AsyncEngine) -> None:
     """Create every SQLModel table on ``engine``."""
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
 
 
 async def _upsert_override(
@@ -183,15 +184,15 @@ class TestBuildSepOverrideProxies:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Carry an app-declared class alongside SEP's own entries."""
-        entry = _app_owned_entry(SettingClassEnum.ALERTS_SETTINGS)
+        entry = _app_owned_entry("AlertsSettings")
         monkeypatch.setattr(
             sep_worker, "collect_app_owned_settings_classes", lambda: [entry]
         )
 
         proxies = build_sep_override_proxies()
 
-        assert set(proxies) == SEP_CORE_CLASSES | {SettingClassEnum.ALERTS_SETTINGS}
-        assert proxies[SettingClassEnum.ALERTS_SETTINGS].proxy is entry.proxy
+        assert set(proxies) == SEP_CORE_CLASSES | {"AlertsSettings"}
+        assert proxies["AlertsSettings"].proxy is entry.proxy
 
     def test_sep_entries_win_over_an_app_owned_collision(
         self, monkeypatch: pytest.MonkeyPatch
@@ -343,7 +344,7 @@ class TestWorkerPmmClientInvalidation:
     async def test_api_key_only_override_evicts_the_cached_client(
         self, override_session_maker: async_sessionmaker
     ) -> None:
-        """Hand a fresh client with the new key to the next ``get_pmm_api()``.
+        """Hand a fresh client with the new key to the next ``resolve_pmm_api()``.
 
         ``ClientRegistry.IMMUTABLE_KEYS`` excludes ``api_key``, so republishing
         the ``PMM`` snapshot alone leaves the stale client cached; only the
@@ -357,7 +358,7 @@ class TestWorkerPmmClientInvalidation:
             value={"endpoint": PMM_ENDPOINT, "api_key": "old-key"},
         )
         await refresh_all(lambda: override_session_maker, proxies)
-        stale = await get_pmm_api()
+        stale = await resolve_pmm_api()
         try:
             await _upsert_override(
                 override_session_maker,
@@ -370,7 +371,7 @@ class TestWorkerPmmClientInvalidation:
                 lambda: override_session_maker, proxies, WORKER_OVERRIDE_CALLBACKS
             )
 
-            fresh = await get_pmm_api()
+            fresh = await resolve_pmm_api()
             assert fresh is not stale
             assert fresh.api_key == SecretStr("new-key")
         finally:
@@ -395,7 +396,7 @@ class TestWorkerPmmClientInvalidation:
             value={"endpoint": PMM_ENDPOINT, "api_key": "old-key"},
         )
         await refresh_all(lambda: override_session_maker, proxies)
-        stale = await get_pmm_api()
+        stale = await resolve_pmm_api()
         try:
             await _upsert_override(
                 override_session_maker,
@@ -407,7 +408,7 @@ class TestWorkerPmmClientInvalidation:
             await refresh_all(lambda: override_session_maker, proxies)
 
             assert settings.PMM.api_key == SecretStr("new-key")
-            assert await get_pmm_api() is stale
+            assert await resolve_pmm_api() is stale
         finally:
             await settings.invalidate_client(PMM_ENDPOINT)
 

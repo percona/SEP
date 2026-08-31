@@ -15,15 +15,15 @@
 
 """Test the shared-database guards on the ``settingoverride`` migrations.
 
-The ``settingoverride`` table and its ``setting_class`` CHECK constraint are
-created by both the SEP and Tasks Alembic tracks. On a shared PostgreSQL
-database both tracks run ``upgrade heads`` against one physical schema, so the
-guarded migrations must apply the DDL exactly once regardless of which track
-wins the race. The real-PostgreSQL cases exercise that cross-track scenario;
-the SQLite cases pin the two cross-dialect helpers the guards rely on.
+The ``settingoverride`` table is created by both the SEP and Tasks Alembic
+tracks, and both tracks also drop the ``setting_class`` CHECK. On a shared
+PostgreSQL database both tracks run ``upgrade heads`` against one physical
+schema, so the guarded migrations must apply the DDL exactly once regardless
+of which track wins the race. The real-PostgreSQL cases exercise that
+cross-track scenario; the SQLite cases pin the two cross-dialect helpers the
+guards rely on.
 """
 
-import os
 from pathlib import Path
 
 import pytest
@@ -31,22 +31,24 @@ from alembic import command
 from alembic.config import Config
 from pydantic import SecretStr
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     create_engine,
     inspect,
     Integer,
     MetaData,
+    String,
     Table,
 )
 from sqlalchemy import (
     Enum as EnumField,
 )
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 
 from app.core.db.utils import (
     acquire_pg_advisory_xact_lock,
     check_constraint_lists_members,
+    check_constraint_name,
 )
 from app.core.settings_override.constants import SETTINGOVERRIDE_MIGRATION_LOCK_KEY
 from app.core.utils.fields import AsyncDatabaseEngine
@@ -55,24 +57,13 @@ from app.tasks.config import tasks_settings
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
-POSTGRES_DSN_ENV = "SEP_TEST_POSTGRES_DSN"
+_SETTING_CLASS_VARCHAR_LENGTH = 255
 
 # The SEP and Tasks revisions immediately below ``add_setting_override_table``
 # on each track — downgrading to them drops the shared table and runs the other
 # track's enum-narrowing downgrades against the now-missing table.
 _SEP_PRE_SETTINGOVERRIDE_REVISION = "810c31754b54"
 _TASKS_PRE_SETTINGOVERRIDE_REVISION = "e42ce8324da7"
-
-# Every ``setting_class`` member the CHECK constraint lists once both tracks are
-# fully upgraded.
-_ALL_SETTING_CLASS_MEMBERS = (
-    "SEP_SETTINGS",
-    "TASKS_SETTINGS",
-    "SNIPPETS_SETTINGS",
-    "SETTINGS",
-    "ALERT_SETTINGS",
-    "ANONYMIZER_SETTINGS",
-)
 
 
 def _sqlite_engine_with_setting_class_check(members):
@@ -212,6 +203,84 @@ class TestCheckConstraintListsMembers:
             engine.dispose()
 
 
+class TestCheckConstraintName:
+    """Cover :func:`check_constraint_name` on SQLite."""
+
+    def test_returns_sqlalchemy_enum_constraint_name(self):
+        """Return the name SQLAlchemy assigns a non-native enum CHECK."""
+        engine = _sqlite_engine_with_setting_class_check(
+            ("SEP_SETTINGS", "TASKS_SETTINGS")
+        )
+        try:
+            with engine.connect() as conn:
+                assert (
+                    check_constraint_name(conn, "settingoverride", "setting_class")
+                    == "settingclassenum"
+                )
+        finally:
+            engine.dispose()
+
+    def test_returns_none_for_missing_table(self):
+        """Return ``None`` for a missing table instead of raising."""
+        engine = create_engine("sqlite://")
+        try:
+            with engine.connect() as conn:
+                assert (
+                    check_constraint_name(conn, "settingoverride", "setting_class")
+                    is None
+                )
+        finally:
+            engine.dispose()
+
+    def test_returns_none_when_column_has_no_check(self):
+        """Return ``None`` when the table exists but the column is unconstrained."""
+        engine = create_engine("sqlite://")
+        metadata = MetaData()
+        Table(
+            "settingoverride",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("setting_class", Integer, nullable=False),
+        )
+        metadata.create_all(engine)
+        try:
+            with engine.connect() as conn:
+                assert (
+                    check_constraint_name(conn, "settingoverride", "setting_class")
+                    is None
+                )
+        finally:
+            engine.dispose()
+
+    def test_raises_when_multiple_checks_mention_column(self):
+        """Fail fast when more than one CHECK mentions the column."""
+        engine = create_engine("sqlite://")
+        metadata = MetaData()
+        Table(
+            "settingoverride",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("setting_class", String(64), nullable=False),
+            CheckConstraint(
+                "setting_class IN ('A', 'B')",
+                name="setting_class_enum_check",
+            ),
+            CheckConstraint(
+                "length(setting_class) > 0",
+                name="setting_class_nonempty_check",
+            ),
+        )
+        metadata.create_all(engine)
+        try:
+            with (
+                engine.connect() as conn,
+                pytest.raises(RuntimeError, match="at most one CHECK"),
+            ):
+                check_constraint_name(conn, "settingoverride", "setting_class")
+        finally:
+            engine.dispose()
+
+
 def test_advisory_lock_is_noop_off_postgres():
     """Issue no SQL and raise nothing when the bind is not PostgreSQL."""
     engine = create_engine("sqlite://")
@@ -223,19 +292,6 @@ def test_advisory_lock_is_noop_off_postgres():
             )
     finally:
         engine.dispose()
-
-
-@pytest.fixture
-def postgres_sync_url():
-    """Return a sync (``psycopg2``) URL to the real-PostgreSQL test database.
-
-    Skip when ``$SEP_TEST_POSTGRES_DSN`` is unset (local runs without
-    PostgreSQL); the dedicated ``test_postgres`` CI job supplies it.
-    """
-    dsn = os.environ.get(POSTGRES_DSN_ENV)
-    if not dsn:
-        pytest.skip(f"{POSTGRES_DSN_ENV} not set; skipping real-PostgreSQL tests")
-    return make_url(dsn).set(drivername="postgresql+psycopg2")
 
 
 @pytest.fixture
@@ -305,12 +361,17 @@ def test_shared_db_sep_then_tasks_upgrade_is_clean(shared_postgres_db):
         assert inspector.has_table("settingoverride")
         assert inspector.has_table("alembic_version_sep")
         assert inspector.has_table("alembic_version_tasks")
+        setting_class_type = next(
+            column["type"]
+            for column in inspector.get_columns("settingoverride")
+            if column["name"] == "setting_class"
+        )
+        assert setting_class_type.length == _SETTING_CLASS_VARCHAR_LENGTH
     finally:
         engine.dispose()
 
     haystack = _setting_class_check_haystack(sync_url)
-    for member in _ALL_SETTING_CLASS_MEMBERS:
-        assert f"'{member}'" in haystack
+    assert haystack == ""
 
 
 @pytest.mark.xdist_group("shared_postgres_db")
@@ -330,12 +391,17 @@ def test_shared_db_tasks_then_sep_upgrade_is_clean(shared_postgres_db):
         assert inspector.has_table("settingoverride")
         assert inspector.has_table("alembic_version_sep")
         assert inspector.has_table("alembic_version_tasks")
+        setting_class_type = next(
+            column["type"]
+            for column in inspector.get_columns("settingoverride")
+            if column["name"] == "setting_class"
+        )
+        assert setting_class_type.length == _SETTING_CLASS_VARCHAR_LENGTH
     finally:
         engine.dispose()
 
     haystack = _setting_class_check_haystack(sync_url)
-    for member in _ALL_SETTING_CLASS_MEMBERS:
-        assert f"'{member}'" in haystack
+    assert haystack == ""
 
 
 @pytest.mark.xdist_group("shared_postgres_db")

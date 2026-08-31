@@ -21,12 +21,11 @@ alert-delivery config that the Tasks worker and every app offering
 """
 
 from app.core.settings_override.api.routes import AppOwnedClassEntry
-from app.core.settings_override.models import SettingClassEnum
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 
 APP_OWNED_SETTINGS_CLASSES: list[AppOwnedClassEntry] = [
     AppOwnedClassEntry(
-        setting_class=SettingClassEnum.ALERTS_SETTINGS,
+        setting_class=AlertsSettings.__name__,
         settings_cls=AlertsSettings,
         proxy=alerts_settings,
         app_key="alerts",

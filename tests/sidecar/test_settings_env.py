@@ -545,9 +545,10 @@ def test_a_mounted_password_never_reaches_the_environment(tmp_path: Path):
 
 
 def test_a_mounted_password_supplies_only_the_name_it_is_named_for(tmp_path: Path):
-    """Leave the sibling services unsupplied, since only the raw input fans out.
+    """Leave sibling services unsupplied in the shell, since only ``SEP_DB_PASSWORD`` fans out.
 
-    This is why the documented mount recipe names all three password files.
+    The settings classes still read a global ``DATABASE__PASSWORD`` mount for every
+    service; this test pins what the shell exports, not what settings resolve.
     """
     secrets_dir = write_secrets(tmp_path, SEP__DATABASE__PASSWORD="from-file")
 
@@ -719,13 +720,15 @@ class TestBlankNamesWhoseGuardMightNeverFire:
     ``export_canonical`` only clears a blank when it actually runs, and four
     guards skip calling it whenever their raw input is absent. Two more names
     -- ``SEP_INTERNAL_TOKEN`` and ``BASE_URL`` -- have no guard at all and are
-    never touched by the script. All ten have to clear regardless.
+    never touched by the script. Every canonical name the script manages must
+    clear blanks unconditionally so a mounted secret file is never shadowed.
     """
 
     ALL_BLANK_CLEARED_NAMES: tuple[str, ...] = (
         "SEP__DATABASE__PASSWORD",
         "INVENTORY__DATABASE__PASSWORD",
         "TASKS__DATABASE__PASSWORD",
+        "DATABASE__PASSWORD",
         "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN",
         "PMM__API_KEY",
         "PMM__ENDPOINT",

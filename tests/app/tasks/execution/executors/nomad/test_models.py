@@ -21,9 +21,10 @@ import logging
 from base64 import b64encode
 from binascii import b2a_base64
 from collections import defaultdict
+from collections.abc import AsyncIterator, Callable, Iterator
 from datetime import datetime, UTC
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, call, MagicMock, patch
 
 import pytest
 from aiohttp import ClientError, ClientResponseError, ClientTimeout
@@ -53,6 +54,8 @@ from app.tasks.execution.executors.nomad.models import (
     _alloc_step_state,
     _alloc_task_states,
     _ANONYMIZED_STEPS,
+    _CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS,
+    _CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS,
     _capture_hold_step_state,
     _detect_capture_hold_ready,
     _detect_stale_skip,
@@ -68,6 +71,7 @@ from app.tasks.execution.executors.nomad.models import (
 )
 from app.tasks.execution.executors.nomad.steps import NomadStep
 from app.tasks.execution.utils import gzip_compress, minify_file_content
+from app.tasks.logs.line_split import WithheldLineBuffer
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     ExecutionEvent,
@@ -88,6 +92,20 @@ INITIAL_LOG_OFFSET = 50
 # One started step times (stdout + stderr) when another step has StartedAt None.
 EXPECTED_GET_LOGS_STREAM_CALLS_ONE_READY_STEP = 2
 EXPECTED_HOLD_READS_UNTIL_RUNNING = 3
+EXPECTED_HOLD_READS_MID_POLL_FAILURE = 2
+# A stop reads the allocation itself before the release re-reads it.
+EXPECTED_STOP_ALLOC_READS_UNTIL_RUNNING = 3
+EXPECTED_STOP_ALLOC_READS_ON_DEAD_HOLD = 2
+# The release budget has to hold across every supported drain tuning, since
+# borrowing the drain's is what used to forfeit it.
+DRAIN_SETTINGS_VARIANTS = [
+    pytest.param({}, id="default-drain"),
+    pytest.param({"terminal_log_drain_max_attempts": 0}, id="drain-disabled"),
+    pytest.param(
+        {"terminal_log_drain_max_attempts": 99, "terminal_log_drain_interval": 99},
+        id="drain-inflated",
+    ),
+]
 MOCK_LOG_STREAM_BODY_START_MONOTONIC = 1000.0
 STALENESS_THRESHOLD_OVERRIDE = 300
 MULTI_CHUNK_LOG_FIRST_OFFSET = 17
@@ -115,6 +133,9 @@ MULTIBYTE_WITHHELD_BYTES = 6  # raw byte length of the withheld "€uro"
 NEWLINELESS_TAIL_FRAME_EOF_OFFSET = 21  # raw EOF of "card=4111111111111111"
 # Ceiling low enough that the 21-byte newline-less card line forces a flush.
 FORCED_FLUSH_CEILING_BYTES = 10
+CARD_LINE_WITH_TAIL_EOF_OFFSET = 26  # raw EOF of the card line plus a trailing "tail"
+CARD_LINE_TAIL_WITHHELD_BYTES = 4  # raw byte length of the withheld "tail"
+RECONNECT_RESUME_FRAME_EOF_OFFSET = 19  # raw EOF of the frame after a reconnect
 NOMAD_MODELS_LOGGER = "app.tasks.execution.executors.nomad.models"
 
 
@@ -1295,6 +1316,61 @@ class TestStopTask:
         refetched = await TaskHistoryManager.get_or_404(session, id=result_id)
         assert refetched.status == TaskHistoryStatusEnum.STOPPED
         assert refetched.finished_at is not None
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    @patch("app.tasks.execution.models.schedule_annotation")
+    async def test_stop_task_keeps_a_payload_failure(
+        self,
+        mock_annotation: MagicMock,
+        mock_nomad_cls: MagicMock,
+        session: AsyncSession,
+        created_task_with_history: TaskHistory,
+    ):
+        """Assert a stop landing on an already-failed run records the failure.
+
+        A stop request can reach a row whose payload has already exited
+        non-zero, because the row stays RUNNING until the next sync.
+        """
+        exited_at_ns = 1_700_000_000_000_000_000
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "ClientStatus": NomadAllocStatusEnum.FAILED,
+            "ModifyTime": exited_at_ns,
+            "TaskStates": {NomadStep.RUN_SCRIPT: {"State": "dead", "Events": []}},
+        }
+        mock_backend.job.get_job.return_value = {
+            "ID": "job-1",
+            "Status": "dead",
+            "Stop": True,
+        }
+
+        queue_item = created_task_with_history
+        queue_item.task.alert_on_fail = False
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        queue_item.execution_request.tracking = {
+            "allocation_id": "alloc-1",
+            "evaluation_id": "eval-1",
+            "job_id": "job-1",
+        }
+
+        result = await _build_executor().stop_task(session, queue_item)
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
+        exited_at = datetime.fromtimestamp(exited_at_ns / 10**9, UTC)
+        # SQLite returns the value tz-naive, so compare without tzinfo.
+        assert result.finished_at.replace(tzinfo=None) == exited_at.replace(tzinfo=None)
+        mock_backend.job.deregister_job.assert_called_once_with("job-1")
+        mock_annotation.assert_called_once_with(result, "FAILED")
+
+        result_id = result.id
+        await session.rollback()
+        refetched = await TaskHistoryManager.get_or_404(session, id=result_id)
+        assert refetched.status == TaskHistoryStatusEnum.FAILED
 
 
 class TestSyncTaskHistory:
@@ -2738,25 +2814,33 @@ class TestNomadLogStreaming:
     """Regression tests for Nomad HTTP log streaming helpers."""
 
     @staticmethod
-    def _alloc_for_logs():
+    def _alloc_for_logs(step: str = "step1") -> dict[str, Any]:
+        """Build a running allocation whose only task state is ``step``.
+
+        :param step: The Nomad task name to mark running.
+        :return: The allocation payload the log-stream helpers read.
+        """
         return {
             "ID": "alloc-stream",
             "JobID": "job-1",
             "EvalID": "eval-1",
             "TaskStates": {
-                "step1": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"},
+                step: {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"},
             },
         }
 
     @staticmethod
-    def _alloc_for_logs_step2():
+    def _log_stream_params(step: str) -> dict[str, Any]:
+        """Build the follow-mode log-stream query params for ``step``.
+
+        :param step: The Nomad task name to stream.
+        :return: The query params the executor mutates as the cursor advances.
+        """
         return {
-            "ID": "alloc-stream",
-            "JobID": "job-1",
-            "EvalID": "eval-1",
-            "TaskStates": {
-                "step2": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"},
-            },
+            "task": step,
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
         }
 
     @staticmethod
@@ -2805,12 +2889,7 @@ class TestNomadLogStreaming:
                 "step1": {"StartedAt": None, "State": "pending"},
             },
         }
-        params = {
-            "task": "step1",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        params = self._log_stream_params("step1")
         queue = asyncio.Queue()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
@@ -2822,7 +2901,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         assert state == "running"
@@ -2909,12 +2988,7 @@ class TestNomadLogStreaming:
 
         executor = _build_executor()
         alloc = self._alloc_for_logs()
-        params = {
-            "task": "step1",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        params = self._log_stream_params("step1")
         queue = asyncio.Queue()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
@@ -2926,7 +3000,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         assert state == _NOMAD_LOG_STREAM_CLIENT_ERROR
@@ -2941,23 +3015,11 @@ class TestNomadLogStreaming:
             raise TimeoutError
             yield (b"", None)  # pragma: no cover
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = iter_chunks
-
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(iter_chunks)
 
         executor = _build_executor()
         alloc = self._alloc_for_logs()
-        params = {
-            "task": "step1",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        params = self._log_stream_params("step1")
         queue = asyncio.Queue()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
@@ -2969,7 +3031,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         assert state == _NOMAD_LOG_STREAM_SOCK_TIMEOUT
@@ -2984,23 +3046,11 @@ class TestNomadLogStreaming:
             self._nomad_log_frame(msg="line-two", offset=MULTI_CHUNK_LOG_SECOND_OFFSET),
         ]
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor()
-        alloc = self._alloc_for_logs_step2()
-        params = {
-            "task": "step2",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        alloc = self._alloc_for_logs("step2")
+        params = self._log_stream_params("step2")
         queue = asyncio.Queue()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
@@ -3012,7 +3062,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3045,29 +3095,11 @@ class TestNomadLogStreaming:
             ),
             self._nomad_log_frame(msg="11111111\n", offset=SPLIT_TOKEN_LINE_EOF_OFFSET),
         ]
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor()
-        alloc = {
-            "ID": "alloc-stream",
-            "JobID": "job-1",
-            "EvalID": "eval-1",
-            "TaskStates": {
-                "run-script": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"}
-            },
-        }
-        params = {
-            "task": "run-script",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        alloc = self._alloc_for_logs("run-script")
+        params = self._log_stream_params("run-script")
         queue = asyncio.Queue()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
@@ -3079,7 +3111,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities={PIIEntity.CREDIT_CARD},
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3099,31 +3131,13 @@ class TestNomadLogStreaming:
                 msg="ok\ncard=41", offset=WITHHELD_PARTIAL_FRAME_EOF_OFFSET
             )
         ]
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor()
-        alloc = {
-            "ID": "alloc-stream",
-            "JobID": "job-1",
-            "EvalID": "eval-1",
-            "TaskStates": {
-                "run-script": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"}
-            },
-        }
-        params = {
-            "task": "run-script",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        alloc = self._alloc_for_logs("run-script")
+        params = self._log_stream_params("run-script")
         queue = asyncio.Queue()
-        pending = bytearray()
+        pending = WithheldLineBuffer()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
             await executor._consume_nomad_log_stream(
@@ -3141,7 +3155,7 @@ class TestNomadLogStreaming:
         assert [log.msg for log in logs] == ["ok\n"]
         # raw EOF (12) minus the 7 withheld bytes of "card=41"
         assert logs[0].offset == WITHHELD_PARTIAL_RESUME_OFFSET
-        assert bytes(pending) == b"card=41"  # carried for the next frame
+        assert pending.drain() == b"card=41"
         assert (
             params["offset"] == WITHHELD_PARTIAL_FRAME_EOF_OFFSET
         )  # raw resume cursor
@@ -3164,33 +3178,15 @@ class TestNomadLogStreaming:
                 offset=NEWLINELESS_TAIL_FRAME_EOF_OFFSET,
             )
         ]
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor(
             log_anonymization_max_withheld_bytes=FORCED_FLUSH_CEILING_BYTES
         )
-        alloc = {
-            "ID": "alloc-stream",
-            "JobID": "job-1",
-            "EvalID": "eval-1",
-            "TaskStates": {
-                "run-script": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"}
-            },
-        }
-        params = {
-            "task": "run-script",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        alloc = self._alloc_for_logs("run-script")
+        params = self._log_stream_params("run-script")
         queue = asyncio.Queue()
-        pending = bytearray()
+        pending = WithheldLineBuffer()
 
         with (
             patch.object(executor, "_request", return_value=mock_ctx),
@@ -3211,7 +3207,7 @@ class TestNomadLogStreaming:
         assert [log.msg for log in logs] == ["card=[REDACTED]"]
         assert "4111" not in logs[0].msg
         assert logs[0].offset == NEWLINELESS_TAIL_FRAME_EOF_OFFSET
-        assert bytes(pending) == b""
+        assert not pending
         assert any(
             "Forced anonymization flush" in record.message
             and "alloc-stream" in record.message
@@ -3235,13 +3231,7 @@ class TestNomadLogStreaming:
             )
             raise TimeoutError
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = iter_chunks
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(iter_chunks)
 
         executor = _build_executor()
         queue = asyncio.Queue()
@@ -3272,23 +3262,11 @@ class TestNomadLogStreaming:
         assert b"}" not in full[:split_at]
         chunks = [full[:split_at], full[split_at:]]
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor()
-        alloc = self._alloc_for_logs_step2()
-        params = {
-            "task": "step2",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        alloc = self._alloc_for_logs("step2")
+        params = self._log_stream_params("step2")
         queue = asyncio.Queue()
 
         with patch.object(executor, "_request", return_value=mock_ctx):
@@ -3300,7 +3278,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3323,23 +3301,11 @@ class TestNomadLogStreaming:
             self._nomad_log_frame(msg=None, offset=EMPTY_DATA_FRAME_OFFSET_ONLY),
         ]
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor()
-        alloc = self._alloc_for_logs_step2()
-        params = {
-            "task": "step2",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        alloc = self._alloc_for_logs("step2")
+        params = self._log_stream_params("step2")
         queue = asyncio.Queue()
 
         with (
@@ -3356,7 +3322,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3378,19 +3344,12 @@ class TestNomadLogStreaming:
             self._nomad_log_frame(msg=None, offset=offset) for offset in empty_offsets
         ]
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor(
             log_socket_read_timeout=RECHECK_LOG_SOCKET_READ_TIMEOUT
         )
-        alloc = self._alloc_for_logs_step2()
+        alloc = self._alloc_for_logs("step2")
         refreshed_alloc = {
             **alloc,
             "TaskStates": {
@@ -3400,12 +3359,7 @@ class TestNomadLogStreaming:
                 },
             },
         }
-        params = {
-            "task": "step2",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        params = self._log_stream_params("step2")
         queue = asyncio.Queue()
 
         with (
@@ -3424,7 +3378,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         logs = await self._drain_task_logs(queue)
@@ -3453,12 +3407,7 @@ class TestNomadLogStreaming:
         mock_ctx = AsyncMock()
         mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
         mock_ctx.__aexit__ = AsyncMock(return_value=False)
-        params = {
-            "task": "step1",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        params = TestNomadLogStreaming._log_stream_params("step1")
 
         with patch.object(executor, "_request", return_value=mock_ctx):
             return await executor._consume_nomad_log_stream(
@@ -3469,7 +3418,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
     @pytest.mark.asyncio
@@ -3533,26 +3482,14 @@ class TestNomadLogStreaming:
             self._nomad_log_frame(msg=None, offset=offset) for offset in empty_offsets
         ]
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
-
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx = self._stream_response(self._make_iter_chunks(chunks))
 
         executor = _build_executor(
             log_socket_read_timeout=RECHECK_LOG_SOCKET_READ_TIMEOUT
         )
-        alloc = self._alloc_for_logs_step2()
+        alloc = self._alloc_for_logs("step2")
         refreshed_alloc = {"ID": "alloc-rescheduled", "JobID": "job-1", "EvalID": "e-2"}
-        params = {
-            "task": "step2",
-            "type": TaskLogType.STDOUT,
-            "follow": "true",
-            "offset": 0,
-        }
+        params = self._log_stream_params("step2")
 
         with (
             patch.object(executor, "_request", return_value=mock_ctx),
@@ -3568,7 +3505,7 @@ class TestNomadLogStreaming:
                 params=params,
                 client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
                 anonymize_entities=None,
-                pending=bytearray(),
+                pending=WithheldLineBuffer(),
             )
 
         assert state != "running"
@@ -3654,6 +3591,207 @@ class TestNomadLogStreaming:
             emitted = [log async for log in executor.stream_logs(queue_item)]
 
         assert emitted == [None]
+
+    @staticmethod
+    def _frames_with_running_offsets(payloads: list[str]) -> list[bytes]:
+        """Build framed payloads carrying the raw EOF offset each one reaches.
+
+        :param payloads: The frame payloads, in arrival order.
+        :return: The encoded Nomad log frames.
+        """
+        frames = []
+        offset = 0
+        for payload in payloads:
+            offset += len(payload.encode())
+            frames.append(
+                TestNomadLogStreaming._nomad_log_frame(msg=payload, offset=offset)
+            )
+        return frames
+
+    @staticmethod
+    def _stream_response(
+        iter_chunks: Callable[[], AsyncIterator[tuple[bytes, bool | None]]],
+    ) -> AsyncMock:
+        """Build a 200 log-stream response whose body iterates ``iter_chunks``.
+
+        :param iter_chunks: The zero-argument async generator function the
+            response's ``content.iter_chunks`` becomes.
+        :return: An async context manager standing in for ``_request``.
+        """
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = iter_chunks
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        return mock_ctx
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    async def test_consume_stream_completion_frame_releases_the_whole_run(
+        self, mock_anonymize
+    ):
+        """Assert a terminator-free run is emitted whole by the frame that ends it.
+
+        Each frame searches only its own bytes, so the frame carrying the
+        terminator must still release everything the earlier frames withheld.
+        """
+        mock_anonymize.side_effect = _redact_card_token
+        chunks = self._frames_with_running_offsets(
+            ["card=41", "111111", "111111", "11\ntail"]
+        )
+        executor = _build_executor()
+        params = self._log_stream_params("run-script")
+        queue = asyncio.Queue()
+        pending = WithheldLineBuffer()
+
+        with patch.object(
+            executor,
+            "_request",
+            return_value=self._stream_response(self._make_iter_chunks(chunks)),
+        ):
+            await executor._consume_nomad_log_stream(
+                alloc=self._alloc_for_logs("run-script"),
+                step="run-script",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities={PIIEntity.CREDIT_CARD},
+                pending=pending,
+            )
+
+        logs = await self._drain_task_logs(queue)
+        assert [log.msg for log in logs] == ["card=[REDACTED]\n"]
+        assert (
+            logs[0].offset
+            == CARD_LINE_WITH_TAIL_EOF_OFFSET - CARD_LINE_TAIL_WITHHELD_BYTES
+        )
+        assert pending.drain() == b"tail"
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    async def test_consume_stream_withheld_remainder_survives_a_reconnect(
+        self, mock_anonymize
+    ):
+        """Assert a remainder withheld by one request is completed by the next.
+
+        The buffer outlives a single HTTP request, so a reconnect resumes
+        mid-line and the frame carrying the terminator must release exactly the
+        carried remainder plus the new bytes.
+        """
+        mock_anonymize.side_effect = _redact_card_token
+        first_stream = self._frames_with_running_offsets(["card=41", "111111"])
+        params = self._log_stream_params("run-script")
+        executor = _build_executor()
+        queue = asyncio.Queue()
+        pending = WithheldLineBuffer()
+        responses = [
+            self._stream_response(self._make_iter_chunks(first_stream)),
+            self._stream_response(
+                self._make_iter_chunks(
+                    [
+                        self._nomad_log_frame(
+                            msg="111111", offset=RECONNECT_RESUME_FRAME_EOF_OFFSET
+                        ),
+                        self._nomad_log_frame(
+                            msg="11\n", offset=SPLIT_TOKEN_LINE_EOF_OFFSET
+                        ),
+                    ]
+                )
+            ),
+        ]
+
+        with patch.object(executor, "_request", side_effect=responses):
+            for _ in responses:
+                await executor._consume_nomad_log_stream(
+                    alloc=self._alloc_for_logs("run-script"),
+                    step="run-script",
+                    log_type=TaskLogType.STDOUT,
+                    queue=queue,
+                    params=params,
+                    client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                    anonymize_entities={PIIEntity.CREDIT_CARD},
+                    pending=pending,
+                )
+
+        logs = await self._drain_task_logs(queue)
+        assert [log.msg for log in logs] == ["card=[REDACTED]\n"]
+        assert logs[0].offset == SPLIT_TOKEN_LINE_EOF_OFFSET
+        assert not pending
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    async def test_consume_stream_leaves_no_terminator_withheld(self, mock_anonymize):
+        """Assert every frame releases the lines it completed and withholds no more.
+
+        A terminator left in the buffer would silently stall a line that was
+        already complete until the ceiling flushed it.
+        """
+        mock_anonymize.side_effect = _redact_card_token
+        chunks = self._frames_with_running_offsets(["a\nb", "c\nd", "e"])
+        executor = _build_executor()
+        params = self._log_stream_params("run-script")
+        queue = asyncio.Queue()
+        pending = WithheldLineBuffer()
+
+        with patch.object(
+            executor,
+            "_request",
+            return_value=self._stream_response(self._make_iter_chunks(chunks)),
+        ):
+            await executor._consume_nomad_log_stream(
+                alloc=self._alloc_for_logs("run-script"),
+                step="run-script",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities={PIIEntity.CREDIT_CARD},
+                pending=pending,
+            )
+
+        logs = await self._drain_task_logs(queue)
+        assert [(log.msg, log.offset) for log in logs] == [("a\n", 2), ("bc\n", 5)]
+        withheld = pending.drain()
+        assert withheld == b"de"
+        assert b"\n" not in withheld
+        assert b"\r" not in withheld
+
+    @pytest.mark.asyncio
+    async def test_consume_stream_unanonymized_step_withholds_nothing(self):
+        """Assert a step outside the anonymized set emits each frame untouched.
+
+        Requested entities do not make a step eligible, so a partial line must
+        reach the queue whole, with the raw offset and nothing withheld.
+        """
+        payload = "partial-no-terminator"
+        chunks = self._frames_with_running_offsets([payload])
+        executor = _build_executor()
+        params = self._log_stream_params(NomadStep.PREPARE_ENV)
+        queue = asyncio.Queue()
+        pending = WithheldLineBuffer()
+
+        with patch.object(
+            executor,
+            "_request",
+            return_value=self._stream_response(self._make_iter_chunks(chunks)),
+        ):
+            await executor._consume_nomad_log_stream(
+                alloc=self._alloc_for_logs(NomadStep.PREPARE_ENV),
+                step=NomadStep.PREPARE_ENV,
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities={PIIEntity.CREDIT_CARD},
+                pending=pending,
+            )
+
+        logs = await self._drain_task_logs(queue)
+        assert [(log.msg, log.offset) for log in logs] == [(payload, len(payload))]
+        assert not pending
 
 
 class TestListFiles:
@@ -5514,8 +5652,17 @@ class TestNomadCaptureHoldDetection:
 class TestNomadCaptureHoldRelease:
     """Cover the hold-release signal and its guards."""
 
+    @pytest.fixture(autouse=True)
+    def mock_sleep(self) -> Iterator[AsyncMock]:
+        """Patch the inter-attempt wait so polling costs no wall-clock time."""
+        with patch(
+            "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as mock:
+            yield mock
+
     @staticmethod
-    def _alloc(hold_state: str | None) -> dict:
+    def _alloc(hold_state: str | None) -> dict[str, Any]:
         """Return an allocation whose hold step carries ``hold_state``."""
         task_states = {"run-script": {"State": "dead"}}
         if hold_state is not None:
@@ -5523,7 +5670,7 @@ class TestNomadCaptureHoldRelease:
         return {"ID": "alloc-1", "TaskStates": task_states}
 
     @classmethod
-    def _backend_serving(cls, mock_nomad_cls, alloc: dict) -> MagicMock:
+    def _backend_serving(cls, mock_nomad_cls, alloc: dict[str, Any]) -> MagicMock:
         """Wire a backend whose allocation re-read returns ``alloc``."""
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
@@ -5545,23 +5692,33 @@ class TestNomadCaptureHoldRelease:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("drain_settings", DRAIN_SETTINGS_VARIANTS)
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    async def test_does_not_signal_a_hold_that_has_not_started(
-        self, mock_nomad_cls
+    async def test_does_not_signal_a_hold_that_stays_pending(
+        self, mock_nomad_cls, mock_sleep, drain_settings: dict[str, float]
     ) -> None:
-        """Assert a ``pending`` hold is left to expire rather than signalled.
+        """Assert a hold pending for the whole budget is left to expire.
 
-        Between the last producer dying and the hold starting there is a window
-        where the step exists but is not running, and a signal delivered there
-        can be dropped — which would strand the allocation for the full deadline
-        while SEP believed it had released it.
+        A signal delivered to a pending step is dropped, so spending the budget
+        without seeing it start has to stay a non-event: no signal, no raised
+        exception, and the hold's own deadline left as the residency bound. The
+        budget bounds an internal Nomad scheduling window, so no drain setting
+        may stretch or shrink it — a derived budget is what let a zeroed drain
+        forfeit the release in the first place.
         """
         alloc = self._alloc("pending")
         mock_backend = self._backend_serving(mock_nomad_cls, alloc)
-        executor = _build_executor()
+        executor = _build_executor(**drain_settings)
 
         await executor._release_capture_hold(alloc)
 
+        assert (
+            mock_backend.allocation.get_allocation.call_count
+            == _CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS
+        )
+        assert mock_sleep.await_args_list == [
+            call(_CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS)
+        ] * (_CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS - 1)
         mock_backend.client.allocation.signal_allocation.assert_not_called()
 
     @pytest.mark.asyncio
@@ -5591,20 +5748,18 @@ class TestNomadCaptureHoldRelease:
         mock_backend.client.allocation.signal_allocation.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch(
-        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
-        new_callable=AsyncMock,
-    )
+    @pytest.mark.parametrize("drain_settings", DRAIN_SETTINGS_VARIANTS)
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    async def test_awaiting_hold_start_polls_until_the_step_runs(
-        self, mock_nomad_cls, mock_sleep
+    async def test_polls_until_the_hold_starts(
+        self, mock_nomad_cls, mock_sleep, drain_settings: dict[str, float]
     ) -> None:
-        """Assert the stop path waits for a poststop hold that has not started.
+        """Assert a hold that has not started yet is waited out, then signalled.
 
-        A stop deregisters and releases straight away, before Nomad has finished
-        killing the payload, so the hold is normally still ``pending`` on the
-        first read. Reading once there would forfeit the release on the very
-        path the release was added for.
+        The hold is a poststop step, so it only starts once Nomad has finished
+        killing the payload. Reading once inside that window would forfeit the
+        release the method exists to issue. Zeroing the drain is a supported way
+        to keep terminal syncs off the beat's critical path, so it must not cost
+        the release that chance either.
         """
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
@@ -5613,27 +5768,22 @@ class TestNomadCaptureHoldRelease:
             self._alloc("pending"),
             self._alloc("running"),
         ]
-        executor = _build_executor()
+        executor = _build_executor(**drain_settings)
 
-        await executor._release_capture_hold(
-            self._alloc("pending"), await_hold_start=True
-        )
+        await executor._release_capture_hold(self._alloc("pending"))
 
         assert (
             mock_backend.allocation.get_allocation.call_count
             == EXPECTED_HOLD_READS_UNTIL_RUNNING
         )
+        assert mock_sleep.await_count == EXPECTED_HOLD_READS_UNTIL_RUNNING - 1
         mock_backend.client.allocation.signal_allocation.assert_called_once_with(
             "alloc-1", "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
         )
 
     @pytest.mark.asyncio
-    @patch(
-        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
-        new_callable=AsyncMock,
-    )
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    async def test_awaiting_hold_start_stops_early_on_a_dead_hold(
+    async def test_stops_polling_early_on_a_dead_hold(
         self, mock_nomad_cls, mock_sleep
     ) -> None:
         """Assert polling gives up as soon as the hold is past signalling.
@@ -5647,9 +5797,10 @@ class TestNomadCaptureHoldRelease:
         mock_backend.allocation.get_allocation.return_value = self._alloc("dead")
         executor = _build_executor()
 
-        await executor._release_capture_hold(self._alloc("dead"), await_hold_start=True)
+        await executor._release_capture_hold(self._alloc("dead"))
 
         assert mock_backend.allocation.get_allocation.call_count == 1
+        mock_sleep.assert_not_awaited()
         mock_backend.client.allocation.signal_allocation.assert_not_called()
 
     @pytest.mark.asyncio
@@ -5659,10 +5810,10 @@ class TestNomadCaptureHoldRelease:
     ) -> None:
         """Assert a hold that started after the sync began is still released.
 
-        The snapshot the caller holds predates the terminal drain, which sleeps
-        between attempts, so a hold that was ``pending`` then is typically
-        running by now. Reading the stale copy would forfeit the early release
-        on the common path and pin the allocation for its full deadline.
+        The snapshot the caller holds predates the capture work, so a hold that
+        was ``pending`` then is typically running by now. Reading the stale copy
+        would forfeit the early release on the common path and pin the
+        allocation for its full deadline.
         """
         stale = self._alloc("pending")
         mock_backend = self._backend_serving(mock_nomad_cls, self._alloc("running"))
@@ -5732,6 +5883,103 @@ class TestNomadCaptureHoldRelease:
         executor = _build_executor()
 
         await executor._release_capture_hold(alloc)
+
+        mock_backend.client.allocation.signal_allocation.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_a_running_hold_is_signalled_without_waiting(
+        self, mock_nomad_cls, mock_sleep
+    ) -> None:
+        """Assert polling adds no latency to a hold that has already started.
+
+        This is the common case on every path, so the budget may only be spent
+        inside the window that would otherwise forfeit the release.
+        """
+        alloc = self._alloc("running")
+        mock_backend = self._backend_serving(mock_nomad_cls, alloc)
+        executor = _build_executor()
+
+        await executor._release_capture_hold(alloc)
+
+        assert mock_backend.allocation.get_allocation.call_count == 1
+        mock_sleep.assert_not_awaited()
+        mock_backend.client.allocation.signal_allocation.assert_called_once_with(
+            "alloc-1", "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("hold_step", [{"State": None}, {}])
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_an_unreadable_hold_state_costs_a_single_read(
+        self, mock_nomad_cls, mock_sleep, hold_step: dict[str, Any]
+    ) -> None:
+        """Assert a hold whose state cannot be read is never polled for.
+
+        A missing or malformed ``State`` is indistinguishable from an absent
+        step as far as signalling goes, and waiting cannot make either
+        signallable.
+        """
+        alloc = {
+            "ID": "alloc-1",
+            "TaskStates": {
+                "run-script": {"State": "dead"},
+                NomadStep.LOG_CAPTURE_HOLD: hold_step,
+            },
+        }
+        mock_backend = self._backend_serving(mock_nomad_cls, alloc)
+        executor = _build_executor()
+
+        await executor._release_capture_hold(alloc)
+
+        assert mock_backend.allocation.get_allocation.call_count == 1
+        mock_sleep.assert_not_awaited()
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_a_re_read_failure_mid_poll_does_not_escape(
+        self, mock_nomad_cls, mock_sleep
+    ) -> None:
+        """Assert Nomad going away part-way through the poll degrades quietly.
+
+        The polled reads run at the tail of an otherwise-successful sync, so a
+        late failure must not lose the terminal status the caller just stamped.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.side_effect = [
+            self._alloc("pending"),
+            BaseNomadException(MagicMock(text="gone")),
+        ]
+        executor = _build_executor()
+
+        await executor._release_capture_hold(self._alloc("pending"))
+
+        assert (
+            mock_backend.allocation.get_allocation.call_count
+            == EXPECTED_HOLD_READS_MID_POLL_FAILURE
+        )
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_a_polled_release_failure_does_not_escape(
+        self, mock_nomad_cls, mock_sleep
+    ) -> None:
+        """Assert the swallow also covers a signal issued after waiting."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.side_effect = [
+            self._alloc("pending"),
+            self._alloc("running"),
+        ]
+        mock_backend.client.allocation.signal_allocation.side_effect = (
+            BaseNomadException(MagicMock(text="denied"))
+        )
+        executor = _build_executor()
+
+        await executor._release_capture_hold(self._alloc("pending"))
 
         mock_backend.client.allocation.signal_allocation.assert_called_once()
 
@@ -5980,8 +6228,97 @@ class TestNomadCaptureOutcomes:
         mock_backend.client.allocation.signal_allocation.assert_called_once_with(
             self.HOLD_ALLOC_ID, "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
         )
+        mock_sleep.assert_not_awaited()
         verdicts = await self._verdicts(session, history.id)
         assert ("clean-up", TaskLogType.STDOUT) in verdicts
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_release_polls_a_pending_hold_with_the_drain_disabled(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ) -> None:
+        """Assert the sync path waits out the hold's start window on its own.
+
+        With the drain disabled the sync has no sleeps of its own, so it can
+        reach the release inside the window where the poststop hold exists but
+        has not started. The verdicts are already written by then and stay as
+        they were.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.return_value = ""
+        alloc = self._alloc({"run-script": "dead"}, hold_state="pending")
+        mock_backend.allocation.get_allocation.side_effect = [
+            alloc,
+            self._alloc({"run-script": "dead"}),
+        ]
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(terminal_log_drain_max_attempts=0)
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=alloc,
+            previous_allocation_id=self.HOLD_ALLOC_ID,
+            capture_hold_ready=True,
+        )
+
+        mock_backend.client.allocation.signal_allocation.assert_called_once_with(
+            self.HOLD_ALLOC_ID, "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
+        )
+        verdicts = await self._verdicts(session, history.id)
+        assert verdicts[("run-script", TaskLogType.STDOUT)] == (
+            LogCaptureStatusEnum.COMPLETE
+        )
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_release_does_not_poll_a_hold_past_signalling(
+        self, mock_nomad_cls, mock_sleep, session, created_task_with_history
+    ) -> None:
+        """Assert a hold that died before the release is due costs a single read.
+
+        Readiness is detected on a snapshot taken before the capture work, so
+        the hold can reach its own deadline in the meantime. Polling one that
+        can never be signalled again would only stretch the beat cycle.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.client.stream_logs.stream.return_value = ""
+        alloc = self._alloc({"run-script": "dead"})
+        mock_backend.allocation.get_allocation.return_value = self._alloc(
+            {"run-script": "dead"}, hold_state="dead"
+        )
+        history = created_task_with_history
+        history.anonymize_mask = 0
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        executor = _build_executor(terminal_log_drain_max_attempts=0)
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=alloc,
+            previous_allocation_id=self.HOLD_ALLOC_ID,
+            capture_hold_ready=True,
+        )
+
+        assert mock_backend.allocation.get_allocation.call_count == 1
+        mock_sleep.assert_not_awaited()
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
+        verdicts = await self._verdicts(session, history.id)
+        assert verdicts[("run-script", TaskLogType.STDOUT)] == (
+            LogCaptureStatusEnum.COMPLETE
+        )
 
     @pytest.mark.asyncio
     @patch(
@@ -6422,8 +6759,14 @@ class TestNomadStopReleasesCaptureHold:
         }
 
     @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    async def test_stop_releases_a_hold_that_is_still_holding(self, mock_nomad_cls):
+    async def test_stop_releases_a_hold_that_is_still_holding(
+        self, mock_nomad_cls, mock_sleep
+    ):
         """Assert stopping a task signals a hold that is holding the allocation.
 
         Deregistering the job does not end the hold: the job goes ``dead`` while
@@ -6448,6 +6791,88 @@ class TestNomadStopReleasesCaptureHold:
         mock_backend.client.allocation.signal_allocation.assert_called_once_with(
             "alloc-1", "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
         )
+        mock_sleep.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_stop_polls_a_pending_hold_with_the_drain_disabled(
+        self, mock_nomad_cls, mock_sleep
+    ) -> None:
+        """Assert the stop path keeps its polling when the log drain is off.
+
+        A stop signals immediately after deregistering, before Nomad has killed
+        the payload, so the poststop hold is normally still ``pending`` here —
+        the path most exposed to losing the release. The hold has to stay
+        pending on the release's own first re-read, not just on the read the
+        stop already made, or the poll is never exercised.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.side_effect = [
+            self._alloc("pending"),
+            self._alloc("pending"),
+            self._alloc("running"),
+        ]
+        executor = _build_executor(terminal_log_drain_max_attempts=0)
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        await executor._stop_task(queue_item)
+
+        mock_backend.job.deregister_job.assert_called_once_with("job-1")
+        assert (
+            mock_backend.allocation.get_allocation.call_count
+            == EXPECTED_STOP_ALLOC_READS_UNTIL_RUNNING
+        )
+        mock_sleep.assert_awaited_once_with(_CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS)
+        mock_backend.client.allocation.signal_allocation.assert_called_once_with(
+            "alloc-1", "SIGTERM", task=NomadStep.LOG_CAPTURE_HOLD
+        )
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.tasks.execution.executors.nomad.models.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_stop_does_not_poll_a_hold_past_signalling(
+        self, mock_nomad_cls, mock_sleep
+    ) -> None:
+        """Assert a stop is not slowed down by a hold that already expired.
+
+        A stop is interactive, so spending the budget on a hold that can never
+        be signalled again would delay the operator for nothing.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.return_value = self._alloc("dead")
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            }
+        )
+
+        await executor._stop_task(queue_item)
+
+        mock_backend.job.deregister_job.assert_called_once_with("job-1")
+        assert (
+            mock_backend.allocation.get_allocation.call_count
+            == EXPECTED_STOP_ALLOC_READS_ON_DEAD_HOLD
+        )
+        mock_sleep.assert_not_awaited()
+        mock_backend.client.allocation.signal_allocation.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")

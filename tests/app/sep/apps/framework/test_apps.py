@@ -1278,6 +1278,26 @@ class TestDefinitionValidation:
         )
         assert app_def.api_router is not None
 
+    def test_response_builder_return_type_mismatch_raises(self) -> None:
+        """Reject a ``response_builder`` whose return type differs from ``response_model``."""
+        with pytest.raises(ValueError, match="_AltListResponse.*SynthResponse"):
+            _synth_app(response_builder=_alt_list_builder)
+
+    def test_response_builder_matching_return_type_constructs(self) -> None:
+        """Construct cleanly when ``response_builder`` return type matches ``response_model``."""
+        app_def = _synth_app(
+            response_builder=_alt_list_builder, response_model=_AltListResponse
+        )
+        assert app_def.api_router is not None
+
+    def test_response_builder_without_return_annotation_raises_type_error(self) -> None:
+        """Assert an unannotated ``response_builder`` still raises ``TypeError``."""
+        with pytest.raises(TypeError, match="return type annotation"):
+            _synth_app(
+                response_builder=_unannotated_list_builder,
+                response_model=_AltListResponse,
+            )
+
     def test_create_model_with_malformed_arg_format_raises(self) -> None:
         """Reject a ``create_model`` whose ``ArgFormat`` template has an unsupported placeholder."""
         with pytest.raises(ValueError, match="unsupported placeholder"):
@@ -1401,6 +1421,16 @@ def _alt_list_builder(
     context: dict | None = None,
 ) -> _AltListResponse:
     """Build the alternate list/detail response, accepting a bound context."""
+    return _AltListResponse(name=task.name)
+
+
+def _unannotated_list_builder(
+    task: Task,
+    *,
+    status: object = None,
+    context: dict | None = None,
+):
+    """Stand in as a response builder with no return annotation."""
     return _AltListResponse(name=task.name)
 
 
@@ -1679,7 +1709,9 @@ class TestResponseAndFilterKnobs:
 
     def test_response_builder_override_drives_list_model(self) -> None:
         """Assert a ``response_builder`` override supplies the list response model."""
-        app_def = _synth_app(response_builder=_alt_list_builder)
+        app_def = _synth_app(
+            response_builder=_alt_list_builder, response_model=_AltListResponse
+        )
         list_route = next(
             route
             for route in app_def.api_router.routes

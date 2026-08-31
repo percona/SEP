@@ -29,10 +29,8 @@ from app.sep.apps.mysql_backups.forms import (
 )
 from app.sep.apps.mysql_backups.models import BackupType
 from app.tasks.models import TaskBackendEnum
-from tests.app.sep.apps.mysql_backups.conftest import (
-    literal_members,
-    XTRABACKUP_INCREMENTAL_CYCLES,
-)
+from tests.app.sep.apps.conftest import literal_members
+from tests.app.sep.apps.mysql_backups.conftest import XTRABACKUP_INCREMENTAL_CYCLES
 
 
 class TestXtrabackupQuietField:

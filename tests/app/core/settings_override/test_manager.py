@@ -38,6 +38,7 @@ async def test_create_and_get_roundtrip(session: AsyncSession) -> None:
     )
     fetched = await SettingsOverrideManager.get(session, id=created.id)
     assert fetched is not None
+    assert fetched.setting_class == "SEP_SETTINGS"
     assert fetched.key == "CONNECTIVITY_CHECK_DEFAULT"
     assert fetched.value is False
 

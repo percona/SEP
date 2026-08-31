@@ -48,6 +48,7 @@ from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.execution.nomad_lifecycle import NomadLifecycle
 from app.tasks.main import _reconcile_nomad, tasks_app
 from tests.app.core.settings_override.conftest import hanging_session_maker_factory
+from tests.app.db_schema import apply_schema
 
 
 @pytest_asyncio.fixture(name="session_maker")
@@ -60,7 +61,7 @@ async def session_maker_fixture() -> async_sessionmaker:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:
@@ -130,6 +131,50 @@ async def test_refresh_all_swaps_snapshot(
 
     await refresh_all(lambda: session_maker, registry)
     assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_skips_unregistered_class_row(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Leave an override row for an unwired class in the table.
+
+    Startup still publishes the wired class's snapshot; the unregistered row
+    is neither applied nor deleted.
+    """
+    proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    async with session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.SEP_SETTINGS,
+                key="CONNECTIVITY_CHECK_DEFAULT",
+                value=override_value,
+            ),
+        )
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class="UNREGISTERED_SETTINGS",
+                key="WHATEVER",
+                value=True,
+            ),
+        )
+
+    await refresh_all(lambda: session_maker, registry)
+    assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+    async with session_maker() as session:
+        leftover = await SettingsOverrideManager.list(
+            session, setting_class="UNREGISTERED_SETTINGS"
+        )
+        wired = await SettingsOverrideManager.list(
+            session, setting_class=SettingClassEnum.SEP_SETTINGS
+        )
+    assert len(leftover) == 1
+    assert leftover[0].key == "WHATEVER"
+    assert len(wired) == 1
 
 
 @pytest.mark.asyncio

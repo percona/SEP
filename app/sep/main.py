@@ -36,6 +36,7 @@ from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableE
 from app.core.health import build_health_router
 from app.core.requests import RemoteAPI
 from app.core.settings_override.lifecycle import (
+    CallbackRegistry,
     previous_or_base,
     RefreshCallback,
     settings_override_refresher,
@@ -121,7 +122,7 @@ def _make_remote_api_rebinder(
 
     The returned callback handles both deployment shapes. Under standalone
     ``sep_lifespan`` the client lives in ``app.state.<name>``: it is rebuilt on
-    the new endpoint and the old one closed. Under the combined ``app.main:app``
+    the new endpoint and the old one retired. Under the combined ``app.main:app``
     no ``app.state`` client exists -- ``get_*_client`` falls back to the
     registry-cached ``get_remote_api`` per request, which already key-misses to
     the new HOT endpoint, so the callback evicts the ordered de-duplicated set
@@ -129,6 +130,11 @@ def _make_remote_api_rebinder(
     same-endpoint credential/SSL changes). When ``key`` is absent from
     ``change.previous`` (override created), :func:`previous_or_base` supplies
     the YAML/env value from the proxy's wrapped instance.
+
+    Both shapes retire the outgoing client rather than closing it outright: the
+    swap and the eviction stop it being handed to new work, and it closes once
+    the consumers still holding it (an open log stream, a running download)
+    release.
 
     :param app: The FastAPI application whose ``state`` holds the client.
     :param name: The ``app.state`` attribute name (``inventory_api`` /
@@ -156,7 +162,7 @@ def _make_remote_api_rebinder(
             logger.exception("Failed to rebind %s; keeping previous client", name)
             return
         setattr(app.state, name, new_api)
-        await old.__aexit__(None, None, None)
+        await old.close_when_idle()
 
     return _rebind
 
@@ -164,9 +170,12 @@ def _make_remote_api_rebinder(
 async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     """Re-seed the SEP beat schedule after a hot interval override.
 
-    Wired for both ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``) and
-    ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``). Rebuilds the
-    system periodic-task set via
+    Wired for ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``),
+    ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``) and
+    ``InventoryAppSettings.COLLECTION_INTERVAL`` (``sep__inventory_collection``,
+    which the rebuild seeds or drops as the interval is set or cleared, since
+    the app's schedule thunk contributes nothing while it is unset).
+    Rebuilds the system periodic-task set via
     :func:`app.sep.db.seed.get_system_periodic_tasks` -- which re-reads the now-live
     interval from the refreshed proxy snapshot -- and re-invokes
     :func:`app.core.celery.utils.init_periodic_tasks_db` under the ``sep__`` prefix.
@@ -208,7 +217,13 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         callbacks against ``app.state``.
     :return: None
     """
-    callbacks = {
+    # Imported here rather than at module scope: this module is reachable from
+    # the Celery include list, and importing an app's config at import time
+    # pulls the app tree in alongside the ``celery.py`` modules loaded from it.
+    from app.sep.apps.alerts.config import AlertsSettings
+    from app.sep.apps.inventory.config import InventoryAppSettings
+
+    callbacks: CallbackRegistry = {
         (
             SettingClassEnum.SEP_SETTINGS,
             "INVENTORY_ENDPOINT",
@@ -237,8 +252,12 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "SYNC_INTERVAL",
         ): _reseed_system_periodic_tasks,
         (
-            SettingClassEnum.ALERTS_SETTINGS,
+            AlertsSettings.__name__,
             "BACKUP_INTERVAL",
+        ): _reseed_system_periodic_tasks,
+        (
+            InventoryAppSettings.__name__,
+            "COLLECTION_INTERVAL",
         ): _reseed_system_periodic_tasks,
         (
             SettingClassEnum.SEP_SETTINGS,

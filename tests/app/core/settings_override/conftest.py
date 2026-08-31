@@ -28,10 +28,25 @@ from sqlmodel.pool import StaticPool
 
 from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.settings_override.manager import SettingsOverrideManager
+from app.core.settings_override.models import SettingOverride
 from app.core.utils import json_serializer
+from tests.app.db_schema import apply_schema
 
 #: Importable path patched when tests replace ``start_refresh_task``.
 START_REFRESH_TASK = "app.core.settings_override.worker.start_refresh_task"
+
+
+async def insert_override_row(
+    session: AsyncSession, **kwargs: object
+) -> SettingOverride:
+    """Insert one override row through the manager, bypassing the API.
+
+    :param session: The async DB session to write through.
+    :param kwargs: Fields forwarded to :class:`SettingOverride`.
+    :return: The persisted override row.
+    """
+    return await SettingsOverrideManager.create(session, SettingOverride(**kwargs))
 
 
 class HangingSession:
@@ -118,7 +133,7 @@ async def session_fixture() -> AsyncSession:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:

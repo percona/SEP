@@ -283,6 +283,10 @@ class BaseYamlSettings(BaseSettings):
         from the directory ``SECRETS_DIR`` names, keyed by the same canonical
         ``__``-nested variable names their environment twins use.
 
+        Within each of the environment, dotenv and secret-file sources, a name
+        spelled with this class's prefix outranks the unprefixed global spelling
+        of the same destination; the ranking between sources is unaffected.
+
         ``FASTAPI_ENV`` selects the YAML profile block, and is read from the same
         three sources in the same order, so the block loaded always matches the
         value the resolved settings report.
@@ -305,14 +309,16 @@ class BaseYamlSettings(BaseSettings):
             or secret_settings.env_vars.get(env_key, pre_env_settings.FASTAPI_ENV)
         )
         if cls.SETTINGS_PREFIXES:
-            env_prefix = "__".join(cls.SETTINGS_PREFIXES).lower()
+            prefix_pattern = re.compile(
+                f"^{'__'.join(cls.SETTINGS_PREFIXES).lower()}__([a-zA-Z0-9_-]+)$"
+            )
             for env_source in [env_settings, dotenv_settings, secret_settings]:
-                env_vars = {}
+                unprefixed: dict[str, Any] = {}
+                prefixed: dict[str, Any] = {}
                 for key, value in env_source.env_vars.items():
-                    env_vars[
-                        re.sub(f"^{env_prefix}__([a-zA-Z0-9_-]+)$", r"\1", key)
-                    ] = value
-                env_source.env_vars = env_vars
+                    stripped = prefix_pattern.sub(r"\1", key)
+                    (unprefixed if stripped == key else prefixed)[stripped] = value
+                env_source.env_vars = {**unprefixed, **prefixed}
         return (
             init_settings,
             env_settings,

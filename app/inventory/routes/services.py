@@ -19,7 +19,7 @@ import logging
 
 from fastapi import APIRouter, status
 
-from app.api.deps import IsAuthenticatedDep
+from app.api.deps import IsAuthenticatedDep, IsServicePrincipalDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import (
@@ -28,9 +28,12 @@ from app.inventory.crud import (
     ServiceSystemObservationManager,
 )
 from app.inventory.deps import (
+    RetirableServiceDep,
     SchemaListQueryDep,
+    SchemaScopeDep,
     ServiceDep,
     ServiceListQueryDep,
+    ServiceScopeDep,
     ServiceSystemObservationDep,
     SessionDep,
 )
@@ -58,11 +61,20 @@ async def list_services(
     session: SessionDep,
     pagination: PaginationDep,
     list_query: ServiceListQueryDep,
+    manager: ServiceScopeDep,
     service_type: ServiceTypeEnum | None = None,
 ) -> PaginatedResponse[ServiceResponse]:
-    """List Services."""
+    """List Services.
+
+    :param session: The async database session.
+    :param pagination: Validated offset/limit query parameters.
+    :param list_query: The resolved sort/search produced at the request boundary.
+    :param manager: The service manager the request's retirement scope selected.
+    :param service_type: Return only services of this type.
+    :return: A paginated response of service responses.
+    """
     logger.debug("Listing services for type '%s'", service_type or "all")
-    return await ServiceManager.list_query_paginated(
+    return await manager.list_query_paginated(
         session,
         list_query=list_query,
         select_related=[Service.schemas, Service.node],
@@ -75,17 +87,18 @@ async def list_services(
 async def retrieve_service(
     session: SessionDep,
     service_id: int,
+    manager: ServiceScopeDep,
 ) -> ServiceDetailResponse:
     """Retrieve Service."""
     logger.debug("Retrieving service %s", service_id)
-    return await ServiceManager.get_or_404(
+    return await manager.get_or_404(
         session,
         select_related=[Service.schemas, Service.node],
         id=service_id,
     )
 
 
-@router.put("/{service_id}", dependencies=[IsAuthenticatedDep])
+@router.put("/{service_id}", dependencies=[IsServicePrincipalDep])
 async def update_service(
     session: SessionDep,
     existing_service: ServiceDep,
@@ -98,13 +111,34 @@ async def update_service(
 
 @router.delete(
     "/{service_id}",
-    dependencies=[IsAuthenticatedDep],
+    dependencies=[IsServicePrincipalDep],
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_service(session: SessionDep, service: ServiceDep) -> None:
-    """Delete Service."""
-    logger.debug("Deleting service %s", service.id)
-    await ServiceManager.delete(session, service)
+async def retire_service(session: SessionDep, service: RetirableServiceDep) -> None:
+    """Retire Service and everything below it, keeping the rows resolvable.
+
+    :param session: The asynchronous database session.
+    :param service: The service to retire, retired or not.
+    """
+    logger.debug("Retiring service %s", service.id)
+    await ServiceManager.retire(session, service)
+
+
+@router.post(
+    "/{service_id}/revive",
+    dependencies=[IsServicePrincipalDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def revive_service(session: SessionDep, service: RetirableServiceDep) -> None:
+    """Revive a retired Service together with its retired ancestors.
+
+    :param session: The asynchronous database session.
+    :param service: The service to revive, retired or not.
+    :raises HTTPConflictException: If an active entity already holds the unique
+        key the revived service would reclaim.
+    """
+    logger.debug("Reviving service %s", service.id)
+    await ServiceManager.revive(session, service)
 
 
 @router.get("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])
@@ -137,6 +171,7 @@ async def list_schemas_by_service(
     service: ServiceDep,
     pagination: PaginationDep,
     list_query: SchemaListQueryDep,
+    manager: SchemaScopeDep,
     include_tables: str | None = None,
 ) -> PaginatedResponse[SchemaResponse | SchemaCompactResponse]:
     """List Schemas by Service.
@@ -149,13 +184,14 @@ async def list_schemas_by_service(
     :param pagination: Validated offset/limit query parameters.
     :param list_query: The resolved sort/search produced at the request
         boundary.
+    :param manager: The schema manager the request's retirement scope selected.
     :param include_tables: Include nested tables in the response when set to
         any non-empty value. Defaults to compact mode (no tables).
     :return: A paginated response of schema responses.
     """
     logger.debug("Listing schemas for service '%s'", service.id)
     select_related = [Schema.tables] if include_tables else []
-    result = await SchemaManager.list_query_paginated(
+    result = await manager.list_query_paginated(
         session,
         list_query=list_query,
         select_related=select_related,

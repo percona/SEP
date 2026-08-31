@@ -40,6 +40,7 @@ from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.main import _reseed_system_periodic_tasks
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
+from tests.app.db_schema import apply_schema
 
 SNIPPETS_TASK = "sep__sync_snippets"
 RECONCILER_TASK = "sep__reconcile_disabling_apps"
@@ -57,7 +58,7 @@ async def _override_session_maker() -> async_sessionmaker:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:
@@ -71,7 +72,7 @@ def _sep_proxies() -> dict:
         SettingClassEnum.SNIPPETS_SETTINGS: ProxyEntry(
             snippets_settings, SnippetsSettings
         ),
-        SettingClassEnum.ALERTS_SETTINGS: ProxyEntry(alerts_settings, AlertsSettings),
+        AlertsSettings.__name__: ProxyEntry(alerts_settings, AlertsSettings),
     }
 
 
@@ -305,7 +306,7 @@ async def _beat_session_maker() -> async_sessionmaker:
     )
     engine = engine.execution_options(schema_translate_map={"celery_schema": None})
     async with engine.begin() as conn:
-        await conn.run_sync(PeriodicTask.__table__.metadata.create_all)
+        await apply_schema(conn, PeriodicTask.__table__.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:
@@ -423,7 +424,7 @@ async def test_backup_interval_override_reseeds_alert_backup_beat_schedule_live(
 
     The alerts backup interval is a ``hot_field`` feeding the system beat schedule
     (:func:`app.sep.db.seed.get_system_periodic_tasks`). Wiring
-    ``(ALERTS_SETTINGS, BACKUP_INTERVAL)`` to ``_reseed_system_periodic_tasks`` means
+    ``(AlertsSettings, BACKUP_INTERVAL)`` to ``_reseed_system_periodic_tasks`` means
     a runtime override updates the live beat row -- not just the proxy -- so Celery
     beat reloads it on its next tick without a restart. Mirrors the snippets case.
     """
@@ -440,7 +441,7 @@ async def test_backup_interval_override_reseeds_alert_backup_beat_schedule_live(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.ALERTS_SETTINGS,
+                setting_class="ALERTS_SETTINGS",
                 key="BACKUP_INTERVAL",
                 value={"every": OVERRIDE_EVERY_MINUTES, "period": "minutes"},
             ),
@@ -452,7 +453,7 @@ async def test_backup_interval_override_reseeds_alert_backup_beat_schedule_live(
     )
     callbacks = {
         (
-            SettingClassEnum.ALERTS_SETTINGS,
+            AlertsSettings.__name__,
             "BACKUP_INTERVAL",
         ): _reseed_system_periodic_tasks,
     }
