@@ -275,6 +275,32 @@ def test_check_honours_and_reports_a_retained_entry(tmp_path, capsys, monkeypatc
     assert retained.reason in capsys.readouterr().out
 
 
+def test_check_accepts_a_partial_drop_of_a_retained_fingerprint(
+    tmp_path, capsys, monkeypatch
+):
+    """Accept a run that resolves one of a retained fingerprint's several sites.
+
+    A ``RETAINED`` entry says the artifact stays reportable, not that every
+    occurrence survives, so fixing one colliding site while the other still
+    reports breaches nothing the reconciliation asserts.
+    """
+    duplicate = (
+        "tests/app/core/test_config.py:30:9: warning[unknown-argument] "
+        "Argument `_env_file` does not match any known parameter"
+    )
+    (artifact,) = classify_ty_diagnostics.parse_diagnostics(_output(ARTIFACT_ROW))
+    fingerprint = artifact.fingerprint
+    monkeypatch.setattr(
+        classify_ty_diagnostics,
+        "RETAINED",
+        (classify_ty_diagnostics.Retained(fingerprint=fingerprint, reason="collides"),),
+    )
+    manifest = _manifest(tmp_path, _output(ARTIFACT_ROW, duplicate))
+
+    assert _check(tmp_path, manifest, _output(ARTIFACT_ROW)) == 0
+    assert "reconciled" in capsys.readouterr().out
+
+
 def test_check_fails_when_a_retained_entry_no_longer_matches(
     tmp_path, capsys, monkeypatch
 ):

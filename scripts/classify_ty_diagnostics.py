@@ -357,6 +357,8 @@ def load_output(source: Path | None) -> str:
 
     :param source: A file holding captured output, or ``None`` to run ty now.
     :return: The raw output text.
+    :raises ReconciliationError: When ty produced no output but reported a cause
+        on stderr, which is the shape of a configuration or startup failure.
     """
     if source is not None:
         return source.read_text(encoding="utf-8")
@@ -367,6 +369,10 @@ def load_output(source: Path | None) -> str:
         text=True,
         check=False,
     )
+    if not completed.stdout.strip() and completed.stderr.strip():
+        raise ReconciliationError(
+            f"ty wrote no diagnostics: {completed.stderr.strip()}"
+        )
     return completed.stdout
 
 
@@ -524,20 +530,28 @@ def _drop_failures(
 ) -> list[str]:
     """Return a failure line per rule whose drop disagrees with its artifact count.
 
+    A retained fingerprint is excluded from **both** sides rather than cancelled
+    out of ``expected`` alone. Its drop is not governed by the suppression
+    invariant this reconciles: the entry says the artifact stays reportable, not
+    that every one of its occurrences survives, so a run that legitimately
+    resolves one of two colliding sites still leaves the other reporting. Netting
+    the entry to zero on the ``expected`` side while its partial drop still
+    reached ``actual`` failed exactly that run.
+
     :param before: Fingerprint multiset from the baseline manifest.
     :param removed: Fingerprints present in the baseline and absent afterwards.
     :param retained: Artifacts deliberately left reporting.
     :return: One message per mismatched rule, naming the rule and the delta.
     """
+    kept = {entry.fingerprint for entry in retained}
     expected: Counter[str] = Counter()
     for fingerprint, count in before.items():
-        if classify(fingerprint) is not None:
+        if fingerprint not in kept and classify(fingerprint) is not None:
             expected[fingerprint[1]] += count
-    for entry in retained:
-        expected[entry.fingerprint[1]] -= before[entry.fingerprint]
     actual: Counter[str] = Counter()
     for fingerprint, count in removed.items():
-        actual[fingerprint[1]] += count
+        if fingerprint not in kept:
+            actual[fingerprint[1]] += count
     return [
         f"{rule}: dropped {actual[rule]}, expected {expected[rule]} "
         f"(delta {actual[rule] - expected[rule]})"
