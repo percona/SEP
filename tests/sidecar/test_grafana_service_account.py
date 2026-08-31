@@ -861,7 +861,11 @@ def test_the_mint_bound_falls_back_rather_than_raising(
 async def test_a_first_start_mints_and_persists_a_token(
     grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
 ):
-    """Resolve a token on a fresh install with nothing configured anywhere."""
+    """Resolve a token on a fresh install with nothing configured anywhere.
+
+    The create path already requests Admin, so the post-mint role probe is
+    skipped — only a reused account needs that round trip.
+    """
     run = await run_helper(
         profile_cwd(tmp_path),
         AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
@@ -871,23 +875,8 @@ async def test_a_first_start_mints_and_persists_a_token(
     assert run.returncode == 0, run.stderr
     assert run.token == MINTED_TOKEN
     assert helper.read_persisted_token(state_dir) == MINTED_TOKEN
-
-
-@pytest.mark.asyncio
-async def test_a_newly_created_account_skips_the_post_mint_probe(
-    grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
-):
-    """Skip the role probe when the create path already requested Admin."""
-    run = await run_helper(
-        profile_cwd(tmp_path),
-        AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
-        SEP_STATE_DIR=str(state_dir),
-    )
-
-    assert run.returncode == 0, run.stderr
-    assert run.token == MINTED_TOKEN
-    assert not grafana_stub.calls(StubRoute.VALIDATE)
     assert grafana_stub.calls(StubRoute.CREATE_ACCOUNT)
+    assert not grafana_stub.calls(StubRoute.VALIDATE)
 
 
 @pytest.mark.asyncio
