@@ -17,123 +17,21 @@
 
 from __future__ import annotations
 
-import importlib.util
 import re
-import shutil
-import sys
 from pathlib import Path
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "merge_alembic_heads.py"
-_MAKO_TEMPLATE = _PROJECT_ROOT / "app" / "tasks" / "migrations" / "script.py.mako"
-_CHECK_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "check_alembic_revision_tree.py"
-
-_spec = importlib.util.spec_from_file_location("merge_alembic_heads", _SCRIPT_PATH)
-assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-merge_alembic_heads = importlib.util.module_from_spec(_spec)
-sys.modules["merge_alembic_heads"] = merge_alembic_heads
-_spec.loader.exec_module(merge_alembic_heads)
-
-_check_spec = importlib.util.spec_from_file_location(
-    "check_alembic_revision_tree", _CHECK_SCRIPT_PATH
+from tests.scripts import load_script
+from tests.scripts.alembic_tree import (
+    script_location_with_mako,
+    write_ini,
+    write_revision,
 )
-assert _check_spec is not None, f"cannot load {_CHECK_SCRIPT_PATH}"
-assert _check_spec.loader is not None, f"cannot load {_CHECK_SCRIPT_PATH}"
-check_alembic_revision_tree = importlib.util.module_from_spec(_check_spec)
-sys.modules["check_alembic_revision_tree"] = check_alembic_revision_tree
-_check_spec.loader.exec_module(check_alembic_revision_tree)
 
-_REVISION_TEMPLATE = """\
-revision = {revision!r}
-down_revision = {down_revision!r}
-branch_labels = {branch_labels!r}
-depends_on = None
-
-def upgrade():
-    pass
-
-def downgrade():
-    pass
-"""
-
-
-def _write_revision(
-    versions_dir: Path,
-    revision: str,
-    down_revision: str | tuple[str, ...] | None,
-    *,
-    branch_labels: str | tuple[str, ...] | None = None,
-) -> None:
-    """Write a minimal Alembic revision module.
-
-    :param versions_dir: Directory that holds revision modules.
-    :param revision: Revision id.
-    :param down_revision: Parent revision id(s), or ``None`` for a root.
-    :param branch_labels: Optional branch label(s) for this revision.
-    """
-    versions_dir.mkdir(parents=True, exist_ok=True)
-    (versions_dir / f"{revision}.py").write_text(
-        _REVISION_TEMPLATE.format(
-            revision=revision,
-            down_revision=down_revision,
-            branch_labels=branch_labels,
-        ),
-        encoding="utf-8",
-    )
-
-
-def _write_ini(
-    tmp_path: Path,
-    *,
-    databases: str,
-    sections: dict[str, dict[str, str]],
-) -> Path:
-    """Write a minimal ``alembic.ini`` for synthetic trees.
-
-    :param tmp_path: Pytest temporary directory.
-    :param databases: Value for ``[alembic] databases``.
-    :param sections: Named section options keyed by section name.
-    :return: Path to the written ini file.
-    """
-    lines = [
-        "[alembic]",
-        f"databases = {databases}",
-        "",
-        "[DEFAULT]",
-        "path_separator = :",
-        "version_path_separator = :",
-        "",
-    ]
-    for name, options in sections.items():
-        lines.append(f"[{name}]")
-        for key, value in options.items():
-            lines.append(f"{key} = {value}")
-        lines.append("")
-    ini_path = tmp_path / "alembic.ini"
-    ini_path.write_text("\n".join(lines), encoding="utf-8")
-    return ini_path
-
-
-def _script_location(tmp_path: Path, name: str = "migrations") -> Path:
-    """Create a ``script_location`` with ``env.py`` and ``script.py.mako``.
-
-    Alembic's merge command requires the mako template. Paths are resolved so
-    ``version_locations`` comparisons succeed on platforms that symlink
-    temporary directories (macOS ``/var`` → ``/private/var``).
-
-    :param tmp_path: Pytest temporary directory.
-    :param name: Directory name under ``tmp_path``.
-    :return: The resolved script location path.
-    """
-    script_location = (tmp_path / name).resolve()
-    script_location.mkdir(parents=True, exist_ok=True)
-    (script_location / "env.py").write_text("", encoding="utf-8")
-    shutil.copy(_MAKO_TEMPLATE, script_location / "script.py.mako")
-    return script_location
+merge_alembic_heads = load_script("merge_alembic_heads")
+check_alembic_revision_tree = load_script("check_alembic_revision_tree")
 
 
 def _script_directory(ini_path: Path, track: str) -> ScriptDirectory:
@@ -191,12 +89,12 @@ def _assert_merge_file(
 
 def test_noop_on_converged_single_branch(tmp_path, capsys):
     """Exit 0 and write nothing when a single-branch track is already converged."""
-    script_location = _script_location(tmp_path)
+    script_location = script_location_with_mako(tmp_path)
     versions_dir = script_location / "versions"
-    _write_revision(versions_dir, "aaaa", None)
-    _write_revision(versions_dir, "bbbb", "aaaa")
+    write_revision(versions_dir, "aaaa", None)
+    write_revision(versions_dir, "bbbb", "aaaa")
     before = _revision_files(versions_dir)
-    ini_path = _write_ini(
+    ini_path = write_ini(
         tmp_path,
         databases="widget",
         sections={"widget": {"script_location": str(script_location)}},
@@ -209,14 +107,14 @@ def test_noop_on_converged_single_branch(tmp_path, capsys):
 
 def test_noop_on_converged_multibranch_tree(tmp_path, capsys):
     """Exit 0 when independent branches each already have one head."""
-    script_location = _script_location(tmp_path)
+    script_location = script_location_with_mako(tmp_path)
     versions_dir = script_location / "versions"
-    _write_revision(versions_dir, "r1", None)
-    _write_revision(versions_dir, "h1", "r1")
-    _write_revision(versions_dir, "r2", None)
-    _write_revision(versions_dir, "h2", "r2")
+    write_revision(versions_dir, "r1", None)
+    write_revision(versions_dir, "h1", "r1")
+    write_revision(versions_dir, "r2", None)
+    write_revision(versions_dir, "h2", "r2")
     before = _revision_files(versions_dir)
-    ini_path = _write_ini(
+    ini_path = write_ini(
         tmp_path,
         databases="widget",
         sections={"widget": {"script_location": str(script_location)}},
@@ -229,12 +127,12 @@ def test_noop_on_converged_multibranch_tree(tmp_path, capsys):
 
 def test_merges_simple_two_head_fork(tmp_path, capsys):
     """Create one merge revision that joins two forked heads under one root."""
-    script_location = _script_location(tmp_path)
+    script_location = script_location_with_mako(tmp_path)
     versions_dir = script_location / "versions"
-    _write_revision(versions_dir, "aaaa", None)
-    _write_revision(versions_dir, "bbbb", "aaaa")
-    _write_revision(versions_dir, "cccc", "aaaa")
-    ini_path = _write_ini(
+    write_revision(versions_dir, "aaaa", None)
+    write_revision(versions_dir, "bbbb", "aaaa")
+    write_revision(versions_dir, "cccc", "aaaa")
+    ini_path = write_ini(
         tmp_path,
         databases="widget",
         sections={"widget": {"script_location": str(script_location)}},
@@ -257,14 +155,14 @@ def test_merges_simple_two_head_fork(tmp_path, capsys):
 
 def test_merges_three_head_fork_into_one_revision(tmp_path):
     """Resolve three forked heads with a single three-parent merge revision."""
-    script_location = _script_location(tmp_path)
+    script_location = script_location_with_mako(tmp_path)
     versions_dir = script_location / "versions"
     # Avoid revision id "base" — it collides with Alembic's special "base" token.
-    _write_revision(versions_dir, "root0", None)
-    _write_revision(versions_dir, "c1", "root0")
-    _write_revision(versions_dir, "c2", "root0")
-    _write_revision(versions_dir, "c3", "root0")
-    ini_path = _write_ini(
+    write_revision(versions_dir, "root0", None)
+    write_revision(versions_dir, "c1", "root0")
+    write_revision(versions_dir, "c2", "root0")
+    write_revision(versions_dir, "c3", "root0")
+    ini_path = write_ini(
         tmp_path,
         databases="widget",
         sections={"widget": {"script_location": str(script_location)}},
@@ -281,16 +179,16 @@ def test_merges_three_head_fork_into_one_revision(tmp_path):
 
 def test_merges_only_forked_branch_in_multibranch_track(tmp_path):
     """Leave unforked branches alone when only one branch in a track is forked."""
-    script_location = _script_location(tmp_path)
+    script_location = script_location_with_mako(tmp_path)
     versions_main = (tmp_path / "main" / "versions").resolve()
     versions_plugin = (tmp_path / "plugin" / "versions").resolve()
-    _write_revision(versions_main, "r1", None, branch_labels=("sep_main",))
-    _write_revision(versions_main, "h1a", "r1")
-    _write_revision(versions_main, "h1b", "r1")
-    _write_revision(versions_plugin, "r2", None, branch_labels=("alerts",))
-    _write_revision(versions_plugin, "h2", "r2")
+    write_revision(versions_main, "r1", None, branch_labels=("sep_main",))
+    write_revision(versions_main, "h1a", "r1")
+    write_revision(versions_main, "h1b", "r1")
+    write_revision(versions_plugin, "r2", None, branch_labels=("alerts",))
+    write_revision(versions_plugin, "h2", "r2")
     plugin_before = _revision_files(versions_plugin)
-    ini_path = _write_ini(
+    ini_path = write_ini(
         tmp_path,
         databases="widget",
         sections={
@@ -324,16 +222,16 @@ def test_merges_only_forked_branch_in_multibranch_track(tmp_path):
 
 def test_merges_two_forked_branches_separately(tmp_path):
     """Create one merge revision per forked branch when two branches fork at once."""
-    script_location = _script_location(tmp_path)
+    script_location = script_location_with_mako(tmp_path)
     versions_a = (tmp_path / "chain_a" / "versions").resolve()
     versions_b = (tmp_path / "chain_b" / "versions").resolve()
-    _write_revision(versions_a, "ra", None, branch_labels=("branch_a",))
-    _write_revision(versions_a, "ha1", "ra")
-    _write_revision(versions_a, "ha2", "ra")
-    _write_revision(versions_b, "rb", None, branch_labels=("branch_b",))
-    _write_revision(versions_b, "hb1", "rb")
-    _write_revision(versions_b, "hb2", "rb")
-    ini_path = _write_ini(
+    write_revision(versions_a, "ra", None, branch_labels=("branch_a",))
+    write_revision(versions_a, "ha1", "ra")
+    write_revision(versions_a, "ha2", "ra")
+    write_revision(versions_b, "rb", None, branch_labels=("branch_b",))
+    write_revision(versions_b, "hb1", "rb")
+    write_revision(versions_b, "hb2", "rb")
+    ini_path = write_ini(
         tmp_path,
         databases="widget",
         sections={
@@ -360,12 +258,12 @@ def test_merges_two_forked_branches_separately(tmp_path):
 
 def test_groups_by_root_not_branch_label(tmp_path):
     """Group unlabeled forked heads by shared root (tasks/inventory shape)."""
-    script_location = _script_location(tmp_path)
+    script_location = script_location_with_mako(tmp_path)
     versions_dir = script_location / "versions"
-    _write_revision(versions_dir, "root", None)  # no branch_labels
-    _write_revision(versions_dir, "left", "root")
-    _write_revision(versions_dir, "right", "root")
-    ini_path = _write_ini(
+    write_revision(versions_dir, "root", None)  # no branch_labels
+    write_revision(versions_dir, "left", "root")
+    write_revision(versions_dir, "right", "root")
+    ini_path = write_ini(
         tmp_path,
         databases="tasks",
         sections={"tasks": {"script_location": str(script_location)}},
@@ -386,17 +284,17 @@ def test_groups_by_root_not_branch_label(tmp_path):
 
 def test_fork_in_one_track_does_not_block_another(tmp_path, capsys):
     """Merge every forked track in one run; a fork elsewhere does not stop others."""
-    widget_loc = _script_location(tmp_path, "widget_migrations")
-    gadget_loc = _script_location(tmp_path, "gadget_migrations")
+    widget_loc = script_location_with_mako(tmp_path, "widget_migrations")
+    gadget_loc = script_location_with_mako(tmp_path, "gadget_migrations")
     widget_versions = widget_loc / "versions"
     gadget_versions = gadget_loc / "versions"
-    _write_revision(widget_versions, "wa", None)
-    _write_revision(widget_versions, "wb", "wa")
-    _write_revision(widget_versions, "wc", "wa")
-    _write_revision(gadget_versions, "ga", None)
-    _write_revision(gadget_versions, "gb", "ga")
-    _write_revision(gadget_versions, "gc", "ga")
-    ini_path = _write_ini(
+    write_revision(widget_versions, "wa", None)
+    write_revision(widget_versions, "wb", "wa")
+    write_revision(widget_versions, "wc", "wa")
+    write_revision(gadget_versions, "ga", None)
+    write_revision(gadget_versions, "gb", "ga")
+    write_revision(gadget_versions, "gc", "ga")
+    ini_path = write_ini(
         tmp_path,
         databases="widget, gadget",
         sections={
@@ -419,12 +317,12 @@ def test_fork_in_one_track_does_not_block_another(tmp_path, capsys):
 
 def test_merge_revision_declares_no_branch_label(tmp_path):
     """Generated merge revisions set ``branch_labels = None``."""
-    script_location = _script_location(tmp_path)
+    script_location = script_location_with_mako(tmp_path)
     versions_dir = script_location / "versions"
-    _write_revision(versions_dir, "root", None, branch_labels=("sep_main",))
-    _write_revision(versions_dir, "left", "root")
-    _write_revision(versions_dir, "right", "root")
-    ini_path = _write_ini(
+    write_revision(versions_dir, "root", None, branch_labels=("sep_main",))
+    write_revision(versions_dir, "left", "root")
+    write_revision(versions_dir, "right", "root")
+    ini_path = write_ini(
         tmp_path,
         databases="sep",
         sections={"sep": {"script_location": str(script_location)}},
@@ -442,15 +340,15 @@ def test_merge_revision_declares_no_branch_label(tmp_path):
 
 def test_new_root_with_branch_label_is_not_a_fork(tmp_path, capsys):
     """A table-owning app root (new head + new root) is not treated as a fork."""
-    script_location = _script_location(tmp_path)
+    script_location = script_location_with_mako(tmp_path)
     versions_main = (tmp_path / "main" / "versions").resolve()
     versions_new = (tmp_path / "new_app" / "versions").resolve()
-    _write_revision(versions_main, "r1", None, branch_labels=("sep_main",))
-    _write_revision(versions_main, "h1", "r1")
-    _write_revision(versions_new, "r_new", None, branch_labels=("new_app",))
+    write_revision(versions_main, "r1", None, branch_labels=("sep_main",))
+    write_revision(versions_main, "h1", "r1")
+    write_revision(versions_new, "r_new", None, branch_labels=("new_app",))
     before_main = _revision_files(versions_main)
     before_new = _revision_files(versions_new)
-    ini_path = _write_ini(
+    ini_path = write_ini(
         tmp_path,
         databases="widget",
         sections={
@@ -473,12 +371,12 @@ def test_new_root_with_branch_label_is_not_a_fork(tmp_path, capsys):
 
 def test_idempotent_after_merge(tmp_path, capsys):
     """A second run after a successful merge writes no further revisions."""
-    script_location = _script_location(tmp_path)
+    script_location = script_location_with_mako(tmp_path)
     versions_dir = script_location / "versions"
-    _write_revision(versions_dir, "aaaa", None)
-    _write_revision(versions_dir, "bbbb", "aaaa")
-    _write_revision(versions_dir, "cccc", "aaaa")
-    ini_path = _write_ini(
+    write_revision(versions_dir, "aaaa", None)
+    write_revision(versions_dir, "bbbb", "aaaa")
+    write_revision(versions_dir, "cccc", "aaaa")
+    ini_path = write_ini(
         tmp_path,
         databases="widget",
         sections={"widget": {"script_location": str(script_location)}},
@@ -493,12 +391,12 @@ def test_idempotent_after_merge(tmp_path, capsys):
 
 def test_message_uses_branch_label_when_present(tmp_path):
     """Prefer the inherited branch label over the track name in the merge message."""
-    script_location = _script_location(tmp_path)
+    script_location = script_location_with_mako(tmp_path)
     versions_dir = script_location / "versions"
-    _write_revision(versions_dir, "root", None, branch_labels=("sep_main",))
-    _write_revision(versions_dir, "left", "root")
-    _write_revision(versions_dir, "right", "root")
-    ini_path = _write_ini(
+    write_revision(versions_dir, "root", None, branch_labels=("sep_main",))
+    write_revision(versions_dir, "left", "root")
+    write_revision(versions_dir, "right", "root")
+    ini_path = write_ini(
         tmp_path,
         databases="sep",
         sections={"sep": {"script_location": str(script_location)}},
@@ -511,17 +409,17 @@ def test_message_uses_branch_label_when_present(tmp_path):
 
 def test_partial_merge_reports_already_written_files(tmp_path, capsys, monkeypatch):
     """On mid-run failure, report merge files already written for earlier tracks."""
-    widget_loc = _script_location(tmp_path, "widget_migrations")
-    gadget_loc = _script_location(tmp_path, "gadget_migrations")
+    widget_loc = script_location_with_mako(tmp_path, "widget_migrations")
+    gadget_loc = script_location_with_mako(tmp_path, "gadget_migrations")
     widget_versions = widget_loc / "versions"
     gadget_versions = gadget_loc / "versions"
-    _write_revision(widget_versions, "wa", None)
-    _write_revision(widget_versions, "wb", "wa")
-    _write_revision(widget_versions, "wc", "wa")
-    _write_revision(gadget_versions, "ga", None)
-    _write_revision(gadget_versions, "gb", "ga")
-    _write_revision(gadget_versions, "gc", "ga")
-    ini_path = _write_ini(
+    write_revision(widget_versions, "wa", None)
+    write_revision(widget_versions, "wb", "wa")
+    write_revision(widget_versions, "wc", "wa")
+    write_revision(gadget_versions, "ga", None)
+    write_revision(gadget_versions, "gb", "ga")
+    write_revision(gadget_versions, "gc", "ga")
+    ini_path = write_ini(
         tmp_path,
         databases="widget, gadget",
         sections={
@@ -552,16 +450,16 @@ def test_partial_merge_reports_already_written_files(tmp_path, capsys, monkeypat
 
 def test_partial_merge_reports_same_track_second_branch(tmp_path, capsys, monkeypatch):
     """Report the first merge when a later forked root on the same track fails."""
-    script_location = _script_location(tmp_path)
+    script_location = script_location_with_mako(tmp_path)
     versions_a = (tmp_path / "chain_a" / "versions").resolve()
     versions_b = (tmp_path / "chain_b" / "versions").resolve()
-    _write_revision(versions_a, "ra", None, branch_labels=("branch_a",))
-    _write_revision(versions_a, "ha1", "ra")
-    _write_revision(versions_a, "ha2", "ra")
-    _write_revision(versions_b, "rb", None, branch_labels=("branch_b",))
-    _write_revision(versions_b, "hb1", "rb")
-    _write_revision(versions_b, "hb2", "rb")
-    ini_path = _write_ini(
+    write_revision(versions_a, "ra", None, branch_labels=("branch_a",))
+    write_revision(versions_a, "ha1", "ra")
+    write_revision(versions_a, "ha2", "ra")
+    write_revision(versions_b, "rb", None, branch_labels=("branch_b",))
+    write_revision(versions_b, "hb1", "rb")
+    write_revision(versions_b, "hb2", "rb")
+    ini_path = write_ini(
         tmp_path,
         databases="widget",
         sections={

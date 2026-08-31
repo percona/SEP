@@ -17,107 +17,28 @@
 
 from __future__ import annotations
 
-import importlib.util
 import shutil
-import sys
-from pathlib import Path
 
 import pytest
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "check_alembic_revision_tree.py"
-
-_spec = importlib.util.spec_from_file_location(
-    "check_alembic_revision_tree", _SCRIPT_PATH
+from tests.scripts import PROJECT_ROOT, load_script
+from tests.scripts.alembic_tree import (
+    dummy_script_location,
+    write_ini,
+    write_revision,
 )
-assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-check_alembic_revision_tree = importlib.util.module_from_spec(_spec)
-sys.modules["check_alembic_revision_tree"] = check_alembic_revision_tree
-_spec.loader.exec_module(check_alembic_revision_tree)
 
-_REVISION_TEMPLATE = """\
-revision = {revision!r}
-down_revision = {down_revision!r}
-branch_labels = None
-depends_on = None
-
-def upgrade():
-    pass
-
-def downgrade():
-    pass
-"""
-
-
-def _write_revision(
-    versions_dir: Path, revision: str, down_revision: str | None
-) -> None:
-    """Write a minimal Alembic revision module.
-
-    :param versions_dir: Directory that holds revision modules.
-    :param revision: Revision id.
-    :param down_revision: Parent revision id, or ``None`` for a root.
-    """
-    versions_dir.mkdir(parents=True, exist_ok=True)
-    (versions_dir / f"{revision}.py").write_text(
-        _REVISION_TEMPLATE.format(revision=revision, down_revision=down_revision),
-        encoding="utf-8",
-    )
-
-
-def _write_ini(
-    tmp_path: Path,
-    *,
-    databases: str,
-    sections: dict[str, dict[str, str]],
-) -> Path:
-    """Write a minimal ``alembic.ini`` for synthetic trees.
-
-    :param tmp_path: Pytest temporary directory.
-    :param databases: Value for ``[alembic] databases``.
-    :param sections: Named section options keyed by section name.
-    :return: Path to the written ini file.
-    """
-    lines = [
-        "[alembic]",
-        f"databases = {databases}",
-        "",
-        "[DEFAULT]",
-        "path_separator = :",
-        "",
-    ]
-    for name, options in sections.items():
-        lines.append(f"[{name}]")
-        for key, value in options.items():
-            lines.append(f"{key} = {value}")
-        lines.append("")
-    ini_path = tmp_path / "alembic.ini"
-    ini_path.write_text("\n".join(lines), encoding="utf-8")
-    return ini_path
-
-
-def _dummy_script_location(tmp_path: Path, name: str = "migrations") -> Path:
-    """Create a dummy ``script_location`` directory with an empty ``env.py``.
-
-    :param tmp_path: Pytest temporary directory.
-    :param name: Directory name under ``tmp_path``.
-    :return: The script location path.
-    """
-    script_location = tmp_path / name
-    script_location.mkdir(parents=True, exist_ok=True)
-    (script_location / "env.py").write_text("", encoding="utf-8")
-    return script_location
+check_alembic_revision_tree = load_script("check_alembic_revision_tree")
 
 
 def test_check_fails_on_forked_tree(tmp_path, capsys):
     """Fail when one root fans out into more heads than roots."""
-    script_location = _dummy_script_location(tmp_path)
+    script_location = dummy_script_location(tmp_path)
     versions_dir = script_location / "versions"
-    _write_revision(versions_dir, "aaaa", None)
-    _write_revision(versions_dir, "bbbb", "aaaa")
-    _write_revision(versions_dir, "cccc", "aaaa")
-    ini_path = _write_ini(
+    write_revision(versions_dir, "aaaa", None)
+    write_revision(versions_dir, "bbbb", "aaaa")
+    write_revision(versions_dir, "cccc", "aaaa")
+    ini_path = write_ini(
         tmp_path,
         databases="widget",
         sections={
@@ -147,13 +68,13 @@ def test_check_fails_on_forked_tree(tmp_path, capsys):
 
 def test_check_passes_on_converged_multibranch_tree(tmp_path, capsys):
     """Pass when independent branches each have one root and one head."""
-    script_location = _dummy_script_location(tmp_path)
+    script_location = dummy_script_location(tmp_path)
     versions_dir = script_location / "versions"
-    _write_revision(versions_dir, "r1", None)
-    _write_revision(versions_dir, "h1", "r1")
-    _write_revision(versions_dir, "r2", None)
-    _write_revision(versions_dir, "h2", "r2")
-    ini_path = _write_ini(
+    write_revision(versions_dir, "r1", None)
+    write_revision(versions_dir, "h1", "r1")
+    write_revision(versions_dir, "r2", None)
+    write_revision(versions_dir, "h2", "r2")
+    ini_path = write_ini(
         tmp_path,
         databases="widget",
         sections={
@@ -174,13 +95,13 @@ def test_check_passes_on_converged_multibranch_tree(tmp_path, capsys):
 
 def test_check_passes_on_reconverged_siblings(tmp_path, capsys):
     """Pass when sibling branches merge back into one head."""
-    script_location = _dummy_script_location(tmp_path)
+    script_location = dummy_script_location(tmp_path)
     versions_dir = script_location / "versions"
-    _write_revision(versions_dir, "base", None)
-    _write_revision(versions_dir, "c1", "base")
-    _write_revision(versions_dir, "c2", "base")
-    _write_revision(versions_dir, "m", ("c1", "c2"))
-    ini_path = _write_ini(
+    write_revision(versions_dir, "base", None)
+    write_revision(versions_dir, "c1", "base")
+    write_revision(versions_dir, "c2", "base")
+    write_revision(versions_dir, "m", ("c1", "c2"))
+    ini_path = write_ini(
         tmp_path,
         databases="widget",
         sections={
@@ -198,7 +119,7 @@ def test_check_passes_on_reconverged_siblings(tmp_path, capsys):
 
 def test_discovers_tracks_from_databases_key(tmp_path):
     """Discover track names from ``[alembic] databases``, not hard-coded lists."""
-    ini_path = _write_ini(
+    ini_path = write_ini(
         tmp_path,
         databases="widget, gadget",
         sections={"widget": {}, "gadget": {}},
@@ -212,7 +133,7 @@ def test_discovers_tracks_from_databases_key(tmp_path):
 
 def test_rejects_databases_with_no_track_names(tmp_path, capsys):
     """Fail closed when ``databases`` parses to an empty track list."""
-    ini_path = _write_ini(tmp_path, databases=",", sections={})
+    ini_path = write_ini(tmp_path, databases=",", sections={})
 
     with pytest.raises(ValueError, match="missing or empty"):
         check_alembic_revision_tree.list_track_names(ini_path)
@@ -223,14 +144,14 @@ def test_rejects_databases_with_no_track_names(tmp_path, capsys):
 
 def test_uses_version_locations_from_ini(tmp_path, capsys):
     """Read ``version_locations`` from the ini instead of hard-coded paths."""
-    script_location = _dummy_script_location(tmp_path)
+    script_location = dummy_script_location(tmp_path)
     versions_a = tmp_path / "chain_a"
     versions_b = tmp_path / "chain_b"
-    _write_revision(versions_a, "ra", None)
-    _write_revision(versions_a, "ha", "ra")
-    _write_revision(versions_b, "rb", None)
-    _write_revision(versions_b, "hb", "rb")
-    ini_path = _write_ini(
+    write_revision(versions_a, "ra", None)
+    write_revision(versions_a, "ha", "ra")
+    write_revision(versions_b, "rb", None)
+    write_revision(versions_b, "hb", "rb")
+    ini_path = write_ini(
         tmp_path,
         databases="widget",
         sections={
@@ -251,7 +172,7 @@ def test_uses_version_locations_from_ini(tmp_path, capsys):
 
 def test_repo_alembic_ini_is_converged():
     """Confirm the committed repo tree has no forked Alembic tracks."""
-    ini_path = _PROJECT_ROOT / "alembic.ini"
+    ini_path = PROJECT_ROOT / "alembic.ini"
     trees = check_alembic_revision_tree.inspect_revision_trees(ini_path)
     names = {tree.name for tree in trees}
     assert {"tasks", "inventory", "sep"} <= names
@@ -262,7 +183,7 @@ def test_reintroducing_sep_1824_fork_fails(tmp_path, capsys):
     """Fail when the SEP-1824 fork is reintroduced in the tasks track."""
     versions_copy = tmp_path / "versions"
     shutil.copytree(
-        _PROJECT_ROOT / "app" / "tasks" / "migrations" / "versions",
+        PROJECT_ROOT / "app" / "tasks" / "migrations" / "versions",
         versions_copy,
     )
     fork_file = versions_copy / (
@@ -279,8 +200,8 @@ def test_reintroducing_sep_1824_fork_fails(tmp_path, capsys):
     )
     fork_file.write_text(text, encoding="utf-8")
 
-    script_location = _PROJECT_ROOT / "app" / "tasks" / "migrations"
-    ini_path = _write_ini(
+    script_location = PROJECT_ROOT / "app" / "tasks" / "migrations"
+    ini_path = write_ini(
         tmp_path,
         databases="tasks",
         sections={
