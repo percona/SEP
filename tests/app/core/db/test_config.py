@@ -49,6 +49,7 @@ def test_database_options_rejects_mysql_engine():
     with pytest.raises(ValidationError):
         DatabaseOptions(ENGINE="mysql", NAME="testdb", HOST="localhost")
 
+
 def test_database_options_url_with_postgresql():
     """Test DatabaseOptions URL construction with PostgreSQL."""
     db_options = DatabaseOptions(
