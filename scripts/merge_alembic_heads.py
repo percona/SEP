@@ -111,7 +111,7 @@ def _merge_message(
     """Build a non-interactive merge message from the branch, when known.
 
     Prefer a single inherited branch label shared by the forked heads; fall
-    back to the track name when heads carry no labels (tasks / inventory).
+    back to the track name when heads carry no labels.
 
     :param track: Alembic config section name.
     :param heads: Forked head revision ids.
@@ -162,6 +162,9 @@ def apply_merges(ini_path: Path, actions: tuple[MergeAction, ...]) -> tuple[Merg
     :param ini_path: Path to ``alembic.ini``.
     :param actions: Planned merges from :func:`plan_merges`.
     :return: The same actions with ``revision`` filled in from Alembic.
+    :raises ValueError: When a track section is misconfigured.
+    :raises OSError: When writing a merge revision file fails.
+    :raises CommandError: When Alembic rejects resolving or writing a merge.
     """
     applied: list[MergeAction] = []
     for action in actions:
@@ -242,7 +245,8 @@ def main(argv: list[str] | None = None) -> int:
 
     :param argv: CLI arguments (defaults to ``sys.argv[1:]``).
     :return: ``0`` on success (including when nothing needed merging);
-        ``1`` when the ini cannot be read or a track section is misconfigured.
+        ``1`` when the ini cannot be read, a track is misconfigured, or
+        merge generation fails (including after a partial write).
     """
     parser = argparse.ArgumentParser(description=__doc__)
     add_ini_argument(parser)

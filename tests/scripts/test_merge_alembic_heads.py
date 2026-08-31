@@ -316,7 +316,7 @@ def test_fork_in_one_track_does_not_block_another(tmp_path, capsys):
 
 
 def test_merge_revision_declares_no_branch_label(tmp_path):
-    """Generated merge revisions set ``branch_labels = None``."""
+    """Assert generated merge revisions set ``branch_labels = None``."""
     script_location = script_location_with_mako(tmp_path)
     versions_dir = script_location / "versions"
     write_revision(versions_dir, "root", None, branch_labels=("sep_main",))
@@ -339,7 +339,7 @@ def test_merge_revision_declares_no_branch_label(tmp_path):
 
 
 def test_new_root_with_branch_label_is_not_a_fork(tmp_path, capsys):
-    """A table-owning app root (new head + new root) is not treated as a fork."""
+    """Treat a table-owning app root (new head + new root) as converged, not a fork."""
     script_location = script_location_with_mako(tmp_path)
     versions_main = (tmp_path / "main" / "versions").resolve()
     versions_new = (tmp_path / "new_app" / "versions").resolve()
@@ -370,7 +370,7 @@ def test_new_root_with_branch_label_is_not_a_fork(tmp_path, capsys):
 
 
 def test_idempotent_after_merge(tmp_path, capsys):
-    """A second run after a successful merge writes no further revisions."""
+    """Write no further revisions on a second run after a successful merge."""
     script_location = script_location_with_mako(tmp_path)
     versions_dir = script_location / "versions"
     write_revision(versions_dir, "aaaa", None)
@@ -408,7 +408,7 @@ def test_message_uses_branch_label_when_present(tmp_path):
 
 
 def test_partial_merge_reports_already_written_files(tmp_path, capsys, monkeypatch):
-    """On mid-run failure, report merge files already written for earlier tracks."""
+    """Report merge files already written for earlier tracks on mid-run failure."""
     widget_loc = script_location_with_mako(tmp_path, "widget_migrations")
     gadget_loc = script_location_with_mako(tmp_path, "gadget_migrations")
     widget_versions = widget_loc / "versions"
