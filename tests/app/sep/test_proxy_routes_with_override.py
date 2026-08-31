@@ -42,6 +42,7 @@ from sqlmodel.pool import StaticPool
 
 from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.config import BaseYamlSettings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
 from app.core.settings_override.manager import SettingsOverrideManager
@@ -90,15 +91,16 @@ def _sep_proxies() -> dict:
 
 async def _insert_override(
     session_maker: async_sessionmaker,
-    setting_class: str,
+    settings_cls: type[BaseYamlSettings],
     key: str,
     value: object,
 ) -> None:
     """Insert one active override row into the override store."""
+    token = setting_class_token(settings_cls)
     async with session_maker() as session:
         await SettingsOverrideManager.create(
             session,
-            SettingOverride(setting_class=setting_class, key=key, value=value),
+            SettingOverride(setting_class=token, key=key, value=value),
         )
 
 
@@ -145,7 +147,7 @@ async def test_snippets_refresh_route_observes_enable_manual_sync_override(
 
         await _insert_override(
             override_session_maker,
-            setting_class_token(SnippetsSettings),
+            SnippetsSettings,
             "ENABLE_MANUAL_SYNC",
             value=False,
         )
@@ -176,7 +178,7 @@ async def test_sep_proxy_visible_after_refresh(
     override_value = not yaml_default
     await _insert_override(
         override_session_maker,
-        setting_class_token(SEPSettings),
+        SEPSettings,
         "CONNECTIVITY_CHECK_DEFAULT",
         value=override_value,
     )

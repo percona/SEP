@@ -108,18 +108,19 @@ async def _create_schema(engine: AsyncEngine) -> None:
 async def _upsert_override(
     maker: async_sessionmaker,
     *,
-    setting_class: str,
+    settings_cls: type[BaseYamlSettings],
     key: str,
     value: object,
 ) -> None:
     """Insert or replace a single active ``SettingOverride`` row through ``maker``."""
+    token = setting_class_token(settings_cls)
     async with maker() as session:
         await SettingsOverrideManager.delete_where(
-            session, setting_class=setting_class, key=key
+            session, setting_class=token, key=key
         )
         await SettingsOverrideManager.create(
             session,
-            SettingOverride(setting_class=setting_class, key=key, value=value),
+            SettingOverride(setting_class=token, key=key, value=value),
         )
 
 
@@ -299,7 +300,7 @@ class TestSepWorkerHandlers:
         loop.run_until_complete(
             _upsert_override(
                 maker,
-                setting_class=setting_class_token(AlertSettings),
+                settings_cls=AlertSettings,
                 key="SOURCE_PREFIX",
                 value="worker-",
             )
@@ -357,7 +358,7 @@ class TestWorkerPmmClientInvalidation:
         proxies = build_sep_override_proxies()
         await _upsert_override(
             override_session_maker,
-            setting_class=setting_class_token(Settings),
+            settings_cls=Settings,
             key="PMM",
             value={"endpoint": PMM_ENDPOINT, "api_key": "old-key"},
         )
@@ -366,7 +367,7 @@ class TestWorkerPmmClientInvalidation:
         try:
             await _upsert_override(
                 override_session_maker,
-                setting_class=setting_class_token(Settings),
+                settings_cls=Settings,
                 key="PMM",
                 value={"endpoint": PMM_ENDPOINT, "api_key": "new-key"},
             )
@@ -395,7 +396,7 @@ class TestWorkerPmmClientInvalidation:
         proxies = build_sep_override_proxies()
         await _upsert_override(
             override_session_maker,
-            setting_class=setting_class_token(Settings),
+            settings_cls=Settings,
             key="PMM",
             value={"endpoint": PMM_ENDPOINT, "api_key": "old-key"},
         )
@@ -404,7 +405,7 @@ class TestWorkerPmmClientInvalidation:
         try:
             await _upsert_override(
                 override_session_maker,
-                setting_class=setting_class_token(Settings),
+                settings_cls=Settings,
                 key="PMM",
                 value={"endpoint": PMM_ENDPOINT, "api_key": "new-key"},
             )
@@ -431,14 +432,14 @@ class TestWorkerPmmClientInvalidation:
         proxies = build_sep_override_proxies()
         await _upsert_override(
             override_session_maker,
-            setting_class=setting_class_token(Settings),
+            settings_cls=Settings,
             key="PMM",
             value={"endpoint": PMM_ENDPOINT, "api_key": "old-key"},
         )
         await refresh_all(lambda: override_session_maker, proxies)
         await _upsert_override(
             override_session_maker,
-            setting_class=setting_class_token(Settings),
+            settings_cls=Settings,
             key="PMM",
             value={"endpoint": PMM_ENDPOINT, "api_key": "new-key"},
         )
@@ -499,7 +500,7 @@ class TestWorkerLoggingRebind:
         proxies = build_sep_override_proxies()
         await _upsert_override(
             override_session_maker,
-            setting_class=setting_class_token(Settings),
+            settings_cls=Settings,
             key="LOGGING",
             value="DEBUG",
         )
@@ -521,7 +522,7 @@ class TestWorkerLoggingRebind:
         proxies = build_sep_override_proxies()
         await _upsert_override(
             override_session_maker,
-            setting_class=setting_class_token(Settings),
+            settings_cls=Settings,
             key="LOGGING",
             value="DEBUG",
         )
@@ -542,7 +543,7 @@ class TestRepublishSepSettingsSnapshot:
         """Reflect an override written after the snapshot in hand was built."""
         await _upsert_override(
             override_session_maker,
-            setting_class=setting_class_token(SEPSettings),
+            settings_cls=SEPSettings,
             key=SEP_OVERRIDE_KEY,
             value=SEP_OVERRIDE_VALUE,
         )
@@ -566,7 +567,7 @@ class TestRepublishSepSettingsSnapshot:
         fire = mocker.spy(lifecycle, "fire_change_callbacks")
         await _upsert_override(
             override_session_maker,
-            setting_class=setting_class_token(SEPSettings),
+            settings_cls=SEPSettings,
             key=SEP_OVERRIDE_KEY,
             value=SEP_OVERRIDE_VALUE,
         )
