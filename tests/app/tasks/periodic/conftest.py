@@ -40,27 +40,6 @@ from tests.app.db_schema import apply_schema
 CELERY_TASK_NAME = "app.tasks.celery.execute_task_by_name"
 
 
-@pytest_asyncio.fixture(name="celery_beat_session")
-async def celery_beat_session_fixture() -> AsyncSession:
-    """Create an async db session for celery beat tables."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        json_serializer=json_serializer,
-        poolclass=StaticPool,
-    )
-    engine = engine.execution_options(schema_translate_map={"celery_schema": None})
-    metadata = PeriodicTask.__table__.metadata
-    async with engine.begin() as conn:
-        await apply_schema(conn, metadata)
-    async_session_maker = get_async_session_maker_from_engine(engine)
-    try:
-        async with async_session_maker() as session:
-            yield session
-    finally:
-        await engine.dispose()
-
-
 @pytest_asyncio.fixture
 async def postgres_celery_beat_session(postgres_engine: AsyncEngine) -> AsyncSession:
     """Create a real-PostgreSQL session for celery-beat tables.
