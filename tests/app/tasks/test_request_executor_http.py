@@ -147,7 +147,9 @@ async def test_file_stream_survives_a_reconcile_mid_transfer(
     await TaskHistoryManager.save(session, created_task_with_history)
     tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
     tasks_app.dependency_overrides[get_session] = lambda: session
-    tasks_settings._set_snapshot({"NOMAD": _nomad_executor(NOMAD_ENDPOINT)})
+    tasks_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+        {"NOMAD": _nomad_executor(NOMAD_ENDPOINT)}
+    )
 
     try:
         async with NomadLifecycle(tasks_app) as holder:
@@ -172,7 +174,7 @@ async def test_file_stream_survives_a_reconcile_mid_transfer(
                     assert response.status_code == status.HTTP_200_OK
                     await asyncio.wait_for(stat_started.wait(), timeout=10)
 
-                    tasks_settings._set_snapshot(
+                    tasks_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
                         {"NOMAD": _nomad_executor("http://nomad-new.example.org")}
                     )
                     await holder.reconcile()
@@ -183,7 +185,7 @@ async def test_file_stream_survives_a_reconcile_mid_transfer(
                     body = await response.drain()
     finally:
         tasks_app.dependency_overrides = {}
-        tasks_settings._set_snapshot({})
+        tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     assert body == payload
     assert old._session is None

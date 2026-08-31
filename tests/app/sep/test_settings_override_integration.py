@@ -291,8 +291,8 @@ async def test_main_lifespan_starts_sep_overrides_refresher(
     finally:
         # Restore the proxy snapshot so unrelated tests in the suite see
         # the YAML default again.
-        sep_settings._set_snapshot({})
-        snippets_settings._set_snapshot({})
+        sep_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
+        snippets_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 async def _seed_snippets_task(
@@ -459,7 +459,7 @@ async def test_backup_interval_override_reseeds_alert_backup_beat_schedule_live(
         assert task.enabled is False  # gating survived the re-seed
     finally:
         # Restore the global proxy snapshot so unrelated tests see the YAML default.
-        alerts_settings._set_snapshot({})
+        alerts_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.asyncio
@@ -611,7 +611,7 @@ async def test_reseed_bumps_periodic_task_changed_last_update(
     try:
         await refresh_all(lambda: override_session_maker, _sep_proxies(), callbacks)
     finally:
-        snippets_settings._set_snapshot({})
+        snippets_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     after = await _read_last_update(beat_maker)
     assert after is not None
@@ -664,7 +664,7 @@ async def test_reseed_does_not_churn_unrelated_task(
     try:
         await refresh_all(lambda: override_session_maker, _sep_proxies(), callbacks)
     finally:
-        snippets_settings._set_snapshot({})
+        snippets_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     from sqlalchemy_celery_beat.models import Period
 
@@ -740,7 +740,7 @@ async def test_removing_sync_interval_override_reverts_beat_to_yaml_default(
             )
         await refresh_all(lambda: override_session_maker, _sep_proxies(), callbacks)
     finally:
-        snippets_settings._set_snapshot({})
+        snippets_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     assert yaml_default == snippets_settings.SYNC_INTERVAL
     async with beat_maker() as session:

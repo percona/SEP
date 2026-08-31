@@ -243,6 +243,166 @@ unsupported-dynamic-base = "error"      # class base computed at runtime, so the
 missing-type-argument = "ignore"        # bare generics are widespread and intended; parameterizing them all is its own decision
 missing-override-decorator = "ignore"   # PEP 698 `@override` is not a convention this project has adopted
 
+# Dependency-typing artifacts, neutralized per (file, rule). Every hit of the
+# named rule in the named files is a shape ty reports because of how a dependency
+# is typed, not a defect here; `scripts/classify_ty_diagnostics.py` carries the
+# discriminant that establishes that, and `check` mode proves no first-party
+# diagnostic was suppressed alongside. Files where the rule also reports genuine
+# defects are absent here and take per-site `# ty: ignore[rule]` comments
+# instead, because an override cannot discriminate within a file. Groups, counts
+# and the residual baseline: docs/development/ty-policy.md.
+
+[[tool.ty.overrides]]
+# `Settings` subclasses reach the proxy-installed `_set_snapshot` / `get_snapshot`
+# / `_resolve` helpers, which the generated model class does not declare.
+include = [
+    "tests/app/conftest.py",
+    "tests/app/core/alerts/test_config.py",
+    "tests/app/core/settings_override/test_lifecycle.py",
+    "tests/app/sep/api/routes/test_settings.py",
+    "tests/app/sep/api/routes/test_settings_export.py",
+    "tests/app/sep/apps/alerts/test_config.py",
+    "tests/app/sep/apps/report/test_config.py",
+    "tests/app/sep/routes/test_stream_logs.py",
+    "tests/app/tasks/test_celery_settings_override.py",
+]
+[tool.ty.overrides.rules]
+unresolved-attribute = "ignore"
+
+[[tool.ty.overrides]]
+# `Celery` installs `loop` and the other attributes read here at runtime, so the
+# stub declares none of them.
+include = [
+    "app/sep/apps/alerts/celery.py",
+    "app/sep/apps/atw/celery.py",
+    "app/sep/apps/report/celery.py",
+    "app/sep/settings_override.py",
+    "tests/app/sep/test_app_drain.py",
+]
+[tool.ty.overrides.rules]
+unresolved-attribute = "ignore"
+
+[[tool.ty.overrides]]
+# A `Field(...)` default is a `FieldInfo` until pydantic builds the model, so ty
+# sees the declared field type assigned a `FieldInfo`.
+include = [
+    "tests/app/core/settings_override/api/test_registry_helpers.py",
+    "tests/app/core/settings_override/test_registry.py",
+    "tests/app/core/settings_override/test_registry_nested.py",
+    "tests/app/sep/test_settings_override_worker.py",
+]
+[tool.ty.overrides.rules]
+invalid-assignment = "ignore"
+
+[[tool.ty.overrides]]
+# `Settings()` fills `CELERY` from the environment and `_session` is injected, so
+# neither is passed at the call site ty inspects.
+include = [
+    "app/core/config.py",
+    "tests/app/core/celery/test_config.py",
+    "tests/app/core/settings_override/test_policy.py",
+    "tests/app/core/test_config.py",
+    "tests/app/sep/sync/syncers/system_facts/test_syncer.py",
+    "tests/app/sep/sync/syncers/test_pmm.py",
+    "tests/app/sep/sync/test_models.py",
+    "tests/sidecar/test_embedded_settings.py",
+    "tests/sidecar/test_settings_env.py",
+]
+[tool.ty.overrides.rules]
+missing-argument = "ignore"
+
+[[tool.ty.overrides]]
+# pydantic-settings accepts `_env_file` / `_secrets_dir` and their siblings at
+# runtime, but they are absent from the generated `__init__`.
+# `tests/app/sep/test_config.py` is not listed: it also passes a first-party
+# `PMM` kwarg, so its artifacts take per-site comments.
+include = [
+    "app/core/config.py",
+    "tests/app/core/auth/test_config.py",
+    "tests/app/core/celery/test_config.py",
+    "tests/app/core/test_config.py",
+    "tests/app/sep/apps/alerts/test_config.py",
+    "tests/app/sep/apps/report/test_config.py",
+    "tests/sidecar/test_embedded_settings.py",
+    "tests/sidecar/test_settings_env.py",
+]
+[tool.ty.overrides.rules]
+unknown-argument = "ignore"
+
+[[tool.ty.overrides]]
+# `AsyncSession.exec`, `select` and `create_model` are third-party overload sets
+# ty cannot resolve against these call sites.
+include = [
+    "app/core/db/crud.py",
+    "app/sep/apps/framework/responses.py",
+    "app/sep/snippets/models/snippet.py",
+    "tests/app/core/db/test_utils.py",
+    "tests/app/inventory/test_crud.py",
+    "tests/app/sep/apps/framework/test_rules.py",
+    "tests/app/sep/apps/framework/test_script_source.py",
+    "tests/app/test_db_schema.py",
+]
+[tool.ty.overrides.rules]
+no-matching-overload = "ignore"
+
+[[tool.ty.overrides]]
+# `sa_type=` is given a `TypeDecorator` *instance*, which is what SQLAlchemy wants
+# and what the sqlmodel stub's `type[Any]` annotation rejects.
+include = [
+    "app/core/db/models.py",
+    "app/inventory/models.py",
+    "app/sep/apps/atw/models.py",
+    "app/sep/apps/mysql_backups/models.py",
+]
+[tool.ty.overrides.rules]
+invalid-argument-type = "ignore"
+
+[[tool.ty.overrides]]
+# Subscripted generics are callable at runtime; ty sees the `GenericAlias`.
+include = [
+    "app/sep/config.py",
+    "tests/app/core/test_requests.py",
+    "tests/app/sep/apps/inventory/test_deps.py",
+]
+[tool.ty.overrides.rules]
+call-non-callable = "ignore"
+
+[[tool.ty.overrides]]
+# A FastAPI `Query(...)` marker stands in for the parameter's declared type until
+# the request is handled.
+include = [
+    "app/core/db/list_query.py",
+    "app/sep/apps/inventory/list_query.py",
+]
+[tool.ty.overrides.rules]
+invalid-parameter-default = "ignore"
+
+[[tool.ty.overrides]]
+# The imported modules do not exist at check time: the `app.sep.apps.golden_*`
+# targets are scaffolded by the test run, and payload.py runs on the monitored
+# host, which is also why [tool.bandit] carves it out above. Scoped to
+# `unresolved-import` rather than excluding the files, because they carry
+# first-party diagnostics under other rules.
+include = [
+    "app/sep/sync/syncers/system_facts/payload.py",
+    "tests/app/sep/apps/framework/golden/base/app.py",
+    "tests/app/sep/apps/framework/golden/script/app.py",
+    "tests/app/sep/apps/framework/golden/task/app.py",
+    "tests/app/sep/apps/framework/golden/task/spec.py",
+]
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
+
+[[tool.ty.overrides]]
+# `pygments.lexers` re-exports its lexers lazily through `__getattr__`, so the
+# stub lists no `TextLexer` member.
+include = [
+    "app/sep/utils/jinja.py",
+    "tests/app/sep/utils/test_jinja.py",
+]
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
+
 [tool.ruff]
 fix = true
 show-fixes = true

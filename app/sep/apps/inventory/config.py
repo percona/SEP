@@ -59,12 +59,20 @@ class InventoryAppSettings(BaseYamlSettings):
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "INVENTORY"]
-    COLLECTION_INTERVAL: ManageableInterval | None = hot_field(None)
-    COLLECTION_RETENTION: Annotated[timedelta, Gt(timedelta(0))] = hot_field(
-        timedelta(days=30)
+    COLLECTION_INTERVAL: ManageableInterval | None = (  # ty: ignore[invalid-assignment]
+        hot_field(None)
     )
-    COLLECTION_BATCH_SIZE: PositiveInt = hot_field(500, advanced=True)
-    COLLECTION_MAX_BATCHES: PositiveInt = hot_field(20, advanced=True)
+    COLLECTION_RETENTION: Annotated[
+        timedelta, Gt(timedelta(0))
+    ] = (  # ty: ignore[invalid-assignment]
+        hot_field(timedelta(days=30))
+    )
+    COLLECTION_BATCH_SIZE: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
+        500, advanced=True
+    )
+    COLLECTION_MAX_BATCHES: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
+        20, advanced=True
+    )
 
 
 inventory_app_settings: InventoryAppSettings = OverridableSettingsProxy(
