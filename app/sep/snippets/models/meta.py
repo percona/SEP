@@ -630,11 +630,10 @@ class SnippetMetaParameter(BaseModel):
         """Get the validation type for the parameter.
 
         Annotated ``Any`` because the value is a type *expression* assembled at
-        runtime -- an ``Annotated[...]`` form or a ``X | None`` union -- neither
+        runtime — an ``Annotated[...]`` form or a ``X | None`` union — neither
         of which is a ``type``.
 
         :return: The type to use for validating the parameter value.
-        :rtype: Any
         """
         if self.choices:
             raw_type = _param_choices_enum(self.choices)

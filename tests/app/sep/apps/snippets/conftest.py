@@ -43,6 +43,9 @@ from tests.app.db_schema import apply_schema
 @pytest_asyncio.fixture(name="session")
 async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an async database session backed by in-memory SQLite."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         json_serializer=json_serializer,

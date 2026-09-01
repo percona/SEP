@@ -32,6 +32,9 @@ router = APIRouter()
 User = get_user_model()
 
 
+# pagination-ok: the provider SDK returns the whole organization in one call
+# (Casdoor /api/get-users, Grafana /api/org/users), so there is no upstream
+# window to page against; the cardinality is the operator's own user count.
 @router.get(
     "/",
     dependencies=[IsAdminDep],
@@ -41,7 +44,6 @@ async def list_users() -> Sequence[BaseUser]:
     """List users.
 
     :return: The list of users.
-    :rtype: Sequence[BaseUser]
     """
     return await User.get_users()
 

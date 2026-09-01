@@ -70,12 +70,10 @@ M = TypeVar("M", bound="BaseSQLModelManager")
 
 
 class _QueryBuilder(NamedTuple, Generic[W]):
-    """A named tuple to hold a query builder function and its arguments.
+    """Hold a query builder function and the arguments to build it with.
 
     :param function: The function to build the query.
-    :type function: Callable[..., W]
     :param args: The arguments to pass to the function. Defaults to an empty tuple.
-    :type args: tuple[Any, ...]
     """
 
     function: Callable[..., W]
@@ -83,15 +81,23 @@ class _QueryBuilder(NamedTuple, Generic[W]):
 
 
 def _select_builder(*args: Any) -> _QueryBuilder[Select[Any]]:
-    """Create a query builder for SELECT statements."""
+    """Create a query builder for SELECT statements.
+
+    :param args: The table the statement selects from, or empty for the
+        manager's own.
+    :return: A builder that produces the SELECT statement.
+    """
+    # call-shape-dup-ok: the three builders are already the thin wrappers this
+    # rule asks for -- one per statement kind, each naming its own intent.
     return _QueryBuilder(select, args)
 
 
 def _update_builder(*args: Any, values: Mapping[str, Any]) -> _QueryBuilder[Update]:
     """Create a query builder for UPDATE statements.
 
-    This function returns a query builder that can be used to create an UPDATE
-    statement with the specified values.
+    :param args: The table the statement updates, or empty for the manager's own.
+    :param values: The column values the statement sets.
+    :return: A builder that produces the UPDATE statement.
     """
 
     def _update(table: T) -> Update:
@@ -101,7 +107,12 @@ def _update_builder(*args: Any, values: Mapping[str, Any]) -> _QueryBuilder[Upda
 
 
 def _delete_builder(*args: Any) -> _QueryBuilder[Delete]:
-    """Create a query builder for DELETE statements."""
+    """Create a query builder for DELETE statements.
+
+    :param args: The table the statement deletes from, or empty for the
+        manager's own.
+    :return: A builder that produces the DELETE statement.
+    """
     return _QueryBuilder(delete, args)
 
 
@@ -262,6 +273,10 @@ class BaseManager:
         select forms, so a caller's element type survives into ``.all()`` instead
         of collapsing to a union. ``sqlmodel`` declares no DML overload, so the
         third arm states what the DML path returns at runtime.
+
+        :param session: The asynchronous database session to execute on.
+        :param query: The statement to execute.
+        :return: The result, keyed on the statement's shape.
         """
         logger.debug("Executing query: %s", query)
         return await session.exec(query)
@@ -446,8 +461,8 @@ class BaseManager:
     ) -> CursorResult[Any] | ChunkedIteratorResult[Any] | list[Any]:
         """Execute an UPDATE statement.
 
-        A truthy ``returning`` always yields a list -- both the RETURNING path and
-        the MySQL FOR UPDATE workaround materialize one -- so the overloads let a
+        A truthy ``returning`` always yields a list — both the RETURNING path and
+        the MySQL FOR UPDATE workaround materialize one — so the overloads let a
         caller state which of the two shapes it asked for.
 
         This method executes an UPDATE statement to update specific values for rows
@@ -455,20 +470,14 @@ class BaseManager:
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param values: A mapping with column names as keys and values as values.
-        :type values: Mapping[str, Any]
         :param whereclause: SQL expressions for the `where` clause of the query.
-        :type whereclause: ColumnExpressionArgument[bool]
         :param returning: If True, return the updated rows as objects of `cls.Model`. If
             a list of column names is provided, return only those columns. Defaults to
             False, meaning no rows are returned from the statement.
-        :type returning: Iterable[str] | bool
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
-        :type equal_filters: Any
         :return: The result of the UPDATE statement execution.
-        :rtype: CursorResult | ChunkedIteratorResult | list
         """
         return await cls._dml_where(
             session,
@@ -513,18 +522,13 @@ class BaseManager:
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param whereclause: SQL expressions for the `where` clause of the query.
-        :type whereclause: ColumnExpressionArgument[bool]
         :param returning: If True, return the updated rows as objects of `cls.Model`. If
             a list of column names is provided, return only those columns. Defaults to
             False, meaning no rows are returned from the statement.
-        :type returning: Iterable[str] | bool
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
-        :type equal_filters: Any
         :return: The result of the DELETE statement execution.
-        :rtype: CursorResult | ChunkedIteratorResult | list
         """
         return await cls._dml_where(
             session,
@@ -1121,7 +1125,6 @@ class BaseSQLModelManager(BaseManager):
     """Manage database operations for a BaseSQLModel-based model.
 
     :param Model: The BaseSQLModel class for which this manager handles operations.
-    :type Model: type[BaseSQLModel]
     """
 
     Model: type[BaseSQLModel]
@@ -1229,10 +1232,8 @@ class BaseSQLModelChildManager(BaseSQLModelManager):
     """Manage database operations for child models with a parent association.
 
     :param ParentManager: The manager class responsible for handling the parent model.
-    :type ParentManager: type[BaseSQLModelManager]
     :param connected_by: The field name that connects the child model to the parent
         model.
-    :type connected_by: str
     """
 
     ParentManager: type[BaseSQLModelManager]

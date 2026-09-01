@@ -113,12 +113,10 @@ class SnippetFilterType(EnumFieldMixin, StrEnum):
         """Get the validation type associated with the specified filter type.
 
         Annotated ``Any`` because both results are ``Annotated[str, ...]``
-        aliases -- type expressions rather than classes.
+        aliases — type expressions rather than classes.
 
         :param filter_type: The filter type value.
-        :type filter_type: str
         :return: The corresponding validation type.
-        :rtype: Any
         :raises ValueError: If the filter type is unknown.
         """
         if filter_type == cls.EXTENSION:

@@ -113,9 +113,7 @@ class MySQLPreChecks:
     def get_table_size_mb(self) -> float | None:
         """Get the size of the table in MB.
 
-        Returns:
-            float | None: Table size in MB, or None if query fails
-
+        :return: The table size in MB, or ``None`` when the query fails.
         """
         if not self.connection:
             self.logger.error("No MySQL connection available")
@@ -150,9 +148,7 @@ class MySQLPreChecks:
     def get_mysql_datadir(self) -> str | None:
         """Get the MySQL datadir path.
 
-        Returns:
-            str | None: MySQL datadir path, or None if query fails
-
+        :return: The MySQL datadir path, or ``None`` when the query fails.
         """
         if not self.connection:
             self.logger.error("No MySQL connection available")
@@ -179,12 +175,9 @@ class MySQLPreChecks:
     def get_disk_space_mb(self, path: str) -> tuple[float, float] | None:
         """Get free and total disk space for a given path.
 
-        Args:
-            path: Path to check disk space for
-
-        Returns:
-            tuple | None: (free_space_mb, total_space_mb) or None if failed
-
+        :param path: The path to check disk space for.
+        :return: The ``(free_space_mb, total_space_mb)`` pair, or ``None`` when
+            the lookup fails.
         """
         try:
             # Get disk usage statistics

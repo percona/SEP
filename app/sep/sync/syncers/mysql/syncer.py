@@ -103,7 +103,6 @@ class MySQLService(Service):
 
         :return: An asynchronous iterator yielding schema index data, or an empty
             iterator if no schema index is set.
-        :rtype: AsyncIterator[dict[str, Any]]
         """
         if self._schemas_index is None:
 
@@ -599,9 +598,7 @@ class MySQLSyncer(BaseTaskSyncer):
         with the updated schemas and performing necessary synchronization actions.
 
         :param created_service: The service instance to synchronize.
-        :type created_service: CreatedService
         :param updated_service: The updated service data.
-        :type updated_service: Service
         :raises TypeError: If ``updated_service`` is not a ``MySQLService``.
         """
         if not isinstance(updated_service, MySQLService):
@@ -712,9 +709,7 @@ class MySQLSyncer(BaseTaskSyncer):
         with the updated tables and performing necessary synchronization actions.
 
         :param created_schema: The schema instance to synchronize.
-        :type created_schema: CreatedSchema
         :param updated_schema: The updated schema data.
-        :type updated_schema: Schema
         :raises TypeError: If ``updated_schema`` is not a ``MySQLSchema``.
         """
         if not isinstance(updated_schema, MySQLSchema):

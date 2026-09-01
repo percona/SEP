@@ -377,7 +377,6 @@ class BaseUser(BaseModel, ABC):
         would reject an override returning the provider's own concrete class.
 
         :return: A sequence of user instances.
-        :rtype: Sequence[Self]
         """
 
     @classmethod

@@ -65,6 +65,9 @@ def entity_posts(inventory_api: AsyncMock) -> list[str]:
 @pytest_asyncio.fixture(name="session")
 async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an async db session for testing."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         json_serializer=json_serializer,

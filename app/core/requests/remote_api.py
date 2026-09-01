@@ -169,7 +169,7 @@ def exception_for_status(
 def as_json_object(payload: JSONBody) -> dict[str, Any]:
     """Return ``payload`` as a JSON object, rejecting any other shape.
 
-    The verb methods declare the whole union a JSON body may take -- an object,
+    The verb methods declare the whole union a JSON body may take — an object,
     an array, or ``None`` on HTTP 204. A caller that reads the result as a
     mapping is asserting a shape the transport never checked; this checks it and
     turns a mis-shaped upstream answer into a 502 rather than a ``TypeError``
@@ -580,9 +580,8 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         """Get the ClientSession used in requests.
 
         :return: The ClientSession used in requests, or ``None`` before the
-            client is opened and after it is closed -- which is what callers
+            client is opened and after it is closed — which is what callers
             test for to decide whether to enter it.
-        :rtype: ClientSession | None
         """
         return self._session
 

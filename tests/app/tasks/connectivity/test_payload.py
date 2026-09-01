@@ -164,8 +164,8 @@ class TestCheckMySQL:
     ):
         """Verify server-side auth/authorization rejections report success.
 
-        Per SEP-927, the goal is to test connectivity. An auth-denied response
-        from the server proves the server is reachable.
+        The goal is to test connectivity: an auth-denied response from the
+        server proves the server is reachable.
         """
         from app.tasks.connectivity.payload import check_mysql
 
@@ -242,8 +242,8 @@ class TestCheckPostgreSQL:
     def test_auth_failure_by_sqlstate_treated_as_success(self, pgcode, mock_psycopg2):
         """Verify SQLSTATE class 28 (auth rejection) reports success.
 
-        Per SEP-927, an auth-rejected response from the server proves the
-        server is reachable, which is what this check measures.
+        An auth-rejected response from the server proves the server is
+        reachable, which is what this check measures.
         """
         from app.tasks.connectivity.payload import check_postgresql
 
@@ -306,8 +306,8 @@ class TestCheckMongoDB:
     def test_auth_failure_treated_as_success(self, code, mock_pymongo):
         """Verify ``OperationFailure`` codes 13 and 18 report success.
 
-        Per SEP-927, a server-side auth rejection (``13`` Unauthorized,
-        ``18`` AuthenticationFailed) proves the server is reachable.
+        A server-side auth rejection (``13`` Unauthorized, ``18``
+        AuthenticationFailed) proves the server is reachable.
         """
         from app.tasks.connectivity.payload import check_mongodb
 

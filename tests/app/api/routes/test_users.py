@@ -224,9 +224,11 @@ class TestProviderFieldsSurviveTheResponseModel:
     response model from the return annotation and filter every provider-specific
     field out of both the body and the published schema.
 
-    The expected set is derived rather than hardcoded, so the assertions hold
-    under whichever provider is configured; only Casdoor actually adds fields
-    over ``BaseUser``, which is what makes it the case worth guarding.
+    The expected set is derived rather than hardcoded, so it names whatever the
+    configured provider adds over ``BaseUser``. Each case asserts that set is
+    non-empty first: only Casdoor — the provider the suite runs under — adds
+    any, and without that control the subset assertions would pass vacuously
+    against a provider that adds none.
     """
 
     @staticmethod
@@ -252,6 +254,7 @@ class TestProviderFieldsSurviveTheResponseModel:
         response = test_client.get("/api/users/")
 
         assert response.status_code == status.HTTP_200_OK
+        assert self._provider_only_fields()
         for item in response.json():
             assert self._provider_only_fields() <= item.keys()
 
@@ -262,6 +265,7 @@ class TestProviderFieldsSurviveTheResponseModel:
         response = test_client.get("/api/users/me")
 
         assert response.status_code == status.HTTP_200_OK
+        assert self._provider_only_fields()
         assert self._provider_only_fields() <= response.json().keys()
 
     def test_lookup_carries_them(self, test_client, mocker, admin_user, other_user):
@@ -272,6 +276,7 @@ class TestProviderFieldsSurviveTheResponseModel:
         response = test_client.get(f"/api/users/{other_user.username}")
 
         assert response.status_code == status.HTTP_200_OK
+        assert self._provider_only_fields()
         assert self._provider_only_fields() <= response.json().keys()
 
     def test_published_schema_still_declares_them(self, test_client):
@@ -281,6 +286,7 @@ class TestProviderFieldsSurviveTheResponseModel:
         unset, so the schema is the half that has to be checked separately.
         """
         schema = test_client.get("/openapi.json").json()
+        assert self._provider_only_fields()
 
         for path, method in (
             ("/api/users/", "get"),

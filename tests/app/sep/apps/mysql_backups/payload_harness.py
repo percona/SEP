@@ -101,7 +101,7 @@ XBCRYPT_BIN = load_constant("XBCRYPT_BIN")
 
 
 def load_function(name: str) -> Callable[..., Any]:
-    """Exec a single module-level payload function with its constants seeded.
+    """Extract a single module-level payload function with its constants seeded.
 
     :raises TypeError: If the extracted name is not callable.
     """

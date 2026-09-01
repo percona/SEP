@@ -118,7 +118,6 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
         the base contract promises.
 
         :param alert: The alert to be sent.
-        :type alert: Alert
         """
         if not isinstance(alert, PagerDutyAlert):
             alert = PagerDutyAlert.model_validate(alert, from_attributes=True)

@@ -258,11 +258,8 @@ class URL(StarletteURL):
         that it should be treated as a string with a URI format.
 
         :param core_schema: The core schema for the URL.
-        :type core_schema: core_schema.CoreSchema
         :param handler: The handler for JSON schema retrieval.
-        :type handler: GetJsonSchemaHandler
         :return: The JSON schema for the `URL` type.
-        :rtype: JsonSchemaValue
         """
         json_schema = handler(core_schema)
         json_schema.update(
@@ -395,9 +392,7 @@ def database_url_normalized_scheme_field_factory(
 
     :param engine_enum_class: The database engine enum type to use. Either
         `DatabaseEngineEnum` or `AsyncDatabaseEngineEnum`.
-    :type engine_enum_class: type[DatabaseEngineEnum] | type[AsyncDatabaseEngineEnum]
     :return: The annotated Url field with the attached validator.
-    :rtype: type[Url]
     """
     get_database_engine_enum = get_enum_from_value_or_name_factory(engine_enum_class)
 

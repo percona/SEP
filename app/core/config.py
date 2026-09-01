@@ -119,7 +119,7 @@ def _sanitize_client_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
 
 @runtime_checkable
 class _EnvVarsSource(Protocol):
-    """A settings source that exposes the variables it collected.
+    """Expose the environment variables a settings source collected.
 
     ``settings_customise_sources`` must declare its parameters as the widest
     source type its base does, and this is the only capability it needs from the

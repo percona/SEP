@@ -321,12 +321,11 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         """Map entity types to their corresponding sync permission check methods.
 
         Each check accepts only its own entity model, so the value type is the
-        widest one the heterogeneous table admits -- the key is what makes a
+        widest one the heterogeneous table admits — the key is what makes a
         lookup well-typed, and that correlation is not expressible here.
 
         :return: A dictionary mapping each SyncInventoryEntityTypeEnum to a method that
                  determines if that entity can be synchronized.
-        :rtype: dict[SyncInventoryEntityTypeEnum, Callable[[Any], bool]]
         """
         return {
             SyncInventoryEntityTypeEnum.NODE: self.can_sync_node,
@@ -402,12 +401,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         need to be synchronized.
 
         :param entity_type: The type of the current entity.
-        :type entity_type: SyncInventoryEntityTypeEnum
         :param created_entity: The current entity instance, or None for top-level
             synchronization.
-        :type created_entity: CreatedEntity | None
         :return: A list of child entities to be synchronized.
-        :rtype: list[CreatedEntity].
         """
         if entity_type == SyncInventoryEntityTypeEnum.INVENTORY:
             return await self.get_inventory_nodes()
@@ -1527,11 +1523,8 @@ class BaseTaskSyncer(BaseSyncer):
         set, or the first available host.
 
         :param host: The target host.
-        :type host: str
         :param name: The target name. Defaults to ``None``.
-        :type name: str | None
         :return: The target host for the task.
-        :rtype: str
         :raises ExecutorHostNotFoundError: If ``strict_executor_matching`` is enabled and
             no executor host matches the node's name or address.
         """

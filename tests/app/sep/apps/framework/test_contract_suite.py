@@ -244,8 +244,8 @@ class _NoGuardExecuteApp(TaskExecutionApp):
 def _bind_suite(app_def: TaskExecutionApp) -> DerivedRouterContractTests:
     """Return a suite instance whose ``app_def`` class attribute is bound.
 
-    ``app_def`` is a ``ClassVar``, so it is bound on a subclass -- the way the
-    suite documents itself as being used -- rather than on the instance.
+    ``app_def`` is a ``ClassVar``, so it is bound on a subclass — the way the
+    suite documents itself as being used — rather than on the instance.
     """
     bound = type(
         "BoundDerivedRouterContractTests",

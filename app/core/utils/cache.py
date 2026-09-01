@@ -178,11 +178,8 @@ class _TTLCache(Generic[T]):
         that is itself ``None`` stays distinguishable from a miss.
 
         :param key: Cache key.
-        :type key: tuple[Any, ...]
         :param now: Current monotonic time in fractional seconds.
-        :type now: float
         :return: The cached value.
-        :rtype: T
         :raises KeyError: When the key is absent or its entry has expired.
         """
         if key in self.store:

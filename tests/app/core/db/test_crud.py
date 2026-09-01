@@ -140,6 +140,9 @@ class UniqueKeyUUIDManager(BaseSQLModelManager):
 @pytest_asyncio.fixture(name="session")
 async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an isolated async database session for CRUD pagination tests."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},

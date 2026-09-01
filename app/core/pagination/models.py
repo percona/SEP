@@ -249,16 +249,13 @@ async def fetch_all_dict_items(
 ) -> list[Any]:
     """Fetch every item from paginated dict responses (e.g. RemoteAPI payloads).
 
-    ``fetch_page`` returns the upstream payload untouched -- an envelope, a bare
-    list of rows, or ``None`` -- because :func:`_coerce_dict_page` normalizes all
+    ``fetch_page`` returns the upstream payload untouched — an envelope, a bare
+    list of rows, or ``None`` — because :func:`_coerce_dict_page` normalizes all
     three before the envelope is validated here.
 
     :param fetch_page: Async callable returning one raw upstream page per window.
-    :type fetch_page: Callable[[Pagination], Awaitable[dict[str, Any] | list[Any] | None]]
     :param page_size: ``limit`` used for each upstream request.
-    :type page_size: PositiveInt
     :return: All ``items`` across every page, in upstream order.
-    :rtype: list[Any]
     """
     total_authoritative: bool | None = None
 

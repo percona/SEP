@@ -71,6 +71,9 @@ async def postgres_celery_beat_session(
 @pytest_asyncio.fixture(name="tasks_session")
 async def tasks_session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an async db session for tasks tables."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},

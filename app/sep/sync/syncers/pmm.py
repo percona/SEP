@@ -470,9 +470,7 @@ class PMMSyncer(BaseSyncer):
         Update the local inventory service with data from the PMM API.
 
         :param created_service: The local service instance to synchronize.
-        :type created_service: CreatedService
         :param updated_service: The updated service data fetched from the PMM API.
-        :type updated_service: Service
         """
         if created_service.node.external_id != updated_service.node_id:
             nodes = await self.get_inventory_nodes(

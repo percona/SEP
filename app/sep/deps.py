@@ -597,15 +597,10 @@ async def get_created_entity(
     `CreatedEntityBase` model. Additional filters might be passed for extra validation.
 
     :param inventory_api: The API client used to interact with the inventory service.
-    :type inventory_api: InventoryAPI
     :param entity_type: The type of the entity to retrieve.
-    :type entity_type: SyncInventoryEntityTypeEnum
     :param entity_id: The ID of the entity to retrieve.
-    :type entity_id: int
     :param filters: Fields filters to check for the retrieved entity.
-    :type filters: Any
     :return: The validated `CreatedEntity` instance.
-    :rtype: CreatedEntity
     :raises ValueError: If one of the optional filters fail.
     """
     entity_path, entity_model = ENTITY_MAPPING[entity_type]
