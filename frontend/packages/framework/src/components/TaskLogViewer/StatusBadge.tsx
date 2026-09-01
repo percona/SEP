@@ -20,6 +20,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
 import ErrorIcon from '@mui/icons-material/Error';
 import HelpIcon from '@mui/icons-material/Help';
+import HourglassDisabledIcon from '@mui/icons-material/HourglassDisabled';
 import ReportIcon from '@mui/icons-material/Report';
 import Chip from '@mui/material/Chip';
 import type { FinishStatus } from '../../hooks/useTaskLogs';
@@ -38,6 +39,11 @@ const MAP: Record<
   stopped: { label: 'Stopped', color: 'default', icon: <CancelIcon /> },
   lost: { label: 'Lost', color: 'warning', icon: <HelpIcon /> },
   failed: { label: 'Failed', color: 'error', icon: <ReportIcon /> },
+  stale: { label: 'Stale', color: 'default', icon: <HourglassDisabledIcon /> },
+  // Reuses the `executor-gone` vocabulary rather than adding a parallel one:
+  // to the operator both mean the node could not run this, not that the
+  // script failed.
+  unlaunchable: { label: 'Not in executor', color: 'warning', icon: <CloudOffIcon /> },
   'stream-error': { label: 'Stream error', color: 'error', icon: <ErrorIcon /> },
   'executor-gone': { label: 'Not in executor', color: 'warning', icon: <CloudOffIcon /> },
 };

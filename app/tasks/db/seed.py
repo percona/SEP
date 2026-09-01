@@ -18,6 +18,7 @@
 import json
 import logging
 from copy import deepcopy
+from typing import Any
 
 from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import JSONB
@@ -42,6 +43,7 @@ from app.tasks.execution.executors.nomad.constants import (
     CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
 )
 from app.tasks.execution.executors.nomad.steps import (
+    LAUNCH_CHECK_EXIT_CODE,
     LOG_CAPTURE_HOLD_DEFAULT_SECONDS,
     NomadStep,
     RUN_SCRIPT_OUTPUT_FILES_PATH,
@@ -96,6 +98,147 @@ _CHECK_STALENESS_TASK = {
 }
 
 _STALENESS_META_OPTIONAL = ["scheduled_at", "staleness_threshold_seconds"]
+
+#: Allocation-shared path the ``check-launchable`` prestart step writes the
+#: effective interpreter to, and the artifact specs' ``run-script`` steps launch
+#: from. Mirrors the existing ``${NOMAD_ALLOC_DIR}/venv`` handoff between
+#: ``prepare-env`` and ``run-script``.
+EFFECTIVE_INTERPRETER_PATH = "${NOMAD_ALLOC_DIR}/sep_interpreter"
+
+#: ``sudo`` options that consume the following token as their value. Walking
+#: past them is what keeps ``sudo -u postgres <cmd>`` resolving ``<cmd>`` rather
+#: than the user name, which names no binary and would abort a run that works.
+_SUDO_VALUE_OPTIONS = (
+    "-C|-D|-g|-h|-p|-R|-r|-T|-t|-U|-u"
+    "|--close-from|--chdir|--group|--host|--prompt|--chroot"
+    "|--role|--command-timeout|--type|--other-user|--user"
+)
+
+#: ``case`` pattern matching any meta value whose quoting, expansion or escaping
+#: ``env -S`` parses differently from ``sh`` word-splitting. The check declines
+#: those rather than guessing, because guessing wrong aborts an execution the
+#: launcher would have run.
+_META_METACHAR_PATTERN = r"""*\'*|*\"*|*\$*|*\`*|*\\*"""
+
+
+def _launch_check_shell(meta_key: str, *, allow_strip: bool) -> str:
+    """Build the POSIX sh preamble that resolves a spec's launch command chain.
+
+    The preamble word-splits the spec's launch-command meta, resolves the
+    commands the node would actually exec, and aborts with
+    :data:`~app.tasks.execution.executors.nomad.steps.LAUNCH_CHECK_EXIT_CODE`
+    when one of them is absent. It recognizes a deliberately small grammar --
+    plain words, optionally behind a bare ``sudo`` -- and declines anything
+    else, leaving that invocation to behave exactly as it does today: ``sh``
+    word-splitting and ``env -S`` (what the launcher tokenizes with) are
+    different grammars, so aborting on a form only one of them understands would
+    fail an execution that runs.
+
+    Under ``allow_strip`` it also drops a redundant ``sudo`` prefix when the
+    node's tasks already run as uid 0 and carry no ``sudo`` binary, and writes
+    the effective interpreter to :data:`EFFECTIVE_INTERPRETER_PATH` for the
+    spec's ``run-script`` step to launch from. Only a *bare* prefix is dropped:
+    ``sudo -u <user>`` lowers privilege, so removing it would run the payload as
+    root instead of as the named user.
+
+    Shell locals use the bareword form (``$name``) throughout, for the reason
+    given at :data:`STALENESS_PREAMBLE_SHELL`. ``${NOMAD_ALLOC_DIR}`` is in
+    Nomad's own variable table and is the one brace form correct here.
+
+    :param meta_key: The spec's launch-command meta key, without the
+        ``NOMAD_META_`` prefix.
+    :param allow_strip: Whether the spec's ``run-script`` step reads the
+        effective interpreter back, which is what makes a strip observable.
+    :return: The POSIX sh script the step runs.
+    """
+    decline = (
+        f"printf '%s' \"$m\" > {EFFECTIVE_INTERPRETER_PATH}; exit 0"
+        if allow_strip
+        else "exit 0"
+    )
+    abort = (
+        'echo "SEP_UNLAUNCHABLE: command=$1 node=$NOMAD_META_target"; '
+        f"exit {LAUNCH_CHECK_EXIT_CODE}"
+    )
+    resolve_or_abort = 'command -v "$1" > /dev/null 2>&1 || { ' + abort + "; }; "
+    skip_assignments = (
+        'while [ $# -gt 0 ]; do case "$1" in *=*) shift;; *) break;; esac; done; '
+    )
+    strip = (
+        "if [ $# -ge 2 ]; then "
+        'case "$1" in sudo|*/sudo) '
+        'case "$2" in -*|*=*) ;; '
+        '*) if [ "$(id -u)" = 0 ] && ! command -v sudo > /dev/null 2>&1; then '
+        "shift; eff=$*; "
+        'echo "SEP_SUDO_STRIPPED: node=$NOMAD_META_target"; '
+        "fi;; esac;; esac; "
+        "fi; "
+    )
+    sudo_walk = (
+        'case "$1" in sudo|*/sudo) shift; '
+        "while [ $# -gt 0 ]; do "
+        'case "$1" in '
+        "--) shift; break;; "
+        "--*=*) shift;; "
+        f"{_SUDO_VALUE_OPTIONS}) shift; if [ $# -gt 0 ]; then shift; fi;; "
+        "--?*) shift;; "
+        "-?) shift;; "
+        f"-*) {decline};; "
+        "*) break;; "
+        "esac; done; "
+        + skip_assignments
+        + "if [ $# -gt 0 ]; then "
+        + resolve_or_abort
+        + "fi;; esac; "
+    )
+    return (
+        f"m=$NOMAD_META_{meta_key}; "
+        '[ -n "$m" ] || exit 0; '
+        f'case "$m" in {_META_METACHAR_PATTERN}) {decline};; esac; '
+        "set -f; "
+        "set -- $m; "
+        "[ $# -gt 0 ] || exit 0; "
+        f'case "$1" in env|*/env) {decline};; esac; '
+        + ("eff=$m; " + strip if allow_strip else "")
+        + skip_assignments
+        + "[ $# -gt 0 ] || exit 0; "
+        + resolve_or_abort
+        + sudo_walk
+        + (
+            f"printf '%s' \"$eff\" > {EFFECTIVE_INTERPRETER_PATH}; "
+            if allow_strip
+            else ""
+        )
+        + "exit 0"
+    )
+
+
+def _check_launchable_task(meta_key: str, *, allow_strip: bool) -> dict[str, Any]:
+    """Build the prestart step guarding one spec's launch command.
+
+    A factory rather than a module constant deep-copied per site: the rendered
+    shell differs by meta key and strip policy, and building per call removes
+    the shared-mutable hazard the constant shape carries.
+
+    :param meta_key: The spec's launch-command meta key, without the
+        ``NOMAD_META_`` prefix.
+    :param allow_strip: Whether the spec's ``run-script`` step launches from
+        :data:`EFFECTIVE_INTERPRETER_PATH`.
+    :return: The Nomad task definition for the check step.
+    """
+    return {
+        "Name": NomadStep.CHECK_LAUNCHABLE,
+        "Lifecycle": {"hook": "prestart", "sidecar": False},
+        "Driver": "raw_exec",
+        "User": "",
+        "Config": {
+            "command": "sh",
+            "args": ["-c", _launch_check_shell(meta_key, allow_strip=allow_strip)],
+        },
+        "Meta": {},
+        "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
+    }
+
 
 #: POSIX sh body of the log-capture hold: keep the allocation non-terminal after
 #: the payload exits so Nomad cannot garbage-collect logs SEP has not read yet,
@@ -157,6 +300,7 @@ NOMAD_RUN_COMMAND = {
             "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
                 deepcopy(_CHECK_STALENESS_TASK),
+                _check_launchable_task("command", allow_strip=False),
                 {
                     "Name": NomadStep.RUN_SCRIPT,
                     "Driver": "raw_exec",
@@ -319,6 +463,7 @@ NOMAD_EXEC_ARTIFACT = {
             "Name": "execution",
             "Tasks": [
                 deepcopy(_CHECK_STALENESS_TASK),
+                _check_launchable_task("interpreter", allow_strip=True),
                 {
                     "Name": NomadStep.RUN_SCRIPT,
                     "Driver": "raw_exec",
@@ -400,6 +545,7 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
             "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
                 deepcopy(_CHECK_STALENESS_TASK),
+                _check_launchable_task("interpreter", allow_strip=True),
                 {
                     "Name": NomadStep.PREPARE_ENV,
                     "Lifecycle": {"hook": "prestart", "sidecar": False},

@@ -152,21 +152,26 @@ class TaskHistoryStatusEnum(StrEnum):
     :cvar STALE: Enum value for tasks skipped because executor placement
         exceeded the configured staleness threshold (for example a Nomad
         allocation that never left the queue).
+    :cvar UNLAUNCHABLE: Enum value for tasks the executor node could not
+        launch at all, because some command in the invocation does not
+        resolve there. The payload never ran, so this is not a script
+        failure.
     """
 
-    FAILED = auto()
-    PENDING = auto()
-    RUNNING = auto()
-    SUCCESS = auto()
-    STOPPED = auto()
-    LOST = auto()
-    STALE = auto()
+    FAILED = "failed"
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    STOPPED = "stopped"
+    LOST = "lost"
+    STALE = "stale"
+    UNLAUNCHABLE = "unlaunchable"
 
     def is_finished(self) -> bool:
         """Check if the task status indicates that it is finished.
 
         :return: True if the task status is one of FAILED, SUCCESS, STOPPED,
-            or STALE; False otherwise.
+            STALE, or UNLAUNCHABLE; False otherwise.
         :rtype: bool
         """
         return self in [
@@ -174,6 +179,7 @@ class TaskHistoryStatusEnum(StrEnum):
             TaskHistoryStatusEnum.SUCCESS,
             TaskHistoryStatusEnum.STOPPED,
             TaskHistoryStatusEnum.STALE,
+            TaskHistoryStatusEnum.UNLAUNCHABLE,
         ]
 
     def is_terminal(self) -> bool:
@@ -802,10 +808,11 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
 
         Generate a deterministic dedup key from the task name and target so
         that PagerDuty deduplicates successive failures into a single incident
-        and can resolve it when the task succeeds. The stale-skip alert uses
-        a ``:stale`` suffix on the same base key so it is a distinct
-        incident from a plain failure while still being scoped to the same
-        task/target pair.
+        and can resolve it when the task succeeds. The stale-skip and
+        unlaunchable alerts each suffix that base key so they stay distinct
+        incidents from a plain failure while still being scoped to the same
+        task/target pair. Every suffixed key needs its own resolve on the
+        ``SUCCESS`` arm -- an unresolved suffixed incident never clears.
         """
         base_dedup_key = (
             f"task:{self.execution_request.task}:{self.execution_request.target}"
@@ -814,6 +821,7 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         if self.status == TaskHistoryStatusEnum.SUCCESS:
             await alert_service.resolve(base_dedup_key)
             await alert_service.resolve(f"{base_dedup_key}:stale")
+            await alert_service.resolve(f"{base_dedup_key}:unlaunchable")
             return
 
         owner_details = None
@@ -835,6 +843,14 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
             )
             severity = AlertSeverity.WARNING
             alert_class = "task_stale"
+        elif self.status == TaskHistoryStatusEnum.UNLAUNCHABLE:
+            dedup_key = f"{base_dedup_key}:unlaunchable"
+            summary_action = (
+                "could not be launched (the executor node cannot run the "
+                "requested command)"
+            )
+            severity = AlertSeverity.WARNING
+            alert_class = "task_unlaunchable"
         else:
             return
 
