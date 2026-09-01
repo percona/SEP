@@ -305,7 +305,7 @@ class PMMRemoteAPI(RemoteAPI):
         :return: The version of the PMM instance.
         :rtype: str
         """
-        version_data = await self.get("/v1/version")
+        version_data = as_json_object(await self.get("/v1/version"))
         return version_data["version"]
 
     async def check_connectivity(
@@ -333,7 +333,7 @@ class PMMRemoteAPI(RemoteAPI):
         probe_path = path if path is not None else self.CONNECTIVITY_CHECK_PATH
         try:
             async with asyncio.timeout(PROBE_TIMEOUT_SECONDS):
-                version_data = await self.get(probe_path)
+                version_data = as_json_object(await self.get(probe_path))
             version = version_data["version"]
         except (KeyError, TypeError):
             return build_connectivity_result(

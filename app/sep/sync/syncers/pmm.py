@@ -111,9 +111,9 @@ class PMMSyncer(BaseSyncer):
 
     async def __aexit__(
         self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         """Exit the asynchronous context manager.
 
@@ -140,7 +140,7 @@ class PMMSyncer(BaseSyncer):
         :rtype: PMMRemoteAPI
         :raises ValueError: If the PMM API client has not been initialized.
         """
-        if getattr(self, "_pmm_api", None) is None:
+        if self._pmm_api is None:
             raise ValueError("PMM API client has not been initialized.")
         return self._pmm_api
 

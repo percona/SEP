@@ -26,7 +26,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.core.pagination import build_proxied_page, PaginatedResponse, PaginationDep
-from app.core.requests import as_json_array
+from app.core.requests import as_json_array, as_json_object
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.tasks.deps import TaskDep
 from app.sep.apps.tasks.models import (
@@ -57,8 +57,10 @@ async def tasks_api_list(
     :param pagination: Validated offset/limit forwarded to the upstream Tasks API.
     :return: A paginated envelope of task rows for the schema-driven list view.
     """
-    response = await tasks_api.get(
-        "/", params={"offset": pagination.offset, "limit": pagination.limit}
+    response = as_json_object(
+        await tasks_api.get(
+            "/", params={"offset": pagination.offset, "limit": pagination.limit}
+        )
     )
     user_id_to_username = await get_username_mapping()
     items = [

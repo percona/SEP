@@ -257,7 +257,9 @@ async def retrieve_host_system_observation(
     observation: HostSystemObservationDep,
 ) -> HostSystemObservationResponse:
     """Retrieve host system observation for a node."""
-    return observation
+    return HostSystemObservationResponse.model_validate(
+        observation, from_attributes=True
+    )
 
 
 @router.put("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])

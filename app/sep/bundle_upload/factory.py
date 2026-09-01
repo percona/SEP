@@ -77,7 +77,7 @@ def _rebase_query(
     :param endpoint_query: The query pairs carried by the configured endpoint.
     :return: The merged query map.
     """
-    merged = {
+    merged: dict[str, PlanValue] = {
         key: LiteralValue(source="literal", value=value)
         for key, value in endpoint_query.items()
     }

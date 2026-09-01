@@ -576,11 +576,13 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         return logging.getLogger(self.logger_name)
 
     @property
-    def session(self) -> ClientSession:
+    def session(self) -> ClientSession | None:
         """Get the ClientSession used in requests.
 
-        :return: The ClientSession used in requests.
-        :rtype: ClientSession
+        :return: The ClientSession used in requests, or ``None`` before the
+            client is opened and after it is closed -- which is what callers
+            test for to decide whether to enter it.
+        :rtype: ClientSession | None
         """
         return self._session
 

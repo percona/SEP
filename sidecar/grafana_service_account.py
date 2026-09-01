@@ -281,12 +281,11 @@ async def search_account(provider: GrafanaSDK) -> int | None:
     )
     accounts = found.get("serviceAccounts") if isinstance(found, Mapping) else None
     for account in accounts if isinstance(accounts, list) else ():
-        if (
-            isinstance(account, Mapping)
-            and account.get("name") == SERVICE_ACCOUNT_NAME
-            and account.get("id") is not None
-        ):
-            return account["id"]
+        if not isinstance(account, Mapping):
+            continue
+        account_id = account.get("id")
+        if account.get("name") == SERVICE_ACCOUNT_NAME and isinstance(account_id, int):
+            return account_id
     return None
 
 
@@ -324,7 +323,7 @@ async def find_or_create_account(provider: GrafanaSDK) -> int:
             raise
         return winner
     account_id = created.get("id") if isinstance(created, Mapping) else None
-    if account_id is None:
+    if not isinstance(account_id, int):
         raise MintError(
             f"Grafana answered no service-account id when creating "
             f"{SERVICE_ACCOUNT_NAME!r}; the response was a "

@@ -225,7 +225,9 @@ async def retrieve_service_system_observation(
     observation: ServiceSystemObservationDep,
 ) -> ServiceSystemObservationResponse:
     """Retrieve service system observation for a service."""
-    return observation
+    return ServiceSystemObservationResponse.model_validate(
+        observation, from_attributes=True
+    )
 
 
 @router.put("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])

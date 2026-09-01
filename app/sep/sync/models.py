@@ -19,7 +19,7 @@ import asyncio
 import json
 import logging
 from collections import defaultdict
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from functools import cached_property
@@ -43,6 +43,7 @@ from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.db import get_async_session_maker
 from app.sep.inventory import (
     CreatedEntity,
+    CreatedEntityBase,
     CreatedNode,
     CreatedSchema,
     CreatedService,
@@ -267,9 +268,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
 
     async def __aexit__(
         self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         """Exit the asynchronous context manager.
 
@@ -316,8 +317,12 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     @cached_property
     def can_sync_mapping(
         self,
-    ) -> dict[SyncInventoryEntityTypeEnum, Callable[[CreatedEntity], bool]]:
+    ) -> dict[SyncInventoryEntityTypeEnum, Callable[[Any], bool]]:
         """Map entity types to their corresponding sync permission check methods.
+
+        Each check accepts only its own entity model, so the value type is the
+        widest one the heterogeneous table admits -- the key is what makes a
+        lookup well-typed, and that correlation is not expressible here.
 
         :return: A dictionary mapping each SyncInventoryEntityTypeEnum to a method that
                  determines if that entity can be synchronized.
@@ -390,7 +395,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         self,
         entity_type: SyncInventoryEntityTypeEnum,
         created_entity: CreatedEntity | None,
-    ) -> list[CreatedEntity]:
+    ) -> Sequence[CreatedEntityBase]:
         """Retrieve child entities for a given entity type and entity.
 
         Depending on the entity type, this method fetches related child entities that
@@ -1581,9 +1586,11 @@ class BaseTaskSyncer(BaseSyncer):
         :raises TimeoutError: If the task times out.
         :raises ValueError: If the task fails.
         """
-        task_history = await self.tasks_api.post(
-            f"/execute/{task_name}",
-            json={"meta": meta, "payload": payload, "anonymize_mask": 0},
+        task_history = as_json_object(
+            await self.tasks_api.post(
+                f"/execute/{task_name}",
+                json={"meta": meta, "payload": payload, "anonymize_mask": 0},
+            )
         )
         task_history_id = task_history["id"]
         status = task_history["status"]
@@ -1595,7 +1602,9 @@ class BaseTaskSyncer(BaseSyncer):
             await asyncio.sleep(self.tasks_execution_wait_interval)
             time_waiting += self.tasks_execution_wait_interval
             try:
-                task_history = await self.tasks_api.get(f"/history/{task_history_id}")
+                task_history = as_json_object(
+                    await self.tasks_api.get(f"/history/{task_history_id}")
+                )
                 status = task_history["status"]
             except (HTTPException, ClientError):
                 logger.exception("Error getting task history")
