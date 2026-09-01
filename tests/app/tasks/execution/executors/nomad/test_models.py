@@ -110,6 +110,7 @@ MOCK_LOG_STREAM_BODY_START_MONOTONIC = 1000.0
 STALENESS_THRESHOLD_OVERRIDE = 300
 PENDING_ALLOCATION_TIMEOUT_OVERRIDE = 60
 PENDING_ALLOCATION_WITHIN_BOUND_AGE = 30
+PENDING_ALLOCATION_BOUNDARY_AGE = 30
 PENDING_ALLOCATION_PAST_BOUND_AGE = 120
 MULTI_CHUNK_LOG_FIRST_OFFSET = 17
 MULTI_CHUNK_LOG_SECOND_OFFSET = 42
@@ -2204,16 +2205,15 @@ class TestSyncTaskHistoryWithoutTaskStates:
     async def test_pending_allocation_escalation_uses_configured_bound(
         self, mock_nomad_cls, monkeypatch: pytest.MonkeyPatch
     ):
-        """Assert a tighter configured bound escalates sooner than the default."""
+        """Assert an age exactly equal to the configured bound escalates."""
         monkeypatch.setattr(
             tasks_settings,
             "PENDING_ALLOCATION_TIMEOUT_SECONDS",
-            PENDING_ALLOCATION_WITHIN_BOUND_AGE,
+            PENDING_ALLOCATION_BOUNDARY_AGE,
         )
         self._backend(mock_nomad_cls, self._alloc())
         executor = _build_executor()
-        # Age equals the override bound; the check uses ``>=`` so this escalates.
-        started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_WITHIN_BOUND_AGE)
+        started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_BOUNDARY_AGE)
 
         result = await executor._sync_task_history(
             self._queue_item(started_at=started_at)
