@@ -79,7 +79,9 @@ async def download_task_history_file(
             filename = Path(path.rstrip("/")).name or path
             is_dir = False
             try:
-                files = await tasks_api.get(f"/history/{task_history.id}/files/")
+                files = as_json_object(
+                    await tasks_api.get(f"/history/{task_history.id}/files/")
+                )
                 meta = files.get(path) or files.get(path.rstrip("/"))
                 if isinstance(meta, dict):
                     is_dir = bool(meta.get("is_dir") or meta.get("isDir"))

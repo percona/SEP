@@ -109,15 +109,20 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
         """
         return await settings.get_remote_api(endpoint=self.api_endpoint)
 
-    @validate_call
     async def send_alert(self, alert: Alert) -> None:
         """Send an alert to PagerDuty using the Events API v2.
 
         The dispatcher hands every provider the base :class:`Alert`, so the
         PagerDuty-specific fields are resolved here rather than by widening what
-        the base contract promises.
+        the base contract promises. Carries no ``validate_call``: that would
+        coerce the argument to :class:`Alert` first, and ``AlertSeverity`` has
+        neither the lowercase values nor the name-or-value lookup that
+        ``PagerDutyAlertSeverity`` accepts, so a mapping naming ``"critical"``
+        would be rejected before reaching the conversion below.
 
-        :param alert: The alert to be sent.
+        :param alert: The alert to be sent, as an :class:`Alert`, a
+            :class:`PagerDutyAlert`, or a mapping of either's fields.
+        :raises ValidationError: If ``alert`` carries no PagerDuty severity.
         """
         if not isinstance(alert, PagerDutyAlert):
             alert = PagerDutyAlert.model_validate(alert, from_attributes=True)

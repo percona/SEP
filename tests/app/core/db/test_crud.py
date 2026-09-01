@@ -1063,3 +1063,56 @@ class TestExists:
             await UniqueKeyManager.exists(session, col(UniqueKeyModel.label) == "gone")
             is False
         )
+
+
+class TestDMLWhereGuards:
+    """Test the guards `update_where` and `delete_where` apply before running."""
+
+    @pytest.mark.asyncio
+    async def test_update_where_rejects_no_filter(self, session: AsyncSession) -> None:
+        """Refuse an unbounded UPDATE."""
+        with pytest.raises(ValueError, match="at least one filter"):
+            await UniqueKeyManager.update_where(session, values={"label": "x"})
+
+    @pytest.mark.asyncio
+    async def test_delete_where_rejects_no_filter(self, session: AsyncSession) -> None:
+        """Refuse an unbounded DELETE."""
+        with pytest.raises(ValueError, match="at least one filter"):
+            await UniqueKeyManager.delete_where(session)
+
+    @pytest.mark.asyncio
+    async def test_update_where_rejects_empty_returning(
+        self, session: AsyncSession
+    ) -> None:
+        """Refuse a `returning` that names no column.
+
+        The overloads promise a list of rows for any non-`bool` `returning`, so
+        an empty one would return a `CursorResult` where a list was declared.
+        """
+        with pytest.raises(ValueError, match="returning must name at least one"):
+            await UniqueKeyManager.update_where(
+                session, values={"label": "x"}, returning=[], key="alpha"
+            )
+
+    @pytest.mark.asyncio
+    async def test_delete_where_rejects_empty_returning(
+        self, session: AsyncSession
+    ) -> None:
+        """Refuse a `returning` that names no column, on the DELETE arm too."""
+        with pytest.raises(ValueError, match="returning must name at least one"):
+            await UniqueKeyManager.delete_where(session, returning=(), key="alpha")
+
+    @pytest.mark.asyncio
+    async def test_update_where_returns_named_columns(
+        self, session: AsyncSession
+    ) -> None:
+        """Honor a `returning` that does name a column."""
+        await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="alpha", label="before"),
+            filter_include={"key"},
+        )
+        returned = await UniqueKeyManager.update_where(
+            session, values={"label": "after"}, returning=["label"], key="alpha"
+        )
+        assert returned == ["after"]

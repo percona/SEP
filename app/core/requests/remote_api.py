@@ -179,11 +179,11 @@ def as_json_object(payload: JSONBody) -> dict[str, Any]:
     :return: The payload as a plain dict.
     :raises HTTPBadGatewayException: If the payload is not a JSON object.
     """
-    if not isinstance(payload, Mapping):
+    if not isinstance(payload, dict):
         raise HTTPBadGatewayException(
             detail="The server answered with an unexpected payload shape."
         )
-    return dict(payload)
+    return payload
 
 
 def as_json_array(payload: JSONBody) -> list[dict[str, Any]]:
@@ -193,17 +193,17 @@ def as_json_array(payload: JSONBody) -> list[dict[str, Any]]:
     verified claim rather than an asserted one.
 
     :param payload: The parsed body returned by a :class:`BaseRemoteAPI` verb.
-    :return: The payload as a list of plain dicts.
+    :return: The payload itself, once every element is confirmed to be an object.
     :raises HTTPBadGatewayException: If the payload is not a JSON array, or any
         element of it is not a JSON object.
     """
     if not isinstance(payload, list) or not all(
-        isinstance(item, Mapping) for item in payload
+        isinstance(item, dict) for item in payload
     ):
         raise HTTPBadGatewayException(
             detail="The server answered with an unexpected payload shape."
         )
-    return [dict(item) for item in payload]
+    return payload
 
 
 def _sanitize_request_kwargs(

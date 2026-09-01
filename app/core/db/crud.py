@@ -399,10 +399,18 @@ class BaseManager:
         This method ensures that at least one filter is provided to avoid unintentional
         mass updates or deletions, and checks for database dialect-specific handling of
         the `RETURNING` clause.
+
+        :raises ValueError: If no filter is given, or if ``returning`` is an empty
+            iterable — the overloads promise a list of rows for any non-``bool``
+            ``returning``, and an empty one names no column to return.
         """
         if not whereclause and not equal_filters:
             raise ValueError(
                 "You must specify at least one filter in *whereclause or **equal_filters"
+            )
+        if returning is not True and returning is not False and not returning:
+            raise ValueError(
+                "returning must name at least one column, or be True or False"
             )
 
         if returning and session.get_bind().name == DatabaseDialect.MYSQL:
@@ -535,7 +543,6 @@ class BaseManager:
             _delete_builder(),
             *whereclause,
             returning=returning,
-            values=None,
             **equal_filters,
         )
 
