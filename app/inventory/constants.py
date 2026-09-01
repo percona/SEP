@@ -40,6 +40,10 @@ UNCOLLECTED_SERVICE_OBSERVATION_DETAIL = (
     "System observation not collected yet for this service"
 )
 
+#: Longest error text stored on an entity's ``last_sync_error``. The manager
+#: truncates to this, so a caller may send an exception message of any length.
+SYNC_ERROR_MAX_LENGTH: Final = 1000
+
 
 class RetirableEntityName(StrEnum):
     """Name the inventory entity types that carry a retirement tombstone.

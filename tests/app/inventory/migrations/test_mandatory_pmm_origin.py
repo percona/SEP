@@ -73,6 +73,17 @@ _MANDATORY_COLUMNS = (
     ("service", "external_id"),
 )
 
+#: Columns no revision at or below ``_PRE_ORIGIN_REVISION`` declares, added by a
+#: later one and therefore dropped again on the way down to it.
+_COLUMNS_ABOVE_PRE_ORIGIN = frozenset(
+    {
+        "last_synced_at",
+        "last_sync_error",
+        "sync_failing_since",
+        "consecutive_failures",
+    }
+)
+
 
 @pytest.fixture
 def inventory_alembic_config(tmp_path, monkeypatch):
@@ -128,6 +139,26 @@ def _row(conn, table_name, entity_id):
         (entity_id,),
     ).one()
     return result._mapping
+
+
+def _row_at_pre_origin(conn, table_name, entity_id):
+    """Return the row restricted to the columns the pre-origin schema declares.
+
+    A revision above ``_PRE_ORIGIN_REVISION`` may add columns, and downgrading
+    to it drops them on the way past. Comparing whole rows across that boundary
+    would then fail on the schema difference rather than on the data this test
+    is about, so the later columns are excluded from the captured expectation.
+
+    :param conn: The open connection to read through.
+    :param table_name: The table holding the row.
+    :param entity_id: The row's primary key.
+    :return: The row's pre-origin columns and their values.
+    """
+    return {
+        name: value
+        for name, value in _row(conn, table_name, entity_id).items()
+        if name not in _COLUMNS_ABOVE_PRE_ORIGIN
+    }
 
 
 def test_origin_less_node_is_retired_not_deleted(inventory_alembic_config):
@@ -400,9 +431,8 @@ def test_downgrade_restores_nullability_and_leaves_data_alone(
     engine = create_engine(sync_url)
     try:
         with engine.begin() as conn:
-            before = (_row(conn, "node", node_id), _row(conn, "service", service_id))
-            stamped_node = dict(before[0])
-            stamped_service = dict(before[1])
+            stamped_node = _row_at_pre_origin(conn, "node", node_id)
+            stamped_service = _row_at_pre_origin(conn, "service", service_id)
     finally:
         engine.dispose()
 

@@ -47,6 +47,32 @@ class RetiredAtBase(SQLModel):
     )
 
 
+class SyncHealthBase(SQLModel):
+    """Expose how recently, and how successfully, a syncer last confirmed an entity.
+
+    Written only by the syncer that mirrors the entity's own fields, so
+    ``last_synced_at`` reads as "these mirrored values were confirmed against
+    their source at T" rather than "some syncer walked past this row".
+
+    :param last_synced_at: When a syncer last compared this entity against its
+        source and updated it, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the entity is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began — the
+        first failure after the last success — or None while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
+    """
+
+    last_synced_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+    last_sync_error: str | None = SQLField(default=None, sa_type=Text)
+    sync_failing_since: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+    consecutive_failures: int = SQLField(default=0, nullable=False)
+
+
 class RetirableSQLModel(RetiredAtBase, BaseSQLModel):
     """Store the retirement state of a tombstoned entity.
 
@@ -143,6 +169,45 @@ class IdentityLinkDecisionEnum(StrEnum):
     UNLINKED = "unlinked"
 
 
+class SyncOutcomeEnum(StrEnum):
+    """Enumerate the outcomes a syncer reports for one entity's sync attempt.
+
+    :cvar SUCCESS: The entity was compared against its source and updated.
+    :cvar FAILURE: The attempt raised before the comparison completed.
+
+    Values are spelled out for the reason given on
+    :class:`IdentityLinkDecisionEnum`: this enum is a request body field.
+    """
+
+    SUCCESS = "success"
+    FAILURE = "failure"
+
+
+class SyncHealthWrite(SQLModel):
+    """Define the body reporting one entity's sync outcome.
+
+    :param outcome: Whether the attempt succeeded or failed.
+    :param error: The failure's message, never empty. Required on FAILURE,
+        absent on SUCCESS.
+    :param attempted_at: When the syncer began this attempt. Stamped as
+        ``last_synced_at`` on success, and compared against the row's current
+        ``last_synced_at`` so a late-arriving report from an older attempt
+        cannot overwrite a newer one.
+    """
+
+    outcome: SyncOutcomeEnum
+    error: NonEmptyStr | None = None
+    attempted_at: UTCDatetime
+
+    @model_validator(mode="after")
+    def _validate_error_matches_outcome(self) -> Self:
+        if self.outcome is SyncOutcomeEnum.FAILURE and self.error is None:
+            raise ValueError("error is required when outcome is failure")
+        if self.outcome is SyncOutcomeEnum.SUCCESS and self.error is not None:
+            raise ValueError("error must be omitted when outcome is success")
+        return self
+
+
 class NodeBase(SQLModel):
     """Define the base structure for node-related operations.
 
@@ -165,7 +230,7 @@ class NodeBase(SQLModel):
     )  # TODO: Enum with allowed values  # noqa: TD002, TD003
 
 
-class Node(NodeBase, RetirableSQLModel, table=True):
+class Node(NodeBase, SyncHealthBase, RetirableSQLModel, table=True):
     """Represent a node in the inventory.
 
     :param address: The network address of the node.
@@ -178,6 +243,13 @@ class Node(NodeBase, RetirableSQLModel, table=True):
     :param retired_at: When the node stopped being reported upstream, or None while
         it is active.
     :param retirement_key: The discriminator carried inside every unique index.
+    :param last_synced_at: When a syncer last confirmed the node against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the node is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     :param services: A list of services associated with the node.
     """
 
@@ -211,7 +283,7 @@ class NodeWrite(NodeBase):
     """
 
 
-class NodeResponse(BaseSQLModel, RetiredAtBase, NodeBase):
+class NodeResponse(BaseSQLModel, RetiredAtBase, SyncHealthBase, NodeBase):
     """Represent a node API response.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -226,6 +298,13 @@ class NodeResponse(BaseSQLModel, RetiredAtBase, NodeBase):
     :param type: The type of the node (e.g., remote, generic).
     :param retired_at: When the node stopped being reported upstream, or None while
         it is active.
+    :param last_synced_at: When a syncer last confirmed the node against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the node is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     :param services: A list of services associated with the node.
     """
 
@@ -291,7 +370,7 @@ class ServiceWrite(ServiceBase):
     )
 
 
-class Service(RetirableSQLModel, ServiceBase, table=True):
+class Service(RetirableSQLModel, SyncHealthBase, ServiceBase, table=True):
     """Represent a service running on a node in the inventory.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -315,6 +394,13 @@ class Service(RetirableSQLModel, ServiceBase, table=True):
     :param retired_at: When the service stopped being reported upstream, or None
         while it is active.
     :param retirement_key: The discriminator carried inside every unique index.
+    :param last_synced_at: When a syncer last confirmed the service against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the service is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     :param schemas: A list of schemas associated with the service.
     """
 
@@ -341,7 +427,7 @@ class Service(RetirableSQLModel, ServiceBase, table=True):
     )
 
 
-class ServiceResponse(BaseSQLModel, RetiredAtBase, ServiceBase):
+class ServiceResponse(BaseSQLModel, RetiredAtBase, SyncHealthBase, ServiceBase):
     """Define the service API response.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -362,6 +448,13 @@ class ServiceResponse(BaseSQLModel, RetiredAtBase, ServiceBase):
     :param node: The node to which the service is associated.
     :param retired_at: When the service stopped being reported upstream, or None
         while it is active.
+    :param last_synced_at: When a syncer last confirmed the service against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the service is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     """
 
     schemas: list["Schema"]
@@ -404,7 +497,7 @@ class SchemaBase(SQLModel):
     service_id: int = SQLField(foreign_key="service.id", index=True, ondelete="CASCADE")
 
 
-class Schema(RetirableSQLModel, SchemaBase, table=True):
+class Schema(RetirableSQLModel, SyncHealthBase, SchemaBase, table=True):
     """Represent a database schema within a service.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -421,6 +514,13 @@ class Schema(RetirableSQLModel, SchemaBase, table=True):
     :param retired_at: When the schema stopped being reported upstream, or None
         while it is active.
     :param retirement_key: The discriminator carried inside every unique index.
+    :param last_synced_at: When a syncer last confirmed the schema against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the schema is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     :param tables: A list of tables within the schema.
     """
 
@@ -461,7 +561,7 @@ class SchemaWrite(SchemaBase):
     )
 
 
-class SchemaCompactResponse(BaseSQLModel, RetiredAtBase, SchemaBase):
+class SchemaCompactResponse(BaseSQLModel, RetiredAtBase, SyncHealthBase, SchemaBase):
     """Define a compact schema response without nested tables.
 
     :param id: The primary key for the schema. Auto-incremented and not nullable.
@@ -473,10 +573,17 @@ class SchemaCompactResponse(BaseSQLModel, RetiredAtBase, SchemaBase):
     :param service_id: The unique identifier of the service to which the schema belongs.
     :param retired_at: When the schema stopped being reported upstream, or None while
         it is active.
+    :param last_synced_at: When a syncer last confirmed the schema against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the schema is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     """
 
 
-class SchemaResponse(BaseSQLModel, RetiredAtBase, SchemaBase):
+class SchemaResponse(BaseSQLModel, RetiredAtBase, SyncHealthBase, SchemaBase):
     """Define the schema API response.
 
     :param id: The primary key for the schema. Auto-incremented and not nullable.
@@ -488,6 +595,13 @@ class SchemaResponse(BaseSQLModel, RetiredAtBase, SchemaBase):
     :param service_id: The unique identifier of the service to which the schema belongs.
     :param retired_at: When the schema stopped being reported upstream, or None while
         it is active.
+    :param last_synced_at: When a syncer last confirmed the schema against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the schema is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     :param tables: A list of tables within the schema.
     """
 
@@ -529,7 +643,7 @@ class TableBase(SQLModel):
     )
 
 
-class Table(RetirableSQLModel, TableBase, table=True):
+class Table(RetirableSQLModel, SyncHealthBase, TableBase, table=True):
     """Represent a table within a schema.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -545,6 +659,13 @@ class Table(RetirableSQLModel, TableBase, table=True):
     :param retired_at: When the table stopped being reported upstream, or None while
         it is active.
     :param retirement_key: The discriminator carried inside every unique index.
+    :param last_synced_at: When a syncer last confirmed the table against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the table is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     :param database: The schema to which the table is associated.
     """
 
@@ -582,7 +703,7 @@ class TableWrite(TableBase):
     )
 
 
-class TableResponse(BaseSQLModel, RetiredAtBase, TableBase):
+class TableResponse(BaseSQLModel, RetiredAtBase, SyncHealthBase, TableBase):
     """Define the table API response.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -595,6 +716,13 @@ class TableResponse(BaseSQLModel, RetiredAtBase, TableBase):
     :param schema_id: The foreign key referencing the schema to which the table belongs.
     :param retired_at: When the table stopped being reported upstream, or None while
         it is active.
+    :param last_synced_at: When a syncer last confirmed the table against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the table is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     """
 
 
