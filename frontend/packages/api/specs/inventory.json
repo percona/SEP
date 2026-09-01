@@ -361,6 +361,7 @@
           },
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },
@@ -504,6 +505,7 @@
           },
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },
@@ -938,6 +940,7 @@
         "properties": {
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },
@@ -1039,6 +1042,7 @@
         "properties": {
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },
@@ -1140,6 +1144,7 @@
         "properties": {
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },
@@ -1253,6 +1258,7 @@
         "properties": {
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },
@@ -1399,6 +1405,7 @@
           },
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },
@@ -1566,6 +1573,7 @@
           },
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },
@@ -1770,6 +1778,7 @@
           },
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },
@@ -2365,7 +2374,7 @@
         "type": "object"
       },
       "SyncOutcomeEnum": {
-        "description": "Enumerate the outcomes a syncer reports for one entity's sync attempt.\n\n:cvar SUCCESS: The entity was compared against its source and updated.\n:cvar FAILURE: The attempt raised before the comparison completed.\n\nValues are spelled out for the reason given on\n:class:`IdentityLinkDecisionEnum`: this enum is a request body field.",
+        "description": "Enumerate the outcomes a syncer reports for one entity's sync attempt.\n\n:cvar SUCCESS: The entity was compared against its source and updated.\n:cvar FAILURE: The attempt raised before the comparison completed.",
         "enum": [
           "success",
           "failure"
@@ -2378,6 +2387,7 @@
         "properties": {
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },
@@ -2491,6 +2501,7 @@
         "properties": {
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },
@@ -2608,6 +2619,7 @@
         "properties": {
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },

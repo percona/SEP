@@ -505,6 +505,7 @@
           },
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },
@@ -797,6 +798,7 @@
         "properties": {
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },
@@ -920,6 +922,7 @@
           },
           "consecutive_failures": {
             "default": 0,
+            "minimum": 0.0,
             "title": "Consecutive Failures",
             "type": "integer"
           },
