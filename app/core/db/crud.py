@@ -308,6 +308,17 @@ class BaseManager:
 
         This method ensures that at least one filter is provided to avoid unintentional
         mass updates or deletions.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :param builder: The builder producing the UPDATE or DELETE statement.
+        :param whereclause: The filter expressions applied to the statement.
+        :param returning: The column names to return, ``True`` for whole rows, or
+            ``False`` for none.
+        :param equal_filters: Additional equality filters applied to the statement.
+        :return: The raw cursor result when nothing is returned, a list of rows when
+            more than one column is requested, or a list of scalars for a single one.
+        :raises ValueError: If neither ``whereclause`` nor ``equal_filters`` is given.
         """
         if not whereclause and not equal_filters:
             raise ValueError(
@@ -804,18 +815,13 @@ class BaseManager:
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param instance_create: The data used to filter and possibly create the
             instance.
-        :type instance_create: B
         :param filter_include: The set of fields of `instance_create` to be included in
             the search filter. Use None (default) for all fields.
-        :type filter_include: set[str] | None
         :param extra_fields: Additional fields to be set on the created instance.
-        :type extra_fields: Any
         :return: The existing or newly created instance of `cls.Model`, and a bool
             specifying whether a new instance was created.
-        :rtype: tuple[T, bool]
         :raises HTTPBadRequestException: If a ``DatabaseError`` occurs during the
             insert commit.
         :raises RuntimeError: If the post-conflict refetch matches no row, meaning

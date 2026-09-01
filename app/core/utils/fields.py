@@ -339,33 +339,21 @@ class LogLevel(EnumFieldMixin, IntEnum):
 
 
 class DatabaseDialect(EnumFieldMixin, StrEnum):
-    """Enum representing supported database dialect names."""
+    """Represent supported database dialect names."""
 
     SQLITE = "sqlite"
     POSTGRESQL = "postgresql"
 
 
 class DatabaseEngine(EnumFieldMixin, StrEnum):
-    """Represent supported database engines.
-
-    :cvar SQLITE: SQLite engine string.
-    :vartype SQLITE: str
-    :cvar POSTGRESQL: PostgreSQL engine string, using the ``psycopg2`` driver.
-    :vartype POSTGRESQL: str
-    """
+    """Represent supported database engines as SQLAlchemy engine strings."""
 
     SQLITE = "sqlite"
     POSTGRESQL = "postgresql+psycopg2"
 
 
 class AsyncDatabaseEngine(EnumFieldMixin, StrEnum):
-    """Represent supported async database engines.
-
-    :cvar SQLITE: SQLite engine string, using the ``aiosqlite`` driver.
-    :vartype SQLITE: str
-    :cvar POSTGRESQL: PostgreSQL engine string, using the ``asyncpg`` driver.
-    :vartype POSTGRESQL: str
-    """
+    """Represent supported async database engines as SQLAlchemy engine strings."""
 
     SQLITE = "sqlite+aiosqlite"
     POSTGRESQL = "postgresql+asyncpg"
@@ -381,10 +369,8 @@ def database_url_normalized_scheme_field_factory(
     specified.
 
     :param engine_enum_class: The database engine enum type to use. Either
-        `DatabaseEngineEnum` or `AsyncDatabaseEngineEnum`.
-    :type engine_enum_class: type[DatabaseEngineEnum] | type[AsyncDatabaseEngineEnum]
+        ``DatabaseEngine`` or ``AsyncDatabaseEngine``.
     :return: The annotated Url field with the attached validator.
-    :rtype: type[Url]
     """
     get_database_engine_enum = get_enum_from_value_or_name_factory(engine_enum_class)
 

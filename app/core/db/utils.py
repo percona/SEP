@@ -185,11 +185,8 @@ def idempotent_insert(engine_name: str, table: Any) -> GenericInsert:
 
     :param engine_name: SQLAlchemy engine ``name`` (``"postgresql"`` or
         ``"sqlite"``).
-    :type engine_name: str
     :param table: The target table or ORM model class.
-    :type table: Any
     :return: A dialect-specific insert construct.
-    :rtype: GenericInsert
     :raises NotImplementedError: If the dialect is not supported.
     """
     if engine_name == DatabaseDialect.POSTGRESQL:
