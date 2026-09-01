@@ -1767,16 +1767,16 @@ class AppSchema(SchemaBaseModel):
         return self
 
     @model_validator(mode="after")
-    def _validate_unique_field_names(self) -> Self:
-        """Ensure root-level form configuration and entities are mutually exclusive.
+    def _validate_form_configuration(self) -> Self:
+        """Validate root-level form configuration for plugin schemas.
 
         When ``entities`` is non-empty, root ``forms``, ``cardinality_rules``,
         and ``fail_when`` must be empty — those keys belong on the entity that
         owns them. If any are set alongside non-empty ``entities``, construction
         fails with a message naming the offending keys.
 
-        For task-style schemas (``entities`` unset or empty), validates
-        field-name uniqueness across root ``forms``.
+        For task-style schemas (``entities`` unset or empty), requires
+        ``list_view`` and validates field-name uniqueness across root ``forms``.
 
         :return: The validated plugin schema instance.
         :raises ValueError: If root form config is set on an entity-style
@@ -1784,7 +1784,7 @@ class AppSchema(SchemaBaseModel):
             ``entities`` nor ``list_view`` is usable.
         """
         if self.entities:
-            conflicting = []
+            conflicting: list[str] = []
             if self.forms:
                 conflicting.append("forms")
             if self.cardinality_rules:
