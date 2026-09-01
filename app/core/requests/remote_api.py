@@ -996,6 +996,7 @@ class RemoteAPI(BaseRemoteAPI):
                     response.status,
                     detail="The server answered with an unfollowed redirect.",
                 )
+            response_data: JSONBody = None
             try:
                 response_data = await response.json()
                 self.logger.debug(

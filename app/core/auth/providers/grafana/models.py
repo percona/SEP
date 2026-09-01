@@ -641,6 +641,7 @@ class GrafanaUser(BaseUser):
             against the lifetime of every accepted type, or of a type this
             surface does not accept.
         """
+        last_error: ValidationError | None = None
         for token_type in _BEARER_TOKEN_TYPES:
             try:
                 user = cls.model_validate(token, context={"token_type": token_type})
@@ -649,6 +650,8 @@ class GrafanaUser(BaseUser):
                 continue
             user.access_token = token
             return user
+        if last_error is None:
+            raise GrafanaException("No bearer token type is accepted on this surface.")
         raise last_error
 
     @classmethod

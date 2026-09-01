@@ -478,6 +478,11 @@ def main() -> None:
 
   if not args.skip_valkey:
 
+    # Bound before the blocks that fill them: --sentinel defaults on, so one of
+    # them always runs, but nothing local to this function says so.
+    dashboard_uid = ""
+    graphs = []
+
     # Sentinel Summary graphs
     if args.sentinel:
 
@@ -619,7 +624,8 @@ def main() -> None:
         "$node_name - known nodes",
       ]
 
-    render_dashboard(graphs, dashboard_uid, path_to_graphs, time_from=time_from, time_to=time_to)
+    if graphs:
+      render_dashboard(graphs, dashboard_uid, path_to_graphs, time_from=time_from, time_to=time_to)
 
 
   # OS Node Summary

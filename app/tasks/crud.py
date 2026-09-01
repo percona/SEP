@@ -99,10 +99,12 @@ class TaskManager(BaseSQLModelManager):
         """Append JSON ``Task.data`` predicates used by active-task list queries."""
         if target is not None:
             where.append(Task.data["meta"]["target"].as_string() == target)
-        if parent_is_null is not None or self_parent:
-            parent_value = func_json_extract(
-                session.get_bind().name, col(Task.data), "parent"
-            )
+        # Bound unconditionally: it only builds a SQL expression, and the guard
+        # it used to sit behind was the disjunction of the two guards below, so
+        # no path ever reached an unbound read.
+        parent_value = func_json_extract(
+            session.get_bind().name, col(Task.data), "parent"
+        )
         if parent_is_null is not None:
             if parent_is_null:
                 where.append(parent_value.is_(None))
