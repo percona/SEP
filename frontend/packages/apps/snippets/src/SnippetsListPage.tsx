@@ -48,7 +48,7 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import DownloadIcon from '@mui/icons-material/Download';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import SearchIcon from '@mui/icons-material/Search';
-import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
+import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET, useAuth } from '@sep/api';
 import { useDebouncedValue, useSnippetDownload } from '@sep/framework';
 import {
   useSnippets,
@@ -67,10 +67,6 @@ import type {
   SnippetApprovalFilter,
   SnippetResponse,
 } from './types';
-
-interface SnippetsListPageProps {
-  isAdmin?: boolean;
-}
 
 type ApprovalFilter = SnippetApprovalFilter;
 
@@ -223,11 +219,13 @@ function ApproveButton({
  * Snippet-centric list page rendered at `/snippets/`.
  *
  * Renders the snippet entities discovered by the backend (one row per
- * snippet file). When `isAdmin` is true, per-row approve / remove-approval
- * buttons and a multi-select batch-approve action are shown.
+ * snippet file). Approval and refresh are mutations, so per-row approve /
+ * remove-approval buttons, the multi-select batch-approve action and the
+ * manual refresh are shown only to a session that may mutate.
  */
-export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
+export function SnippetsListPage() {
   const navigate = useNavigate();
+  const { canMutate } = useAuth();
   const [listPage, setListPage] = useState({
     offset: DEFAULT_APP_LIST_OFFSET,
     limit: DEFAULT_APP_LIST_LIMIT,
@@ -305,7 +303,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [refreshSuccess, setRefreshSuccess] = useState<RefreshResponse | null>(null);
 
-  const showRefresh = isAdmin && capabilities?.manual_sync_enabled;
+  const showRefresh = canMutate && capabilities?.manual_sync_enabled;
 
   // Service-type options come from the whole-dataset facet, not the loaded page, so
   // a type unique to a later page is still selectable. The active selection is kept
@@ -421,7 +419,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
         history.
       </Typography>
 
-      {isAdmin && batchResult?.success && (
+      {canMutate && batchResult?.success && (
         <Alert severity="success" onClose={() => setBatchResult(null)} sx={{ mb: 2 }}>
           <Stack direction="row" spacing={1} flexWrap="wrap">
             <Chip label={`${batchResult.success.count} approved`} color="success" size="small" />
@@ -436,13 +434,13 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
         </Alert>
       )}
 
-      {isAdmin && batchResult?.generic && (
+      {canMutate && batchResult?.generic && (
         <Alert severity="error" onClose={() => setBatchResult(null)} sx={{ mb: 2 }}>
           {batchResult.generic}
         </Alert>
       )}
 
-      {isAdmin && batchResult?.error && (
+      {canMutate && batchResult?.error && (
         <Alert severity="error" onClose={() => setBatchResult(null)} sx={{ mb: 2 }}>
           <Stack spacing={0.5}>
             {batchResult.error.missing_in_db.length > 0 && (
@@ -465,7 +463,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
         </Alert>
       )}
 
-      {isAdmin && selectedFilenames.length > 0 && (
+      {canMutate && selectedFilenames.length > 0 && (
         <Box sx={{ mb: 2 }}>
           <Button
             variant="contained"
@@ -636,7 +634,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  {isAdmin && (
+                  {canMutate && (
                     <TableCell padding="checkbox">
                       <Checkbox
                         indeterminate={someSelected}
@@ -653,7 +651,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
                   <TableCell>Description</TableCell>
                   <TableCell>Approved</TableCell>
                   <TableCell>Reason</TableCell>
-                  {isAdmin && <TableCell>Actions</TableCell>}
+                  {canMutate && <TableCell>Actions</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -664,7 +662,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
                     sx={{ cursor: 'pointer' }}
                     onClick={() => navigate(encodeURIComponent(snippet.filename))}
                   >
-                    {isAdmin && (
+                    {canMutate && (
                       <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={selected.has(snippet.filename)}
@@ -698,7 +696,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
                     <TableCell>{snippet.description}</TableCell>
                     <TableCell>{snippet.is_approved ? 'Yes' : 'No'}</TableCell>
                     <TableCell>{snippet.reason}</TableCell>
-                    {isAdmin && (
+                    {canMutate && (
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <Stack direction="row" spacing={1}>
                           <DownloadButton
