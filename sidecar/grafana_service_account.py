@@ -482,6 +482,19 @@ def resolve_provider() -> GrafanaSDK | None:
     return provider
 
 
+def warn_role_gap(subject: str) -> None:
+    """Warn that SEP's service account ranks below Admin in its org.
+
+    :param subject: What Grafana accepted, e.g. ``"persisted token"``.
+    """
+    warn(
+        f"Grafana accepts the {subject} but the "
+        f"{SERVICE_ACCOUNT_NAME!r} service account ranks below "
+        f"{SERVICE_ACCOUNT_ROLE} in its org; a re-mint would carry the same "
+        "role, so the token is kept."
+    )
+
+
 async def keep_persisted_token(provider: GrafanaSDK, token: str) -> bool:
     """Return whether Grafana's answer leaves the persisted token usable.
 
@@ -491,12 +504,7 @@ async def keep_persisted_token(provider: GrafanaSDK, token: str) -> bool:
     """
     state = await validate_token(provider, token)
     if state is TokenStateEnum.FORBIDDEN:
-        warn(
-            f"Grafana accepts the persisted token but the "
-            f"{SERVICE_ACCOUNT_NAME!r} service account ranks below "
-            f"{SERVICE_ACCOUNT_ROLE} in its org; a re-mint would carry the same "
-            "role, so the token is kept."
-        )
+        warn_role_gap("persisted token")
     elif state is TokenStateEnum.UNREACHABLE:
         warn(
             f"Could not reach Grafana at {provider.endpoint} to revalidate "
@@ -537,12 +545,7 @@ async def resolve_token() -> str | None:
             if reused:
                 probe = await validate_token(provider, token)
                 if probe is TokenStateEnum.FORBIDDEN:
-                    warn(
-                        f"Grafana accepts the freshly minted token but the "
-                        f"{SERVICE_ACCOUNT_NAME!r} service account ranks below "
-                        f"{SERVICE_ACCOUNT_ROLE} in its org; a re-mint would carry "
-                        "the same role, so the token is kept."
-                    )
+                    warn_role_gap("freshly minted token")
                 elif probe is TokenStateEnum.UNREACHABLE:
                     warn(
                         f"Could not reach Grafana at {provider.endpoint} to "
