@@ -5,7 +5,9 @@ Behind the `mysql` compose profile. One container carrying Percona Server
 the `datacharmer/test_db` employees dataset — the target a MySQL Backups run
 executes *on*, not just against. The seed is baked into the image, so first
 boot needs no download; it lands as ~125 MB of real data (300,024 employees,
-2.8 M salary rows).
+2.8 M salary rows). For how long the import takes and how to tell it has
+finished, see [README.md](README.md#bring-up) — this file does not restate
+that timing.
 
 **Why one container.** SEP does no scheduling: it pins a Nomad job to the node
 name the operator picked and `raw_exec` runs it as a plain process in that
