@@ -591,7 +591,7 @@ class MySQLSyncer(BaseTaskSyncer):
     async def perform_service_sync(
         self,
         created_service: CreatedService,
-        updated_service: MySQLService,
+        updated_service: Service,
     ) -> None:
         """Synchronize data for a specific service.
 
@@ -601,8 +601,14 @@ class MySQLSyncer(BaseTaskSyncer):
         :param created_service: The service instance to synchronize.
         :type created_service: CreatedService
         :param updated_service: The updated service data.
-        :type updated_service: MySQLService
+        :type updated_service: Service
+        :raises TypeError: If ``updated_service`` is not a ``MySQLService``.
         """
+        if not isinstance(updated_service, MySQLService):
+            raise TypeError(
+                f"MySQLSyncer requires a MySQLService, got "
+                f"{type(updated_service).__name__}"
+            )
         # Keyed by primary key, not name: a tombstone and the replacement that took
         # its name both come back from a retired-inclusive read, and only the
         # primary key tells them apart once the active row has claimed the name.
@@ -698,7 +704,7 @@ class MySQLSyncer(BaseTaskSyncer):
     async def perform_schema_sync(
         self,
         created_schema: CreatedSchema,
-        updated_schema: MySQLSchema,
+        updated_schema: Schema,
     ) -> None:
         """Synchronize data for a specific schema.
 
@@ -708,8 +714,14 @@ class MySQLSyncer(BaseTaskSyncer):
         :param created_schema: The schema instance to synchronize.
         :type created_schema: CreatedSchema
         :param updated_schema: The updated schema data.
-        :type updated_schema: MySQLSchema
+        :type updated_schema: Schema
+        :raises TypeError: If ``updated_schema`` is not a ``MySQLSchema``.
         """
+        if not isinstance(updated_schema, MySQLSchema):
+            raise TypeError(
+                f"MySQLSyncer requires a MySQLSchema, got "
+                f"{type(updated_schema).__name__}"
+            )
         await self.update_schema(created_schema, updated_schema)
         # Keyed by primary key for the reason the schema index above is.
         syncable_tables: dict[int | None, CreatedTable] = {}

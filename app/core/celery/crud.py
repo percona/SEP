@@ -105,6 +105,7 @@ class BasePeriodicTaskManager(BaseManager):
         updated_instance: BaseModel,
         *,
         flag_modified_fields: Sequence[str] = (),
+        **extra_fields: Any,
     ) -> PeriodicTask:
         """Update and save a PeriodicTask, creating the necessary scheduler with it.
 
@@ -141,4 +142,5 @@ class BasePeriodicTaskManager(BaseManager):
             existing_instance,
             updated_instance,
             flag_modified_fields=flag_modified_fields,
+            **extra_fields,
         )

@@ -959,8 +959,14 @@ class AliasableManagerMixin(RetirableManagerMixin):
         ]
 
     @classmethod
-    async def _identity_source(cls, session: AsyncSession, entity: Any) -> SourceEnum:
+    async def _identity_source(
+        cls, session: AsyncSession, entity: Any, /
+    ) -> SourceEnum:
         """Return the upstream system this entity's identifiers belong to.
+
+        Positional-only: a subclass that needs no session names the parameter
+        ``_session`` to satisfy ruff's unused-argument rule, and only
+        positional-only parameters keep that rename out of the override check.
 
         :param session: The asynchronous database session to use.
         :param entity: The row whose provenance is wanted.
@@ -1659,6 +1665,7 @@ class NodeManager(AliasableManagerMixin, SyncHealthManagerMixin, BaseSQLModelMan
         cls,
         _session: AsyncSession,
         entity: Any,
+        /,
     ) -> SourceEnum:
         """Return the node's own source, which needs no lookup.
 
@@ -1775,7 +1782,9 @@ class ServiceManager(
         )
 
     @classmethod
-    async def _identity_source(cls, session: AsyncSession, entity: Any) -> SourceEnum:
+    async def _identity_source(
+        cls, session: AsyncSession, entity: Any, /
+    ) -> SourceEnum:
         """Return the source the service inherits through its node.
 
         ``Service`` carries no ``source`` column of its own — provenance is the

@@ -110,12 +110,18 @@ class PagerDutyEventsAlertProvider(BaseAlertProvider):
         return await settings.get_remote_api(endpoint=self.api_endpoint)
 
     @validate_call
-    async def send_alert(self, alert: PagerDutyAlert) -> None:
+    async def send_alert(self, alert: Alert) -> None:
         """Send an alert to PagerDuty using the Events API v2.
 
+        The dispatcher hands every provider the base :class:`Alert`, so the
+        PagerDuty-specific fields are resolved here rather than by widening what
+        the base contract promises.
+
         :param alert: The alert to be sent.
-        :type alert: PagerDutyAlert
+        :type alert: Alert
         """
+        if not isinstance(alert, PagerDutyAlert):
+            alert = PagerDutyAlert.model_validate(alert, from_attributes=True)
         pagerduty_api = await self.get_api()
         await pagerduty_api.post(
             "enqueue",
