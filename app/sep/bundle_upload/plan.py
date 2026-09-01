@@ -79,7 +79,7 @@ _QUERY_MAP = "query"
 
 #: The display label the upload step's records carry. The upload step declares
 #: no name of its own, and this label is deliberately not reserved against
-#: resolution-step names -- ``StepRecord.kind`` is what tells the two apart.
+#: resolution-step names. ``StepRecord.kind`` is what tells the two apart.
 _UPLOAD_STEP_LABEL = "upload"
 
 
