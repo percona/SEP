@@ -184,6 +184,11 @@ class MySQLSyncer(BaseTaskSyncer):
 
     :cvar SYNC_TO_LIMIT: The highest entity type that can be synchronized. Set to
         `SyncInventoryEntityTypeEnum.TABLE`.
+    :cvar mirrors_entity_levels: The schema and table levels, the only two whose
+        own fields this syncer writes. Its node and service passes are traversal
+        to reach the schemas: ``perform_node_sync`` and ``perform_service_sync``
+        walk to their children and never call ``update_node`` or
+        ``update_service``, so neither level's freshness is theirs to refresh.
     :cvar reads_retired_entities: The schema and table levels, the only two this
         syncer matches by name against a live fetch. Its node and service passes
         walk the inventory unconditionally, so they stay active-only — reading a
@@ -196,6 +201,9 @@ class MySQLSyncer(BaseTaskSyncer):
 
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.TABLE
+    )
+    mirrors_entity_levels: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = frozenset(
+        {SyncInventoryEntityTypeEnum.SCHEMA, SyncInventoryEntityTypeEnum.TABLE}
     )
     reads_retired_entities: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
         frozenset(
@@ -253,32 +261,46 @@ class MySQLSyncer(BaseTaskSyncer):
     ) -> Generator[str]:
         """Append data to buffer and yield complete lines.
 
-        Appends incoming byte data to the provided buffer and yields complete lines
-        decoded using the specified encoding.
+        Each call consumes the newlines ``data`` introduced and drops what
+        precedes them, so ``buffer`` holds no newline when the next call
+        arrives. Searching only the arriving bytes therefore finds exactly what
+        a search from the front finds, at a cost proportional to ``data`` rather
+        than to the remainder behind it.
 
-        :param buffer: A bytearray buffer to hold incomplete line data.
-        :type buffer: bytearray
+        The narrowing holds only while ``buffer`` is newline-free on entry, so
+        this call empties it of terminators before it yields anything: a
+        consumer that abandons the generator part-way cannot leave one behind
+        for the next call to search past. An abandoned generator therefore drops
+        the lines it had not yet yielded instead of corrupting the buffer.
+        Nothing but this function may mutate ``buffer`` between calls.
+
+        :param buffer: A bytearray buffer to hold incomplete line data. Must
+            hold no newline on entry.
         :param data: Incoming byte data to append to the buffer.
-        :type data: bytes
         :param encoding: The character encoding to use for decoding lines. Defaults to
             `"utf-8"`.
-        :type encoding: str
-        :yield: Each complete line decoded from the buffer.
-        :rtype: Generator[str]
+        :yield: Each complete line decoded from the buffer, terminator stripped;
+            empty lines are dropped.
         """
-        if data:
-            buffer.extend(data)
-            offset = 0
-            while True:
-                newline_pos = buffer.find(b"\n", offset)
-                if newline_pos == -1:
-                    if offset:
-                        del buffer[:offset]
-                    break
-                line_bytes = buffer[offset:newline_pos]
-                if line_bytes:
-                    yield line_bytes.decode(encoding)
-                offset = newline_pos + 1
+        if not data:
+            return
+        # Two cursors, not one: the terminator can only be in the arriving
+        # bytes, but the line it ends begins at the front of the buffer, where
+        # the remainder carried from earlier calls sits.
+        search_from = len(buffer)
+        buffer.extend(data)
+        line_start = 0
+        lines: list[bytearray] = []
+        while True:
+            newline_pos = buffer.find(b"\n", search_from)
+            if newline_pos == -1:
+                break
+            lines.append(buffer[line_start:newline_pos])
+            line_start = search_from = newline_pos + 1
+        del buffer[:line_start]
+        for line_bytes in lines:
+            if line_bytes:
+                yield line_bytes.decode(encoding)
 
     async def _iter_lines_gzip_stream(
         self, chunks: AsyncIterator[bytes], encoding: str = "utf-8"

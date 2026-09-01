@@ -74,8 +74,8 @@ def build_sep_override_proxies() -> ProxyRegistry:
     :raises TypeError: Propagates from ``collect_app_owned_settings_classes``
         when an app's ``APP_OWNED_SETTINGS_CLASSES`` declaration is malformed.
     :raises ValueError: Propagates from ``collect_app_owned_settings_classes``
-        when two apps declare the same class, or one references an unknown app
-        key.
+        when an activated app's declaration is invalid; that function
+        enumerates the cases.
     """
     proxies = {
         entry.setting_class: ProxyEntry(entry.proxy, entry.settings_cls)

@@ -597,6 +597,14 @@ def _inventory_sync_schedule() -> SystemPeriodicTaskSchedule | None:
     shape appears in the sync UI's schedule list and produces the ``TaskHistory``
     rows the sync-health rollup reads.
 
+    The entry opts into ``due_on_first_seed`` because the beat store cannot tell
+    a schedule that has never run apart from one that has just run: without the
+    marker the first sync lands one interval after beat starts and the countdown
+    restarts on every restart, so a deployment redeployed more often than the
+    interval never syncs at all. It applies wherever an interval is configured,
+    since a schedule switched on for the first time should collect inventory now
+    rather than one interval from now.
+
     :return: The schedule to append to the seeded set, or ``None`` when
         ``INVENTORY_SYNC_INTERVAL`` is unset.
     """
@@ -616,6 +624,7 @@ def _inventory_sync_schedule() -> SystemPeriodicTaskSchedule | None:
                 name=INVENTORY_SYNC_SCHEDULE_NAME,
                 task_name="app.tasks.celery.execute_task_by_name",
                 extra_kwargs={"kwargs": json.dumps(kwargs)},
+                due_on_first_seed=True,
             ),
         ],
     )

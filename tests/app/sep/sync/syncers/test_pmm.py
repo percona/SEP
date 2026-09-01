@@ -48,6 +48,7 @@ from tests.app.factories import (
     CreatedServiceFactory,
     MOCK_CREATED_NODE_ID,
 )
+from tests.app.sep.sync.conftest import entity_posts, sync_health_posts
 
 
 def _make_validation_error(title: str = "ValidationError") -> ValidationError:
@@ -1587,9 +1588,9 @@ class TestTombstoneReconciliation:
 
         await owned_pmmsyncer.perform_inventory_sync()
 
-        owned_pmmsyncer.inventory_api.post.assert_awaited_once_with(
+        assert entity_posts(owned_pmmsyncer.inventory_api) == [
             f"/nodes/{local_node.id}/revive"
-        )
+        ]
 
     @pytest.mark.asyncio
     async def test_an_active_node_wins_its_external_id_over_a_tombstone(
@@ -1618,7 +1619,7 @@ class TestTombstoneReconciliation:
         await owned_pmmsyncer.perform_inventory_sync()
 
         # The live node matched, so no revive was posted and no row was created.
-        owned_pmmsyncer.inventory_api.post.assert_not_awaited()
+        assert entity_posts(owned_pmmsyncer.inventory_api) == []
         # The tombstone still reached absence handling, which held it.
         assert await _absence_rows(session) == []
         assert (
@@ -1763,12 +1764,41 @@ class TestTombstoneReconciliation:
         assert {
             call.kwargs["json"]["external_id"]
             for call in owned_pmmsyncer.inventory_api.post.await_args_list
+            if "external_id" in call.kwargs["json"]
         } == {"svc-a", "svc-b"}
         assert (
             owned_pmmsyncer.sync_items[
                 (SyncInventoryEntityTypeEnum.NODE, local_node.id)
             ].status
             == SyncStatusEnum.SUCCESS
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_matching_service_name_does_not_claim_the_local_row(
+        self, local_node, owned_pmmsyncer, sync_service
+    ):
+        """Create a second service for a new upstream id sharing an existing name.
+
+        The service level has no name-based fallback either: matching is by
+        upstream id alone, so a same-named predecessor is a candidate for an
+        operator to confirm and never an automatic match.
+        """
+        predecessor = CreatedServiceFactory.build(id=7)
+        predecessor.external_id = "svc-old"
+        predecessor.name = "reported"
+        predecessor.node_id = local_node.id
+        local_node.services = [predecessor]
+        replacement = CreatedServiceFactory.build(id=8)
+        owned_pmmsyncer.inventory_api.put.return_value = local_node.model_dump()
+        owned_pmmsyncer.inventory_api.post.return_value = replacement.model_dump()
+
+        await owned_pmmsyncer.perform_node_sync(
+            local_node, self._node_reporting(local_node, service_id="svc-new")
+        )
+
+        owned_pmmsyncer.inventory_api.post.assert_awaited_once()
+        assert owned_pmmsyncer.inventory_api.post.await_args.args[0] == (
+            f"/nodes/{local_node.id}/services/"
         )
 
 
@@ -1830,3 +1860,135 @@ class TestPMMSyncerKeepalive:
 
         invalidate.assert_not_awaited()
         assert syncer._pmm_api is mock_pmm_api
+
+
+class TestNodeIdentityIsNeverInferredFromANaturalKey:
+    """Test that a re-registered node is never auto-linked by name or address.
+
+    Automatic natural-key linking is out of the question by design: contemporaneous
+    uniqueness is not historical identity, and a false-positive link silently
+    attaches one machine's backup and task history to another. The recovery path
+    is an operator confirmation through the inventory identity-link routes, so the
+    syncer must keep creating a second row and leave the pairing to be surfaced as
+    a candidate. These tests fail if any name- or address-based fallback is ever
+    reintroduced at the node level.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_matching_name_does_not_claim_the_local_row(
+        self, local_node, owned_pmmsyncer
+    ):
+        """Create a second node for a new upstream id sharing an existing name."""
+        owned_pmmsyncer.inventory_api.get.side_effect = [
+            _local_nodes_payload(local_node)
+        ]
+        reregistered = _remote_node(local_node)
+        reregistered.external_id = "pmm-node-1-reregistered"
+        replacement = CreatedNodeFactory.build(id=local_node.id + 1)
+        replacement.services = []
+        owned_pmmsyncer.inventory_api.post.return_value = replacement.model_dump()
+        owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(
+            return_value=_snapshot(reregistered)
+        )
+
+        await owned_pmmsyncer.perform_inventory_sync()
+
+        created = owned_pmmsyncer.inventory_api.post.await_args_list[0]
+        assert created.args[0] == "/nodes/"
+        assert created.kwargs["json"]["external_id"] == "pmm-node-1-reregistered"
+
+    @pytest.mark.asyncio
+    async def test_a_matching_name_and_address_does_not_claim_the_local_row(
+        self, local_node, owned_pmmsyncer
+    ):
+        """Create a second node even when the address agrees as well.
+
+        A rebuilt machine reusing a name and address is indistinguishable from
+        the same machine re-registered, which is exactly why detection precision
+        is not where this design's safety lives.
+        """
+        local_node.address = "10.0.0.1"
+        owned_pmmsyncer.inventory_api.get.side_effect = [
+            _local_nodes_payload(local_node)
+        ]
+        reregistered = _remote_node(local_node)
+        reregistered.external_id = "pmm-node-1-reregistered"
+        reregistered.address = "10.0.0.1"
+        replacement = CreatedNodeFactory.build(id=local_node.id + 1)
+        replacement.services = []
+        owned_pmmsyncer.inventory_api.post.return_value = replacement.model_dump()
+        owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(
+            return_value=_snapshot(reregistered)
+        )
+
+        await owned_pmmsyncer.perform_inventory_sync()
+
+        assert (
+            owned_pmmsyncer.inventory_api.post.await_args_list[0].args[0] == "/nodes/"
+        )
+
+
+class TestMirroredEntityLevels:
+    """Test which entity levels this syncer's attempts write sync health for."""
+
+    def test_node_and_service_are_the_mirrored_levels(self) -> None:
+        """Own exactly the two levels ``update_node`` and ``update_service`` write."""
+        assert PMMSyncer.mirrors_entity_levels == frozenset(
+            {
+                SyncInventoryEntityTypeEnum.NODE,
+                SyncInventoryEntityTypeEnum.SERVICE,
+            }
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_run_reports_every_node_and_service_it_mirrors(
+        self, local_node, owned_pmmsyncer
+    ) -> None:
+        """Report one success per entity a clean generation confirmed.
+
+        The node is pinned active and PMM-sourced: the factory randomizes both,
+        and ``can_sync_node`` skips a node this syncer does not own, so an
+        unpinned fixture makes the assertion depend on generated data.
+        """
+        local_node.retired_at = None
+        local_node.source = SourceEnum.PMM
+        owned_pmmsyncer.inventory_api.get.side_effect = [
+            _local_nodes_payload(local_node)
+        ]
+        owned_pmmsyncer.inventory_api.put.return_value = local_node.model_dump()
+        owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(
+            return_value=_snapshot(_remote_node(local_node))
+        )
+
+        await owned_pmmsyncer.perform_inventory_sync()
+
+        assert [
+            path for path, _ in sync_health_posts(owned_pmmsyncer.inventory_api)
+        ] == [f"/nodes/{local_node.id}/sync-health"]
+
+    @pytest.mark.asyncio
+    async def test_an_absent_entity_is_never_reported(
+        self, local_node, owned_pmmsyncer, session
+    ) -> None:
+        """Confirm nothing about a node this run held or retired instead of syncing.
+
+        Two complete generations reporting absence spend the grace and retire
+        the node; neither of them compared it against a source, so neither is
+        evidence its mirrored values are fresh. The node is pinned active and
+        PMM-sourced for the reason its sibling above is — here it also keeps the
+        empty-list assertion from passing because the node was never eligible.
+        """
+        local_node.retired_at = None
+        local_node.source = SourceEnum.PMM
+        owned_pmmsyncer.inventory_api.get.side_effect = [
+            _local_nodes_payload(local_node)
+        ]
+        owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(
+            return_value=_snapshot()
+        )
+
+        await owned_pmmsyncer.perform_inventory_sync()
+        await owned_pmmsyncer.perform_inventory_sync()
+
+        assert await _absence_rows(session) == []
+        assert sync_health_posts(owned_pmmsyncer.inventory_api) == []

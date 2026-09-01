@@ -18,12 +18,15 @@
 import logging
 
 from fastapi import APIRouter, status
+from sqlmodel import col
 
-from app.api.deps import IsAuthenticatedDep, IsServicePrincipalDep
+from app.api.deps import CurrentUserID, IsAuthenticatedDep, IsServicePrincipalDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.core.utils.fields import NonEmptyStr
+from app.inventory.constants import RetirableEntityName
 from app.inventory.crud import (
+    ExternalIdentityAliasManager,
     HostSystemObservationManager,
     NodeManager,
     ServiceManager,
@@ -39,9 +42,13 @@ from app.inventory.deps import (
     SessionDep,
 )
 from app.inventory.models import (
+    ExternalIdentityAlias,
+    ExternalIdentityAliasResponse,
     HostSystemObservationResponse,
     HostSystemObservationWrite,
+    IdentityLinkDecisionWrite,
     Node,
+    NodeIdentityCandidateResponse,
     NodeResponse,
     NodeWrite,
     Service,
@@ -49,6 +56,7 @@ from app.inventory.models import (
     ServiceTypeEnum,
     ServiceWrite,
     SourceEnum,
+    SyncHealthWrite,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,7 +80,8 @@ async def list_nodes(
     :param pagination: Validated offset/limit query parameters.
     :param list_query: The resolved sort/search produced at the request boundary.
     :param manager: The node manager the request's retirement scope selected.
-    :param external_id: Return only the node carrying this upstream identifier.
+    :param external_id: Return only the node carrying this upstream identifier,
+        resolved through any identity alias recorded for it.
     :param source: Return only nodes discovered by this source.
     :param node_type: Return only nodes of this type.
     :return: A paginated response of node responses.
@@ -82,14 +91,61 @@ async def list_nodes(
         source or "all",
         node_type or "all",
     )
+    resolved_id: int | None = None
+    if external_id is not None:
+        resolved_id = await ExternalIdentityAliasManager.resolve_entity_id(
+            session, RetirableEntityName.NODE, source, external_id
+        )
+    identity_filter = (
+        {"id": resolved_id} if resolved_id is not None else {"external_id": external_id}
+    )
     return await manager.list_query_paginated(
         session,
         list_query=list_query,
         select_related=[Node.services],
         pagination=pagination,
-        external_id=external_id,
         source=source,
         type=node_type,
+        **identity_filter,
+    )
+
+
+@router.get("/identity-candidates", dependencies=[IsAuthenticatedDep])
+async def list_node_identity_candidates(
+    session: SessionDep, pagination: PaginationDep
+) -> PaginatedResponse[NodeIdentityCandidateResponse]:
+    """List node pairings a PMM re-registration may have split.
+
+    Declared above ``GET /{node_id}``: FastAPI matches path operations in
+    declaration order, so the parameterized route would claim this path first and
+    answer 422 on the unparseable identifier rather than 404.
+
+    Built through :meth:`PaginatedResponse.from_pagination` rather than
+    ``list_query_paginated``, the item being a pair of rows and not a single
+    model.
+
+    :param session: The async database session.
+    :param pagination: Validated offset/limit query parameters.
+    :return: A paginated response of candidate pairings.
+    """
+    candidates, total = await NodeManager.identity_candidates(
+        session, pagination=pagination
+    )
+    return PaginatedResponse.from_pagination(
+        [
+            NodeIdentityCandidateResponse(
+                predecessor=NodeResponse.model_validate(
+                    candidate.predecessor, from_attributes=True
+                ),
+                successor=NodeResponse.model_validate(
+                    candidate.successor, from_attributes=True
+                ),
+                matched_on=candidate.matched_on,
+            )
+            for candidate in candidates
+        ],
+        total,
+        pagination,
     )
 
 
@@ -173,6 +229,29 @@ async def revive_node(session: SessionDep, node: RetirableNodeDep) -> None:
     await NodeManager.revive(session, node)
 
 
+@router.post(
+    "/{node_id}/sync-health",
+    dependencies=[IsServicePrincipalDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def record_node_sync_health(
+    session: SessionDep,
+    node: RetirableNodeDep,
+    outcome: SyncHealthWrite,
+) -> None:
+    """Record the outcome of one syncer attempt on a Node.
+
+    Addresses the node whether retired or not: the attempt happened, and a
+    concurrent retirement must not turn bookkeeping into a failed sync item.
+
+    :param session: The async database session.
+    :param node: The node the outcome was observed for, retired or not.
+    :param outcome: What the syncer reported.
+    """
+    logger.debug("Recording %s sync health on node %s", outcome.outcome, node.id)
+    await NodeManager.record_sync_health(session, node, outcome)
+
+
 @router.get("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])
 async def retrieve_host_system_observation(
     observation: HostSystemObservationDep,
@@ -241,3 +320,63 @@ async def create_service_for_node(
     """Create Service for Node."""
     logger.debug("Creating service for node %s: %s", node.id, service)
     return await ServiceManager.create(session, service, node_id=node.id)
+
+
+@router.post(
+    "/{node_id}/identity-link",
+    dependencies=[IsAuthenticatedDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def decide_node_identity_link(
+    session: SessionDep,
+    node: RetirableNodeDep,
+    decision: IdentityLinkDecisionWrite,
+    principal: CurrentUserID,
+) -> None:
+    """Confirm, reject or reverse a candidate node pairing.
+
+    The path names the **predecessor** — the survivor of a confirmation, and the
+    row the operator is acting on in all three decisions.
+
+    Carries ``IsAuthenticatedDep`` and deliberately not ``IsServicePrincipalDep``:
+    an identity link is an operator judgement, not a row the syncer owns. The
+    app-wide unsafe-method gate already makes the route admin-only for a human
+    while admitting the principal by identity.
+
+    :param session: The async database session.
+    :param node: The predecessor addressed by the path, retired or not.
+    :param decision: What the operator decided, and about which successor.
+    :param principal: The caller recorded on the resulting records.
+    :raises HTTPBadRequestException: If the body names the node itself, or both
+        rows already hold one identifier.
+    :raises HTTPNotFoundException: If a confirmation or rejection names a
+        successor that does not exist. A reversal reports the same absence as a
+        conflict, the pairing it would reverse no longer being reversible.
+    :raises HTTPConflictException: If the decision does not apply to the pairing
+        as it currently stands.
+    """
+    logger.debug("Deciding %s on node %s", decision.decision, node.id)
+    await NodeManager.decide_identity_link(session, node, decision, principal=principal)
+
+
+@router.get("/{node_id}/identity-aliases", dependencies=[IsAuthenticatedDep])
+async def list_node_identity_aliases(
+    session: SessionDep, node: RetirableNodeDep, pagination: PaginationDep
+) -> PaginatedResponse[ExternalIdentityAliasResponse]:
+    """List the upstream identifiers this node has answered for, oldest first.
+
+    A node no link has ever touched has no records, which is an empty page rather
+    than a 404.
+
+    :param session: The async database session.
+    :param node: The node addressed by the path, retired or not.
+    :param pagination: Validated offset/limit query parameters.
+    :return: A paginated response of the node's binding records, oldest first.
+    """
+    return await ExternalIdentityAliasManager.list_paginated(
+        session,
+        order_by=[col(ExternalIdentityAlias.id)],
+        pagination=pagination,
+        entity_type=RetirableEntityName.NODE,
+        entity_id=node.id,
+    )

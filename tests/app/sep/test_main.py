@@ -421,6 +421,30 @@ async def test_proxy_map_drops_alerts_but_keeps_core_alert_settings(mocker):
     assert alert_entry.settings_cls is AlertSettings
 
 
+@pytest.mark.asyncio
+async def test_callback_registry_drops_alerts_under_reduced_activation(mocker):
+    """Assert the callback registry follows the activation list, not a hardcoded import.
+
+    The PMM-embedded image strips every deactivated app package, so an entry
+    naming one is an import that cannot resolve there.
+    """
+    mocker.patch.object(sep_settings, "APPS", REDUCED_ACTIVATION)
+    get_app_registry.cache_clear()
+    original = getattr(main_module.sep_app.state, "override_callbacks", None)
+    try:
+        async with main_module.sep_overrides_lifespan(FastAPI()):
+            callbacks = dict(main_module.sep_app.state.override_callbacks)
+    finally:
+        main_module.sep_app.state.override_callbacks = original
+        get_app_registry.cache_clear()
+
+    assert not [key for key in callbacks if key[0] == AlertsSettings.__name__]
+    assert (
+        callbacks[(InventoryAppSettings.__name__, "COLLECTION_INTERVAL")]
+        is main_module._reseed_system_periodic_tasks
+    )
+
+
 @contextmanager
 def _reloaded_against(mocker, registry):
     """Rebuild ``sep_app`` over ``registry``, restoring the real one on exit.

@@ -15,10 +15,18 @@
 
 """Define models for the Inventory API."""
 
+from datetime import datetime
 from enum import auto, StrEnum
 from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, model_validator, PositiveInt
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    field_validator,
+    model_validator,
+    NonNegativeInt,
+    PositiveInt,
+)
 from sqlalchemy import Column, Index, JSON, Text, text
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
@@ -26,8 +34,13 @@ from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
+from app.core.utils.date_time import utc_now
 from app.core.utils.fields import ArbitraryMapping, NonEmptyStr, UTCDatetime
-from app.inventory.constants import ACTIVE_RETIREMENT_KEY, RetirableEntityName
+from app.inventory.constants import (
+    ACTIVE_RETIREMENT_KEY,
+    RetirableEntityName,
+    SYNC_ATTEMPT_MAX_CLOCK_SKEW,
+)
 
 #: Predicate narrowing the collection-scan indexes to the tombstones alone.
 #: Active rows are the overwhelming majority and can never be returned by that
@@ -45,6 +58,32 @@ class RetiredAtBase(SQLModel):
     retired_at: UTCDatetime | None = SQLField(
         default=None, sa_type=DateTimeWithTimezone
     )
+
+
+class SyncHealthBase(SQLModel):
+    """Expose how recently, and how successfully, a syncer last confirmed an entity.
+
+    Written only by the syncer that mirrors the entity's own fields, so
+    ``last_synced_at`` reads as "these mirrored values were confirmed against
+    their source at T" rather than "some syncer walked past this row".
+
+    :param last_synced_at: When a syncer last compared this entity against its
+        source and updated it, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the entity is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began — the
+        first failure after the last success — or None while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
+    """
+
+    last_synced_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+    last_sync_error: str | None = SQLField(default=None, sa_type=Text)
+    sync_failing_since: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+    consecutive_failures: NonNegativeInt = SQLField(default=0, nullable=False)
 
 
 class RetirableSQLModel(RetiredAtBase, BaseSQLModel):
@@ -107,6 +146,90 @@ class ServiceTypeEnum(StrEnum):
     VALKEY = auto()
 
 
+class LinkageMethodEnum(StrEnum):
+    """Enumerate how an external-identity binding came to be recorded.
+
+    Every member names an operator action: nothing here records a binding the
+    syncer made on its own, because ordinary sync creation writes no alias row.
+
+    Values are spelled out rather than derived with ``auto()``. The column
+    persists the member *name*, but the API serializes the *value*, so under
+    ``auto()`` the two move in opposite ways when a member is renamed: the
+    stored form follows the rename while the published one silently changes
+    with it. Pinning the value holds the wire contract — this enum reaches the
+    generated API client — and leaves a rename a database concern alone.
+    """
+
+    OPERATOR_CONFIRMATION = "operator_confirmation"
+    OPERATOR_UNLINK = "operator_unlink"
+
+
+class IdentityLinkDecisionEnum(StrEnum):
+    """Enumerate the decisions an operator may record against a candidate pairing.
+
+    :cvar CONFIRMED: The pairing names one machine, and the link stands.
+    :cvar REJECTED: The pairing names two machines, so stop suggesting it.
+    :cvar UNLINKED: A standing confirmation was reversed.
+
+    Values are spelled out for the reason given on
+    :class:`LinkageMethodEnum`, and it binds harder here: this enum is also a
+    *request* body field, so a rename would reject the payloads callers were
+    already sending.
+    """
+
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+    UNLINKED = "unlinked"
+
+
+class SyncOutcomeEnum(StrEnum):
+    """Enumerate the outcomes a syncer reports for one entity's sync attempt.
+
+    :cvar SUCCESS: The entity was compared against its source and updated.
+    :cvar FAILURE: The attempt raised before the comparison completed.
+    """
+
+    SUCCESS = "success"
+    FAILURE = "failure"
+
+
+class SyncHealthWrite(SQLModel):
+    """Define the body reporting one entity's sync outcome.
+
+    :param outcome: Whether the attempt succeeded or failed.
+    :param error: The failure's message, never empty. Required on FAILURE,
+        absent on SUCCESS.
+    :param attempted_at: When the syncer began this attempt. Stamped as
+        ``last_synced_at`` on success, and compared against the row's current
+        ``last_synced_at`` so a late-arriving report from an older attempt
+        cannot overwrite a newer one. Refused when it sits further ahead of this
+        service's clock than the tolerated skew, since nothing later could then
+        supersede it.
+    """
+
+    outcome: SyncOutcomeEnum
+    error: NonEmptyStr | None = None
+    attempted_at: UTCDatetime
+
+    @model_validator(mode="after")
+    def _validate_error_matches_outcome(self) -> Self:
+        if self.outcome is SyncOutcomeEnum.FAILURE and self.error is None:
+            raise ValueError("error is required when outcome is failure")
+        if self.outcome is SyncOutcomeEnum.SUCCESS and self.error is not None:
+            raise ValueError("error must be omitted when outcome is success")
+        return self
+
+    @field_validator("attempted_at")
+    @classmethod
+    def _validate_attempted_at_is_not_ahead(cls, value: datetime) -> datetime:
+        if value > utc_now() + SYNC_ATTEMPT_MAX_CLOCK_SKEW:
+            raise ValueError(
+                "attempted_at is further ahead of server time than the "
+                "tolerated clock skew"
+            )
+        return value
+
+
 class NodeBase(SQLModel):
     """Define the base structure for node-related operations.
 
@@ -129,7 +252,7 @@ class NodeBase(SQLModel):
     )  # TODO: Enum with allowed values  # noqa: TD002, TD003
 
 
-class Node(NodeBase, RetirableSQLModel, table=True):
+class Node(NodeBase, SyncHealthBase, RetirableSQLModel, table=True):
     """Represent a node in the inventory.
 
     :param address: The network address of the node.
@@ -142,6 +265,13 @@ class Node(NodeBase, RetirableSQLModel, table=True):
     :param retired_at: When the node stopped being reported upstream, or None while
         it is active.
     :param retirement_key: The discriminator carried inside every unique index.
+    :param last_synced_at: When a syncer last confirmed the node against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the node is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     :param services: A list of services associated with the node.
     """
 
@@ -175,7 +305,7 @@ class NodeWrite(NodeBase):
     """
 
 
-class NodeResponse(BaseSQLModel, RetiredAtBase, NodeBase):
+class NodeResponse(BaseSQLModel, RetiredAtBase, SyncHealthBase, NodeBase):
     """Represent a node API response.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -190,6 +320,13 @@ class NodeResponse(BaseSQLModel, RetiredAtBase, NodeBase):
     :param type: The type of the node (e.g., remote, generic).
     :param retired_at: When the node stopped being reported upstream, or None while
         it is active.
+    :param last_synced_at: When a syncer last confirmed the node against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the node is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     :param services: A list of services associated with the node.
     """
 
@@ -255,7 +392,7 @@ class ServiceWrite(ServiceBase):
     )
 
 
-class Service(RetirableSQLModel, ServiceBase, table=True):
+class Service(RetirableSQLModel, SyncHealthBase, ServiceBase, table=True):
     """Represent a service running on a node in the inventory.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -279,6 +416,13 @@ class Service(RetirableSQLModel, ServiceBase, table=True):
     :param retired_at: When the service stopped being reported upstream, or None
         while it is active.
     :param retirement_key: The discriminator carried inside every unique index.
+    :param last_synced_at: When a syncer last confirmed the service against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the service is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     :param schemas: A list of schemas associated with the service.
     """
 
@@ -305,7 +449,7 @@ class Service(RetirableSQLModel, ServiceBase, table=True):
     )
 
 
-class ServiceResponse(BaseSQLModel, RetiredAtBase, ServiceBase):
+class ServiceResponse(BaseSQLModel, RetiredAtBase, SyncHealthBase, ServiceBase):
     """Define the service API response.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -326,6 +470,13 @@ class ServiceResponse(BaseSQLModel, RetiredAtBase, ServiceBase):
     :param node: The node to which the service is associated.
     :param retired_at: When the service stopped being reported upstream, or None
         while it is active.
+    :param last_synced_at: When a syncer last confirmed the service against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the service is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     """
 
     schemas: list["Schema"]
@@ -368,7 +519,7 @@ class SchemaBase(SQLModel):
     service_id: int = SQLField(foreign_key="service.id", index=True, ondelete="CASCADE")
 
 
-class Schema(RetirableSQLModel, SchemaBase, table=True):
+class Schema(RetirableSQLModel, SyncHealthBase, SchemaBase, table=True):
     """Represent a database schema within a service.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -385,6 +536,13 @@ class Schema(RetirableSQLModel, SchemaBase, table=True):
     :param retired_at: When the schema stopped being reported upstream, or None
         while it is active.
     :param retirement_key: The discriminator carried inside every unique index.
+    :param last_synced_at: When a syncer last confirmed the schema against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the schema is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     :param tables: A list of tables within the schema.
     """
 
@@ -425,7 +583,7 @@ class SchemaWrite(SchemaBase):
     )
 
 
-class SchemaCompactResponse(BaseSQLModel, RetiredAtBase, SchemaBase):
+class SchemaCompactResponse(BaseSQLModel, RetiredAtBase, SyncHealthBase, SchemaBase):
     """Define a compact schema response without nested tables.
 
     :param id: The primary key for the schema. Auto-incremented and not nullable.
@@ -437,10 +595,17 @@ class SchemaCompactResponse(BaseSQLModel, RetiredAtBase, SchemaBase):
     :param service_id: The unique identifier of the service to which the schema belongs.
     :param retired_at: When the schema stopped being reported upstream, or None while
         it is active.
+    :param last_synced_at: When a syncer last confirmed the schema against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the schema is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     """
 
 
-class SchemaResponse(BaseSQLModel, RetiredAtBase, SchemaBase):
+class SchemaResponse(BaseSQLModel, RetiredAtBase, SyncHealthBase, SchemaBase):
     """Define the schema API response.
 
     :param id: The primary key for the schema. Auto-incremented and not nullable.
@@ -452,6 +617,13 @@ class SchemaResponse(BaseSQLModel, RetiredAtBase, SchemaBase):
     :param service_id: The unique identifier of the service to which the schema belongs.
     :param retired_at: When the schema stopped being reported upstream, or None while
         it is active.
+    :param last_synced_at: When a syncer last confirmed the schema against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the schema is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     :param tables: A list of tables within the schema.
     """
 
@@ -493,7 +665,7 @@ class TableBase(SQLModel):
     )
 
 
-class Table(RetirableSQLModel, TableBase, table=True):
+class Table(RetirableSQLModel, SyncHealthBase, TableBase, table=True):
     """Represent a table within a schema.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -509,6 +681,13 @@ class Table(RetirableSQLModel, TableBase, table=True):
     :param retired_at: When the table stopped being reported upstream, or None while
         it is active.
     :param retirement_key: The discriminator carried inside every unique index.
+    :param last_synced_at: When a syncer last confirmed the table against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the table is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     :param database: The schema to which the table is associated.
     """
 
@@ -546,7 +725,7 @@ class TableWrite(TableBase):
     )
 
 
-class TableResponse(BaseSQLModel, RetiredAtBase, TableBase):
+class TableResponse(BaseSQLModel, RetiredAtBase, SyncHealthBase, TableBase):
     """Define the table API response.
 
     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -559,6 +738,13 @@ class TableResponse(BaseSQLModel, RetiredAtBase, TableBase):
     :param schema_id: The foreign key referencing the schema to which the table belongs.
     :param retired_at: When the table stopped being reported upstream, or None while
         it is active.
+    :param last_synced_at: When a syncer last confirmed the table against its
+        source, or None if that has never happened.
+    :param last_sync_error: The message from the most recent failed attempt, or
+        None while the table is syncing cleanly.
+    :param sync_failing_since: When the current run of failures began, or None
+        while not failing.
+    :param consecutive_failures: Failed attempts since the last success.
     """
 
 
@@ -577,6 +763,231 @@ class TableDetailResponse(TableResponse):
     """
 
     database: Schema
+
+
+class ExternalIdentityAliasBase(SQLModel):
+    """Define the base structure for an external-identity binding record.
+
+    :param entity_type: The inventory entity type the binding names.
+    :param entity_id: The primary key of the row the upstream id resolves to.
+    :param source: The upstream system the identifier belongs to.
+    :param external_id: The upstream identifier being bound.
+    :param valid_from: When the binding took effect.
+    :param valid_to: When the binding stopped applying, or None while it stands.
+    :param linkage_method: How the binding came to be recorded.
+    :param principal: The caller that recorded the binding.
+    """
+
+    entity_type: RetirableEntityName = SQLField(
+        sa_column=Column(
+            EnumField(
+                RetirableEntityName,
+                native_enum=False,
+                create_constraint=True,
+                name="alias_entity_type",
+            ),
+            nullable=False,
+        )
+    )
+    entity_id: int
+    source: SourceEnum = SQLField(
+        sa_column=Column(
+            EnumField(
+                SourceEnum,
+                native_enum=False,
+                create_constraint=True,
+                name="alias_source",
+            ),
+            nullable=False,
+        )
+    )
+    external_id: NonEmptyStr
+    valid_from: UTCDatetime = SQLField(sa_type=DateTimeWithTimezone)
+    valid_to: UTCDatetime | None = SQLField(default=None, sa_type=DateTimeWithTimezone)
+    linkage_method: LinkageMethodEnum = SQLField(
+        sa_column=Column(
+            EnumField(
+                LinkageMethodEnum,
+                native_enum=False,
+                create_constraint=True,
+                name="alias_linkage_method",
+            ),
+            nullable=False,
+        )
+    )
+    principal: NonEmptyStr
+
+
+class ExternalIdentityAlias(ExternalIdentityAliasBase, BaseSQLModel, table=True):
+    """Bind one upstream identifier to one inventory row over a validity interval.
+
+    Append-only. A binding that is open at write time carries ``valid_to = None``
+    and is closed by appending a superseding record rather than by an update, so
+    a confirmation and its reversal both stay readable afterwards. An identifier
+    is bound to the row named by its record with the greatest
+    ``(valid_from, id)``, and then resolves to whichever row has since absorbed
+    that one through a standing confirmation — a confirmation transfers only the
+    identifier its successor currently holds, so the rest of that successor's
+    bindings stay where they are and are followed rather than rewritten. An
+    identifier with no record at all resolves by the ``external_id`` column,
+    which is the overwhelming majority.
+
+    ``entity_id`` carries no foreign key on purpose: the column is polymorphic
+    over ``node`` and ``service``, so no single target exists, and its absence
+    keeps the trail readable once collection deletes a row the history names.
+    Neither index is unique, equally on purpose —
+    ``BaseSQLModelManager.save`` rebuilds equality filters from every unique
+    index and would refuse the superseding record that expresses closure.
+
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :param created_at: The timestamp when the record is created. Defaults to the
+        current time in UTC.
+    :param updated_at: The timestamp when the record is last updated.
+        Automatically updated on changes.
+    :param entity_type: The inventory entity type the binding names.
+    :param entity_id: The primary key of the row the upstream id resolves to.
+    :param source: The upstream system the identifier belongs to.
+    :param external_id: The upstream identifier being bound.
+    :param valid_from: When the binding took effect.
+    :param valid_to: When the binding stopped applying, or None while it stands.
+    :param linkage_method: How the binding came to be recorded.
+    :param principal: The caller that recorded the binding.
+    """
+
+    __table_args__ = (
+        Index("ix_alias_source_external_id", "source", "external_id"),
+        Index("ix_alias_entity", "entity_type", "entity_id"),
+    )
+
+
+class ExternalIdentityAliasResponse(BaseSQLModel, ExternalIdentityAliasBase):
+    """Define the external-identity alias API response.
+
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :param created_at: The timestamp when the record is created. Defaults to the
+        current time in UTC.
+    :param updated_at: The timestamp when the record is last updated.
+        Automatically updated on changes.
+    :param entity_type: The inventory entity type the binding names.
+    :param entity_id: The primary key of the row the upstream id resolves to.
+    :param source: The upstream system the identifier belongs to.
+    :param external_id: The upstream identifier being bound.
+    :param valid_from: When the binding took effect.
+    :param valid_to: When the binding stopped applying, or None while it stands.
+    :param linkage_method: How the binding came to be recorded.
+    :param principal: The caller that recorded the binding.
+    """
+
+
+class IdentityLinkDecision(BaseSQLModel, table=True):
+    """Record one operator decision over one candidate pairing, append-only.
+
+    A pairing's current state is its most recent row, so nothing is ever updated
+    or deleted here either. ``predecessor_external_id`` and
+    ``predecessor_retired_at`` describe the predecessor immediately before a
+    confirmation and are read back only off a ``CONFIRMED`` row; they are what
+    lets a reversal restore the exact pre-confirmation state rather than an
+    approximation of it.
+
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :param created_at: The timestamp when the record is created. Defaults to the
+        current time in UTC.
+    :param updated_at: The timestamp when the record is last updated.
+        Automatically updated on changes.
+    :param entity_type: The inventory entity type the pairing names.
+    :param predecessor_id: The older row of the pairing, the one a confirmation
+        keeps.
+    :param successor_id: The newer row of the pairing.
+    :param decision: What the operator decided.
+    :param principal: The caller that recorded the decision.
+    :param predecessor_external_id: The identifier the predecessor held before a
+        confirmation transferred the successor's onto it, or None on a decision
+        that transferred nothing.
+    :param predecessor_retired_at: The predecessor's retirement timestamp before
+        a confirmation revived it, or None when it was active or nothing was
+        revived.
+    """
+
+    __table_args__ = (
+        Index(
+            "ix_link_decision_pair",
+            "entity_type",
+            "predecessor_id",
+            "successor_id",
+        ),
+        Index("ix_link_decision_successor", "entity_type", "successor_id"),
+    )
+
+    entity_type: RetirableEntityName = SQLField(
+        sa_column=Column(
+            EnumField(
+                RetirableEntityName,
+                native_enum=False,
+                create_constraint=True,
+                name="link_decision_entity_type",
+            ),
+            nullable=False,
+        )
+    )
+    predecessor_id: int
+    successor_id: int
+    decision: IdentityLinkDecisionEnum = SQLField(
+        sa_column=Column(
+            EnumField(
+                IdentityLinkDecisionEnum,
+                native_enum=False,
+                create_constraint=True,
+                name="link_decision_decision",
+            ),
+            nullable=False,
+        )
+    )
+    principal: NonEmptyStr
+    predecessor_external_id: NonEmptyStr | None = SQLField(default=None)
+    predecessor_retired_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+
+
+class IdentityLinkDecisionWrite(SQLModel):
+    """Define the request body recording one operator decision over a pairing.
+
+    :param successor_id: The row the addressed predecessor is being paired with.
+    :param decision: What the operator decided.
+    """
+
+    successor_id: int
+    decision: IdentityLinkDecisionEnum
+
+
+class NodeIdentityCandidateResponse(SQLModel):
+    """Pair a node with the successor a re-registration may have split it into.
+
+    :param predecessor: The older row — the one every SEP reference persisted
+        before the re-registration resolves through, and so the one a
+        confirmation keeps.
+    :param successor: The newer row PMM created when the node re-registered.
+    :param matched_on: The signals that agreed, informational only. Detection
+        never requires an address match, because PMM discards the address on a
+        non-``--force`` re-registration.
+    """
+
+    predecessor: NodeResponse
+    successor: NodeResponse
+    matched_on: list[str]
+
+
+class ServiceIdentityCandidateResponse(SQLModel):
+    """Pair a service with the successor a re-registration may have split it into.
+
+    :param predecessor: The older row a confirmation keeps.
+    :param successor: The newer row PMM created.
+    :param matched_on: The signals that agreed, informational only.
+    """
+
+    predecessor: ServiceResponse
+    successor: ServiceResponse
+    matched_on: list[str]
 
 
 class HostSystemObservationBase(SQLModel):

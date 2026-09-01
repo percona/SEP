@@ -48,14 +48,17 @@ Two limitations are deliberate, so the guard is not mistaken for a total one:
   the intra-module form does not.
 
 A second walker, :func:`_declared_imports`, counts every import including
-``TYPE_CHECKING`` blocks. It pins two form-backfill edges the import-time
-rule cannot see: nothing under ``app/sep/apps/`` may import the
-``form_backfill`` orchestrator, and ``form_backfill_inventory`` may not
-import ``form_backfill_registry``.
+``TYPE_CHECKING`` blocks and function bodies. It pins three edges the
+import-time rule cannot see: nothing under ``app/sep/apps/`` may import the
+``form_backfill`` orchestrator, ``form_backfill_inventory`` may not import
+``form_backfill_registry``, and no module may *defer* an edge into another
+app package into a function body. Deferring does not remove the edge. In the
+image that strips the package it relocates the failure into a lifespan or a
+request, which is how the side-car shipped unable to serve its main API.
 """
 
 import ast
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import pytest
@@ -366,11 +369,16 @@ def _app_package_of(module: str, app_packages: set[str]) -> str | None:
 def _violations() -> list[str]:
     """Collect every import-time edge into an app package other than the owner's.
 
+    Deduplicated by ``(path, line, target)``, on the same reasoning as
+    :func:`_deferred_violations`: the line collapses a statement's base module
+    and its aliases, and the resolved package keeps a statement reaching two of
+    them from collapsing to whichever resolved first.
+
     :return: One ``path:line -> module`` entry per violating import.
     """
     app_packages = _app_package_names(APPS_ROOT)
     found: list[str] = []
-    seen: set[tuple[Path, int]] = set()
+    seen: set[tuple[Path, int, str]] = set()
     for path in _guarded_module_paths():
         owner = _owning_app_package(path, app_packages)
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -378,9 +386,9 @@ def _violations() -> list[str]:
             target = _app_package_of(module, app_packages)
             if target is None or target == owner:
                 continue
-            if (path, lineno) in seen:
+            if (path, lineno, target) in seen:
                 continue
-            seen.add((path, lineno))
+            seen.add((path, lineno, target))
             found.append(f"{path.relative_to(BASE_DIR)}:{lineno} -> {module}")
     return found
 
@@ -393,6 +401,146 @@ def test_no_module_imports_another_app_package() -> None:
         " lives in at import time (the PMM-embedded image strips them):\n"
         + "\n".join(violations)
     )
+
+
+def _parsed_guarded_modules() -> Iterator[tuple[Path, ast.Module]]:
+    """Parse every module the boundary rule binds.
+
+    :return: An iterator of ``(path, tree)`` pairs over the guarded tree.
+    """
+    for path in _guarded_module_paths():
+        yield path, ast.parse(path.read_text(encoding="utf-8"))
+
+
+def _deferred_violations(
+    modules: Iterable[tuple[Path, ast.Module]] | None = None,
+) -> list[str]:
+    """Collect every deferred edge into an app package other than the owner's.
+
+    A deferred edge is one :func:`_declared_imports` sees and
+    :func:`_import_time_imports` does not: a function-body import, or one
+    under ``TYPE_CHECKING``.
+
+    Deduplicated by ``(path, line, target)``: a ``from ... import`` yields the
+    base module *and* one path per alias, so a single statement would otherwise
+    be reported once per name it binds. Keying on the line alone would also
+    collapse a statement reaching *two* app packages (``from app.sep.apps
+    import alerts, dipper``) down to whichever resolved first, so the resolved
+    package is part of the key. Within one package the earliest spelling
+    renders, because :func:`_direct_import_edges` yields the base module before
+    the aliases. A base module resolving to no app package is skipped outright,
+    which is what lets the multi-package form report each package it names.
+
+    :param modules: The ``(path, tree)`` pairs to scan. Defaults to the whole
+        guarded tree parsed from disk (:func:`_parsed_guarded_modules`).
+        Passing pairs directly lets a case drive the collector over a
+        synthetic tree attributed to a real path.
+    :return: One ``path:line -> module`` entry per violating import.
+    """
+    app_packages = _app_package_names(APPS_ROOT)
+    found: list[str] = []
+    seen: set[tuple[Path, int, str]] = set()
+    for path, tree in modules if modules is not None else _parsed_guarded_modules():
+        owner = _owning_app_package(path, app_packages)
+        package = package_of(path, BASE_DIR)
+        at_import = set(_import_time_imports(tree, package))
+        for module, lineno in _declared_imports(tree, package):
+            if (module, lineno) in at_import:
+                continue
+            target = _app_package_of(module, app_packages)
+            if target is None or target == owner:
+                continue
+            if (path, lineno, target) in seen:
+                continue
+            seen.add((path, lineno, target))
+            found.append(f"{path.relative_to(BASE_DIR)}:{lineno} -> {module}")
+    return found
+
+
+def test_no_module_defers_an_import_into_another_app_package() -> None:
+    """Reject a deferred edge into an app package other than the owner's.
+
+    The PMM-embedded image strips the package from disk, so deferring the import
+    into a function body postpones the failure into a lifespan or a request
+    rather than removing it, which is how the side-car shipped unable to serve
+    its main API.
+    """
+    violations = _deferred_violations()
+    assert not violations, (
+        "no module may import an activatable app package other than the one it"
+        " lives in, even from a function body (the PMM-embedded image strips"
+        " them):\n" + "\n".join(violations)
+    )
+
+
+@pytest.mark.parametrize(
+    ("importer", "source", "expected"),
+    [
+        pytest.param(
+            "app/sep/main.py",
+            "def _lazy():\n    from app.sep.apps.alerts.config import AlertsSettings\n",
+            ["app/sep/main.py:2 -> app.sep.apps.alerts.config"],
+            id="function-body-edge-reported-once",
+        ),
+        pytest.param(
+            "app/sep/main.py",
+            "if TYPE_CHECKING:\n"
+            "    from app.sep.apps.alerts.config import AlertsSettings\n",
+            ["app/sep/main.py:2 -> app.sep.apps.alerts.config"],
+            id="type-checking-edge-reported",
+        ),
+        pytest.param(
+            "app/sep/main.py",
+            "from app.sep.apps.alerts.config import AlertsSettings\n",
+            [],
+            id="import-time-edge-not-deferred",
+        ),
+        pytest.param(
+            "app/sep/main.py",
+            "def _lazy():\n"
+            "    from app.sep.apps.alerts.config import AlertsSettings\n"
+            "_lazy()\n",
+            [],
+            id="function-body-reachable-at-import-not-deferred",
+        ),
+        pytest.param(
+            "app/sep/apps/inventory/deps.py",
+            "def _lazy():\n"
+            "    from app.sep.apps.inventory.sync import run_inventory_sync\n",
+            [],
+            id="own-package-edge-exempt",
+        ),
+        pytest.param(
+            "app/sep/main.py",
+            "def _lazy():\n    from app.sep.apps import alerts, dipper\n",
+            [
+                "app/sep/main.py:2 -> app.sep.apps.alerts",
+                "app/sep/main.py:2 -> app.sep.apps.dipper",
+            ],
+            id="two-packages-on-one-line-both-reported",
+        ),
+    ],
+)
+def test_deferred_violations_over_a_synthetic_tree(
+    importer: str, source: str, expected: list[str]
+) -> None:
+    """Reject a deferred edge driven over a synthetic tree attributed to a real path.
+
+    Each source is parsed as if it were the module at ``importer``, so both the
+    owner exemption and the rendered path come from that real path, mirroring
+    :func:`test_import_time_edges_ignore_a_modules_own_app_package`. The first two
+    cases pin the function-body and ``TYPE_CHECKING`` shapes this guard exists to
+    catch; the function-body case also pins the dedup collapsing one statement,
+    since :func:`_direct_import_edges` yields the base module and the alias path
+    for it. Three cases pin what the guard must NOT report: an import-time edge
+    (``_violations``' business, not this guard's), a function-body edge the
+    module reaches at import through a call, and an edge into the importer's own
+    app package. The last case pins the other half of the dedup: one statement
+    reaching two app packages reports both, which keying on ``(path, line)``
+    alone would collapse to whichever resolved first.
+    """
+    path = BASE_DIR / importer
+    assert _deferred_violations([(path, ast.parse(source))]) == expected
 
 
 @pytest.fixture(scope="module")

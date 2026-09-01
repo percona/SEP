@@ -27,7 +27,13 @@ from app.core.config import settings
 from app.core.settings_override.models import SettingClassEnum
 from app.inventory.deps import get_session
 from app.inventory.main import inventory_app
-from app.inventory.models import Node, Service, Table
+from app.inventory.models import (
+    IdentityLinkDecisionEnum,
+    Node,
+    Service,
+    SyncOutcomeEnum,
+    Table,
+)
 from tests.app.factories import (
     HostSystemObservationWriteFactory,
     NodeWriteFactory,
@@ -35,6 +41,7 @@ from tests.app.factories import (
     ServiceSystemObservationWriteFactory,
     ServiceWriteFactory,
 )
+from tests.app.inventory.conftest import sync_health_payload
 
 BEARER_HEADERS = {"Authorization": "Bearer valid_token"}
 SERVICE_TOKEN = "supersecret"
@@ -67,8 +74,17 @@ OPEN_MUTATIONS = [
     ("DELETE", "/tables/1"),
     ("POST", "/tables/1/revive"),
     ("POST", "/collection/collect"),
+    ("POST", "/nodes/1/identity-link"),
+    ("POST", "/services/1/identity-link"),
 ]
-OPEN_MUTATION_IDS = ["schemas", "tables", "revive", "collection"]
+OPEN_MUTATION_IDS = [
+    "schemas",
+    "tables",
+    "revive",
+    "collection",
+    "node_identity_link",
+    "service_identity_link",
+]
 
 #: Adds back the two restricted routers, which the gate still refuses a
 #: non-admin one layer ahead of the route, so every router stays covered there.
@@ -84,6 +100,10 @@ RESTRICTED_WRITES = [
     ("PUT", "/services/1"),
     ("DELETE", "/services/1"),
     ("POST", "/services/1/revive"),
+    ("POST", "/nodes/1/sync-health"),
+    ("POST", "/services/1/sync-health"),
+    ("POST", "/schemas/1/sync-health"),
+    ("POST", "/tables/1/sync-health"),
 ]
 RESTRICTED_WRITE_IDS = [
     "create_node",
@@ -94,6 +114,10 @@ RESTRICTED_WRITE_IDS = [
     "update_service",
     "retire_service",
     "revive_service",
+    "record_node_sync_health",
+    "record_service_sync_health",
+    "record_schema_sync_health",
+    "record_table_sync_health",
 ]
 
 
@@ -294,6 +318,40 @@ def test_the_service_principal_can_revive_a_node(
     assert response.status_code == status.HTTP_204_NO_CONTENT
 
 
+@pytest.mark.parametrize(
+    ("plural", "fixture_name"),
+    [
+        ("nodes", "node"),
+        ("services", "service"),
+        ("schemas", "schema"),
+        ("tables", "table"),
+    ],
+)
+def test_the_service_principal_can_record_sync_health(
+    bearer_client: TestClient,
+    request: pytest.FixtureRequest,
+    mocker: MockerFixture,
+    plural: str,
+    fixture_name: str,
+) -> None:
+    """Record a sync outcome as the principal, at every level a syncer mirrors.
+
+    The write is the one the syncer issues after each per-entity attempt, so a
+    gate that refused it would leave the columns permanently unwritten while
+    every sync still reported success.
+    """
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    entity = request.getfixturevalue(fixture_name)
+
+    response = bearer_client.post(
+        f"/{plural}/{entity.id}/sync-health",
+        json=sync_health_payload(SyncOutcomeEnum.SUCCESS),
+        headers={"Authorization": f"Bearer {SERVICE_TOKEN}"},
+    )
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
 def test_the_service_principal_can_create_a_service_for_a_node(
     bearer_client: TestClient, node: Node, mocker: MockerFixture
 ) -> None:
@@ -471,3 +529,74 @@ def test_the_health_probe_resolves_no_credential(
 
     assert response.status_code == status.HTTP_200_OK
     casdoor_mock.introspect_token.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/nodes/identity-candidates"),
+        ("GET", "/services/identity-candidates"),
+        ("GET", "/nodes/1/identity-aliases"),
+        ("GET", "/services/1/identity-aliases"),
+    ],
+    ids=["node_candidates", "service_candidates", "node_aliases", "service_aliases"],
+)
+def test_identity_reads_are_served_to_a_non_admin(
+    bearer_client: TestClient, method: str, path: str
+) -> None:
+    """Serve a non-admin's identity read unchanged — the gate is method-scoped.
+
+    The two ``identity-aliases`` paths address rows that do not exist here, so a
+    404 from the path dependency is an equally good answer; what neither may be
+    is the 403 the gate would return if it reached a safe method.
+    """
+    response = bearer_client.request(method, path, headers=BEARER_HEADERS)
+
+    assert response.status_code in {status.HTTP_200_OK, status.HTTP_404_NOT_FOUND}
+
+
+def test_an_admin_may_decide_an_identity_link(
+    admin_bearer_client: TestClient, split_nodes: tuple[Node, Node]
+) -> None:
+    """Admit an admin on the identity-link route, unlike every other write here.
+
+    An identity link is an operator judgement rather than a row PMM owns, so
+    these routes deliberately carry ``IsAuthenticatedDep`` and not
+    ``IsServicePrincipalDep``. An admin credential is what makes the assertion
+    mean anything — a lower rank is already refused by the app-level gate. The
+    concrete 204 is the assertion rather than "not 403", which a 401 or a body
+    the route never resolved would satisfy just as well.
+    """
+    predecessor, successor = split_nodes
+
+    response = admin_bearer_client.post(
+        f"/nodes/{predecessor.id}/identity-link",
+        json={
+            "successor_id": successor.id,
+            "decision": IdentityLinkDecisionEnum.REJECTED,
+        },
+        headers=BEARER_HEADERS,
+    )
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
+def test_the_service_principal_may_also_decide_an_identity_link(
+    bearer_client: TestClient,
+    split_nodes: tuple[Node, Node],
+    mocker: MockerFixture,
+) -> None:
+    """Admit the principal too, so an automated caller is not locked out later."""
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    predecessor, successor = split_nodes
+
+    response = bearer_client.post(
+        f"/nodes/{predecessor.id}/identity-link",
+        json={
+            "successor_id": successor.id,
+            "decision": IdentityLinkDecisionEnum.REJECTED,
+        },
+        headers={"Authorization": f"Bearer {SERVICE_TOKEN}"},
+    )
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT

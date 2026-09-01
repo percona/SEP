@@ -24,7 +24,7 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from functools import cached_property
 from types import TracebackType
-from typing import Annotated, Any, ClassVar, Final, NamedTuple, Self, TypeVar
+from typing import Annotated, Any, ClassVar, NamedTuple, Self, TypeVar
 from uuid import uuid4
 
 from aiohttp import ClientError
@@ -61,23 +61,16 @@ from app.sep.models import (
     SyncItemWrite,
     SyncStatusEnum,
 )
+from app.sep.sync.constants import INVENTORY_PATH_SEGMENTS
 from app.sep.sync.exceptions import (
     ExecutorHostNotFoundError,
     SyncFailError,
     SyncItemAlreadyInProgressError,
 )
+from app.sep.sync.health import SyncHealthReporter
 from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
 logger = logging.getLogger(__name__)
-
-#: Inventory API path segment per entity type, for the routes that address one
-#: entity generically rather than through a per-level method.
-INVENTORY_PATH_SEGMENTS: Final = {
-    SyncInventoryEntityTypeEnum.NODE: "nodes",
-    SyncInventoryEntityTypeEnum.SERVICE: "services",
-    SyncInventoryEntityTypeEnum.SCHEMA: "schemas",
-    SyncInventoryEntityTypeEnum.TABLE: "tables",
-}
 
 #: Ties an identity map to the index it points into, so a schema index cannot be
 #: handed a table.
@@ -187,6 +180,13 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     APIs and abstract methods that can be overridden by subclasses.
 
     :cvar SYNC_TO_LIMIT: The upper limit for entity types that can be synchronized.
+    :cvar mirrors_entity_levels: The entity levels whose own fields this syncer
+        mirrors, and therefore whose sync-health columns its attempts write. A
+        level belongs here only where the syncer compares the entity against its
+        source and updates it — a syncer that merely traverses a level to reach
+        its children, or that writes a separate observation resource, owns
+        nothing there and must not refresh a freshness the mirroring syncer is
+        responsible for. Empty by default.
     :cvar reads_retired_entities: The entity levels whose inventory reads include
         retired entities. A level belongs here only if this syncer has a match
         site there — a point where an incoming report is matched against the local
@@ -215,6 +215,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
+    mirrors_entity_levels: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
+        frozenset()
+    )
     reads_retired_entities: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
         frozenset()
     )
@@ -301,6 +304,14 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         if self.sync_instance is not None:
             self.sync_id = self.sync_instance.id
         return self
+
+    @cached_property
+    def sync_health(self) -> SyncHealthReporter:
+        """Build the reporter for this syncer's API client and mirrored levels.
+
+        :return: The reporter the ``sync_*`` boundaries record through.
+        """
+        return SyncHealthReporter(self.inventory_api, self.mirrors_entity_levels)
 
     @cached_property
     def can_sync_mapping(
@@ -942,9 +953,14 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self.get_name(),
                 created_node.id,
             )
-            async with self.manage_sync_item(
-                SyncInventoryEntityTypeEnum.NODE,
-                created_node,
+            async with (
+                self.manage_sync_item(
+                    SyncInventoryEntityTypeEnum.NODE,
+                    created_node,
+                ),
+                self.sync_health.record(
+                    SyncInventoryEntityTypeEnum.NODE, created_node
+                ) as attempt,
             ):
                 updated_node = (
                     await self.fetch_node(created_node)
@@ -957,6 +973,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                         created_node.id,
                     )
                     return
+                attempt.mark_compared()
                 await self.perform_node_sync(created_node, updated_node)
             logger.info(
                 "Finished node synchronization (%s) for node %s",
@@ -1060,9 +1077,14 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self.get_name(),
                 created_service.id,
             )
-            async with self.manage_sync_item(
-                SyncInventoryEntityTypeEnum.SERVICE,
-                created_service,
+            async with (
+                self.manage_sync_item(
+                    SyncInventoryEntityTypeEnum.SERVICE,
+                    created_service,
+                ),
+                self.sync_health.record(
+                    SyncInventoryEntityTypeEnum.SERVICE, created_service
+                ) as attempt,
             ):
                 updated_service = (
                     await self.fetch_service(created_service)
@@ -1075,6 +1097,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                         created_service.id,
                     )
                     return
+                attempt.mark_compared()
                 await self.perform_service_sync(created_service, updated_service)
             logger.info(
                 "Finished service synchronization (%s) for service %s",
@@ -1177,15 +1200,21 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self.get_name(),
                 created_schema.id,
             )
-            async with self.manage_sync_item(
-                SyncInventoryEntityTypeEnum.SCHEMA,
-                created_schema,
+            async with (
+                self.manage_sync_item(
+                    SyncInventoryEntityTypeEnum.SCHEMA,
+                    created_schema,
+                ),
+                self.sync_health.record(
+                    SyncInventoryEntityTypeEnum.SCHEMA, created_schema
+                ) as attempt,
             ):
                 updated_schema = (
                     await self.fetch_schema(created_schema)
                     if updated_schema is None
                     else updated_schema
                 )
+                attempt.mark_compared()
                 await self.perform_schema_sync(created_schema, updated_schema)
             logger.info(
                 "Finished schema synchronization (%s) for schema %s",
@@ -1286,15 +1315,21 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self.get_name(),
                 created_table.id,
             )
-            async with self.manage_sync_item(
-                SyncInventoryEntityTypeEnum.TABLE,
-                created_table,
+            async with (
+                self.manage_sync_item(
+                    SyncInventoryEntityTypeEnum.TABLE,
+                    created_table,
+                ),
+                self.sync_health.record(
+                    SyncInventoryEntityTypeEnum.TABLE, created_table
+                ) as attempt,
             ):
                 updated_table = (
                     await self.fetch_table(created_table)
                     if updated_table is None
                     else updated_table
                 )
+                attempt.mark_compared()
                 await self.perform_table_sync(created_table, updated_table)
             logger.info(
                 "Finished table synchronization (%s) for table %s",
