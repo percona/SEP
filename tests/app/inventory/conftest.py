@@ -230,3 +230,54 @@ async def service_observation(
         ServiceSystemObservationWriteFactory.build(),
         service_id=service.id,
     )
+
+
+@pytest_asyncio.fixture
+async def split_nodes(session: AsyncSession, node: Node) -> tuple[Node, Node]:
+    """Create the second node a PMM re-registration of ``node`` leaves behind."""
+    successor = await NodeManager.create(
+        session, NodeWriteFactory.build(name=node.name, address=node.address)
+    )
+    return node, successor
+
+
+@pytest_asyncio.fixture
+async def tombstoned_split_nodes(
+    session: AsyncSession, split_nodes: tuple[Node, Node]
+) -> tuple[Node, Node]:
+    """Retire the predecessor of a split pair, as its absence grace eventually does."""
+    predecessor, successor = split_nodes
+    await retire_in_place(session, predecessor)
+    return predecessor, successor
+
+
+@pytest_asyncio.fixture
+async def split_services(
+    session: AsyncSession, service: Service
+) -> tuple[Service, Service]:
+    """Create the second service a re-registration leaves on the same node."""
+    successor = await ServiceManager.create(
+        session,
+        ServiceWriteFactory.build(name=service.name, port=service.port),
+        node_id=service.node_id,
+    )
+    return service, successor
+
+
+@pytest_asyncio.fixture
+async def split_nodes_with_services(
+    session: AsyncSession, split_nodes: tuple[Node, Node]
+) -> tuple[Node, Node, Service, Service]:
+    """Give each node of a split pair a service sharing one name across them."""
+    predecessor, successor = split_nodes
+    predecessor_service = await ServiceManager.create(
+        session,
+        ServiceWriteFactory.build(name="inventory-test-mysql"),
+        node_id=predecessor.id,
+    )
+    successor_service = await ServiceManager.create(
+        session,
+        ServiceWriteFactory.build(name="inventory-test-mysql"),
+        node_id=successor.id,
+    )
+    return predecessor, successor, predecessor_service, successor_service

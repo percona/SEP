@@ -50,11 +50,11 @@ class AlertSettings(BaseYamlSettings):
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["ALERTING"]
-    PROVIDERS: set[BaseAlertProvider] = hot_field(
+    PROVIDERS: set[BaseAlertProvider] = hot_field(  # ty: ignore[invalid-assignment]
         set(), materializer=materialize_via_owning_model
     )
-    SOURCE_PREFIX: str = hot_field("")
-    SOURCE_SUFFIX: str = hot_field("")
+    SOURCE_PREFIX: str = hot_field("")  # ty: ignore[invalid-assignment]
+    SOURCE_SUFFIX: str = hot_field("")  # ty: ignore[invalid-assignment]
 
     @field_validator("PROVIDERS", mode="before")
     @classmethod
