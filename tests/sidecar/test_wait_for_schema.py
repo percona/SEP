@@ -18,21 +18,19 @@
 import re
 import subprocess
 from collections.abc import Callable, Iterator
-from configparser import RawConfigParser
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
-from tests.sidecar.conftest import SIDECAR_DIR
+from tests.sidecar.conftest import schema_steps, SIDECAR_DIR
 
 GATE = SIDECAR_DIR / "wait_for_schema.sh"
-SUPERVISORD_CONF = SIDECAR_DIR / "supervisord.conf"
 CONTAINERFILE = SIDECAR_DIR / "Containerfile.sidecar"
 HEALTHCHECK = SIDECAR_DIR / "healthcheck.sh"
 
 GATE_INVOCATION = "./wait_for_schema.sh"
-SCHEMA_STEPS = ("sep", "inventory", "tasks", "beat")
+SCHEMA_STEPS = schema_steps()
 """Every schema step an API program waits for, in program-table order."""
 
 GATED_PROGRAMS = {
@@ -50,7 +48,7 @@ RunGate = Callable[..., subprocess.CompletedProcess[str]]
 
 @pytest.fixture
 def sentinel_names() -> Iterator[list[str]]:
-    """Return four sentinel names unique to this test, cleaning up what it wrote.
+    """Return one sentinel name per schema step, cleaning up what it wrote.
 
     The gate derives ``/tmp/migrate-<name>.ok`` from each name it is given, and
     that path is hardcoded across the entrypoint, the program table and the
@@ -58,7 +56,7 @@ def sentinel_names() -> Iterator[list[str]]:
     and off a sibling xdist worker's, without introducing a directory knob that
     exists only for the tests.
 
-    :return: Four names, positionally standing in for the four schema steps.
+    :return: One name per schema step, positionally aligned with them.
     """
     names = [f"sep1946-{step}-{uuid4().hex}" for step in SCHEMA_STEPS]
     yield names
@@ -111,24 +109,6 @@ def run_gate(tmp_path: Path) -> RunGate:
     return run
 
 
-@pytest.fixture
-def program_settings() -> dict[str, dict[str, str]]:
-    """Return the side-car's supervisord programs, keyed by program name.
-
-    ``RawConfigParser`` rather than the interpolating default: the file carries
-    ``%(ENV_...)s`` names supervisord expands, which the default parser rejects.
-
-    :return: Each ``[program:...]`` section's settings, keyed by the bare name.
-    """
-    parser = RawConfigParser()
-    parser.read_string(SUPERVISORD_CONF.read_text(encoding="utf-8"))
-    return {
-        section.split(":", 1)[1]: dict(parser[section])
-        for section in parser.sections()
-        if section.startswith("program:")
-    }
-
-
 def test_the_gate_passes_once_every_sentinel_is_present(
     sentinel_names: list[str], run_gate: RunGate
 ):
@@ -146,8 +126,8 @@ def test_the_gate_waits_for_a_sentinel_that_arrives_late(
 ):
     """Hold the app while one step is still running, then release it.
 
-    This is the defect the ticket reports: without the wait the API program is
-    spawned beside the schema steps and reads tables that do not exist yet.
+    Without the wait the API program is spawned beside the schema steps and reads
+    tables that do not exist yet.
     """
     late, *ready = sentinel_names
     for name in ready:
@@ -187,8 +167,8 @@ def test_the_gate_names_only_the_sentinels_it_is_still_missing(
     sentinel_names: list[str], run_gate: RunGate
 ):
     """Name every outstanding step, so nothing waits without an explanation."""
-    absent = [sentinel_names[0], sentinel_names[3]]
-    present = [sentinel_names[1], sentinel_names[2]]
+    absent = [sentinel_names[0], sentinel_names[-1]]
+    present = sentinel_names[1:-1]
     for name in present:
         publish(name)
 

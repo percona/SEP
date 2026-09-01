@@ -69,7 +69,7 @@ def _wait_for_store(engine: Engine) -> None:
     not finished starting outlasts.
 
     :param engine: The synchronous engine for the resolved beat store.
-    :raises SQLAlchemyError: On a connection failure that is not an
+    :raises DBAPIError: On a connection failure that is not an
         ``OperationalError``, which is raised on the first attempt rather than
         retried — only an ``OperationalError`` is treated as "not up yet".
     """
@@ -103,8 +103,12 @@ def bootstrap_beat_schema() -> None:
     ``create_engine``. Neither outcome can configure anything, and the second
     would fail this step on a documented, validated setting.
 
-    :raises DatabaseError: When creating the tables fails, after the library has
-        exhausted its own retries.
+    :raises DBAPIError: When the store refuses a connection for a reason other
+        than not being up yet, or when creating the tables fails after the
+        library has exhausted its own retries. The family is ``DBAPIError``
+        rather than ``DatabaseError`` because the first case surfaces as
+        ``InterfaceError``, a sibling of ``DatabaseError`` rather than one of
+        its subclasses.
     :raises ArgumentError: When the resolved URL is malformed, or names a dialect
         whose driver is not installed. The engine is built before the wait, so
         this surfaces immediately.

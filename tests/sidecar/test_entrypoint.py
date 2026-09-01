@@ -18,16 +18,14 @@ import os
 import re
 import subprocess
 from collections.abc import Iterator
-from configparser import RawConfigParser
 from pathlib import Path
 
 import pytest
 
-from tests.sidecar.conftest import SIDECAR_DIR
+from tests.sidecar.conftest import schema_steps, SIDECAR_DIR
 
 ENTRYPOINT = SIDECAR_DIR / "entrypoint.sh"
 SETTINGS_ENV_HELPER = SIDECAR_DIR / "settings-env.sh"
-SUPERVISORD_CONF = SIDECAR_DIR / "supervisord.conf"
 MINT_HELPER_NAME = "grafana_service_account.py"
 
 SENTINEL_PATH = re.compile(r"/tmp/migrate-([a-z]+)\.ok")
@@ -226,20 +224,6 @@ def cleared_sentinels() -> set[str]:
     return set(SENTINEL_PATH.findall(ENTRYPOINT.read_text(encoding="utf-8")))
 
 
-def one_shot_programs() -> set[str]:
-    """Return the schema steps supervisord runs as one-shots.
-
-    :return: One bare step name per ``migrate-*`` program.
-    """
-    parser = RawConfigParser()
-    parser.read_string(SUPERVISORD_CONF.read_text(encoding="utf-8"))
-    return {
-        section.split(":", 1)[1].removeprefix("migrate-")
-        for section in parser.sections()
-        if section.startswith("program:migrate-")
-    }
-
-
 @pytest.fixture
 def owned_sentinels() -> Iterator[set[str]]:
     """Return the sentinel paths this suite owns, removing them afterwards.
@@ -251,7 +235,7 @@ def owned_sentinels() -> Iterator[set[str]]:
 
     :return: One absolute sentinel path per schema step.
     """
-    paths = {f"/tmp/migrate-{step}.ok" for step in one_shot_programs()}
+    paths = {f"/tmp/migrate-{step}.ok" for step in schema_steps()}
     yield paths
     for path in paths:
         Path(path).unlink(missing_ok=True)
@@ -304,4 +288,4 @@ def test_every_one_shot_sentinel_is_cleared():
     files from drifting: a schema step added to the program table without being
     cleared here would survive a restart and release the gate on a stale marker.
     """
-    assert cleared_sentinels() == one_shot_programs()
+    assert cleared_sentinels() == set(schema_steps())
