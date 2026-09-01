@@ -205,6 +205,28 @@ default:
     #         table_sys_id: {source: output, step: lookup, output: sys_id}
     #       reference_pointer: /result/sys_id
     #
+    # Optional connectivity probe. Declares the one request the admin Settings
+    # "Test connection" panel issues against the receiver for the `delivery`
+    # target; without it that target answers `probe_undeclared` and nothing is
+    # sent. The probe is deliberately NOT derived from the steps above: a
+    # resolution step may be a mutating POST, and its values may cite send inputs
+    # that only exist during a real send. So it is declared separately, under two
+    # constraints the schema enforces:
+    #   - the method is always GET, and there is no body;
+    #   - values may only be {source: literal} or {source: secret} - `input`,
+    #     `output` and `manifest_key` are refused when the plan is parsed.
+    # `path` must be relative to `endpoint`: a path carrying a scheme or a host
+    # would send the probe's credentials to another origin and is refused. As
+    # everywhere else, secrets are rejected in `query`.
+    #   DIAGNOSTICS_DELIVERY:
+    #     probe:
+    #       path: api/now/table/sn_customerservice_case
+    #       query:
+    #         sysparm_limit: {source: literal, value: "1"}
+    #         sysparm_fields: {source: literal, value: sys_id}
+    #       headers:
+    #         x-sn-apikey: {source: secret, name: api_key}
+    #
     # Per-deployment inputs for the plan above - unset by default. Supplies the
     # values the skeleton leaves open, so an image can bake a plan whose secret
     # names are declared but empty and an operator fill them in later. Unlike the

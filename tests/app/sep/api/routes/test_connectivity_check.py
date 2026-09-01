@@ -15,11 +15,16 @@
 
 """Define tests for the /api/sep/admin/connectivity-check endpoint."""
 
+import asyncio
+import ssl
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from aioresponses import aioresponses
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
+from pytest_mock import MockerFixture
 
 from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
@@ -33,8 +38,16 @@ from app.core.requests.connectivity import (
     ConnectivityStatusEnum,
 )
 from app.core.requests.remote_api import UPSTREAM_NON_JSON_HEADER
+from app.sep.api.routes import connectivity_check
 from app.sep.apps.alerts.deps import get_pmm_api
+from app.sep.bundle_upload.plan import DeliveryPlan
+from app.sep.bundle_upload.resolver import (
+    DeliveryUnavailableCode,
+    DRIFTED_INPUTS_REASON,
+    UNCONFIGURED_REASON,
+)
 from app.sep.clients.pmm import PMMRemoteAPI
+from app.sep.config import DeliveryPlanInputs, sep_settings
 from app.sep.deps import (
     get_api_authenticated_admin,
     get_current_user,
@@ -86,6 +99,44 @@ def pmm_not_configured() -> None:
 def _results_by_service(payload: list[dict]) -> dict[str, dict]:
     """Index a response payload by its ``service`` field."""
     return {entry["service"]: entry for entry in payload}
+
+
+#: Body naming the delivery target alone, for the cases that only exercise it.
+_DELIVERY_ONLY = {"targets": ["delivery"]}
+
+_DELIVERY_ENDPOINT = "https://intake.example.com/"
+_DELIVERY_PROBE_URL = f"{_DELIVERY_ENDPOINT}health?sysparm_limit=1"
+_DELIVERY_SECRET = "real-receiver-key"
+
+
+def _delivery_plan(*, with_probe: bool = True) -> DeliveryPlan:
+    """Build a resolvable delivery plan, optionally declaring a probe.
+
+    :param with_probe: Whether the plan declares the probe request.
+    :return: The validated plan.
+    """
+    payload = {
+        "endpoint": _DELIVERY_ENDPOINT,
+        "secrets": {"api_key": _DELIVERY_SECRET},
+        "upload": {
+            "path": "attachment/upload",
+            "headers": {"x-api-key": {"source": "secret", "name": "api_key"}},
+        },
+    }
+    if with_probe:
+        payload["probe"] = {
+            "path": "health",
+            "headers": {"x-api-key": {"source": "secret", "name": "api_key"}},
+            "query": {"sysparm_limit": {"source": "literal", "value": "1"}},
+        }
+    return DeliveryPlan(**payload)
+
+
+@pytest.fixture
+def configured_delivery(mocker: MockerFixture) -> None:
+    """Configure a resolvable delivery plan that declares a probe."""
+    mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", _delivery_plan())
+    mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY_INPUTS", None)
 
 
 class TestConnectivityCheckEndpoint:
@@ -280,7 +331,11 @@ class TestConnectivityCheckEndpoint:
         mock_inventory_api_dep: AsyncMock,
         mock_task_api_dep: AsyncMock,
     ) -> None:
-        """Report PMM not-configured without raising when no PMM is set."""
+        """Report an unconfigured PMM under its own status, not as unreachable.
+
+        An unconfigured deployment is a different operator action from one whose
+        endpoint is down, and the status is what a client branches on.
+        """
         mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
         mock_task_api_dep.get.return_value = {}
 
@@ -289,6 +344,7 @@ class TestConnectivityCheckEndpoint:
         )
 
         assert results["pmm"]["reachable"] is False
+        assert results["pmm"]["status"] == ConnectivityStatusEnum.NOT_CONFIGURED.value
         assert "not configured" in results["pmm"]["detail"].lower()
 
     def test_resolves_the_real_pmm_dependency_over_real_http(
@@ -489,3 +545,263 @@ class TestConnectivityCheckEndpoint:
 
         assert results["pmm"]["reachable"] is False
         assert results["pmm"]["status"] == "unreachable"
+
+
+@pytest.mark.usefixtures("mock_pmm_api", "mock_inventory_api_dep", "mock_task_api_dep")
+class TestConnectivityCheckDeliveryTarget:
+    """Exercise the diagnostics-delivery target of the connectivity check.
+
+    Every case names the delivery target alone, but the route resolves all of
+    its client dependencies regardless of which targets are asked for, so the
+    sibling dependency mocks stay in place to keep each request hermetic.
+    """
+
+    def test_reports_not_configured_without_a_baked_plan(
+        self, admin_client: TestClient, mocker: MockerFixture
+    ) -> None:
+        """Report a deployment nobody configured under its own status."""
+        mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", None)
+
+        results = _results_by_service(
+            admin_client.post(ENDPOINT, json=_DELIVERY_ONLY).json()
+        )
+
+        assert results["delivery"]["reachable"] is False
+        assert (
+            results["delivery"]["status"] == ConnectivityStatusEnum.NOT_CONFIGURED.value
+        )
+        assert results["delivery"]["detail"] == UNCONFIGURED_REASON
+
+    def test_reports_drifted_inputs_separately_from_unconfigured(
+        self, admin_client: TestClient, mocker: MockerFixture
+    ) -> None:
+        """Keep re-suppliable inputs distinct from delivery nobody configured."""
+        mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", _delivery_plan())
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY_INPUTS",
+            DeliveryPlanInputs(secrets={"renamed_key": "value"}),
+        )
+
+        results = _results_by_service(
+            admin_client.post(ENDPOINT, json=_DELIVERY_ONLY).json()
+        )
+
+        assert (
+            results["delivery"]["status"] == ConnectivityStatusEnum.INPUTS_DRIFTED.value
+        )
+        assert results["delivery"]["detail"] == DRIFTED_INPUTS_REASON
+
+    def test_reports_a_plan_that_declares_no_probe(
+        self, admin_client: TestClient, mocker: MockerFixture
+    ) -> None:
+        """Say so rather than guessing a request for a plan without a probe."""
+        mocker.patch.object(
+            sep_settings, "DIAGNOSTICS_DELIVERY", _delivery_plan(with_probe=False)
+        )
+        mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY_INPUTS", None)
+
+        with aioresponses() as mock:
+            results = _results_by_service(
+                admin_client.post(ENDPOINT, json=_DELIVERY_ONLY).json()
+            )
+            requests = list(mock.requests)
+
+        assert (
+            results["delivery"]["status"]
+            == ConnectivityStatusEnum.PROBE_UNDECLARED.value
+        )
+        assert requests == []
+
+    def test_reports_reachable_when_the_receiver_answers(
+        self, admin_client: TestClient, configured_delivery: None
+    ) -> None:
+        """Report the receiver reachable when the declared probe succeeds."""
+        with aioresponses() as mock:
+            mock.get(_DELIVERY_PROBE_URL, status=status.HTTP_200_OK, payload={})
+
+            results = _results_by_service(
+                admin_client.post(ENDPOINT, json=_DELIVERY_ONLY).json()
+            )
+
+        assert results["delivery"]["reachable"] is True
+        assert results["delivery"]["status"] == ConnectivityStatusEnum.REACHABLE.value
+
+    def test_reports_reachable_when_the_receiver_answers_without_json(
+        self, admin_client: TestClient, configured_delivery: None
+    ) -> None:
+        """Report a plain-text acknowledgement reachable, not as an error.
+
+        A probe declares no response-body contract, so a receiver whose health
+        route answers ``200 text/plain`` is healthy.
+        """
+        with aioresponses() as mock:
+            mock.get(
+                _DELIVERY_PROBE_URL,
+                status=status.HTTP_200_OK,
+                body="OK",
+                content_type="text/plain",
+            )
+
+            results = _results_by_service(
+                admin_client.post(ENDPOINT, json=_DELIVERY_ONLY).json()
+            )
+
+        assert results["delivery"]["reachable"] is True
+        assert results["delivery"]["status"] == ConnectivityStatusEnum.REACHABLE.value
+
+    def test_reports_auth_failed_on_a_rejected_credential(
+        self, admin_client: TestClient, configured_delivery: None
+    ) -> None:
+        """Separate a refused credential from an unreachable receiver."""
+        with aioresponses() as mock:
+            mock.get(_DELIVERY_PROBE_URL, status=status.HTTP_401_UNAUTHORIZED)
+
+            results = _results_by_service(
+                admin_client.post(ENDPOINT, json=_DELIVERY_ONLY).json()
+            )
+
+        assert results["delivery"]["reachable"] is False
+        assert results["delivery"]["status"] == ConnectivityStatusEnum.AUTH_FAILED.value
+
+    def test_reports_ssl_error_on_a_tls_failure(
+        self, admin_client: TestClient, configured_delivery: None
+    ) -> None:
+        """Separate a TLS failure from a plain connection failure."""
+        with aioresponses() as mock:
+            mock.get(_DELIVERY_PROBE_URL, exception=ssl.SSLError("bad cert"))
+
+            results = _results_by_service(
+                admin_client.post(ENDPOINT, json=_DELIVERY_ONLY).json()
+            )
+
+        assert results["delivery"]["status"] == ConnectivityStatusEnum.SSL_ERROR.value
+
+    def test_reports_unreachable_when_the_host_does_not_resolve(
+        self, admin_client: TestClient, configured_delivery: None
+    ) -> None:
+        """Report a receiver that cannot be connected to at all."""
+        with aioresponses() as mock:
+            mock.get(_DELIVERY_PROBE_URL, exception=ConnectionRefusedError("refused"))
+
+            results = _results_by_service(
+                admin_client.post(ENDPOINT, json=_DELIVERY_ONLY).json()
+            )
+
+        assert results["delivery"]["status"] == ConnectivityStatusEnum.UNREACHABLE.value
+
+    def test_reports_error_on_a_receiver_side_failure(
+        self, admin_client: TestClient, configured_delivery: None
+    ) -> None:
+        """Report a receiver that answered but not healthily."""
+        with aioresponses() as mock:
+            mock.get(_DELIVERY_PROBE_URL, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            results = _results_by_service(
+                admin_client.post(ENDPOINT, json=_DELIVERY_ONLY).json()
+            )
+
+        assert results["delivery"]["status"] == ConnectivityStatusEnum.ERROR.value
+
+    def test_reports_timeout_when_the_probe_outlives_its_bound(
+        self,
+        admin_client: TestClient,
+        configured_delivery: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """Report a timeout from the probe's own bound, not the transport's limits."""
+        mocker.patch.object(connectivity_check, "EXTERNAL_PROBE_TIMEOUT_SECONDS", 0.01)
+
+        async def _slow_receiver(_url: str, **_kwargs: Any) -> None:
+            """Answer more slowly than the probe's own bound allows."""
+            await asyncio.sleep(0.5)
+
+        with aioresponses() as mock:
+            mock.get(_DELIVERY_PROBE_URL, callback=_slow_receiver)
+
+            results = _results_by_service(
+                admin_client.post(ENDPOINT, json=_DELIVERY_ONLY).json()
+            )
+
+        assert results["delivery"]["status"] == ConnectivityStatusEnum.TIMEOUT.value
+
+    def test_no_probe_credential_reaches_the_response(
+        self, admin_client: TestClient, configured_delivery: None
+    ) -> None:
+        """Keep the receiver credential out of the body, whatever the outcome."""
+        with aioresponses() as mock:
+            mock.get(_DELIVERY_PROBE_URL, status=status.HTTP_401_UNAUTHORIZED)
+
+            body = admin_client.post(ENDPOINT, json=_DELIVERY_ONLY).text
+
+        assert _DELIVERY_SECRET not in body
+
+    def test_a_failing_delivery_leaves_its_siblings_alone(
+        self,
+        admin_client: TestClient,
+        configured_delivery: None,
+        mock_pmm_api: AsyncMock,
+        mock_inventory_api_dep: AsyncMock,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Keep a delivery failure from disturbing the targets probed beside it."""
+        mock_pmm_api.check_connectivity.return_value = _reachable("pmm")
+        mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
+        mock_task_api_dep.get.return_value = {}
+
+        with aioresponses() as mock:
+            mock.get(_DELIVERY_PROBE_URL, status=status.HTTP_401_UNAUTHORIZED)
+
+            payload = admin_client.post(
+                ENDPOINT, json={"targets": [*ALL_TARGETS["targets"], "delivery"]}
+            ).json()
+
+        results = _results_by_service(payload)
+        assert [entry["service"] for entry in payload] == [
+            *ALL_TARGETS["targets"],
+            "delivery",
+        ]
+        assert results["delivery"]["reachable"] is False
+        assert all(
+            results[service]["reachable"] is True for service in ALL_TARGETS["targets"]
+        )
+
+    def test_delivery_is_not_probed_when_it_is_not_requested(
+        self, admin_client: TestClient, mocker: MockerFixture
+    ) -> None:
+        """Leave the resolver untouched for a sweep that does not name delivery."""
+        resolve = mocker.patch.object(
+            connectivity_check, "resolve_delivery_plan", autospec=True
+        )
+
+        admin_client.post(ENDPOINT, json={"targets": ["pmm"]})
+
+        resolve.assert_not_called()
+
+    @pytest.mark.parametrize("code", list(DeliveryUnavailableCode))
+    def test_every_unavailable_code_maps_to_a_status(
+        self, code: DeliveryUnavailableCode
+    ) -> None:
+        """Give every unavailability code a status, since the lookup is unguarded.
+
+        That lookup sits ahead of the probe's own exception handling, so a code
+        added without a status would raise out of the concurrent fan-out and
+        fail every other target in the same request rather than just this one.
+        Iterating the enum is what makes a future member fail here instead.
+        """
+        assert code in connectivity_check._DELIVERY_UNAVAILABLE_STATUS
+
+    def test_delivery_requested_twice_yields_one_result(
+        self, admin_client: TestClient, configured_delivery: None
+    ) -> None:
+        """Collapse a duplicated target into a single probe and a single entry."""
+        with aioresponses() as mock:
+            mock.get(_DELIVERY_PROBE_URL, status=status.HTTP_200_OK, payload={})
+
+            payload = admin_client.post(
+                ENDPOINT, json={"targets": ["delivery", "delivery"]}
+            ).json()
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert [entry["service"] for entry in payload] == ["delivery"]
+        assert len(requests) == 1

@@ -24,7 +24,7 @@ the client wholesale -- those parts are rebased onto the plan's own steps here.
 
 __all__ = ["get_delivery_executor", "split_endpoint"]
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from urllib.parse import parse_qsl, urlparse
 
@@ -69,9 +69,13 @@ def _rebase_path(prefix: str, path: str) -> str:
 
 
 def _rebase_query(
-    query: dict[str, PlanValue], endpoint_query: dict[str, str]
+    query: Mapping[str, PlanValue], endpoint_query: dict[str, str]
 ) -> dict[str, PlanValue]:
     """Merge the endpoint's query pairs into a step's own, without displacing them.
+
+    Accepts any value map the plan admits, so a step whose values are drawn
+    from a narrower set than :data:`~app.sep.bundle_upload.plan.PlanValue`,
+    as the probe's are, rebases through the same helper.
 
     :param query: The step's configured query map.
     :param endpoint_query: The query pairs carried by the configured endpoint.
@@ -94,6 +98,10 @@ def _rebased_plan(
     than shared: the plan handed in is the process-global configured one, and
     mutating its steps would corrupt every later send.
 
+    Every step kind the plan carries is enumerated here by hand, so a step kind
+    added to :class:`~app.sep.bundle_upload.plan.DeliveryPlan` without a branch
+    below is silently carried through unrebased and issued at the wrong URL.
+
     :param plan: The configured plan to rebase.
     :param path: The endpoint's path.
     :param query: The endpoint's query pairs.
@@ -114,7 +122,19 @@ def _rebased_plan(
             "query": _rebase_query(plan.upload.query, query),
         }
     )
-    return plan.model_copy(update={"resolution_steps": steps, "upload": upload})
+    probe = (
+        None
+        if plan.probe is None
+        else plan.probe.model_copy(
+            update={
+                "path": _rebase_path(path, plan.probe.path),
+                "query": _rebase_query(plan.probe.query, query),
+            }
+        )
+    )
+    return plan.model_copy(
+        update={"resolution_steps": steps, "upload": upload, "probe": probe}
+    )
 
 
 @asynccontextmanager
