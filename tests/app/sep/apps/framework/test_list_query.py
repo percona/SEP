@@ -13,43 +13,33 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Test the framework's in-memory list-query applier and its request dependency."""
+"""Test the framework's spec-bound in-memory list-query applier."""
 
 from __future__ import annotations
 
 import ast
 import inspect
 from dataclasses import dataclass
-from typing import Annotated, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import pytest
-import pytest_asyncio
-from fastapi import Depends, FastAPI, status
-from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel
 from sqlalchemy import cast, column, String
 
 from app.core.db.list_query import (
     ListQuerySpec,
-    SEARCH_PARAM_DESCRIPTION,
-    SORT_PARAM_DESCRIPTION,
     UnknownSortKeyError,
 )
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import Pagination
-from app.core.pagination.deps import pagination_dep
 from app.sep.apps.framework import list_query as list_query_module
 from app.sep.apps.framework.list_query import (
-    apply_in_memory,
-    build_in_memory_list_query,
-    default_in_memory_query,
-    in_memory_list_scripts,
     InMemoryListQuery,
-    make_in_memory_list_query_dep,
+    InMemoryListQueryApplier,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Awaitable, Callable
+    from collections.abc import Awaitable, Callable
     from typing import TypeAlias
 
 
@@ -79,6 +69,9 @@ NO_SEARCH_SPEC = ListQuerySpec(
     tie_breaker=column("filename"),
 )
 
+APPLIER = InMemoryListQueryApplier(SPEC)
+NO_SEARCH_APPLIER = InMemoryListQueryApplier(NO_SEARCH_SPEC)
+
 
 if TYPE_CHECKING:
     ListScripts: TypeAlias = Callable[
@@ -96,12 +89,115 @@ def _rows(*specs: tuple[str, str | None, int]) -> list[_Row]:
     return [_Row(filename=f, title=t, created_at=c) for f, t, c in specs]
 
 
-class TestBuildInMemoryListQuery:
-    """Cover the public builder a hand-written route can call without a FastAPI dep."""
+def _forbid_spec_attrs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail the test if the spec attribute mapping is resolved again.
+
+    :param monkeypatch: The fixture patching the applier module.
+    """
+
+    def _boom(spec: ListQuerySpec) -> None:
+        raise AssertionError(f"spec attributes re-resolved for {spec!r}")
+
+    monkeypatch.setattr(list_query_module, "_spec_attrs", _boom)
+
+
+class TestApplierConstruction:
+    """Pin that the spec binds — and is validated — once, at construction."""
+
+    def test_binds_the_spec_and_its_resolved_attributes(self) -> None:
+        """Hold the spec and the row attributes its expressions name."""
+        applier = InMemoryListQueryApplier(SPEC)
+
+        assert applier.spec is SPEC
+        assert applier._attrs.sort_attrs == {
+            "filename": "filename",
+            "title": "title",
+            "created_at": "created_at",
+        }
+        assert applier._attrs.tie_attr == "filename"
+        assert applier._attrs.search_attrs == ("filename", "title")
+
+    def test_resolved_mapping_cannot_be_mutated(self) -> None:
+        """Reject an in-place edit of the resolved sort mapping.
+
+        The applier is reached from module scope by every request, so a writable
+        mapping would let one caller repoint another's sort key at a different
+        attribute for the process's lifetime.
+        """
+        applier = InMemoryListQueryApplier(SPEC)
+
+        with pytest.raises(TypeError):
+            applier._attrs.sort_attrs["filename"] = "created_at"  # type: ignore[index]
+
+        assert applier._attrs.sort_attrs["filename"] == "filename"
+
+    def test_attributes_are_never_resolved_again(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Serve every per-call operation from the construction-time mapping.
+
+        The whole point of binding the spec: a request must not re-walk the spec's
+        column expressions, so re-resolution is made fatal for the duration.
+        """
+        applier = InMemoryListQueryApplier(SPEC)
+        rows = _rows(("b.sh", "Beta", 2), ("a.sh", "Alpha", 1))
+        _forbid_spec_attrs(monkeypatch)
+
+        for _ in range(2):
+            applier.apply(rows, applier.default_query(), Pagination())
+        applier.apply(rows, applier.build_query("filename", "alpha"), None)
+
+    def test_unnamed_sortable_column_rejected(self) -> None:
+        """Reject an unnamed sort expression when the applier is built."""
+        spec = ListQuerySpec(
+            sortable={"size": cast(column("size"), String)},
+            default_sort="size",
+            tie_breaker=column("filename"),
+        )
+
+        with pytest.raises(ValueError, match="exposes no name"):
+            InMemoryListQueryApplier(spec)
+
+    @pytest.mark.parametrize("role", ["tie_breaker", "searchable"])
+    def test_unnamed_non_sortable_expression_also_rejected(self, role: str) -> None:
+        """Guard every role at construction, not just the sortable allowlist."""
+        unnamed = cast(column("filename"), String)
+        spec = ListQuerySpec(
+            sortable={"filename": column("filename")},
+            default_sort="filename",
+            tie_breaker=unnamed if role == "tie_breaker" else column("filename"),
+            searchable=[unnamed] if role == "searchable" else [],
+        )
+
+        with pytest.raises(ValueError, match=f"spec {role}"):
+            InMemoryListQueryApplier(spec)
+
+    def test_no_applier_escapes_a_misdeclared_spec(self) -> None:
+        """Leave no half-built applier behind: construction is the only way in.
+
+        The applier is the sole entry point to the in-memory path, so a spec whose
+        tie-breaker cannot be read off a row cannot reach a request at all.
+        """
+        spec = ListQuerySpec(
+            sortable={"filename": column("filename")},
+            default_sort="filename",
+            tie_breaker=cast(column("filename"), String),
+        )
+
+        with pytest.raises(ValueError, match="tie_breaker"):
+            InMemoryListQueryApplier(spec).apply(
+                _rows(("a.sh", None, 1)),
+                InMemoryListQuery(sort_key="filename", descending=False, search=None),
+                Pagination(),
+            )
+
+
+class TestBuildQuery:
+    """Cover the public builder a hand-written route calls without a FastAPI dep."""
 
     def test_resolves_sort_and_search(self) -> None:
         """Carry a vetted sort key and search term onto the resolved query."""
-        query = build_in_memory_list_query(SPEC, "-filename", "needle")
+        query = APPLIER.build_query("-filename", "needle")
         assert query == InMemoryListQuery(
             sort_key="filename", descending=True, search="needle"
         )
@@ -109,85 +205,18 @@ class TestBuildInMemoryListQuery:
     def test_unknown_sort_key_raises_422(self) -> None:
         """Reject an out-of-allowlist sort key with HTTP 422."""
         with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
-            build_in_memory_list_query(SPEC, "bogus", None)
+            APPLIER.build_query("bogus", None)
         assert "bogus" in str(excinfo.value.detail)
 
 
-class TestMakeInMemoryListQueryDep:
-    """Exercise the FastAPI dependency the paginated list route injects."""
-
-    def test_exposes_sort_and_search_params_when_searchable(self) -> None:
-        """Expose ``sort`` and ``search`` when the spec has searchable columns."""
-        dep = make_in_memory_list_query_dep(SPEC)
-        params = inspect.signature(dep).parameters
-        assert set(params) == {"sort", "search"}
-
-    def test_exposes_only_sort_when_no_searchable(self) -> None:
-        """Expose only ``sort`` when the spec has no searchable columns."""
-        dep = make_in_memory_list_query_dep(NO_SEARCH_SPEC)
-        params = inspect.signature(dep).parameters
-        assert set(params) == {"sort"}
-
-    def test_default_sort_resolves_to_spec_default(self) -> None:
-        """Resolve the spec's default sort, honoring its descending prefix."""
-        dep = make_in_memory_list_query_dep(SPEC)
-        query = dep(sort=SPEC.default_sort, search=None)
-        assert query == InMemoryListQuery(
-            sort_key="created_at", descending=True, search=None
-        )
-
-    def test_ascending_sort_key_parsed(self) -> None:
-        """Parse a bare (unprefixed) sort key as ascending."""
-        dep = make_in_memory_list_query_dep(SPEC)
-        assert dep(sort="filename", search=None).descending is False
-
-    def test_search_term_passed_through(self) -> None:
-        """Carry the raw search term onto the resolved query."""
-        dep = make_in_memory_list_query_dep(SPEC)
-        assert dep(sort="filename", search="needle").search == "needle"
-
-    def test_unknown_sort_key_raises_422(self) -> None:
-        """Reject an out-of-allowlist sort key with HTTP 422."""
-        dep = make_in_memory_list_query_dep(SPEC)
-        with pytest.raises(HTTPUnprocessableEntityException):
-            dep(sort="bogus", search=None)
-
-    def test_unknown_sort_key_with_descending_prefix_raises_422(self) -> None:
-        """Reject an out-of-allowlist descending sort key with HTTP 422."""
-        dep = make_in_memory_list_query_dep(SPEC)
-        with pytest.raises(HTTPUnprocessableEntityException):
-            dep(sort="-bogus", search=None)
-
-    def test_params_carry_the_allowlist_enum_and_descriptions(self) -> None:
-        """Declare the params through Core, so both paths document one contract."""
-        dep = make_in_memory_list_query_dep(SPEC)
-        declarations = {
-            name: param.default
-            for name, param in inspect.signature(dep).parameters.items()
-        }
-
-        assert declarations["sort"].json_schema_extra == {
-            "enum": [
-                "created_at",
-                "-created_at",
-                "filename",
-                "-filename",
-                "title",
-                "-title",
-            ]
-        }
-        assert declarations["sort"].description == SORT_PARAM_DESCRIPTION
-        assert declarations["search"].description == SEARCH_PARAM_DESCRIPTION
-
-
-class TestApplyInMemorySort:
+class TestApplySort:
     """Verify ordering matches the SQL path: direction, NULLS-LAST, tie-breaker."""
 
     def test_descending_primary(self) -> None:
         """Order rows by the primary key descending."""
         rows = _rows(("a", "A", 1), ("b", "B", 3), ("c", "C", 2))
         query = InMemoryListQuery(sort_key="created_at", descending=True, search=None)
-        page, total = apply_in_memory(rows, SPEC, query, Pagination())
+        page, total = APPLIER.apply(rows, query, Pagination())
         assert [r.filename for r in page] == ["b", "c", "a"]
         assert total == len(rows)
 
@@ -195,7 +224,7 @@ class TestApplyInMemorySort:
         """Order rows by the primary key ascending."""
         rows = _rows(("a", "A", 1), ("b", "B", 3), ("c", "C", 2))
         query = InMemoryListQuery(sort_key="created_at", descending=False, search=None)
-        page, _ = apply_in_memory(rows, SPEC, query, Pagination())
+        page, _ = APPLIER.apply(rows, query, Pagination())
         assert [r.filename for r in page] == ["a", "c", "b"]
 
     def test_nulls_sort_last_regardless_of_direction(self) -> None:
@@ -203,8 +232,8 @@ class TestApplyInMemorySort:
         rows = _rows(("a", None, 1), ("b", "B", 2), ("c", None, 3))
         asc = InMemoryListQuery(sort_key="title", descending=False, search=None)
         desc = InMemoryListQuery(sort_key="title", descending=True, search=None)
-        asc_page, _ = apply_in_memory(rows, SPEC, asc, Pagination())
-        desc_page, _ = apply_in_memory(rows, SPEC, desc, Pagination())
+        asc_page, _ = APPLIER.apply(rows, asc, Pagination())
+        desc_page, _ = APPLIER.apply(rows, desc, Pagination())
         # Non-null "B" leads both directions; NULL rows trail, ordered by tie-breaker.
         assert [r.filename for r in asc_page] == ["b", "a", "c"]
         assert [r.filename for r in desc_page] == ["b", "a", "c"]
@@ -214,21 +243,21 @@ class TestApplyInMemorySort:
         rows = _rows(("c", "X", 5), ("a", "X", 5), ("b", "X", 5))
         asc = InMemoryListQuery(sort_key="created_at", descending=False, search=None)
         desc = InMemoryListQuery(sort_key="created_at", descending=True, search=None)
-        asc_page, _ = apply_in_memory(rows, SPEC, asc, Pagination())
-        desc_page, _ = apply_in_memory(rows, SPEC, desc, Pagination())
+        asc_page, _ = APPLIER.apply(rows, asc, Pagination())
+        desc_page, _ = APPLIER.apply(rows, desc, Pagination())
         # Equal primary → filename tie-breaker ascending in BOTH directions.
         assert [r.filename for r in asc_page] == ["a", "b", "c"]
         assert [r.filename for r in desc_page] == ["a", "b", "c"]
 
 
-class TestApplyInMemorySearch:
+class TestApplySearch:
     """Verify case-insensitive substring search and the filtered total."""
 
     def test_case_insensitive_substring_over_searchable_attrs(self) -> None:
         """Match a term case-insensitively as a substring of a searchable attr."""
         rows = _rows(("alpha.sh", "First", 1), ("beta.sh", "Second", 2))
         query = InMemoryListQuery(sort_key="filename", descending=False, search="FIR")
-        page, total = apply_in_memory(rows, SPEC, query, Pagination())
+        page, total = APPLIER.apply(rows, query, Pagination())
         assert [r.filename for r in page] == ["alpha.sh"]
         assert total == 1
 
@@ -236,7 +265,7 @@ class TestApplyInMemorySearch:
         """Match the term against the filename attribute."""
         rows = _rows(("alpha.sh", None, 1), ("beta.sh", None, 2))
         query = InMemoryListQuery(sort_key="filename", descending=False, search="beta")
-        page, total = apply_in_memory(rows, SPEC, query, Pagination())
+        page, total = APPLIER.apply(rows, query, Pagination())
         assert [r.filename for r in page] == ["beta.sh"]
         assert total == 1
 
@@ -244,7 +273,7 @@ class TestApplyInMemorySearch:
         """Skip a row whose only match candidate is a ``None`` attribute."""
         rows = _rows(("alpha.sh", None, 1))
         query = InMemoryListQuery(sort_key="filename", descending=False, search="x")
-        page, total = apply_in_memory(rows, SPEC, query, Pagination())
+        page, total = APPLIER.apply(rows, query, Pagination())
         assert page == []
         assert total == 0
 
@@ -252,14 +281,14 @@ class TestApplyInMemorySearch:
         """Treat a whitespace-only term as no search."""
         rows = _rows(("a", "A", 1), ("b", "B", 2))
         query = InMemoryListQuery(sort_key="filename", descending=False, search="   ")
-        _, total = apply_in_memory(rows, SPEC, query, Pagination())
+        _, total = APPLIER.apply(rows, query, Pagination())
         assert total == len(rows)
 
     def test_none_search_returns_all(self) -> None:
         """Return every row when no search term is supplied."""
         rows = _rows(("a", "A", 1), ("b", "B", 2))
         query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
-        _, total = apply_in_memory(rows, SPEC, query, Pagination())
+        _, total = APPLIER.apply(rows, query, Pagination())
         assert total == len(rows)
 
     def test_non_string_searchable_value_matched_as_text(self) -> None:
@@ -268,22 +297,24 @@ class TestApplyInMemorySearch:
         A spec is free to make a numeric attribute searchable; SQL ``ilike`` casts it,
         so the in-memory path has to compare the same way rather than skipping it.
         """
-        spec = ListQuerySpec(
-            sortable={"filename": column("filename")},
-            default_sort="filename",
-            tie_breaker=column("filename"),
-            searchable=(column("created_at"),),
+        applier = InMemoryListQueryApplier(
+            ListQuerySpec(
+                sortable={"filename": column("filename")},
+                default_sort="filename",
+                tie_breaker=column("filename"),
+                searchable=(column("created_at"),),
+            )
         )
         rows = _rows(("a", "A", 17), ("b", "B", 42))
         query = InMemoryListQuery(sort_key="filename", descending=False, search="17")
 
-        page, total = apply_in_memory(rows, spec, query, Pagination())
+        page, total = applier.apply(rows, query, Pagination())
 
         assert [row.filename for row in page] == ["a"]
         assert total == 1
 
 
-class TestApplyInMemoryPagination:
+class TestApplyPagination:
     """Verify slicing and that the total reflects the filtered set, not the page."""
 
     def test_total_is_filtered_count_before_slice(self) -> None:
@@ -291,9 +322,7 @@ class TestApplyInMemoryPagination:
         row_count, page_limit = 10, 3
         rows = _rows(*[(f"{i:02d}.sh", "T", i) for i in range(row_count)])
         query = InMemoryListQuery(sort_key="filename", descending=False, search="T")
-        page, total = apply_in_memory(
-            rows, SPEC, query, Pagination(offset=0, limit=page_limit)
-        )
+        page, total = APPLIER.apply(rows, query, Pagination(offset=0, limit=page_limit))
         assert len(page) == page_limit
         assert total == row_count
 
@@ -301,23 +330,23 @@ class TestApplyInMemoryPagination:
         """Return exactly the offset/limit window of the ordered set."""
         rows = _rows(*[(f"{i:02d}.sh", None, i) for i in range(5)])
         query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
-        page, _ = apply_in_memory(rows, SPEC, query, Pagination(offset=2, limit=2))
+        page, _ = APPLIER.apply(rows, query, Pagination(offset=2, limit=2))
         assert [r.filename for r in page] == ["02.sh", "03.sh"]
 
     def test_empty_items(self) -> None:
         """Return an empty page and zero total for an empty input."""
         query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
-        page, total = apply_in_memory([], SPEC, query, Pagination())
+        page, total = APPLIER.apply([], query, Pagination())
         assert page == []
         assert total == 0
 
 
-class TestDefaultInMemoryQuery:
+class TestDefaultQuery:
     """Cover the query a caller with no request-derived selections falls back to."""
 
     def test_descending_default_strips_the_prefix(self) -> None:
         """Split a ``-`` prefixed default into a bare key plus a descending flag."""
-        query = default_in_memory_query(SPEC)
+        query = APPLIER.default_query()
 
         assert (query.sort_key, query.descending, query.search) == (
             "created_at",
@@ -327,12 +356,12 @@ class TestDefaultInMemoryQuery:
 
     def test_ascending_default_is_not_descending(self) -> None:
         """Keep an unprefixed default ascending."""
-        query = default_in_memory_query(NO_SEARCH_SPEC)
+        query = NO_SEARCH_APPLIER.default_query()
 
         assert (query.sort_key, query.descending) == ("filename", False)
 
 
-class TestApplyInMemoryWithoutPagination:
+class TestApplyWithoutPagination:
     """Cover the whole-collection call shape the derived non-paginated route makes."""
 
     def test_returns_every_row_unsliced(self) -> None:
@@ -341,7 +370,7 @@ class TestApplyInMemoryWithoutPagination:
         rows = _rows(*[(f"{i:02d}.sh", "T", i) for i in range(row_count)])
         query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
 
-        page, total = apply_in_memory(rows, SPEC, query, None)
+        page, total = APPLIER.apply(rows, query, None)
 
         assert len(page) == row_count
         assert total == row_count
@@ -352,7 +381,7 @@ class TestApplyInMemoryWithoutPagination:
         rows = _rows(("b.sh", "Beta", 2), ("a.sh", "Alpha", 1), ("c.sh", "Gamma", 3))
         query = InMemoryListQuery(sort_key="filename", descending=True, search="a")
 
-        page, total = apply_in_memory(rows, SPEC, query, None)
+        page, total = APPLIER.apply(rows, query, None)
 
         assert [row.filename for row in page] == ["c.sh", "b.sh", "a.sh"]
         assert total == len(rows)
@@ -360,45 +389,6 @@ class TestApplyInMemoryWithoutPagination:
 
 class TestSpecAttributeValidation:
     """Pin that a spec/row mismatch fails loudly, and once, rather than per row."""
-
-    def test_unnamed_sortable_column_rejected_at_dep_construction(self) -> None:
-        """Reject an unnamed sort expression when the dependency is built."""
-        spec = ListQuerySpec(
-            sortable={"size": cast(column("size"), String)},
-            default_sort="size",
-            tie_breaker=column("filename"),
-        )
-
-        with pytest.raises(ValueError, match="exposes no name"):
-            make_in_memory_list_query_dep(spec)
-
-    @pytest.mark.parametrize("role", ["tie_breaker", "searchable"])
-    def test_unnamed_non_sortable_expression_also_rejected_at_dep_construction(
-        self, role: str
-    ) -> None:
-        """Guard every role at wiring time, not just the sortable allowlist."""
-        unnamed = cast(column("filename"), String)
-        spec = ListQuerySpec(
-            sortable={"filename": column("filename")},
-            default_sort="filename",
-            tie_breaker=unnamed if role == "tie_breaker" else column("filename"),
-            searchable=[unnamed] if role == "searchable" else [],
-        )
-
-        with pytest.raises(ValueError, match=f"spec {role}"):
-            make_in_memory_list_query_dep(spec)
-
-    def test_unnamed_tie_breaker_rejected_by_applier(self) -> None:
-        """Reject an unnamed tie-breaker even when the dependency was bypassed."""
-        spec = ListQuerySpec(
-            sortable={"filename": column("filename")},
-            default_sort="filename",
-            tie_breaker=cast(column("filename"), String),
-        )
-        query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
-
-        with pytest.raises(ValueError, match="tie_breaker"):
-            apply_in_memory(_rows(("a.sh", None, 1)), spec, query, Pagination())
 
     def test_row_missing_spec_attribute_names_both_sides(self) -> None:
         """Name the row type and the attribute instead of raising ``AttributeError``."""
@@ -409,14 +399,14 @@ class TestSpecAttributeValidation:
         query = InMemoryListQuery(sort_key="created_at", descending=False, search=None)
 
         with pytest.raises(ValueError, match="_Sparse has no attribute 'created_at'"):
-            apply_in_memory([_Sparse(filename="a.sh")], SPEC, query, Pagination())
+            APPLIER.apply([_Sparse(filename="a.sh")], query, Pagination())
 
     def test_out_of_allowlist_sort_key_rejected(self) -> None:
         """Reject a hand-built query whose sort key was never vetted by the spec."""
         query = InMemoryListQuery(sort_key="secret", descending=False, search=None)
 
         with pytest.raises(UnknownSortKeyError):
-            apply_in_memory(_rows(("a.sh", None, 1)), SPEC, query, Pagination())
+            APPLIER.apply(_rows(("a.sh", None, 1)), query, Pagination())
 
     @pytest.mark.parametrize("sort_key", ["__class__", "__dict__"])
     def test_dunder_sort_key_rejected(self, sort_key: str) -> None:
@@ -428,7 +418,7 @@ class TestSpecAttributeValidation:
         query = InMemoryListQuery(sort_key=sort_key, descending=False, search=None)
 
         with pytest.raises(UnknownSortKeyError):
-            apply_in_memory(_rows(("a.sh", None, 1)), SPEC, query, Pagination())
+            APPLIER.apply(_rows(("a.sh", None, 1)), query, Pagination())
 
     def test_row_missing_searchable_attribute_names_both_sides(self) -> None:
         """Reject a searchable-only mismatch on the first list call, not the first search.
@@ -445,24 +435,27 @@ class TestSpecAttributeValidation:
         query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
 
         with pytest.raises(ValueError, match="_Untitled has no attribute 'title'"):
-            apply_in_memory([_Untitled(filename="a.sh")], SPEC, query, Pagination())
+            APPLIER.apply([_Untitled(filename="a.sh")], query, Pagination())
 
 
 _ADAPTER_ROWS = 3
 
 
-class TestInMemoryListScripts:
+class TestListScripts:
     """Cover the adapter across all four shapes the framework calls it with."""
 
     @pytest.fixture
     def list_scripts(self) -> ListScripts:
-        """Adapt a fixed set of rows through the framework's applier."""
+        """Adapt a fixed set of rows through the framework's applier.
+
+        :return: The bound list-scripts callable over a fixed row set.
+        """
         rows = _rows(("b.sh", "Beta", 2), ("a.sh", "Alpha", 1), ("c.sh", "Gamma", 3))
 
         async def _materialize() -> list[_Row]:
             return rows
 
-        return in_memory_list_scripts(_materialize, SPEC)
+        return APPLIER.list_scripts(_materialize)
 
     @pytest.mark.asyncio
     async def test_no_query_no_pagination_returns_all_in_spec_order(
@@ -508,6 +501,16 @@ class TestInMemoryListScripts:
         assert [row.filename for row in page] == ["b.sh"]
         assert total == _ADAPTER_ROWS
 
+    @pytest.mark.asyncio
+    async def test_adapter_resolves_no_spec_attributes_per_call(
+        self, list_scripts: ListScripts, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Serve every list call from the applier the source was set up with."""
+        _forbid_spec_attrs(monkeypatch)
+
+        for pagination in (None, Pagination()):
+            await list_scripts(None, pagination)
+
 
 class TestApplierIsBackingAgnostic:
     """Pin the applier's independence from the script seam.
@@ -534,10 +537,34 @@ class TestApplierIsBackingAgnostic:
         ]
         query = InMemoryListQuery(sort_key="filename", descending=False, search="alpha")
 
-        page, total = apply_in_memory(rows, SPEC, query, Pagination())
+        page, total = APPLIER.apply(rows, query, Pagination())
 
         assert [row.filename for row in page] == ["a-node", "c-node"]
         assert total == matching
+
+    def test_one_applier_serves_repeated_calls_over_mixed_row_types(self) -> None:
+        """Keep results stable when a shared applier is reused, since it holds no scratch.
+
+        Module-level appliers are shared across requests, so an interleaving of row
+        types, queries, and page windows must not carry state from one call to the next.
+        """
+
+        class _Node(BaseModel):
+            filename: str
+            title: str | None = None
+            created_at: int = 0
+
+        dataclass_rows = _rows(("b.sh", "Beta", 2), ("a.sh", "Alpha", 1))
+        model_rows = [_Node(filename="z-node", title="Zeta")]
+        query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
+
+        first = APPLIER.apply(dataclass_rows, query, None)
+        APPLIER.apply(model_rows, APPLIER.default_query(), Pagination())
+        APPLIER.apply(dataclass_rows, APPLIER.build_query("-title", "a"), Pagination())
+        second = APPLIER.apply(dataclass_rows, query, None)
+
+        assert [row.filename for row in first[0]] == ["a.sh", "b.sh"]
+        assert first == second
 
     def test_module_does_not_import_the_script_seam(self) -> None:
         """Keep the applier importable without pulling in ``ScriptSource``.
@@ -559,153 +586,3 @@ class TestApplierIsBackingAgnostic:
         }
 
         assert not [name for name in imported if name.endswith("script_source")]
-
-
-_ROUTE_APP = FastAPI()
-_ROUTE_ROWS = _rows(("a.sh", "Alpha", 1), ("b.sh", "Beta", 2), ("c.sh", "Gamma", 3))
-
-_search_dep = make_in_memory_list_query_dep(SPEC)
-_no_search_dep = make_in_memory_list_query_dep(NO_SEARCH_SPEC)
-
-
-@_ROUTE_APP.get("/scripts")
-async def _list_scripts(
-    list_query: Annotated[InMemoryListQuery, Depends(_search_dep)],
-    pagination: Annotated[Pagination, Depends(pagination_dep)],
-) -> dict[str, Any]:
-    page, total = apply_in_memory(_ROUTE_ROWS, SPEC, list_query, pagination)
-    return {"items": [row.filename for row in page], "total": total}
-
-
-@_ROUTE_APP.get("/scripts-nosearch")
-async def _list_scripts_no_search(
-    list_query: Annotated[InMemoryListQuery, Depends(_no_search_dep)],
-    pagination: Annotated[Pagination, Depends(pagination_dep)],
-) -> dict[str, Any]:
-    page, total = apply_in_memory(_ROUTE_ROWS, NO_SEARCH_SPEC, list_query, pagination)
-    return {"items": [row.filename for row in page], "total": total}
-
-
-@pytest_asyncio.fixture(name="route_client")
-async def route_client_fixture() -> AsyncIterator[AsyncClient]:
-    """Yield an async client bound to the throwaway in-memory list-query app.
-
-    :return: A client whose lifetime is scoped to the requesting test.
-    """
-    client = AsyncClient(
-        transport=ASGITransport(app=_ROUTE_APP), base_url="http://test"
-    )
-    try:
-        yield client
-    finally:
-        await client.aclose()
-
-
-def _route_params(path: str) -> dict[str, dict[str, Any]]:
-    """Return the generated OpenAPI query parameters of a route, keyed by name.
-
-    :param path: The route path to read the generated parameters of.
-    :return: Each declared query parameter's schema entry, keyed by parameter name.
-    """
-    return {
-        param["name"]: param
-        for param in _ROUTE_APP.openapi()["paths"][path]["get"]["parameters"]
-    }
-
-
-class TestInMemoryListQueryDepAtTheRequestBoundary:
-    """Pin the in-memory dependency's boundary against the SQL dependency's.
-
-    The direct-call tests above cover resolution; these cover what a client sees —
-    the reflected OpenAPI parameters and the rejection body — which is the half a
-    request contract can drift on without any unit test noticing.
-    """
-
-    def test_search_enabled_route_exposes_both_params(self) -> None:
-        """Reflect ``sort`` and ``search`` into the generated OpenAPI."""
-        assert {"sort", "search"} <= set(_route_params("/scripts"))
-
-    def test_search_disabled_route_omits_search(self) -> None:
-        """Reflect only ``sort`` when the spec declares nothing searchable."""
-        names = set(_route_params("/scripts-nosearch"))
-        assert "sort" in names
-        assert "search" not in names
-
-    def test_params_document_the_allowlist_and_descriptions(self) -> None:
-        """Publish the allowlist enum and both descriptions a generated client reads."""
-        params = _route_params("/scripts")
-
-        assert params["sort"]["schema"]["enum"] == [
-            "created_at",
-            "-created_at",
-            "filename",
-            "-filename",
-            "title",
-            "-title",
-        ]
-        assert params["sort"]["description"] == SORT_PARAM_DESCRIPTION
-        assert params["search"]["description"] == SEARCH_PARAM_DESCRIPTION
-
-    @pytest.mark.asyncio
-    async def test_out_of_allowlist_sort_returns_a_flat_422(
-        self, route_client: AsyncClient
-    ) -> None:
-        """Reject an unvetted sort key with the SQL path's exact 422 body."""
-        response = await route_client.get("/scripts", params={"sort": "evil"})
-
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert response.json() == {"detail": "Invalid sort key: 'evil'"}
-
-    @pytest.mark.asyncio
-    async def test_dunder_sort_key_rejected_at_the_boundary(
-        self, route_client: AsyncClient
-    ) -> None:
-        """Stop an attribute-shaped sort key at the allowlist, before any row read."""
-        response = await route_client.get("/scripts", params={"sort": "__class__"})
-
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert response.json() == {"detail": "Invalid sort key: '__class__'"}
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("term", ["%", "_", "\\", "a%a"])
-    async def test_search_metacharacters_match_literally(
-        self, route_client: AsyncClient, term: str
-    ) -> None:
-        """Treat LIKE metacharacters as text, matching the escaped SQL predicate."""
-        response = await route_client.get("/scripts", params={"search": term})
-
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json()["total"] == 0
-
-    @pytest.mark.asyncio
-    async def test_default_sort_applied_when_omitted(
-        self, route_client: AsyncClient
-    ) -> None:
-        """Apply the spec's descending default when the request omits ``sort``."""
-        response = await route_client.get("/scripts")
-
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json()["items"] == ["c.sh", "b.sh", "a.sh"]
-
-    @pytest.mark.asyncio
-    async def test_search_filters_and_reports_filtered_total(
-        self, route_client: AsyncClient
-    ) -> None:
-        """Filter by the search term and report the filtered total."""
-        response = await route_client.get(
-            "/scripts", params={"sort": "filename", "search": "beta"}
-        )
-
-        assert response.json() == {"items": ["b.sh"], "total": 1}
-
-    @pytest.mark.asyncio
-    async def test_search_param_ignored_where_the_spec_disables_it(
-        self, route_client: AsyncClient
-    ) -> None:
-        """Ignore a ``search`` the route never declared instead of filtering on it."""
-        response = await route_client.get(
-            "/scripts-nosearch", params={"search": "beta"}
-        )
-
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json()["total"] == len(_ROUTE_ROWS)

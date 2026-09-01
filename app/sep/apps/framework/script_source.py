@@ -187,7 +187,8 @@ class ScriptSource(Generic[S, Q]):
         applies sort/search/pagination in-process (a disk-backed source) rather than
         pushing them down to SQL. Selects which list-query dependency the framework
         builds for the app's :class:`~app.core.db.list_query.ListQuerySpec` — the
-        in-memory dep (:func:`~app.sep.apps.framework.list_query.make_in_memory_list_query_dep`)
+        in-memory dep
+        (:func:`~app.sep.apps.framework.deps.make_in_memory_list_query_dep`)
         when ``True``, the SQL dep (:func:`~app.core.db.list_query.make_list_query_dep`)
         otherwise. Meaningful only on a source with no ``list_query_dep``, which
         supersedes it.

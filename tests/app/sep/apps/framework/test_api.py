@@ -60,10 +60,7 @@ from app.sep.apps.framework.api import (
     schema_endpoint,
 )
 from app.sep.apps.framework.deps import make_task_dep
-from app.sep.apps.framework.list_query import (
-    default_in_memory_query,
-    in_memory_list_scripts,
-)
+from app.sep.apps.framework.list_query import InMemoryListQueryApplier
 from app.sep.apps.framework.rules import (
     CardinalityRule,
     F,
@@ -1315,6 +1312,8 @@ _STUB_SPEC = ListQuerySpec(
     searchable=(column("filename"),),
 )
 
+_STUB_APPLIER = InMemoryListQueryApplier(_STUB_SPEC)
+
 
 def _make_script_source(
     *,
@@ -1332,7 +1331,7 @@ def _make_script_source(
     async def _materialize() -> list[_StubScript]:
         return scripts
 
-    _list_scripts = in_memory_list_scripts(_materialize, _STUB_SPEC)
+    _list_scripts = _STUB_APPLIER.list_scripts(_materialize)
 
     async def _load_script(filename: str) -> _StubScript:
         return _StubScript(filename)
@@ -1639,7 +1638,7 @@ class TestDeriveScriptRoutesListQueryGuard:
         """Reject a source supplying its own dependency when no spec was supplied."""
         source = replace(
             _make_script_source(),
-            list_query_dep=lambda: default_in_memory_query(_STUB_SPEC),
+            list_query_dep=_STUB_APPLIER.default_query,
         )
 
         with pytest.raises(ValueError, match="no list_query_spec was supplied"):

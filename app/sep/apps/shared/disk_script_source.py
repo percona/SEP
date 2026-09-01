@@ -47,7 +47,7 @@ from app.core.exceptions import (
     HTTPUnprocessableEntityException,
 )
 from app.sep.apps.field_names import EXECUTOR_HOST_FIELD_NAME, SUDO_FIELD_NAME
-from app.sep.apps.framework.list_query import in_memory_list_scripts
+from app.sep.apps.framework.list_query import InMemoryListQueryApplier
 from app.sep.apps.framework.schema import (
     AppSchema,
     BoolField,
@@ -347,7 +347,9 @@ def build_disk_script_source(
             if path.is_file()
         ]
 
-    list_scripts = in_memory_list_scripts(materialize_scripts, list_query_spec)
+    list_scripts = InMemoryListQueryApplier(list_query_spec).list_scripts(
+        materialize_scripts
+    )
 
     def build_form_schema(script: _DiskScript) -> AppSchema:
         return _build_form_schema(script, name=name)

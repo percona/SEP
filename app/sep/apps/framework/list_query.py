@@ -26,14 +26,24 @@ type. The applier keys on **object attributes**, not SQL columns, resolving each
 attribute name from the spec's column expressions: an in-memory spec must therefore
 use named column clauses (``sqlalchemy.column("filename")``) whose name matches the
 attribute exposed on the materialized row (for example ``_DiskScript.filename``).
+
+That resolution is pure given a spec, so :class:`InMemoryListQueryApplier` binds the
+spec at construction and does it once. Build one per spec where the spec is already
+known statically — FastAPI wiring, script-source setup, module load — and reuse it;
+no per-call signature carries a spec.
+
+Request wiring lives elsewhere:
+:func:`~app.sep.apps.framework.deps.make_in_memory_list_query_dep` turns an applier into
+the FastAPI dependency, so this module changes only when query behaviour does.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, TypeVar
 
-from app.core.db.list_query import make_query_param_dep, UnknownSortKeyError
+from app.core.db.list_query import UnknownSortKeyError
 from app.core.exceptions import HTTPUnprocessableEntityException
 
 if TYPE_CHECKING:
@@ -43,6 +53,11 @@ if TYPE_CHECKING:
 
     from app.core.db.list_query import ListQuerySpec
     from app.core.pagination import Pagination
+
+__all__ = [
+    "InMemoryListQuery",
+    "InMemoryListQueryApplier",
+]
 
 S = TypeVar("S")
 
@@ -103,7 +118,8 @@ def _attr_name(column: ColumnExpressionArgument, *, role: str) -> str:
 class _SpecAttrs:
     """Carry the row attribute names a spec's column expressions resolve to.
 
-    :param sort_attrs: The attribute behind each public sort key.
+    :param sort_attrs: The attribute behind each public sort key, kept immutable so a
+        shared applier's resolved mapping cannot be rewritten in place.
     :param tie_attr: The attribute behind the tie-breaker.
     :param search_attrs: The attributes behind the searchable set.
     """
@@ -121,10 +137,12 @@ def _spec_attrs(spec: ListQuerySpec) -> _SpecAttrs:
     :raises ValueError: When any expression exposes no name or key.
     """
     return _SpecAttrs(
-        sort_attrs={
-            key: _attr_name(column, role=f"sortable[{key!r}]")
-            for key, column in spec.sortable.items()
-        },
+        sort_attrs=MappingProxyType(
+            {
+                key: _attr_name(column, role=f"sortable[{key!r}]")
+                for key, column in spec.sortable.items()
+            }
+        ),
         tie_attr=_attr_name(spec.tie_breaker, role="tie_breaker"),
         search_attrs=tuple(
             _attr_name(column, role="searchable") for column in spec.searchable
@@ -152,158 +170,133 @@ def _require_row_attrs(row: object, attrs: Iterable[tuple[str, str]]) -> None:
             )
 
 
-def make_in_memory_list_query_dep(
-    spec: ListQuerySpec,
-) -> Callable[..., InMemoryListQuery]:
-    """Create a FastAPI dependency yielding a validated :class:`InMemoryListQuery`.
+@dataclass(frozen=True, slots=True)
+class InMemoryListQueryApplier:
+    """Replay one spec's list-query contract against materialized rows.
 
-    The request boundary is Core's, through
-    :func:`~app.core.db.list_query.make_query_param_dep`, so this path and the SQL one
-    expose the same parameters, publish the same allowlist ``enum`` and descriptions,
-    and reject an out-of-allowlist sort key with the same HTTP 422. Only the resolved
-    value object differs.
+    Resolving the spec's column expressions to row attribute names is pure given the
+    spec, so it happens once here, at construction, and every operation reads the
+    stored mapping. A misdeclared spec therefore fails where the applier is built —
+    module load, FastAPI wiring, script-source setup — rather than once per request.
 
-    :param spec: The spec whose allowlist and searchable set bound the request.
-    :return: A dependency callable resolving the request into an
-        :class:`InMemoryListQuery`.
-    :raises ValueError: When a spec column expression exposes no name to read off a
-        row, so a misdeclared spec fails at wiring time rather than per request.
-    """
-    # Resolved for its exception only: a misdeclared spec has to fail here, at wiring
-    # time, rather than once per request inside the applier.
-    _spec_attrs(spec)
-    return make_query_param_dep(spec, _build_in_memory_query)
+    Frozen because instances are built once and shared across requests: an applier
+    reached from module scope must not be mutable in place.
 
-
-def _build_in_memory_query(
-    spec: ListQuerySpec,
-    sort: str,
-    search: str | None,
-) -> InMemoryListQuery:
-    """Resolve a request's sort and search into an :class:`InMemoryListQuery`.
-
-    :param spec: The spec whose allowlist bounds the request.
-    :param sort: The requested public sort key (possibly ``-`` prefixed).
-    :param search: The raw search term, or ``None`` when search is disabled or unset.
-    :return: The resolved in-memory list query.
-    :raises UnknownSortKeyError: When ``sort`` is not in the allowlist; the dependency
-        maps it to a 422.
-    """
-    spec.resolve_sort(sort)
-    return InMemoryListQuery.from_sort(sort, search)
-
-
-def build_in_memory_list_query(
-    spec: ListQuerySpec,
-    sort: str,
-    search: str | None,
-) -> InMemoryListQuery:
-    """Resolve a request's sort and search into an :class:`InMemoryListQuery`.
-
-    Validation delegates to :meth:`ListQuerySpec.resolve_sort` so the allowlist and
-    the 422 boundary are identical to the SQL dependency. Public so a hand-written
-    route — for example a proxied inventory list that dispatches across per-entity
-    specs — can reuse the same mapping without going through
-    :func:`make_in_memory_list_query_dep`.
-
-    :param spec: The spec whose allowlist bounds the request.
-    :param sort: The requested public sort key (possibly ``-`` prefixed).
-    :param search: The raw search term, or ``None`` when search is disabled or unset.
-    :return: The resolved in-memory list query.
-    :raises HTTPUnprocessableEntityException: When ``sort`` is not in the allowlist.
-    """
-    try:
-        return _build_in_memory_query(spec, sort, search)
-    except UnknownSortKeyError as exc:
-        raise HTTPUnprocessableEntityException(
-            detail=f"Invalid sort key: {exc.key!r}"
-        ) from exc
-
-
-def default_in_memory_query(spec: ListQuerySpec) -> InMemoryListQuery:
-    """Return the query a request that selected nothing resolves to.
-
-    Lets a caller with no request-derived query — the whole-collection call shape — run
-    the same applier as a queried one, so a source needs no second, order-less path.
-
-    :param spec: The spec whose default sort to adopt.
-    :return: The spec's default sort with no search term.
-    """
-    return InMemoryListQuery.from_sort(spec.default_sort, None)
-
-
-def apply_in_memory(
-    items: Sequence[S],
-    spec: ListQuerySpec,
-    query: InMemoryListQuery,
-    pagination: Pagination | None,
-) -> tuple[list[S], int]:
-    """Filter, order, and page ``items`` per the spec and resolved query.
-
-    Replays the SQL path against in-process objects: case-insensitive substring
-    search over the searchable attributes, then a NULLS-LAST, tie-broken ordering,
-    then the pagination slice. The returned total is the filtered count taken before
-    slicing, so it matches the SQL path's filtered total.
-
-    :param items: The materialized rows to query.
-    :param spec: The spec describing the searchable/sortable surface.
-    :param query: The resolved, allowlist-vetted list-query selections.
-    :param pagination: The offset/limit window for the page, or ``None`` to return
-        every matching row unsliced (the whole-collection call shape).
-    :return: The page slice and the filtered total across all pages.
-    :raises ValueError: When a spec column expression exposes no name, or the rows do
-        not expose an attribute the spec names.
-    :raises UnknownSortKeyError: When ``query.sort_key`` is outside the allowlist.
-    """
-    attrs = _spec_attrs(spec)
-    if query.sort_key not in attrs.sort_attrs:
-        raise UnknownSortKeyError(query.sort_key)
-    if items:
-        _require_row_attrs(
-            items[0],
-            [
-                (f"sortable[{query.sort_key!r}]", attrs.sort_attrs[query.sort_key]),
-                ("tie_breaker", attrs.tie_attr),
-                *(("searchable", attr) for attr in attrs.search_attrs),
-            ],
-        )
-    filtered = _search(items, attrs, query.search)
-    ordered = _sort(filtered, attrs, query)
-    return (ordered if pagination is None else pagination.slice(ordered)), len(ordered)
-
-
-def in_memory_list_scripts(
-    materialize: Callable[[], Awaitable[Sequence[S]]],
-    spec: ListQuerySpec,
-) -> Callable[
-    [InMemoryListQuery | None, Pagination | None], Awaitable[tuple[list[S], int]]
-]:
-    """Adapt a materialize-everything callable into the widened list-scripts contract.
-
-    A source that fetches its whole set has one honest implementation of all four call
-    shapes — query or not, paginated or not — so it is written once here rather than as
-    a branch cascade per source. A missing query resolves to the spec default, which is
-    what removes the need for an unsorted, unfiltered fallback path.
-
-    Nothing here assumes a script type: any homogeneous sequence of rows exposing the
-    spec's attributes works, so a hand-written route outside the script seam can use it.
-
-    :param materialize: Fetches the complete set of rows.
-    :param spec: The spec bounding the sort, search, and default ordering.
-    :return: A callable honouring the ``ScriptSource.list_scripts`` contract.
+    :param spec: The spec bounding the sortable allowlist, the searchable set, and
+        the default ordering.
     """
 
-    async def list_scripts(
-        list_query: InMemoryListQuery | None, pagination: Pagination | None
+    spec: ListQuerySpec
+    _attrs: _SpecAttrs = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        """Resolve and store the row attribute names the spec's expressions name.
+
+        :raises ValueError: When a spec column expression exposes no name or key to
+            read off a row.
+        """
+        object.__setattr__(self, "_attrs", _spec_attrs(self.spec))
+
+    def build_query(self, sort: str, search: str | None) -> InMemoryListQuery:
+        """Resolve a request's sort and search into an :class:`InMemoryListQuery`.
+
+        Validation delegates to :meth:`ListQuerySpec.resolve_sort` so the allowlist and
+        the 422 boundary are identical to the SQL dependency. Public so a route that
+        resolves the request itself — one dispatching across several appliers, say —
+        needs no generated dependency, and so the dependency factory can build on it.
+
+        :param sort: The requested public sort key (possibly ``-`` prefixed).
+        :param search: The raw search term, or ``None`` when search is disabled or
+            unset.
+        :return: The resolved in-memory list query.
+        :raises HTTPUnprocessableEntityException: When ``sort`` is not in the allowlist.
+        """
+        try:
+            self.spec.resolve_sort(sort)
+        except UnknownSortKeyError as exc:
+            raise HTTPUnprocessableEntityException(
+                detail=f"Invalid sort key: {exc.key!r}"
+            ) from exc
+        return InMemoryListQuery.from_sort(sort, search)
+
+    def default_query(self) -> InMemoryListQuery:
+        """Return the query a request that selected nothing resolves to.
+
+        Lets a caller with no request-derived query — the whole-collection call shape —
+        run the same applier as a queried one, so a source needs no second, order-less
+        path.
+
+        :return: The spec's default sort with no search term.
+        """
+        return InMemoryListQuery.from_sort(self.spec.default_sort, None)
+
+    def apply(
+        self,
+        items: Sequence[S],
+        query: InMemoryListQuery,
+        pagination: Pagination | None,
     ) -> tuple[list[S], int]:
-        return apply_in_memory(
-            await materialize(),
-            spec,
-            list_query or default_in_memory_query(spec),
-            pagination,
-        )
+        """Filter, order, and page ``items`` per the bound spec and resolved query.
 
-    return list_scripts
+        Replays the SQL path against in-process objects: case-insensitive substring
+        search over the searchable attributes, then a NULLS-LAST, tie-broken ordering,
+        then the pagination slice. The returned total is the filtered count taken
+        before slicing, so it matches the SQL path's filtered total.
+
+        :param items: The materialized rows to query.
+        :param query: The resolved, allowlist-vetted list-query selections.
+        :param pagination: The offset/limit window for the page, or ``None`` to return
+            every matching row unsliced (the whole-collection call shape).
+        :return: The page slice and the filtered total across all pages.
+        :raises ValueError: When the rows do not expose an attribute the spec names.
+        :raises UnknownSortKeyError: When ``query.sort_key`` is outside the allowlist.
+        """
+        attrs = self._attrs
+        if query.sort_key not in attrs.sort_attrs:
+            raise UnknownSortKeyError(query.sort_key)
+        if items:
+            sort_role = f"sortable[{query.sort_key!r}]"
+            _require_row_attrs(
+                items[0],
+                [
+                    (sort_role, attrs.sort_attrs[query.sort_key]),
+                    ("tie_breaker", attrs.tie_attr),
+                    *(("searchable", attr) for attr in attrs.search_attrs),
+                ],
+            )
+        ordered = _sort(_search(items, attrs, query.search), attrs, query)
+        page = ordered if pagination is None else pagination.slice(ordered)
+        return page, len(ordered)
+
+    def list_scripts(
+        self, materialize: Callable[[], Awaitable[Sequence[S]]]
+    ) -> Callable[
+        [InMemoryListQuery | None, Pagination | None], Awaitable[tuple[list[S], int]]
+    ]:
+        """Adapt a materialize-everything callable into the widened list-scripts contract.
+
+        A source that fetches its whole set has one honest implementation of all four
+        call shapes — query or not, paginated or not — so it is written once here rather
+        than as a branch cascade per source. A missing query resolves to the spec
+        default, which is what removes the need for an unsorted, unfiltered fallback
+        path.
+
+        Nothing here assumes a script type: any homogeneous sequence of rows exposing
+        the spec's attributes works, so a hand-written route outside the script seam can
+        use it.
+
+        :param materialize: Fetches the complete set of rows.
+        :return: A callable honouring the ``ScriptSource.list_scripts`` contract.
+        """
+
+        async def _list_scripts(
+            list_query: InMemoryListQuery | None, pagination: Pagination | None
+        ) -> tuple[list[S], int]:
+            return self.apply(
+                await materialize(), list_query or self.default_query(), pagination
+            )
+
+        return _list_scripts
 
 
 def _search(
@@ -357,13 +350,3 @@ def _sort(
         (absent if getattr(item, sort_attr) is None else present).append(item)
     present.sort(key=lambda item: getattr(item, sort_attr), reverse=query.descending)
     return present + absent
-
-
-__all__ = [
-    "InMemoryListQuery",
-    "apply_in_memory",
-    "build_in_memory_list_query",
-    "default_in_memory_query",
-    "in_memory_list_scripts",
-    "make_in_memory_list_query_dep",
-]
