@@ -185,7 +185,9 @@ class TestCheckMySQL:
 
         result = check_mysql("db-host", 3306)
         assert result["success"] is False
-        assert "Can't connect" in result["error"]
+        error = result["error"]
+        assert isinstance(error, str)
+        assert "Can't connect" in error
 
     def test_operational_error_with_empty_args_remains_failure(
         self, mock_myloginpath, mock_pymysql
@@ -262,7 +264,9 @@ class TestCheckPostgreSQL:
 
         result = check_postgresql("db-host", 5432)
         assert result["success"] is False
-        assert "password authentication failed" in result["error"]
+        error = result["error"]
+        assert isinstance(error, str)
+        assert "password authentication failed" in error
 
 
 class TestCheckMongoDB:
@@ -323,7 +327,9 @@ class TestCheckMongoDB:
 
         result = check_mongodb("db-host", 27017)
         assert result["success"] is False
-        assert "namespace not found" in result["error"]
+        error = result["error"]
+        assert isinstance(error, str)
+        assert "namespace not found" in error
 
 
 class TestMain:

@@ -409,6 +409,7 @@ class TestPeriodicTaskResponseNextRunAt:
         before = datetime.now(UTC)
         response = PeriodicTaskResponse.model_validate(response_fields)
         expected = before + timedelta(days=2)
+        assert response.next_run_at is not None
         assert abs((response.next_run_at - expected).total_seconds()) < 1
 
     def test_disabled_task_returns_none(self, response_fields):

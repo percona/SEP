@@ -107,7 +107,7 @@ def _sanitize_client_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     return safe
 
 
-LOGGING_CONFIG = {
+LOGGING_CONFIG: dict[str, Any] = {
     "version": 1,
     "disable_existing_loggers": False,
     "filters": {

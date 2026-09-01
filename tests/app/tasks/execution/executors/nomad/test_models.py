@@ -421,6 +421,7 @@ class TestPrepareTask:
         task = _build_task(task_id="base-job")
         queue_item = _build_queue_item(task=task)
         result = NomadExecutor.prepare_task(queue_item)
+        assert result.data is not None
         assert result.data["ID"] == f"base-job-{slugify('node-1')}"
 
     def test_prepare_task_with_explicit_task(self):
@@ -428,6 +429,7 @@ class TestPrepareTask:
         queue_item = _build_queue_item()
         explicit_task = _build_task(task_id="explicit-job")
         result = NomadExecutor.prepare_task(queue_item, task=explicit_task)
+        assert result.data is not None
         assert result.data["ID"].startswith("explicit-job-")
 
     def test_prepare_task_meta_substitution(self):
@@ -437,6 +439,7 @@ class TestPrepareTask:
         meta = {"target": "node-1", "dc": "dc1"}
         queue_item = _build_queue_item(task=task, meta=meta)
         result = NomadExecutor.prepare_task(queue_item)
+        assert result.data is not None
         assert result.data["Constraints"][0]["Operand"] == "node-1"
 
     def test_prepare_task_no_meta(self):
@@ -445,6 +448,7 @@ class TestPrepareTask:
         queue_item = _build_queue_item(task=task, meta=None)
         queue_item.execution_request.meta = None
         result = NomadExecutor.prepare_task(queue_item)
+        assert result.data is not None
         assert result.data["ID"] == f"no-meta-job-{slugify('node-1')}"
 
 
@@ -1159,6 +1163,7 @@ class TestDispatchTask:
         result = await executor.dispatch_task(session, queue_item, task)
 
         assert result.status == TaskHistoryStatusEnum.RUNNING
+        assert result.execution_request.tracking is not None
         assert result.execution_request.tracking["job_id"] == "dispatched-job-1"
         assert result.execution_request.tracking["evaluation_id"] == "eval-disp"
         assert result.started_at is not None
@@ -1689,6 +1694,7 @@ class TestSyncTaskHistory:
         result = await executor._sync_task_history(queue_item)
 
         assert result.status == TaskHistoryStatusEnum.SUCCESS
+        assert result.execution_request.tracking is not None
         assert result.execution_request.tracking["allocation_id"] == "alloc-2"
 
     @pytest.mark.asyncio
@@ -1835,6 +1841,7 @@ class TestSyncTaskHistoryWithoutTaskStates:
 
         assert result.status == TaskHistoryStatusEnum.RUNNING
         assert result.finished_at is None
+        assert result.execution_request.tracking is not None
         assert result.execution_request.tracking["task_states"] == {}
         assert result.execution_request.tracking["allocation_id"] == "alloc-2"
 
@@ -1859,6 +1866,7 @@ class TestSyncTaskHistoryWithoutTaskStates:
         result = await executor._sync_task_history(self._queue_item())
 
         assert result.status == TaskHistoryStatusEnum.RUNNING
+        assert result.execution_request.tracking is not None
         assert result.execution_request.tracking["allocation_id"] == "alloc-2"
 
     @pytest.mark.asyncio
@@ -2046,6 +2054,7 @@ class TestSyncTaskHistoryWithoutTaskStates:
         result = await executor._sync_task_history(queue_item, writer_session=session)
 
         assert result.status == TaskHistoryStatusEnum.LOST
+        assert result.execution_request.tracking is not None
         assert result.execution_request.tracking["allocation_id"] == "alloc-2"
         chunks = await TaskHistoryLogManager.list_chunks_for_task(session, result.id)
         assert chunks == []
@@ -3116,7 +3125,9 @@ class TestNomadLogStreaming:
 
         logs = await self._drain_task_logs(queue)
         assert [log.msg for log in logs] == ["card=[REDACTED]\n"]
-        assert "4111" not in logs[0].msg
+        first_message = logs[0].msg
+        assert first_message is not None
+        assert "4111" not in first_message
         assert logs[0].offset == SPLIT_TOKEN_LINE_EOF_OFFSET
 
     @pytest.mark.asyncio
@@ -3205,7 +3216,9 @@ class TestNomadLogStreaming:
 
         logs = await self._drain_task_logs(queue)
         assert [log.msg for log in logs] == ["card=[REDACTED]"]
-        assert "4111" not in logs[0].msg
+        first_message = logs[0].msg
+        assert first_message is not None
+        assert "4111" not in first_message
         assert logs[0].offset == NEWLINELESS_TAIL_FRAME_EOF_OFFSET
         assert not pending
         assert any(
@@ -3251,7 +3264,9 @@ class TestNomadLogStreaming:
 
         logs = await self._drain_task_logs(queue)
         assert logs[0].msg == "card=[REDACTED]"
-        assert "4111" not in logs[0].msg
+        first_message = logs[0].msg
+        assert first_message is not None
+        assert "4111" not in first_message
         assert logs[-1].msg is None  # end-of-stream sentinel comes last
 
     @pytest.mark.asyncio
@@ -4292,6 +4307,7 @@ class TestStreamFile:
                 )
             ]
 
+        assert tar_gz.call_args.kwargs is not None
         assert tar_gz.call_args.kwargs["anonymize"] is False
 
 

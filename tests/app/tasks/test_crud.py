@@ -644,6 +644,9 @@ class TestTaskHistoryManagerListByTaskNameOrdering:
         )
 
         assert [row.id for row in result] == [first.id, second.id, third.id]
+        assert first.id is not None
+        assert second.id is not None
+        assert third.id is not None
         assert first.id < second.id < third.id
 
 

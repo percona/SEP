@@ -144,6 +144,7 @@ class TestBackupPgContract(DerivedRouterContractTests):
         so the conflicting task must be seeded under the create body's own name.
         """
         body = build_valid_create_body(self.app_def)
+        assert body is not None
         mock_task_api.seed_running(body["task_name"], owner=self.app_def.owner)
         base = app_base_url(self.app_def)
 

@@ -770,6 +770,7 @@ class TestConfirmNodeIdentityLink:
         self, session: AsyncSession, node: Node
     ) -> None:
         """Refuse a body naming a row that does not exist."""
+        assert node.id is not None
         with pytest.raises(HTTPNotFoundException):
             await NodeManager.confirm_identity_link(
                 session, node, node.id + 1000, principal=PRINCIPAL

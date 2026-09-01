@@ -1324,6 +1324,7 @@ class TestPurgeTaskHistoryLogs:
                 await _purge_task_history_logs()
 
             mock_alert.assert_awaited_once()
+            assert mock_alert.await_args is not None
             alert = mock_alert.await_args[0][0]
             assert alert["severity"] == AlertSeverity.ERROR
             assert alert["dedup_key"] == "purge_task_history_logs"

@@ -311,6 +311,7 @@ def test_legacy_casdoor_settings_reads_secret_file(tmp_path):
 
     instance = _LegacyCasdoorSettings(_secrets_dir=tmp_path)
 
+    assert instance.CASDOOR is not None
     assert instance.CASDOOR["endpoint"] == "http://from-file:9999"
 
 
