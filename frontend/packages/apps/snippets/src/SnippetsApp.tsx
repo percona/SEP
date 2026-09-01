@@ -19,24 +19,19 @@ import { Route, Routes } from 'react-router';
 import { SnippetDetailPage } from './SnippetDetailPage';
 import { SnippetsListPage } from './SnippetsListPage';
 
-interface SnippetsAppProps {
-  /** Whether the current user has admin privileges. Controls approval UI visibility. */
-  isAdmin?: boolean;
-}
-
 /**
  * Snippets app entry point — composes its own routes because the legacy
  * snippets UI is snippet-centric (list of files → detail page combining
  * preview + execution form + history) rather than the framework's
  * task-centric default.
  *
- * Pass `isAdmin` from the shell's auth context to enable per-row and
- * batch approval controls for admin users.
+ * The list page reads the session's mutation capability from the shared auth
+ * context, so nothing is threaded in here.
  */
-export function SnippetsApp({ isAdmin = false }: SnippetsAppProps) {
+export function SnippetsApp() {
   return (
     <Routes>
-      <Route index element={<SnippetsListPage isAdmin={isAdmin} />} />
+      <Route index element={<SnippetsListPage />} />
       <Route path=":filename" element={<SnippetDetailPage />} />
     </Routes>
   );

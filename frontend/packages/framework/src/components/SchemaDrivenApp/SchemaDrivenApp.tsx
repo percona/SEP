@@ -27,10 +27,12 @@ import { useSnackbar } from 'notistack';
 import {
   useAppSchema,
   useAppEntityDetail,
+  useAuth,
   useUpdateAppEntity,
   type AppEntitySchema,
   type AppSchema,
 } from '@sep/api';
+import { ReadOnlyNotice } from '../ReadOnlyNotice';
 import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
 import type { RenderFieldOverride } from '../SchemaFormRenderer/types';
 import { EMPTY_SUBMIT_ERROR, mapSubmitError, type SubmitErrorState } from './submitErrorMapping';
@@ -120,6 +122,7 @@ function AppEditPage({
   renderEditForm?: RenderFormSlot;
 }) {
   const navigate = useNavigate();
+  const { canMutate } = useAuth();
   const { entityName, id } = useParams<{ entityName?: string; id: string }>();
   const entitySchema = useMemo(
     () => schema.entities?.find((e: AppEntitySchema) => e.name === entityName),
@@ -178,6 +181,26 @@ function AppEditPage({
       },
     );
   };
+
+  // Editing is a mutation, so the whole page is the control (see AppCreatePage).
+  if (!canMutate) {
+    return (
+      <Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+          <IconButton
+            onClick={() => navigate('..', { relative: 'path' })}
+            aria-label={`Back to ${title}`}
+          >
+            <ArrowBackIcon />
+          </IconButton>
+          <Typography variant="h4">
+            {title} #{id}
+          </Typography>
+        </Box>
+        <ReadOnlyNotice action={`edit ${title}`} testId="app-entity-edit-read-only" />
+      </Box>
+    );
+  }
 
   if (!multi || !entitySchema) {
     return (

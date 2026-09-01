@@ -26,9 +26,13 @@ import { StatusBadge } from './StatusBadge';
 import { useTaskHistory } from '../../hooks/useTaskHistory';
 import type { TaskHistoryEntry, TaskHistoryStatus } from './TaskHistoryTable.types';
 
+/** Flipped per test to cover the read-only (non-admin) rendering. */
+let mockCanMutate = true;
+
 vi.mock('@sep/api', () => {
   const RUNNING_STATUSES = new Set(['running', 'pending']);
   return {
+    useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
     apiClient: {
       get: vi.fn(),
       post: vi.fn(),
@@ -39,6 +43,10 @@ vi.mock('@sep/api', () => {
 });
 
 import { apiClient } from '@sep/api';
+
+beforeEach(() => {
+  mockCanMutate = true;
+});
 
 const mockedApiClient = apiClient as unknown as {
   get: ReturnType<typeof vi.fn>;
@@ -498,5 +506,32 @@ describe('useTaskHistory polling', () => {
     await waitFor(() => expect(mockedApiClient.get).toHaveBeenCalledTimes(1));
     await wait(150);
     expect(mockedApiClient.get).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('TaskHistoryTable — write access', () => {
+  const client = makeQueryClient();
+
+  it('shows the stop control on a running row for a session that may mutate', () => {
+    render(
+      <Wrapper client={client}>
+        <TaskHistoryTable data={[makeEntry(2, 'running')]} disablePolling onStopTask={vi.fn()} />
+      </Wrapper>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Stop task' })).toBeInTheDocument();
+  });
+
+  it('shows no stop control on a running row for a non-admin', () => {
+    mockCanMutate = false;
+    render(
+      <Wrapper client={client}>
+        <TaskHistoryTable data={[makeEntry(2, 'running')]} disablePolling onStopTask={vi.fn()} />
+      </Wrapper>,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Stop task' })).not.toBeInTheDocument();
+    // Reads stay: the row and its log viewer remain available.
+    expect(screen.getByRole('button', { name: 'View logs' })).toBeInTheDocument();
   });
 });

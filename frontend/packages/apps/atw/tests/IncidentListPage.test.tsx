@@ -23,10 +23,18 @@ import { MemoryRouter } from 'react-router';
 import type { ReactNode } from 'react';
 import { IncidentListPage } from '../src/IncidentListPage';
 
+/** Flipped per test to cover the read-only (non-admin) rendering. */
+let mockCanMutate = true;
+
 vi.mock('@sep/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@sep/api')>()),
   apiClient: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
 }));
+
+beforeEach(() => {
+  mockCanMutate = true;
+});
 
 import { apiClient } from '@sep/api';
 const mockedApi = apiClient as unknown as {
@@ -279,5 +287,56 @@ describe('IncidentListPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Close DB slowness/i })).not.toBeDisabled();
     });
+  });
+});
+
+describe('IncidentListPage — write access', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders create, close, rename and delete for a session that may mutate', async () => {
+    mockedApi.get.mockResolvedValue(paginated([incident]));
+
+    renderPage(<IncidentListPage />);
+
+    await waitFor(() => expect(screen.getByText('DB slowness')).toBeTruthy());
+    expect(screen.getByRole('button', { name: /New incident/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Close DB slowness/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Rename DB slowness/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Delete DB slowness/i })).toBeInTheDocument();
+  });
+
+  it('keeps the create instruction in the empty state for a session that may mutate', async () => {
+    mockedApi.get.mockResolvedValue(paginated([]));
+
+    renderPage(<IncidentListPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/No incidents yet\. Create one to get started\./)).toBeTruthy(),
+    );
+  });
+
+  it('drops the create instruction from the empty state for a non-admin', async () => {
+    mockCanMutate = false;
+    mockedApi.get.mockResolvedValue(paginated([]));
+
+    renderPage(<IncidentListPage />);
+
+    await waitFor(() => expect(screen.getByText('No incidents yet.')).toBeTruthy());
+    expect(screen.queryByText(/Create one to get started/i)).not.toBeInTheDocument();
+  });
+
+  it('renders no create, close, rename or delete for a non-admin', async () => {
+    mockCanMutate = false;
+    mockedApi.get.mockResolvedValue(paginated([incident]));
+
+    renderPage(<IncidentListPage />);
+
+    await waitFor(() => expect(screen.getByText('DB slowness')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /New incident/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Close DB slowness/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Rename DB slowness/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Delete DB slowness/i })).not.toBeInTheDocument();
   });
 });

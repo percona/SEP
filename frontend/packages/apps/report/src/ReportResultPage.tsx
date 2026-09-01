@@ -29,6 +29,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { useAuth } from '@sep/api';
 import {
   isReportJobActive,
   reportJobError,
@@ -44,6 +45,7 @@ import {
 import type { ReportParams } from './types';
 
 export function ReportResultPage() {
+  const { canMutate } = useAuth();
   const { state } = useLocation();
   const navigate = useNavigate();
   const params = (state as { params?: ReportParams } | null)?.params;
@@ -157,36 +159,41 @@ export function ReportResultPage() {
       <Divider sx={{ mb: 3 }} />
 
       <Stack direction="row" spacing={2} sx={{ mb: 3 }} flexWrap="wrap" useFlexGap>
-        <Button
-          variant="contained"
-          onClick={() => {
-            setPdfJobId(null);
-            setDownloadedPdfJobId(null);
-            startPdfJob.mutate(report, {
-              onSuccess: (job) => setPdfJobId(job.job_id),
-            });
-          }}
-          disabled={pdfInProgress}
-        >
-          {pdfInProgress ? 'Generating PDF…' : 'Download PDF'}
-        </Button>
-
-        <Tooltip title={uploadTooltip}>
-          <span>
+        {/* Both start a server-side job, so both are withheld from a read-only session. */}
+        {canMutate && (
+          <>
             <Button
-              variant="outlined"
+              variant="contained"
               onClick={() => {
-                setUploadJobId(null);
-                startUploadJob.mutate(report, {
-                  onSuccess: (job) => setUploadJobId(job.job_id),
+                setPdfJobId(null);
+                setDownloadedPdfJobId(null);
+                startPdfJob.mutate(report, {
+                  onSuccess: (job) => setPdfJobId(job.job_id),
                 });
               }}
-              disabled={uploadDisabled}
+              disabled={pdfInProgress}
             >
-              {uploadInProgress ? 'Uploading…' : 'Upload to ServiceNow'}
+              {pdfInProgress ? 'Generating PDF…' : 'Download PDF'}
             </Button>
-          </span>
-        </Tooltip>
+
+            <Tooltip title={uploadTooltip}>
+              <span>
+                <Button
+                  variant="outlined"
+                  onClick={() => {
+                    setUploadJobId(null);
+                    startUploadJob.mutate(report, {
+                      onSuccess: (job) => setUploadJobId(job.job_id),
+                    });
+                  }}
+                  disabled={uploadDisabled}
+                >
+                  {uploadInProgress ? 'Uploading…' : 'Upload to ServiceNow'}
+                </Button>
+              </span>
+            </Tooltip>
+          </>
+        )}
 
         <Button variant="text" onClick={() => navigate('/reports')}>
           Generate New Report
