@@ -15,11 +15,13 @@
 
 """Unit tests for the plugin schema DSL."""
 
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.framework.rules import FailRule, present
+from app.sep.apps.framework.rules import CardinalityRule, FailRule, present
 from app.sep.apps.framework.schema import (
     AppEntitySchema,
     AppSchema,
@@ -68,6 +70,20 @@ def _minimal_detail_view() -> DetailView:
 
 def _minimal_list_view() -> ListView:
     return ListView(columns=[Column(key="id", label="ID")])
+
+
+def _minimal_entity_schema() -> AppEntitySchema:
+    return AppEntitySchema(
+        name="things",
+        display_name="Things",
+        forms=[
+            FormSection(
+                title="T",
+                fields=[StringField(name="title", label="Title", required=True)],
+            )
+        ],
+        list_view=_minimal_list_view(),
+    )
 
 
 _CHECKSUMS_LIKE_SCHEMA = AppSchema(
@@ -177,17 +193,7 @@ def test_plugin_schema_constructs_with_minimal_fields():
 
 def test_plugin_schema_entities_mode_omits_root_list_view():
     """Construct an ``AppSchema`` with ``entities`` set and no root ``list_view``."""
-    entity = AppEntitySchema(
-        name="things",
-        display_name="Things",
-        forms=[
-            FormSection(
-                title="T",
-                fields=[StringField(name="title", label="Title", required=True)],
-            )
-        ],
-        list_view=_minimal_list_view(),
-    )
+    entity = _minimal_entity_schema()
     schema = AppSchema(
         name="multi",
         display_name="Multi",
@@ -196,6 +202,155 @@ def test_plugin_schema_entities_mode_omits_root_list_view():
     assert schema.entities is not None
     assert len(schema.entities) == 1
     assert schema.list_view is None
+
+
+@pytest.mark.parametrize(
+    ("conflict_kwargs", "match_pattern"),
+    [
+        (
+            {
+                "forms": [
+                    FormSection(
+                        title="Root",
+                        fields=[StringField(name="ignored", label="Ignored")],
+                    )
+                ],
+            },
+            r"Root-level forms.*entity-style",
+        ),
+        (
+            {
+                "cardinality_rules": [
+                    CardinalityRule(when=None, fields=["title"], min=1)
+                ]
+            },
+            r"Root-level cardinality_rules.*entity-style",
+        ),
+        (
+            {
+                "fail_when": [
+                    FailRule(
+                        fail_when=present("title"),
+                        error_fields=["title"],
+                        message="title must be set",
+                    ),
+                ],
+            },
+            r"Root-level fail_when.*entity-style",
+        ),
+    ],
+)
+def test_plugin_schema_entities_mode_rejects_root_form_config_key(
+    conflict_kwargs: dict[str, Any],
+    match_pattern: str,
+) -> None:
+    """Refuse a single root form-config key on an entity-style ``AppSchema``."""
+    entity = _minimal_entity_schema()
+    with pytest.raises(ValidationError, match=match_pattern):
+        AppSchema(
+            name="multi",
+            display_name="Multi",
+            entities=[entity],
+            **conflict_kwargs,
+        )
+
+
+def test_plugin_schema_entities_mode_rejects_all_root_form_keys():
+    """Refuse all three root form keys at once and name each in the error."""
+    entity = _minimal_entity_schema()
+    with pytest.raises(
+        ValidationError,
+        match=(
+            r"Root-level forms, cardinality_rules, fail_when must not be set "
+            r"on an entity-style schema.*'things'"
+        ),
+    ):
+        AppSchema(
+            name="multi",
+            display_name="Multi",
+            entities=[entity],
+            forms=[
+                FormSection(
+                    title="Root",
+                    fields=[StringField(name="ignored", label="Ignored")],
+                )
+            ],
+            cardinality_rules=[
+                CardinalityRule(when=None, fields=["title"], min=1),
+            ],
+            fail_when=[
+                FailRule(
+                    fail_when=present("title"),
+                    error_fields=["title"],
+                    message="title must be set",
+                ),
+            ],
+        )
+
+
+def test_plugin_schema_entities_mode_duplicate_root_fields_unreachable():
+    """Reject root forms before duplicate field names can be reported."""
+    entity = _minimal_entity_schema()
+    with pytest.raises(ValidationError, match=r"Root-level forms.*entity-style") as exc:
+        AppSchema(
+            name="x",
+            display_name="X",
+            entities=[entity],
+            forms=[
+                FormSection(
+                    title="A",
+                    fields=[StringField(name="dup", label="D")],
+                ),
+                FormSection(
+                    title="B",
+                    fields=[StringField(name="dup", label="D")],
+                ),
+            ],
+        )
+    assert "duplicate field name" not in str(exc.value)
+
+
+def test_plugin_schema_entities_mode_accepts_empty_root_form_config():
+    """Accept an entity-style schema whose root form config is empty or omitted."""
+    entity = _minimal_entity_schema()
+    schema = AppSchema(
+        name="multi",
+        display_name="Multi",
+        entities=[entity],
+        forms=[],
+    )
+    assert schema.forms == []
+    assert schema.cardinality_rules is None
+    assert schema.fail_when is None
+
+
+def test_plugin_schema_task_style_root_forms_unaffected():
+    """Confirm task-style root forms stay optional and duplicate-checked."""
+    empty = AppSchema(
+        name="minimal",
+        display_name="Minimal",
+        forms=[],
+        list_view=_minimal_list_view(),
+    )
+    assert empty.forms == []
+    assert empty.entities is None
+
+    with pytest.raises(ValidationError, match="duplicate field name"):
+        AppSchema(
+            name="dup",
+            display_name="Dup",
+            forms=[
+                FormSection(
+                    title="A",
+                    fields=[StringField(name="dup", label="D")],
+                ),
+                FormSection(
+                    title="B",
+                    fields=[StringField(name="dup", label="D")],
+                ),
+            ],
+            list_view=_minimal_list_view(),
+        )
 
 
 def test_plugin_entity_schema_detail_highlights_round_trip():
@@ -1200,7 +1355,6 @@ class TestReferenceFieldAllowCustom:
 
 
 from app.sep.apps.framework.rules import (  # noqa: E402 — group near tests
-    CardinalityRule,
     F,
     FieldGate,
     truthy,
@@ -1699,7 +1853,7 @@ class TestAppSchemaDerivedField:
         assert reparsed == schema
 
     def test_existing_unique_field_check_ignores_derived(self) -> None:
-        """Verify ``_validate_unique_field_names`` still passes when ``derived`` mirrors a field name.
+        """Verify ``_validate_form_configuration`` still passes when ``derived`` mirrors a field name.
 
         ``derived[*].name_suffix`` lives outside the form-field namespace, so
         sharing a literal value with a form field name must not trigger the
@@ -1967,7 +2121,7 @@ class TestAppSchemaPredecessorsField:
         assert reparsed == schema
 
     def test_existing_unique_field_check_ignores_predecessors(self) -> None:
-        """Verify ``_validate_unique_field_names`` still passes when a predecessor name_suffix mirrors a field name.
+        """Verify ``_validate_form_configuration`` still passes when a predecessor name_suffix mirrors a field name.
 
         ``predecessors[*].name_suffix`` lives outside the form-field
         namespace, so sharing a literal value with a form field name must
