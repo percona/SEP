@@ -1189,7 +1189,7 @@ class TaskStats(BaseModel):
         """
         if self._durations["average_seconds"] is None:
             self._process()
-        return self._durations
+        return ArbitraryMapping(self._durations)
 
     @computed_field
     @property

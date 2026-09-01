@@ -86,13 +86,17 @@ def mock_pymongo():
     mock.errors.OperationFailure = type(
         "OperationFailure", (Exception,), {"code": None}
     )
-    old = sys.modules.get("pymongo")
+    # The production code imports the errors submodule explicitly, as importing
+    # the package alone does not guarantee it is bound; register both.
+    previous = {name: sys.modules.get(name) for name in ("pymongo", "pymongo.errors")}
     sys.modules["pymongo"] = mock
+    sys.modules["pymongo.errors"] = mock.errors
     yield mock
-    if old is None:
-        sys.modules.pop("pymongo", None)
-    else:
-        sys.modules["pymongo"] = old
+    for name, old in previous.items():
+        if old is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = old
 
 
 class TestCheckMySQL:

@@ -88,6 +88,18 @@ META_KEY_SERVICE_TYPE = "service_type"
 """``meta`` JSON key holding a snippet's free-form service type."""
 
 
+def _param_choices_enum(choices: list[dict[str, Any]]) -> type[StrEnum]:
+    """Build the choice enum a parameter validates its value against.
+
+    Kept as a function so the enum's own name stays ``ParamChoices`` rather than
+    having to match the variable it is assigned to at the call site.
+
+    :param choices: The parameter's declared choices.
+    :return: A ``StrEnum`` over the choice values.
+    """
+    return StrEnum("ParamChoices", [choice["value"] for choice in choices])
+
+
 class SnippetMetaParameterType(EnumFieldMixin, Enum):
     """Enumerate the possible types for snippet parameters."""
 
@@ -614,16 +626,18 @@ class SnippetMetaParameter(BaseModel):
     @cached_property
     def validation_type(
         self,
-    ) -> type:
+    ) -> Any:
         """Get the validation type for the parameter.
 
+        Annotated ``Any`` because the value is a type *expression* assembled at
+        runtime -- an ``Annotated[...]`` form or a ``X | None`` union -- neither
+        of which is a ``type``.
+
         :return: The type to use for validating the parameter value.
-        :rtype: type
+        :rtype: Any
         """
         if self.choices:
-            raw_type = StrEnum(
-                "ParamChoices", [choice["value"] for choice in self.choices]
-            )
+            raw_type = _param_choices_enum(self.choices)
         else:
             raw_type = self.py_type.value
             if self.constraints:

@@ -381,8 +381,11 @@ class AsyncDatabaseEngine(EnumFieldMixin, StrEnum):
 
 def database_url_normalized_scheme_field_factory(
     engine_enum_class: type[DatabaseEngine] | type[AsyncDatabaseEngine],
-) -> type[Url]:
+) -> Any:
     """Generate and return an Url field that normalizes the scheme of a database URL.
+
+    Annotated ``Any`` because the result is an ``Annotated[...]`` type expression
+    assembled here, not a class.
 
     This factory function generates an annotated Url field with a BeforeValidator that
     normalizes the scheme of a database URL according to the `engine_enum_class`

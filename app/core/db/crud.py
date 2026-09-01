@@ -17,7 +17,7 @@
 
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any, Generic, NamedTuple, overload, TypeVar
+from typing import Any, Generic, Literal, NamedTuple, overload, TypeVar
 
 from pydantic import BaseModel
 from sqlalchemy import (
@@ -413,6 +413,28 @@ class BaseManager:
             return list(result.scalars().all())
         return result
 
+    @overload
+    @classmethod
+    async def update_where(
+        cls,
+        session: AsyncSession,
+        values: Mapping[str, Any],
+        *whereclause: ColumnExpressionArgument[bool],
+        returning: Literal[False] = False,
+        **equal_filters: Any,
+    ) -> CursorResult[Any] | ChunkedIteratorResult[Any]: ...
+
+    @overload
+    @classmethod
+    async def update_where(
+        cls,
+        session: AsyncSession,
+        values: Mapping[str, Any],
+        *whereclause: ColumnExpressionArgument[bool],
+        returning: Iterable[str] | Literal[True],
+        **equal_filters: Any,
+    ) -> list[Any]: ...
+
     @classmethod
     async def update_where(
         cls,
@@ -421,8 +443,12 @@ class BaseManager:
         *whereclause: ColumnExpressionArgument[bool],
         returning: Iterable[str] | bool = False,
         **equal_filters: Any,
-    ) -> CursorResult | ChunkedIteratorResult | list:
+    ) -> CursorResult[Any] | ChunkedIteratorResult[Any] | list[Any]:
         """Execute an UPDATE statement.
+
+        A truthy ``returning`` always yields a list -- both the RETURNING path and
+        the MySQL FOR UPDATE workaround materialize one -- so the overloads let a
+        caller state which of the two shapes it asked for.
 
         This method executes an UPDATE statement to update specific values for rows
         matching the specified filters.
@@ -452,6 +478,26 @@ class BaseManager:
             **equal_filters,
         )
 
+    @overload
+    @classmethod
+    async def delete_where(
+        cls,
+        session: AsyncSession,
+        *whereclause: ColumnExpressionArgument[bool],
+        returning: Literal[False] = False,
+        **equal_filters: Any,
+    ) -> CursorResult[Any] | ChunkedIteratorResult[Any]: ...
+
+    @overload
+    @classmethod
+    async def delete_where(
+        cls,
+        session: AsyncSession,
+        *whereclause: ColumnExpressionArgument[bool],
+        returning: Iterable[str] | Literal[True],
+        **equal_filters: Any,
+    ) -> list[Any]: ...
+
     @classmethod
     async def delete_where(
         cls,
@@ -459,7 +505,7 @@ class BaseManager:
         *whereclause: ColumnExpressionArgument[bool],
         returning: Iterable[str] | bool = False,
         **equal_filters: Any,
-    ) -> CursorResult | ChunkedIteratorResult | list:
+    ) -> CursorResult[Any] | ChunkedIteratorResult[Any] | list[Any]:
         """Execute a DELETE statement.
 
         This method executes a DELETE statement to delete specific rows matching the

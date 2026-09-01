@@ -36,6 +36,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection
+from sqlalchemy.engine.interfaces import ReflectedCheckConstraint
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine, create_async_engine
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import InstrumentedAttribute
@@ -366,7 +367,7 @@ def _check_constraints_for_column(
     bind: Connection,
     table_name: str,
     column_name: str,
-) -> list[dict[str, Any]]:
+) -> list[ReflectedCheckConstraint]:
     """Return CHECK constraints whose SQL text mentions ``column_name``.
 
     :param bind: The migration's bound connection (``op.get_bind()``).

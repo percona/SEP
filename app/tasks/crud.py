@@ -19,8 +19,9 @@ import logging
 from collections import defaultdict
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import CursorResult, delete, func, or_, update
+from sqlalchemy import ChunkedIteratorResult, CursorResult, delete, func, or_, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import and_, col, select
@@ -264,7 +265,7 @@ class TaskManager(BaseSQLModelManager):
     @classmethod
     async def delete_unattached_system_tasks(
         cls, session: AsyncSession, exclude_task_names: Sequence[str]
-    ) -> CursorResult:
+    ) -> CursorResult[Any] | ChunkedIteratorResult[Any]:
         """Delete unattached system tasks that are not in the provided sequence.
 
         This method identifies system tasks that are not attached to any task history

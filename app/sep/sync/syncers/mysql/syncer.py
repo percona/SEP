@@ -98,12 +98,12 @@ class MySQLService(Service):
     _schemas_index: AsyncIterator[dict[str, Any]] | None = None
 
     @property
-    def schemas_index(self) -> AsyncIterator[dict[str, Any]] | None:
+    def schemas_index(self) -> AsyncIterator[dict[str, Any]]:
         """Return the asynchronous iterator for schema index data.
 
         :return: An asynchronous iterator yielding schema index data, or an empty
             iterator if no schema index is set.
-        :rtype: AsyncIterator[dict[str, Any]] | None
+        :rtype: AsyncIterator[dict[str, Any]]
         """
         if self._schemas_index is None:
 
