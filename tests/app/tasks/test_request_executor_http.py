@@ -38,7 +38,7 @@ from app.main import app as combined_app
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.deps import get_session
-from app.tasks.execution.executors.nomad import NomadExecutor
+from app.tasks.execution.executors.nomad.models import NomadExecutor
 from app.tasks.execution.nomad_lifecycle import NomadLifecycle
 from app.tasks.main import tasks_app
 from app.tasks.models import TaskHistory

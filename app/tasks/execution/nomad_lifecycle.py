@@ -20,13 +20,20 @@ __all__ = ["NomadLifecycle", "normalize_nomad_config_value"]
 import asyncio
 import logging
 from collections.abc import Mapping
-from typing import Any, Self
+from typing import Any, Self, TYPE_CHECKING
 
 from fastapi import FastAPI
 
 from app.core.utils.fields import PRESERVE_CREDENTIALS_CONTEXT
 from app.tasks.config import tasks_settings
-from app.tasks.execution.executors.nomad import NomadExecutor
+
+if TYPE_CHECKING:
+    # The package export resolves through a PEP 562 __getattr__ that has to
+    # declare `object`, so import the class itself for annotations and keep the
+    # lazy path for the runtime binding that breaks the import cycle.
+    from app.tasks.execution.executors.nomad.models import NomadExecutor
+else:
+    from app.tasks.execution.executors.nomad import NomadExecutor
 
 logger = logging.getLogger(__name__)
 
