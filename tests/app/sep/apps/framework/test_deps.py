@@ -17,7 +17,6 @@
 
 import inspect
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from typing import Annotated, Any
 from unittest.mock import AsyncMock
 
@@ -26,10 +25,8 @@ import pytest_asyncio
 from fastapi import Depends, FastAPI, status
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import column
 
 from app.core.db.list_query import (
-    ListQuerySpec,
     SEARCH_PARAM_DESCRIPTION,
     SORT_PARAM_DESCRIPTION,
 )
@@ -46,6 +43,11 @@ from app.sep.apps.framework.list_query import (
 from app.sep.deps import get_tasks_api
 from app.tasks.models import Task
 from tests.app.factories import TaskFactory
+from tests.app.sep.apps.framework.list_query_kit import (
+    make_rows,
+    NO_SEARCH_SPEC,
+    SPEC,
+)
 
 
 class TestMakeTaskDep:
@@ -169,43 +171,8 @@ class TestMakeParentResolver:
         get_task.assert_awaited_once_with("parent-1", tasks_api)
 
 
-_SPEC = ListQuerySpec(
-    sortable={
-        "filename": column("filename"),
-        "title": column("title"),
-        "created_at": column("created_at"),
-    },
-    default_sort="-created_at",
-    tie_breaker=column("filename"),
-    searchable=(column("filename"), column("title")),
-)
-
-_NO_SEARCH_SPEC = ListQuerySpec(
-    sortable={"filename": column("filename")},
-    default_sort="filename",
-    tie_breaker=column("filename"),
-)
-
-APPLIER = InMemoryListQueryApplier(_SPEC)
-NO_SEARCH_APPLIER = InMemoryListQueryApplier(_NO_SEARCH_SPEC)
-
-
-@dataclass(frozen=True, slots=True)
-class _Row:
-    """Stand in for a materialized in-memory row the applier queries."""
-
-    filename: str
-    title: str | None
-    created_at: int
-
-
-def _rows(*specs: tuple[str, str | None, int]) -> list[_Row]:
-    """Build materialized rows from ``(filename, title, created_at)`` triples.
-
-    :param specs: One triple per row, in the order the source materialized them.
-    :return: The rows to hand to the applier.
-    """
-    return [_Row(filename=f, title=t, created_at=c) for f, t, c in specs]
+APPLIER = InMemoryListQueryApplier(SPEC)
+NO_SEARCH_APPLIER = InMemoryListQueryApplier(NO_SEARCH_SPEC)
 
 
 class TestMakeInMemoryListQueryDep:
@@ -226,7 +193,7 @@ class TestMakeInMemoryListQueryDep:
     def test_default_sort_resolves_to_spec_default(self) -> None:
         """Resolve the spec's default sort, honoring its descending prefix."""
         dep = make_in_memory_list_query_dep(APPLIER)
-        query = dep(sort=_SPEC.default_sort, search=None)
+        query = dep(sort=SPEC.default_sort, search=None)
         assert query == InMemoryListQuery(
             sort_key="created_at", descending=True, search=None
         )
@@ -293,7 +260,7 @@ class TestMakeInMemoryListQueryDep:
 
 
 _ROUTE_APP = FastAPI()
-_ROUTE_ROWS = _rows(("a.sh", "Alpha", 1), ("b.sh", "Beta", 2), ("c.sh", "Gamma", 3))
+_ROUTE_ROWS = make_rows(("a.sh", "Alpha", 1), ("b.sh", "Beta", 2), ("c.sh", "Gamma", 3))
 
 
 @_ROUTE_APP.get("/scripts")

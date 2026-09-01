@@ -44,7 +44,6 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, TypeVar
 
 from app.core.db.list_query import UnknownSortKeyError
-from app.core.exceptions import HTTPUnprocessableEntityException
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
@@ -200,23 +199,19 @@ class InMemoryListQueryApplier:
     def build_query(self, sort: str, search: str | None) -> InMemoryListQuery:
         """Resolve a request's sort and search into an :class:`InMemoryListQuery`.
 
-        Validation delegates to :meth:`ListQuerySpec.resolve_sort` so the allowlist and
-        the 422 boundary are identical to the SQL dependency. Public so a route that
-        resolves the request itself — one dispatching across several appliers, say —
-        needs no generated dependency, and so the dependency factory can build on it.
+        Validation delegates to :meth:`ListQuerySpec.resolve_sort`, and the rejection
+        surfaces as the domain error rather than an HTTP one: the generated dependency
+        lets Core map it, so the 422 boundary is stated in exactly one place. A route
+        resolving the request itself — one dispatching across several appliers, say —
+        translates it the same way.
 
         :param sort: The requested public sort key (possibly ``-`` prefixed).
         :param search: The raw search term, or ``None`` when search is disabled or
             unset.
         :return: The resolved in-memory list query.
-        :raises HTTPUnprocessableEntityException: When ``sort`` is not in the allowlist.
+        :raises UnknownSortKeyError: When ``sort`` is not in the allowlist.
         """
-        try:
-            self.spec.resolve_sort(sort)
-        except UnknownSortKeyError as exc:
-            raise HTTPUnprocessableEntityException(
-                detail=f"Invalid sort key: {exc.key!r}"
-            ) from exc
+        self.spec.resolve_sort(sort)
         return InMemoryListQuery.from_sort(sort, search)
 
     def default_query(self) -> InMemoryListQuery:

@@ -79,8 +79,9 @@ def make_in_memory_list_query_dep(
     The boundary itself is Core's, through
     :func:`~app.core.db.list_query.make_query_param_dep`, so the in-memory path and the
     SQL one expose the same parameters, publish the same allowlist ``enum`` and
-    descriptions, and reject an out-of-allowlist sort key with the same HTTP 422. Only
-    the resolved value object differs.
+    descriptions, and reject an out-of-allowlist sort key with the same HTTP 422 — Core
+    maps the applier's :class:`~app.core.db.list_query.UnknownSortKeyError`. Only the
+    resolved value object differs.
 
     Call this at wiring time and hand the result to ``Depends``; a fresh dependency is
     built per call rather than cached, because FastAPI binds each reflected parameter's

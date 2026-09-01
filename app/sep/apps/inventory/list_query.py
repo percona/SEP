@@ -45,7 +45,9 @@ from app.core.db.list_query import (
     ListQuerySpec,
     search_query_param,
     SORT_PARAM_DESCRIPTION,
+    UnknownSortKeyError,
 )
+from app.core.exceptions import HTTPUnprocessableEntityException
 from app.sep.apps.framework.list_query import (
     InMemoryListQuery,
     InMemoryListQueryApplier,
@@ -167,6 +169,9 @@ def inventory_list_query(
     OpenAPI declaration cannot carry four different entity defaults; an omitted
     ``sort`` resolves to the matching spec's ``default_sort``.
 
+    This dependency is hand-written rather than generated, so the rejection Core's
+    generated dependency would map is translated here, to the same 422 body.
+
     :param entity: Inventory entity URL segment (``nodes``, ``services``,
         ``schemas``, or ``tables``).
     :param sort: Requested public sort key, optionally ``-`` prefixed, or
@@ -179,7 +184,12 @@ def inventory_list_query(
     """
     entity = require_inventory_plugin_entity(entity)
     applier = _ENTITY_LIST_QUERY_APPLIERS[entity]
-    return applier.build_query(sort or applier.spec.default_sort, search)
+    try:
+        return applier.build_query(sort or applier.spec.default_sort, search)
+    except UnknownSortKeyError as exc:
+        raise HTTPUnprocessableEntityException(
+            detail=f"Invalid sort key: {exc.key!r}"
+        ) from exc
 
 
 InventoryListQueryDep = Annotated[InMemoryListQuery, Depends(inventory_list_query)]
