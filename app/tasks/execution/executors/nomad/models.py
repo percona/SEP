@@ -338,7 +338,7 @@ def _detect_step_sentinel(
 
     Walk the Nomad ``TaskStates`` dict produced by an allocation sync and look
     for a ``Terminated`` event on ``task_name`` whose exit code matches. Shape
-    drift across Nomad API responses is tolerated -- missing keys or unexpected
+    drift across Nomad API responses is tolerated — missing keys or unexpected
     types simply short circuit to ``False``.
 
     Each caller reads only its own step's state, so which sentinel fired is
@@ -1432,7 +1432,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         A prestart sentinel abort overrides the derived status on either path:
         both aborts leave a *failed* prestart step behind and a failed
         allocation, either of which would otherwise be reported as an ordinary
-        payload failure. Where both fired, staleness wins -- see
+        payload failure. Where both fired, staleness wins — see
         :func:`_sentinel_status`. Each sentinel is read off its own step's task
         state, so the resolved status does not depend on the order Nomad ran the
         two prestart tasks in.

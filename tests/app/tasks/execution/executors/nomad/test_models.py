@@ -841,7 +841,7 @@ class TestAllocStepState:
 class TestDetectUnlaunchable:
     """Test the module-level ``_detect_unlaunchable`` helper.
 
-    Mirrors :class:`TestDetectStaleSkip` -- both sentinels are read off the same
+    Mirrors :class:`TestDetectStaleSkip` — both sentinels are read off the same
     defensive walk, so both need the same shape-drift coverage.
     """
 
@@ -1568,7 +1568,7 @@ class TestSyncTaskHistory:
         """Assert an aborted launch check maps to UNLAUNCHABLE, not FAILED.
 
         The prestart step is persistable, so without the arm the failed step
-        would derive an ordinary ``FAILED`` -- indistinguishable from a script
+        would derive an ordinary ``FAILED`` — indistinguishable from a script
         that ran and exited non-zero on its own terms.
         """
         mock_backend = MagicMock()

@@ -634,8 +634,8 @@ class TestLaunchCheckTemplateShape:
     def test_run_python_has_no_check(self) -> None:
         """Assert the payload-driven spec is left alone.
 
-        ``run-python`` declares no launch-command meta -- it runs the venv
-        interpreter it built -- so there is no command chain to resolve.
+        ``run-python`` declares no launch-command meta — it runs the venv
+        interpreter it built — so there is no command chain to resolve.
         """
         assert self._check_task(NOMAD_RUN_PYTHON) is None
 
@@ -647,7 +647,7 @@ class TestLaunchCheckTemplateShape:
 
         Executed rather than pattern-matched against the built string: a check
         wired to the wrong meta key reads an unset variable, which short-circuits
-        to a silent pass on every input -- the failure mode a substring
+        to a silent pass on every input — the failure mode a substring
         assertion would report as healthy.
         """
         meta_key = "command" if template is NOMAD_RUN_COMMAND else "interpreter"
@@ -680,7 +680,7 @@ class TestLaunchCheckTemplateShape:
         """Assert the abort-only check leaves no handoff file behind.
 
         ``run-command``'s launcher reads its meta directly, so a file written
-        here would never be read -- and its meta carries no SEP-applied ``sudo``
+        here would never be read — and its meta carries no SEP-applied ``sudo``
         prefix to strip in the first place.
         """
         script = self._check_task(NOMAD_RUN_COMMAND)["Config"]["args"][1]
@@ -907,11 +907,16 @@ class TestLaunchCheckShell:
         spawning the shell and fails config validation on anything it does not
         know, so shell locals must use the bareword form. ``${NOMAD_ALLOC_DIR}``
         is in that table and is the one brace form that is correct here.
+
+        Asserted as an exact set rather than a subset: only the stripping
+        variant writes the handoff file, so a subset assertion would hold
+        vacuously for the abort-only one even if every brace reference vanished.
         """
         meta_key, allow_strip = LAUNCH_CHECK_VARIANTS[variant]
         script = _launch_check_shell(meta_key, allow_strip=allow_strip)
 
-        assert set(re.findall(r"\$\{[^}]*\}", script)) <= {"${NOMAD_ALLOC_DIR}"}
+        expected = {"${NOMAD_ALLOC_DIR}"} if allow_strip else set()
+        assert set(re.findall(r"\$\{[^}]*\}", script)) == expected
 
 
 def test_internal_task_names_membership_is_exact() -> None:

@@ -754,7 +754,7 @@ class TestTaskHistory:
         """Assert UNLAUNCHABLE triggers its own WARNING alert under a suffixed key.
 
         A suffixed key keeps the incident distinct from a plain task failure
-        while still scoping it to the same task/target pair -- and the paired
+        while still scoping it to the same task/target pair — and the paired
         ``SUCCESS`` resolve above is what lets it ever clear.
         """
         history = TaskHistory(

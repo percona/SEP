@@ -41,7 +41,7 @@ def _status_enum(*members: str) -> sa.Enum:
 
 
 def upgrade() -> None:
-    """Widen ``taskhistory.status`` so it can hold the new member's name.
+    """Expand ``taskhistory.status`` so it can hold the new member's name.
 
     The column stores the enum member *name*, and ``UNLAUNCHABLE`` is twelve
     characters against the existing ``VARCHAR(7)``, so PostgreSQL rejects the
@@ -62,7 +62,7 @@ def downgrade() -> None:
 
     Narrowing to ``VARCHAR(7)`` aborts on PostgreSQL while any twelve-character
     ``UNLAUNCHABLE`` value remains, so those rows are remapped to ``FAILED``
-    first -- the status they carried before this feature existed. Without the
+    first — the status they carried before this feature existed. Without the
     remap the downgrade is unrunnable exactly once the feature has been used.
     """
     op.execute(

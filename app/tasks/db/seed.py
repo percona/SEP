@@ -127,8 +127,8 @@ def _launch_check_shell(meta_key: str, *, allow_strip: bool) -> str:
     The preamble word-splits the spec's launch-command meta, resolves the
     commands the node would actually exec, and aborts with
     :data:`~app.tasks.execution.executors.nomad.steps.LAUNCH_CHECK_EXIT_CODE`
-    when one of them is absent. It recognizes a deliberately small grammar --
-    plain words, optionally behind a bare ``sudo`` -- and declines anything
+    when one of them is absent. It recognizes a deliberately small grammar —
+    plain words, optionally behind a bare ``sudo`` — and declines anything
     else, leaving that invocation to behave exactly as it does today: ``sh``
     word-splitting and ``env -S`` (what the launcher tokenizes with) are
     different grammars, so aborting on a form only one of them understands would

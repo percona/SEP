@@ -450,7 +450,7 @@ async def _add_execution_logs(
     A single step is fetched: for a run that happened, the prestart and poststop
     steps surrounding :data:`_MAIN_LOG_STEP` log setup machinery, which is noise
     on a support case. The one exception is a run that never started, whose only
-    diagnostic lives in a prestart step -- see :func:`_log_step_for`.
+    diagnostic lives in a prestart step — see :func:`_log_step_for`.
 
     Members are keyed by a record's ``(step, stream)`` group and replaced when it
     changes -- the two upstream read paths both deliver contiguous runs per group

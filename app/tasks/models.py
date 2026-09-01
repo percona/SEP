@@ -172,7 +172,6 @@ class TaskHistoryStatusEnum(StrEnum):
 
         :return: True if the task status is one of FAILED, SUCCESS, STOPPED,
             STALE, or UNLAUNCHABLE; False otherwise.
-        :rtype: bool
         """
         return self in [
             TaskHistoryStatusEnum.FAILED,
@@ -812,7 +811,7 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         unlaunchable alerts each suffix that base key so they stay distinct
         incidents from a plain failure while still being scoped to the same
         task/target pair. Every suffixed key needs its own resolve on the
-        ``SUCCESS`` arm -- an unresolved suffixed incident never clears.
+        ``SUCCESS`` arm — an unresolved suffixed incident never clears.
         """
         base_dedup_key = (
             f"task:{self.execution_request.task}:{self.execution_request.target}"

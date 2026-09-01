@@ -602,7 +602,7 @@ class TestRunSendExecutionLogs:
 
         An unlaunchable allocation never starts ``run-script`` and produces no
         output files, so streaming only the main step would leave the bundle
-        empty and fail the send outright -- with the diagnostic the support case
+        empty and fail the send outright — with the diagnostic the support case
         exists for sitting in a step the default rule filters out.
         """
         api = _fake_tasks_api(
