@@ -43,6 +43,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import { useSnackbar } from 'notistack';
 import {
+  useAuth,
   useDeleteAppEntity,
   useDeleteAppTask,
   useAppEntityDetail,
@@ -601,6 +602,7 @@ function ActionBar({
   hasStoredForm,
 }: ActionBarProps) {
   const navigate = useNavigate();
+  const { canMutate } = useAuth();
   const { enqueueSnackbar } = useSnackbar();
   const deleteTask = useDeleteAppTask(pluginName);
   const executeTask = useExecuteTask(pluginName);
@@ -685,6 +687,12 @@ function ActionBar({
 
   const editUnavailable = "Editing isn't available for this task — it has no saved form input.";
 
+  // Every action here is a mutation except Schedule (navigation), so a
+  // read-only session with no scheduling capability is left with no bar at all.
+  if (!canMutate && !schema.capabilities?.scheduling) {
+    return null;
+  }
+
   return (
     <>
       <Stack direction="row" spacing={1} sx={{ mb: 3 }}>
@@ -699,55 +707,59 @@ function ActionBar({
           </Button>
         )}
 
-        {resolvedExecuteActions.map((action) => (
-          <Button
-            key={`${action.taskName}-${action.label}`}
-            variant="outlined"
-            startIcon={<PlayArrowIcon />}
-            onClick={() => setPendingExecute(action)}
-            disabled={executeTask.isPending}
-            data-testid={action.testId ?? 'plugin-task-execute'}
-          >
-            {action.label}
-          </Button>
-        ))}
+        {canMutate &&
+          resolvedExecuteActions.map((action) => (
+            <Button
+              key={`${action.taskName}-${action.label}`}
+              variant="outlined"
+              startIcon={<PlayArrowIcon />}
+              onClick={() => setPendingExecute(action)}
+              disabled={executeTask.isPending}
+              data-testid={action.testId ?? 'plugin-task-execute'}
+            >
+              {action.label}
+            </Button>
+          ))}
 
-        {hasStoredForm ? (
-          <Button
-            variant="outlined"
-            component={Link}
-            to={`${routeBase}/task/${encodeURIComponent(taskName)}/edit`}
-            startIcon={<EditIcon />}
-            data-testid="plugin-task-edit"
-          >
-            Edit
-          </Button>
-        ) : (
-          <Tooltip title={editUnavailable}>
-            <span>
-              <Button
-                variant="outlined"
-                startIcon={<EditIcon />}
-                disabled
-                data-testid="plugin-task-edit"
-              >
-                Edit
-              </Button>
-            </span>
-          </Tooltip>
-        )}
+        {canMutate &&
+          (hasStoredForm ? (
+            <Button
+              variant="outlined"
+              component={Link}
+              to={`${routeBase}/task/${encodeURIComponent(taskName)}/edit`}
+              startIcon={<EditIcon />}
+              data-testid="plugin-task-edit"
+            >
+              Edit
+            </Button>
+          ) : (
+            <Tooltip title={editUnavailable}>
+              <span>
+                <Button
+                  variant="outlined"
+                  startIcon={<EditIcon />}
+                  disabled
+                  data-testid="plugin-task-edit"
+                >
+                  Edit
+                </Button>
+              </span>
+            </Tooltip>
+          ))}
 
         <Box sx={{ flexGrow: 1 }} />
 
-        <Button
-          variant="outlined"
-          startIcon={<DeleteIcon />}
-          onClick={() => setConfirmOpen(true)}
-          disabled={deleteTask.isPending}
-          data-testid="plugin-task-delete"
-        >
-          Delete
-        </Button>
+        {canMutate && (
+          <Button
+            variant="outlined"
+            startIcon={<DeleteIcon />}
+            onClick={() => setConfirmOpen(true)}
+            disabled={deleteTask.isPending}
+            data-testid="plugin-task-delete"
+          >
+            Delete
+          </Button>
+        )}
       </Stack>
 
       <Dialog
@@ -845,6 +857,7 @@ export function AppDetailPage({
   allowListEntityDelete = false,
 }: AppDetailPageProps) {
   const routeBase = resolveAppRouteBase(pluginName, routeBaseProp);
+  const { canMutate } = useAuth();
   const params = useParams<Record<string, string | undefined>>();
   const id = (detailIdParam && params[detailIdParam]) ?? params.id;
   const entityName = detailEntityName ?? params.entityName;
@@ -986,7 +999,7 @@ export function AppDetailPage({
               // SchemaListView's status-cell fallback.
               <Chip label={task.status} size="small" />
             ) : null}
-            {multi && !browseOnly && (
+            {multi && !browseOnly && canMutate && (
               <>
                 <Button
                   component={Link}

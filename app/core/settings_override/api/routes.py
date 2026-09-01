@@ -94,12 +94,16 @@ class AppOwnedClassEntry:
     :param settings_cls: The Pydantic settings model class.
     :param proxy: The live override proxy for the class.
     :param app_key: The owning app's registry key.
+    :param reseed_keys: Field names on this class whose HOT override must
+        re-seed the periodic-task schedule. Empty by default, so an app whose
+        settings drive no beat entry declares nothing.
     """
 
     setting_class: str
     settings_cls: type[BaseYamlSettings]
     proxy: OverridableSettingsProxy
     app_key: str
+    reseed_keys: frozenset[str] = frozenset()
 
 
 #: One ``(class_name, remote_base_path)`` pair per settings class whose
