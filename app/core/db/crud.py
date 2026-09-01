@@ -17,7 +17,7 @@
 
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any, NamedTuple, ParamSpec, TypeVar
+from typing import Any, Generic, NamedTuple, overload, TypeVar
 
 from pydantic import BaseModel
 from sqlalchemy import (
@@ -35,9 +35,11 @@ from sqlalchemy.exc import DatabaseError, NoResultFound
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql import ColumnExpressionArgument
-from sqlalchemy.sql.dml import DMLWhereBase, Update
+from sqlalchemy.sql.dml import Delete, Update
 from sqlmodel import col, select, SQLModel, update
 from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlmodel.sql.expression import Select as SQLModelSelect
+from sqlmodel.sql.expression import SelectOfScalar
 
 from app.core.db import BaseSQLModel
 from app.core.db.list_query import ListQuery, ListQuerySpec
@@ -55,8 +57,8 @@ from app.core.utils.fields import DatabaseDialect
 
 logger = logging.getLogger(__name__)
 
-Whereable = Select | DMLWhereBase
-Executable = Select | Insert | DMLWhereBase
+Whereable = Select | Update | Delete
+Executable = Select | Insert | Update | Delete
 ColumnExpressionOrStrLabelArgument = str | ColumnExpressionArgument[Any]
 W = TypeVar("W", bound=Whereable)
 E = TypeVar("E", bound=Executable)
@@ -65,28 +67,27 @@ S = TypeVar("S", bound=SQLModel)
 BS = TypeVar("BS", bound=BaseSQLModel)
 B = TypeVar("B", bound=BaseModel)
 M = TypeVar("M", bound="BaseSQLModelManager")
-P = ParamSpec("P")
 
 
-class _QueryBuilder(NamedTuple):
+class _QueryBuilder(NamedTuple, Generic[W]):
     """A named tuple to hold a query builder function and its arguments.
 
     :param function: The function to build the query.
-    :type function: Callable[P, W]
+    :type function: Callable[..., W]
     :param args: The arguments to pass to the function. Defaults to an empty tuple.
-    :type args: P.args
+    :type args: tuple[Any, ...]
     """
 
-    function: Callable[P, W]
-    args: P.args = ()
+    function: Callable[..., W]
+    args: tuple[Any, ...] = ()
 
 
-def _select_builder(*args: P.args) -> _QueryBuilder:
+def _select_builder(*args: Any) -> _QueryBuilder[Select[Any]]:
     """Create a query builder for SELECT statements."""
     return _QueryBuilder(select, args)
 
 
-def _update_builder(*args: P.args, values: Mapping[str, Any]) -> _QueryBuilder:
+def _update_builder(*args: Any, values: Mapping[str, Any]) -> _QueryBuilder[Update]:
     """Create a query builder for UPDATE statements.
 
     This function returns a query builder that can be used to create an UPDATE
@@ -99,7 +100,7 @@ def _update_builder(*args: P.args, values: Mapping[str, Any]) -> _QueryBuilder:
     return _QueryBuilder(_update, args)
 
 
-def _delete_builder(*args: P.args) -> _QueryBuilder:
+def _delete_builder(*args: Any) -> _QueryBuilder[Delete]:
     """Create a query builder for DELETE statements."""
     return _QueryBuilder(delete, args)
 
@@ -116,7 +117,10 @@ class BaseManager:
         ``created_at``-descending fallback for ``BaseSQLModel`` managers.
     """
 
-    Model: type[T]
+    # Subclasses map both SQLModel tables and the sqlalchemy-celery-beat
+    # declarative models, which share no declared base, so no type narrower than
+    # ``type[Any]`` covers them until the manager hierarchy is made generic.
+    Model: type[Any]
     list_query_spec: ListQuerySpec | None = None
 
     @classmethod
@@ -180,7 +184,7 @@ class BaseManager:
     def _build_query(
         cls,
         *whereclause: ColumnExpressionArgument[bool],
-        builder: _QueryBuilder = _DEFAULT_SELECT_QUERY_BUILDER,
+        builder: _QueryBuilder[W] = _DEFAULT_SELECT_QUERY_BUILDER,
         select_related: Sequence = (),
         query_options: Sequence = (),
         returning: Iterable[str] | bool = False,
@@ -217,12 +221,48 @@ class BaseManager:
             return [cls._get_column("created_at").desc(), cls._get_column("id").desc()]
         return None
 
+    @overload
+    @classmethod
+    async def _exec(
+        cls,
+        session: AsyncSession,
+        query: SelectOfScalar[T],
+    ) -> ScalarResult[T]: ...
+
+    @overload
+    @classmethod
+    async def _exec(
+        cls,
+        session: AsyncSession,
+        query: SQLModelSelect[T],
+    ) -> TupleResult[T]: ...
+
+    @overload
+    @classmethod
+    async def _exec(
+        cls,
+        session: AsyncSession,
+        query: Update | Delete | Insert,
+    ) -> CursorResult[Any] | ChunkedIteratorResult[Any]: ...
+
     @classmethod
     async def _exec(
         cls,
         session: AsyncSession,
         query: E,
-    ) -> TupleResult | ScalarResult | CursorResult:
+    ) -> (
+        ScalarResult[Any]
+        | TupleResult[Any]
+        | CursorResult[Any]
+        | ChunkedIteratorResult[Any]
+    ):
+        """Run ``query`` and return its result, keyed on the statement's shape.
+
+        The overloads mirror what ``AsyncSession.exec`` declares for the two
+        select forms, so a caller's element type survives into ``.all()`` instead
+        of collapsing to a union. ``sqlmodel`` declares no DML overload, so the
+        third arm states what the DML path returns at runtime.
+        """
         logger.debug("Executing query: %s", query)
         return await session.exec(query)
 
@@ -1035,13 +1075,15 @@ class BaseSQLModelManager(BaseManager):
     """Manage database operations for a BaseSQLModel-based model.
 
     :param Model: The BaseSQLModel class for which this manager handles operations.
-    :type Model: type[BS]
+    :type Model: type[BaseSQLModel]
     """
 
-    Model: type[BS]
+    Model: type[BaseSQLModel]
 
     @classmethod
-    def _construct_instance(cls, instance_create: S, **extra_fields: Any) -> BS:
+    def _construct_instance(
+        cls, instance_create: S, **extra_fields: Any
+    ) -> BaseSQLModel:
         pk_column = inspect(cls.Model).primary_key[0]
         if pk_column.autoincrement and isinstance(
             None,
@@ -1141,13 +1183,13 @@ class BaseSQLModelChildManager(BaseSQLModelManager):
     """Manage database operations for child models with a parent association.
 
     :param ParentManager: The manager class responsible for handling the parent model.
-    :type ParentManager: type[M]
+    :type ParentManager: type[BaseSQLModelManager]
     :param connected_by: The field name that connects the child model to the parent
         model.
     :type connected_by: str
     """
 
-    ParentManager: type[M]
+    ParentManager: type[BaseSQLModelManager]
     connected_by: str
 
     @classmethod

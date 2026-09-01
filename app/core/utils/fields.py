@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum, IntEnum, StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Self, TypeVar
+from typing import Annotated, Any, Generic, Self, TypeVar
 from urllib.parse import urlparse, urlunparse
 
 from annotated_types import Interval
@@ -135,7 +135,7 @@ R = TypeVar("R")
 
 
 @dataclass(frozen=True)
-class AsTypeValidator:
+class AsTypeValidator(Generic[V, R]):
     """Validate an object with a specified class and optionally apply post-processing.
 
     This validator uses a designated type (`validate_class`) to validate an object. If a
