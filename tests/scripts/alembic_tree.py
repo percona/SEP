@@ -114,7 +114,12 @@ def dummy_script_location(tmp_path: Path, name: str = "migrations") -> Path:
     return script_location
 
 
-def script_location_with_mako(tmp_path: Path, name: str = "migrations") -> Path:
+def script_location_with_mako(
+    tmp_path: Path,
+    name: str = "migrations",
+    *,
+    mako_template: Path | None = None,
+) -> Path:
     """Create a ``script_location`` with ``env.py`` and ``script.py.mako``.
 
     Required for Alembic's merge/revision file generation. Paths are resolved
@@ -123,10 +128,13 @@ def script_location_with_mako(tmp_path: Path, name: str = "migrations") -> Path:
 
     :param tmp_path: Pytest temporary directory.
     :param name: Directory name under ``tmp_path``.
+    :param mako_template: Template to copy as ``script.py.mako``; defaults to
+        the tasks-track template.
     :return: The resolved script location path.
     """
+    template = mako_template if mako_template is not None else MAKO_TEMPLATE
     script_location = (tmp_path / name).resolve()
     script_location.mkdir(parents=True, exist_ok=True)
     (script_location / "env.py").write_text("", encoding="utf-8")
-    shutil.copy(MAKO_TEMPLATE, script_location / "script.py.mako")
+    shutil.copy(template, script_location / "script.py.mako")
     return script_location

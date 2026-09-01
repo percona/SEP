@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-from tests.scripts import load_script
+from tests.scripts import load_script, PROJECT_ROOT
 from tests.scripts.alembic_tree import (
     script_location_with_mako,
     write_ini,
@@ -322,8 +322,13 @@ def test_fork_in_one_track_does_not_block_another(tmp_path, capsys):
 
 
 def test_merge_revision_declares_no_branch_label(tmp_path):
-    """Assert generated merge revisions set ``branch_labels = None``."""
-    script_location = script_location_with_mako(tmp_path)
+    """Assert generated merge revisions set ``branch_labels = None``.
+
+    Uses the sep-track ``script.py.mako`` so the Sequence annotation change
+    in that template is exercised, not only the tasks copy.
+    """
+    sep_mako = PROJECT_ROOT / "app" / "sep" / "migrations" / "script.py.mako"
+    script_location = script_location_with_mako(tmp_path, mako_template=sep_mako)
     versions_dir = script_location / "versions"
     write_revision(versions_dir, "root", None, branch_labels=("sep_main",))
     write_revision(versions_dir, "left", "root")

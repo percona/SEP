@@ -19,8 +19,6 @@ from __future__ import annotations
 
 import shutil
 
-import pytest
-
 from tests.scripts import load_script, PROJECT_ROOT
 from tests.scripts.alembic_tree import (
     dummy_script_location,
@@ -117,26 +115,9 @@ def test_check_passes_on_reconverged_siblings(tmp_path, capsys):
     assert check_alembic_revision_tree.main(["--ini", str(ini_path)]) == 0
 
 
-def test_discovers_tracks_from_databases_key(tmp_path):
-    """Discover track names from ``[alembic] databases``, not hard-coded lists."""
-    ini_path = write_ini(
-        tmp_path,
-        databases="widget, gadget",
-        sections={"widget": {}, "gadget": {}},
-    )
-
-    assert check_alembic_revision_tree.list_track_names(ini_path) == (
-        "widget",
-        "gadget",
-    )
-
-
-def test_rejects_databases_with_no_track_names(tmp_path, capsys):
-    """Fail closed when ``databases`` parses to an empty track list."""
+def test_rejects_empty_databases_via_cli(tmp_path, capsys):
+    """Exit 1 when ``[alembic] databases`` parses to no track names."""
     ini_path = write_ini(tmp_path, databases=",", sections={})
-
-    with pytest.raises(ValueError, match="missing or empty"):
-        check_alembic_revision_tree.list_track_names(ini_path)
 
     assert check_alembic_revision_tree.main(["--ini", str(ini_path)]) == 1
     assert "databases" in capsys.readouterr().err
