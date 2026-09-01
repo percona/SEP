@@ -2148,9 +2148,10 @@ class TestSyncTaskHistoryWithoutTaskStates:
         assert result.finished_at is None
 
     @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.utc_now")
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_pending_allocation_exceeds_bound_escalates_to_lost(
-        self, mock_nomad_cls, monkeypatch: pytest.MonkeyPatch
+        self, mock_nomad_cls, mock_utc_now: MagicMock, monkeypatch: pytest.MonkeyPatch
     ):
         """Assert a TaskStates-less pending allocation past the bound becomes LOST."""
         monkeypatch.setattr(
@@ -2163,14 +2164,16 @@ class TestSyncTaskHistoryWithoutTaskStates:
             self._alloc(ModifyTime=1_700_000_000_000_000_000),
         )
         executor = _build_executor()
-        started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_PAST_BOUND_AGE)
+        now = datetime(2026, 9, 1, 12, 0, 0, tzinfo=UTC)
+        mock_utc_now.return_value = now
+        started_at = now - timedelta(seconds=PENDING_ALLOCATION_PAST_BOUND_AGE)
 
         result = await executor._sync_task_history(
             self._queue_item(started_at=started_at)
         )
 
         assert result.status == TaskHistoryStatusEnum.LOST
-        assert result.finished_at == datetime(2023, 11, 14, 22, 13, 20, tzinfo=UTC)
+        assert result.finished_at == now
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
