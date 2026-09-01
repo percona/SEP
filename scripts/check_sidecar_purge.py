@@ -33,26 +33,38 @@ PURGE_FLAG = "--force-remove-essential"
 PURGE_MARKER = f"dpkg --purge {PURGE_FLAG}"
 
 #: Program-name stems whose family breaks once debconf is gone. A token counts as
-#: an invocation when its basename is one of these or begins with one plus a
-#: hyphen, so ``apt-get``, ``apt-cache``, ``dpkg-query`` and ``dpkg-reconfigure``
-#: are all covered, and matching the basename keeps ``/usr/bin/apt-get`` a hit
-#: while leaving a path such as ``/etc/apt/apt.conf.d/99x`` alone.
+#: an invocation when its name is one of these or begins with one plus a hyphen,
+#: so ``apt-get``, ``apt-cache``, ``dpkg-query`` and ``dpkg-reconfigure`` are all
+#: covered. Which tokens are eligible at all is decided by ``_BIN_DIRS`` below.
 PACKAGE_MANAGER_STEMS = ("apt", "dpkg")
 
 #: Split an instruction body on whitespace, the shell operators that separate
 #: commands, and the quoting and bracket punctuation of Dockerfile exec form, so
 #: an operator butted against a program name still isolates it and
 #: ``RUN ["apt-get", "update"]`` yields a bare ``apt-get``.
-_TOKEN_RE = re.compile(r"[^\s;&|()<>\[\],\"']+")
+_TOKEN_RE = re.compile(r"[^\s;&|()<>\[\],\"'`]+")
+
+#: Directories a package-manager binary is invoked from. A token carrying a path
+#: names an invocation only when it lives in one, which keeps ``/usr/bin/apt-get``
+#: a hit while leaving data paths such as ``/var/lib/apt`` and ``/etc/apt`` alone.
+_BIN_DIRS = frozenset(
+    {"/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin"}
+)
+
+#: A Debian package name is lowercase alphanumerics plus ``+``, ``-`` and ``.``,
+#: opening on an alphanumeric. Anything else in the purge tail means the
+#: instruction is not a bare dpkg invocation, so its tail is not a package list.
+_PACKAGE_NAME_RE = re.compile(r"[a-z0-9][a-z0-9+.-]+")
 
 
 def parse_instructions(path: Path) -> list[tuple[int, str]]:
     """Return one ``(line_number, joined_body)`` pair per Dockerfile instruction.
 
-    Comment lines are dropped and backslash continuations are folded into the
-    instruction they belong to, so a comment naming ``apt`` or ``dpkg`` cannot be
-    mistaken for an instruction and a continuation carrying one is still seen.
-    The line number is where the instruction starts.
+    Blank and comment lines are dropped wherever they fall, and backslash
+    continuations are folded into the instruction they belong to, so a comment
+    naming ``apt`` or ``dpkg`` cannot be mistaken for an instruction, a blank line
+    cannot cut a continuation short, and a continuation carrying either is still
+    seen whole. The line number is where the instruction starts.
 
     :param path: Containerfile to parse.
     :return: ``(line_number, body)`` per instruction, in file order.
@@ -72,9 +84,7 @@ def parse_instructions(path: Path) -> list[tuple[int, str]]:
         path.read_text(encoding="utf-8").splitlines(), start=1
     ):
         stripped = raw.strip()
-        if not parts and (not stripped or stripped.startswith("#")):
-            continue
-        if parts and stripped.startswith("#"):
+        if not stripped or stripped.startswith("#"):
             continue
         if not parts:
             start_line = lineno
@@ -97,7 +107,8 @@ def purge_index(instructions: list[tuple[int, str]]) -> int:
 
     :param instructions: Parsed instructions from :func:`parse_instructions`.
     :return: Index of the purge instruction.
-    :raises SystemExit: When the purge instruction is absent or appears twice.
+    :raises SystemExit: When the purge instruction is absent or appears more
+        than once.
     """
     matches = [i for i, (_, body) in enumerate(instructions) if PURGE_MARKER in body]
     if not matches:
@@ -116,23 +127,38 @@ def purge_index(instructions: list[tuple[int, str]]) -> int:
 def purged_packages(instructions: list[tuple[int, str]]) -> list[str]:
     """Return the package names the purge instruction removes, in recipe order.
 
+    Every remaining token must look like a package name. Chaining a second
+    command onto the purge would otherwise put shell words in this list, and the
+    CI presence check reads it as the set of packages to look for.
+
     :param instructions: Parsed instructions from :func:`parse_instructions`.
     :return: Package names following ``--force-remove-essential``.
-    :raises SystemExit: When the purge instruction is absent or appears twice.
+    :raises SystemExit: When the purge instruction is absent, appears more than
+        once, or carries a tail that is not a bare package list.
     """
-    _, body = instructions[purge_index(instructions)]
+    lineno, body = instructions[purge_index(instructions)]
     _, _, tail = body.partition(PURGE_FLAG)
-    return [token for token in tail.split() if not token.startswith("-")]
+    names = [token for token in tail.split() if not token.startswith("-")]
+    unexpected = [name for name in names if not _PACKAGE_NAME_RE.fullmatch(name)]
+    if unexpected:
+        raise SystemExit(
+            f"Purge instruction at line {lineno} lists non-package tokens "
+            f"{unexpected}. Keep it a bare dpkg invocation, so the package list "
+            "it names stays the one the presence check looks for."
+        )
+    return names
 
 
 def _invokes_package_manager(body: str) -> bool:
     """Report whether ``body`` invokes a program from the apt or dpkg families.
 
     :param body: A joined instruction body.
-    :return: ``True`` when a token's basename names a package-manager program.
+    :return: ``True`` when a token names a package-manager program.
     """
     for token in _TOKEN_RE.findall(body):
-        name = token.rsplit("/", 1)[-1]
+        parent, separator, name = token.rpartition("/")
+        if separator and parent not in _BIN_DIRS:
+            continue
         if any(
             name == stem or name.startswith(f"{stem}-")
             for stem in PACKAGE_MANAGER_STEMS
@@ -149,7 +175,8 @@ def check_ordering(instructions: list[tuple[int, str]]) -> list[tuple[int, str]]
 
     :param instructions: Parsed instructions from :func:`parse_instructions`.
     :return: ``(line_number, body)`` per offending instruction.
-    :raises SystemExit: When the purge instruction is absent or appears twice.
+    :raises SystemExit: When the purge instruction is absent or appears more
+        than once.
     """
     offenders: list[tuple[int, str]] = []
     for lineno, body in instructions[purge_index(instructions) + 1 :]:

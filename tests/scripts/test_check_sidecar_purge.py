@@ -203,3 +203,40 @@ def test_exec_form_instruction_after_purge_is_reported(tmp_path):
     body = f'{RECIPE_PREFIX}{PURGE_LAYER}\nRUN ["apt-get", "install", "-y", "foo"]\n'
     offenders = check_sidecar_purge.check_ordering(_instructions(tmp_path, body))
     assert [b for _, b in offenders] == ['RUN ["apt-get", "install", "-y", "foo"]']
+
+
+def test_blank_line_inside_a_continuation_does_not_truncate_the_package_list(tmp_path):
+    """Fold a purge layer whose continuation is interrupted by a blank line."""
+    interrupted = PURGE_LAYER.replace("        gzip \\\n", "\n        gzip \\\n")
+    body = f"{RECIPE_PREFIX}{interrupted}"
+    instructions = _instructions(tmp_path, body)
+    assert check_sidecar_purge.purged_packages(instructions) == PURGED_PACKAGES
+
+
+def test_chained_purge_instruction_is_a_hard_failure(tmp_path):
+    """Raise ``SystemExit`` when the purge tail carries shell words, not packages."""
+    chained = (
+        "RUN dpkg --purge --force-remove-essential perl-base && rm -rf /var/cache\n"
+    )
+    instructions = _instructions(tmp_path, f"{RECIPE_PREFIX}{chained}")
+    with pytest.raises(SystemExit, match="non-package tokens"):
+        check_sidecar_purge.purged_packages(instructions)
+
+
+def test_data_path_ending_in_apt_is_not_an_invocation(tmp_path):
+    """Leave a post-purge path whose final segment is apt alone; it invokes nothing."""
+    body = f"{RECIPE_PREFIX}{PURGE_LAYER}\nRUN rm -rf /var/lib/apt\n"
+    assert check_sidecar_purge.check_ordering(_instructions(tmp_path, body)) == []
+
+
+def test_backtick_substitution_after_purge_is_reported(tmp_path):
+    """Report a package manager invoked inside backticks, which glue to the name."""
+    body = f"{RECIPE_PREFIX}{PURGE_LAYER}\nRUN echo `apt-get -v`\n"
+    offenders = check_sidecar_purge.check_ordering(_instructions(tmp_path, body))
+    assert [b for _, b in offenders] == ["RUN echo `apt-get -v`"]
+
+
+def test_absent_containerfile_is_a_hard_failure(tmp_path):
+    """Raise ``SystemExit`` rather than reporting a clean parse for a missing file."""
+    with pytest.raises(SystemExit, match="No Containerfile at"):
+        check_sidecar_purge.parse_instructions(tmp_path / "does-not-exist")
