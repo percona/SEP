@@ -803,6 +803,10 @@ describe('HostSelector', () => {
         target_service?: string;
         allow_custom?: boolean;
       } = {},
+      serviceExtras: {
+        allow_custom?: boolean;
+        required?: boolean;
+      } = {},
     ): FormSection[] {
       return [
         {
@@ -814,6 +818,7 @@ describe('HostSelector', () => {
               label: 'Database Service',
               required: true,
               service_types: ['mysql'],
+              ...serviceExtras,
             },
             {
               type: 'host',
@@ -1087,6 +1092,27 @@ describe('HostSelector', () => {
       expectNoMismatchWarning();
     });
 
+    it('is silent when the target service is a free-typed custom value', async () => {
+      mockHostsAndServices();
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer
+            sections={taskSections({}, { allow_custom: true, required: false })}
+            onSubmit={vi.fn()}
+          />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+
+      await user.type(screen.getByLabelText(/^Database Service\b/), 'external-svc');
+      await user.click(screen.getByLabelText(/^Execution Host\b/));
+      await user.click(await screen.findByRole('option', { name: 'Display A' }));
+
+      expectNoMismatchWarning();
+    });
+
     it('is silent while the hosts query is loading', async () => {
       let resolveHosts!: (value: unknown) => void;
       mocked.get.mockImplementation((url: string) => {
@@ -1282,6 +1308,34 @@ describe('HostSelector', () => {
       expect(onSubmit).toHaveBeenCalledWith(
         expect.objectContaining({ hostname: 'node-b', service_id: 7 }),
       );
+    });
+
+    it('shows a warning when the user overrides a cascade auto-selected host', async () => {
+      mockHostsAndServices();
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <SchemaFormRenderer
+            sections={taskSections({ depends_on: 'service_id' })}
+            onSubmit={vi.fn()}
+          />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+
+      await user.click(screen.getByLabelText(/^Database Service\b/));
+      await user.click(await screen.findByRole('option', { name: 'mysql-svc (mysql)' }));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/^Execution Host\b/)).toHaveValue('Display B');
+      });
+      expectNoMismatchWarning();
+
+      await user.click(screen.getByLabelText(/^Execution Host\b/));
+      await user.click(await screen.findByRole('option', { name: 'Display A' }));
+
+      await expectMismatchWarning();
     });
   });
 });
