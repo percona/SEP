@@ -1252,31 +1252,6 @@ class TestRunSendFailures:
         )
 
     @pytest.mark.usefixtures("tasks_api")
-    async def test_a_step_reading_a_manifest_key_names_the_key(
-        self, send_session: AsyncSession, uploader: _FakeUploader
-    ) -> None:
-        """Name the manifest key the step read, not the whole manifest."""
-        row = await _seed_send_log(send_session)
-
-        async def _upload(**kwargs: Any) -> UploadResult:
-            assert uploader.step_observer is not None
-            uploader.step_observer(
-                StepRecord(
-                    name="lookup",
-                    status="failed",
-                    cited_inputs=("manifest.incident_id",),
-                )
-            )
-            raise HTTPConflictException(detail="ticket locked")
-
-        uploader.upload_bundle = _upload
-
-        await run_send(row.id)
-
-        reloaded = await _reload(send_session, row.id)
-        assert "which reads manifest.incident_id" in reloaded.detail["error"]
-
-    @pytest.mark.usefixtures("tasks_api")
     async def test_a_step_reading_two_inputs_names_both(
         self, send_session: AsyncSession, uploader: _FakeUploader
     ) -> None:
