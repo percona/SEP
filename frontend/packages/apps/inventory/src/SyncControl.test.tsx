@@ -20,19 +20,21 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SnackbarProvider } from 'notistack';
-import { apiClient } from '@sep/api';
+import { ADMIN_SESSION, apiClient, AuthContext, UNAUTHENTICATED_SESSION } from '@sep/api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SyncControl } from './SyncControl';
 
-function makeWrapper() {
+function makeWrapper({ canMutate = true }: { canMutate?: boolean } = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
-      <QueryClientProvider client={client}>
-        <SnackbarProvider>{children}</SnackbarProvider>
-      </QueryClientProvider>
+      <AuthContext value={canMutate ? ADMIN_SESSION : UNAUTHENTICATED_SESSION}>
+        <QueryClientProvider client={client}>
+          <SnackbarProvider>{children}</SnackbarProvider>
+        </QueryClientProvider>
+      </AuthContext>
     );
   };
 }
@@ -235,9 +237,11 @@ describe('SyncControl', () => {
       });
       const invalidate = vi.spyOn(client, 'invalidateQueries');
       const wrapper = ({ children }: { children: ReactNode }) => (
-        <QueryClientProvider client={client}>
-          <SnackbarProvider>{children}</SnackbarProvider>
-        </QueryClientProvider>
+        <AuthContext value={ADMIN_SESSION}>
+          <QueryClientProvider client={client}>
+            <SnackbarProvider>{children}</SnackbarProvider>
+          </QueryClientProvider>
+        </AuthContext>
       );
 
       render(<SyncControl />, { wrapper });
@@ -249,5 +253,36 @@ describe('SyncControl', () => {
       await waitFor(() => expect(hasStatusInvalidation(invalidate)).toBe(true));
       expect(hasEntityInvalidation(invalidate)).toBe(false);
     });
+  });
+});
+
+describe('SyncControl — write access', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('renders the sync control for a session that may mutate', async () => {
+    stubGet([{ name: 'pmm', display_name: 'PMM' }]);
+
+    render(<SyncControl />, { wrapper: makeWrapper() });
+
+    expect(
+      await screen.findByRole('button', { name: 'Sync all configured syncers' }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders no sync control for a non-admin', async () => {
+    const get = stubGet([{ name: 'pmm', display_name: 'PMM' }]);
+
+    render(<SyncControl />, { wrapper: makeWrapper({ canMutate: false }) });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: 'Sync all configured syncers' }),
+      ).not.toBeInTheDocument();
+    });
+    // The syncer listing is a GET the component still needs for nothing here,
+    // but the control itself never renders.
+    expect(get).toHaveBeenCalled();
   });
 });

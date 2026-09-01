@@ -6851,8 +6851,10 @@ export interface components {
      *     :param task_type: Optional task-type identifier used when creating tasks
      *         via the shared task API. Defaults to ``None``.
      *     :type task_type: NonEmptyStr | None
-     *     :param forms: Form sections for single-entity / task plugins. Defaults to
-     *         an empty list when ``entities`` is used instead.
+     *     :param forms: Form sections for single-entity / task plugins. When
+     *         ``entities`` is non-empty, root ``forms`` must be empty (declare
+     *         forms on each entity instead); non-empty root ``forms`` are rejected
+     *         at construction. Defaults to an empty list.
      *     :type forms: list[FormSection]
      *     :param capabilities: Optional plugin-level feature flags. Defaults to
      *         ``None``.
@@ -6870,11 +6872,13 @@ export interface components {
      *         When non-empty, the React shell renders one list/create/detail flow
      *         per entity. Defaults to ``None`` (legacy single-entity mode).
      *     :param cardinality_rules: Optional plugin-wide cross-field cardinality
-     *         constraints (task-style plugins only; ignored when ``entities`` is set).
+     *         constraints (task-style plugins only). Rejected at construction when
+     *         ``entities`` is non-empty — declare rules on each entity instead.
      *         Defaults to ``None``.
      *     :type cardinality_rules: list[CardinalityRule] | None
      *     :param fail_when: Optional plugin-wide predicate-only invariants (task-style
-     *         plugins only; ignored when ``entities`` is set). Defaults to ``None``.
+     *         plugins only). Rejected at construction when ``entities`` is non-empty —
+     *         declare rules on each entity instead. Defaults to ``None``.
      *     :type fail_when: list[FailRule] | None
      *     :param derived: Optional declarative specs for sibling tasks derived from
      *         the parent task on cascade. Consumed by
