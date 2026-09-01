@@ -481,7 +481,7 @@ def main() -> int:
     # Bound before the blocks that fill them: --sentinel defaults on, so one of
     # them always runs, but nothing local to this function says so.
     dashboard_uid = ""
-    graphs = []
+    graphs: list[str] = []
 
     # Sentinel Summary graphs
     if args.sentinel:

@@ -114,7 +114,6 @@ def check_mongodb(host: str, port: int) -> dict[str, bool | str]:
     :param port: The database port number.
     :return: A dict with ``success`` and optionally ``error``.
     """
-    import pymongo
     import pymongo.errors
 
     try:
