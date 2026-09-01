@@ -18,13 +18,12 @@
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Final
 
 from fastapi import HTTPException
 
 from app.core.requests import RemoteAPI
-from app.core.utils.date_time import utc_now
 from app.inventory.models import SyncOutcomeEnum
 from app.sep.inventory import CreatedEntity
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -40,17 +39,20 @@ logger = logging.getLogger(__name__)
 
 #: The exceptions whose full message may be stored on ``last_sync_error``.
 #:
-#: An allowlist rather than a denylist, and named per class rather than by
-#: hierarchy: a ``SyncError`` subclass added later must be opted in deliberately
-#: instead of inheriting persistence from its base. Every member here
+#: An allowlist rather than a denylist, and matched by exact type rather than by
+#: ``isinstance``: a ``SyncError`` subclass added later must be opted in
+#: deliberately instead of inheriting persistence from its base — a subclass is
+#: free to interpolate remote context its base never did. Every member here
 #: interpolates only sync bookkeeping — the ``SyncItem`` an attempt was for.
 #: ``ExecutorHostNotFoundError`` is deliberately absent: its message carries the
 #: whole executor-host map from the Tasks API, which the inventory read routes
 #: would then expose to any authenticated caller.
-_MESSAGE_SAFE_ERRORS: Final = (
-    SyncFailError,
-    SyncInstanceAlreadyInProgressError,
-    SyncItemAlreadyInProgressError,
+_MESSAGE_SAFE_ERRORS: Final = frozenset(
+    {
+        SyncFailError,
+        SyncInstanceAlreadyInProgressError,
+        SyncItemAlreadyInProgressError,
+    }
 )
 
 
@@ -58,8 +60,11 @@ def _describe_sync_error(error: Exception) -> str:
     """Summarize an exception for storage on an entity's ``last_sync_error``.
 
     The field is durable and readable through the inventory read routes, so the
-    summary carries a message only for the exceptions listed in
-    :data:`_MESSAGE_SAFE_ERRORS`. Everything else is reduced to its type name: a
+    summary carries a message only for the exceptions whose *exact* type is
+    listed in :data:`_MESSAGE_SAFE_ERRORS`; a subclass of one is not a member.
+    ``HTTPException`` is matched by ``isinstance`` instead because that branch
+    reduces rather than admits, and a subclass of it must reduce too.
+    Everything else is reduced to its type name: a
     third-party exception's message is arbitrary text this code never inspected
     — a ``ValidationError`` echoes the offending input, a driver error can carry
     a DSN — and no redaction pass can be trusted over an open set. Nothing is
@@ -75,7 +80,7 @@ def _describe_sync_error(error: Exception) -> str:
     """
     if isinstance(error, HTTPException):
         return f"{type(error).__name__}: HTTP {error.status_code}"
-    if isinstance(error, _MESSAGE_SAFE_ERRORS):
+    if type(error) in _MESSAGE_SAFE_ERRORS:
         return f"{type(error).__name__}: {error}"
     return type(error).__name__
 
@@ -152,7 +157,7 @@ class SyncHealthReporter:
         if entity_type not in self._mirrored_levels:
             yield attempt
             return
-        attempted_at = utc_now()
+        attempted_at = datetime.now(UTC)
         try:
             yield attempt
         except SyncFailError as exc:
@@ -185,7 +190,11 @@ class SyncHealthReporter:
         :param entity_type: The level being reported.
         :param created_entity: The entity being reported.
         :param attempted_at: When this attempt began, captured before the block
-            ran so the inventory service orders by attempt, not by arrival.
+            ran so the inventory service orders by attempt, not by arrival. Read
+            from the clock directly rather than through ``utc_now``, whose
+            second truncation would hand two attempts within one second the same
+            ordering key — and the service's guards admit an equal one, so the
+            later arrival would win regardless of which attempt was newer.
         :param error: The exception that ended the attempt, or None on success.
         """
         outcome = (

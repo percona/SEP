@@ -15,6 +15,7 @@
 
 """Define constants for the Inventory service."""
 
+from datetime import timedelta
 from enum import StrEnum
 from typing import Final
 
@@ -43,6 +44,16 @@ UNCOLLECTED_SERVICE_OBSERVATION_DETAIL = (
 #: Longest error text stored on an entity's ``last_sync_error``. The manager
 #: truncates to this, so a caller may send an exception message of any length.
 SYNC_ERROR_MAX_LENGTH: Final = 1000
+
+#: How far ahead of this service's clock a reported ``attempted_at`` may sit
+#: before the report is refused. The ordering guards admit anything not older
+#: than the stored attempt, so a reporter whose clock runs fast stamps a
+#: freshness no later report can supersede until wall-clock time catches up —
+#: and one whose clock is then corrected is locked out for the whole interval.
+#: Refusing leaves the entity looking stale, which is the direction the rest of
+#: this mechanism already errs in. Wide enough to absorb the drift between two
+#: containers of one deployment without absorbing a misconfigured clock.
+SYNC_ATTEMPT_MAX_CLOCK_SKEW: Final = timedelta(minutes=5)
 
 
 class RetirableEntityName(StrEnum):

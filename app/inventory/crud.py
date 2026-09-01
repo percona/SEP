@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Any, ClassVar, Final, TYPE_CHECKING
 
 from fastapi import HTTPException
-from sqlalchemy import and_, func, literal, Update, update
+from sqlalchemy import and_, case, func, literal, Update, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased, joinedload
 from sqlalchemy.sql import ColumnElement, ColumnExpressionArgument
@@ -140,7 +140,7 @@ def _no_newer_failure(
     A failure never moves ``last_synced_at``, so :func:`_not_superseded` cannot
     see one: an older success arriving late would otherwise clear a run a newer
     attempt had just opened, reporting a clean row whose latest attempt failed.
-    ``sync_failing_since`` names the *first* failure of the run, so a success
+    ``sync_failing_since`` names the *earliest* failure of the run, so a success
     landing between two failures of one run is still admitted — closing that
     would take a column recording the newest attempt seen.
 
@@ -195,11 +195,17 @@ def _record_sync_failure(
 ) -> Update:
     """Build the UPDATE recording a failed sync on every row matching the clauses.
 
-    ``sync_failing_since`` is coalesced rather than assigned so it keeps naming
-    the *first* failure after the last success, and the counter is incremented
-    in SQL so concurrent runs cannot lose an increment to a read-modify-write.
-    ``last_synced_at`` is deliberately absent: a failure never moves it — which
-    is also why the guard compares against it rather than being skipped here.
+    ``sync_failing_since`` keeps the earlier of the stored value and this
+    attempt rather than being assigned, so it names the *first* failure after
+    the last success even when two failures of one run arrive out of order —
+    coalescing alone would leave it on whichever landed first. The counter is
+    incremented in SQL so concurrent runs cannot lose an increment to a
+    read-modify-write. ``last_sync_error`` is still assigned unconditionally,
+    so an out-of-order pair leaves the older message there; naming the newest
+    failure would take a column recording the newest attempt seen, which the
+    entity does not carry. ``last_synced_at`` is deliberately absent: a failure
+    never moves it — which is also why the guard compares against it rather
+    than being skipped here.
 
     :param model: The table to record the failure in.
     :param whereclause: Clauses narrowing the rows to write.
@@ -213,7 +219,13 @@ def _record_sync_failure(
         .values(
             last_sync_error=error,
             consecutive_failures=col(model.consecutive_failures) + 1,
-            sync_failing_since=func.coalesce(col(model.sync_failing_since), failed_at),
+            sync_failing_since=case(
+                (
+                    col(model.sync_failing_since) < failed_at,
+                    col(model.sync_failing_since),
+                ),
+                else_=failed_at,
+            ),
         )
         .execution_options(**_UNSYNCHRONIZED)
     )

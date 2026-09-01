@@ -16,7 +16,7 @@
 """Define test fixtures for inventory tests."""
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -36,6 +36,7 @@ from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.core.utils.date_time import utc_now
+from app.inventory.constants import SYNC_ATTEMPT_MAX_CLOCK_SKEW
 from app.inventory.crud import (
     HostSystemObservationManager,
     NodeManager,
@@ -298,6 +299,17 @@ SYNC_HEALTH_RESPONSE_KEYS = frozenset(
 #: the field under test rather than to a moving timestamp.
 SYNC_HEALTH_ATTEMPTED_AT = "2026-08-31T12:00:00+00:00"
 
+#: An attempt time past the tolerated clock skew. Relative rather than fixed:
+#: the rejection is about the distance from *this run's* clock, so a literal
+#: would stop testing the boundary the moment it fell into the past. Read once
+#: at collection and overshot by a day, because the margin has to survive the
+#: whole run — a value only minutes past the tolerance falls back inside it
+#: while the suite is still executing, and the route then answers 204.
+#: The tolerance boundary itself is pinned precisely in ``test_models.py``.
+SYNC_HEALTH_FUTURE_ATTEMPTED_AT = (
+    utc_now() + SYNC_ATTEMPT_MAX_CLOCK_SKEW + timedelta(days=1)
+).isoformat()
+
 #: Bodies the sync-health routes must refuse, one per rejection ``SyncHealthWrite``
 #: declares. Raw dicts rather than model dumps: the wire shape is the contract
 #: these route tests exercise, and none of these can be produced by the model
@@ -308,6 +320,7 @@ INVALID_SYNC_HEALTH_BODIES = [
     {"outcome": "success", "error": "boom", "attempted_at": SYNC_HEALTH_ATTEMPTED_AT},
     {"outcome": "nope", "attempted_at": SYNC_HEALTH_ATTEMPTED_AT},
     {"outcome": "success"},
+    {"outcome": "success", "attempted_at": SYNC_HEALTH_FUTURE_ATTEMPTED_AT},
 ]
 INVALID_SYNC_HEALTH_BODY_IDS = [
     "failure_without_error",
@@ -315,6 +328,7 @@ INVALID_SYNC_HEALTH_BODY_IDS = [
     "success_with_error",
     "unknown_outcome",
     "missing_attempted_at",
+    "attempted_at_beyond_clock_skew",
 ]
 
 

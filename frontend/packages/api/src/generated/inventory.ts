@@ -2262,7 +2262,9 @@ export interface components {
      *     :param attempted_at: When the syncer began this attempt. Stamped as
      *         ``last_synced_at`` on success, and compared against the row's current
      *         ``last_synced_at`` so a late-arriving report from an older attempt
-     *         cannot overwrite a newer one.
+     *         cannot overwrite a newer one. Refused when it sits further ahead of this
+     *         service's clock than the tolerated skew, since nothing later could then
+     *         supersede it.
      */
     SyncHealthWrite: {
       /**

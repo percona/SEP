@@ -2090,6 +2090,36 @@ class TestRecordSyncHealth:
         assert entity.last_sync_error == "second"
         assert entity.consecutive_failures == SECOND_CONSECUTIVE_FAILURE
 
+    @pytest.mark.asyncio
+    async def test_out_of_order_failures_still_open_the_run_at_the_earlier_one(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Keep ``sync_failing_since`` at the earlier attempt whichever lands first.
+
+        Reports cross the service boundary over HTTP, so two failures of one run
+        can arrive newest-first. Coalescing alone would leave the run opened at
+        whichever landed first, which is not the run's start.
+
+        ``last_sync_error`` is the residual gap: it is assigned unconditionally,
+        so the late older report leaves its own message behind. Naming the newest
+        failure would take a column recording the newest attempt seen, which the
+        entity does not carry; the assertion states today's behaviour so a future
+        fix has a failing test to flip.
+        """
+        manager, entity = sync_health_target
+        earlier = utc_now() - timedelta(minutes=10)
+        later = utc_now()
+
+        await manager.record_sync_health(session, entity, _failure(later, error="new"))
+        await manager.record_sync_health(
+            session, entity, _failure(earlier, error="old")
+        )
+
+        await session.refresh(entity)
+        assert _as_utc(entity.sync_failing_since) == earlier
+        assert entity.consecutive_failures == SECOND_CONSECUTIVE_FAILURE
+        assert entity.last_sync_error == "old"
+
     @pytest.mark.parametrize(
         "outcome", [_success, _failure], ids=["success", "failure"]
     )

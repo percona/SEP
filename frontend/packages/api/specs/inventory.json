@@ -2334,7 +2334,7 @@
         "type": "string"
       },
       "SyncHealthWrite": {
-        "description": "Define the body reporting one entity's sync outcome.\n\n:param outcome: Whether the attempt succeeded or failed.\n:param error: The failure's message, never empty. Required on FAILURE,\n    absent on SUCCESS.\n:param attempted_at: When the syncer began this attempt. Stamped as\n    ``last_synced_at`` on success, and compared against the row's current\n    ``last_synced_at`` so a late-arriving report from an older attempt\n    cannot overwrite a newer one.",
+        "description": "Define the body reporting one entity's sync outcome.\n\n:param outcome: Whether the attempt succeeded or failed.\n:param error: The failure's message, never empty. Required on FAILURE,\n    absent on SUCCESS.\n:param attempted_at: When the syncer began this attempt. Stamped as\n    ``last_synced_at`` on success, and compared against the row's current\n    ``last_synced_at`` so a late-arriving report from an older attempt\n    cannot overwrite a newer one. Refused when it sits further ahead of this\n    service's clock than the tolerated skew, since nothing later could then\n    supersede it.",
         "properties": {
           "attempted_at": {
             "format": "date-time",

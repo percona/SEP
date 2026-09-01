@@ -15,7 +15,7 @@
 
 """Define tests for the app.sep.sync.health module."""
 
-from datetime import datetime
+from datetime import datetime, UTC
 from unittest.mock import AsyncMock
 
 import pytest
@@ -24,7 +24,6 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.exceptions import HTTPNotFoundException
 from app.core.requests import RemoteAPI
-from app.core.utils.date_time import utc_now
 from app.inventory.models import SyncHealthWrite, SyncOutcomeEnum
 from app.sep.inventory import CreatedNode
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -187,14 +186,37 @@ class TestRecordedOutcomes:
         created_node: CreatedNode,
     ) -> None:
         """Send the attempt's own start time so inventory can order by attempt."""
-        before = utc_now()
+        before = datetime.now(UTC)
 
         async with reporter.record(NODE, created_node) as attempt:
             attempt.mark_compared()
 
         _, body = _posted(inventory_api)
         attempted_at = datetime.fromisoformat(body["attempted_at"])
-        assert before <= attempted_at <= utc_now()
+        assert before <= attempted_at <= datetime.now(UTC)
+
+    @pytest.mark.asyncio
+    async def test_the_payload_time_is_not_truncated_to_the_second(
+        self,
+        reporter: SyncHealthReporter,
+        inventory_api: AsyncMock,
+        created_node: CreatedNode,
+    ) -> None:
+        """Keep sub-second resolution, which the inventory guards order on.
+
+        ``utc_now`` zeroes the microsecond, which would hand two attempts within
+        one second the same ordering key — and the guards admit an equal one, so
+        the later arrival would win whichever attempt was actually newer.
+        """
+        seen = set()
+        for _ in range(50):
+            inventory_api.post.reset_mock()
+            async with reporter.record(NODE, created_node) as attempt:
+                attempt.mark_compared()
+            _, body = _posted(inventory_api)
+            seen.add(datetime.fromisoformat(body["attempted_at"]).microsecond)
+
+        assert seen != {0}
 
 
 class TestUnmirroredLevels:
@@ -314,16 +336,35 @@ class TestDescribeSyncError:
         """Keep the executor-host map out of a column any reader can fetch.
 
         ``ExecutorHostNotFoundError`` is a ``SyncError`` and reaches this from
-        the ``fetch_schema`` / ``fetch_table`` task-target lookup, so hierarchy
-        alone would opt it in — its message carries the whole Tasks-API host
-        table, which the write's service-principal gate does not protect on the
-        read side.
+        the ``fetch_schema`` / ``fetch_table`` task-target lookup, so an
+        allowlist keyed on the shared base would opt it in — its message carries
+        the whole Tasks-API host table, which the write's service-principal gate
+        does not protect on the read side.
         """
         described = _describe_sync_error(
             ExecutorHostNotFoundError("db-1", "10.0.0.1", {"executor-1": "10.0.0.99"})
         )
 
         assert described == "ExecutorHostNotFoundError"
+
+    def test_a_subclass_of_an_allowlisted_error_contributes_only_its_type(
+        self,
+    ) -> None:
+        """Refuse to extend the allowlist down a hierarchy it never opted in.
+
+        A subclass is free to interpolate context its base never did, so
+        membership is by exact type: adding one must be a deliberate edit here
+        rather than something a new exception inherits.
+        """
+
+        class _DerivedInProgressError(SyncInstanceAlreadyInProgressError):
+            def __init__(self) -> None:
+                Exception.__init__(self, f"connected as {LEAKY_DSN}")
+
+        described = _describe_sync_error(_DerivedInProgressError())
+
+        assert described == "_DerivedInProgressError"
+        assert SECRET not in described
 
 
 class TestErrorTextReachesThePayload:

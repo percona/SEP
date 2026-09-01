@@ -26,8 +26,13 @@ from sqlmodel import Relationship, SQLModel
 
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
+from app.core.utils.date_time import utc_now
 from app.core.utils.fields import ArbitraryMapping, NonEmptyStr, UTCDatetime
-from app.inventory.constants import ACTIVE_RETIREMENT_KEY, RetirableEntityName
+from app.inventory.constants import (
+    ACTIVE_RETIREMENT_KEY,
+    RetirableEntityName,
+    SYNC_ATTEMPT_MAX_CLOCK_SKEW,
+)
 
 #: Predicate narrowing the collection-scan indexes to the tombstones alone.
 #: Active rows are the overwhelming majority and can never be returned by that
@@ -192,7 +197,9 @@ class SyncHealthWrite(SQLModel):
     :param attempted_at: When the syncer began this attempt. Stamped as
         ``last_synced_at`` on success, and compared against the row's current
         ``last_synced_at`` so a late-arriving report from an older attempt
-        cannot overwrite a newer one.
+        cannot overwrite a newer one. Refused when it sits further ahead of this
+        service's clock than the tolerated skew, since nothing later could then
+        supersede it.
     """
 
     outcome: SyncOutcomeEnum
@@ -205,6 +212,15 @@ class SyncHealthWrite(SQLModel):
             raise ValueError("error is required when outcome is failure")
         if self.outcome is SyncOutcomeEnum.SUCCESS and self.error is not None:
             raise ValueError("error must be omitted when outcome is success")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_attempted_at_is_not_ahead(self) -> Self:
+        if self.attempted_at > utc_now() + SYNC_ATTEMPT_MAX_CLOCK_SKEW:
+            raise ValueError(
+                "attempted_at is further ahead of server time than the "
+                "tolerated clock skew"
+            )
         return self
 
 

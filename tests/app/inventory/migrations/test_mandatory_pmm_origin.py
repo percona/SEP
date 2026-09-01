@@ -73,17 +73,6 @@ _MANDATORY_COLUMNS = (
     ("service", "external_id"),
 )
 
-#: Columns no revision at or below ``_PRE_ORIGIN_REVISION`` declares, added by a
-#: later one and therefore dropped again on the way down to it.
-_COLUMNS_ABOVE_PRE_ORIGIN = frozenset(
-    {
-        "last_synced_at",
-        "last_sync_error",
-        "sync_failing_since",
-        "consecutive_failures",
-    }
-)
-
 
 @pytest.fixture
 def inventory_alembic_config(tmp_path, monkeypatch):
@@ -141,23 +130,32 @@ def _row(conn, table_name, entity_id):
     return result._mapping
 
 
-def _row_at_pre_origin(conn, table_name, entity_id):
-    """Return the row restricted to the columns the pre-origin schema declares.
+def _column_names(engine, table_name):
+    """Return the column names the named table currently declares."""
+    return {column["name"] for column in inspect(engine).get_columns(table_name)}
+
+
+def _projected_row(conn, table_name, entity_id, column_names):
+    """Return the row restricted to ``column_names``.
 
     A revision above ``_PRE_ORIGIN_REVISION`` may add columns, and downgrading
     to it drops them on the way past. Comparing whole rows across that boundary
-    would then fail on the schema difference rather than on the data this test
-    is about, so the later columns are excluded from the captured expectation.
+    would then fail on the schema difference rather than on the data the test is
+    about. The caller reads ``column_names`` off the pre-origin schema itself, so
+    no list here has to be kept in step with later revisions, and the projected
+    expectation still pins the column set: it came from a different source than
+    the post-downgrade row it is compared against.
 
     :param conn: The open connection to read through.
     :param table_name: The table holding the row.
     :param entity_id: The row's primary key.
-    :return: The row's pre-origin columns and their values.
+    :param column_names: The columns to keep.
+    :return: The kept columns and their values.
     """
     return {
         name: value
         for name, value in _row(conn, table_name, entity_id).items()
-        if name not in _COLUMNS_ABOVE_PRE_ORIGIN
+        if name in column_names
     }
 
 
@@ -420,6 +418,8 @@ def test_downgrade_restores_nullability_and_leaves_data_alone(
 
     engine = create_engine(sync_url)
     try:
+        node_columns = _column_names(engine, "node")
+        service_columns = _column_names(engine, "service")
         with engine.begin() as conn:
             node_id = _seed_node(conn, "10.0.0.9", "legacy", None, None)
             service_id = _seed_service(conn, None, "svc", 3309, node_id)
@@ -431,8 +431,10 @@ def test_downgrade_restores_nullability_and_leaves_data_alone(
     engine = create_engine(sync_url)
     try:
         with engine.begin() as conn:
-            stamped_node = _row_at_pre_origin(conn, "node", node_id)
-            stamped_service = _row_at_pre_origin(conn, "service", service_id)
+            stamped_node = _projected_row(conn, "node", node_id, node_columns)
+            stamped_service = _projected_row(
+                conn, "service", service_id, service_columns
+            )
     finally:
         engine.dispose()
 
