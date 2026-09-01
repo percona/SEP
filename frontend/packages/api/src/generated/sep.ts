@@ -3677,7 +3677,10 @@ export interface components {
       | 'error'
       | 'unreachable'
       | 'ssl_error'
-      | 'timeout';
+      | 'timeout'
+      | 'not_configured'
+      | 'inputs_drifted'
+      | 'probe_undeclared';
     /**
      * DashboardStatsResponse
      * @description Represent aggregate counts for the four dashboard stat cards.
@@ -4006,7 +4009,7 @@ export interface components {
      * @description Enumerate the probeable services, used as stable ``service`` identifiers.
      * @enum {string}
      */
-    ServiceEnum: 'pmm' | 'inventory' | 'tasks' | 'nomad';
+    ServiceEnum: 'pmm' | 'inventory' | 'tasks' | 'nomad' | 'delivery';
     /**
      * ServiceResponse
      * @description Define the service API response.

@@ -16,12 +16,12 @@
 """Define the admin-only ``/api/sep/admin/connectivity-check`` endpoint.
 
 Expose a single generic ``POST`` that probes the caller-specified external /
-inter-service endpoints (PMM, Inventory, Tasks, Nomad) on demand and reports
-normalized per-endpoint connectivity status, so an admin can confirm an
-endpoint or credential change is reachable and valid before relying on it. The
-request must name which services to probe (``targets``, required, no default),
-so the settings flow can validate only the endpoint being edited while a full
-sweep still names all four.
+inter-service endpoints (PMM, Inventory, Tasks, Nomad, and the diagnostics
+delivery receiver) on demand and reports normalized per-endpoint connectivity
+status, so an admin can confirm an endpoint or credential change is reachable
+and valid before relying on it. The request must name which services to probe
+(``targets``, required, no default), so the settings flow can validate only the
+endpoint being edited while a full sweep still names them all.
 
 The probes are driven by the overridable ``RemoteAPI.check_connectivity``
 capability and fan out concurrently. A failure for one endpoint is captured and
@@ -46,9 +46,15 @@ from app.core.requests.connectivity import (
     classify_connectivity_error,
     ConnectivityResult,
     ConnectivityStatusEnum,
+    EXTERNAL_PROBE_TIMEOUT_SECONDS,
     PROBE_TIMEOUT_SECONDS,
 )
 from app.core.requests.remote_api import UPSTREAM_NON_JSON_HEADER
+from app.sep.bundle_upload.factory import get_delivery_executor
+from app.sep.bundle_upload.resolver import (
+    DeliveryUnavailableCode,
+    resolve_delivery_plan,
+)
 from app.sep.deps import InventoryAPI, PMMAPIDep, TaskAPI
 
 router = APIRouter()
@@ -61,6 +67,7 @@ class ServiceEnum(StrEnum):
     INVENTORY = "inventory"
     TASKS = "tasks"
     NOMAD = "nomad"
+    DELIVERY = "delivery"
 
 
 class ConnectivityCheckRequest(BaseModel):
@@ -92,7 +99,7 @@ async def _probe_pmm(pmm_api: PMMAPIDep) -> ConnectivityResult:
     if pmm_api is None:
         return build_connectivity_result(
             ServiceEnum.PMM,
-            ConnectivityStatusEnum.UNREACHABLE,
+            ConnectivityStatusEnum.NOT_CONFIGURED,
             detail="PMM is not configured.",
         )
     return await pmm_api.check_connectivity(ServiceEnum.PMM)
@@ -150,6 +157,57 @@ async def _probe_tasks_and_nomad(
     )
 
 
+#: The connectivity status each unavailability code reports as. Delivery being
+#: unconfigured and its stored inputs having drifted are separate outcomes
+#: because only the second is fixed by re-supplying the inputs.
+_DELIVERY_UNAVAILABLE_STATUS: dict[DeliveryUnavailableCode, ConnectivityStatusEnum] = {
+    DeliveryUnavailableCode.UNCONFIGURED: ConnectivityStatusEnum.NOT_CONFIGURED,
+    DeliveryUnavailableCode.DRIFTED_INPUTS: ConnectivityStatusEnum.INPUTS_DRIFTED,
+}
+
+
+async def _probe_delivery() -> ConnectivityResult:
+    """Report whether the configured diagnostics-delivery receiver answers.
+
+    Issues the delivery plan's own declared probe request rather than replaying
+    its send steps: a resolution step may mutate state, and its values may cite
+    inputs that exist only during a real send. A plan that declares no probe is
+    reported as such instead of being guessed at.
+
+    The resolver's prose reason is passed through verbatim as the detail, while
+    the status carries the same distinction machine-readably.
+
+    Branches on the resolution's code rather than its plan so the optional
+    narrows without an assertion; the resolution's own invariant is what makes
+    the two agree, so the plan cannot be absent once the code is.
+
+    :return: The delivery connectivity result.
+    """
+    resolution = resolve_delivery_plan()
+    if (code := resolution.code) is not None:
+        return build_connectivity_result(
+            ServiceEnum.DELIVERY,
+            _DELIVERY_UNAVAILABLE_STATUS[code],
+            detail=resolution.unavailable_reason,
+        )
+    plan = resolution.plan
+    if plan is None or plan.probe is None:
+        return build_connectivity_result(
+            ServiceEnum.DELIVERY, ConnectivityStatusEnum.PROBE_UNDECLARED
+        )
+    try:
+        async with asyncio.timeout(EXTERNAL_PROBE_TIMEOUT_SECONDS):
+            async with get_delivery_executor(plan) as executor:
+                await executor.probe()
+    except Exception as exc:  # noqa: BLE001 -- classified, never re-raised
+        return build_connectivity_result(
+            ServiceEnum.DELIVERY, classify_connectivity_error(exc)
+        )
+    return build_connectivity_result(
+        ServiceEnum.DELIVERY, ConnectivityStatusEnum.REACHABLE
+    )
+
+
 @router.post("/")
 async def check_connectivity(
     body: ConnectivityCheckRequest,
@@ -188,6 +246,8 @@ async def check_connectivity(
         )
     if want_tasks or want_nomad:
         probes["_tasks_nomad"] = _probe_tasks_and_nomad(tasks_api)
+    if ServiceEnum.DELIVERY in targets:
+        probes[ServiceEnum.DELIVERY] = _probe_delivery()
 
     completed = dict(zip(probes, await asyncio.gather(*probes.values()), strict=False))
 

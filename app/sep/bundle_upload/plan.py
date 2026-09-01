@@ -40,6 +40,8 @@ __all__ = [
     "LiteralValue",
     "ManifestValue",
     "PlanValue",
+    "ProbeStep",
+    "ProbeValue",
     "ResolutionStep",
     "SecretValue",
     "StepObserver",
@@ -52,9 +54,17 @@ import logging
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Self
+from urllib.parse import urlparse
 
 from fastapi import HTTPException
-from pydantic import BaseModel, Field, model_validator, PositiveInt, SecretStr
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    model_validator,
+    PositiveInt,
+    SecretStr,
+)
 
 from app.core.requests.remote_api import RemoteAPI
 from app.core.utils import json_serializer, remove_falsy_values_from_dict
@@ -143,6 +153,11 @@ PlanValue = Annotated[
     Field(discriminator="source"),
 ]
 
+#: One probe value. Narrower than :data:`PlanValue` by construction: a probe runs
+#: outside any send, so the three send-scoped sources have nothing to read and
+#: are refused when the plan is parsed rather than when the probe is issued.
+ProbeValue = Annotated[LiteralValue | SecretValue, Field(discriminator="source")]
+
 
 class ResolutionStep(BaseModel):
     """Describe one HTTP request whose response feeds later steps.
@@ -186,6 +201,46 @@ class UploadStep(BaseModel):
     file_field: NonEmptyStr = "file"
     file_content_type: NonEmptyStr = "application/octet-stream"
     reference_pointer: JsonPointerStr | None = None
+
+
+class ProbeStep(BaseModel):
+    """Describe the request that tests the receiver without sending anything.
+
+    Carries no ``name``, so nothing here joins the resolution-step namespace and
+    a plan already using any given step name cannot collide with it. The method
+    is ``GET`` by construction, which is what lets the probe run against a
+    receiver whose resolution steps mutate state.
+
+    :param path: The request path, resolved against the plan endpoint.
+    :param headers: Request headers keyed by header name.
+    :param query: Query-string parameters keyed by parameter name.
+    """
+
+    path: NonEmptyStr
+    headers: dict[str, ProbeValue] = {}
+    query: dict[str, ProbeValue] = {}
+
+    @field_validator("path")
+    @classmethod
+    def _reject_off_origin_path(cls, value: str) -> str:
+        """Keep the probe on the receiver's own origin.
+
+        A path carrying a scheme or an authority is not resolved *under* the
+        endpoint but *instead of* it, so the probe, and the credentials it
+        carries, would reach a host the plan never named.
+
+        :param value: The configured probe path.
+        :return: The validated path.
+        :raises ValueError: When the path carries a scheme or an authority.
+        """
+        parsed = urlparse(value)
+        if parsed.scheme or parsed.netloc or value.startswith("//"):
+            raise ValueError(
+                "Probe step path must be relative to the plan's endpoint: a "
+                "path carrying a scheme or host would send the probe's "
+                "credentials to another origin."
+            )
+        return value
 
 
 def _check_value(
@@ -268,6 +323,8 @@ class DeliveryPlan(BaseModel):
     :param secrets: Credential values keyed by the name secret values cite.
     :param resolution_steps: Steps executed in declaration order before the
         upload; empty for a plan that uploads directly.
+    :param probe: The request that tests the receiver without sending a bundle,
+        or ``None`` for a plan that declares no probe.
     :param upload: The terminal step that carries the bundle file.
     """
 
@@ -275,6 +332,7 @@ class DeliveryPlan(BaseModel):
     max_bundle_size_mb: PositiveInt = 30
     secrets: dict[str, SecretStr] = {}
     resolution_steps: list[ResolutionStep] = []
+    probe: ProbeStep | None = None
     upload: UploadStep
 
     @model_validator(mode="after")
@@ -308,6 +366,13 @@ class DeliveryPlan(BaseModel):
             secrets=self.secrets,
             available_outputs=available,
         )
+        if self.probe is not None:
+            _check_value_maps(
+                {"headers": self.probe.headers, _QUERY_MAP: self.probe.query},
+                where_prefix="Probe step",
+                secrets=self.secrets,
+                available_outputs={},
+            )
         return self
 
 
@@ -429,6 +494,34 @@ class DeliveryPlanExecutor:
                 step, inputs, outputs, manifest
             )
         return await self._run_upload_step(bundle, inputs, outputs, manifest)
+
+    async def probe(self) -> None:
+        """Issue the plan's declared probe request, sending nothing.
+
+        Runs none of the plan's resolution steps and records no step trail: a
+        probe is not a send. It reaches the receiver over the same per-send
+        transport a real delivery uses, so a success means the credential this
+        plan carries is accepted at the endpoint it names.
+
+        :raises DeliveryPlanError: When the plan declares no probe step.
+        :raises HTTPException: Propagates the project exception ``RemoteAPI``
+            raises for an upstream error status, including a redirect the
+            receiver answered with.
+        """
+        step = self._plan.probe
+        if step is None:
+            raise DeliveryPlanError("The delivery plan declares no probe step.")
+        request_kwargs = remove_falsy_values_from_dict(
+            {
+                "headers": self._resolve_map(step.headers, {}, {}, {}),
+                "params": self._resolve_map(step.query, {}, {}, {}),
+            }
+        )
+        logger.debug("Delivery plan: probing the receiver.")
+        with self._api.redact_headers(_secret_valued_keys(step.headers)):
+            await self._api.request(
+                "GET", step.path, allow_redirects=False, **request_kwargs
+            )
 
     def _check_bundle_size(self, size: int) -> None:
         """Reject an over-cap bundle before the transport is touched.

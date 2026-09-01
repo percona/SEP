@@ -62,21 +62,29 @@ function makeSetting(over: Record<string, unknown>) {
 type ConnectivityScenario = 'mixed' | 'all-statuses' | 'error' | 'slow' | 'versions';
 
 /**
- * Default sweep: three reachable services and one unreachable, exercising the
- * `reachable` + `unreachable` chips and per-service isolation.
+ * Default sweep: three reachable services, one unreachable, and a delivery
+ * receiver whose plan declares no probe — exercising the `reachable`,
+ * `unreachable` and `probe_undeclared` chips and per-service isolation.
  */
 const MIXED_RESULTS = [
   { service: 'pmm', reachable: true, status: 'reachable', detail: 'PMM OK', version: '2.44.0' },
   { service: 'inventory', reachable: true, status: 'reachable', detail: 'Inventory OK' },
   { service: 'tasks', reachable: true, status: 'reachable', detail: 'Tasks OK' },
   { service: 'nomad', reachable: false, status: 'unreachable', detail: 'Connection refused' },
+  {
+    service: 'delivery',
+    reachable: false,
+    status: 'probe_undeclared',
+    detail: 'No connectivity probe is declared.',
+  },
 ];
 
 /**
- * One row per remaining status (auth_failed, error, ssl_error, timeout) — the
- * four the `mixed` scenario does not cover. Between the two scenarios every
- * ConnectivityStatusEnum value is rendered end-to-end. Only four services exist,
- * so this is the realistic maximum (the backend returns one row per service).
+ * One row per status the `mixed` scenario does not cover: auth_failed, error,
+ * ssl_error, timeout, and delivery's own not_configured. The backend returns one
+ * row per service, so five services is the realistic maximum per sweep; that
+ * leaves `inputs_drifted` as the one status no realistic pair of sweeps renders
+ * here, and it is covered by the TestConnectionButton component test instead.
  */
 const ALL_STATUS_RESULTS = [
   { service: 'pmm', reachable: false, status: 'auth_failed', detail: 'Authentication failed.' },
@@ -88,6 +96,12 @@ const ALL_STATUS_RESULTS = [
   },
   { service: 'tasks', reachable: false, status: 'ssl_error', detail: 'SSL verification failed.' },
   { service: 'nomad', reachable: false, status: 'timeout', detail: 'Connection timed out.' },
+  {
+    service: 'delivery',
+    reachable: false,
+    status: 'not_configured',
+    detail: 'Diagnostics delivery is not configured',
+  },
 ];
 
 /** One row with a version string, one with an explicit null version. */
@@ -376,12 +390,13 @@ test.describe('Settings page smoke', () => {
 
     // One independent row per target; an unreachable service never hides the others.
     await expect(page.getByTestId('connectivity-results')).toBeVisible();
-    for (const service of ['pmm', 'inventory', 'tasks', 'nomad']) {
+    for (const service of ['pmm', 'inventory', 'tasks', 'nomad', 'delivery']) {
       await expect(page.getByTestId(`conn-result-${service}`)).toBeVisible();
     }
     await expect(page.getByTestId('conn-status-pmm')).toHaveText(/reachable/i);
     await expect(page.getByTestId('conn-status-nomad')).toHaveText(/unreachable/i);
     await expect(page.getByTestId('conn-result-nomad')).toContainText('Connection refused');
+    await expect(page.getByTestId('conn-status-delivery')).toHaveText(/no probe declared/i);
   });
 
   test('renders a distinct chip for every connectivity status', async ({ page }) => {
@@ -394,14 +409,14 @@ test.describe('Settings page smoke', () => {
     await page.getByRole('button', { name: /test connection/i }).click();
 
     await expect(page.getByTestId('connectivity-results')).toBeVisible();
-    for (const service of ['pmm', 'inventory', 'tasks', 'nomad']) {
+    for (const service of ['pmm', 'inventory', 'tasks', 'nomad', 'delivery']) {
       await expect(page.getByTestId(`conn-result-${service}`)).toBeVisible();
     }
-    // Together with the `mixed` scenario's reachable/unreachable, every status renders.
     await expect(page.getByTestId('conn-status-pmm')).toHaveText(/auth failed/i);
     await expect(page.getByTestId('conn-status-inventory')).toHaveText('Error');
     await expect(page.getByTestId('conn-status-tasks')).toHaveText(/ssl error/i);
     await expect(page.getByTestId('conn-status-nomad')).toHaveText(/timeout/i);
+    await expect(page.getByTestId('conn-status-delivery')).toHaveText(/not configured/i);
   });
 
   test('renders a version when present and omits it when null', async ({ page }) => {
