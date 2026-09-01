@@ -640,6 +640,11 @@ class GrafanaUser(BaseUser):
         :raises ValidationError: If the assertion is tampered, malformed, expired
             against the lifetime of every accepted type, or of a type this
             surface does not accept.
+        :raises GrafanaException: If the accepted-type set is empty, so the loop
+            ends with nothing tried and no error to re-raise. Unreachable while
+            ``_BEARER_TOKEN_TYPES`` is a non-empty literal; it is what makes the
+            re-raise below answer for a name that is otherwise only bound inside
+            the loop.
         """
         last_error: ValidationError | None = None
         for token_type in _BEARER_TOKEN_TYPES:

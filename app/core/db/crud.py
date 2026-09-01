@@ -191,16 +191,55 @@ class BaseManager:
             query = query.options(*query_options)
         return query
 
+    @overload
     @classmethod
     def _build_query(
         cls,
         *whereclause: ColumnExpressionArgument[bool],
-        builder: _QueryBuilder[W] = _DEFAULT_SELECT_QUERY_BUILDER,
         select_related: Sequence = (),
         query_options: Sequence = (),
         returning: Iterable[str] | bool = False,
         **equal_filters: Any,
-    ) -> W:
+    ) -> Select[Any]: ...
+
+    @overload
+    @classmethod
+    def _build_query(
+        cls,
+        *whereclause: ColumnExpressionArgument[bool],
+        builder: _QueryBuilder[W],
+        select_related: Sequence = (),
+        query_options: Sequence = (),
+        returning: Iterable[str] | bool = False,
+        **equal_filters: Any,
+    ) -> W: ...
+
+    @classmethod
+    def _build_query(
+        cls,
+        *whereclause: ColumnExpressionArgument[bool],
+        builder: _QueryBuilder[Any] = _DEFAULT_SELECT_QUERY_BUILDER,
+        select_related: Sequence = (),
+        query_options: Sequence = (),
+        returning: Iterable[str] | bool = False,
+        **equal_filters: Any,
+    ) -> Any:
+        """Build the statement ``builder`` produces, filtered and RETURNING-decorated.
+
+        The overloads keep the omitted-``builder`` case concrete: the default
+        produces a SELECT, and a bare ``W`` would have no argument to solve from.
+
+        :param whereclause: SQL expressions for the ``where`` clause.
+        :param builder: The query builder producing the statement. Defaults to the
+            manager's own SELECT.
+        :param select_related: Relationship attributes to eagerly load.
+        :param query_options: Additional loader options to apply.
+        :param returning: If True, return the affected rows as objects of
+            ``cls.Model``. If a list of column names is provided, return only those
+            columns. Defaults to False.
+        :param equal_filters: Column names and their respective filter values.
+        :return: The built statement.
+        """
         query = cls._filter_query(
             builder.function(*(builder.args or (cls.Model,))),
             *whereclause,
@@ -338,7 +377,7 @@ class BaseManager:
     async def _mutate_where(
         cls,
         session: AsyncSession,
-        builder: _QueryBuilder,
+        builder: _QueryBuilder[Any],
         *whereclause: ColumnExpressionArgument[bool],
         returning: Iterable[str] | bool = False,
         **equal_filters: Any,
@@ -355,7 +394,7 @@ class BaseManager:
     async def _mutate_where_returning_with_for_update(
         cls,
         session: AsyncSession,
-        builder: _QueryBuilder,
+        builder: _QueryBuilder[Any],
         *whereclause: ColumnExpressionArgument[bool],
         returning: Iterable[str] | bool,
         **equal_filters: Any,
@@ -389,7 +428,7 @@ class BaseManager:
     async def _dml_where(
         cls,
         session: AsyncSession,
-        builder: _QueryBuilder,
+        builder: _QueryBuilder[Any],
         *whereclause: ColumnExpressionArgument[bool],
         returning: Iterable[str] | bool = False,
         **equal_filters: Any,
