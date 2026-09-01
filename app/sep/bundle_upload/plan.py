@@ -67,7 +67,11 @@ from pydantic import (
 )
 
 from app.core.requests.remote_api import is_non_json_success, RemoteAPI
-from app.core.utils import json_serializer, remove_falsy_values_from_dict
+from app.core.utils import (
+    json_serializer,
+    remove_falsy_values_from_dict,
+    unique_everseen,
+)
 from app.core.utils.fields import CredentialHttpUrl, JsonPointerStr, NonEmptyStr
 from app.core.utils.json_pointer import (
     JsonPointerResolutionError,
@@ -82,6 +86,11 @@ _BYTES_PER_MIB = 1024 * 1024
 #: The value map whose contents land in the query string, where secrets are
 #: rejected because query strings are logged, cached and proxied unredacted.
 _QUERY_MAP = "query"
+
+#: The display label the upload step's records carry. The upload step declares
+#: no name of its own, and this label is deliberately not reserved against
+#: resolution-step names. ``StepRecord.kind`` is what tells the two apart.
+_UPLOAD_STEP_LABEL = "upload"
 
 
 class LiteralValue(BaseModel):
@@ -382,24 +391,36 @@ class DeliveryPlanError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class StepRecord:
-    """Report one resolution step's progress to an observer.
+    """Report one plan step's progress to an observer.
 
     Carries the step's declared outputs and never its response body, so an
     observer that persists these records cannot retain data the plan did not
-    ask for.
+    ask for. ``cited_inputs`` names the send inputs the step reads without
+    carrying their values, so a failure can be attributed to an input without an
+    observer holding one.
 
-    :param name: The resolution step's name.
+    :param name: The resolution step's name, or the upload step's display label.
     :param status: ``"running"`` when the request is about to be issued,
-        ``"success"`` once its outputs are extracted.
-    :param outputs: The extracted outputs, or ``None`` while the step runs.
+        ``"success"`` once its outputs are extracted, ``"failed"`` when the step
+        ended in an exception.
+    :param outputs: The extracted outputs, or ``None`` unless the step succeeded.
+    :param kind: Which step of the plan the record came from. The upload's label
+        is not unique against resolution-step names; this discriminator is.
+    :param cited_inputs: The send inputs this step's configured values read, in
+        declaration order: a send input by name, or a manifest key as
+        ``manifest.<key>``.
     """
 
     name: str
-    status: Literal["running", "success"]
+    status: Literal["running", "success", "failed"]
     outputs: Mapping[str, str] | None = None
+    kind: Literal["resolution", "upload"] = "resolution"
+    cited_inputs: tuple[str, ...] = ()
 
 
-#: A synchronous callback invoked once per resolution-step transition.
+#: A synchronous callback invoked once per step transition. It must not raise:
+#: a failure record is observed from inside an exception handler, so an observer
+#: that raises there replaces the exception the executor was propagating.
 StepObserver = Callable[[StepRecord], None]
 
 
@@ -410,6 +431,27 @@ def _secret_valued_keys(values: Mapping[str, PlanValue]) -> list[str]:
     :return: The keys whose resolved values must be masked in the request log.
     """
     return [key for key, value in values.items() if isinstance(value, SecretValue)]
+
+
+def _cited_send_inputs(*value_maps: Mapping[str, PlanValue]) -> tuple[str, ...]:
+    """Return the send inputs a step's configured values read, in order.
+
+    A manifest value is named for the key it reads rather than for the whole
+    manifest, so a step that fails on one is attributable to that key. Only names
+    are returned: a secret value cites no send input and so cannot appear here at
+    all.
+
+    :param value_maps: The step's configured value maps, in declaration order.
+    :return: The distinct send inputs the maps cite, never their values.
+    """
+    return tuple(
+        unique_everseen(
+            f"manifest.{value.key}" if isinstance(value, ManifestValue) else value.field
+            for values in value_maps
+            for value in values.values()
+            if isinstance(value, InputValue | ManifestValue)
+        )
+    )
 
 
 def _as_scalar(value: Any) -> str | None:
@@ -449,9 +491,11 @@ class DeliveryPlanExecutor:
         :param plan: The validated delivery plan to run.
         :param api: The remote API client every request is issued through.
         :param step_observer: A synchronous callback notified as each resolution
-            step starts and completes, for a caller that records send progress.
-            The terminal upload is not reported -- its outcome is the returned
-            :class:`~app.sep.bundle_upload.seam.UploadResult`.
+            step starts and ends, for a caller that records send progress. A
+            successful terminal upload is not reported, since its outcome is the
+            returned :class:`~app.sep.bundle_upload.seam.UploadResult`, but a
+            failing one is, so a send that dies in the upload is attributable to
+            it.
         """
         self._plan = plan
         self._api = api
@@ -633,35 +677,52 @@ class DeliveryPlanExecutor:
         :raises HTTPException: Propagates the project exception ``RemoteAPI``
             raises for an upstream error status.
         """
-        request_kwargs = remove_falsy_values_from_dict(
-            {
-                "headers": self._resolve_map(step.headers, inputs, outputs, manifest),
-                "params": self._resolve_map(step.query, inputs, outputs, manifest),
-                "json": self._resolve_map(step.body, inputs, outputs, manifest),
-            }
-        )
-        logger.debug("Delivery plan: running resolution step %r.", step.name)
-        self._observe(StepRecord(name=step.name, status="running"))
-        with (
-            self._api.redact_headers(_secret_valued_keys(step.headers)),
-            self._api.redact_body_fields(_secret_valued_keys(step.body)),
-        ):
-            try:
+        cited = _cited_send_inputs(step.headers, step.query, step.body)
+        failed = StepRecord(name=step.name, status="failed", cited_inputs=cited)
+        try:
+            request_kwargs = remove_falsy_values_from_dict(
+                {
+                    "headers": self._resolve_map(
+                        step.headers, inputs, outputs, manifest
+                    ),
+                    "params": self._resolve_map(step.query, inputs, outputs, manifest),
+                    "json": self._resolve_map(step.body, inputs, outputs, manifest),
+                }
+            )
+            logger.debug("Delivery plan: running resolution step %r.", step.name)
+            self._observe(
+                StepRecord(name=step.name, status="running", cited_inputs=cited)
+            )
+            with (
+                self._api.redact_headers(_secret_valued_keys(step.headers)),
+                self._api.redact_body_fields(_secret_valued_keys(step.body)),
+            ):
                 response = await self._api.request(
                     step.method,
                     step.path,
                     allow_redirects=False,
                     **request_kwargs,
                 )
-            except HTTPException as err:
-                logger.warning(
-                    "Delivery plan: resolution step %r failed with status %s.",
-                    step.name,
-                    err.status_code,
-                )
-                raise
-        extracted = self._extract_outputs(step, response)
-        self._observe(StepRecord(name=step.name, status="success", outputs=extracted))
+            extracted = self._extract_outputs(step, response)
+        except HTTPException as err:
+            logger.warning(
+                "Delivery plan: resolution step %r failed with status %s.",
+                step.name,
+                err.status_code,
+            )
+            self._observe(failed)
+            raise
+        except Exception:
+            self._observe(failed)
+            raise
+        self._observe(
+            StepRecord(
+                name=step.name,
+                status="success",
+                outputs=extracted,
+                cited_inputs=cited,
+            )
+        )
         return extracted
 
     def _observe(self, record: StepRecord) -> None:
@@ -730,6 +791,9 @@ class DeliveryPlanExecutor:
         location, which may downgrade to plaintext; failing on the redirect
         status surfaces the misconfiguration instead of leaking the credential.
 
+        Only a failure is reported to the observer, and it is what tells a send
+        that died here from one that died in the last resolution step.
+
         :param bundle: The bundle bytes and the metadata describing them.
         :param inputs: The send inputs keyed by their plan-facing names.
         :param outputs: Outputs extracted by the resolution steps.
@@ -743,26 +807,38 @@ class DeliveryPlanExecutor:
             receiver answered with.
         """
         step = self._plan.upload
-        request_kwargs = remove_falsy_values_from_dict(
-            {
-                "headers": self._resolve_map(step.headers, inputs, outputs, manifest),
-                "params": self._resolve_map(step.query, inputs, outputs, manifest),
-                "fields": self._resolve_map(step.fields, inputs, outputs, manifest),
-            }
+        failed = StepRecord(
+            name=_UPLOAD_STEP_LABEL,
+            status="failed",
+            kind="upload",
+            cited_inputs=_cited_send_inputs(step.headers, step.query, step.fields),
         )
-        with self._api.redact_headers(_secret_valued_keys(step.headers)):
-            response = await self._api.upload(
-                step.path,
-                files={
-                    step.file_field: (
-                        bundle.filename,
-                        bundle.content,
-                        step.file_content_type,
-                    )
-                },
-                allow_redirects=False,
-                **request_kwargs,
+        try:
+            request_kwargs = remove_falsy_values_from_dict(
+                {
+                    "headers": self._resolve_map(
+                        step.headers, inputs, outputs, manifest
+                    ),
+                    "params": self._resolve_map(step.query, inputs, outputs, manifest),
+                    "fields": self._resolve_map(step.fields, inputs, outputs, manifest),
+                }
             )
+            with self._api.redact_headers(_secret_valued_keys(step.headers)):
+                response = await self._api.upload(
+                    step.path,
+                    files={
+                        step.file_field: (
+                            bundle.filename,
+                            bundle.content,
+                            step.file_content_type,
+                        )
+                    },
+                    allow_redirects=False,
+                    **request_kwargs,
+                )
+        except Exception:
+            self._observe(failed)
+            raise
         return self._build_result(response)
 
     def _build_result(

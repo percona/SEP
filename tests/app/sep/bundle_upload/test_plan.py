@@ -1220,10 +1220,10 @@ class TestDeliveryPlanExecutorStepObserver:
 
         assert all("customer data" not in str(record.outputs) for record in records)
 
-    async def test_a_failed_step_leaves_its_running_record_as_the_last_one(
+    async def test_a_step_failing_on_the_request_is_recorded_as_failed(
         self, api: RemoteAPI, bundle: BundleSource
     ):
-        """Leave the failing step recorded as still running so the log names it."""
+        """Close the failing step's trail with a terminal record, not a running one."""
         records: list[StepRecord] = []
         executor = DeliveryPlanExecutor(
             DeliveryPlan(**_one_step_plan()), api, step_observer=records.append
@@ -1240,13 +1240,89 @@ class TestDeliveryPlanExecutorStepObserver:
                     )
 
         assert [(record.name, record.status) for record in records] == [
-            ("lookup", "running")
+            ("lookup", "running"),
+            ("lookup", "failed"),
         ]
 
-    async def test_the_upload_step_is_not_observed(
+    async def test_a_step_failing_while_its_values_resolve_is_recorded_as_failed(
         self, api: RemoteAPI, bundle: BundleSource
     ):
-        """Leave the terminal upload out of the step records; its result stands alone."""
+        """Record a step that never reached its request, so the log still names it."""
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**_one_step_plan()), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            async with api:
+                with pytest.raises(DeliveryPlanError):
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref=None,
+                        manifest=_MANIFEST,
+                    )
+            assert mock.requests == {}
+
+        assert [(record.name, record.status) for record in records] == [
+            ("lookup", "failed")
+        ]
+
+    async def test_a_step_failing_while_outputs_are_extracted_is_recorded_as_failed(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Record a step whose answered response could not satisfy its outputs."""
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**_one_step_plan()), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            mock.post(_TICKET_URL, status=status.HTTP_200_OK, payload={"result": {}})
+            async with api:
+                with pytest.raises(DeliveryPlanError):
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref="CS0001",
+                        manifest=_MANIFEST,
+                    )
+
+        assert [(record.name, record.status) for record in records] == [
+            ("lookup", "running"),
+            ("lookup", "failed"),
+        ]
+
+    async def test_a_failed_record_carries_no_outputs(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Leave a failed record's outputs unset so no partial extraction is kept."""
+        payload = _one_step_plan()
+        payload["resolution_steps"][0]["outputs"]["account_id"] = "/result/account_id"
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**payload), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            mock.post(
+                _TICKET_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": {"sys_id": "case-77"}},
+            )
+            async with api:
+                with pytest.raises(DeliveryPlanError):
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref="CS0001",
+                        manifest=_MANIFEST,
+                    )
+
+        assert records[-1].status == "failed"
+        assert records[-1].outputs is None
+
+    async def test_a_successful_upload_step_is_not_observed(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Leave a landed upload out of the step records; its result stands alone."""
         records: list[StepRecord] = []
         executor = DeliveryPlanExecutor(
             DeliveryPlan(**_upload_only_plan()), api, step_observer=records.append
@@ -1266,6 +1342,257 @@ class TestDeliveryPlanExecutorStepObserver:
                 )
 
         assert records == []
+
+    async def test_a_failing_upload_step_is_observed_with_the_upload_kind(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Report the terminal upload when it fails, tagged apart from the steps."""
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**_upload_only_plan()), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            mock.post(_UPLOAD_URL, status=status.HTTP_409_CONFLICT)
+            async with api:
+                with pytest.raises(HTTPConflictException):
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref="CS0001",
+                        manifest=_MANIFEST,
+                    )
+
+        assert [(record.name, record.kind, record.status) for record in records] == [
+            ("upload", "upload", "failed")
+        ]
+
+    async def test_a_failing_upload_after_a_successful_step_is_attributed_to_the_upload(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """End the trail on the upload's failure rather than the last step's success."""
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**_one_step_plan()), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            mock.post(
+                _TICKET_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": {"sys_id": "case-77"}},
+            )
+            mock.post(_UPLOAD_URL, status=status.HTTP_409_CONFLICT)
+            async with api:
+                with pytest.raises(HTTPConflictException):
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref="CS0001",
+                        manifest=_MANIFEST,
+                    )
+
+        assert [(record.name, record.kind, record.status) for record in records] == [
+            ("lookup", "resolution", "running"),
+            ("lookup", "resolution", "success"),
+            ("upload", "upload", "failed"),
+        ]
+
+    async def test_a_record_names_the_send_inputs_its_step_reads(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Name the send inputs a step reads on every record that step produces."""
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**_one_step_plan()), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            mock.post(
+                _TICKET_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": {"sys_id": "case-77"}},
+            )
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_201_CREATED,
+                payload={"result": {"sys_id": "att-2"}},
+            )
+            async with api:
+                await executor.upload_bundle(
+                    source_ref="src-9",
+                    bundle=bundle,
+                    case_ref="CS0001",
+                    manifest=_MANIFEST,
+                )
+
+        assert [record.cited_inputs for record in records] == [
+            ("case_ref",),
+            ("case_ref",),
+        ]
+
+    async def test_an_input_cited_in_two_maps_is_named_once(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Name an input once however many of a step's maps read it."""
+        payload = _one_step_plan()
+        payload["resolution_steps"][0]["headers"]["x-case"] = {
+            "source": "input",
+            "field": "case_ref",
+        }
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**payload), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            mock.post(_TICKET_URL, status=status.HTTP_409_CONFLICT)
+            async with api:
+                with pytest.raises(HTTPConflictException):
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref="CS0001",
+                        manifest=_MANIFEST,
+                    )
+
+        assert records[-1].cited_inputs == ("case_ref",)
+
+    async def test_a_step_citing_no_send_input_names_none(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Leave the cited inputs empty when every value is written into the plan."""
+        payload = _one_step_plan()
+        payload["resolution_steps"][0]["headers"] = {}
+        payload["resolution_steps"][0]["body"] = {
+            "ticket_number": {"source": "literal", "value": "CS0001"}
+        }
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**payload), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            mock.post(_TICKET_URL, status=status.HTTP_409_CONFLICT)
+            async with api:
+                with pytest.raises(HTTPConflictException):
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref="CS0001",
+                        manifest=_MANIFEST,
+                    )
+
+        assert records[-1].cited_inputs == ()
+
+    async def test_a_secret_valued_map_cites_no_send_input(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Keep a named secret out of the cited inputs, which carry names alone."""
+        payload = _one_step_plan()
+        payload["resolution_steps"][0]["body"] = {
+            "client_token": {"source": "secret", "name": "client_token"}
+        }
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**payload), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            mock.post(_TICKET_URL, status=status.HTTP_409_CONFLICT)
+            async with api:
+                with pytest.raises(HTTPConflictException):
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref="CS0001",
+                        manifest=_MANIFEST,
+                    )
+
+        assert records[-1].cited_inputs == ()
+
+    async def test_a_manifest_key_is_cited_by_key(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Name a manifest value by the key it reads, not by the whole manifest."""
+        payload = _one_step_plan()
+        payload["resolution_steps"][0]["body"] = {
+            "incident": {"source": "manifest_key", "key": "incident_id"}
+        }
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**payload), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            mock.post(
+                _TICKET_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": {"sys_id": "case-77"}},
+            )
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_201_CREATED,
+                payload={"result": {"sys_id": "att-2"}},
+            )
+            async with api:
+                await executor.upload_bundle(
+                    source_ref="src-9",
+                    bundle=bundle,
+                    case_ref="CS0001",
+                    manifest={**_MANIFEST, "incident_id": "INC-1"},
+                )
+
+        assert [record.cited_inputs for record in records] == [
+            ("manifest.incident_id",),
+            ("manifest.incident_id",),
+        ]
+
+    async def test_a_step_failing_on_a_missing_manifest_key_is_attributed_to_it(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Name the manifest key whose absence ended the send."""
+        payload = _one_step_plan()
+        payload["resolution_steps"][0]["body"] = {
+            "incident": {"source": "manifest_key", "key": "incident_id"}
+        }
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**payload), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            async with api:
+                with pytest.raises(DeliveryPlanError):
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref="CS0001",
+                        manifest=_MANIFEST,
+                    )
+            assert mock.requests == {}
+
+        assert [(record.status, record.cited_inputs) for record in records] == [
+            ("failed", ("manifest.incident_id",))
+        ]
+
+    async def test_the_whole_manifest_input_and_a_manifest_key_are_cited_separately(
+        self, api: RemoteAPI, bundle: BundleSource
+    ):
+        """Tell reading the whole manifest apart from reading one of its keys."""
+        payload = _one_step_plan()
+        payload["resolution_steps"][0]["body"] = {
+            "manifest": {"source": "input", "field": "manifest"},
+            "incident": {"source": "manifest_key", "key": "incident_id"},
+        }
+        records: list[StepRecord] = []
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**payload), api, step_observer=records.append
+        )
+        with aioresponses() as mock:
+            mock.post(_TICKET_URL, status=status.HTTP_409_CONFLICT)
+            async with api:
+                with pytest.raises(HTTPConflictException):
+                    await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref="CS0001",
+                        manifest={**_MANIFEST, "incident_id": "INC-1"},
+                    )
+
+        assert records[-1].cited_inputs == ("manifest", "manifest.incident_id")
 
 
 @pytest.mark.asyncio

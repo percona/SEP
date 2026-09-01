@@ -150,7 +150,8 @@ async def get_delivery_executor(
 
     :param plan: The configured delivery plan to run.
     :param step_observer: A synchronous callback notified as each resolution step
-        starts and completes, for a caller that records send progress.
+        starts and ends, and when the terminal upload fails, for a caller that
+        records send progress.
     :return: The executor bound to the plan and its transport.
     """
     origin, path, query = split_endpoint(str(plan.endpoint))
