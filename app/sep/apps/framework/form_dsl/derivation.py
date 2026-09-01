@@ -461,9 +461,6 @@ def _build_ref_field(
         # otherwise so exclude_none keeps other apps' wire schemas unchanged.
         # MultiHostField may carry the key for wire uniformity, but only the
         # single-value HostField renderer honours it today.
-        #
-        # target_service: prefer HostRef when not None (None-check, not ``or``);
-        # else fall back to Ui(depends_on=...). Semantics: see HostRef.
         return field_class(
             **common,
             allow_custom=allow_custom,

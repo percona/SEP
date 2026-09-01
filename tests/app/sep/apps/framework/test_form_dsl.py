@@ -567,19 +567,16 @@ class _HostTargetServiceModel(AppFormModel):
         ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
         Ui(label="Other", section="s"),
     ]
-    # Marker only — no Ui(depends_on=...), so target_service is the sole source.
     explicit_only: Annotated[
         str,
         HostRef(target_service="service_id"),
         Ui(label="Explicit", section="s"),
     ]
-    # Marker wins over a different Ui(depends_on=...).
     precedence: Annotated[
         str,
         HostRef(target_service="other_id"),
         Ui(label="Precedence", section="s", depends_on="service_id"),
     ]
-    # No marker, no depends_on — key omitted from the wire.
     plain_host: Annotated[str, HostRef(), Ui(label="Plain Host", section="s")]
 
 
@@ -607,7 +604,6 @@ class TestReferenceFields:
         assert fields["hostname"].model_dump(exclude_none=True)["depends_on"] == (
             "service_id"
         )
-        # Cascade-only forms fall back: target_service mirrors depends_on.
         assert fields["hostname"].target_service == "service_id"
         assert "target_service" not in fields["plain_host"].model_dump(
             exclude_none=True
@@ -622,7 +618,6 @@ class TestReferenceFields:
         fields = _fields_by_name(_MultiHostCascadeModel)
         assert isinstance(fields["hosts"], MultiHostField)
         assert fields["hosts"].depends_on == "service_id"
-        # Wire uniformity: target_service falls back from depends_on too.
         assert fields["hosts"].target_service == "service_id"
 
     def test_host_ref_target_service_explicit_and_omitted(self) -> None:

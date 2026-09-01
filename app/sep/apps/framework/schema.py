@@ -462,7 +462,6 @@ class HostField(BaseField):
 
     :param field_type: The discriminator literal; always ``"host"`` for this
         class. Serialised as the JSON key ``"type"``.
-    :type field_type: Literal["host"]
     :param depends_on: Optional name of the field whose value drives the
         default executor selection. ``None`` (the default) omits the key from
         the wire so plugins that do not opt in stay byte-identical.
