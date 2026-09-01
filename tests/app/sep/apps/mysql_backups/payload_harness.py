@@ -32,6 +32,7 @@ import re
 import subprocess
 import types
 from collections.abc import Callable
+from typing import Any
 
 from tests.app.sep.apps.mysql_backups.conftest import (
     XTRABACKUP_PAYLOAD_PATH,
@@ -99,8 +100,11 @@ def load_constant(name: str) -> object:
 XBCRYPT_BIN = load_constant("XBCRYPT_BIN")
 
 
-def load_function(name: str) -> object:
-    """Exec a single module-level payload function with its constants seeded."""
+def load_function(name: str) -> Callable[..., Any]:
+    """Exec a single module-level payload function with its constants seeded.
+
+    :raises TypeError: If the extracted name is not callable.
+    """
     tree = xtrabackup_payload_tree()
     namespace = base_namespace()
     body = const_nodes(tree)
@@ -120,7 +124,10 @@ def load_function(name: str) -> object:
         ),
         namespace,
     )
-    return namespace[name]
+    extracted = namespace[name]
+    if not callable(extracted):
+        raise TypeError(f"{name} in {XTRABACKUP_PAYLOAD_PATH} is not callable.")
+    return extracted
 
 
 def gpg_probe(*, returncode: int = 0) -> tuple[Callable[..., bool], list[list[str]]]:

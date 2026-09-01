@@ -58,7 +58,6 @@ def _make_validation_error(title: str = "ValidationError") -> ValidationError:
             {
                 "type": "missing",
                 "loc": ("field",),
-                "msg": "Field required",
                 "input": {},
             }
         ],

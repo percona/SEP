@@ -108,7 +108,7 @@ async def test_null_value_rejected_at_insert(session: AsyncSession) -> None:
         "VALUES (CURRENT_TIMESTAMP, 'SEP_SETTINGS', 'k', NULL, 1)"
     )
     with pytest.raises(IntegrityError):
-        await session.execute(insert_stmt)
+        await session.exec(insert_stmt)
 
 
 @pytest.mark.asyncio

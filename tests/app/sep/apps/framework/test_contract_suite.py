@@ -194,7 +194,9 @@ class _WrongStatusCreateApp(TaskExecutionApp):
 
     def build_router(self) -> APIRouter:
         router = APIRouter()
-        form_param = Annotated[self.create_model, Body()]
+        form_param = Annotated[
+            self.create_model, Body()
+        ]  # ty: ignore[invalid-type-form]
 
         async def _create(form: form_param) -> SynthResponse:
             return SynthResponse(name=form.task_name)
@@ -219,7 +221,9 @@ class _NoGuardExecuteApp(TaskExecutionApp):
         write_model = self.execute_write_model
 
         async def _execute(
-            task: task_dep, body: write_model, tasks_api: TaskAPI
+            task: task_dep,
+            body: write_model,
+            tasks_api: TaskAPI,  # ty: ignore[invalid-type-form]
         ) -> SynthExecuteResponse:
             await tasks_api.post(
                 f"/execute/{task.name}", json=body.model_dump(exclude_none=True)
@@ -238,9 +242,17 @@ class _NoGuardExecuteApp(TaskExecutionApp):
 
 
 def _bind_suite(app_def: TaskExecutionApp) -> DerivedRouterContractTests:
-    suite = DerivedRouterContractTests()
-    suite.app_def = app_def
-    return suite
+    """Return a suite instance whose ``app_def`` class attribute is bound.
+
+    ``app_def`` is a ``ClassVar``, so it is bound on a subclass -- the way the
+    suite documents itself as being used -- rather than on the instance.
+    """
+    bound = type(
+        "BoundDerivedRouterContractTests",
+        (DerivedRouterContractTests,),
+        {"app_def": app_def},
+    )
+    return bound()
 
 
 def test_suite_detects_wrong_create_status(regular_user: CasdoorUser) -> None:

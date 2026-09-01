@@ -375,7 +375,9 @@ _NOMAD_CALLBACK_KEY = (SettingClassEnum.TASKS_SETTINGS, "NOMAD")
 _NOMAD_LEAF_TIMEOUT = 30
 
 
-def _make_tasks_proxy_registry() -> tuple[OverridableSettingsProxy, dict]:
+def _make_tasks_proxy_registry() -> tuple[
+    TasksSettings, dict[SettingClassEnum, ProxyEntry]
+]:
     """Construct the global Tasks proxy and a single-entry registry."""
     registry = {
         SettingClassEnum.TASKS_SETTINGS: ProxyEntry(tasks_settings, TasksSettings),

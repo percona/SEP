@@ -1581,6 +1581,7 @@ class TestSyncQueueItem:
             result = await sync_queue_item(pending_item.id)
 
         mock_executor.sync_task_history.assert_awaited_once()
+        assert mock_executor.sync_task_history.await_args is not None
         called_args, called_kwargs = mock_executor.sync_task_history.await_args
         assert called_args == (running_item,)
         assert "writer_session" in called_kwargs
