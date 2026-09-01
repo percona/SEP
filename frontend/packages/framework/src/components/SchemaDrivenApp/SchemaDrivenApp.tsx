@@ -77,7 +77,7 @@ interface SchemaDrivenAppProps {
   hideEntityTabs?: boolean;
   /**
    * When true, entity list tables that declare an ``actions`` column show a per-row delete
-   * control (inventory uses this with browse-only detail chrome).
+   * control. No app enables it today; it stays for a future multi-entity app.
    */
   allowListEntityDelete?: boolean;
   renderEntityDetailChildren?: (args: {

@@ -129,7 +129,7 @@ export interface AppDetailPageProps {
   resolveParentPath?: (pathname: string) => string | null;
   /** When true, omit the header row (back button, ``{title} #{id}``, status chip, edit/delete). */
   hideDetailChrome?: boolean;
-  /** When true, nested list tables may show row delete (inventory ``actions`` column). */
+  /** When true, nested list tables that declare an ``actions`` column may show row delete. */
   allowListEntityDelete?: boolean;
 }
 

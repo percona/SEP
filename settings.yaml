@@ -40,6 +40,18 @@ default:
     ANNOTATIONS_ENABLED: false
     ANNOTATIONS_TIMEOUT: 5  # Optional: PMM annotation request timeout in seconds
   SEP:
+    INVENTORY:
+      # Tombstone collection. A retired node/service/schema/table is deleted
+      # permanently once it has been retired for COLLECTION_RETENTION AND
+      # nothing SEP persisted still resolves it. Deletion is irreversible and
+      # cascades to the entity's subtree, so shortening the retention widens
+      # what a run removes. Nothing is ever deleted while the interval is null.
+      COLLECTION_INTERVAL: null  # Celery beat interval seeded for inventory-collection, e.g. "1 days"
+      COLLECTION_RETENTION: 30 days
+      # Entities of each type one API call may collect, and the most calls one
+      # scheduled run issues before leaving the rest to the next tick.
+      COLLECTION_BATCH_SIZE: 500
+      COLLECTION_MAX_BATCHES: 20
     SNIPPETS:
       # Restrict snippet sync to shell scripts. Bare strings are parsed as
       # extension filters; MIME-type filters use the "mime:<value>" form.

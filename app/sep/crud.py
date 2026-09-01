@@ -521,7 +521,7 @@ class SyncEntityAbsenceManager(BaseSQLModelManager):
     async def clear(
         cls,
         session: AsyncSession,
-        syncer: str,
+        syncer: str | None,
         entity_type: SyncInventoryEntityTypeEnum,
         *entity_ids: int,
     ) -> None:
@@ -533,17 +533,23 @@ class SyncEntityAbsenceManager(BaseSQLModelManager):
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :param syncer: The name of the synchronizer that observed the entities.
+        :param syncer: The name of the synchronizer that observed the entities, or
+            ``None`` to drop the rows of every syncer. A row outlives the
+            configuration that wrote it, so a caller clearing rows for an entity
+            that is going away needs the syncer-agnostic form: rows left by a
+            syncer since removed or renamed are unreachable by name.
         :param entity_type: The type of the inventory entities.
         :param entity_ids: The local identifiers whose ledger rows should be dropped.
         """
         if not entity_ids:
             return
+        scope: dict[str, Any] = {"entity_type": entity_type}
+        if syncer is not None:
+            scope["syncer"] = syncer
         await cls.delete_where(
             session,
             col(SyncEntityAbsence.entity_id).in_(entity_ids),
-            syncer=syncer,
-            entity_type=entity_type,
+            **scope,
         )
 
 

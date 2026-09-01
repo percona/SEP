@@ -883,7 +883,7 @@ class Snippet(BaseSnippet, BaseSQLModel, table=True):
 
     __table_args__ = (Index("ix_snippet_filename", "filename", unique=True),)
     approved_at: UTCDatetime | None = SQLField(
-        sa_type=DateTimeWithTimezone,
+        sa_type=DateTimeWithTimezone,  # ty: ignore[invalid-argument-type]
         default=None,
         index=True,
     )

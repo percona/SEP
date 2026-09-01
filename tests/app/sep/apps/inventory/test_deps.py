@@ -15,10 +15,9 @@
 
 """Define tests for the app.sep.apps.inventory.deps module."""
 
-import json
 import re
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import status
@@ -26,7 +25,6 @@ from fastapi import status
 from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPNotFoundException,
-    HTTPUnprocessableEntityException,
 )
 from app.core.requests import RemoteAPI
 from app.core.utils.fields import UniqueList
@@ -37,8 +35,6 @@ from app.sep.apps.inventory.deps import (
     filter_syncers_by_name,
     get_syncers,
     INVENTORY_PLUGIN_ENTITY_NAMES,
-    inventory_plugin_json_object_body,
-    inventory_service_create_path,
     inventory_service_detail_path,
     inventory_service_list_path,
     require_inventory_plugin_entity,
@@ -287,115 +283,6 @@ def test_inventory_service_detail_path_nodes_vs_collections():
     """Ensure node detail uses the ``/nodes/{id}`` path."""
     assert inventory_service_detail_path("nodes", 5) == "/nodes/5"
     assert inventory_service_detail_path("services", 5) == "/services/5"
-
-
-def test_inventory_service_create_path_nodes_and_nested_entities():
-    """Ensure POST paths match the inventory service nesting rules."""
-    assert inventory_service_create_path("nodes", {}) == "/nodes/"
-    assert (
-        inventory_service_create_path(
-            "services",
-            {"node_id": 9, "name": "x", "type": "mysql"},
-        )
-        == "/nodes/9/services/"
-    )
-    assert (
-        inventory_service_create_path(
-            "schemas",
-            {"service_id": 3, "name": "db"},
-        )
-        == "/services/3/schemas/"
-    )
-    assert (
-        inventory_service_create_path(
-            "tables",
-            {"schema_id": 2, "name": "t", "create": "...", "keys": "{}"},
-        )
-        == "/schemas/2/tables/"
-    )
-
-
-def test_inventory_service_create_path_raises_422_when_parent_id_missing():
-    """Ensure nested creates require the parent id field in the JSON body."""
-    with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
-        inventory_service_create_path("services", {"name": "x", "type": "mysql"})
-    assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-
-
-@pytest.mark.parametrize(
-    ("entity", "body"),
-    [
-        (
-            "services",
-            {"node_id": "abc", "name": "x", "type": "mysql"},
-        ),
-        (
-            "services",
-            {"node_id": True, "name": "x", "type": "mysql"},
-        ),
-        (
-            "services",
-            {"node_id": 0, "name": "x", "type": "mysql"},
-        ),
-        (
-            "schemas",
-            {"service_id": "xyz", "name": "db"},
-        ),
-        (
-            "tables",
-            {
-                "schema_id": {},
-                "name": "t",
-                "create": "CREATE TABLE t (id INT)",
-                "keys": "{}",
-            },
-        ),
-    ],
-)
-def test_inventory_service_create_path_raises_422_for_invalid_parent_id(entity, body):
-    """Ensure malformed parent ids raise HTTP 422 (never bare ``ValueError``)."""
-    with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
-        inventory_service_create_path(entity, body)
-    assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-
-
-@pytest.mark.parametrize(
-    "side_effect",
-    [
-        json.JSONDecodeError("Expecting value", "", 0),
-        UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"),
-    ],
-)
-@pytest.mark.asyncio
-async def test_inventory_plugin_json_object_body_raises_422_on_decode_errors(
-    side_effect: Exception,
-) -> None:
-    """Ensure ``request.json()`` decode/parse failures map to HTTP 422."""
-    request = MagicMock()
-    request.json = AsyncMock(side_effect=side_effect)
-    with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
-        await inventory_plugin_json_object_body(request)
-    assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-    assert excinfo.value.detail == "JSON object body required"
-
-
-@pytest.mark.asyncio
-async def test_inventory_plugin_json_object_body_raises_422_when_not_object() -> None:
-    """Ensure a JSON array body returns HTTP 422."""
-    request = MagicMock()
-    request.json = AsyncMock(return_value=[])
-    with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
-        await inventory_plugin_json_object_body(request)
-    assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-
-
-@pytest.mark.asyncio
-async def test_inventory_plugin_json_object_body_returns_dict() -> None:
-    """Ensure a valid JSON object passes through."""
-    request = MagicMock()
-    payload = {"name": "n"}
-    request.json = AsyncMock(return_value=payload)
-    assert await inventory_plugin_json_object_body(request) is payload
 
 
 def test_get_syncers_omits_unset_pmm_none() -> None:

@@ -40,6 +40,7 @@ from app.sep.apps.framework.registry import (
     AppRegistry,
     get_app_registry,
 )
+from app.sep.apps.inventory.config import InventoryAppSettings
 from app.sep.apps.report.config import health_report_settings, HealthReportSettings
 from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
 from app.sep.config import App, sep_settings, SEPSettings
@@ -368,6 +369,7 @@ async def test_proxy_map_composes_app_owned_and_sep_entries(mocker):
         SettingClassEnum.ALERT_SETTINGS,
         AlertsSettings.__name__,
         HealthReportSettings.__name__,
+        InventoryAppSettings.__name__,
     }
     alerts_entry = proxies[AlertsSettings.__name__]
     assert alerts_entry.proxy is alerts_settings
@@ -417,6 +419,30 @@ async def test_proxy_map_drops_alerts_but_keeps_core_alert_settings(mocker):
     alert_entry = proxies[SettingClassEnum.ALERT_SETTINGS]
     assert alert_entry.proxy is alert_settings
     assert alert_entry.settings_cls is AlertSettings
+
+
+@pytest.mark.asyncio
+async def test_callback_registry_drops_alerts_under_reduced_activation(mocker):
+    """Assert the callback registry follows the activation list, not a hardcoded import.
+
+    The PMM-embedded image strips every deactivated app package, so an entry
+    naming one is an import that cannot resolve there.
+    """
+    mocker.patch.object(sep_settings, "APPS", REDUCED_ACTIVATION)
+    get_app_registry.cache_clear()
+    original = getattr(main_module.sep_app.state, "override_callbacks", None)
+    try:
+        async with main_module.sep_overrides_lifespan(FastAPI()):
+            callbacks = dict(main_module.sep_app.state.override_callbacks)
+    finally:
+        main_module.sep_app.state.override_callbacks = original
+        get_app_registry.cache_clear()
+
+    assert not [key for key in callbacks if key[0] == AlertsSettings.__name__]
+    assert (
+        callbacks[(InventoryAppSettings.__name__, "COLLECTION_INTERVAL")]
+        is main_module._reseed_system_periodic_tasks
+    )
 
 
 @contextmanager

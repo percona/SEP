@@ -15,6 +15,7 @@
 
 """Define tests for the inventory plugin ``inventory_schema`` object."""
 
+from app.sep.apps.framework.schema import ColumnFormat
 from app.sep.apps.inventory.schema import inventory_schema
 
 
@@ -44,3 +45,15 @@ def test_inventory_list_views_advertise_server_side_query():
     for entity in inventory_schema.entities:
         assert entity.list_view is not None
         assert entity.list_view.server_side_query is True
+
+
+def test_inventory_entities_declare_no_authoring_surface():
+    """Assert no entity offers a create form or a row-action column."""
+    assert inventory_schema.entities is not None
+    for entity in inventory_schema.entities:
+        assert entity.forms == []
+        keys = {c.key for c in entity.list_view.columns}
+        assert "_actions" not in keys
+        assert all(
+            c.format is not ColumnFormat.ACTIONS for c in entity.list_view.columns
+        )
