@@ -39,6 +39,7 @@ _BASE_URL = "http://localhost:8000/"
 _UPLOAD_URL = "http://localhost:8000/attachment/upload"
 _TICKET_URL = "http://localhost:8000/ticket_details"
 _ACCOUNT_URL = "http://localhost:8000/case_account"
+_PROBE_URL = "http://localhost:8000/health"
 _MANIFEST: dict[str, Any] = {"bundle": "diag", "size": 12}
 _PLAN_LOGGER = "app.sep.bundle_upload.plan"
 
@@ -174,6 +175,20 @@ def _one_step_plan() -> dict[str, Any]:
             "reference_pointer": "/result/sys_id",
         },
     }
+
+
+def _probe_plan(**probe_overrides: Any) -> dict[str, Any]:
+    """Return an upload-only plan payload carrying an overridable probe step.
+
+    :param probe_overrides: Probe-step keys replacing the defaults below.
+    :return: The plan payload to validate.
+    """
+    probe = {"path": "health"}
+    probe.update(probe_overrides)
+    payload = _upload_only_plan()
+    payload["secrets"] = {"api_key": "real-api-key"}
+    payload["probe"] = probe
+    return payload
 
 
 def _two_step_plan() -> dict[str, Any]:
@@ -340,6 +355,110 @@ class TestDeliveryPlanValidation:
         payload = _upload_only_plan(fields={"week": {"source": "manifest_key"}})
         with pytest.raises(ValidationError):
             DeliveryPlan(**payload)
+
+
+class TestProbeStepValidation:
+    """Cover the probe step's narrowed value sources and same-origin path rule."""
+
+    def test_literal_and_secret_values_are_accepted(self):
+        """Accept the two sources a probe can resolve without a send in flight."""
+        payload = _probe_plan(
+            headers={"x-sn-apikey": {"source": "secret", "name": "api_key"}},
+            query={"sysparm_limit": {"source": "literal", "value": "1"}},
+        )
+
+        plan = DeliveryPlan(**payload)
+
+        assert plan.probe.headers["x-sn-apikey"].name == "api_key"
+        assert plan.probe.query["sysparm_limit"].value == "1"
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            {"source": "input", "field": "case_ref"},
+            {"source": "manifest_key", "key": "collected_at"},
+            {"source": "output", "step": "lookup", "output": "sys_id"},
+        ],
+        ids=["input", "manifest_key", "output"],
+    )
+    def test_send_scoped_sources_are_refused(self, source: dict[str, Any]):
+        """Reject every source that only a send in flight could supply."""
+        payload = _probe_plan(headers={"x-probe": source})
+
+        with pytest.raises(ValidationError, match="does not match any of the expected"):
+            DeliveryPlan(**payload)
+
+    def test_a_refused_source_fails_as_an_invalid_tag(self):
+        """Refuse a send-scoped source by its tag, so no message wording is load-bearing.
+
+        The refusal comes from the probe value type itself rather than from the
+        cross-reference validator, so a caller distinguishing this rejection from
+        a resolvable-but-wrong value has a stable error type to match on.
+        """
+        payload = _probe_plan(
+            headers={"x-probe": {"source": "input", "field": "case_ref"}}
+        )
+
+        with pytest.raises(ValidationError) as exc_info:
+            DeliveryPlan(**payload)
+
+        assert exc_info.value.errors()[0]["type"] == "union_tag_invalid"
+
+    def test_undeclared_secret_is_refused(self):
+        """Reject a probe secret the plan never declares, as any other step's is."""
+        payload = _probe_plan(
+            headers={"x-probe": {"source": "secret", "name": "missing"}}
+        )
+
+        with pytest.raises(ValidationError, match="undefined secret 'missing'"):
+            DeliveryPlan(**payload)
+
+    def test_secret_in_the_query_map_is_refused(self):
+        """Keep a probe credential out of the query string, as every other step does."""
+        payload = _probe_plan(query={"key": {"source": "secret", "name": "api_key"}})
+
+        with pytest.raises(ValidationError, match="may not use a secret"):
+            DeliveryPlan(**payload)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "https://attacker.example/probe",
+            "//attacker.example/probe",
+            "//",
+            "///probe",
+        ],
+        ids=[
+            "absolute_url",
+            "network_path_reference",
+            "bare_authority_marker",
+            "empty_authority",
+        ],
+    )
+    def test_an_off_origin_path_is_refused(self, path: str):
+        """Reject every spelling that is not a path under the plan's endpoint.
+
+        ``//`` and ``///probe`` carry an empty authority, which ``urlparse``
+        reports as a falsy ``netloc``; the explicit ``//`` prefix check is the
+        only clause that rejects them.
+        """
+        payload = _probe_plan(path=path)
+
+        with pytest.raises(ValidationError, match="must be relative"):
+            DeliveryPlan(**payload)
+
+    @pytest.mark.parametrize(
+        "path", ["api/now/table/x", "/api/now/table/x"], ids=["relative", "rooted"]
+    )
+    def test_ordinary_paths_are_accepted(self, path: str):
+        """Accept both spellings of a path that stays under the plan's endpoint."""
+        assert DeliveryPlan(**_probe_plan(path=path)).probe.path == path
+
+    def test_a_plan_without_a_probe_still_validates(self):
+        """Leave every already-deployed plan valid, with no probe declared."""
+        plan = DeliveryPlan(**_one_step_plan())
+
+        assert plan.probe is None
 
 
 @pytest.mark.asyncio
@@ -1474,3 +1593,180 @@ class TestDeliveryPlanExecutorStepObserver:
                     )
 
         assert records[-1].cited_inputs == ("manifest", "manifest.incident_id")
+
+
+@pytest.mark.asyncio
+class TestDeliveryPlanProbe:
+    """Cover issuing the plan's declared probe without sending a bundle."""
+
+    async def test_probe_issues_one_get_carrying_the_resolved_secret(
+        self, api: RemoteAPI
+    ):
+        """Issue one request carrying the plan's own credential to the receiver."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(
+                **_probe_plan(
+                    headers={"x-sn-apikey": {"source": "secret", "name": "api_key"}}
+                )
+            ),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(_PROBE_URL, status=status.HTTP_200_OK, payload={"result": []})
+            async with api:
+                await executor.probe()
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert len(requests) == 1
+        assert requests[0].kwargs["headers"]["x-sn-apikey"] == "real-api-key"
+
+    async def test_probe_sends_the_declared_query_parameters(self, api: RemoteAPI):
+        """Carry the probe's literal query pairs so a receiver can bound its answer."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(
+                **_probe_plan(
+                    query={"sysparm_limit": {"source": "literal", "value": "1"}}
+                )
+            ),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(
+                f"{_PROBE_URL}?sysparm_limit=1",
+                status=status.HTTP_200_OK,
+                payload={"result": []},
+            )
+            async with api:
+                await executor.probe()
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert requests[0].kwargs["params"] == {"sysparm_limit": "1"}
+
+    async def test_probe_without_a_query_map_omits_the_params_argument(
+        self, api: RemoteAPI
+    ):
+        """Drop an empty query map rather than sending an empty params dict."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_probe_plan()), api)
+        with aioresponses() as mock:
+            mock.get(_PROBE_URL, status=status.HTTP_200_OK, payload={})
+            async with api:
+                await executor.probe()
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert "params" not in requests[0].kwargs
+
+    async def test_probe_sends_no_body_and_refuses_to_follow_redirects(
+        self, api: RemoteAPI
+    ):
+        """Issue a bodiless GET that never replays the credential to a new origin."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_probe_plan()), api)
+        with aioresponses() as mock:
+            mock.get(_PROBE_URL, status=status.HTTP_200_OK, payload={})
+            async with api:
+                await executor.probe()
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert requests[0].kwargs["allow_redirects"] is False
+        assert requests[0].kwargs.get("json") is None
+        assert requests[0].kwargs.get("data") is None
+
+    @pytest.mark.parametrize("content_type", ["text/plain", "text/html"])
+    async def test_probe_accepts_a_healthy_receivers_non_json_answer(
+        self, api: RemoteAPI, content_type: str
+    ):
+        """Pass a 200 whose body is not JSON, since a probe reads no body.
+
+        ``RemoteAPI.request`` parses the body before it checks the status, so a
+        receiver acknowledging with plain text or an HTML health page would
+        otherwise be reported as an upstream error.
+        """
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_probe_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _PROBE_URL,
+                status=status.HTTP_200_OK,
+                body="OK",
+                content_type=content_type,
+            )
+            async with api:
+                await executor.probe()
+
+    async def test_probe_still_fails_on_a_non_json_error_answer(self, api: RemoteAPI):
+        """Keep a non-JSON 401 a failure, so a rejected credential still reports."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_probe_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _PROBE_URL,
+                status=status.HTTP_401_UNAUTHORIZED,
+                body="<html>denied</html>",
+                content_type="text/html",
+            )
+            async with api:
+                with pytest.raises(HTTPException) as exc_info:
+                    await executor.probe()
+
+        assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
+
+    async def test_probe_raises_on_a_redirect_instead_of_reporting_success(
+        self, api: RemoteAPI
+    ):
+        """Fail loudly when the receiver answers the probe with a redirect."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_probe_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _PROBE_URL,
+                status=status.HTTP_307_TEMPORARY_REDIRECT,
+                headers={"Location": "http://elsewhere.example/health"},
+            )
+            async with api:
+                with pytest.raises(HTTPException) as exc_info:
+                    await executor.probe()
+
+        assert exc_info.value.status_code == status.HTTP_307_TEMPORARY_REDIRECT
+
+    async def test_probe_secret_is_sent_but_masked_in_logs(
+        self, api: RemoteAPI, caplog
+    ):
+        """Send the real API key on the wire while the debug log shows only a mask."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(
+                **_probe_plan(
+                    headers={"x-sn-apikey": {"source": "secret", "name": "api_key"}}
+                )
+            ),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(_PROBE_URL, status=status.HTTP_200_OK, payload={})
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    await executor.probe()
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("****" in message for message in messages)
+        assert all("real-api-key" not in message for message in messages)
+
+    async def test_probe_without_a_declared_step_raises(self, api: RemoteAPI):
+        """Refuse to guess a probe request for a plan that declares none."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
+
+        with pytest.raises(DeliveryPlanError, match="declares no probe step"):
+            await executor.probe()
+
+    async def test_probe_runs_none_of_the_plans_resolution_steps(self, api: RemoteAPI):
+        """Leave a mutating resolution step unrun, reaching only the probe path."""
+        payload = _one_step_plan()
+        payload["probe"] = {"path": "health"}
+        executor = DeliveryPlanExecutor(DeliveryPlan(**payload), api)
+        with aioresponses() as mock:
+            mock.get(_PROBE_URL, status=status.HTTP_200_OK, payload={})
+            async with api:
+                await executor.probe()
+
+            requested = [str(key[1]) for key in mock.requests]
+
+        assert requested == [_PROBE_URL]
