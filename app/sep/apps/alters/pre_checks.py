@@ -110,11 +110,11 @@ class MySQLPreChecks:
         else:
             return True
 
-    def get_table_size_mb(self) -> float:
+    def get_table_size_mb(self) -> float | None:
         """Get the size of the table in MB.
 
         Returns:
-            float: Table size in MB, or None if query fails
+            float | None: Table size in MB, or None if query fails
 
         """
         if not self.connection:
@@ -147,11 +147,11 @@ class MySQLPreChecks:
             self.logger.exception("Failed to get table size")
             return None
 
-    def get_mysql_datadir(self) -> str:
+    def get_mysql_datadir(self) -> str | None:
         """Get the MySQL datadir path.
 
         Returns:
-            str: MySQL datadir path, or None if query fails
+            str | None: MySQL datadir path, or None if query fails
 
         """
         if not self.connection:
@@ -176,14 +176,14 @@ class MySQLPreChecks:
             self.logger.exception("Failed to get MySQL datadir")
             return None
 
-    def get_disk_space_mb(self, path: str) -> tuple[float, float]:
+    def get_disk_space_mb(self, path: str) -> tuple[float, float] | None:
         """Get free and total disk space for a given path.
 
         Args:
             path: Path to check disk space for
 
         Returns:
-            tuple: (free_space_mb, total_space_mb) or None if failed
+            tuple | None: (free_space_mb, total_space_mb) or None if failed
 
         """
         try:

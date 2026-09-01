@@ -38,7 +38,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine, create_async_engine
 from sqlalchemy.ext.compiler import compiles
-from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
+from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql import coercions, ColumnExpressionArgument, roles
 from sqlalchemy.sql.compiler import SQLCompiler
 from sqlalchemy.sql.dml import Insert as GenericInsert
@@ -66,7 +66,7 @@ def get_async_session_maker_from_engine(engine: AsyncEngine) -> async_sessionmak
     :return: A new asynchronous session maker.
     :rtype: async_sessionmaker
     """
-    return sessionmaker(
+    return async_sessionmaker(
         engine,
         class_=AsyncSession,
         expire_on_commit=False,

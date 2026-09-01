@@ -34,6 +34,7 @@ from pydantic import (
     Field,
     FilePath,
     GetCoreSchemaHandler,
+    GetJsonSchemaHandler,
     HttpUrl,
     PlainSerializer,
     StringConstraints,
@@ -247,7 +248,7 @@ class URL(StarletteURL):
     def __get_pydantic_json_schema__(
         cls,
         core_schema: core_schema.CoreSchema,
-        handler: GetCoreSchemaHandler,
+        handler: GetJsonSchemaHandler,
     ) -> JsonSchemaValue:
         """Provide the JSON schema for the custom URL type.
 
@@ -257,7 +258,7 @@ class URL(StarletteURL):
         :param core_schema: The core schema for the URL.
         :type core_schema: core_schema.CoreSchema
         :param handler: The handler for JSON schema retrieval.
-        :type handler: GetCoreSchemaHandler
+        :type handler: GetJsonSchemaHandler
         :return: The JSON schema for the `URL` type.
         :rtype: JsonSchemaValue
         """

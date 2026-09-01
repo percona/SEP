@@ -99,7 +99,7 @@ derive_cascade_create_route(
 )
 
 
-@router.put("/{task_name}")
+@router.put("/{task_name}", response_model=AltersTaskResponseUpdate)
 async def alters_api_update(
     parent_task: EditableAltersParent,
     body: AltersCreate,
@@ -107,7 +107,7 @@ async def alters_api_update(
     inventory_api: InventoryAPI,
     *,
     check_connectivity: Annotated[bool, Query()] = True,
-) -> AltersTaskResponseUpdate:
+) -> AltersTaskResponse:
     """Update an alters task group from a JSON payload request body.
 
     :param check_connectivity: Whether to verify the target database is

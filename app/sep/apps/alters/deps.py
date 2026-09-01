@@ -452,9 +452,7 @@ async def build_alters_cascade_plan(
 AltersCascadePlan = Annotated[CascadeCreatePlan, Depends(build_alters_cascade_plan)]
 
 
-async def render_alters_create(
-    task: Task, _tasks_api: TaskAPI
-) -> AltersTaskResponseCreate:
+async def render_alters_create(task: Task, _tasks_api: TaskAPI) -> AltersTaskResponse:
     """Render the alters create response, matching the cascade builder contract.
 
     The uniform ``response_builder`` contract is ``async (task, tasks_api)``;

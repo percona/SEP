@@ -17,7 +17,7 @@
 
 import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal, overload
 
 import aiohttp
 from fastapi import Depends, HTTPException, Request
@@ -31,7 +31,11 @@ from app.api.deps import oauth2_scheme
 from app.core.auth import config as auth_config
 from app.core.auth.base import BaseAuthProvider
 from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
-from app.core.auth.models import OAuthToken, SessionExchangeTokenResponse
+from app.core.auth.models import (
+    BaseUser,
+    OAuthToken,
+    SessionExchangeTokenResponse,
+)
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import (
@@ -86,7 +90,7 @@ def get_base_url(request: Request) -> URL:
 
 async def get_current_user(
     request: Request,
-) -> User:
+) -> BaseUser:
     """Return the authenticated user from the ``Authorization: Bearer`` header.
 
     The header is checked explicitly before delegating to ``oauth2_scheme``:
@@ -111,7 +115,7 @@ async def get_current_user(
 
 
 IsApiAuthenticated = Depends(get_current_user)
-ApiCurrentUser = Annotated[User, IsApiAuthenticated]
+ApiCurrentUser = Annotated[BaseUser, IsApiAuthenticated]
 
 
 BEARER_REQUIRED_DETAIL = "Bearer authentication required for state-changing requests."
@@ -146,7 +150,7 @@ async def require_bearer_for_unsafe_methods(request: Request) -> None:
 RequireBearerForUnsafeMethods = Depends(require_bearer_for_unsafe_methods)
 
 
-async def get_api_authenticated_admin(api_user: ApiCurrentUser) -> User:
+async def get_api_authenticated_admin(api_user: ApiCurrentUser) -> BaseUser:
     """Return the authenticated API admin user.
 
     :param api_user: The current API-authenticated user.
@@ -161,7 +165,7 @@ async def get_api_authenticated_admin(api_user: ApiCurrentUser) -> User:
 
 
 IsApiAdmin = Depends(get_api_authenticated_admin)
-ApiAdminUser = Annotated[User, IsApiAdmin]
+ApiAdminUser = Annotated[BaseUser, IsApiAdmin]
 
 
 def _ambient_session_provider() -> BaseAuthProvider | None:
@@ -533,6 +537,51 @@ async def require_pmm_api(pmm_api: PMMAPIDep) -> PMMRemoteAPI:
 RequiredPMMAPIDep = Annotated[PMMRemoteAPI, Depends(require_pmm_api)]
 
 
+@overload
+async def get_created_entity(
+    inventory_api: InventoryAPI,
+    entity_type: Literal[SyncInventoryEntityTypeEnum.NODE],
+    entity_id: int,
+    **filters: Any,
+) -> CreatedNode: ...
+
+
+@overload
+async def get_created_entity(
+    inventory_api: InventoryAPI,
+    entity_type: Literal[SyncInventoryEntityTypeEnum.SERVICE],
+    entity_id: int,
+    **filters: Any,
+) -> CreatedService: ...
+
+
+@overload
+async def get_created_entity(
+    inventory_api: InventoryAPI,
+    entity_type: Literal[SyncInventoryEntityTypeEnum.SCHEMA],
+    entity_id: int,
+    **filters: Any,
+) -> CreatedSchema: ...
+
+
+@overload
+async def get_created_entity(
+    inventory_api: InventoryAPI,
+    entity_type: Literal[SyncInventoryEntityTypeEnum.TABLE],
+    entity_id: int,
+    **filters: Any,
+) -> CreatedTable: ...
+
+
+@overload
+async def get_created_entity(
+    inventory_api: InventoryAPI,
+    entity_type: SyncInventoryEntityTypeEnum,
+    entity_id: int,
+    **filters: Any,
+) -> CreatedEntity: ...
+
+
 async def get_created_entity(
     inventory_api: InventoryAPI,
     entity_type: SyncInventoryEntityTypeEnum,
@@ -540,6 +589,9 @@ async def get_created_entity(
     **filters: Any,
 ) -> CreatedEntity:
     """Retrieve a created entity instance based on the given entity type and ID.
+
+    The overloads restate ``ENTITY_MAPPING``'s entity-type to model pairing, so a
+    caller naming one type gets that model rather than the whole union.
 
     Fetches the entity data from the Inventory API and validates it into a
     `CreatedEntityBase` model. Additional filters might be passed for extra validation.
@@ -557,7 +609,7 @@ async def get_created_entity(
     :raises ValueError: If one of the optional filters fail.
     """
     entity_path, entity_model = ENTITY_MAPPING[entity_type]
-    entity_data = await inventory_api.get(f"{entity_path}/{entity_id}")
+    entity_data = as_json_object(await inventory_api.get(f"{entity_path}/{entity_id}"))
     entity = entity_model.model_validate(entity_data)
     for field, expected_value in filters.items():
         if (value := entity_data.get(field)) != expected_value:
@@ -858,12 +910,16 @@ async def check_for_conflicted_running_tasks(
     :raises HTTPConflictException: If there are running or pending tasks with the same
         name.
     """
-    response = await tasks_api.get(
-        f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    response = as_json_object(
+        await tasks_api.get(
+            f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+        )
     )
     running_tasks = response["items"]
-    response = await tasks_api.get(
-        f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.PENDING}
+    response = as_json_object(
+        await tasks_api.get(
+            f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.PENDING}
+        )
     )
     pending_tasks = response["items"]
     if running_tasks or pending_tasks:
