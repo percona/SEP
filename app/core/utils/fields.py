@@ -95,7 +95,9 @@ def get_enum_from_value_or_name_factory(enum_class: type[E]) -> Callable[[Any], 
     """
     enum_class_name = enum_class.__name__
 
-    def get_enum_from_value_or_name(value_or_name: Any) -> enum_class:
+    def get_enum_from_value_or_name(
+        value_or_name: Any,
+    ) -> enum_class:  # ty: ignore[invalid-type-form]
         """Return the {enum_class} from its value or name.
 
         :param value_or_name: The value or name of the {enum_class} to return.

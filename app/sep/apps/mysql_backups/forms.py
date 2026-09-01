@@ -332,7 +332,7 @@ class BackupCreate(TaskFormModel):
         str | EmptyStrToNone, _MYDUMPER_ONLY, Ui(label="Extra args", section="Mydumper")
     ] = None
     mydumper_verbose: Annotated[
-        bounded_int_from_empty_str_factory(0, 3),
+        bounded_int_from_empty_str_factory(0, 3),  # ty: ignore[invalid-type-form]
         _MYDUMPER_ONLY,
         Ui(label="Verbose level", section="Mydumper"),
     ] = None

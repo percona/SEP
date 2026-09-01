@@ -32,7 +32,9 @@ router = APIRouter()
 User = get_user_model()
 
 
-@router.get("/", dependencies=[IsAdminDep], response_model=list[User])
+@router.get(
+    "/", dependencies=[IsAdminDep], response_model=list[User]
+)  # ty: ignore[invalid-type-form]
 async def list_users() -> Sequence[BaseUser]:
     """List users.
 

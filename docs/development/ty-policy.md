@@ -109,9 +109,16 @@ ty check        ->  Found 3926 diagnostics, exit 1
 
 The two agree because they now carry identical argument lists — none.
 
-That figure predates the artifact suppressions. Under the configuration as it
-now stands the same command reports **3,626**; the before/after split and what
-moved between them are in *Neutralized dependency-typing artifacts* below.
+That figure predates both the artifact suppressions and SEP-1908's first-party
+fixes. Under the tree as it now stands, measured on SEP-1908 with the pinned
+`ty 0.0.49`, the same command reports **3,178 — 0 error, 3,178 warning**, and
+`make typecheck` exits **0**. The before/after split for the suppressions alone,
+and what moved between them, are in *Neutralized dependency-typing artifacts*
+below.
+
+The error count reaching zero is what SEP-1908 was for; the warning fleet is
+unchanged by design, because the nine rules at `warn` mix first-party defects
+with dependency-typing artifacts and clearing them is separate work.
 
 The two exit codes differ because `make` reports its own status: `ty` exits 1
 when it finds diagnostics, and `make` turns any failed recipe into exit 2.
@@ -504,6 +511,13 @@ report — which is why close calls in this table go to `warn` rather than
   recorded baseline. Only that one figure is re-measured: the per-rule hit
   counts and the sampling record stay as they are, dated evidence for calls
   already made rather than values to keep current.
+- **Clearing diagnostics in bulk** — the same re-measure applies, for the same
+  reason and with the same limit. A change that drives a rule's count to zero,
+  or that narrows a first-party signature enough to reveal diagnostics standing
+  behind it, moves the recorded baseline; update that figure and nothing else.
+  Expect the total to rise before it falls: correcting an annotation ty was
+  giving up on exposes what it was hiding, so measure iteratively rather than
+  projecting a burn-down.
 - **Adding or removing a suppression** — never by hand. Add the shape to
   `GROUPS` in `scripts/classify_ty_diagnostics.py` with the discriminant it
   classifies on, then let `report` say which (file, rule) pairs take an override

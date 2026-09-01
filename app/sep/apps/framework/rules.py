@@ -160,12 +160,18 @@ class FieldExpr:
             )
         self.name = name
 
-    def __eq__(self, other: object) -> Predicate:  # type: ignore[override]
+    # `object.__eq__` / `__ne__` are declared `-> bool` in typeshed and cannot
+    # move, so returning a Predicate node -- which is what makes `F("x") == v`
+    # build a rule, as SQLAlchemy does for a column -- can only be a Liskov
+    # violation. Registered in classify_ty_diagnostics.py as
+    # `predicate-dsl-comparison-operators`; the previous `type: ignore[override]`
+    # here was mypy syntax and suppressed nothing.
+    def __eq__(self, other: object) -> Predicate:  # ty: ignore[invalid-method-override]
         if isinstance(other, FieldExpr):
             return AllEqual([self.name, other.name])
         return Equals(self.name, other)
 
-    def __ne__(self, other: object) -> Predicate:  # type: ignore[override]
+    def __ne__(self, other: object) -> Predicate:  # ty: ignore[invalid-method-override]
         if isinstance(other, FieldExpr):
             return Not(AllEqual([self.name, other.name]))
         return NotEquals(self.name, other)

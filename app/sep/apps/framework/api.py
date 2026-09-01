@@ -1030,7 +1030,7 @@ def _register_list_route(
             _list,
             methods=["GET"],
             summary="List",
-            response_model=list[list_detail_model],
+            response_model=list[list_detail_model],  # ty: ignore[invalid-type-form]
             response_model_by_alias=True,
             dependencies=[IsApiAuthenticated],
         )
@@ -1058,7 +1058,9 @@ def _register_list_route(
             _list_paginated,
             methods=["GET"],
             summary="List",
-            response_model=PaginatedResponse[list_detail_model],
+            response_model=PaginatedResponse[
+                list_detail_model
+            ],  # ty: ignore[invalid-type-form]
             response_model_by_alias=True,
             dependencies=[IsApiAuthenticated],
         )
@@ -1446,7 +1448,7 @@ def derive_execute_route(
 
     async def execute(
         task: task_dep,
-        body: write_model,
+        body: write_model,  # ty: ignore[invalid-type-form]
         tasks_api: TaskAPI,
     ) -> BaseModel:
         """Resolve, dispatch, and wrap a standard task execution."""
@@ -1775,7 +1777,7 @@ def derive_script_routes(
     script_param = Annotated[Any, Depends(make_script_dep(source))]
 
     list_model = (
-        list[source.list_response_model]
+        list[source.list_response_model]  # ty: ignore[invalid-type-form]
         if source.list_response_model is not None
         else None
     )
@@ -1799,7 +1801,9 @@ def derive_script_routes(
     else:
         paginated_param = Annotated[Pagination, Depends(pagination_dep)]
         paginated_list_model = (
-            PaginatedResponse[source.list_response_model]
+            PaginatedResponse[
+                source.list_response_model
+            ]  # ty: ignore[invalid-type-form]
             if source.list_response_model is not None
             else PaginatedResponse
         )
