@@ -299,12 +299,10 @@ async def find_or_create_account(provider: GrafanaSDK) -> tuple[int, bool]:
     The lookup decides that, not the refusal's status, because Grafana's
     duplicate-name status varies by release.
 
-    The second element is ``True`` when the id came from a search (initial or
-    race-recovery) rather than a create this call performed.
+    The second element is ``True`` when this call created the account.
 
     :param provider: The open Grafana client, authenticated as the admin.
-    :return: The service account's id, and whether it was reused rather than
-        created.
+    :return: The service account's id, and whether this call created it.
     :raises MintError: When Grafana creates an account but answers no id.
     :raises HTTPException: When Grafana refuses the creation and no account of
         that name exists afterwards.
@@ -312,7 +310,7 @@ async def find_or_create_account(provider: GrafanaSDK) -> tuple[int, bool]:
     """
     existing = await search_account(provider)
     if existing is not None:
-        return existing, True
+        return existing, False
     try:
         created = await provider.post(
             SERVICE_ACCOUNTS_PATH,
@@ -326,7 +324,7 @@ async def find_or_create_account(provider: GrafanaSDK) -> tuple[int, bool]:
         winner = await search_account(provider)
         if winner is None:
             raise
-        return winner, True
+        return winner, False
     account_id = created.get("id") if isinstance(created, Mapping) else None
     if account_id is None:
         raise MintError(
@@ -334,7 +332,7 @@ async def find_or_create_account(provider: GrafanaSDK) -> tuple[int, bool]:
             f"{SERVICE_ACCOUNT_NAME!r}; the response was a "
             f"{type(created).__name__}."
         )
-    return account_id, False
+    return account_id, True
 
 
 async def mint(provider: GrafanaSDK, credentials: str) -> tuple[str, bool]:
@@ -356,7 +354,7 @@ async def mint(provider: GrafanaSDK, credentials: str) -> tuple[str, bool]:
         provider.auth(credentials, auth_scheme="Basic"),
         quiet_client_logging(provider, logging.INFO),
     ):
-        account_id, reused = await find_or_create_account(provider)
+        account_id, account_created = await find_or_create_account(provider)
         created = await provider.post(
             f"{SERVICE_ACCOUNTS_PATH}/{account_id}/tokens", json={"name": token_name()}
         )
@@ -367,7 +365,7 @@ async def mint(provider: GrafanaSDK, credentials: str) -> tuple[str, bool]:
             f"service account {account_id}; the response was a "
             f"{type(created).__name__}."
         )
-    return token.strip(), reused
+    return token.strip(), not account_created
 
 
 async def mint_with_retry(
