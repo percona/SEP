@@ -24,6 +24,7 @@ from pydantic import (
     ConfigDict,
     field_validator,
     model_validator,
+    NonNegativeInt,
     PositiveInt,
 )
 from sqlalchemy import Column, Index, JSON, Text, text
