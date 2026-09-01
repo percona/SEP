@@ -21,13 +21,16 @@ from __future__ import annotations
 import argparse
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.util.exc import CommandError
 
 from scripts.alembic_tracks import add_ini_argument, list_track_names
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass(frozen=True)

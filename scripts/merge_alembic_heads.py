@@ -29,7 +29,7 @@ import argparse
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from alembic import command
 from alembic.config import Config
@@ -37,6 +37,9 @@ from alembic.script import ScriptDirectory
 from alembic.util.exc import CommandError
 
 from scripts.alembic_tracks import add_ini_argument, list_track_names
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # A branch is forked when more than one head shares the same root.
 _MIN_FORK_HEADS = 2
@@ -108,7 +111,7 @@ def _merge_message(track: str, heads: tuple[str, ...], script: ScriptDirectory) 
     """Build a non-interactive merge message from the branch, when known.
 
     Prefer a single inherited branch label shared by the forked heads; fall
-    back to the track name when heads carry no labels.
+    back to the track name when they do not share exactly one label.
 
     :param track: Alembic config section name.
     :param heads: Forked head revision ids.
@@ -153,37 +156,30 @@ def plan_merges(ini_path: Path, track: str) -> tuple[MergeAction, ...]:
     return tuple(actions)
 
 
-def apply_merges(
-    ini_path: Path, actions: tuple[MergeAction, ...]
-) -> tuple[MergeAction, ...]:
-    """Create merge revision files for each planned action.
+def apply_merges(ini_path: Path, action: MergeAction) -> MergeAction:
+    """Create a merge revision file for one planned action.
 
     :param ini_path: Path to ``alembic.ini``.
-    :param actions: Planned merges from :func:`plan_merges`.
-    :return: The same actions with ``revision`` filled in from Alembic.
+    :param action: Planned merge from :func:`plan_merges`.
+    :return: The same action with ``revision`` filled in from Alembic.
     :raises ValueError: When a track section is misconfigured.
     :raises OSError: When writing a merge revision file fails.
     :raises CommandError: When Alembic rejects resolving or writing a merge.
     """
-    applied: list[MergeAction] = []
-    for action in actions:
-        cfg = Config(str(ini_path), ini_section=action.track)
-        script = command.merge(
-            cfg,
-            revisions=list(action.heads),
-            message=action.message,
-        )
-        revision = script.revision if script is not None else None
-        applied.append(
-            MergeAction(
-                track=action.track,
-                root=action.root,
-                heads=action.heads,
-                message=action.message,
-                revision=revision,
-            )
-        )
-    return tuple(applied)
+    cfg = Config(str(ini_path), ini_section=action.track)
+    script = command.merge(
+        cfg,
+        revisions=list(action.heads),
+        message=action.message,
+    )
+    revision = script.revision if script is not None else None
+    return MergeAction(
+        track=action.track,
+        root=action.root,
+        heads=action.heads,
+        message=action.message,
+        revision=revision,
+    )
 
 
 def _format_merge_line(action: MergeAction) -> str:
@@ -228,10 +224,10 @@ def merge_forked_heads(
     applied: list[MergeAction] = []
     try:
         for track in tracks:
-            for action in plan_merges(ini_path, track):
-                # Apply one action at a time so a failure mid-track still
-                # leaves earlier successful merges in ``applied``.
-                applied.extend(apply_merges(ini_path, (action,)))
+            applied.extend(
+                apply_merges(ini_path, action)
+                for action in plan_merges(ini_path, track)
+            )
     except (ValueError, OSError, CommandError) as exc:
         if applied:
             raise PartialMergeError(exc, tuple(applied)) from exc
