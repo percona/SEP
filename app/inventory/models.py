@@ -187,9 +187,6 @@ class SyncOutcomeEnum(StrEnum):
 
     :cvar SUCCESS: The entity was compared against its source and updated.
     :cvar FAILURE: The attempt raised before the comparison completed.
-
-    Values are spelled out for the reason given on
-    :class:`IdentityLinkDecisionEnum`: this enum is a request body field.
     """
 
     SUCCESS = "success"
