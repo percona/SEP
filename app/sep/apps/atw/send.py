@@ -790,7 +790,8 @@ def _upstream_detail(exc: Exception) -> str:
     """Return the message ``exc`` carries, preferring a project exception's detail.
 
     :param exc: The exception to describe.
-    :return: The exception's ``detail`` when it has one, else its string form.
+    :return: The exception's ``detail`` when it carries a non-empty one, else
+        its string form.
     """
     detail = getattr(exc, "detail", None)
     return str(detail) if detail else str(exc)
