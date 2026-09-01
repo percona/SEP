@@ -123,9 +123,10 @@ services:
         PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-a2f83c2}
     # service_started, not service_healthy: this node consumes none of the SEP
     # secret provisioning pmm-server's health now gates on, and ordering is all
-    # it needs — pmm-managed starts answering registration requests later still,
-    # and the entrypoint's own bounded retry (retry_cmd 30 2 pmm-agent setup,
-    # 60s) already covers that wait.
+    # it needs — pmm-managed starts answering registration requests later still.
+    # On first registration the entrypoint retries `pmm-agent setup` for 60s;
+    # recreates preserve that registration and instead wait up to 180s for
+    # `pmm-admin list` to confirm the reconnected agent.
     depends_on:
       pmm-server:
         condition: service_started
