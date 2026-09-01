@@ -16,7 +16,7 @@
 """Define tests for the core list-query framework (spec, dependency, predicate)."""
 
 import inspect
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Annotated
 
 import pytest
@@ -410,7 +410,7 @@ async def _lq_nosearch_route(
 
 
 @pytest_asyncio.fixture(name="lq_session")
-async def lq_session_fixture() -> AsyncSession:
+async def lq_session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an isolated SQLite session seeded with ordered, searchable rows."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",
@@ -431,10 +431,12 @@ async def lq_session_fixture() -> AsyncSession:
 
 
 @pytest_asyncio.fixture(name="lq_client")
-async def lq_client_fixture(lq_session: AsyncSession) -> AsyncClient:
+async def lq_client_fixture(
+    lq_session: AsyncSession,
+) -> AsyncGenerator[AsyncClient, None]:
     """Yield an async client bound to the throwaway list-query app."""
 
-    async def _override_session() -> AsyncSession:
+    async def _override_session() -> AsyncGenerator[AsyncSession, None]:
         yield lq_session
 
     _SESSION_SENTINEL_APP.dependency_overrides[_get_lq_session] = _override_session

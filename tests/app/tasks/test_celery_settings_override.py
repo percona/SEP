@@ -16,6 +16,7 @@
 """Define tests for the Tasks worker's settings-override wiring."""
 
 import asyncio
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -84,7 +85,7 @@ def _write_cert(path: Path, *, not_valid_after: datetime) -> None:
 
 
 @pytest_asyncio.fixture(name="override_session_maker")
-async def _override_session_maker() -> async_sessionmaker:
+async def _override_session_maker() -> AsyncGenerator[async_sessionmaker, None]:
     """Provide an in-memory SQLite session maker isolated from the main test DB."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",

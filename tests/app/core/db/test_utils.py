@@ -15,6 +15,7 @@
 
 """Define tests for the app.core.db.utils module."""
 
+from collections.abc import AsyncGenerator
 from contextlib import nullcontext
 from unittest.mock import MagicMock
 
@@ -522,7 +523,9 @@ _json_probe = Table(
 
 
 @pytest_asyncio.fixture
-async def json_probe_session(postgres_engine: AsyncEngine) -> AsyncSession:
+async def json_probe_session(
+    postgres_engine: AsyncEngine,
+) -> AsyncGenerator[AsyncSession, None]:
     """Create the module-local JSON probe table on real PG and yield a session.
 
     Layered on the shared ``postgres_engine`` so cells 1-3 exercise

@@ -22,6 +22,7 @@ route is verified at the framework level, not just in unit tests.
 """
 
 import asyncio
+from collections.abc import Iterator
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -55,7 +56,7 @@ def _nomad_executor(endpoint: str) -> NomadExecutor:
 
 
 @pytest.fixture
-def holder_client(regular_user: CasdoorUser) -> TestClient:
+def holder_client(regular_user: CasdoorUser) -> Iterator[TestClient]:
     """Yield a Tasks client whose lifecycle holder serves a stub executor."""
     stub = MagicMock()
     stub.get_hosts = MagicMock(return_value={"node1": "10.0.0.1"})

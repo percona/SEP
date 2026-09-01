@@ -17,7 +17,7 @@
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
 
 import pytest
 import pytest_asyncio
@@ -91,7 +91,7 @@ def recording_start_refresh_task(
 
 
 @pytest.fixture(autouse=True)
-def _propagate_cache_logs() -> None:
+def _propagate_cache_logs() -> Iterator[None]:
     """Allow ``caplog`` to see ``app.core.settings_override.cache`` warnings.
 
     The application's ``LOGGING_CONFIG`` sets ``propagate=False`` on the
@@ -124,7 +124,7 @@ def restrict_fixture(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an in-memory SQLite async session for override tests."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",

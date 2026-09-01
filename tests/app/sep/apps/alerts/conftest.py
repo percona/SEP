@@ -15,6 +15,8 @@
 
 """Define shared fixtures for the alerts plugin tests."""
 
+from collections.abc import AsyncGenerator
+
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -26,7 +28,7 @@ from tests.app.db_schema import apply_schema
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an async db session for testing."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",

@@ -16,7 +16,7 @@
 """Tests for the ``AppRegistry`` and its builders in ``registry.py``."""
 
 import importlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from types import SimpleNamespace
 from typing import Any
 
@@ -61,7 +61,7 @@ from tests.app.sep.conftest import REDUCED_ACTIVATION
 
 
 @pytest.fixture(autouse=True)
-def _clear_registry_cache() -> None:
+def _clear_registry_cache() -> Iterator[None]:
     """Reset the cached registry so each test rebuilds from its own input."""
     get_app_registry.cache_clear()
     yield

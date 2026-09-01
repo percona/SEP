@@ -15,6 +15,7 @@
 
 """Define tests for CRUD pagination helpers."""
 
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, UTC
 
 import pytest
@@ -137,7 +138,7 @@ class UniqueKeyUUIDManager(BaseSQLModelManager):
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an isolated async database session for CRUD pagination tests."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",

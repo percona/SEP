@@ -15,6 +15,7 @@
 
 """Tests for the SEP app-info JSON API route at ``/api/sep/app-info/``."""
 
+from collections.abc import Iterator
 from string import Template
 
 import pytest
@@ -74,7 +75,7 @@ class TestAppInfoAuth:
     """Tests for ``/api/sep/app-info/`` authentication enforcement."""
 
     @pytest.fixture
-    def unauthenticated_client(self) -> TestClient:
+    def unauthenticated_client(self) -> Iterator[TestClient]:
         """Yield a TestClient with no auth dependency overrides applied."""
         previous = sep_app.dependency_overrides
         sep_app.dependency_overrides = {}

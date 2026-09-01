@@ -15,6 +15,8 @@
 
 """Define tests for the unsafe-method role gate on the Inventory sub-app."""
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
@@ -48,7 +50,7 @@ SERVICE_TOKEN = "supersecret"
 
 
 @pytest.fixture
-def bearer_client(session: AsyncSession, casdoor_mock) -> TestClient:
+def bearer_client(session: AsyncSession, casdoor_mock) -> Iterator[TestClient]:
     """Yield an Inventory TestClient that authenticates by Bearer token.
 
     No authentication dependency is overridden: the gate resolves the user

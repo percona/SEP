@@ -508,7 +508,7 @@ def postgres_worker_schema() -> str:
 
 
 @pytest_asyncio.fixture
-async def postgres_engine() -> AsyncEngine:
+async def postgres_engine() -> AsyncGenerator[AsyncEngine, None]:
     """Provide a real-PostgreSQL ``AsyncEngine`` for dialect-specific SQL tests.
 
     Connect through the already-present ``asyncpg`` driver to the DSN in
@@ -546,7 +546,9 @@ async def postgres_engine() -> AsyncEngine:
 
 
 @pytest_asyncio.fixture
-async def postgres_session(postgres_engine: AsyncEngine) -> AsyncSession:
+async def postgres_session(
+    postgres_engine: AsyncEngine,
+) -> AsyncGenerator[AsyncSession, None]:
     """Provide a real-PostgreSQL ``AsyncSession`` with the tasks-service tables.
 
     Create every ``SQLModel`` table (including ``TaskHistory`` with its ``jsonb``
@@ -587,7 +589,7 @@ def mysql_worker_database() -> str:
 
 
 @pytest_asyncio.fixture
-async def mysql_engine() -> AsyncEngine:
+async def mysql_engine() -> AsyncGenerator[AsyncEngine, None]:
     """Provide a real-MySQL ``AsyncEngine`` for dialect-specific SQL tests.
 
     Mirror :func:`postgres_engine`, including its skip contract: an unset env var
@@ -615,7 +617,9 @@ async def mysql_engine() -> AsyncEngine:
 
 
 @pytest_asyncio.fixture
-async def mysql_session(mysql_engine: AsyncEngine) -> AsyncSession:
+async def mysql_session(
+    mysql_engine: AsyncEngine,
+) -> AsyncGenerator[AsyncSession, None]:
     """Provide a real-MySQL ``AsyncSession`` over the MySQL-creatable ``SQLModel`` tables.
 
     Mirror :func:`postgres_session`: create the tables in the worker database, yield
@@ -700,7 +704,9 @@ async def celery_beat_session_fixture(
 
 
 @pytest.fixture
-def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
+def test_client(
+    regular_user: CasdoorUser, session: AsyncSession
+) -> Iterator[TestClient]:
     """Yield an authenticated cookie-auth TestClient for the SEP app.
 
     Overrides ``require_bearer_for_unsafe_methods`` so cookie-only JSON
@@ -726,7 +732,7 @@ def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
 
 
 @pytest.fixture
-def api_admin_client_no_bearer(admin_user: CasdoorUser) -> TestClient:
+def api_admin_client_no_bearer(admin_user: CasdoorUser) -> Iterator[TestClient]:
     """Yield a cookie-auth admin TestClient with the Bearer gate intact.
 
     Mirrors :func:`test_client` but deliberately leaves
@@ -751,7 +757,9 @@ def unauthenticated_client() -> Iterator[TestClient]:
 
 
 @pytest_asyncio.fixture
-async def async_test_client(regular_user: CasdoorUser) -> AsyncClient:
+async def async_test_client(
+    regular_user: CasdoorUser,
+) -> AsyncGenerator[AsyncClient, None]:
     """Yield an authenticated async cookie-auth client for the SEP app.
 
     See :func:`test_client` for the gate-override rationale.
@@ -832,7 +840,7 @@ def dummy_request() -> Request:
 
 
 @pytest.fixture
-def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
+def mock_task_api_dep(mock_remote_api: RemoteAPI) -> Iterator[AsyncMock]:
     """Mock the TaskAPI dependency."""
     mock = AsyncMock(spec=RemoteAPI)
     sep_app.dependency_overrides[get_tasks_api] = lambda: mock
@@ -841,7 +849,7 @@ def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
 
 
 @pytest.fixture
-def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
+def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> Iterator[AsyncMock]:
     """Mock the InventoryAPI dependency."""
     mock = AsyncMock(spec=RemoteAPI)
     mock.get.return_value = {

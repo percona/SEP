@@ -15,6 +15,7 @@
 
 """Tests for the SEP dashboard stats JSON API route at ``/api/sep/dashboard/``."""
 
+from collections.abc import Iterator
 from unittest.mock import AsyncMock
 
 import pytest
@@ -28,7 +29,7 @@ from app.sep.main import sep_app
 
 
 @pytest.fixture
-def mock_session_dep() -> AsyncMock:
+def mock_session_dep() -> Iterator[AsyncMock]:
     """Override ``get_session`` with a bare AsyncMock for dashboard tests."""
     mock = AsyncMock(spec=AsyncSession)
     sep_app.dependency_overrides[get_session] = lambda: mock
@@ -206,7 +207,7 @@ class TestDashboardStatsAuth:
     """Tests for ``/api/sep/dashboard/`` authentication enforcement."""
 
     @pytest.fixture
-    def unauthenticated_client(self) -> TestClient:
+    def unauthenticated_client(self) -> Iterator[TestClient]:
         """Yield a TestClient with no auth dependency overrides applied."""
         previous = sep_app.dependency_overrides
         sep_app.dependency_overrides = {}

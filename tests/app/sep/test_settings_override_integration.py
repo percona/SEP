@@ -15,6 +15,7 @@
 
 """End-to-end-ish integration tests for the SEP-side override layer."""
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 
@@ -49,7 +50,7 @@ OVERRIDE_EVERY_MINUTES = 30
 
 
 @pytest_asyncio.fixture(name="override_session_maker")
-async def _override_session_maker() -> async_sessionmaker:
+async def _override_session_maker() -> AsyncGenerator[async_sessionmaker, None]:
     """Provide an in-memory SQLite session maker isolated from the main test DB."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",

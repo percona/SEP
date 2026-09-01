@@ -87,7 +87,7 @@ def generated_task() -> TaskWrite:
 
 
 @pytest.fixture
-def _mock_check_for_conflicted_running_tasks() -> None:
+def _mock_check_for_conflicted_running_tasks() -> Iterator[None]:
     """Mock check_for_conflicted_running_tasks."""
     previous = sep_app.dependency_overrides.copy()
     sep_app.dependency_overrides[check_for_conflicted_running_tasks] = lambda: None
@@ -96,7 +96,7 @@ def _mock_check_for_conflicted_running_tasks() -> None:
 
 
 @pytest.fixture
-def _mock_check_for_conflicted_running_tasks_raises() -> None:
+def _mock_check_for_conflicted_running_tasks_raises() -> Iterator[None]:
     """Mock check_for_conflicted_running_tasks to raise HTTPConflictException."""
 
     def raise_conflict() -> None:

@@ -15,6 +15,8 @@
 
 """Define shared fixtures for the ATW incident model, CRUD, and route tests."""
 
+from collections.abc import AsyncGenerator
+
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
@@ -71,7 +73,7 @@ def delivery_plan() -> DeliveryPlan:
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an in-memory async DB session with every SQLModel table created."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",
@@ -115,7 +117,7 @@ def cookie_only_client(test_client: TestClient) -> TestClient:
 @pytest_asyncio.fixture
 async def async_api_client(
     regular_user: CasdoorUser, session: AsyncSession
-) -> AsyncClient:
+) -> AsyncGenerator[AsyncClient, None]:
     """Yield an authenticated async client sharing the in-memory test session.
 
     Used by route tests that must ``await`` a DB read after the request (e.g.

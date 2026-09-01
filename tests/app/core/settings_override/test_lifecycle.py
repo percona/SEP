@@ -16,6 +16,7 @@
 """Cover the override-snapshot lifecycle helpers and the background refresher."""
 
 import asyncio
+from collections.abc import AsyncGenerator
 from datetime import timedelta
 
 import pytest
@@ -52,7 +53,7 @@ from tests.app.db_schema import apply_schema
 
 
 @pytest_asyncio.fixture(name="session_maker")
-async def session_maker_fixture() -> async_sessionmaker:
+async def session_maker_fixture() -> AsyncGenerator[async_sessionmaker, None]:
     """Provide an in-memory SQLite session maker bound to a fresh schema."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",

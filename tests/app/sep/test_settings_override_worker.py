@@ -18,6 +18,7 @@
 import asyncio
 import logging
 import logging.config
+from collections.abc import Iterator
 from typing import ClassVar
 
 import pytest
@@ -126,7 +127,7 @@ def no_app_owned_classes_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(name="override_session_maker")
-def override_session_maker_fixture() -> async_sessionmaker:
+def override_session_maker_fixture() -> Iterator[async_sessionmaker]:
     """Provide an in-memory SQLite session maker with the SEP schema created."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",
@@ -144,7 +145,7 @@ def override_session_maker_fixture() -> async_sessionmaker:
 @pytest.fixture(name="worker_loop_env")
 def worker_loop_env_fixture(
     monkeypatch: pytest.MonkeyPatch,
-) -> WorkerLoopEnv:
+) -> Iterator[WorkerLoopEnv]:
     """Wire a fresh event loop and in-memory SEP DB as a prefork worker child.
 
     Mirrors the ``worker_process_init`` runtime: a dedicated ``celery.loop``, the
@@ -449,7 +450,7 @@ class TestWorkerPmmClientInvalidation:
 
 
 @pytest.fixture(name="worker_logging_boot")
-def worker_logging_boot_fixture() -> None:
+def worker_logging_boot_fixture() -> Iterator[None]:
     """Install a WARNING-level NullHandler config and restore process logging.
 
     Mutates process-global logging and the ``settings`` snapshot; teardown

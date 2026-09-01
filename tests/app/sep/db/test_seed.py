@@ -16,7 +16,7 @@
 """Cover SEP database seeding and system periodic-task contributions."""
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 import pytest_asyncio
@@ -64,7 +64,7 @@ def _registry_app(key: str, specs: list[AppPeriodicTask]) -> BaseApp:
 
 
 @pytest.fixture(autouse=True)
-def _clear_registry_cache() -> None:
+def _clear_registry_cache() -> Iterator[None]:
     """Rebuild the registry from each test's patched ``APPS``."""
     get_app_registry.cache_clear()
     yield
