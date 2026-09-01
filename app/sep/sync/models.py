@@ -305,12 +305,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             self.sync_id = self.sync_instance.id
         return self
 
-    @property
+    @cached_property
     def sync_health(self) -> SyncHealthReporter:
         """Build the reporter for this syncer's API client and mirrored levels.
-
-        The reporter is stateless, so a fresh instance per access is equivalent
-        to a held one and avoids a non-pydantic field on this model.
 
         :return: The reporter the ``sync_*`` boundaries record through.
         """

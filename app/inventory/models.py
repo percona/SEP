@@ -82,7 +82,7 @@ class SyncHealthBase(SQLModel):
     sync_failing_since: UTCDatetime | None = SQLField(
         default=None, sa_type=DateTimeWithTimezone
     )
-    consecutive_failures: int = SQLField(default=0, nullable=False)
+    consecutive_failures: NonNegativeInt = SQLField(default=0, nullable=False)
 
 
 class RetirableSQLModel(RetiredAtBase, BaseSQLModel):
