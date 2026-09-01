@@ -109,10 +109,16 @@ EFFECTIVE_INTERPRETER_PATH = "${NOMAD_ALLOC_DIR}/sep_interpreter"
 #: past them is what keeps ``sudo -u postgres <cmd>`` resolving ``<cmd>`` rather
 #: than the user name, which names no binary and would abort a run that works.
 _SUDO_VALUE_OPTIONS = (
-    "-C|-D|-g|-h|-p|-R|-r|-T|-t|-U|-u"
-    "|--close-from|--chdir|--group|--host|--prompt|--chroot"
+    "-C|-D|-c|-g|-h|-p|-R|-r|-T|-t|-U|-u"
+    "|--close-from|--chdir|--login-class|--group|--host|--prompt|--chroot"
     "|--role|--command-timeout|--type|--other-user|--user"
 )
+
+#: The interpreter ``prepare-env`` builds its virtualenv with, and therefore the
+#: one ``exec-python-artifact`` actually needs on the node. That spec's
+#: ``run-script`` always execs the venv python, never the interpreter meta, so
+#: this -- not the meta's own token -- is what its check resolves.
+_VENV_BUILDER_COMMAND = "python3"
 
 #: ``case`` pattern matching any meta value whose quoting, expansion or escaping
 #: ``env -S`` parses differently from ``sh`` word-splitting. The check declines
@@ -121,7 +127,9 @@ _SUDO_VALUE_OPTIONS = (
 _META_METACHAR_PATTERN = r"""*\'*|*\"*|*\$*|*\`*|*\\*"""
 
 
-def _launch_check_shell(meta_key: str, *, allow_strip: bool) -> str:
+def _launch_check_shell(
+    meta_key: str, *, allow_strip: bool, launches: str | None = None
+) -> str:
     """Build the POSIX sh preamble that resolves a spec's launch command chain.
 
     The preamble word-splits the spec's launch-command meta, resolves the
@@ -135,11 +143,30 @@ def _launch_check_shell(meta_key: str, *, allow_strip: bool) -> str:
     fail an execution that runs.
 
     Under ``allow_strip`` it also drops a redundant ``sudo`` prefix when the
-    node's tasks already run as uid 0 and carry no ``sudo`` binary, and writes
-    the effective interpreter to :data:`EFFECTIVE_INTERPRETER_PATH` for the
-    spec's ``run-script`` step to launch from. Only a *bare* prefix is dropped:
+    node's tasks already run as uid 0 and the prefix's *own* token does not
+    resolve there — an operator-supplied ``/opt/x/sudo`` that exists is kept,
+    since a binary the invocation names by path may be a wrapper that changes
+    the target user rather than the stock no-op-as-root ``sudo``. It writes the
+    effective interpreter to :data:`EFFECTIVE_INTERPRETER_PATH` for the spec's
+    ``run-script`` step to launch from. Only a *bare* prefix is dropped:
     ``sudo -u <user>`` lowers privilege, so removing it would run the payload as
     root instead of as the named user.
+
+    ``launches`` names the binary a spec's ``run-script`` execs when that is
+    *not* the meta's own token. ``exec-python-artifact`` is the case: it always
+    runs the venv python and consults the meta only for a ``"sudo "`` prefix
+    test, so resolving the meta's interpreter there would abort a runnable
+    execution whenever an operator maps ``.py`` to anything but
+    :data:`_VENV_BUILDER_COMMAND` (``INTERPRETERS`` is settings-configurable).
+    That variant therefore mirrors the launcher exactly: it resolves ``sudo``
+    only when the effective interpreter carries the literal prefix the launcher
+    tests for, then resolves ``launches``.
+
+    ``run-command`` is checked against a single word-split of its meta, which
+    its launcher passes to ``xargs`` as one argv element rather than splitting.
+    Every producer emits a single token today, so the two agree; a multi-token
+    command would be checked on its first token and fail in the launcher as it
+    does now, which is the harmless direction.
 
     Shell locals use the bareword form (``$name``) throughout, for the reason
     given at :data:`STALENESS_PREAMBLE_SHELL`. ``${NOMAD_ALLOC_DIR}`` is in
@@ -149,6 +176,8 @@ def _launch_check_shell(meta_key: str, *, allow_strip: bool) -> str:
         ``NOMAD_META_`` prefix.
     :param allow_strip: Whether the spec's ``run-script`` step reads the
         effective interpreter back, which is what makes a strip observable.
+    :param launches: The binary the spec's ``run-script`` execs, when the meta
+        is not it. ``None`` resolves the meta's own command chain.
     :return: The POSIX sh script the step runs.
     """
     decline = (
@@ -156,21 +185,28 @@ def _launch_check_shell(meta_key: str, *, allow_strip: bool) -> str:
         if allow_strip
         else "exit 0"
     )
-    abort = (
-        'echo "SEP_UNLAUNCHABLE: command=$1 node=$NOMAD_META_target"; '
-        f"exit {LAUNCH_CHECK_EXIT_CODE}"
-    )
-    resolve_or_abort = 'command -v "$1" > /dev/null 2>&1 || { ' + abort + "; }; "
+
+    def abort(command: str) -> str:
+        return (
+            f'echo "SEP_UNLAUNCHABLE: command={command} node=$NOMAD_META_target"; '
+            f"exit {LAUNCH_CHECK_EXIT_CODE}"
+        )
+
+    def resolve_or_abort(token: str, name: str) -> str:
+        return f"command -v {token} > /dev/null 2>&1 || {{ {abort(name)}; }}; "
+
     skip_assignments = (
         'while [ $# -gt 0 ]; do case "$1" in *=*) shift;; *) break;; esac; done; '
     )
+    # Records the strip rather than announcing it, so the notice is emitted only
+    # once the run is known to launch. Reporting it above an abort would head an
+    # unlaunchable execution's only diagnostic with a success-shaped line.
     strip = (
         "if [ $# -ge 2 ]; then "
         'case "$1" in sudo|*/sudo) '
         'case "$2" in -*|*=*) ;; '
-        '*) if [ "$(id -u)" = 0 ] && ! command -v sudo > /dev/null 2>&1; then '
-        "shift; eff=$*; "
-        'echo "SEP_SUDO_STRIPPED: node=$NOMAD_META_target"; '
+        '*) if [ "$(id -u)" = 0 ] && ! command -v "$1" > /dev/null 2>&1; then '
+        "shift; eff=$*; stripped=1; "
         "fi;; esac;; esac; "
         "fi; "
     )
@@ -188,8 +224,30 @@ def _launch_check_shell(meta_key: str, *, allow_strip: bool) -> str:
         "esac; done; "
         + skip_assignments
         + "if [ $# -gt 0 ]; then "
-        + resolve_or_abort
+        + resolve_or_abort('"$1"', "$1")
         + "fi;; esac; "
+    )
+    if launches is None:
+        resolution = (
+            skip_assignments
+            + "[ $# -gt 0 ] || exit 0; "
+            + resolve_or_abort('"$1"', "$1")
+            + sudo_walk
+        )
+    else:
+        # Mirrors the launcher's own test byte for byte: it prefixes the venv
+        # python with sudo for exactly this pattern and ignores the meta
+        # otherwise, so anything else in the meta is not ours to resolve.
+        resolution = (
+            'case "$eff" in "sudo "*) '
+            + resolve_or_abort("sudo", "sudo")
+            + ";; esac; "
+            + resolve_or_abort(launches, launches)
+        )
+    announce = (
+        '[ -z "$stripped" ] || echo "SEP_SUDO_STRIPPED: node=$NOMAD_META_target"; '
+        if allow_strip
+        else ""
     )
     return (
         f"m=$NOMAD_META_{meta_key}; "
@@ -199,11 +257,15 @@ def _launch_check_shell(meta_key: str, *, allow_strip: bool) -> str:
         "set -- $m; "
         "[ $# -gt 0 ] || exit 0; "
         f'case "$1" in env|*/env) {decline};; esac; '
+        # A relative path resolves against the step's cwd, which is not the
+        # launcher's — run-script pins a work_dir and this step does not. Only
+        # one that resolves *here* is declined; one that resolves in neither
+        # place is still reported, so this cannot mask a genuine failure.
+        f'case "$1" in /*) ;; */*) command -v "$1" > /dev/null 2>&1 && '
+        f"{{ {decline}; }};; esac; "
         + ("eff=$m; " + strip if allow_strip else "")
-        + skip_assignments
-        + "[ $# -gt 0 ] || exit 0; "
-        + resolve_or_abort
-        + sudo_walk
+        + resolution
+        + announce
         + (
             f"printf '%s' \"$eff\" > {EFFECTIVE_INTERPRETER_PATH}; "
             if allow_strip
@@ -213,7 +275,9 @@ def _launch_check_shell(meta_key: str, *, allow_strip: bool) -> str:
     )
 
 
-def _check_launchable_task(meta_key: str, *, allow_strip: bool) -> dict[str, Any]:
+def _check_launchable_task(
+    meta_key: str, *, allow_strip: bool, launches: str | None = None
+) -> dict[str, Any]:
     """Build the prestart step guarding one spec's launch command.
 
     A factory rather than a module constant deep-copied per site: the rendered
@@ -224,6 +288,7 @@ def _check_launchable_task(meta_key: str, *, allow_strip: bool) -> dict[str, Any
         ``NOMAD_META_`` prefix.
     :param allow_strip: Whether the spec's ``run-script`` step launches from
         :data:`EFFECTIVE_INTERPRETER_PATH`.
+    :param launches: Forwarded to :func:`_launch_check_shell`.
     :return: The Nomad task definition for the check step.
     """
     return {
@@ -233,7 +298,12 @@ def _check_launchable_task(meta_key: str, *, allow_strip: bool) -> dict[str, Any
         "User": "",
         "Config": {
             "command": "sh",
-            "args": ["-c", _launch_check_shell(meta_key, allow_strip=allow_strip)],
+            "args": [
+                "-c",
+                _launch_check_shell(
+                    meta_key, allow_strip=allow_strip, launches=launches
+                ),
+            ],
         },
         "Meta": {},
         "RestartPolicy": {"Attempts": 0, "Mode": "fail"},
@@ -544,7 +614,11 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
             "ReschedulePolicy": {"Attempts": 0},
             "Tasks": [
                 deepcopy(_CHECK_STALENESS_TASK),
-                _check_launchable_task("interpreter", allow_strip=True),
+                _check_launchable_task(
+                    "interpreter",
+                    allow_strip=True,
+                    launches=_VENV_BUILDER_COMMAND,
+                ),
                 {
                     "Name": NomadStep.PREPARE_ENV,
                     "Lifecycle": {"hook": "prestart", "sidecar": False},

@@ -96,10 +96,17 @@ NODE_SHAPES = {
     "user-no-sudo": (UNPRIVILEGED_UID, False),
     "user-sudo": (UNPRIVILEGED_UID, True),
 }
-#: The two launch-check variants the seeded specs build, as (meta key, strip policy).
+#: The launch-check variants the seeded specs build, as the keyword arguments
+#: that build each. ``python-artifact`` resolves the venv builder rather than the
+#: interpreter meta, because its ``run-script`` never execs the meta.
 LAUNCH_CHECK_VARIANTS = {
-    "artifact": ("interpreter", True),
-    "command": ("command", False),
+    "artifact": {"meta_key": "interpreter", "allow_strip": True, "launches": None},
+    "command": {"meta_key": "command", "allow_strip": False, "launches": None},
+    "python-artifact": {
+        "meta_key": "interpreter",
+        "allow_strip": True,
+        "launches": "python3",
+    },
 }
 
 
@@ -566,11 +573,11 @@ class TestArtifactLauncher:
         assert result.stdout.decode().split() == ["alpha", "beta", "gamma"]
 
     @pytest.mark.parametrize(
-        ("effective", "expect_sudo"),
-        [("python3", False), ("sudo python3", True)],
+        ("effective", "sudo_expected"),
+        [("python3", "no"), ("sudo python3", "yes")],
     )
     def test_python_launcher_reads_sudo_from_the_effective_interpreter(
-        self, tmp_path: Path, effective: str, expect_sudo: str
+        self, tmp_path: Path, effective: str, sudo_expected: str
     ) -> None:
         """Assert the venv python is prefixed from the handoff, not the meta.
 
@@ -602,7 +609,7 @@ class TestArtifactLauncher:
         )
 
         assert result.returncode == 0, result.stderr
-        assert (b"sudo-used" in result.stdout) is expect_sudo
+        assert (b"sudo-used" in result.stdout) is (sudo_expected == "yes")
         assert b"python:" in result.stdout
 
 
@@ -652,6 +659,15 @@ class TestLaunchCheckTemplateShape:
         """
         meta_key = "command" if template is NOMAD_RUN_COMMAND else "interpreter"
         script = self._check_task(template)["Config"]["args"][1]
+        # An unprivileged node with no `sudo`, so a bare `sudo ` prefix aborts
+        # in every variant: the python spec's launcher prefixes the venv python
+        # with it, so that variant resolves `sudo` even though it deliberately
+        # ignores the interpreter token that follows.
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        stub = bin_dir / "id"
+        stub.write_text(f"#!/bin/sh\necho {UNPRIVILEGED_UID}\n")
+        stub.chmod(0o755)
 
         def run(env: dict[str, str]) -> int:
             return subprocess.run(
@@ -660,14 +676,14 @@ class TestLaunchCheckTemplateShape:
                     "-c",
                     script.replace(EFFECTIVE_INTERPRETER_PATH, "/dev/null"),
                 ],
-                env={"PATH": "/usr/bin:/bin", "NOMAD_META_target": "node-1", **env},
+                env={"PATH": str(bin_dir), "NOMAD_META_target": "node-1", **env},
                 capture_output=True,
                 check=False,
             ).returncode
 
-        assert run({f"NOMAD_META_{meta_key}": "nosuchinterp"}) == LAUNCH_CHECK_EXIT_CODE
+        assert run({f"NOMAD_META_{meta_key}": "sudo x"}) == LAUNCH_CHECK_EXIT_CODE
         other = "interpreter" if meta_key == "command" else "command"
-        assert run({f"NOMAD_META_{other}": "nosuchinterp"}) == 0
+        assert run({f"NOMAD_META_{other}": "sudo x"}) == 0
 
     @pytest.mark.parametrize("template", ARTIFACT_TEMPLATES_WITH_STRIP)
     def test_artifact_checks_hand_the_interpreter_forward(self, template) -> None:
@@ -709,6 +725,11 @@ class TestLaunchCheckTemplateShape:
         assert all(checks[0] is not other for other in others)
 
 
+def _build_check(*, meta_key: str, allow_strip: bool, launches: str | None) -> str:
+    """Build one launch-check variant from its stored keyword arguments."""
+    return _launch_check_shell(meta_key, allow_strip=allow_strip, launches=launches)
+
+
 class TestLaunchCheckShell:
     """Execute the launch-check preamble under ``/bin/sh`` on a stubbed node.
 
@@ -743,11 +764,12 @@ class TestLaunchCheckShell:
     ) -> tuple[subprocess.CompletedProcess, Path]:
         """Run the built preamble; return the process and the handoff file."""
         bin_dir = self._node(tmp_path, node)
-        meta_key, allow_strip = LAUNCH_CHECK_VARIANTS[variant]
+        kwargs = LAUNCH_CHECK_VARIANTS[variant]
+        meta_key = kwargs["meta_key"]
         alloc_dir = tmp_path / "alloc"
         alloc_dir.mkdir(exist_ok=True)
         handoff = alloc_dir / "sep_interpreter"
-        script = _launch_check_shell(meta_key, allow_strip=allow_strip).replace(
+        script = _build_check(**kwargs).replace(
             EFFECTIVE_INTERPRETER_PATH, str(handoff)
         )
         result = subprocess.run(
@@ -836,14 +858,15 @@ class TestLaunchCheckShell:
 
         That line is the operator's only diagnostic: ``run-script`` never
         starts, so nothing else in the allocation says what could not be found.
-        It is asserted as the last line rather than the whole output because a
-        strip that happened first legitimately reports itself above it.
+        Asserted as the *whole* output: a strip that happened first must not
+        report itself above an abort, since a success-shaped line heading the
+        only diagnostic an unlaunchable execution produces is misleading.
         """
         result, _ = self._run(tmp_path, node=node, meta=meta)
 
         assert result.returncode == LAUNCH_CHECK_EXIT_CODE
         assert (
-            result.stdout.decode().splitlines()[-1]
+            result.stdout.decode().strip()
             == f"SEP_UNLAUNCHABLE: command={expected_command} node=node-1"
         )
 
@@ -853,6 +876,145 @@ class TestLaunchCheckShell:
 
         assert result.returncode == 0
         assert result.stdout.decode().strip() == "SEP_SUDO_STRIPPED: node=node-1"
+
+    @pytest.mark.parametrize(
+        ("named_sudo", "expected_effective"),
+        [("present", "{sudo} bash"), ("absent", "bash")],
+    )
+    def test_strip_asks_whether_the_named_sudo_resolves(
+        self, tmp_path: Path, named_sudo: str, expected_effective: str
+    ) -> None:
+        """Assert a path-named ``sudo`` is stripped only when it is really absent.
+
+        Asking whether the bare name ``sudo`` resolves answers the wrong
+        question for ``/opt/x/sudo``: on a root node with no ``sudo`` on
+        ``PATH`` the operator's own binary would be dropped, and a binary named
+        by path may be a wrapper that lowers privilege rather than the stock
+        no-op-as-root ``sudo``.
+        """
+        bin_dir = self._node(tmp_path, "root-no-sudo")
+        custom = tmp_path / "opt" / "sudo"
+        if named_sudo == "present":
+            custom.parent.mkdir(parents=True, exist_ok=True)
+            custom.write_text("#!/bin/sh\nexit 0\n")
+            custom.chmod(0o755)
+        alloc_dir = tmp_path / "alloc"
+        alloc_dir.mkdir(exist_ok=True)
+        handoff = alloc_dir / "sep_interpreter"
+        script = _build_check(**LAUNCH_CHECK_VARIANTS["artifact"]).replace(
+            EFFECTIVE_INTERPRETER_PATH, str(handoff)
+        )
+
+        result = subprocess.run(
+            ["/bin/sh", "-c", script],
+            env={
+                "PATH": str(bin_dir),
+                "NOMAD_META_interpreter": f"{custom} bash",
+                "NOMAD_META_target": "node-1",
+            },
+            capture_output=True,
+            check=False,
+            cwd=tmp_path,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert handoff.read_text() == expected_effective.format(sudo=custom)
+
+    @pytest.mark.parametrize(
+        "meta",
+        [
+            "'/tmp/x/true2'",
+            '"/tmp/x/true2"',
+            "$HOME/bin/python3",
+            "`which bash`",
+            "/tmp/a\\ b/bash",
+        ],
+    )
+    def test_declines_every_metacharacter_form(self, tmp_path: Path, meta: str) -> None:
+        """Assert each alternative of the metachar guard passes its meta through.
+
+        The guard is a raw string of five ``case`` alternatives, and ``sh -n``
+        cannot catch a mistyped one — only executing each form can, and the
+        failure it would cause is a false abort on a working configuration.
+        """
+        result, handoff = self._run(tmp_path, node="user-no-sudo", meta=meta)
+
+        assert result.returncode == 0, result.stderr
+        assert handoff.read_text() == meta
+
+    def test_declines_a_relative_interpreter_path_that_resolves_here(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert a resolvable relative path is passed through, not resolved.
+
+        This step pins no ``work_dir`` and ``run-script`` pins one, so the two
+        would resolve the same relative path against different directories.
+        """
+        bin_dir = self._node(tmp_path, "user-no-sudo")
+        relative = Path("rel") / "interp"
+        (tmp_path / "rel").mkdir()
+        (tmp_path / relative).write_text("#!/bin/sh\nexit 0\n")
+        (tmp_path / relative).chmod(0o755)
+        alloc_dir = tmp_path / "alloc"
+        alloc_dir.mkdir(exist_ok=True)
+        handoff = alloc_dir / "sep_interpreter"
+        script = _build_check(**LAUNCH_CHECK_VARIANTS["artifact"]).replace(
+            EFFECTIVE_INTERPRETER_PATH, str(handoff)
+        )
+
+        result = subprocess.run(
+            ["/bin/sh", "-c", script],
+            env={
+                "PATH": str(bin_dir),
+                "NOMAD_META_interpreter": str(relative),
+                "NOMAD_META_target": "node-1",
+            },
+            capture_output=True,
+            check=False,
+            cwd=tmp_path,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert handoff.read_text() == str(relative)
+
+    @pytest.mark.parametrize(
+        ("node", "meta", "expected_exit", "expected_effective"),
+        [
+            # The venv python is what runs, so an interpreter the node lacks is
+            # not a reason to abort -- prepare-env builds the venv from python3.
+            ("user-no-sudo", "python3.12", 0, "python3.12"),
+            ("user-sudo", "sudo python3.12", 0, "sudo python3.12"),
+            # A sudo prefix the node cannot satisfy still aborts, because the
+            # launcher really does exec `sudo <venv python>` for it.
+            ("user-no-sudo", "sudo python3.12", LAUNCH_CHECK_EXIT_CODE, None),
+            # ... and on a root node with no sudo it is stripped instead.
+            ("root-no-sudo", "sudo python3.12", 0, "python3.12"),
+        ],
+    )
+    def test_python_variant_resolves_the_venv_builder_not_the_meta(
+        self,
+        tmp_path: Path,
+        node: str,
+        meta: str,
+        expected_exit: int,
+        expected_effective: str | None,
+    ) -> None:
+        """Assert the python spec's check ignores an interpreter it never execs.
+
+        ``exec-python-artifact``'s ``run-script`` always runs the venv python
+        and reads the meta only for a ``"sudo "`` prefix test, so resolving the
+        meta's own token would abort a runnable execution for any operator who
+        maps ``.py`` to something other than ``python3``.
+        """
+        result, handoff = self._run(
+            tmp_path, node=node, meta=meta, variant="python-artifact"
+        )
+
+        assert result.returncode == expected_exit, result.stdout + result.stderr
+        if expected_effective is None:
+            assert not handoff.exists()
+        else:
+            assert handoff.read_text() == expected_effective
 
     def test_declines_an_unrecognized_sudo_option_cluster(self, tmp_path: Path) -> None:
         """Assert a bundled short-option cluster is passed through, not aborted.
@@ -890,8 +1052,7 @@ class TestLaunchCheckShell:
         The builder joins fragments, so a dropped ``;`` is otherwise caught only
         when Nomad runs the step.
         """
-        meta_key, allow_strip = LAUNCH_CHECK_VARIANTS[variant]
-        script = _launch_check_shell(meta_key, allow_strip=allow_strip)
+        script = _build_check(**LAUNCH_CHECK_VARIANTS[variant])
 
         parsed = subprocess.run(
             ["/bin/sh", "-n", "-c", script], capture_output=True, check=False
@@ -912,10 +1073,10 @@ class TestLaunchCheckShell:
         variant writes the handoff file, so a subset assertion would hold
         vacuously for the abort-only one even if every brace reference vanished.
         """
-        meta_key, allow_strip = LAUNCH_CHECK_VARIANTS[variant]
-        script = _launch_check_shell(meta_key, allow_strip=allow_strip)
+        kwargs = LAUNCH_CHECK_VARIANTS[variant]
+        script = _build_check(**kwargs)
 
-        expected = {"${NOMAD_ALLOC_DIR}"} if allow_strip else set()
+        expected = {"${NOMAD_ALLOC_DIR}"} if kwargs["allow_strip"] else set()
         assert set(re.findall(r"\$\{[^}]*\}", script)) == expected
 
 
