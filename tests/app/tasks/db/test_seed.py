@@ -412,6 +412,200 @@ class TestStalenessPreambleShell:
         assert "threshold=5s" in line
 
 
+class TestArtifactLauncher:
+    """Cover the artifact specs launching from the effective interpreter.
+
+    Both launchers now read a file the ``check-launchable`` step writes, so the
+    step is load-bearing for every artifact execution rather than only failing
+    ones. These tests execute the launcher strings under ``/bin/sh``.
+    """
+
+    def _payload(self, task_dir: Path) -> None:
+        """Write a payload script that echoes its own argv, one entry per line."""
+        script = task_dir / "script"
+        script.write_text('#!/bin/sh\nfor a in "$@"; do echo "$a"; done\n')
+        script.chmod(0o755)
+        (task_dir / "args_file").write_text("alpha\nbeta gamma\n")
+
+    def _launcher(self, template: dict) -> str:
+        """Return the template's ``run-script`` shell string."""
+        run_script = next(
+            task
+            for task in template["TaskGroups"][0]["Tasks"]
+            if task["Name"] == NomadStep.RUN_SCRIPT
+        )
+        assert run_script["Config"]["command"] == "sh"
+        return run_script["Config"]["args"][1]
+
+    def _run(
+        self,
+        script: str,
+        *,
+        task_dir: Path,
+        alloc_dir: Path,
+        env: dict[str, str],
+        path: str = "/usr/bin:/bin",
+    ) -> subprocess.CompletedProcess:
+        """Run a launcher string with Nomad's directory references resolved."""
+        resolved = script.replace("${NOMAD_TASK_DIR}", str(task_dir)).replace(
+            "${NOMAD_ALLOC_DIR}", str(alloc_dir)
+        )
+        return subprocess.run(
+            ["/bin/sh", "-c", resolved],
+            env={"PATH": path, **env},
+            capture_output=True,
+            check=False,
+        )
+
+    def test_passes_the_same_argv_as_a_direct_xargs_exec(self, tmp_path: Path) -> None:
+        """Assert wrapping the launcher in ``sh -c`` did not reshape the argv.
+
+        ``beta gamma`` must still reach the payload as two arguments. This is
+        the regression the rewrite could plausibly introduce, and the only
+        thing that covers it.
+        """
+        task_dir = tmp_path / "local"
+        task_dir.mkdir()
+        alloc_dir = tmp_path / "alloc"
+        alloc_dir.mkdir()
+        self._payload(task_dir)
+
+        rewritten = self._run(
+            self._launcher(NOMAD_EXEC_ARTIFACT),
+            task_dir=task_dir,
+            alloc_dir=alloc_dir,
+            env={"NOMAD_META_interpreter": "sh"},
+        )
+        direct = subprocess.run(
+            [
+                "xargs",
+                "--arg-file",
+                str(task_dir / "args_file"),
+                "env",
+                "-S",
+                "sh",
+                str(task_dir / "script"),
+            ],
+            env={"PATH": "/usr/bin:/bin"},
+            capture_output=True,
+            check=False,
+        )
+
+        assert rewritten.returncode == 0, rewritten.stderr
+        assert direct.returncode == 0, direct.stderr
+        assert rewritten.stdout == direct.stdout
+        assert rewritten.stdout.decode().split() == ["alpha", "beta", "gamma"]
+
+    def test_launches_from_the_effective_interpreter_when_written(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert a stripped interpreter, not the raw meta, reaches the payload.
+
+        The meta still carries the ``sudo`` prefix the check dropped, so a
+        launcher that ignored the handoff file would fail on the node the strip
+        exists for.
+        """
+        task_dir = tmp_path / "local"
+        task_dir.mkdir()
+        alloc_dir = tmp_path / "alloc"
+        alloc_dir.mkdir()
+        self._payload(task_dir)
+        (alloc_dir / "sep_interpreter").write_text("sh")
+
+        result = self._run(
+            self._launcher(NOMAD_EXEC_ARTIFACT),
+            task_dir=task_dir,
+            alloc_dir=alloc_dir,
+            env={"NOMAD_META_interpreter": "sudo sh"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.decode().split() == ["alpha", "beta", "gamma"]
+
+    def test_falls_back_to_the_meta_when_the_handoff_is_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert a missing handoff file leaves behaviour exactly as it was.
+
+        Without the fallback an absent or empty file would make ``env -S ""``
+        exec the *script* as the interpreter.
+        """
+        task_dir = tmp_path / "local"
+        task_dir.mkdir()
+        alloc_dir = tmp_path / "alloc"
+        alloc_dir.mkdir()
+        self._payload(task_dir)
+
+        result = self._run(
+            self._launcher(NOMAD_EXEC_ARTIFACT),
+            task_dir=task_dir,
+            alloc_dir=alloc_dir,
+            env={"NOMAD_META_interpreter": "sh"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.decode().split() == ["alpha", "beta", "gamma"]
+
+    def test_falls_back_when_the_handoff_is_empty(self, tmp_path: Path) -> None:
+        """Assert an empty handoff file is treated as no handoff at all."""
+        task_dir = tmp_path / "local"
+        task_dir.mkdir()
+        alloc_dir = tmp_path / "alloc"
+        alloc_dir.mkdir()
+        self._payload(task_dir)
+        (alloc_dir / "sep_interpreter").write_text("")
+
+        result = self._run(
+            self._launcher(NOMAD_EXEC_ARTIFACT),
+            task_dir=task_dir,
+            alloc_dir=alloc_dir,
+            env={"NOMAD_META_interpreter": "sh"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.decode().split() == ["alpha", "beta", "gamma"]
+
+    @pytest.mark.parametrize(
+        ("effective", "expect_sudo"),
+        [("python3", False), ("sudo python3", True)],
+    )
+    def test_python_launcher_reads_sudo_from_the_effective_interpreter(
+        self, tmp_path: Path, effective: str, expect_sudo: str
+    ) -> None:
+        """Assert the venv python is prefixed from the handoff, not the meta.
+
+        On a stripped root allocation the meta still says ``sudo python3`` while
+        the effective interpreter says ``python3``; reading the meta would
+        re-introduce the prefix the check just removed.
+        """
+        task_dir = tmp_path / "local"
+        task_dir.mkdir()
+        alloc_dir = tmp_path / "alloc"
+        (alloc_dir / "venv" / "bin").mkdir(parents=True)
+        self._payload(task_dir)
+        venv_python = alloc_dir / "venv" / "bin" / "python3"
+        venv_python.write_text('#!/bin/sh\necho "python:$*"\n')
+        venv_python.chmod(0o755)
+        (alloc_dir / "sep_interpreter").write_text(effective)
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        sudo_stub = bin_dir / "sudo"
+        sudo_stub.write_text('#!/bin/sh\necho "sudo-used"\nexec "$@"\n')
+        sudo_stub.chmod(0o755)
+
+        result = self._run(
+            self._launcher(NOMAD_EXEC_PYTHON_ARTIFACT),
+            task_dir=task_dir,
+            alloc_dir=alloc_dir,
+            env={"NOMAD_META_interpreter": "sudo python3"},
+            path=f"{bin_dir}:/usr/bin:/bin",
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert (b"sudo-used" in result.stdout) is expect_sudo
+        assert b"python:" in result.stdout
+
+
 class TestLaunchCheckTemplateShape:
     """Cover the launch-check task's injection across the Nomad templates."""
 

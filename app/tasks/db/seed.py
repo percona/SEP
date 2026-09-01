@@ -469,14 +469,13 @@ NOMAD_EXEC_ARTIFACT = {
                     "Driver": "raw_exec",
                     "User": "",
                     "Config": {
-                        "command": "xargs",
+                        "command": "sh",
                         "args": [
-                            "--arg-file",
-                            "${NOMAD_TASK_DIR}/args_file",
-                            "env",
-                            "-S",
-                            "${NOMAD_META_interpreter}",
-                            "${NOMAD_TASK_DIR}/script",
+                            "-c",
+                            f"i=$(cat {EFFECTIVE_INTERPRETER_PATH} 2>/dev/null); "
+                            '[ -n "$i" ] || i=$NOMAD_META_interpreter; '
+                            "xargs --arg-file ${NOMAD_TASK_DIR}/args_file "
+                            'env -S "$i" ${NOMAD_TASK_DIR}/script',
                         ],
                         "work_dir": "${NOMAD_TASK_DIR}/output_files",
                     },
@@ -577,8 +576,10 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
                         "command": "sh",
                         "args": [
                             "-c",
+                            f"i=$(cat {EFFECTIVE_INTERPRETER_PATH} 2>/dev/null); "
+                            '[ -n "$i" ] || i=$NOMAD_META_interpreter; '
                             "PYTHON_CMD=${NOMAD_ALLOC_DIR}/venv/bin/python3;"
-                            'case "${NOMAD_META_interpreter}" in "sudo "*) '
+                            'case "$i" in "sudo "*) '
                             'PYTHON_CMD="sudo ${NOMAD_ALLOC_DIR}/venv/bin/python3";; esac;'
                             "xargs --arg-file ${NOMAD_TASK_DIR}/args_file -- "
                             "$PYTHON_CMD -u ${NOMAD_TASK_DIR}/script",
