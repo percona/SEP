@@ -53,6 +53,9 @@ class PMMSyncer(BaseSyncer):
 
     :cvar SYNC_TO_LIMIT: The highest entity type that can be synchronized.
         Set to `SyncInventoryEntityTypeEnum.SERVICE`.
+    :cvar mirrors_entity_levels: The node and service levels, whose own fields
+        this syncer compares against PMM and writes back through ``update_node``
+        and ``update_service``.
     :cvar reads_retired_entities: The node and service levels, whose incoming
         reports this syncer matches against the local inventory by external id.
     :param inventory_api: The remote API interface for interacting with the inventory
@@ -69,6 +72,9 @@ class PMMSyncer(BaseSyncer):
 
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.SERVICE
+    )
+    mirrors_entity_levels: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = frozenset(
+        {SyncInventoryEntityTypeEnum.NODE, SyncInventoryEntityTypeEnum.SERVICE}
     )
     reads_retired_entities: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
         frozenset(

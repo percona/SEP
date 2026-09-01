@@ -176,6 +176,27 @@ async def _row(conn, table_name, entity_id):
     return dict(result.mappings().one())
 
 
+async def _projected_row(conn, table_name, entity_id, column_names):
+    """Return the row restricted to ``column_names``.
+
+    A revision above ``_PRE_ORIGIN_REVISION`` may add columns, and downgrading
+    to it drops them on the way past. Comparing whole rows across that boundary
+    would then fail on the schema difference rather than on the data the test is
+    about. The caller reads ``column_names`` off the pre-origin row itself, so no
+    list here has to be kept in step with later revisions, and the projected
+    expectation still pins the column set: it came from a different source than
+    the post-downgrade row it is compared against.
+
+    :param conn: The open connection to read through.
+    :param table_name: The table holding the row.
+    :param entity_id: The row's primary key.
+    :param column_names: The columns to keep.
+    :return: The kept columns and their values.
+    """
+    row = await _row(conn, table_name, entity_id)
+    return {name: value for name, value in row.items() if name in column_names}
+
+
 async def _is_nullable(conn, table_name, column):
     """Return ``information_schema``'s nullability verdict for one column."""
     result = await conn.execute(
@@ -268,9 +289,12 @@ def test_downgrade_restores_nullability_and_leaves_data_alone(
     node_id = _await(
         url, lambda conn: _insert_node(conn, "10.0.0.3", "legacy", None, None)
     )
+    node_columns = set(_await(url, lambda conn: _row(conn, "node", node_id)))
 
     command.upgrade(cfg, "heads")
-    stamped = _await(url, lambda conn: _row(conn, "node", node_id))
+    stamped = _await(
+        url, lambda conn: _projected_row(conn, "node", node_id, node_columns)
+    )
 
     command.downgrade(cfg, _PRE_ORIGIN_REVISION)
 
