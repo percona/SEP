@@ -1538,6 +1538,22 @@ class TestTombstoneReconciliation:
         ]
         return Node.model_validate(remote.model_dump() | {"node_name": remote.name})
 
+    @staticmethod
+    def _node_reporting_pair(
+        created_node: CreatedNode, *services: dict[str, Any]
+    ) -> Node:
+        """Build the PMM-side node reporting several services at once."""
+        remote = _remote_node(created_node)
+        remote.services = [
+            {
+                "service_name": f"reported-{position}",
+                "service_type": "postgresql",
+                **service_fields,
+            }
+            for position, service_fields in enumerate(services)
+        ]
+        return Node.model_validate(remote.model_dump() | {"node_name": remote.name})
+
     @pytest.mark.asyncio
     async def test_inventory_read_opts_into_tombstones(
         self, local_node, owned_pmmsyncer
@@ -1613,10 +1629,15 @@ class TestTombstoneReconciliation:
         )
 
     @pytest.mark.asyncio
-    async def test_port_fallback_passes_over_a_retired_predecessor(
+    async def test_unmatched_external_id_always_creates(
         self, local_node, owned_pmmsyncer, sync_service
     ):
-        """Create a new service rather than claim a tombstone sharing its port."""
+        """Create a new service for an external id that matches no local row.
+
+        A retired predecessor sharing the incoming service's port is not a
+        match: matching is by external id alone, with no port-based fallback
+        to find a row by.
+        """
         predecessor = CreatedServiceFactory.build(id=7)
         predecessor.external_id = "svc-old"
         predecessor.port = 3306
@@ -1638,25 +1659,145 @@ class TestTombstoneReconciliation:
         )
 
     @pytest.mark.asyncio
-    async def test_port_fallback_still_matches_a_live_service(
+    async def test_an_identified_service_never_matches_by_port(
         self, local_node, owned_pmmsyncer, sync_service
     ):
-        """Keep matching two live services by port exactly as before."""
+        """Create a new row for an identified service sharing a live port.
+
+        Several databases behind one server legally share its port, so a service
+        PMM identifies is a distinct service even when a local row already holds
+        that port under another upstream id.
+        """
         live = CreatedServiceFactory.build(id=7)
         live.external_id = "svc-old"
         live.port = 3306
         live.node_id = local_node.id
         live.retired_at = None
         local_node.services = [live]
+        replacement = CreatedServiceFactory.build(id=8)
         owned_pmmsyncer.inventory_api.put.return_value = local_node.model_dump()
+        owned_pmmsyncer.inventory_api.post.return_value = replacement.model_dump()
 
         await owned_pmmsyncer.perform_node_sync(
             local_node,
             self._node_reporting(local_node, service_id="svc-new", port=3306),
         )
 
-        owned_pmmsyncer.inventory_api.post.assert_not_awaited()
-        assert sync_service.await_args.args[0].id == live.id
+        owned_pmmsyncer.inventory_api.post.assert_awaited_once()
+        assert owned_pmmsyncer.inventory_api.post.await_args.args[0] == (
+            f"/nodes/{local_node.id}/services/"
+        )
+
+    @pytest.mark.asyncio
+    async def test_same_node_same_port_pair_both_sync(
+        self, local_node, owned_pmmsyncer, sync_service
+    ):
+        """Create a row for the neighbour of a service already mirrored on its port.
+
+        The reported failure: a node already mirroring one of a same-port pair
+        resolved the other onto that same row by port, so the mirrored service
+        was overwritten by its neighbour and pushed into a row of its own. The
+        unmirrored service is reported first, which is the order that lets it
+        reach the incumbent's row before the incumbent claims it.
+        """
+        mirrored = CreatedServiceFactory.build(id=7)
+        mirrored.external_id = "svc-a"
+        mirrored.port = 5432
+        mirrored.node_id = local_node.id
+        mirrored.retired_at = None
+        local_node.services = [mirrored]
+        owned_pmmsyncer.inventory_api.put.return_value = local_node.model_dump()
+        owned_pmmsyncer.inventory_api.post.return_value = CreatedServiceFactory.build(
+            id=8
+        ).model_dump()
+
+        await owned_pmmsyncer.perform_node_sync(
+            local_node,
+            self._node_reporting_pair(
+                local_node,
+                {"service_id": "svc-b", "port": 5432},
+                {"service_id": "svc-a", "port": 5432},
+            ),
+        )
+
+        owned_pmmsyncer.inventory_api.post.assert_awaited_once()
+        assert owned_pmmsyncer.inventory_api.post.await_args.args[0] == (
+            f"/nodes/{local_node.id}/services/"
+        )
+        assert (
+            owned_pmmsyncer.inventory_api.post.await_args.kwargs["json"]["external_id"]
+            == "svc-b"
+        )
+        assert {call.args[0].id for call in sync_service.await_args_list} == {
+            mirrored.id,
+            8,
+        }
+
+    @pytest.mark.asyncio
+    async def test_neither_service_of_a_same_port_pair_is_mirrored_yet(
+        self, local_node, owned_pmmsyncer, sync_service
+    ):
+        """Create both new same-port services and reach SUCCESS, not FAILED.
+
+        The reported failure: a node with no local services yet, reporting two
+        services that share a port, failed the whole node sync on every run
+        because the second create was rejected by the port key. Port is no
+        longer a uniqueness key, so both now create cleanly.
+        """
+        local_node.source = SourceEnum.PMM
+        owned_pmmsyncer.inventory_api.put.return_value = local_node.model_dump()
+        owned_pmmsyncer.inventory_api.post.side_effect = [
+            CreatedServiceFactory.build(id=7).model_dump(),
+            CreatedServiceFactory.build(id=8).model_dump(),
+        ]
+
+        await owned_pmmsyncer.sync_node(
+            local_node,
+            self._node_reporting_pair(
+                local_node,
+                {"service_id": "svc-a", "port": 5432},
+                {"service_id": "svc-b", "port": 5432},
+            ),
+        )
+
+        assert {
+            call.kwargs["json"]["external_id"]
+            for call in owned_pmmsyncer.inventory_api.post.await_args_list
+        } == {"svc-a", "svc-b"}
+        assert (
+            owned_pmmsyncer.sync_items[
+                (SyncInventoryEntityTypeEnum.NODE, local_node.id)
+            ].status
+            == SyncStatusEnum.SUCCESS
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_matching_service_name_does_not_claim_the_local_row(
+        self, local_node, owned_pmmsyncer, sync_service
+    ):
+        """Create a second service for a new upstream id sharing an existing name.
+
+        The service level has no name-based fallback either: matching is by
+        upstream id alone, so a same-named predecessor is a candidate for an
+        operator to confirm and never an automatic match.
+        """
+        predecessor = CreatedServiceFactory.build(id=7)
+        predecessor.external_id = "svc-old"
+        predecessor.name = "reported"
+        predecessor.node_id = local_node.id
+        local_node.services = [predecessor]
+        replacement = CreatedServiceFactory.build(id=8)
+        owned_pmmsyncer.inventory_api.put.return_value = local_node.model_dump()
+        owned_pmmsyncer.inventory_api.post.return_value = replacement.model_dump()
+
+        await owned_pmmsyncer.perform_node_sync(
+            local_node, self._node_reporting(local_node, service_id="svc-new")
+        )
+
+        owned_pmmsyncer.inventory_api.post.assert_awaited_once()
+        assert owned_pmmsyncer.inventory_api.post.await_args.args[0] == (
+            f"/nodes/{local_node.id}/services/"
+        )
 
 
 class TestPMMSyncerKeepalive:
@@ -1717,3 +1858,69 @@ class TestPMMSyncerKeepalive:
 
         invalidate.assert_not_awaited()
         assert syncer._pmm_api is mock_pmm_api
+
+
+class TestNodeIdentityIsNeverInferredFromANaturalKey:
+    """Test that a re-registered node is never auto-linked by name or address.
+
+    Automatic natural-key linking is out of the question by design: contemporaneous
+    uniqueness is not historical identity, and a false-positive link silently
+    attaches one machine's backup and task history to another. The recovery path
+    is an operator confirmation through the inventory identity-link routes, so the
+    syncer must keep creating a second row and leave the pairing to be surfaced as
+    a candidate. These tests fail if any name- or address-based fallback is ever
+    reintroduced at the node level.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_matching_name_does_not_claim_the_local_row(
+        self, local_node, owned_pmmsyncer
+    ):
+        """Create a second node for a new upstream id sharing an existing name."""
+        owned_pmmsyncer.inventory_api.get.side_effect = [
+            _local_nodes_payload(local_node)
+        ]
+        reregistered = _remote_node(local_node)
+        reregistered.external_id = "pmm-node-1-reregistered"
+        replacement = CreatedNodeFactory.build(id=local_node.id + 1)
+        replacement.services = []
+        owned_pmmsyncer.inventory_api.post.return_value = replacement.model_dump()
+        owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(
+            return_value=_snapshot(reregistered)
+        )
+
+        await owned_pmmsyncer.perform_inventory_sync()
+
+        created = owned_pmmsyncer.inventory_api.post.await_args_list[0]
+        assert created.args[0] == "/nodes/"
+        assert created.kwargs["json"]["external_id"] == "pmm-node-1-reregistered"
+
+    @pytest.mark.asyncio
+    async def test_a_matching_name_and_address_does_not_claim_the_local_row(
+        self, local_node, owned_pmmsyncer
+    ):
+        """Create a second node even when the address agrees as well.
+
+        A rebuilt machine reusing a name and address is indistinguishable from
+        the same machine re-registered, which is exactly why detection precision
+        is not where this design's safety lives.
+        """
+        local_node.address = "10.0.0.1"
+        owned_pmmsyncer.inventory_api.get.side_effect = [
+            _local_nodes_payload(local_node)
+        ]
+        reregistered = _remote_node(local_node)
+        reregistered.external_id = "pmm-node-1-reregistered"
+        reregistered.address = "10.0.0.1"
+        replacement = CreatedNodeFactory.build(id=local_node.id + 1)
+        replacement.services = []
+        owned_pmmsyncer.inventory_api.post.return_value = replacement.model_dump()
+        owned_pmmsyncer.pmm_api.get_inventory_snapshot = AsyncMock(
+            return_value=_snapshot(reregistered)
+        )
+
+        await owned_pmmsyncer.perform_inventory_sync()
+
+        assert (
+            owned_pmmsyncer.inventory_api.post.await_args_list[0].args[0] == "/nodes/"
+        )

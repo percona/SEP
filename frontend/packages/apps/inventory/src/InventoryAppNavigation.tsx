@@ -15,22 +15,14 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Box from '@mui/material/Box';
 import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
-import { useSnackbar } from 'notistack';
-import {
-  useAuth,
-  useDeleteAppEntity,
-  useAppEntityDetail,
-  type ListView,
-  type AppEntitySchema,
-  type AppSchema,
-} from '@sep/api';
-import { DeleteConfirmDialog, SchemaListView } from '@sep/framework';
+import { useAppEntityDetail, type ListView, type AppEntitySchema, type AppSchema } from '@sep/api';
+import { SchemaListView } from '@sep/framework';
 import { ConnectivityControl } from './ConnectivityControl';
 import {
   inventoryMountPrefix,
@@ -517,92 +509,16 @@ function NestedListSection({
   listView,
   rows,
   rowHref,
-  listEntityName,
-  pluginName,
-  mockEntityItems,
-  allowListEntityDelete,
-  schema,
 }: {
   title: string;
   listView: ListView;
   rows: Row[];
   rowHref: (row: Row) => string;
-  listEntityName: string;
-  pluginName: string;
-  mockEntityItems?: Record<string, Record<string, unknown>[]>;
-  allowListEntityDelete?: boolean;
-  schema: AppSchema;
 }) {
   const navigate = useNavigate();
-  const { canMutate } = useAuth();
-  const { enqueueSnackbar } = useSnackbar();
-  const [pendingDelete, setPendingDelete] = useState<{
-    id: string;
-    name?: string;
-  } | null>(null);
-  const entityTitle = useMemo(
-    () =>
-      schema.entities?.find((e: AppEntitySchema) => e.name === listEntityName)?.display_name ??
-      listEntityName,
-    [listEntityName, schema.entities],
-  );
-
-  const deleteEntity = useDeleteAppEntity(
-    pluginName,
-    listEntityName,
-    mockEntityItems?.[listEntityName],
-  );
-
-  const hasActionsColumn = listView.columns.some((c) => c.format === 'actions');
-  const onDeleteRow =
-    canMutate && allowListEntityDelete && hasActionsColumn
-      ? (row: Record<string, unknown>) => {
-          const rid = row.id;
-          if (rid === undefined || rid === null) {
-            return;
-          }
-          const rawName = row.name;
-          const rowName =
-            typeof rawName === 'string' && rawName.trim()
-              ? rawName.trim()
-              : typeof rawName === 'number'
-                ? String(rawName)
-                : undefined;
-          setPendingDelete({ id: String(rid), name: rowName });
-        }
-      : undefined;
-
-  const confirmNestedListDelete = () => {
-    const sid = pendingDelete?.id;
-    setPendingDelete(null);
-    if (!sid) {
-      return;
-    }
-    deleteEntity.mutate(sid, {
-      onSuccess: () => {
-        enqueueSnackbar(`${entityTitle} deleted`, { variant: 'success' });
-      },
-      onError: (err: Error) => {
-        enqueueSnackbar(err.message || 'Delete failed', { variant: 'error' });
-      },
-    });
-  };
 
   return (
     <Box sx={{ mt: 3 }}>
-      <DeleteConfirmDialog
-        open={pendingDelete !== null}
-        onClose={() => setPendingDelete(null)}
-        onConfirm={confirmNestedListDelete}
-        title={`Delete from ${schema.display_name}?`}
-        description={
-          pendingDelete
-            ? pendingDelete.name
-              ? `Permanently delete ${entityTitle} "${pendingDelete.name}" (id ${pendingDelete.id}) from ${schema.display_name}? This cannot be undone.`
-              : `Permanently delete ${entityTitle} (id ${pendingDelete.id}) from ${schema.display_name}? This cannot be undone.`
-            : ''
-        }
-      />
       <Typography variant="h6" sx={{ mb: 2 }}>
         {title}
       </Typography>
@@ -610,8 +526,6 @@ function NestedListSection({
         listView={listView}
         data={rows}
         onRowClick={rows.length > 0 ? (row) => navigate(rowHref(row as Row)) : undefined}
-        onDeleteRow={onDeleteRow}
-        deletingRowId={deleteEntity.isPending ? deleteEntity.variables : null}
       />
     </Box>
   );
@@ -640,17 +554,11 @@ export function renderInventoryDetailChildren({
   record,
   schema,
   pathname,
-  pluginName,
-  mockEntityItems,
-  allowListEntityDelete,
 }: {
   entityName: string;
   record: Row;
   schema: AppSchema;
   pathname: string;
-  pluginName: string;
-  mockEntityItems?: Record<string, Record<string, unknown>[]>;
-  allowListEntityDelete?: boolean;
 }): ReactNode {
   const prefix = inventoryMountPrefix(pathname);
   const blocks: ReactNode[] = [];
@@ -685,11 +593,6 @@ export function renderInventoryDetailChildren({
               ? nestedChildHref(prefix, pathname, 'nodes', record, 'services', row.id)
               : `${prefix}/services/${row.id}`
           }
-          listEntityName="services"
-          pluginName={pluginName}
-          mockEntityItems={mockEntityItems}
-          allowListEntityDelete={allowListEntityDelete}
-          schema={schema}
         />,
       );
     }
@@ -709,11 +612,6 @@ export function renderInventoryDetailChildren({
               ? nestedChildHref(prefix, pathname, 'services', record, 'schemas', row.id)
               : `${prefix}/schemas/${row.id}`
           }
-          listEntityName="schemas"
-          pluginName={pluginName}
-          mockEntityItems={mockEntityItems}
-          allowListEntityDelete={allowListEntityDelete}
-          schema={schema}
         />,
       );
     }
@@ -753,11 +651,6 @@ export function renderInventoryDetailChildren({
               ? nestedChildHref(prefix, pathname, 'schemas', record, 'tables', row.id)
               : `${prefix}/tables/${row.id}`
           }
-          listEntityName="tables"
-          pluginName={pluginName}
-          mockEntityItems={mockEntityItems}
-          allowListEntityDelete={allowListEntityDelete}
-          schema={schema}
         />,
       );
     }

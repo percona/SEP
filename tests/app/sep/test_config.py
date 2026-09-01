@@ -142,7 +142,12 @@ class TestDiagnosticsDelivery:
 
     def test_defaults_to_not_configured(self):
         """Keep the block unset so a consumer can gate on ``None``."""
-        assert SEPSettings(_env_file=None).DIAGNOSTICS_DELIVERY is None
+        assert (
+            SEPSettings(
+                _env_file=None  # ty: ignore[unknown-argument]
+            ).DIAGNOSTICS_DELIVERY
+            is None
+        )
 
     def test_is_not_overridable_from_the_database(self):
         """Keep the block out of the override layer, whole-object and per-leaf alike.
@@ -212,7 +217,12 @@ class TestDiagnosticsDeliveryInputs:
 
     def test_defaults_to_not_configured(self):
         """Leave the inputs unset so a standalone deployment behaves unchanged."""
-        assert SEPSettings(_env_file=None).DIAGNOSTICS_DELIVERY_INPUTS is None
+        assert (
+            SEPSettings(
+                _env_file=None  # ty: ignore[unknown-argument]
+            ).DIAGNOSTICS_DELIVERY_INPUTS
+            is None
+        )
 
     def test_is_hot_reloadable_and_advanced(self):
         """Expose the whole object to the settings API, grouped as advanced."""
@@ -342,7 +352,7 @@ class TestFooterTemplate:
         worktree hook may set ``SEP__FOOTER_TEMPLATE`` to the branch name) does
         not mask the built-in default.
         """
-        settings = SEPSettings(_env_file=None)
+        settings = SEPSettings(_env_file=None)  # ty: ignore[unknown-argument]
         assert settings.FOOTER_TEMPLATE.template == "$summary $version"
 
     def test_footer_template_coerced_from_string(self):
@@ -630,7 +640,10 @@ class TestCredentialUrlMaskRejection:
     def test_mask_is_rejected_on_the_yaml_path(self, field: str) -> None:
         """Fail settings construction when a masked export is re-fed as configuration."""
         with pytest.raises(ValidationError, match=field):
-            SEPSettings(**{field: self._MASKED_ENDPOINT}, _env_file=None)
+            SEPSettings(
+                **{field: self._MASKED_ENDPOINT},
+                _env_file=None,  # ty: ignore[unknown-argument]
+            )
 
     @pytest.mark.parametrize(
         ("field", "env_name"),
@@ -645,7 +658,7 @@ class TestCredentialUrlMaskRejection:
         """Fail settings construction when a masked endpoint arrives via the environment."""
         monkeypatch.setenv(env_name, self._MASKED_ENDPOINT)
         with pytest.raises(ValidationError, match=field):
-            SEPSettings(_env_file=None)
+            SEPSettings(_env_file=None)  # ty: ignore[unknown-argument]
 
 
 class TestSyncerRetirementThresholdsOverConfig:

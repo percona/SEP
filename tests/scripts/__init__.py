@@ -24,6 +24,19 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 
 
+def write_file(tmp_path: Path, name: str, text: str) -> Path:
+    """Write ``text`` to ``tmp_path/name`` and return the path.
+
+    :param tmp_path: pytest's per-test temporary directory.
+    :param name: The filename to create under ``tmp_path``.
+    :param text: UTF-8 contents to write.
+    :return: The newly-written path.
+    """
+    path = tmp_path / name
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
 def load_script(name: str) -> ModuleType:
     """Return ``scripts/<name>.py`` loaded as a module named ``name``.
 

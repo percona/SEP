@@ -27,7 +27,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 from starlette.testclient import TestClient
 
-from app.api.deps import get_current_user, require_minimum_role_for_unsafe_methods
+from app.api.deps import (
+    get_current_service_principal,
+    get_current_user,
+    require_minimum_role_for_unsafe_methods,
+)
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
@@ -94,12 +98,20 @@ def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
     """Create an authenticated test client for the inventory app.
 
     Mirrors the SEP ``test_client``'s ``require_minimum_role_for_unsafe_methods``
-    override so the non-admin fixture user can exercise a mutating route.
+    override so the non-admin fixture user can exercise a mutating route, and
+    overrides ``get_current_service_principal`` for the same reason: it is the
+    outer dependency on the node and service writes, so overriding
+    ``get_current_user`` alone leaves it resolving the fixture user and refusing
+    it. Authorization itself is covered by ``test_role_gate.py``, which drives a
+    real credential chain.
     """
     inventory_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
         lambda: None
     )
     inventory_app.dependency_overrides[get_current_user] = lambda: regular_user
+    inventory_app.dependency_overrides[get_current_service_principal] = (
+        lambda: regular_user
+    )
     inventory_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(inventory_app)
     inventory_app.dependency_overrides = {}
@@ -218,3 +230,54 @@ async def service_observation(
         ServiceSystemObservationWriteFactory.build(),
         service_id=service.id,
     )
+
+
+@pytest_asyncio.fixture
+async def split_nodes(session: AsyncSession, node: Node) -> tuple[Node, Node]:
+    """Create the second node a PMM re-registration of ``node`` leaves behind."""
+    successor = await NodeManager.create(
+        session, NodeWriteFactory.build(name=node.name, address=node.address)
+    )
+    return node, successor
+
+
+@pytest_asyncio.fixture
+async def tombstoned_split_nodes(
+    session: AsyncSession, split_nodes: tuple[Node, Node]
+) -> tuple[Node, Node]:
+    """Retire the predecessor of a split pair, as its absence grace eventually does."""
+    predecessor, successor = split_nodes
+    await retire_in_place(session, predecessor)
+    return predecessor, successor
+
+
+@pytest_asyncio.fixture
+async def split_services(
+    session: AsyncSession, service: Service
+) -> tuple[Service, Service]:
+    """Create the second service a re-registration leaves on the same node."""
+    successor = await ServiceManager.create(
+        session,
+        ServiceWriteFactory.build(name=service.name, port=service.port),
+        node_id=service.node_id,
+    )
+    return service, successor
+
+
+@pytest_asyncio.fixture
+async def split_nodes_with_services(
+    session: AsyncSession, split_nodes: tuple[Node, Node]
+) -> tuple[Node, Node, Service, Service]:
+    """Give each node of a split pair a service sharing one name across them."""
+    predecessor, successor = split_nodes
+    predecessor_service = await ServiceManager.create(
+        session,
+        ServiceWriteFactory.build(name="inventory-test-mysql"),
+        node_id=predecessor.id,
+    )
+    successor_service = await ServiceManager.create(
+        session,
+        ServiceWriteFactory.build(name="inventory-test-mysql"),
+        node_id=successor.id,
+    )
+    return predecessor, successor, predecessor_service, successor_service

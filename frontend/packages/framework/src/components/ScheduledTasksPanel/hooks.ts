@@ -31,6 +31,7 @@ const POLL_INTERVAL_MS = 30_000;
 
 interface AppTask extends Record<string, unknown> {
   name: string;
+  display_name?: string;
 }
 
 /**

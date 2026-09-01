@@ -57,6 +57,7 @@ import type { TasksComponents } from '@sep/api';
 type PeriodicTaskResponse = TasksComponents['schemas']['PeriodicTaskResponse'];
 
 const TASK_NAME = 'inventory-sync';
+const COLLECTION_TASK_NAME = 'inventory-collection';
 
 const MOCK_SYNCERS = [
   { name: 'myapp.SyncerA', display_name: 'Syncer A' },
@@ -100,9 +101,12 @@ function renderPage(schedulingEnabled = true) {
   });
 }
 
-function setupHooks(periodic: PeriodicTaskResponse[]) {
+function setupHooks(
+  periodic: PeriodicTaskResponse[],
+  appTasks: Array<{ name: string; display_name?: string }> = [{ name: TASK_NAME }],
+) {
   useAppTasksMock.mockReturnValue({
-    data: { items: [{ name: TASK_NAME }], pagination: null },
+    data: { items: appTasks, pagination: null },
     isLoading: false,
     isError: false,
   });
@@ -114,6 +118,11 @@ function setupHooks(periodic: PeriodicTaskResponse[]) {
     return { data: periodic };
   });
 }
+
+const MOCK_BOTH_TASKS = [
+  { name: TASK_NAME, display_name: 'Inventory Sync' },
+  { name: COLLECTION_TASK_NAME, display_name: 'Inventory Collection' },
+];
 
 beforeEach(() => {
   apiMock.get.mockReset();
@@ -155,7 +164,7 @@ describe('InventorySchedulePage', () => {
     it('shows empty message when no schedules', async () => {
       setupHooks([]);
       renderPage();
-      await screen.findByText(/No inventory-sync schedules configured/i);
+      await screen.findByText(/No schedules configured/i);
     });
 
     it('shows attach button when schedulingEnabled', async () => {
@@ -203,6 +212,48 @@ describe('InventorySchedulePage', () => {
       renderPage();
       await screen.findByTestId('inv-sched-row-12');
       expect(screen.getByText('unknown.Syncer')).toBeInTheDocument();
+    });
+  });
+
+  describe('task-aware rendering', () => {
+    it('shows a collection schedule under its own task, never as a syncer row', async () => {
+      setupHooks(
+        [
+          makePeriodic({ id: 13, task: COLLECTION_TASK_NAME, execute_request: null }),
+          makePeriodic({
+            id: 14,
+            task: TASK_NAME,
+            execute_request: { meta: {}, chain_task_names: [], chain_on_failure: false },
+          }),
+        ],
+        MOCK_BOTH_TASKS,
+      );
+      renderPage();
+
+      const collectionRow = await screen.findByTestId('inv-sched-row-13');
+      expect(within(collectionRow).getByText('Inventory Collection')).toBeInTheDocument();
+      expect(within(collectionRow).queryByText('All syncers')).not.toBeInTheDocument();
+      expect(
+        within(collectionRow).getByLabelText(/Enable schedule for Inventory Collection/i),
+      ).toBeInTheDocument();
+
+      const syncRow = await screen.findByTestId('inv-sched-row-14');
+      expect(within(syncRow).getByText('Inventory Sync')).toBeInTheDocument();
+      expect(within(syncRow).getByText('All syncers')).toBeInTheDocument();
+    });
+
+    it('delete confirmation for a collection row names the collection task, not inventory-sync', async () => {
+      setupHooks(
+        [makePeriodic({ id: 15, task: COLLECTION_TASK_NAME, execute_request: null })],
+        MOCK_BOTH_TASKS,
+      );
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(await screen.findByTestId('inv-sched-delete-15'));
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toHaveTextContent(/Clear the Inventory Collection schedule\?/i);
+      expect(dialog).not.toHaveTextContent(/inventory-sync/i);
     });
   });
 
@@ -336,6 +387,44 @@ describe('InventorySchedulePage', () => {
 
       expect(apiMock.post).not.toHaveBeenCalled();
       expect(await screen.findByRole('alert')).toHaveTextContent(/whole number/i);
+    });
+  });
+
+  describe('attach form with multiple tasks', () => {
+    it('offers a task selector and hides the syncer picker for the collection task', async () => {
+      setupHooks([], MOCK_BOTH_TASKS);
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(await screen.findByTestId('inv-sched-attach'));
+      const form = await screen.findByTestId('inv-sched-form');
+      const taskGroup = within(form).getByTestId('inv-sched-task-group');
+      expect(within(taskGroup).getByLabelText('Inventory Sync')).toBeInTheDocument();
+      expect(within(taskGroup).getByLabelText('Inventory Collection')).toBeInTheDocument();
+      expect(within(form).getByTestId('inv-sched-syncer-group')).toBeInTheDocument();
+
+      await user.click(within(taskGroup).getByLabelText('Inventory Collection'));
+      expect(within(form).queryByTestId('inv-sched-syncer-group')).not.toBeInTheDocument();
+    });
+
+    it('submits a collection schedule with no syncer meta to the collection task endpoint', async () => {
+      setupHooks([], MOCK_BOTH_TASKS);
+      apiMock.post.mockResolvedValue({
+        data: makePeriodic({ id: 200, task: COLLECTION_TASK_NAME }),
+      });
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(await screen.findByTestId('inv-sched-attach'));
+      const form = await screen.findByTestId('inv-sched-form');
+      await user.click(within(form).getByLabelText('Inventory Collection'));
+      await user.click(within(form).getByRole('button', { name: /Attach schedule/i }));
+
+      await waitFor(() => expect(apiMock.post).toHaveBeenCalledTimes(1));
+      const [url, body] = apiMock.post.mock.calls[0];
+      expect(url).toBe(`/sep/periodic-tasks/${COLLECTION_TASK_NAME}/`);
+      expect(body.task).toBe(COLLECTION_TASK_NAME);
+      expect(body.execute_request).toBeNull();
     });
   });
 
