@@ -832,3 +832,32 @@ class TestSyncEntityAbsenceManager:
             ("pmm", SyncInventoryEntityTypeEnum.SERVICE),
             ("mysql", SyncInventoryEntityTypeEnum.NODE),
         }
+
+    @pytest.mark.asyncio
+    async def test_a_null_syncer_clears_the_entity_across_every_syncer(
+        self, session
+    ) -> None:
+        """Drop every syncer's row for an entity that is going away for good.
+
+        A row outlives the configuration that wrote it, so a caller collecting
+        the entity itself cannot enumerate the syncers that observed it.
+        """
+        await SyncEntityAbsenceManager.record_missing(
+            session, "pmm", SyncInventoryEntityTypeEnum.NODE, 7
+        )
+        await SyncEntityAbsenceManager.record_missing(
+            session, "mysql", SyncInventoryEntityTypeEnum.NODE, 7
+        )
+        await SyncEntityAbsenceManager.record_missing(
+            session, "pmm", SyncInventoryEntityTypeEnum.SERVICE, 7
+        )
+
+        await SyncEntityAbsenceManager.clear(
+            session, None, SyncInventoryEntityTypeEnum.NODE, 7
+        )
+
+        survivors = {
+            (row.syncer, row.entity_type)
+            for row in await SyncEntityAbsenceManager.list(session)
+        }
+        assert survivors == {("pmm", SyncInventoryEntityTypeEnum.SERVICE)}

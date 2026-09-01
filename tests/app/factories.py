@@ -37,6 +37,7 @@ from app.inventory.models import (
     SchemaWrite,
     ServiceSystemObservationWrite,
     ServiceWrite,
+    SourceEnum,
     TableWrite,
 )
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
@@ -176,11 +177,19 @@ class TaskHistoryResponseFactory(ModelFactory[TaskHistoryResponse]):
     task = Use(TaskResponseFactory.build)
 
 
+# Node has a unique (external_id, source) index and Service a unique
+# (external_id, node_id) one, so a randomly generated identifier can collide with
+# one a sibling build already used and turn that create into a bewildering 409.
+# Hand out identifiers from a sequence instead, as the ports below already do.
+_node_external_ids = count(1)
+_service_external_ids = count(1)
+
+
 class NodeWriteFactory(ModelFactory[NodeWrite]):
     """Define factory for NodeWrite instances."""
 
-    source = None
-    external_id = None
+    source = SourceEnum.PMM
+    external_id = Use(lambda: f"/node_id/test-{next(_node_external_ids)}")
 
 
 # Service has a unique (port, node_id) index, so a randomly generated port can
@@ -193,7 +202,7 @@ class ServiceWriteFactory(ModelFactory[ServiceWrite]):
     """Define factory for ServiceWrite instances."""
 
     node_id = None
-    external_id = None
+    external_id = Use(lambda: f"/service_id/test-{next(_service_external_ids)}")
     port = Use(lambda: next(_service_ports))
 
 

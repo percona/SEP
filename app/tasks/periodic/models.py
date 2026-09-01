@@ -28,9 +28,13 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from sqlalchemy_celery_beat.models import Period, PeriodicTask
+from sqlalchemy_celery_beat.models import PeriodicTask
 
-from app.core.celery.models import CrontabSchedule, IntervalSchedule
+from app.core.celery.models import (
+    CrontabSchedule,
+    IntervalSchedule,
+    reject_unmanageable_period,
+)
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
 from app.tasks.models import TaskExecuteRequest, TaskHistoryStatusEnum
 
@@ -331,21 +335,16 @@ class PeriodicTaskWrite(BasePeriodicTask):
     ) -> IntervalSchedule | None:
         """Ensure the interval is not lower than 1 minute.
 
+        Defers to :data:`app.core.celery.models.MANAGEABLE_PERIODS`, the same
+        bound the operator-settable interval fields annotate with, so a cadence
+        accepted at one boundary cannot be refused at the other.
+
         :param v: The interval schedule to validate.
-        :type v: IntervalSchedule | None
         :return: The validated interval schedule.
-        :rtype: IntervalSchedule | None
         """
-        if v is not None and v.period not in {
-            Period.DAYS,
-            Period.HOURS,
-            Period.MINUTES,
-        }:
-            raise ValueError(
-                f"Invalid period '{v.period}' for IntervalSchedule. Valid periods are: "
-                f"'days', 'hours', 'minutes'."
-            )
-        return v
+        if v is None:
+            return v
+        return reject_unmanageable_period(v)
 
 
 class PeriodicTaskUpdate(PeriodicTaskWrite):

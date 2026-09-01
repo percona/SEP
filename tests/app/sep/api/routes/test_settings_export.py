@@ -45,6 +45,7 @@ from app.sep.deps import (
     require_bearer_for_unsafe_methods,
 )
 from app.sep.main import sep_app
+from tests.app.db_schema import apply_schema
 
 EXPORT_URL = "/api/sep/admin/settings/export"
 SETTINGS_LIST_URL = "/api/sep/admin/settings/"
@@ -99,7 +100,7 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
@@ -581,6 +582,7 @@ SEP_CLASS = SettingClassEnum.SEP_SETTINGS.value
 SNIPPETS_CLASS = SettingClassEnum.SNIPPETS_SETTINGS.value
 ALERTS_CLASS = "AlertsSettings"
 HEALTH_REPORT_CLASS = "HealthReportSettings"
+INVENTORY_APP_CLASS = "InventoryAppSettings"
 SETTINGS_CLASS = SettingClassEnum.SETTINGS.value
 ALERT_CLASS = SettingClassEnum.ALERT_SETTINGS.value
 TASKS_CLASS = SettingClassEnum.TASKS_SETTINGS.value
@@ -589,6 +591,7 @@ FULL_EXPORT_CLASSES = {
     SNIPPETS_CLASS,
     ALERTS_CLASS,
     HEALTH_REPORT_CLASS,
+    INVENTORY_APP_CLASS,
     SETTINGS_CLASS,
     ALERT_CLASS,
     TASKS_CLASS,

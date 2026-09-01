@@ -41,12 +41,10 @@ const INVENTORY_DETAIL_SUPPRESS_KEYS = [
 function InventoryNodesList({
   schema,
   mockEntityItems,
-  allowListEntityDelete,
   schedulingEnabled,
 }: {
   schema: AppSchema;
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
-  allowListEntityDelete: boolean;
   schedulingEnabled: boolean;
 }) {
   const { pathname } = useLocation();
@@ -96,7 +94,6 @@ function InventoryNodesList({
         hideScheduleButton
         entityNameOverride="nodes"
         rowClickHref={(row) => `${pathname}/${String(row.id)}`}
-        allowListEntityDelete={allowListEntityDelete}
       />
     </>
   );
@@ -123,7 +120,6 @@ export function InventoryRoutes({
     suppressDetailKeys: INVENTORY_DETAIL_SUPPRESS_KEYS,
     renderEntityDetailChildren: renderInventoryDetailChildren,
     hideDetailChrome: true,
-    allowListEntityDelete: true,
   };
 
   return (
@@ -135,7 +131,6 @@ export function InventoryRoutes({
           <InventoryNodesList
             schema={schema}
             mockEntityItems={mockEntityItems}
-            allowListEntityDelete
             schedulingEnabled={schedulingEnabled}
           />
         }

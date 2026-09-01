@@ -13,55 +13,7 @@
       "description": "Physical or logical hosts tracked in inventory.",
       "detail_highlights": {},
       "display_name": "Nodes",
-      "forms": [
-        {
-          "collapsed_by_default": false,
-          "collapsible": false,
-          "fields": [
-            {
-              "label": "Address",
-              "name": "address",
-              "required": true,
-              "type": "string"
-            },
-            {
-              "label": "Name",
-              "name": "name",
-              "required": true,
-              "type": "string"
-            },
-            {
-              "description": "Optional external identifier (requires a source).",
-              "label": "External ID",
-              "name": "external_id",
-              "required": false,
-              "type": "string"
-            },
-            {
-              "choices": [
-                {
-                  "label": "PMM",
-                  "value": "pmm"
-                }
-              ],
-              "label": "Source",
-              "name": "source",
-              "required": false,
-              "type": "choice"
-            },
-            {
-              "default": "generic",
-              "description": "Node classification (for example generic, remote).",
-              "label": "Type",
-              "name": "type",
-              "required": false,
-              "type": "string"
-            }
-          ],
-          "render_after_submit": false,
-          "title": "Node"
-        }
-      ],
+      "forms": [],
       "list_view": {
         "columns": [
           {
@@ -91,12 +43,6 @@
             "key": "created_at",
             "label": "Created",
             "sortable": false
-          },
-          {
-            "format": "actions",
-            "key": "_actions",
-            "label": "Actions",
-            "sortable": false
           }
         ],
         "default_sort": "-created_at",
@@ -109,104 +55,7 @@
       "description": "Database services attached to nodes.",
       "detail_highlights": {},
       "display_name": "Services",
-      "forms": [
-        {
-          "collapsed_by_default": false,
-          "collapsible": false,
-          "fields": [
-            {
-              "ge": 1,
-              "label": "Node ID",
-              "name": "node_id",
-              "required": true,
-              "type": "integer"
-            },
-            {
-              "label": "Name",
-              "name": "name",
-              "required": true,
-              "type": "string"
-            },
-            {
-              "choices": [
-                {
-                  "label": "Mysql",
-                  "value": "mysql"
-                },
-                {
-                  "label": "Postgresql",
-                  "value": "postgresql"
-                },
-                {
-                  "label": "Mongodb",
-                  "value": "mongodb"
-                },
-                {
-                  "label": "Proxysql",
-                  "value": "proxysql"
-                },
-                {
-                  "label": "Haproxy",
-                  "value": "haproxy"
-                },
-                {
-                  "label": "External",
-                  "value": "external"
-                },
-                {
-                  "label": "Valkey",
-                  "value": "valkey"
-                }
-              ],
-              "label": "Service type",
-              "name": "type",
-              "required": true,
-              "type": "choice"
-            },
-            {
-              "ge": 1,
-              "label": "Port",
-              "le": 65535,
-              "name": "port",
-              "required": false,
-              "type": "integer"
-            },
-            {
-              "label": "External ID",
-              "name": "external_id",
-              "required": false,
-              "type": "string"
-            },
-            {
-              "label": "Environment",
-              "name": "environment",
-              "required": false,
-              "type": "string"
-            },
-            {
-              "label": "Cluster",
-              "name": "cluster",
-              "required": false,
-              "type": "string"
-            },
-            {
-              "label": "Replication set",
-              "name": "replication_set",
-              "required": false,
-              "type": "string"
-            },
-            {
-              "description": "Optional YAML/JSON object of labels.",
-              "label": "Custom labels",
-              "name": "custom_labels",
-              "required": false,
-              "type": "yaml"
-            }
-          ],
-          "render_after_submit": false,
-          "title": "Service"
-        }
-      ],
+      "forms": [],
       "list_view": {
         "columns": [
           {
@@ -239,12 +88,6 @@
             "key": "replication_set",
             "label": "Replication set",
             "sortable": false
-          },
-          {
-            "format": "actions",
-            "key": "_actions",
-            "label": "Actions",
-            "sortable": false
           }
         ],
         "default_sort": "-name",
@@ -257,29 +100,7 @@
       "description": "Database schemas within a service.",
       "detail_highlights": {},
       "display_name": "Schemas",
-      "forms": [
-        {
-          "collapsed_by_default": false,
-          "collapsible": false,
-          "fields": [
-            {
-              "ge": 1,
-              "label": "Service ID",
-              "name": "service_id",
-              "required": true,
-              "type": "integer"
-            },
-            {
-              "label": "Schema name",
-              "name": "name",
-              "required": true,
-              "type": "string"
-            }
-          ],
-          "render_after_submit": false,
-          "title": "Schema"
-        }
-      ],
+      "forms": [],
       "list_view": {
         "columns": [
           {
@@ -297,12 +118,6 @@
             "key": "created_at",
             "label": "Created",
             "sortable": false
-          },
-          {
-            "format": "actions",
-            "key": "_actions",
-            "label": "Actions",
-            "sortable": false
           }
         ],
         "default_sort": "-created_at",
@@ -318,44 +133,7 @@
         "keys": "json"
       },
       "display_name": "Tables",
-      "forms": [
-        {
-          "collapsed_by_default": false,
-          "collapsible": false,
-          "fields": [
-            {
-              "ge": 1,
-              "label": "Schema ID",
-              "name": "schema_id",
-              "required": true,
-              "type": "integer"
-            },
-            {
-              "label": "Table name",
-              "name": "name",
-              "required": true,
-              "type": "string"
-            },
-            {
-              "description": "DDL used to define the table.",
-              "label": "CREATE statement",
-              "name": "create",
-              "required": true,
-              "rows": 6,
-              "type": "textarea"
-            },
-            {
-              "description": "JSON describing primary / unique keys.",
-              "label": "Keys",
-              "name": "keys",
-              "required": true,
-              "type": "yaml"
-            }
-          ],
-          "render_after_submit": false,
-          "title": "Table"
-        }
-      ],
+      "forms": [],
       "list_view": {
         "columns": [
           {
@@ -372,12 +150,6 @@
             "format": "relative",
             "key": "created_at",
             "label": "Created",
-            "sortable": false
-          },
-          {
-            "format": "actions",
-            "key": "_actions",
-            "label": "Actions",
             "sortable": false
           }
         ],

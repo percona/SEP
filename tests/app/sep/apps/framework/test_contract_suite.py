@@ -50,6 +50,7 @@ from app.tasks.models import LATEST_HISTORY_STATUS_NAMES_MAX, TaskHistoryStatusE
 from tests.app.sep.apps.archives.build_pins import ARCHIVES_ARCHIVE_PINS
 from tests.app.sep.apps.framework.contract_suite import (
     app_base_url,
+    borrow_shared_mount,
     build_contract_client,
     build_valid_create_body,
     DerivedRouterContractTests,
@@ -76,6 +77,8 @@ from tests.app.sep.apps.framework.kit import (
     SynthForm,
     SynthResponse,
 )
+
+pytest_plugins = ["pytester"]
 
 
 class TestSyntheticContract(DerivedRouterContractTests):
@@ -739,3 +742,75 @@ def test_create_response_builder_pins_stable_component(
     assert "owner" not in payload
     assert payload["created_by"] == SYNTH_CREATED_BY_NAME
     assert payload["connectivity_warning"] is not None
+
+
+_OVERRIDE_LEAK_SUITE = """
+import pytest
+
+from tests.app.sep.apps.framework.contract_suite import mount_app_shared
+from tests.app.sep.apps.framework.kit import synth_app
+
+
+def sentinel_dep():
+    return "sentinel"
+
+
+class TestLeak:
+    app_def = synth_app()
+
+    @pytest.mark.usefixtures("contract_client")
+    def test_a_installs_the_sentinel(self):
+        mount_app_shared(self.app_def).dependency_overrides[sentinel_dep] = lambda: "x"
+
+    @pytest.mark.usefixtures("contract_client")
+    def test_b_does_not_see_it(self):
+        assert sentinel_dep not in mount_app_shared(self.app_def).dependency_overrides
+"""
+
+
+def test_shared_mount_clears_overrides_between_tests(pytester: pytest.Pytester) -> None:
+    """Prove a contract test's overrides never reach the next test sharing its mount.
+
+    ``contract_client`` mounts through :func:`mount_app_shared`'s per-process
+    cache, so consecutive tests bound to one definition borrow a single
+    ``dependency_overrides`` mapping. The child suite installs a sentinel in its
+    first test and asserts the second cannot see it; dropping the fixture's
+    ``.clear()`` teardown turns that second test red.
+
+    The child runs under ``-n0`` because the guard is only meaningful when both
+    tests share a process — the cache is per-process, so a pair split across
+    xdist workers would pass vacuously whatever the teardown did.
+    """
+    pytester.makeconftest(
+        'pytest_plugins = ["tests.app.conftest", "tests.app.sep.apps.conftest"]'
+    )
+    pytester.makepyfile(test_override_leak=_OVERRIDE_LEAK_SUITE)
+
+    result = pytester.runpytest("-p", "no:cacheprovider", "-n0")
+
+    result.assert_outcomes(passed=2)
+
+
+def test_borrowing_a_shared_mount_twice_is_rejected() -> None:
+    """Reject a second borrow of one shared mount while the first still holds it.
+
+    ``contract_client`` and ``unauthenticated_contract_client`` both install on
+    the cached app's single ``dependency_overrides`` mapping, so a test
+    requesting both would have the later setup decide what *each* client
+    authenticates as. The borrow has to fail loudly instead.
+    """
+
+    def held_dep() -> str:
+        return "held"
+
+    app_def = synth_app()
+    app = borrow_shared_mount(app_def)
+    app.dependency_overrides[held_dep] = lambda: "held"
+
+    try:
+        with pytest.raises(RuntimeError, match="already lent"):
+            borrow_shared_mount(app_def)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert borrow_shared_mount(app_def) is app

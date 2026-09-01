@@ -18,8 +18,8 @@
 from enum import auto, StrEnum
 from typing import Any, Self
 
-from pydantic import model_validator
-from sqlalchemy import Column, Index, JSON, Text
+from pydantic import BaseModel, ConfigDict, model_validator, PositiveInt
+from sqlalchemy import Column, Index, JSON, Text, text
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
@@ -27,7 +27,12 @@ from sqlmodel import Relationship, SQLModel
 from app.core.db import BaseSQLModel
 from app.core.db.models import DateTimeWithTimezone
 from app.core.utils.fields import ArbitraryMapping, NonEmptyStr, UTCDatetime
-from app.inventory.constants import ACTIVE_RETIREMENT_KEY
+from app.inventory.constants import ACTIVE_RETIREMENT_KEY, RetirableEntityName
+
+#: Predicate narrowing the collection-scan indexes to the tombstones alone.
+#: Active rows are the overwhelming majority and can never be returned by that
+#: scan, so keeping them out holds the index size to the retired set.
+RETIRED_ROWS_ONLY = text("retired_at IS NOT NULL")
 
 
 class RetiredAtBase(SQLModel):
@@ -102,50 +107,62 @@ class ServiceTypeEnum(StrEnum):
     VALKEY = auto()
 
 
+class LinkageMethodEnum(StrEnum):
+    """Enumerate how an external-identity binding came to be recorded.
+
+    Every member names an operator action: nothing here records a binding the
+    syncer made on its own, because ordinary sync creation writes no alias row.
+
+    Values are spelled out rather than derived with ``auto()``. The column
+    persists the member *name*, but the API serializes the *value*, so under
+    ``auto()`` the two move in opposite ways when a member is renamed: the
+    stored form follows the rename while the published one silently changes
+    with it. Pinning the value holds the wire contract — this enum reaches the
+    generated API client — and leaves a rename a database concern alone.
+    """
+
+    OPERATOR_CONFIRMATION = "operator_confirmation"
+    OPERATOR_UNLINK = "operator_unlink"
+
+
+class IdentityLinkDecisionEnum(StrEnum):
+    """Enumerate the decisions an operator may record against a candidate pairing.
+
+    :cvar CONFIRMED: The pairing names one machine, and the link stands.
+    :cvar REJECTED: The pairing names two machines, so stop suggesting it.
+    :cvar UNLINKED: A standing confirmation was reversed.
+
+    Values are spelled out for the reason given on
+    :class:`LinkageMethodEnum`, and it binds harder here: this enum is also a
+    *request* body field, so a rename would reject the payloads callers were
+    already sending.
+    """
+
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+    UNLINKED = "unlinked"
+
+
 class NodeBase(SQLModel):
     """Define the base structure for node-related operations.
 
     :param address: The network address of the node.
-    :type address: NonEmptyStr
     :param name: The name of the node.
-    :type name: NonEmptyStr
     :param external_id: An external identifier for the node, indexed for quick lookup.
-        Defaults to None.
-    :type external_id: NonEmptyStr | None
     :param source: The source from which the node information is derived. Indexed for
-        quick lookup. Defaults to None.
-    :type source: SourceEnum | None
+        quick lookup.
     :param type: The type of the node (e.g., remote, generic). Defaults to "generic".
-    :type type: NonEmptyStr
     """
 
     address: NonEmptyStr
     name: NonEmptyStr
-    external_id: NonEmptyStr | None = SQLField(default=None, index=True)
-    source: SourceEnum | None = SQLField(
-        default=None,
-        sa_column=Column(EnumField(SourceEnum)),
+    external_id: NonEmptyStr = SQLField(index=True)
+    source: SourceEnum = SQLField(
+        sa_column=Column(EnumField(SourceEnum), nullable=False),
     )
     type: NonEmptyStr = SQLField(
         default="generic"
     )  # TODO: Enum with allowed values  # noqa: TD002, TD003
-
-    @model_validator(mode="after")
-    def validate_external_id_source(self) -> Self:
-        """Ensure that external_id is set only if source is provided.
-
-        Raises
-        ------
-        ValueError
-            If ``external_id`` is provided without a corresponding ``source``.
-
-        :return: The validated instance.
-        :rtype: Self
-
-        """
-        if self.external_id is not None and self.source is None:
-            raise ValueError("Can't set external_id if source is None")
-        return self
 
 
 class Node(NodeBase, RetirableSQLModel, table=True):
@@ -172,6 +189,12 @@ class Node(NodeBase, RetirableSQLModel, table=True):
             "retirement_key",
             unique=True,
         ),
+        Index(
+            "ix_node_retired_at_not_null",
+            "retired_at",
+            postgresql_where=RETIRED_ROWS_ONLY,
+            sqlite_where=RETIRED_ROWS_ONLY,
+        ),
     )
     services: list["Service"] = Relationship(back_populates="node", cascade_delete=True)
 
@@ -182,9 +205,8 @@ class NodeWrite(NodeBase):
     :param address: The network address of the node.
     :param name: The name of the node.
     :param external_id: An external identifier for the node, indexed for quick lookup.
-        Defaults to None.
     :param source: The source from which the node information is derived. Indexed for
-        quick lookup. Defaults to None.
+        quick lookup.
     :param type: The type of the node (e.g., remote, generic). Defaults to "generic".
     """
 
@@ -214,7 +236,7 @@ class ServiceBase(SQLModel):
     """Define the base structure for service-related operations.
 
     :param external_id: An external identifier for the service, indexed for quick
-        lookup. Defaults to None.
+        lookup.
     :param name: The name of the service.
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
     :param port: The port number on which the service is running. Defaults to None.
@@ -226,10 +248,7 @@ class ServiceBase(SQLModel):
     :param node_id: The foreign key referencing the node to which the service belongs.
     """
 
-    external_id: NonEmptyStr | None = SQLField(
-        default=None,
-        index=True,
-    )  # TODO: validate external_id not null if node source is defined  # noqa: TD002, TD003
+    external_id: NonEmptyStr = SQLField(index=True)
     name: NonEmptyStr
     type: ServiceTypeEnum = SQLField(
         sa_column=Column(EnumField(ServiceTypeEnum, native_enum=False), nullable=False),
@@ -251,25 +270,17 @@ class ServiceWrite(ServiceBase):
     """Define the model for writing service data to the inventory.
 
     :param external_id: An external identifier for the service, indexed for quick
-        lookup. Defaults to None.
-    :type external_id: NonEmptyStr | None
+        lookup.
     :param name: The name of the service.
-    :type name: NonEmptyStr
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-    :type type: ServiceTypeEnum
     :param port: The port number on which the service is running. Defaults to None.
-    :type port: int | None
     :param environment: The environment in which the service is running (e.g.,
         production, staging). Defaults to None.
-    :type environment: str | None
     :param cluster: The cluster in which the service is running. Defaults to None.
-    :type cluster: str | None
     :param replication_set: The replication set in which the service is running. Defaults to None.
-    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
     :param node_id: The foreign key referencing the node to which the service belongs.
         Defaults to None.
-    :type node_id: int | None
     """
 
     node_id: int | None = SQLField(
@@ -292,16 +303,14 @@ class Service(RetirableSQLModel, ServiceBase, table=True):
         node_id, as defined by composite index ix_service_external_id_node_id.
     :param name: The name of the service.
     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-    :param port: The port number on which the service is running. Must be unique for
-        node_id, as defined by composite index ix_service_port_node_id.
+    :param port: The port number on which the service is running.
     :param environment: The environment in which the service is running, if set.
     :param cluster: The cluster in which the service is running, if set.
     :param replication_set: The replication set in which the service is running, if set.
     :param custom_labels: Custom labels associated with the service, if set.
     :param node_id: The unique identifier of the node on which the service is running.
         Must be unique for external_id, as defined by composite index
-        ix_service_external_id_node_id, and for port, as defined by composite index
-        ix_service_port_node_id.
+        ix_service_external_id_node_id.
     :param node: The node to which the service is associated.
     :param retired_at: When the service stopped being reported upstream, or None
         while it is active.
@@ -318,11 +327,10 @@ class Service(RetirableSQLModel, ServiceBase, table=True):
             unique=True,
         ),
         Index(
-            "ix_service_port_node_id",
-            "port",
-            "node_id",
-            "retirement_key",
-            unique=True,
+            "ix_service_retired_at_not_null",
+            "retired_at",
+            postgresql_where=RETIRED_ROWS_ONLY,
+            sqlite_where=RETIRED_ROWS_ONLY,
         ),
     )
 
@@ -423,6 +431,12 @@ class Schema(RetirableSQLModel, SchemaBase, table=True):
             "service_id",
             "retirement_key",
             unique=True,
+        ),
+        Index(
+            "ix_schema_retired_at_not_null",
+            "retired_at",
+            postgresql_where=RETIRED_ROWS_ONLY,
+            sqlite_where=RETIRED_ROWS_ONLY,
         ),
     )
     service: Service = Relationship(back_populates="schemas")
@@ -542,6 +556,12 @@ class Table(RetirableSQLModel, TableBase, table=True):
             "retirement_key",
             unique=True,
         ),
+        Index(
+            "ix_table_retired_at_not_null",
+            "retired_at",
+            postgresql_where=RETIRED_ROWS_ONLY,
+            sqlite_where=RETIRED_ROWS_ONLY,
+        ),
     )
     database: Schema = Relationship(back_populates="tables")
 
@@ -593,6 +613,231 @@ class TableDetailResponse(TableResponse):
     """
 
     database: Schema
+
+
+class ExternalIdentityAliasBase(SQLModel):
+    """Define the base structure for an external-identity binding record.
+
+    :param entity_type: The inventory entity type the binding names.
+    :param entity_id: The primary key of the row the upstream id resolves to.
+    :param source: The upstream system the identifier belongs to.
+    :param external_id: The upstream identifier being bound.
+    :param valid_from: When the binding took effect.
+    :param valid_to: When the binding stopped applying, or None while it stands.
+    :param linkage_method: How the binding came to be recorded.
+    :param principal: The caller that recorded the binding.
+    """
+
+    entity_type: RetirableEntityName = SQLField(
+        sa_column=Column(
+            EnumField(
+                RetirableEntityName,
+                native_enum=False,
+                create_constraint=True,
+                name="alias_entity_type",
+            ),
+            nullable=False,
+        )
+    )
+    entity_id: int
+    source: SourceEnum = SQLField(
+        sa_column=Column(
+            EnumField(
+                SourceEnum,
+                native_enum=False,
+                create_constraint=True,
+                name="alias_source",
+            ),
+            nullable=False,
+        )
+    )
+    external_id: NonEmptyStr
+    valid_from: UTCDatetime = SQLField(sa_type=DateTimeWithTimezone)
+    valid_to: UTCDatetime | None = SQLField(default=None, sa_type=DateTimeWithTimezone)
+    linkage_method: LinkageMethodEnum = SQLField(
+        sa_column=Column(
+            EnumField(
+                LinkageMethodEnum,
+                native_enum=False,
+                create_constraint=True,
+                name="alias_linkage_method",
+            ),
+            nullable=False,
+        )
+    )
+    principal: NonEmptyStr
+
+
+class ExternalIdentityAlias(ExternalIdentityAliasBase, BaseSQLModel, table=True):
+    """Bind one upstream identifier to one inventory row over a validity interval.
+
+    Append-only. A binding that is open at write time carries ``valid_to = None``
+    and is closed by appending a superseding record rather than by an update, so
+    a confirmation and its reversal both stay readable afterwards. An identifier
+    is bound to the row named by its record with the greatest
+    ``(valid_from, id)``, and then resolves to whichever row has since absorbed
+    that one through a standing confirmation — a confirmation transfers only the
+    identifier its successor currently holds, so the rest of that successor's
+    bindings stay where they are and are followed rather than rewritten. An
+    identifier with no record at all resolves by the ``external_id`` column,
+    which is the overwhelming majority.
+
+    ``entity_id`` carries no foreign key on purpose: the column is polymorphic
+    over ``node`` and ``service``, so no single target exists, and its absence
+    keeps the trail readable once collection deletes a row the history names.
+    Neither index is unique, equally on purpose —
+    ``BaseSQLModelManager.save`` rebuilds equality filters from every unique
+    index and would refuse the superseding record that expresses closure.
+
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :param created_at: The timestamp when the record is created. Defaults to the
+        current time in UTC.
+    :param updated_at: The timestamp when the record is last updated.
+        Automatically updated on changes.
+    :param entity_type: The inventory entity type the binding names.
+    :param entity_id: The primary key of the row the upstream id resolves to.
+    :param source: The upstream system the identifier belongs to.
+    :param external_id: The upstream identifier being bound.
+    :param valid_from: When the binding took effect.
+    :param valid_to: When the binding stopped applying, or None while it stands.
+    :param linkage_method: How the binding came to be recorded.
+    :param principal: The caller that recorded the binding.
+    """
+
+    __table_args__ = (
+        Index("ix_alias_source_external_id", "source", "external_id"),
+        Index("ix_alias_entity", "entity_type", "entity_id"),
+    )
+
+
+class ExternalIdentityAliasResponse(BaseSQLModel, ExternalIdentityAliasBase):
+    """Define the external-identity alias API response.
+
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :param created_at: The timestamp when the record is created. Defaults to the
+        current time in UTC.
+    :param updated_at: The timestamp when the record is last updated.
+        Automatically updated on changes.
+    :param entity_type: The inventory entity type the binding names.
+    :param entity_id: The primary key of the row the upstream id resolves to.
+    :param source: The upstream system the identifier belongs to.
+    :param external_id: The upstream identifier being bound.
+    :param valid_from: When the binding took effect.
+    :param valid_to: When the binding stopped applying, or None while it stands.
+    :param linkage_method: How the binding came to be recorded.
+    :param principal: The caller that recorded the binding.
+    """
+
+
+class IdentityLinkDecision(BaseSQLModel, table=True):
+    """Record one operator decision over one candidate pairing, append-only.
+
+    A pairing's current state is its most recent row, so nothing is ever updated
+    or deleted here either. ``predecessor_external_id`` and
+    ``predecessor_retired_at`` describe the predecessor immediately before a
+    confirmation and are read back only off a ``CONFIRMED`` row; they are what
+    lets a reversal restore the exact pre-confirmation state rather than an
+    approximation of it.
+
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :param created_at: The timestamp when the record is created. Defaults to the
+        current time in UTC.
+    :param updated_at: The timestamp when the record is last updated.
+        Automatically updated on changes.
+    :param entity_type: The inventory entity type the pairing names.
+    :param predecessor_id: The older row of the pairing, the one a confirmation
+        keeps.
+    :param successor_id: The newer row of the pairing.
+    :param decision: What the operator decided.
+    :param principal: The caller that recorded the decision.
+    :param predecessor_external_id: The identifier the predecessor held before a
+        confirmation transferred the successor's onto it, or None on a decision
+        that transferred nothing.
+    :param predecessor_retired_at: The predecessor's retirement timestamp before
+        a confirmation revived it, or None when it was active or nothing was
+        revived.
+    """
+
+    __table_args__ = (
+        Index(
+            "ix_link_decision_pair",
+            "entity_type",
+            "predecessor_id",
+            "successor_id",
+        ),
+        Index("ix_link_decision_successor", "entity_type", "successor_id"),
+    )
+
+    entity_type: RetirableEntityName = SQLField(
+        sa_column=Column(
+            EnumField(
+                RetirableEntityName,
+                native_enum=False,
+                create_constraint=True,
+                name="link_decision_entity_type",
+            ),
+            nullable=False,
+        )
+    )
+    predecessor_id: int
+    successor_id: int
+    decision: IdentityLinkDecisionEnum = SQLField(
+        sa_column=Column(
+            EnumField(
+                IdentityLinkDecisionEnum,
+                native_enum=False,
+                create_constraint=True,
+                name="link_decision_decision",
+            ),
+            nullable=False,
+        )
+    )
+    principal: NonEmptyStr
+    predecessor_external_id: NonEmptyStr | None = SQLField(default=None)
+    predecessor_retired_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+
+
+class IdentityLinkDecisionWrite(SQLModel):
+    """Define the request body recording one operator decision over a pairing.
+
+    :param successor_id: The row the addressed predecessor is being paired with.
+    :param decision: What the operator decided.
+    """
+
+    successor_id: int
+    decision: IdentityLinkDecisionEnum
+
+
+class NodeIdentityCandidateResponse(SQLModel):
+    """Pair a node with the successor a re-registration may have split it into.
+
+    :param predecessor: The older row — the one every SEP reference persisted
+        before the re-registration resolves through, and so the one a
+        confirmation keeps.
+    :param successor: The newer row PMM created when the node re-registered.
+    :param matched_on: The signals that agreed, informational only. Detection
+        never requires an address match, because PMM discards the address on a
+        non-``--force`` re-registration.
+    """
+
+    predecessor: NodeResponse
+    successor: NodeResponse
+    matched_on: list[str]
+
+
+class ServiceIdentityCandidateResponse(SQLModel):
+    """Pair a service with the successor a re-registration may have split it into.
+
+    :param predecessor: The older row a confirmation keeps.
+    :param successor: The newer row PMM created.
+    :param matched_on: The signals that agreed, informational only.
+    """
+
+    predecessor: ServiceResponse
+    successor: ServiceResponse
+    matched_on: list[str]
 
 
 class HostSystemObservationBase(SQLModel):
@@ -771,3 +1016,44 @@ class ServiceSystemObservationResponse(BaseSQLModel, ServiceSystemObservationBas
     :param observed_at: When this observation was collected.
     :type observed_at: UTCDatetime
     """
+
+
+class InventoryCollectWrite(BaseModel):
+    """Ask the inventory service to collect the tombstones nothing resolves.
+
+    Unknown fields are rejected with HTTP 422. This request deletes rows
+    irreversibly, so a client typo must never be read as an omitted field: a
+    misspelled ``keep`` would otherwise arrive as an empty retained set and a
+    misspelled ``dry_run`` as a real delete.
+
+    :param retired_before: The cutoff a tombstone must predate to be eligible.
+        The caller pins one value for a whole run so successive batches cannot
+        drift into collecting a tombstone that was too young a moment earlier.
+    :param keep: The ids the caller knows are still referenced, per entity type.
+        Ancestors of a kept entity are retained without being listed.
+    :param limit: The most entities to collect per type in this call.
+    :param dry_run: Whether to report the eligible ids without deleting them.
+        Defaults to reporting: on an irreversible endpoint the mode a caller
+        reaches by omission is the one that cannot destroy anything.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    retired_before: UTCDatetime
+    keep: dict[RetirableEntityName, list[int]] = {}
+    limit: PositiveInt = 500
+    dry_run: bool = True
+
+
+class InventoryCollectResponse(BaseModel):
+    """Report what a collection call deleted, or would have deleted.
+
+    :param deleted: The collected ids per entity type, exhaustive for this
+        call. On a dry run these are the ids the equivalent real call would
+        delete. A type the walk stopped before reporting is empty rather than
+        absent.
+    :param remaining: Whether any entity type filled its ``limit``, meaning more
+        tombstones are waiting for the next batch.
+    """
+
+    deleted: dict[RetirableEntityName, list[int]]
+    remaining: bool

@@ -59,6 +59,7 @@ from tests.app.core.settings_override.conftest import (
     recording_start_refresh_task,
     START_REFRESH_TASK,
 )
+from tests.app.db_schema import apply_schema
 
 SEP_CORE_CLASSES = frozenset(
     {
@@ -97,7 +98,7 @@ def _app_owned_entry(setting_class: str) -> AppOwnedClassEntry:
 async def _create_schema(engine: AsyncEngine) -> None:
     """Create every SQLModel table on ``engine``."""
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
 
 
 async def _upsert_override(
@@ -467,10 +468,12 @@ def worker_logging_boot_fixture() -> None:
     }
     try:
         logging.config.dictConfig(boot_config)
-        settings._set_snapshot({"LOGGING": LogLevel.WARNING})
+        settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"LOGGING": LogLevel.WARNING}
+        )
         yield
     finally:
-        settings._set_snapshot({})
+        settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
         logging.config.dictConfig(settings.LOGGING_CONFIG)
 
 
@@ -546,7 +549,12 @@ class TestRepublishSepSettingsSnapshot:
             await republish_sep_settings_snapshot(session)
 
         assert sep_settings.SYNC_REFRESH_TIME == SEP_OVERRIDE_VALUE
-        assert sep_settings.get_snapshot()[SEP_OVERRIDE_KEY] == SEP_OVERRIDE_VALUE
+        assert (
+            sep_settings.get_snapshot()[  # ty: ignore[unresolved-attribute]
+                SEP_OVERRIDE_KEY
+            ]
+            == SEP_OVERRIDE_VALUE
+        )
 
     @pytest.mark.asyncio
     async def test_the_helper_fires_no_rebind_callback(

@@ -74,10 +74,7 @@ per-service value for SEP, regardless of ordering.
 `DATABASE__PASSWORD` file.** The settings classes resolve that global name for
 SEP, Inventory, and Tasks alike. Mount a per-service
 `{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` file only when one service needs a
-different password. Leave the name unset rather than blank: unlike the
-per-service password names, `settings-env.sh` does not clear a blank inherited
-`DATABASE__PASSWORD`, so an empty value outranks the mounted file (see the
-blank-inherited-value note below). The `SEP_DB_PASSWORD` shell input remains
+different password. The `SEP_DB_PASSWORD` shell input remains
 available: it fans out to all three per-service names as environment variables,
 which is the path to avoid when keeping the password out of the process
 environment.
@@ -113,10 +110,7 @@ file, since a blank environment variable still counts as supplied, so the
 script clears the blank for every canonical name it manages — `SECRET_KEY`,
 every name it derives, and every name a `SEP_*` guard would otherwise leave
 untouched when that guard is inactive (`PMM__API_KEY` with no
-`SEP_GRAFANA_TOKEN` set, say). The global `DATABASE__PASSWORD` name is outside
-that list: a blank inherited value there resolves as an empty password rather
-than deferring to a mounted file. Unset is still the clearer choice for a
-deployment that writes its own compose file or job template.
+`SEP_GRAFANA_TOKEN` set, say).
 
 ### App set
 
@@ -145,11 +139,12 @@ owning migrations is an independent Alembic branch recorded in the shared
 `alembic_version_sep` table, so a database a full image migrated carries head
 rows for apps this image does not ship. `skip_unresolvable_heads` in
 `app/sep/migrations/_orphan_heads.py` drops those rows from the heads it hands
-Alembic — but only when a configured `version_locations` entry is absent from
-disk, which is what a stripped app looks like. With every configured location
-present, an unresolvable revision means version skew instead and the upgrade
-hard-fails by design. So pruning a stripped app's entry — regenerating the list
-in an already-stripped tree, or rewriting the file during the build — turns a
+Alembic — but only when a configured `version_locations` entry contributes no
+revisions (absent from disk or present and empty), which is what a stripped
+app looks like. With every configured location present and populated, an
+unresolvable revision means version skew instead and the upgrade hard-fails by
+design. So pruning a stripped app's entry — regenerating the list in an
+already-stripped tree, or rewriting the file during the build — turns a
 working upgrade into a failed one. `tests/sidecar/test_app_strip.py` asserts the
 entries survive for every app the strip removes that owns migrations; an app
 owning none needs no entry, and must not carry one.

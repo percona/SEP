@@ -74,6 +74,7 @@ from app.tasks.models import (
     TaskLogType,
     TaskWrite,
 )
+from tests.app.db_schema import apply_schema
 from tests.app.factories import TaskFactory
 
 MODULE = "app.tasks.celery"
@@ -1222,7 +1223,7 @@ async def _seed_purge_db(num_aged: int, *, chunks_each: int = 1):
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     maker = get_async_session_maker_from_engine(engine)
     old = utc_now() - timedelta(days=100)
     async with maker() as session:
@@ -2265,7 +2266,7 @@ class TestMaybeDispatchChainMetaNone:
 async def _create_tables(engine):
     """Create the Tasks metadata tables on ``engine``."""
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
 
 
 @contextmanager
@@ -3309,13 +3310,15 @@ class TestCheckNomadCertExpiry:
         mock_check = MagicMock(return_value=coro)
         mocker.patch(f"{MODULE}._check_nomad_cert_expiry", mock_check)
         mocker.patch.object(
-            app_celery.loop,
+            app_celery.loop,  # ty: ignore[unresolved-attribute]
             "run_until_complete",
             autospec=True,
         )
 
         check_nomad_cert_expiry()
-        app_celery.loop.run_until_complete.assert_called_once_with(coro)
+        app_celery.loop.run_until_complete.assert_called_once_with(  # ty: ignore[unresolved-attribute]
+            coro
+        )
 
 
 class TestPreDispatchPayloadCheck:
