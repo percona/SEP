@@ -443,7 +443,7 @@
 | app/tasks/migrations/versions/2026\_08\_12\_1200-e2f3a4b5c6d7\_extend\_setting\_class\_enum\_health\_report.py               |       27 |        9 |        6 |        2 |     61% |63, 67, 89-99 |
 | app/tasks/migrations/versions/2026\_08\_13\_2143-a19da5cf0bca\_add\_taskhistory\_log\_state\_capture\_status.py              |       20 |        0 |        0 |        0 |    100% |           |
 | app/tasks/migrations/versions/2026\_08\_17\_2210-7d2e869ac188\_drop\_setting\_class\_check\_constraint.py                    |        9 |        0 |        0 |        0 |    100% |           |
-| app/tasks/models.py                                                                                                          |      347 |        4 |       68 |        5 |     98% |202, 645-\>648, 652, 667-\>673, 1181-\>1183, 1193-\>1195, 1218-1219 |
+| app/tasks/models.py                                                                                                          |      350 |        4 |       68 |        5 |     98% |202, 645-\>648, 652, 669-\>682, 1190-\>1192, 1202-\>1204, 1227-1228 |
 | app/tasks/periodic/crud.py                                                                                                   |       31 |        0 |        0 |        0 |    100% |           |
 | app/tasks/periodic/deps.py                                                                                                   |       11 |        0 |        0 |        0 |    100% |           |
 | app/tasks/periodic/models.py                                                                                                 |      111 |        6 |       34 |        6 |     92% |224, 259, 313, 329, 346, 393 |
@@ -452,7 +452,7 @@
 | app/tasks/routes.py                                                                                                          |      237 |       20 |       46 |        4 |     91% |153-157, 240-246, 279, 329-335, 342, 432, 475, 490, 650, 664, 672, 698, 706-\>708, 729-730 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **27891** | **1733** | **6876** |  **638** | **92%** |           |
+| **TOTAL**                                                                                                                    | **27894** | **1733** | **6876** |  **638** | **92%** |           |
 
 
 ## Setup coverage badge
