@@ -24,11 +24,16 @@ RUN rpm --import 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x79EA15
 # python3-PyMySQL mirror the ansible playbook's set. zstd, lz4, gnupg2 and rsync
 # are named though they already arrive transitively, so a shift upstream cannot
 # quietly drop a compression, encryption or upload option the forms offer.
+# sudo is not in the base image, but a builtin snippet declaring `sudo: always`
+# prepends it regardless, as does any snippet once "Run with sudo" is on.
+# Without the binary those die on `env: 'sudo': No such file or directory`
+# rather than on a privilege they already hold — raw_exec runs tasks as root
+# on this node.
 RUN dnf install -y \
         percona-server-server percona-toolkit python3-PyMySQL \
         percona-xtrabackup-84 mydumper \
         python3-pip gzip tar hostname procps-ng iproute \
-        zstd lz4 gnupg2 rsync \
+        zstd lz4 gnupg2 rsync sudo \
     && dnf clean all
 
 # Static Go binaries, so the feature build's own tree runs unchanged on OL9
