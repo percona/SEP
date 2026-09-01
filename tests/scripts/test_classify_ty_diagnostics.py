@@ -323,12 +323,20 @@ def test_check_names_a_group_that_matched_nothing_in_the_baseline(tmp_path, caps
     The baseline is the only run where a zero means drift rather than a group
     doing its job, and naming it is the whole effect: a retired artifact class
     loses no first-party diagnostic, so there is nothing for the gate to reject.
+
+    The expected count is derived rather than written down: exactly one group
+    matches this fixture, so every other registered one is stale, and a literal
+    would fail the next time a group is added for a reason unrelated to this.
     """
     manifest = _manifest(tmp_path, _output(ARTIFACT_ROW, FIRST_PARTY_ROW))
 
     assert _check(tmp_path, manifest, _output(FIRST_PARTY_ROW)) == 0
     out = capsys.readouterr().out
-    assert "STALE groups (matched nothing in the baseline, advisory): 10" in out
+    stale_count = len(classify_ty_diagnostics.GROUPS) - 1
+    assert (
+        f"STALE groups (matched nothing in the baseline, advisory): {stale_count}"
+        in out
+    )
     assert "pydantic-settings-private-kwargs" not in out.split("STALE groups")[1]
 
 
