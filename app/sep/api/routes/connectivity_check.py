@@ -177,9 +177,11 @@ async def _probe_delivery() -> ConnectivityResult:
     The resolver's prose reason is passed through verbatim as the detail, while
     the status carries the same distinction machine-readably.
 
-    Branches on the resolution's code rather than its plan so the optional
-    narrows without an assertion; the resolution's own invariant is what makes
-    the two agree, so the plan cannot be absent once the code is.
+    Branches on the resolution's code rather than its plan, so the unavailable
+    outcomes map through one table instead of being re-derived from the prose.
+    That branch narrows nothing for a type checker, so the ``plan is None`` arm
+    below is what narrows the optional in place of an assertion; the
+    resolution's own invariant is what makes that arm unreachable.
 
     :return: The delivery connectivity result.
     """

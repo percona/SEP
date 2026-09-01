@@ -422,11 +422,26 @@ class TestProbeStepValidation:
 
     @pytest.mark.parametrize(
         "path",
-        ["https://attacker.example/probe", "//attacker.example/probe"],
-        ids=["absolute_url", "network_path_reference"],
+        [
+            "https://attacker.example/probe",
+            "//attacker.example/probe",
+            "//",
+            "///probe",
+        ],
+        ids=[
+            "absolute_url",
+            "network_path_reference",
+            "bare_authority_marker",
+            "empty_authority",
+        ],
     )
     def test_an_off_origin_path_is_refused(self, path: str):
-        """Reject a path that would carry the probe's credentials to another host."""
+        """Reject every spelling that is not a path under the plan's endpoint.
+
+        ``//`` and ``///probe`` carry an empty authority, which ``urlparse``
+        reports as a falsy ``netloc``; the explicit ``//`` prefix check is the
+        only clause that rejects them.
+        """
         payload = _probe_plan(path=path)
 
         with pytest.raises(ValidationError, match="must be relative"):
