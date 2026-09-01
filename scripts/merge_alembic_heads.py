@@ -36,11 +36,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.util.exc import CommandError
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-from scripts.alembic_tracks import add_ini_argument, list_track_names  # noqa: E402
+from scripts.alembic_tracks import add_ini_argument, list_track_names
 
 # A branch is forked when more than one head shares the same root.
 _MIN_FORK_HEADS = 2

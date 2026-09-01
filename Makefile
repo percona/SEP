@@ -173,7 +173,7 @@ migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations
 	done
 
 checkmigrations: migrate
-	@"${VENV_BIN}"/python scripts/check_alembic_revision_tree.py
+	@"${VENV_BIN}"/python -m scripts.check_alembic_revision_tree
 	@ret=0; \
 	for app in $(APPS); do \
 	  echo "Checking migrations for $$app"; \
@@ -187,7 +187,7 @@ checkmigrations: migrate
 
 mergemigrations: venv alembic.ini
 	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
-	@"${VENV_BIN}"/python scripts/merge_alembic_heads.py
+	@"${VENV_BIN}"/python -m scripts.merge_alembic_heads
 
 test: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --dist ${PYTEST_DIST} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
