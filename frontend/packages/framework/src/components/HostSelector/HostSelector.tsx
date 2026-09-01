@@ -246,16 +246,15 @@ function HostMismatchWarning({
     return null;
   }
 
-  if (!isHostMismatch(selectedHost.address, service.node?.address)) {
+  const serviceNodeAddress = service.node?.address;
+  if (!isHostMismatch(selectedHost.address, serviceNodeAddress)) {
     return null;
   }
 
-  const serviceNodeAddress = service.node?.address;
   return (
     <Alert severity="warning" sx={{ mt: 1 }}>
       The selected executor host ({selectedHost.name}, {selectedHost.address}) is not the node where{' '}
-      {service.name} runs
-      {serviceNodeAddress ? ` (${serviceNodeAddress})` : ''}.
+      {service.name} runs ({serviceNodeAddress}).
     </Alert>
   );
 }
