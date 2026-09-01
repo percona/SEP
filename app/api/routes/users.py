@@ -32,12 +32,12 @@ router = APIRouter()
 User = get_user_model()
 
 
-# pagination-ok: the provider SDK returns the whole organization in one call
-# (Casdoor /api/get-users, Grafana /api/org/users), so there is no upstream
-# window to page against; the cardinality is the operator's own user count.
 @router.get(
     "/",
     dependencies=[IsAdminDep],
+    # pagination-ok: the provider SDK returns the whole organization in one call
+    # (Casdoor /api/get-users, Grafana /api/org/users), so there is no upstream
+    # window to page against; the cardinality is the operator's own user count.
     response_model=list[User],  # ty: ignore[invalid-type-form]
 )
 async def list_users() -> Sequence[BaseUser]:

@@ -400,9 +400,20 @@ class BaseManager:
         mass updates or deletions, and checks for database dialect-specific handling of
         the `RETURNING` clause.
 
-        :raises ValueError: If no filter is given, or if ``returning`` is an empty
-            iterable — the overloads promise a list of rows for any non-``bool``
-            ``returning``, and an empty one names no column to return.
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :param builder: The query builder producing the UPDATE or DELETE statement.
+        :param whereclause: SQL expressions for the `where` clause of the statement.
+        :param returning: If True, return the affected rows as objects of `cls.Model`.
+            If a list of column names is provided, return only those columns. Defaults
+            to False, meaning no rows are returned from the statement.
+        :param equal_filters: Keyword arguments representing column names and their
+            respective filter values.
+        :return: The result of the statement execution, or the returned rows when
+            `returning` asks for them.
+        :raises ValueError: If no filter is given, or if `returning` is an empty
+            iterable — the overloads promise a list of rows for any non-`bool`
+            `returning`, and an empty one names no column to return.
         """
         if not whereclause and not equal_filters:
             raise ValueError(
