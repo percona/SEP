@@ -460,7 +460,7 @@ test.describe('Settings page smoke', () => {
     await expect(page.getByTestId('connectivity-results')).toBeVisible();
   });
 
-  test('sends a full four-target sweep in the request body', async ({ page }) => {
+  test('sends a full five-target sweep in the request body', async ({ page }) => {
     await mockApis(page, { isAdmin: true });
     let capturedTargets: string[] | undefined;
     // Registered after mockApis so it takes precedence for this path and can
@@ -482,7 +482,7 @@ test.describe('Settings page smoke', () => {
     await page.getByRole('button', { name: /test connection/i }).click();
 
     await expect(page.getByTestId('connectivity-results')).toBeVisible();
-    expect(capturedTargets).toEqual(['pmm', 'inventory', 'tasks', 'nomad']);
+    expect(capturedTargets).toEqual(['pmm', 'inventory', 'tasks', 'nomad', 'delivery']);
   });
 
   test('never renders a reconstructed URL or secret', async ({ page }) => {
