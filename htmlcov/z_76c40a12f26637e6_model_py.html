@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_76c40a12f26637e6_pt_toolkit_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-01 12:37 +0000
+            created at 2026-09-01 15:45 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -171,12 +171,18 @@
     <p class="pln"><span class="n"><a id="t87" href="#t87">87</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t88" href="#t88">88</a></span><span class="t"><span class="str">    :param task_name: The human-readable task name; required and non-empty.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t89" href="#t89">89</a></span><span class="t"><span class="str">    :param hostname: The executor host the task runs on; required and non-empty.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t90" href="#t90">90</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t91" href="#t91">91</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t92" href="#t92">92</a></span><span class="t">    <span class="nam">task_name</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">NonEmptyStr</span><span class="op">,</span> <span class="nam">Ui</span><span class="op">(</span><span class="nam">section</span><span class="op">=</span><span class="str">&quot;Task&quot;</span><span class="op">)</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t93" href="#t93">93</a></span><span class="t">    <span class="nam">hostname</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t94" href="#t94">94</a></span><span class="t">        <span class="nam">NonEmptyStr</span><span class="op">,</span> <span class="nam">HostRef</span><span class="op">(</span><span class="op">)</span><span class="op">,</span> <span class="nam">Ui</span><span class="op">(</span><span class="nam">label</span><span class="op">=</span><span class="nam">EXECUTION_HOST_LABEL</span><span class="op">,</span> <span class="nam">section</span><span class="op">=</span><span class="str">&quot;Task&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t95" href="#t95">95</a></span><span class="t">    <span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t90" href="#t90">90</a></span><span class="t"><span class="str">        The default ``HostRef(target_service=&quot;service_id&quot;)`` ties the</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t91" href="#t91">91</a></span><span class="t"><span class="str">        co-location warning to a service field named ``service_id``; subclasses</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t92" href="#t92">92</a></span><span class="t"><span class="str">        that name their service field differently must override with an explicit</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t93" href="#t93">93</a></span><span class="t"><span class="str">        ``HostRef(target_service=...)``.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t94" href="#t94">94</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t95" href="#t95">95</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t96" href="#t96">96</a></span><span class="t">    <span class="nam">task_name</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">NonEmptyStr</span><span class="op">,</span> <span class="nam">Ui</span><span class="op">(</span><span class="nam">section</span><span class="op">=</span><span class="str">&quot;Task&quot;</span><span class="op">)</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t97" href="#t97">97</a></span><span class="t">    <span class="nam">hostname</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t98" href="#t98">98</a></span><span class="t">        <span class="nam">NonEmptyStr</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t99" href="#t99">99</a></span><span class="t">        <span class="nam">HostRef</span><span class="op">(</span><span class="nam">target_service</span><span class="op">=</span><span class="str">&quot;service_id&quot;</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t100" href="#t100">100</a></span><span class="t">        <span class="nam">Ui</span><span class="op">(</span><span class="nam">label</span><span class="op">=</span><span class="nam">EXECUTION_HOST_LABEL</span><span class="op">,</span> <span class="nam">section</span><span class="op">=</span><span class="str">&quot;Task&quot;</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t101" href="#t101">101</a></span><span class="t">    <span class="op">]</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -186,7 +192,7 @@
             <a class="nav" href="z_76c40a12f26637e6_pt_toolkit_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-01 12:37 +0000
+            created at 2026-09-01 15:45 +0000
         </p>
     </div>
 </footer>
