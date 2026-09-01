@@ -117,7 +117,7 @@ class PMMSyncer(BaseSyncer):
         """
         await super().__aexit__(exc_type, exc_val, exc_tb)
         if not self.keepalive_api and self._pmm_api is not None:
-            await self._pmm_api.close()
+            await settings.invalidate_client(str(self._pmm_api.endpoint))
             self._pmm_api = None
 
     @property
@@ -293,10 +293,7 @@ class PMMSyncer(BaseSyncer):
         external_id_to_id: dict[str, int | None] = {}
         for node in await self.get_inventory_nodes():
             syncable_nodes[node.id] = node
-            if node.external_id is not None:
-                claim_identity(
-                    external_id_to_id, node.external_id, node, syncable_nodes
-                )
+            claim_identity(external_id_to_id, node.external_id, node, syncable_nodes)
         logger.debug("Syncable nodes: %s", syncable_nodes)
         snapshot = await self._fetch_snapshot()
         self._generation = snapshot
@@ -372,6 +369,11 @@ class PMMSyncer(BaseSyncer):
         single-node refresh, has no generation to judge absence against, so it is
         upsert-only.
 
+        An incoming service is matched by external id alone, with no natural-key
+        fallback: several databases behind one server legally share that server's
+        port, so matching on port would attach one service's sync history to
+        another's row.
+
         :param created_node: The local node instance to synchronize.
         :param updated_node: The updated node data fetched from the PMM API.
         :raises SyncFailError: If synchronizing, holding or retiring a service fails
@@ -380,32 +382,19 @@ class PMMSyncer(BaseSyncer):
         """
         await self.update_node(created_node, updated_node)
         external_id_to_id: dict[str, int | None] = {}
-        port_to_id: dict[int, int] = {}
         syncable_services: dict[int | None, CreatedService] = {}
         for service in created_node.services:
             syncable_services[service.id] = service
-            if service.external_id is not None:
-                claim_identity(
-                    external_id_to_id,
-                    service.external_id,
-                    service,
-                    syncable_services,
-                )
-            # Retired services are matchable by external id only. Letting the port
-            # fallback reach one would revive a predecessor under a different
-            # upstream id, handing an unrelated machine its backup and task history.
-            if service.port is not None and service.retired_at is None:
-                port_to_id[service.port] = service.id
+            claim_identity(
+                external_id_to_id,
+                service.external_id,
+                service,
+                syncable_services,
+            )
         present_ids: list[int | None] = []
         for service in updated_node.services:
-            if (
-                created_service := syncable_services.pop(
-                    external_id_to_id.get(
-                        service.external_id, port_to_id.get(service.port)
-                    ),
-                    None,
-                )
-            ) is None:
+            matched_id = external_id_to_id.get(service.external_id)
+            if (created_service := syncable_services.pop(matched_id, None)) is None:
                 logger.info("Creating new service: %r", service)
                 created_service = CreatedService.model_validate(
                     await self.inventory_api.post(
@@ -505,7 +494,5 @@ class PMMSyncer(BaseSyncer):
         :rtype: bool
         """
         return (
-            super().can_sync_service(service)
-            and service.node.source == SourceEnum.PMM
-            and service.external_id
+            super().can_sync_service(service) and service.node.source == SourceEnum.PMM
         )

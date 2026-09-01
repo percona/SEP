@@ -48,6 +48,7 @@ from app.tasks.run_result import (
     RUN_RESULT_FILENAME,
     RUN_RESULT_MAX_BYTES,
 )
+from tests.app.db_schema import apply_schema
 from tests.app.factories import build_task_history, TaskFactory
 
 _RESULT = {"backup_dir": "/data/x", "size_bytes": 123, "upload_destination": "s3://b/x"}
@@ -196,7 +197,7 @@ async def _recorder_db(
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     maker = get_async_session_maker_from_engine(engine)
     async with maker() as session:
         task = await TaskManager.create(

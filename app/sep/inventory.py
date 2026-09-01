@@ -117,27 +117,21 @@ class Node(BaseInventoryModel):
     address, external identifier, name, and type.
 
     :param address: The network address of the node.
-    :type address: NonEmptyStr
     :param name: The name of the node, aliased as "node_name".
-    :type name: NonEmptyStr
     :param external_id: The external identifier for the node, aliased as "node_id".
-        Defaults to None.
-    :type external_id: NonEmptyStr | EmptyStrToNone
-    :param source: The source of the node information. Defaults to None.
-    :type source: SourceEnum | EmptyStrToNone
+    :param source: The source of the node information. Defaults to None. Left
+        optional deliberately, unlike ``external_id``: both construction sites
+        inject :attr:`SourceEnum.PMM` unconditionally, so narrowing it here
+        would turn the syncer's ``source == SourceEnum.PMM`` check into
+        provably dead code rather than a real boundary.
     :param type: The type of the node (e.g., "generic"), aliased as "node_type".
         Defaults to "generic".
-    :type type: NonEmptyStr
     :param services: The services associated with the node.
-    :type services: list[Service]
     """
 
     address: NonEmptyStr
     name: NonEmptyStr = Field(validation_alias="node_name")
-    external_id: NonEmptyStr | EmptyStrToNone = Field(
-        default=None,
-        validation_alias="node_id",
-    )
+    external_id: NonEmptyStr = Field(validation_alias="node_id")
     source: SourceEnum | EmptyStrToNone = None
     type: NonEmptyStr = Field(default="generic", validation_alias="node_type")
     services: list[Service] = []
@@ -158,28 +152,17 @@ class CreatedNode(CreatedEntityBase, Node):
     existing database node.
 
     :cvar CHILDREN_FIELD: The field name representing child entities. Set to "services".
-    :vartype CHILDREN_FIELD: ClassVar[str]
     :param id: The primary key of the node in the inventory database.
-    :type id: int | None
     :param created_at: The timestamp when the node was created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime | None
     :param updated_at: The timestamp when the record was last updated.
-    :type updated_at: UTCDatetime | None
     :param address: The network address of the node.
-    :type address: NonEmptyStr
     :param external_id: The external identifier for the node, aliased as "node_id".
-        Defaults to None.
-    :type external_id: NonEmptyStr | EmptyStrToNone
     :param name: The name of the node, aliased as "node_name".
-    :type name: NonEmptyStr
     :param type: The type of the node (e.g., "generic"), aliased as "node_type".
         Defaults to "generic".
-    :type type: NonEmptyStr
     :param source: The source of the node information. Defaults to None.
-    :type source: SourceEnum | EmptyStrToNone
     :param services: A list of existing services associated with the node.
-    :type services: list[CreatedService]
     """
 
     CHILDREN_FIELD: ClassVar[str] = "services"
@@ -194,34 +177,23 @@ class Service(BaseInventoryModel):
 
     :param environment: The environment in which the service is running (e.g.,
         "production", "staging"). Defaults to None.
-    :type environment: str | None
     :param cluster: The cluster in which the service is running. Defaults to None.
-    :type cluster: str | None
     :param replication_set: The replication set in which the service is running. Defaults to None.
-    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
     :param external_id: The external identifier for the service, aliased as
-        "service_id". Defaults to None.
-    :type external_id: NonEmptyStr | EmptyStrToNone
+        "service_id".
     :param name: The name of the service, aliased as "service_name".
-    :type name: NonEmptyStr
     :param port: The port number on which the service is running. Defaults to None.
-    :type port: int | EmptyStrToNone
     :param type: The type of the service (e.g., "service_type"), aliased as
         "service_type".
-    :type type: ServiceTypeEnum
     :param schemas: The schemas associated with the service.
-    :type schemas: list[Schema]
     """
 
     environment: str | None = None
     cluster: str | None = None
     replication_set: str | None = None
     custom_labels: ArbitraryMapping | None = None
-    external_id: NonEmptyStr | EmptyStrToNone = Field(
-        default=None,
-        validation_alias="service_id",
-    )
+    external_id: NonEmptyStr = Field(validation_alias="service_id")
     name: NonEmptyStr = Field(validation_alias="service_name")
     port: int | EmptyStrToNone = None
     type: ServiceTypeEnum = Field(validation_alias="service_type")
@@ -241,40 +213,25 @@ class CreatedService(CreatedEntityBase, Service):
     existent database service.
 
     :cvar CHILDREN_FIELD: The field name representing child entities. Set to "schemas".
-    :vartype CHILDREN_FIELD: ClassVar[str]
     :cvar PARENT_FIELD: The field name representing the parent entity. Set to "node".
-    :vartype PARENT_FIELD: ClassVar[str]
     :param id: The primary key of the service in the inventory database.
-    :type id: int | None
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record was last updated.
-    :type updated_at: UTCDatetime | None
     :param environment: The environment in which the service is running (e.g.,
         "production", "staging"). Defaults to None.
-    :type environment: str | None
     :param cluster: The cluster in which the service is running. Defaults to None.
-    :type cluster: str | None
     :param replication_set: The replication set in which the service is running. Defaults to None.
-    :type replication_set: str | None
     :param custom_labels: Custom labels associated with the service. Defaults to None.
     :param external_id: The external identifier for the service, aliased as
-        "service_id". Defaults to None.
-    :type external_id: NonEmptyStr | EmptyStrToNone
+        "service_id".
     :param name: The name of the service, aliased as "service_name".
-    :type name: NonEmptyStr
     :param port: The port number on which the service is running. Defaults to None.
-    :type port: int | EmptyStrToNone
     :param type: The type of the service (e.g., "service_type"), aliased as
         "service_type".
-    :type type: ServiceTypeEnum
     :param node_id: The ID of the node to which the service belongs.
-    :type node_id: int
     :param node: The node to which the service is associated. Defaults to None.
-    :type node: CreatedNode | None
     :param schemas: A list of existing schemas associated with the service.
-    :type schemas: list[CreatedSchema]
     """
 
     CHILDREN_FIELD: ClassVar[str] = "schemas"

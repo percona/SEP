@@ -62,6 +62,25 @@ class MysqlBackupRunManager(BaseSQLModelManager):
         )
 
     @classmethod
+    async def referenced_service_ids(cls, session: AsyncSession) -> set[int]:
+        """Return every inventory service id the catalog still points at.
+
+        The catalog resolves these ids on a client-facing route, so collecting
+        one would turn a documented historical read into a 404. The query lives
+        here rather than in the collector because the column is this app's.
+
+        :param session: The asynchronous SEP database session.
+        :return: The distinct service ids recorded on backup runs.
+        """
+        return set(
+            await cls.values_list(
+                session,
+                ["service_id"],
+                col(MysqlBackupRun.service_id).is_not(None),
+            )
+        )
+
+    @classmethod
     async def list_for_service(
         cls,
         session: AsyncSession,

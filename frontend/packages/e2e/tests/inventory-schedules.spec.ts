@@ -30,7 +30,9 @@ const MOCK_USER = {
   email: 'smoke@percona.com',
   firstName: 'Smoke',
   lastName: 'Test',
-  isAdmin: false,
+  // Admin: the app pages under test render their create / execute / delete
+  // controls only for a session that may mutate.
+  isAdmin: true,
 };
 
 const MOCK_SCHEMA = {
@@ -41,7 +43,7 @@ const MOCK_SCHEMA = {
     {
       name: 'nodes',
       display_name: 'Nodes',
-      forms: [{ title: 'N', fields: [{ name: 'name', label: 'Name', type: 'string' }] }],
+      forms: [],
       list_view: { columns: [{ key: 'id', label: 'ID' }] },
     },
   ],
@@ -271,7 +273,7 @@ test.describe('Inventory schedule management smoke', () => {
 
     // Row should disappear and empty state restored
     await expect(page.getByTestId('inv-sched-row-1')).not.toBeVisible({ timeout: 8_000 });
-    await expect(page.getByText(/No inventory-sync schedules configured/i)).toBeVisible({
+    await expect(page.getByText(/No schedules configured/i)).toBeVisible({
       timeout: 5_000,
     });
   });

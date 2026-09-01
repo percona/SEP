@@ -29,6 +29,13 @@ endif
 PIP?="${VENV_BIN}/pip"
 APPS=tasks inventory sep
 PYTEST_WORKERS?=auto
+# xdist's default `load` hands each free worker the next single test, so a long
+# test picked up late leaves the other workers idle at the tail. `worksteal`
+# deals tests out in blocks and lets an idle worker steal from a busy one,
+# which measured fastest of the four schedulers on this suite. Ignored when
+# PYTEST_WORKERS=0 (the CI jobs that run single-process): -n 0 disables
+# distribution regardless of --dist.
+PYTEST_DIST?=worksteal
 # COV=0 drops --cov=app (and the fail_under coverage gate) so a local run skips
 # the coverage instrumentation tax; CI and coverage-main keep the default COV=1.
 COV?=1
@@ -88,7 +95,7 @@ ruff: venv
 # pre-commit, or CI: a non-zero exit from the existing type-error backlog is expected and
 # must not gate any automated check.
 typecheck: venv
-	@"${VENV_BIN}"/ty check app
+	@"${VENV_BIN}"/ty check
 
 lint: ruff
 
@@ -166,7 +173,7 @@ migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations
 	done
 
 checkmigrations: migrate
-	@"${VENV_BIN}"/python scripts/check_alembic_revision_tree.py
+	@"${VENV_BIN}"/python -m scripts.check_alembic_revision_tree
 	@ret=0; \
 	for app in $(APPS); do \
 	  echo "Checking migrations for $$app"; \
@@ -178,8 +185,12 @@ checkmigrations: migrate
 	fi
 	@echo "All migration checks passed."
 
+mergemigrations: venv alembic.ini
+	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
+	@"${VENV_BIN}"/python -m scripts.merge_alembic_heads
+
 test: venv
-	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
+	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --dist ${PYTEST_DIST} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
 
 # Regenerate every derived API/form contract from the live app in one pass:
 # the route GET /schema + OpenAPI snapshot goldens, the synthetic form-DSL
@@ -207,6 +218,9 @@ smoke-xtrabackup-variants: venv
 
 check-nomad-payload-size: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/check_nomad_payload_size.py $(ARGS)
+
+check-sidecar-purge: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/check_sidecar_purge.py $(ARGS)
 
 changelog-add:
 ifndef TICKET
@@ -357,4 +371,4 @@ lint-pipelines:
 	done; \
 	if [ "$${failures}" -ne 0 ]; then exit 1; fi
 
-.PHONY: venv build pack builder image format ruff typecheck lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image format ruff typecheck lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations mergemigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size check-sidecar-purge release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check

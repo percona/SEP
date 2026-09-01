@@ -44,7 +44,10 @@ _NOMAD_WITH_CREDS = {
 
 def _override_nomad(config: dict[str, object]) -> None:
     """Publish a merged ``NomadExecutor`` NOMAD override on the tasks proxy snapshot."""
-    tasks_settings._set_snapshot({"NOMAD": NomadExecutor.model_validate(config)})
+    executor = NomadExecutor.model_validate(config)
+    tasks_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+        {"NOMAD": executor}
+    )
 
 
 def test_normalize_passes_through_executor() -> None:
@@ -151,7 +154,7 @@ async def test_reconcile_opens_a_fresh_session_for_a_copied_override() -> None:
     _override_nomad(_NOMAD_A)
     async with NomadLifecycle(FastAPI()) as holder:
         startup = holder.current
-        tasks_settings._set_snapshot(
+        tasks_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
             {"NOMAD": startup.model_copy(update={"log_socket_read_timeout": 13})}
         )
 
@@ -169,7 +172,9 @@ async def test_reconcile_construction_failure_keeps_old_executor() -> None:
     _override_nomad(_NOMAD_A)
     async with NomadLifecycle(FastAPI()) as holder:
         old = holder.current
-        tasks_settings._set_snapshot({"NOMAD": {"endpoint": "not-a-url"}})
+        tasks_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"NOMAD": {"endpoint": "not-a-url"}}
+        )
         with pytest.raises(ValidationError):
             await holder.reconcile()
         assert holder.current is old

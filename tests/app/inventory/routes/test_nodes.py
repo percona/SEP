@@ -15,6 +15,8 @@
 
 """Define tests for inventory node routes."""
 
+import pytest
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 from starlette.testclient import TestClient
 
@@ -32,6 +34,7 @@ from tests.app.factories import (
     NodeWriteFactory,
     ServiceWriteFactory,
 )
+from tests.app.inventory.conftest import retire_in_place
 
 CREATED_NODE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
@@ -64,6 +67,33 @@ class TestListNodes:
         data = response.json()
         assert data["items"] == []
         assert data["total"] == 0
+
+    @pytest.mark.asyncio
+    async def test_include_retired_resolves_a_legacy_tombstone(
+        self, test_client: TestClient, session: AsyncSession, node: Node
+    ) -> None:
+        """Serve a tombstone carrying the migration's synthetic origin.
+
+        The migration stamps ``sep-legacy:<pk>`` onto a brownfield row so the
+        NOT NULL constraint can land. ``NodeResponse`` now requires an origin, so
+        the stamped value is what keeps such a row readable at all through the
+        retired-inclusive route the historical and sync paths use.
+        """
+        node.external_id = f"sep-legacy:{node.id}"
+        node.source = SourceEnum.PMM
+        session.add(node)
+        await session.commit()
+        await retire_in_place(session, node)
+
+        active = test_client.get(f"/nodes/{node.id}")
+        assert active.status_code == status.HTTP_404_NOT_FOUND
+
+        retired = test_client.get(f"/nodes/{node.id}", params={"include_retired": True})
+        assert retired.status_code == status.HTTP_200_OK
+        body = retired.json()
+        assert body["external_id"] == f"sep-legacy:{node.id}"
+        assert body["source"] == SourceEnum.PMM.value
+        assert body["retired_at"] is not None
 
     def test_list_nodes_include_retired(
         self, test_client: TestClient, retired_node: Node
@@ -120,19 +150,24 @@ class TestListNodes:
         assert "services" in data["items"][0]
 
     def test_list_nodes_filter_by_source(self, test_client: TestClient) -> None:
-        """Return only nodes matching the given source filter."""
-        pmm_payload = NodeWriteFactory.build(
-            source=SourceEnum.PMM, external_id="pmm-node"
-        )
-        plain_payload = NodeWriteFactory.build()
-        test_client.post("/nodes/", json=pmm_payload.model_dump(mode="json"))
-        test_client.post("/nodes/", json=plain_payload.model_dump(mode="json"))
+        """Return the PMM-sourced nodes for the source filter.
 
-        response = test_client.get("/nodes/", params={"source": "pmm"})
+        ``SourceEnum`` has a single member and every node now carries it, so the
+        filter can no longer be shown to exclude anything through the API. What
+        it still proves is that the parameter resolves and narrows to the rows
+        carrying that source rather than 422-ing or matching nothing.
+        """
+        for external_id in ("pmm-node-1", "pmm-node-2"):
+            payload = NodeWriteFactory.build(
+                source=SourceEnum.PMM, external_id=external_id
+            )
+            test_client.post("/nodes/", json=payload.model_dump(mode="json"))
+
+        response = test_client.get("/nodes/", params={"source": SourceEnum.PMM.value})
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data["items"]) == 1
-        assert data["items"][0]["source"] == "pmm"
+        assert len(data["items"]) == CREATED_NODE_COUNT
+        assert {item["source"] for item in data["items"]} == {SourceEnum.PMM.value}
 
     def test_list_nodes_filter_by_external_id(self, test_client: TestClient) -> None:
         """Return only nodes matching the given external_id filter."""
@@ -334,6 +369,38 @@ class TestCreateNode:
         response = test_client.post("/nodes/", json=data)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
+    def test_create_node_missing_external_id(self, test_client: TestClient) -> None:
+        """Return 422 when external_id is absent from the body."""
+        data = NodeWriteFactory.build().model_dump(mode="json")
+        del data["external_id"]
+        response = test_client.post("/nodes/", json=data)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_create_node_missing_source(self, test_client: TestClient) -> None:
+        """Return 422 when source is absent from the body."""
+        data = NodeWriteFactory.build().model_dump(mode="json")
+        del data["source"]
+        response = test_client.post("/nodes/", json=data)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_create_node_null_external_id(self, test_client: TestClient) -> None:
+        """Return 422 when external_id is explicitly null."""
+        data = NodeWriteFactory.build().model_dump(mode="json")
+        data["external_id"] = None
+        response = test_client.post("/nodes/", json=data)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_create_node_with_full_origin(self, test_client: TestClient) -> None:
+        """Create a node and echo back the PMM origin it was given."""
+        payload = NodeWriteFactory.build(
+            source=SourceEnum.PMM, external_id="/node_id/full-origin"
+        )
+        response = test_client.post("/nodes/", json=payload.model_dump(mode="json"))
+        assert response.status_code == status.HTTP_201_CREATED
+        body = response.json()
+        assert body["external_id"] == "/node_id/full-origin"
+        assert body["source"] == SourceEnum.PMM
+
 
 class TestUpdateNode:
     """Test the PUT /nodes/{node_id} endpoint."""
@@ -352,6 +419,41 @@ class TestUpdateNode:
         payload = NodeWriteFactory.build()
         response = test_client.put("/nodes/99999", json=payload.model_dump(mode="json"))
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_update_node_missing_external_id(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Return 422 when the update body omits external_id."""
+        data = NodeWriteFactory.build().model_dump(mode="json")
+        del data["external_id"]
+        response = test_client.put(f"/nodes/{node.id}", json=data)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_update_node_null_external_id_leaves_row_intact(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Reject an explicit-null external_id without clearing the stored origin."""
+        data = NodeWriteFactory.build().model_dump(mode="json")
+        data["external_id"] = None
+        response = test_client.put(f"/nodes/{node.id}", json=data)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+        stored = test_client.get(f"/nodes/{node.id}")
+        assert stored.status_code == status.HTTP_200_OK
+        assert stored.json()["external_id"] == node.external_id
+
+    def test_update_node_null_source_leaves_row_intact(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Reject an explicit-null source without clearing the stored origin."""
+        data = NodeWriteFactory.build().model_dump(mode="json")
+        data["source"] = None
+        response = test_client.put(f"/nodes/{node.id}", json=data)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+        stored = test_client.get(f"/nodes/{node.id}")
+        assert stored.status_code == status.HTTP_200_OK
+        assert stored.json()["source"] == node.source
 
 
 class TestDeleteNode:
@@ -647,27 +749,47 @@ class TestCreateServiceForNode:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.json()["id"] != retired_service.id
 
-    def test_create_second_active_service_on_same_port_conflicts(
+    def test_create_second_active_service_on_same_port_succeeds(
         self, test_client: TestClient, service: Service
     ) -> None:
-        """Keep rejecting a second active service on one node and port."""
+        """Admit a second active service sharing a node and port with the first."""
         payload = ServiceWriteFactory.build(port=service.port)
         response = test_client.post(
             f"/nodes/{service.node_id}/services/",
             json=payload.model_dump(mode="json"),
         )
-        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["id"] != service.id
 
-    def test_create_service_for_node_external_id_without_node_source(
+    def test_create_service_for_node_with_external_id(
         self, test_client: TestClient, node: Node
     ) -> None:
-        """Return 400 when service has external_id but node has no source."""
+        """Create a service carrying an external_id under a PMM-sourced node."""
         payload = ServiceWriteFactory.build(external_id="svc-ext-123")
         response = test_client.post(
             f"/nodes/{node.id}/services/",
             json=payload.model_dump(mode="json"),
         )
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["external_id"] == "svc-ext-123"
+
+    def test_create_service_for_node_missing_external_id(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Return 422 when the service body omits external_id."""
+        data = ServiceWriteFactory.build().model_dump(mode="json")
+        del data["external_id"]
+        response = test_client.post(f"/nodes/{node.id}/services/", json=data)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_create_service_for_node_null_external_id(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Return 422 when the service body carries an explicit-null external_id."""
+        data = ServiceWriteFactory.build().model_dump(mode="json")
+        data["external_id"] = None
+        response = test_client.post(f"/nodes/{node.id}/services/", json=data)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_create_service_for_node_duplicate_external_id(
         self, test_client: TestClient
@@ -695,10 +817,65 @@ class TestCreateServiceForNode:
         )
         assert response2.status_code == status.HTTP_409_CONFLICT
 
+    def test_create_two_identified_services_on_same_port(
+        self, test_client: TestClient
+    ) -> None:
+        """Return 201 for both services PMM identifies on one node and port."""
+        node_payload = NodeWriteFactory.build(
+            source=SourceEnum.PMM, external_id="node-shared-port"
+        )
+        node_id = test_client.post(
+            "/nodes/", json=node_payload.model_dump(mode="json")
+        ).json()["id"]
+
+        first = test_client.post(
+            f"/nodes/{node_id}/services/",
+            json=ServiceWriteFactory.build(external_id="svc-a", port=5432).model_dump(
+                mode="json"
+            ),
+        )
+        second = test_client.post(
+            f"/nodes/{node_id}/services/",
+            json=ServiceWriteFactory.build(external_id="svc-b", port=5432).model_dump(
+                mode="json"
+            ),
+        )
+
+        assert first.status_code == status.HTTP_201_CREATED
+        assert second.status_code == status.HTTP_201_CREATED
+        assert first.json()["id"] != second.json()["id"]
+
+    def test_create_third_service_on_a_port_two_others_already_hold(
+        self, test_client: TestClient
+    ) -> None:
+        """Return 201 because port is no longer a uniqueness key at all."""
+        node_payload = NodeWriteFactory.build(
+            source=SourceEnum.PMM, external_id="node-mixed-port"
+        )
+        node_id = test_client.post(
+            "/nodes/", json=node_payload.model_dump(mode="json")
+        ).json()["id"]
+        assert (
+            test_client.post(
+                f"/nodes/{node_id}/services/",
+                json=ServiceWriteFactory.build(
+                    external_id="svc-identified", port=5432
+                ).model_dump(mode="json"),
+            ).status_code
+            == status.HTTP_201_CREATED
+        )
+
+        response = test_client.post(
+            f"/nodes/{node_id}/services/",
+            json=ServiceWriteFactory.build(port=5432).model_dump(mode="json"),
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
     def test_create_service_for_node_duplicate_port(
         self, test_client: TestClient, node: Node
     ) -> None:
-        """Return 409 when creating a service with duplicate (port, node_id)."""
+        """Return 201 twice for two services sharing one (port, node_id)."""
         svc_payload = ServiceWriteFactory.build(port=3306)
         response = test_client.post(
             f"/nodes/{node.id}/services/",
@@ -711,7 +888,8 @@ class TestCreateServiceForNode:
             f"/nodes/{node.id}/services/",
             json=svc_payload2.model_dump(mode="json"),
         )
-        assert response2.status_code == status.HTTP_409_CONFLICT
+        assert response2.status_code == status.HTTP_201_CREATED
+        assert response2.json()["id"] != response.json()["id"]
 
     def test_create_service_for_node_not_found(self, test_client: TestClient) -> None:
         """Return 404 for a nonexistent node ID."""
