@@ -21,12 +21,15 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException, status
 from pydantic import BaseModel, ValidationError
+from starlette.routing import Match
 
 from app.core.exceptions import HTTPNotFoundException
 from app.core.requests import RemoteAPI
+from app.inventory.main import inventory_app
 from app.inventory.models import SyncHealthWrite, SyncOutcomeEnum
 from app.sep.inventory import CreatedNode
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.sync.constants import INVENTORY_PATH_SEGMENTS
 from app.sep.sync.exceptions import (
     ExecutorHostNotFoundError,
     SyncInstanceAlreadyInProgressError,
@@ -387,3 +390,27 @@ class TestErrorTextReachesThePayload:
             f"HTTPNotFoundException: HTTP {status.HTTP_404_NOT_FOUND}"
         )
         assert SECRET not in str(body)
+
+
+class TestReportedPathsAreRegisteredRoutes:
+    """Test that ``INVENTORY_PATH_SEGMENTS`` still names a route the inventory app serves.
+
+    Guards against the two silently drifting apart.
+    """
+
+    @pytest.mark.parametrize("entity_type", list(INVENTORY_PATH_SEGMENTS))
+    def test_the_posted_path_resolves_to_a_registered_route(
+        self, entity_type: SyncInventoryEntityTypeEnum
+    ) -> None:
+        """Match the path ``_post`` builds against the inventory app's routes.
+
+        Renaming the route the segment is meant to address should fail this
+        test rather than only 404 silently in production, where ``_post``'s
+        best-effort ``except Exception`` would swallow it.
+        """
+        path = f"/{INVENTORY_PATH_SEGMENTS[entity_type]}/1/sync-health"
+        scope = {"type": "http", "method": "POST", "path": path}
+
+        assert any(
+            route.matches(scope)[0] == Match.FULL for route in inventory_app.routes
+        )
