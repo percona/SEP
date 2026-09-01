@@ -47,7 +47,7 @@ from pydantic import BaseModel
 
 from app.core.db.list_query import ListQuerySpec, make_list_query_dep
 from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
-from app.core.requests.remote_api import RemoteAPI
+from app.core.requests.remote_api import as_json_object, RemoteAPI
 from app.core.utils.fields import ArbitraryMapping
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.connectivity import (
@@ -1868,9 +1868,13 @@ def derive_script_routes(
         script: script_param, tasks_api: TaskAPI
     ) -> ArbitraryMapping:
         """Proxy the per-script execution history from the Tasks API by filename."""
-        return await tasks_api.get(
-            f"/{script.execution_task_name}/history/",
-            params={"snippet_filename": script.filename},
+        return ArbitraryMapping(
+            as_json_object(
+                await tasks_api.get(
+                    f"/{script.execution_task_name}/history/",
+                    params={"snippet_filename": script.filename},
+                )
+            )
         )
 
     @router.post(

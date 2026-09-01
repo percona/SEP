@@ -40,7 +40,7 @@ from app.core.exceptions import (
     HTTPServiceUnavailableException,
 )
 from app.core.pagination import fetch_all_dict_items
-from app.core.requests import RemoteAPI
+from app.core.requests import as_json_object, RemoteAPI
 from app.core.security import is_bearer_authenticated, SAFE_HTTP_METHODS
 from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
@@ -774,7 +774,7 @@ async def get_executor_hosts(tasks_api: TaskAPI) -> dict[str, str]:
     :return: A dictionary of executor hosts.
     """
     try:
-        return await tasks_api.get("/hosts/")
+        return as_json_object(await tasks_api.get("/hosts/"))
     except HTTPException:
         logger.warning(
             "Could not read executor hosts from the Tasks API.", exc_info=True

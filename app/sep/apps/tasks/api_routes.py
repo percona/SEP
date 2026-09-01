@@ -26,6 +26,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.core.pagination import build_proxied_page, PaginatedResponse, PaginationDep
+from app.core.requests import as_json_array
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.tasks.deps import TaskDep
 from app.sep.apps.tasks.models import (
@@ -103,7 +104,9 @@ async def tasks_api_detail(
     periodic_summary: list[PeriodicTaskSummary] = []
 
     if not task.is_template:
-        periodic_response = await tasks_api.get(f"/{task.name}/periodic/")
+        periodic_response = as_json_array(
+            await tasks_api.get(f"/{task.name}/periodic/")
+        )
         periodic_summary = [
             PeriodicTaskSummary.model_validate(item) for item in periodic_response
         ]

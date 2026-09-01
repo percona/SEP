@@ -38,7 +38,7 @@ from app.core.alerts.config import alert_service
 from app.core.alerts.models import AlertSeverity
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.pagination import fetch_all_dict_items
-from app.core.requests import RemoteAPI
+from app.core.requests import as_json_object, RemoteAPI
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.db import get_async_session_maker
 from app.sep.inventory import (
@@ -1509,7 +1509,7 @@ class BaseTaskSyncer(BaseSyncer):
         :return: The available hosts.
         :rtype: dict[str, str]
         """
-        return await self.tasks_api.get("/hosts/")
+        return as_json_object(await self.tasks_api.get("/hosts/"))
 
     @alru_cache
     async def get_task_target(self, host: str, name: str | None = None) -> str:

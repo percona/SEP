@@ -18,7 +18,8 @@
 from pydantic import BaseModel
 
 from app.core.exceptions import HTTPNotFoundException
-from app.core.pagination import fetch_all_dict_items, PaginatedDictPage, Pagination
+from app.core.pagination import fetch_all_dict_items, Pagination
+from app.core.requests import JSONBody
 from app.sep.deps import InventoryAPI
 
 
@@ -53,7 +54,7 @@ async def proxy_inventory_selector(
     """
     try:
 
-        async def fetch_page(pagination: Pagination) -> PaginatedDictPage:
+        async def fetch_page(pagination: Pagination) -> JSONBody:
             return await inventory_api.get(
                 url,
                 params={
