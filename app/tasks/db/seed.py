@@ -162,6 +162,11 @@ def _launch_check_shell(
     only when the effective interpreter carries the literal prefix the launcher
     tests for, then resolves ``launches``.
 
+    A leading ``NAME=VALUE`` is declined rather than skipped: ``env -S`` applies
+    it before locating the command, so an assignment that changes ``PATH``
+    decides where the command resolves, and resolving against the step's own
+    environment instead would report a runnable execution as unlaunchable.
+
     ``run-command`` is checked against a single word-split of its meta, which
     its launcher passes to ``xargs`` as one argv element rather than splitting.
     Every producer emits a single token today, so the two agree; a multi-token
@@ -195,9 +200,13 @@ def _launch_check_shell(
     def resolve_or_abort(token: str, name: str) -> str:
         return f"command -v {token} > /dev/null 2>&1 || {{ {abort(name)}; }}; "
 
-    skip_assignments = (
-        'while [ $# -gt 0 ]; do case "$1" in *=*) shift;; *) break;; esac; done; '
-    )
+    # `env -S` applies a leading NAME=VALUE before locating the command, so a
+    # `PATH=/opt/toolchain bash` resolves against the assigned PATH there and
+    # against the step's own PATH here. Rather than skip the assignment and
+    # resolve the wrong environment -- which aborts an execution the launcher
+    # would run -- decline the form entirely, exactly as for the other
+    # constructs the two tokenizers disagree about.
+    decline_assignment = f'case "$1" in *=*) {decline};; esac; '
     # Records the strip rather than announcing it, so the notice is emitted only
     # once the run is known to launch. Reporting it above an abort would head an
     # unlaunchable execution's only diagnostic with a success-shaped line.
@@ -222,14 +231,14 @@ def _launch_check_shell(
         f"-*) {decline};; "
         "*) break;; "
         "esac; done; "
-        + skip_assignments
+        + decline_assignment
         + "if [ $# -gt 0 ]; then "
         + resolve_or_abort('"$1"', "$1")
         + "fi;; esac; "
     )
     if launches is None:
         resolution = (
-            skip_assignments
+            decline_assignment
             + "[ $# -gt 0 ] || exit 0; "
             + resolve_or_abort('"$1"', "$1")
             + sudo_walk

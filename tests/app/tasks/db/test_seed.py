@@ -942,6 +942,29 @@ class TestLaunchCheckShell:
         assert result.returncode == 0, result.stderr
         assert handoff.read_text() == meta
 
+    def test_declines_an_assignment_that_changes_where_the_command_resolves(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert a ``PATH=`` prefix is passed through rather than resolved.
+
+        ``env -S`` applies a leading ``NAME=VALUE`` *before* locating the
+        command, so ``PATH=/opt/toolchain bash`` finds a ``bash`` that exists
+        only under that toolchain. Skipping the assignment and resolving
+        against the step's own ``PATH`` would abort an execution the launcher
+        runs.
+        """
+        toolchain = tmp_path / "toolchain"
+        toolchain.mkdir()
+        only_there = toolchain / "toolchain-bash"
+        only_there.write_text("#!/bin/sh\nexit 0\n")
+        only_there.chmod(0o755)
+        meta = f"PATH={toolchain} toolchain-bash"
+
+        result, handoff = self._run(tmp_path, node="user-no-sudo", meta=meta)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert handoff.read_text() == meta
+
     def test_declines_a_relative_interpreter_path_that_resolves_here(
         self, tmp_path: Path
     ) -> None:
