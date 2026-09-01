@@ -262,7 +262,7 @@ def test_builder_reads_sync_interval_at_call_time() -> None:
     from app.core.celery.models import IntervalSchedule as CoreIntervalSchedule
     from app.sep.snippets.config import snippets_settings
 
-    snippets_settings._set_snapshot(
+    snippets_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
         {"SYNC_INTERVAL": CoreIntervalSchedule(every=30, period=Period.MINUTES)}
     )
     try:
@@ -271,17 +271,17 @@ def test_builder_reads_sync_interval_at_call_time() -> None:
             every=30, period=Period.MINUTES
         )
     finally:
-        snippets_settings._set_snapshot({})
+        snippets_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     # A different override on the next call is reflected (no import-time freeze).
-    snippets_settings._set_snapshot(
+    snippets_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
         {"SYNC_INTERVAL": CoreIntervalSchedule(every=5, period=Period.MINUTES)}
     )
     try:
         schedule = _snippets_schedule(seed_module.get_system_periodic_tasks())
         assert schedule.schedule == CoreIntervalSchedule(every=5, period=Period.MINUTES)
     finally:
-        snippets_settings._set_snapshot({})
+        snippets_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 class TestInventoryCollectionSchedule:
@@ -301,11 +301,13 @@ class TestInventoryCollectionSchedule:
 
     def test_no_entry_while_the_interval_is_unset(self) -> None:
         """Seed no schedule on the shipped default, so nothing is ever deleted."""
-        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": None})
+        inventory_app_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"COLLECTION_INTERVAL": None}
+        )
         try:
             assert self._entries(seed_module.get_system_periodic_tasks()) == []
         finally:
-            inventory_app_settings._set_snapshot({})
+            inventory_app_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     def test_builds_the_execute_by_name_entry(self) -> None:
         """Point the entry at the SEP task through ``execute_task_by_name``.
@@ -315,11 +317,13 @@ class TestInventoryCollectionSchedule:
         task path must arrive verbatim: the Inventory app ships no ``celery.py``
         to prefix it with, and prefixing would point beat at nothing.
         """
-        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": ONE_DAY})
+        inventory_app_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"COLLECTION_INTERVAL": ONE_DAY}
+        )
         try:
             (schedule,) = self._entries(seed_module.get_system_periodic_tasks())
         finally:
-            inventory_app_settings._set_snapshot({})
+            inventory_app_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
         assert schedule.schedule == ONE_DAY
         (entry,) = schedule.tasks
@@ -336,11 +340,13 @@ class TestInventoryCollectionSchedule:
         The callable lives in the app package the embedded image strips, so a
         schedule that outlived its app would fire and fail on every tick.
         """
-        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": ONE_DAY})
+        inventory_app_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"COLLECTION_INTERVAL": ONE_DAY}
+        )
         try:
             (schedule,) = self._entries(seed_module.get_system_periodic_tasks())
         finally:
-            inventory_app_settings._set_snapshot({})
+            inventory_app_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
         (entry,) = schedule.tasks
         assert entry.owner_app_key == "inventory"
@@ -352,28 +358,36 @@ class TestInventoryCollectionSchedule:
         seeder: ``get_system_periodic_tasks`` re-reads the proxy snapshot on
         every call, so the override refresh callback re-seeds beat in place.
         """
-        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": ONE_DAY})
+        inventory_app_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"COLLECTION_INTERVAL": ONE_DAY}
+        )
         try:
             (schedule,) = self._entries(seed_module.get_system_periodic_tasks())
             assert schedule.schedule == ONE_DAY
 
-            inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": SIX_HOURS})
+            inventory_app_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+                {"COLLECTION_INTERVAL": SIX_HOURS}
+            )
             (schedule,) = self._entries(seed_module.get_system_periodic_tasks())
             assert schedule.schedule == SIX_HOURS
 
-            inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": None})
+            inventory_app_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+                {"COLLECTION_INTERVAL": None}
+            )
             assert self._entries(seed_module.get_system_periodic_tasks()) == []
         finally:
-            inventory_app_settings._set_snapshot({})
+            inventory_app_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     def test_repeated_calls_do_not_accumulate_the_entry(self) -> None:
         """Build a fresh set per call, so repeated boots do not duplicate it."""
-        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": ONE_DAY})
+        inventory_app_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"COLLECTION_INTERVAL": ONE_DAY}
+        )
         try:
             first = seed_module.get_system_periodic_tasks()
             second = seed_module.get_system_periodic_tasks()
         finally:
-            inventory_app_settings._set_snapshot({})
+            inventory_app_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
         assert len(self._entries(first)) == 1
         assert len(self._entries(second)) == 1
@@ -557,7 +571,7 @@ class TestAppScheduleContribution:
 
         mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("alerts")])
 
-        alerts_settings._set_snapshot(
+        alerts_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
             {"BACKUP_INTERVAL": CoreIntervalSchedule(every=6, period=Period.HOURS)}
         )
         try:
@@ -568,9 +582,9 @@ class TestAppScheduleContribution:
                 every=6, period=Period.HOURS
             )
         finally:
-            alerts_settings._set_snapshot({})
+            alerts_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
-        alerts_settings._set_snapshot(
+        alerts_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
             {"BACKUP_INTERVAL": CoreIntervalSchedule(every=12, period=Period.HOURS)}
         )
         try:
@@ -581,7 +595,7 @@ class TestAppScheduleContribution:
                 every=12, period=Period.HOURS
             )
         finally:
-            alerts_settings._set_snapshot({})
+            alerts_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     def test_report_kwargs_assemble_from_non_default_entry(self, mocker) -> None:
         """Carry kwargs only for non-default report schedule-entry fields."""
@@ -635,24 +649,6 @@ class TestAppScheduleContribution:
 def test_celery_result_expires_configured() -> None:
     """Celery results have a TTL so result backends do not grow forever."""
     assert settings.CELERY.result_expires == CELERY_RESULT_EXPIRES_SECONDS
-
-
-@pytest_asyncio.fixture(name="beat_maker")
-async def beat_maker_fixture() -> AsyncIterator:
-    """Provide a session maker bound to an in-memory celery-beat DB."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        json_serializer=json_serializer,
-        poolclass=StaticPool,
-    )
-    engine = engine.execution_options(schema_translate_map={"celery_schema": None})
-    async with engine.begin() as conn:
-        await apply_schema(conn, PeriodicTask.__table__.metadata)
-    try:
-        yield get_async_session_maker_from_engine(engine)
-    finally:
-        await engine.dispose()
 
 
 @pytest.mark.asyncio

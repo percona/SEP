@@ -107,6 +107,42 @@ class ServiceTypeEnum(StrEnum):
     VALKEY = auto()
 
 
+class LinkageMethodEnum(StrEnum):
+    """Enumerate how an external-identity binding came to be recorded.
+
+    Every member names an operator action: nothing here records a binding the
+    syncer made on its own, because ordinary sync creation writes no alias row.
+
+    Values are spelled out rather than derived with ``auto()``. The column
+    persists the member *name*, but the API serializes the *value*, so under
+    ``auto()`` the two move in opposite ways when a member is renamed: the
+    stored form follows the rename while the published one silently changes
+    with it. Pinning the value holds the wire contract — this enum reaches the
+    generated API client — and leaves a rename a database concern alone.
+    """
+
+    OPERATOR_CONFIRMATION = "operator_confirmation"
+    OPERATOR_UNLINK = "operator_unlink"
+
+
+class IdentityLinkDecisionEnum(StrEnum):
+    """Enumerate the decisions an operator may record against a candidate pairing.
+
+    :cvar CONFIRMED: The pairing names one machine, and the link stands.
+    :cvar REJECTED: The pairing names two machines, so stop suggesting it.
+    :cvar UNLINKED: A standing confirmation was reversed.
+
+    Values are spelled out for the reason given on
+    :class:`LinkageMethodEnum`, and it binds harder here: this enum is also a
+    *request* body field, so a rename would reject the payloads callers were
+    already sending.
+    """
+
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+    UNLINKED = "unlinked"
+
+
 class NodeBase(SQLModel):
     """Define the base structure for node-related operations.
 
@@ -577,6 +613,231 @@ class TableDetailResponse(TableResponse):
     """
 
     database: Schema
+
+
+class ExternalIdentityAliasBase(SQLModel):
+    """Define the base structure for an external-identity binding record.
+
+    :param entity_type: The inventory entity type the binding names.
+    :param entity_id: The primary key of the row the upstream id resolves to.
+    :param source: The upstream system the identifier belongs to.
+    :param external_id: The upstream identifier being bound.
+    :param valid_from: When the binding took effect.
+    :param valid_to: When the binding stopped applying, or None while it stands.
+    :param linkage_method: How the binding came to be recorded.
+    :param principal: The caller that recorded the binding.
+    """
+
+    entity_type: RetirableEntityName = SQLField(
+        sa_column=Column(
+            EnumField(
+                RetirableEntityName,
+                native_enum=False,
+                create_constraint=True,
+                name="alias_entity_type",
+            ),
+            nullable=False,
+        )
+    )
+    entity_id: int
+    source: SourceEnum = SQLField(
+        sa_column=Column(
+            EnumField(
+                SourceEnum,
+                native_enum=False,
+                create_constraint=True,
+                name="alias_source",
+            ),
+            nullable=False,
+        )
+    )
+    external_id: NonEmptyStr
+    valid_from: UTCDatetime = SQLField(sa_type=DateTimeWithTimezone)
+    valid_to: UTCDatetime | None = SQLField(default=None, sa_type=DateTimeWithTimezone)
+    linkage_method: LinkageMethodEnum = SQLField(
+        sa_column=Column(
+            EnumField(
+                LinkageMethodEnum,
+                native_enum=False,
+                create_constraint=True,
+                name="alias_linkage_method",
+            ),
+            nullable=False,
+        )
+    )
+    principal: NonEmptyStr
+
+
+class ExternalIdentityAlias(ExternalIdentityAliasBase, BaseSQLModel, table=True):
+    """Bind one upstream identifier to one inventory row over a validity interval.
+
+    Append-only. A binding that is open at write time carries ``valid_to = None``
+    and is closed by appending a superseding record rather than by an update, so
+    a confirmation and its reversal both stay readable afterwards. An identifier
+    is bound to the row named by its record with the greatest
+    ``(valid_from, id)``, and then resolves to whichever row has since absorbed
+    that one through a standing confirmation — a confirmation transfers only the
+    identifier its successor currently holds, so the rest of that successor's
+    bindings stay where they are and are followed rather than rewritten. An
+    identifier with no record at all resolves by the ``external_id`` column,
+    which is the overwhelming majority.
+
+    ``entity_id`` carries no foreign key on purpose: the column is polymorphic
+    over ``node`` and ``service``, so no single target exists, and its absence
+    keeps the trail readable once collection deletes a row the history names.
+    Neither index is unique, equally on purpose —
+    ``BaseSQLModelManager.save`` rebuilds equality filters from every unique
+    index and would refuse the superseding record that expresses closure.
+
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :param created_at: The timestamp when the record is created. Defaults to the
+        current time in UTC.
+    :param updated_at: The timestamp when the record is last updated.
+        Automatically updated on changes.
+    :param entity_type: The inventory entity type the binding names.
+    :param entity_id: The primary key of the row the upstream id resolves to.
+    :param source: The upstream system the identifier belongs to.
+    :param external_id: The upstream identifier being bound.
+    :param valid_from: When the binding took effect.
+    :param valid_to: When the binding stopped applying, or None while it stands.
+    :param linkage_method: How the binding came to be recorded.
+    :param principal: The caller that recorded the binding.
+    """
+
+    __table_args__ = (
+        Index("ix_alias_source_external_id", "source", "external_id"),
+        Index("ix_alias_entity", "entity_type", "entity_id"),
+    )
+
+
+class ExternalIdentityAliasResponse(BaseSQLModel, ExternalIdentityAliasBase):
+    """Define the external-identity alias API response.
+
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :param created_at: The timestamp when the record is created. Defaults to the
+        current time in UTC.
+    :param updated_at: The timestamp when the record is last updated.
+        Automatically updated on changes.
+    :param entity_type: The inventory entity type the binding names.
+    :param entity_id: The primary key of the row the upstream id resolves to.
+    :param source: The upstream system the identifier belongs to.
+    :param external_id: The upstream identifier being bound.
+    :param valid_from: When the binding took effect.
+    :param valid_to: When the binding stopped applying, or None while it stands.
+    :param linkage_method: How the binding came to be recorded.
+    :param principal: The caller that recorded the binding.
+    """
+
+
+class IdentityLinkDecision(BaseSQLModel, table=True):
+    """Record one operator decision over one candidate pairing, append-only.
+
+    A pairing's current state is its most recent row, so nothing is ever updated
+    or deleted here either. ``predecessor_external_id`` and
+    ``predecessor_retired_at`` describe the predecessor immediately before a
+    confirmation and are read back only off a ``CONFIRMED`` row; they are what
+    lets a reversal restore the exact pre-confirmation state rather than an
+    approximation of it.
+
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :param created_at: The timestamp when the record is created. Defaults to the
+        current time in UTC.
+    :param updated_at: The timestamp when the record is last updated.
+        Automatically updated on changes.
+    :param entity_type: The inventory entity type the pairing names.
+    :param predecessor_id: The older row of the pairing, the one a confirmation
+        keeps.
+    :param successor_id: The newer row of the pairing.
+    :param decision: What the operator decided.
+    :param principal: The caller that recorded the decision.
+    :param predecessor_external_id: The identifier the predecessor held before a
+        confirmation transferred the successor's onto it, or None on a decision
+        that transferred nothing.
+    :param predecessor_retired_at: The predecessor's retirement timestamp before
+        a confirmation revived it, or None when it was active or nothing was
+        revived.
+    """
+
+    __table_args__ = (
+        Index(
+            "ix_link_decision_pair",
+            "entity_type",
+            "predecessor_id",
+            "successor_id",
+        ),
+        Index("ix_link_decision_successor", "entity_type", "successor_id"),
+    )
+
+    entity_type: RetirableEntityName = SQLField(
+        sa_column=Column(
+            EnumField(
+                RetirableEntityName,
+                native_enum=False,
+                create_constraint=True,
+                name="link_decision_entity_type",
+            ),
+            nullable=False,
+        )
+    )
+    predecessor_id: int
+    successor_id: int
+    decision: IdentityLinkDecisionEnum = SQLField(
+        sa_column=Column(
+            EnumField(
+                IdentityLinkDecisionEnum,
+                native_enum=False,
+                create_constraint=True,
+                name="link_decision_decision",
+            ),
+            nullable=False,
+        )
+    )
+    principal: NonEmptyStr
+    predecessor_external_id: NonEmptyStr | None = SQLField(default=None)
+    predecessor_retired_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+
+
+class IdentityLinkDecisionWrite(SQLModel):
+    """Define the request body recording one operator decision over a pairing.
+
+    :param successor_id: The row the addressed predecessor is being paired with.
+    :param decision: What the operator decided.
+    """
+
+    successor_id: int
+    decision: IdentityLinkDecisionEnum
+
+
+class NodeIdentityCandidateResponse(SQLModel):
+    """Pair a node with the successor a re-registration may have split it into.
+
+    :param predecessor: The older row — the one every SEP reference persisted
+        before the re-registration resolves through, and so the one a
+        confirmation keeps.
+    :param successor: The newer row PMM created when the node re-registered.
+    :param matched_on: The signals that agreed, informational only. Detection
+        never requires an address match, because PMM discards the address on a
+        non-``--force`` re-registration.
+    """
+
+    predecessor: NodeResponse
+    successor: NodeResponse
+    matched_on: list[str]
+
+
+class ServiceIdentityCandidateResponse(SQLModel):
+    """Pair a service with the successor a re-registration may have split it into.
+
+    :param predecessor: The older row a confirmation keeps.
+    :param successor: The newer row PMM created.
+    :param matched_on: The signals that agreed, informational only.
+    """
+
+    predecessor: ServiceResponse
+    successor: ServiceResponse
+    matched_on: list[str]
 
 
 class HostSystemObservationBase(SQLModel):
