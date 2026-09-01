@@ -30,7 +30,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.models import AlertService, AlertSeverity
 from app.core.utils.date_time import utc_now
-from app.inventory.models import ServiceTypeEnum
+from app.inventory.models import ServiceTypeEnum, SyncOutcomeEnum
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.inventory import (
     CreatedNode,
@@ -60,6 +60,7 @@ from tests.app.factories import (
     CreatedTableFactory,
     MOCK_CREATED_NODE_ID,
 )
+from tests.app.sep.sync.conftest import sync_health_posts
 
 # Pinned verbatim rather than imported: the parameter name is the inventory API's
 # contract, so renaming the constant must fail the test.
@@ -1195,3 +1196,369 @@ async def test_hold_entity_closes_the_sync_item(
         sync_instance_id=sync_instance.id,
     )
     assert held.status == SyncStatusEnum.SUCCESS
+
+
+class NodeMirroringSyncer(StubTestSyncer):
+    """Declare the node level mirrored, as ``PMMSyncer`` does."""
+
+    SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.NODE
+    mirrors_entity_levels: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = frozenset(
+        {SyncInventoryEntityTypeEnum.NODE}
+    )
+
+
+class TableMirroringSyncer(StubTestSyncer):
+    """Declare the schema and table levels mirrored, as ``MySQLSyncer`` does."""
+
+    SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.TABLE
+    mirrors_entity_levels: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = frozenset(
+        {SyncInventoryEntityTypeEnum.SCHEMA, SyncInventoryEntityTypeEnum.TABLE}
+    )
+
+
+class TestSyncHealthWiring:
+    """Test which of ``BaseSyncer``'s boundaries report an entity's sync health."""
+
+    def test_no_level_is_mirrored_by_default(self) -> None:
+        """Own nothing until a subclass says otherwise."""
+        assert BaseSyncer.mirrors_entity_levels == frozenset()
+
+    @pytest.mark.asyncio
+    async def test_a_mirrored_level_reports_a_clean_sync(
+        self, session: AsyncSession, created_node, mock_remote_api
+    ) -> None:
+        """Report one success for the node this syncer just confirmed."""
+        sync_instance = await _create_sync_instance(session, NodeMirroringSyncer)
+        syncer = _build_syncer(
+            NodeMirroringSyncer,
+            session,
+            inventory_api=mock_remote_api,
+            sync_instance=sync_instance,
+        )
+
+        await syncer.sync_node(created_node, None)
+
+        posts = sync_health_posts(mock_remote_api)
+        assert [path for path, _ in posts] == [f"/nodes/{created_node.id}/sync-health"]
+        assert posts[0][1]["outcome"] == SyncOutcomeEnum.SUCCESS
+
+    @pytest.mark.asyncio
+    async def test_an_unmirrored_level_reports_nothing(
+        self, session: AsyncSession, created_node, mock_remote_api
+    ) -> None:
+        """Leave the columns alone at a level this syncer only traverses."""
+
+        class TraversingSyncer(StubTestSyncer):
+            SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.NODE
+
+        sync_instance = await _create_sync_instance(session, TraversingSyncer)
+        syncer = _build_syncer(
+            TraversingSyncer,
+            session,
+            inventory_api=mock_remote_api,
+            sync_instance=sync_instance,
+        )
+
+        await syncer.sync_node(created_node, None)
+
+        assert sync_health_posts(mock_remote_api) == []
+
+    @pytest.mark.asyncio
+    async def test_a_filtered_out_entity_reports_nothing(
+        self, session: AsyncSession, created_node, mock_remote_api
+    ) -> None:
+        """Report nothing when ``fetch_node`` declines the entity.
+
+        The early return leaves ``manage_sync_item`` on the same clean-exit path
+        a real sync takes, so only the unset compared marker separates them.
+        """
+
+        class FilteringSyncer(NodeMirroringSyncer):
+            fetch_node_returns_none = True
+
+        sync_instance = await _create_sync_instance(session, FilteringSyncer)
+        syncer = _build_syncer(
+            FilteringSyncer,
+            session,
+            inventory_api=mock_remote_api,
+            sync_instance=sync_instance,
+        )
+
+        await syncer.sync_node(created_node, None)
+
+        assert sync_health_posts(mock_remote_api) == []
+
+    @pytest.mark.asyncio
+    async def test_an_entity_outside_the_run_scope_reports_nothing(
+        self, session: AsyncSession, created_node, mock_remote_api
+    ) -> None:
+        """Report nothing for a node a scoped run declined to visit at all.
+
+        ``can_sync_node`` gates ahead of both context managers, so the entity
+        never becomes an attempt — distinct from the filtered-out case below,
+        which does enter them.
+        """
+
+        class ScopedSyncer(NodeMirroringSyncer):
+            @classmethod
+            def can_sync_node(cls, node: CreatedNode) -> bool:  # noqa: ARG003
+                """Exclude every node from this run's target set."""
+                return False
+
+        sync_instance = await _create_sync_instance(session, ScopedSyncer)
+        syncer = _build_syncer(
+            ScopedSyncer,
+            session,
+            inventory_api=mock_remote_api,
+            sync_instance=sync_instance,
+        )
+
+        await syncer.sync_node(created_node, None)
+
+        assert sync_health_posts(mock_remote_api) == []
+
+    @pytest.mark.asyncio
+    async def test_a_fetch_failure_is_reported(
+        self, session: AsyncSession, created_node, mock_remote_api
+    ) -> None:
+        """Report the failure a ``fetch_node`` raise ends the attempt with."""
+
+        class FetchFailingSyncer(NodeMirroringSyncer):
+            async def fetch_node(self, created_node):
+                """Fail before any source data is in hand."""
+                raise RuntimeError("upstream unreachable")
+
+        sync_instance = await _create_sync_instance(session, FetchFailingSyncer)
+        syncer = _build_syncer(
+            FetchFailingSyncer,
+            session,
+            inventory_api=mock_remote_api,
+            sync_instance=sync_instance,
+        )
+
+        await syncer.sync_node(created_node, None)
+
+        posts = sync_health_posts(mock_remote_api)
+        assert [body["outcome"] for _, body in posts] == [SyncOutcomeEnum.FAILURE]
+
+    @pytest.mark.asyncio
+    async def test_a_perform_failure_is_reported_inside_the_sync_item_boundary(
+        self, session: AsyncSession, created_node, mock_remote_api
+    ) -> None:
+        """Report a failure the enclosing SyncItem boundary swallows.
+
+        ``manage_sync_item`` absorbs the exception when ``break_on_error`` is
+        off, so a reporter wrapped *outside* it would see a clean exit and post
+        a success. The failure body is what pins the nesting order.
+        """
+
+        class PerformFailingSyncer(NodeMirroringSyncer):
+            async def perform_node_sync(self, created_node, updated_node):
+                """Fail after the comparison against source began."""
+                raise RuntimeError("write rejected")
+
+        sync_instance = await _create_sync_instance(session, PerformFailingSyncer)
+        syncer = _build_syncer(
+            PerformFailingSyncer,
+            session,
+            inventory_api=mock_remote_api,
+            sync_instance=sync_instance,
+        )
+
+        await syncer.sync_node(created_node, None)
+
+        posts = sync_health_posts(mock_remote_api)
+        assert [body["outcome"] for _, body in posts] == [SyncOutcomeEnum.FAILURE]
+        item = await SyncItemManager.first(
+            session,
+            entity_id=created_node.id,
+            entity_type=SyncInventoryEntityTypeEnum.NODE,
+            sync_instance_id=sync_instance.id,
+        )
+        assert item.status == SyncStatusEnum.FAILED
+
+    @pytest.mark.asyncio
+    async def test_break_on_error_still_reports_the_failure(
+        self, session: AsyncSession, created_node, mock_remote_api
+    ) -> None:
+        """Record the outcome before the run aborts, not instead of aborting."""
+
+        class PerformFailingSyncer(NodeMirroringSyncer):
+            async def perform_node_sync(self, created_node, updated_node):
+                """Fail after the comparison against source began."""
+                raise RuntimeError("write rejected")
+
+        sync_instance = await _create_sync_instance(session, PerformFailingSyncer)
+        syncer = _build_syncer(
+            PerformFailingSyncer,
+            session,
+            inventory_api=mock_remote_api,
+            sync_instance=sync_instance,
+            break_on_error=True,
+        )
+
+        with pytest.raises(SyncFailError):
+            await syncer.sync_node(created_node, None)
+
+        posts = sync_health_posts(mock_remote_api)
+        assert [body["outcome"] for _, body in posts] == [SyncOutcomeEnum.FAILURE]
+
+    @pytest.mark.asyncio
+    async def test_a_child_failure_does_not_mark_the_parent_failing(
+        self, session: AsyncSession, created_node, created_service, mock_remote_api
+    ) -> None:
+        """Confirm the parent whose own mirror succeeded, even as a child fails.
+
+        The syncers walk to children from inside the parent's ``perform_*_sync``,
+        so under ``break_on_error`` the child's ``SyncFailError`` passes through
+        the parent's reporter. Attributing it to the parent would report a node
+        as failing whose own fields were just confirmed — and would say
+        something different from the default mode, where the child's own
+        boundary swallows the same failure.
+        """
+
+        class ParentSyncer(StubTestSyncer):
+            SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.SERVICE
+            mirrors_entity_levels: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
+                frozenset(
+                    {
+                        SyncInventoryEntityTypeEnum.NODE,
+                        SyncInventoryEntityTypeEnum.SERVICE,
+                    }
+                )
+            )
+
+            async def perform_node_sync(self, created_node, updated_node):
+                """Confirm the node, then walk to the service that will fail."""
+                await self.sync_service(created_service)
+
+            async def perform_service_sync(self, created_service, updated_service):
+                """Fail the child level."""
+                raise RuntimeError("child write rejected")
+
+        created_node.services = [created_service]
+        sync_instance = await _create_sync_instance(session, ParentSyncer)
+        syncer = _build_syncer(
+            ParentSyncer,
+            session,
+            inventory_api=mock_remote_api,
+            sync_instance=sync_instance,
+            break_on_error=True,
+        )
+
+        with pytest.raises(SyncFailError):
+            await syncer.sync_node(created_node, None)
+
+        posts = dict(sync_health_posts(mock_remote_api))
+        assert (
+            posts[f"/services/{created_service.id}/sync-health"]["outcome"]
+            == SyncOutcomeEnum.FAILURE
+        )
+        assert (
+            posts[f"/nodes/{created_node.id}/sync-health"]["outcome"]
+            == SyncOutcomeEnum.SUCCESS
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_failed_bookkeeping_post_leaves_the_sync_item_successful(
+        self, session: AsyncSession, created_node, mock_remote_api
+    ) -> None:
+        """Keep a healthy sync healthy when the freshness write cannot land."""
+        sync_instance = await _create_sync_instance(session, NodeMirroringSyncer)
+        syncer = _build_syncer(
+            NodeMirroringSyncer,
+            session,
+            inventory_api=mock_remote_api,
+            sync_instance=sync_instance,
+        )
+        mock_remote_api.post.side_effect = HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY
+        )
+
+        await syncer.sync_node(created_node, None)
+
+        item = await SyncItemManager.first(
+            session,
+            entity_id=created_node.id,
+            entity_type=SyncInventoryEntityTypeEnum.NODE,
+            sync_instance_id=sync_instance.id,
+        )
+        assert item.status == SyncStatusEnum.SUCCESS
+
+    @pytest.mark.asyncio
+    async def test_schema_and_table_levels_report(
+        self, session: AsyncSession, created_schema, created_table, mock_remote_api
+    ) -> None:
+        """Report both levels the MySQL-shaped syncer mirrors."""
+        sync_instance = await _create_sync_instance(session, TableMirroringSyncer)
+        syncer = _build_syncer(
+            TableMirroringSyncer,
+            session,
+            inventory_api=mock_remote_api,
+            sync_instance=sync_instance,
+        )
+        created_schema.tables = []
+
+        await syncer.sync_schema(created_schema, None)
+        await syncer.sync_table(created_table, None)
+
+        assert [path for path, _ in sync_health_posts(mock_remote_api)] == [
+            f"/schemas/{created_schema.id}/sync-health",
+            f"/tables/{created_table.id}/sync-health",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_holding_an_entity_reports_nothing(
+        self, session: AsyncSession, created_node, mock_remote_api
+    ) -> None:
+        """Confirm nothing about a node this run only declined to retire."""
+        sync_instance = await _create_sync_instance(session, NodeMirroringSyncer)
+        syncer = _build_syncer(
+            NodeMirroringSyncer,
+            session,
+            inventory_api=mock_remote_api,
+            sync_instance=sync_instance,
+        )
+        created_node.services = []
+
+        await syncer.hold_entity(SyncInventoryEntityTypeEnum.NODE, created_node)
+
+        assert sync_health_posts(mock_remote_api) == []
+
+    @pytest.mark.asyncio
+    async def test_retiring_an_entity_reports_nothing(
+        self, session: AsyncSession, created_node, mock_remote_api
+    ) -> None:
+        """Confirm nothing about a node whose upstream is gone."""
+        sync_instance = await _create_sync_instance(session, NodeMirroringSyncer)
+        syncer = _build_syncer(
+            NodeMirroringSyncer,
+            session,
+            inventory_api=mock_remote_api,
+            sync_instance=sync_instance,
+        )
+        created_node.services = []
+
+        await syncer.retire_node(created_node)
+
+        assert sync_health_posts(mock_remote_api) == []
+
+    @pytest.mark.asyncio
+    async def test_the_inventory_level_reports_nothing(
+        self, session: AsyncSession, mock_remote_api
+    ) -> None:
+        """Report nothing for the run-level boundary, which names no entity."""
+        sync_instance = await _create_sync_instance(session, NodeMirroringSyncer)
+        syncer = _build_syncer(
+            NodeMirroringSyncer,
+            session,
+            inventory_api=mock_remote_api,
+            sync_instance=sync_instance,
+        )
+        mock_remote_api.get.side_effect = [
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+        ]
+
+        await syncer.sync_inventory()
+
+        assert sync_health_posts(mock_remote_api) == []

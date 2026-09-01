@@ -19,10 +19,15 @@ import json
 from unittest.mock import AsyncMock, call
 
 import pytest
+import pytest_asyncio
 
 from app.inventory.models import ServiceTypeEnum
+from app.sep.crud import SyncInstanceManager
 from app.sep.inventory import CreatedNode, CreatedService
-from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.models import (
+    SyncInstanceWrite,
+    SyncInventoryEntityTypeEnum,
+)
 from app.sep.sync.models import TaskRunResult
 from app.sep.sync.syncers.system_facts.syncer import (
     SystemFactsService,
@@ -33,6 +38,7 @@ from tests.app.factories import (
     CreatedServiceFactory,
     MOCK_CREATED_NODE_ID,
 )
+from tests.app.sep.sync.conftest import sync_health_posts
 
 NODE_NAME = "db-node-1"
 NODE_ADDRESS = "10.0.0.5"
@@ -65,6 +71,26 @@ def _make_service(
 def mock_syncer(mock_remote_api) -> SystemFactsSyncer:
     """Return a SystemFactsSyncer with mocked tasks/inventory APIs."""
     return SystemFactsSyncer(tasks_api=mock_remote_api, inventory_api=mock_remote_api)
+
+
+@pytest_asyncio.fixture
+async def bound_system_facts_syncer(session, mock_remote_api) -> SystemFactsSyncer:
+    """Return a SystemFactsSyncer bound to a real session and persisted SyncInstance.
+
+    A test whose subject reaches the base ``manage_sync_item`` needs both, the
+    same way ``bound_mysql_syncer`` does for the MySQL syncer's cascade tests.
+    """
+    sync_instance = await SyncInstanceManager.create(
+        session,
+        SyncInstanceWrite(syncer=SystemFactsSyncer.get_name()),
+    )
+    syncer = SystemFactsSyncer(
+        tasks_api=mock_remote_api,
+        inventory_api=mock_remote_api,
+        sync_instance=sync_instance,
+    )
+    syncer._session = session
+    return syncer
 
 
 @pytest.fixture
@@ -725,3 +751,65 @@ class TestTombstoneBlindness:
     def test_no_entity_level_opts_into_retired_reads(self):
         """Keep every entity level out of retired reads."""
         assert SystemFactsSyncer.reads_retired_entities == frozenset()
+
+
+class TestMirroredEntityLevels:
+    """Test which entity levels this syncer's attempts write sync health for."""
+
+    def test_no_entity_level_is_mirrored(self):
+        """Own no level: observations are a separate resource, not the entity's fields.
+
+        The declaration is deliberately explicit rather than inherited. This
+        syncer walks the same ``sync_node`` / ``sync_service`` path the mirroring
+        syncers do, so a reader has to be able to see that its walks confirm
+        nothing about the values PMM is responsible for.
+        """
+        assert SystemFactsSyncer.mirrors_entity_levels == frozenset()
+
+    @pytest.mark.asyncio
+    async def test_a_full_run_reports_no_sync_health(
+        self, bound_system_facts_syncer, created_node, created_service, mocker
+    ):
+        """Leave both walked levels' columns untouched across a whole run.
+
+        This is the regression guard for the masking hazard: a system-facts run
+        interleaves with PMM's on the same rows, so refreshing their freshness
+        here would report a failing PMM mirror as healthy. Only the two external
+        boundaries are mocked — the executor host list and the task output — so
+        the run drives the real ``sync_node`` / ``sync_service`` path the
+        mirroring syncers share.
+        """
+        mocker.patch.object(
+            SystemFactsSyncer, "get_available_hosts", new_callable=AsyncMock
+        ).return_value = {NODE_NAME: NODE_ADDRESS}
+        mocker.patch.object(
+            SystemFactsSyncer, "wait_for_task_output", new_callable=AsyncMock
+        ).return_value = TaskRunResult(
+            1,
+            json.dumps(
+                {
+                    "host": {
+                        "os_version": OS_VERSION,
+                        "installed_packages": INSTALLED_PACKAGES,
+                        "config": HOST_CONFIG,
+                        "collected_at": COLLECTED_AT,
+                    },
+                    "services": {
+                        created_service.address: {
+                            "db_engine_version": MYSQL_VERSION,
+                            "collected_at": COLLECTED_AT,
+                        }
+                    },
+                }
+            ),
+        )
+        mocker.patch.object(
+            SystemFactsSyncer,
+            "get_inventory_nodes",
+            new_callable=AsyncMock,
+            return_value=[created_node],
+        )
+
+        await bound_system_facts_syncer.perform_inventory_sync()
+
+        assert sync_health_posts(bound_system_facts_syncer.inventory_api) == []

@@ -27,6 +27,7 @@ from app.inventory.models import (
     Schema,
     Service,
     SourceEnum,
+    SyncOutcomeEnum,
     Table,
 )
 from tests.app.factories import (
@@ -34,7 +35,13 @@ from tests.app.factories import (
     NodeWriteFactory,
     ServiceWriteFactory,
 )
-from tests.app.inventory.conftest import retire_in_place
+from tests.app.inventory.conftest import (
+    INVALID_SYNC_HEALTH_BODIES,
+    INVALID_SYNC_HEALTH_BODY_IDS,
+    retire_in_place,
+    sync_health_payload,
+    SYNC_HEALTH_RESPONSE_KEYS,
+)
 
 CREATED_NODE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
@@ -1074,3 +1081,100 @@ class TestUpsertHostSystemObservation:
         data["config"] = None
         response = test_client.put(f"/nodes/{node.id}/system-observation", json=data)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+class TestRecordNodeSyncHealth:
+    """Test the POST /nodes/{node_id}/sync-health endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_success_outcome_clears_the_failure_state(
+        self, test_client: TestClient, session: AsyncSession, node: Node
+    ) -> None:
+        """Record the freshness and answer 204."""
+        response = test_client.post(
+            f"/nodes/{node.id}/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.SUCCESS),
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        await session.refresh(node)
+        assert node.last_synced_at is not None
+        assert node.last_sync_error is None
+        assert node.consecutive_failures == 0
+
+    @pytest.mark.asyncio
+    async def test_failure_outcome_opens_the_failure_run(
+        self, test_client: TestClient, session: AsyncSession, node: Node
+    ) -> None:
+        """Record the failure columns and answer 204."""
+        response = test_client.post(
+            f"/nodes/{node.id}/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.FAILURE, "boom"),
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        await session.refresh(node)
+        assert node.last_synced_at is None
+        assert node.last_sync_error == "boom"
+        assert node.sync_failing_since is not None
+        assert node.consecutive_failures == 1
+
+    @pytest.mark.parametrize(
+        "body", INVALID_SYNC_HEALTH_BODIES, ids=INVALID_SYNC_HEALTH_BODY_IDS
+    )
+    def test_rejects_an_inconsistent_or_incomplete_body(
+        self, test_client: TestClient, node: Node, body: dict[str, str]
+    ) -> None:
+        """Refuse every body shape the write model declares invalid."""
+        response = test_client.post(f"/nodes/{node.id}/sync-health", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_unknown_node_is_not_found(self, test_client: TestClient) -> None:
+        """Answer 404 when the addressed node does not exist."""
+        response = test_client.post(
+            "/nodes/99999/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.SUCCESS),
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_retired_node_still_records_the_outcome(
+        self, test_client: TestClient, session: AsyncSession, retired_node: Node
+    ) -> None:
+        """Record the attempt against a node retired concurrently with the sync."""
+        response = test_client.post(
+            f"/nodes/{retired_node.id}/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.FAILURE, "boom"),
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        await session.refresh(retired_node)
+        assert retired_node.consecutive_failures == 1
+
+
+class TestNodeSyncHealthReads:
+    """Test that the node read responses expose the sync-health columns."""
+
+    def test_detail_and_nested_service_expose_the_columns(
+        self, test_client: TestClient, node: Node, service: Service
+    ) -> None:
+        """Carry the four fields on the node and on the service nested inside it."""
+        response = test_client.get(f"/nodes/{node.id}")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data.keys() >= SYNC_HEALTH_RESPONSE_KEYS
+        assert data["services"][0].keys() >= SYNC_HEALTH_RESPONSE_KEYS
+
+    def test_list_items_expose_the_columns(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Carry the four fields on every row of the paginated list."""
+        response = test_client.get("/nodes/")
+
+        assert response.status_code == status.HTTP_200_OK
+        items = response.json()["items"]
+        assert items, "the node fixture should have produced a row to read back"
+        assert items[0].keys() >= SYNC_HEALTH_RESPONSE_KEYS

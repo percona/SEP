@@ -3810,11 +3810,23 @@ export interface components {
      *     :param retired_at: When the node stopped being reported upstream, or None while
      *         it is active.
      *     :param retirement_key: The discriminator carried inside every unique index.
+     *     :param last_synced_at: When a syncer last confirmed the node against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the node is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      *     :param services: A list of services associated with the node.
      */
     Node: {
       /** Address */
       address: string;
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -3824,11 +3836,17 @@ export interface components {
       external_id: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
       source: components['schemas']['SourceEnum'];
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /**
        * Type
        * @default generic
@@ -3946,9 +3964,21 @@ export interface components {
      *     :param retired_at: When the schema stopped being reported upstream, or None
      *         while it is active.
      *     :param retirement_key: The discriminator carried inside every unique index.
+     *     :param last_synced_at: When a syncer last confirmed the schema against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the schema is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      *     :param tables: A list of tables within the schema.
      */
     Schema: {
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -3956,12 +3986,18 @@ export interface components {
       created_at?: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
       /** Service Id */
       service_id: number;
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -3993,10 +4029,22 @@ export interface components {
      *     :param node: The node to which the service is associated.
      *     :param retired_at: When the service stopped being reported upstream, or None
      *         while it is active.
+     *     :param last_synced_at: When a syncer last confirmed the service against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the service is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      */
     ServiceResponse: {
       /** Cluster */
       cluster?: string | null;
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -4012,6 +4060,10 @@ export interface components {
       external_id: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       node: components['schemas']['Node'];
@@ -4025,6 +4077,8 @@ export interface components {
       retired_at?: string | null;
       /** Schemas */
       schemas: components['schemas']['Schema'][];
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       type: components['schemas']['ServiceTypeEnum'];
       /** Updated At */
       updated_at?: string | null;
