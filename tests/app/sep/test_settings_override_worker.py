@@ -112,7 +112,14 @@ async def _upsert_override(
     key: str,
     value: object,
 ) -> None:
-    """Insert or replace a single active ``SettingOverride`` row through ``maker``."""
+    """Insert or replace a single active ``SettingOverride`` row through ``maker``.
+
+    :param maker: Async session maker bound to the override store.
+    :param settings_cls: Settings class whose :func:`~app.core.settings_override.models.setting_class_token`
+        is persisted as ``setting_class`` on the row.
+    :param key: Canonical override key (``SCREAMING_SNAKE`` or nested path).
+    :param value: JSON-serializable override payload.
+    """
     token = setting_class_token(settings_cls)
     async with maker() as session:
         await SettingsOverrideManager.delete_where(

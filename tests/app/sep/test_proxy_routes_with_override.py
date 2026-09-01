@@ -95,7 +95,14 @@ async def _insert_override(
     key: str,
     value: object,
 ) -> None:
-    """Insert one active override row into the override store."""
+    """Insert one active override row into the override store.
+
+    :param session_maker: Async session maker bound to the override store.
+    :param settings_cls: Settings class whose :func:`~app.core.settings_override.models.setting_class_token`
+        is persisted as ``setting_class`` on the row.
+    :param key: Canonical override key (``SCREAMING_SNAKE`` or nested path).
+    :param value: JSON-serializable override payload.
+    """
     token = setting_class_token(settings_cls)
     async with session_maker() as session:
         await SettingsOverrideManager.create(
