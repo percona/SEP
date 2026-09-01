@@ -2219,6 +2219,36 @@ class TestSyncTaskHistoryWithoutTaskStates:
         assert result.status == TaskHistoryStatusEnum.LOST
         assert result.finished_at is not None
 
+    @pytest.mark.asyncio
+    async def test_should_escalate_pending_allocation_coerces_naive_started_at(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        session: AsyncSession,
+        created_task_with_history: TaskHistory,
+    ):
+        """Assert the age bound compares safely after an ORM load strips tzinfo.
+
+        ``DateTimeWithTimezone`` does not coerce on load; SQLite and MySQL return
+        ``started_at`` tz-naive. The sync path loads through ``get_or_404``, so the
+        predicate must tolerate that shape.
+        """
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
+        )
+        started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_PAST_BOUND_AGE)
+        queue_item = created_task_with_history
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        queue_item.started_at = started_at
+        await TaskHistoryManager.save(session, queue_item)
+
+        reloaded = await TaskHistoryManager.get_or_404(session, id=queue_item.id)
+        assert reloaded.started_at is not None
+        assert reloaded.started_at.tzinfo is None
+
+        assert _build_executor()._should_escalate_pending_allocation(reloaded) is True
+
 
 class TestStampFinishedAt:
     """Exercise ``NomadExecutor._stamp_finished_at``."""

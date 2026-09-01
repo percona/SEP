@@ -1447,7 +1447,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         from app.tasks import config as tasks_config
 
         bound = tasks_config.tasks_settings.PENDING_ALLOCATION_TIMEOUT_SECONDS
-        return (utc_now() - queue_item.started_at).total_seconds() >= bound
+        elapsed = utc_now() - make_datetime_utc(queue_item.started_at)
+        return elapsed.total_seconds() >= bound
 
     async def _persist_nomad_task_logs(
         self,
