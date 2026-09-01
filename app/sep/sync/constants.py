@@ -15,8 +15,8 @@
 
 """Define constants shared across the SEP sync package.
 
-A leaf module: importing it pulls in nothing beyond the entity-type enum, so a
-collaborator can address an inventory entity generically without reaching back
+A leaf within this package: its only project import is the entity-type enum, so
+a collaborator can address an inventory entity generically without reaching back
 into the syncer framework that also needs the same map.
 """
 

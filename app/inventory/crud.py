@@ -298,7 +298,7 @@ class SyncHealthManagerMixin(BaseSQLModelManager):
     async def record_sync_health(
         cls,
         session: AsyncSession,
-        instance: SyncHealthBase,
+        instance: RetirableSQLModel,
         outcome: SyncHealthWrite,
     ) -> None:
         """Apply one sync outcome to an entity's four sync-health columns.
@@ -310,7 +310,11 @@ class SyncHealthManagerMixin(BaseSQLModelManager):
         retired filter would hide.
 
         :param session: The asynchronous database session to use.
-        :param instance: The entity the outcome was observed for.
+        :param instance: The entity the outcome was observed for. Typed as the
+            retirable base ``retire`` takes rather than as ``SyncHealthBase``,
+            which carries the columns but not the ``id`` this addresses the row
+            by; ``cls.Model`` is what confines the write to a level that has
+            them.
         :param outcome: What the syncer reported.
         :raises ValueError: If the outcome names no branch here, which an
             outcome added to :class:`SyncOutcomeEnum` without a transition

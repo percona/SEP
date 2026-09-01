@@ -1946,7 +1946,10 @@ _SYNC_HEALTH_COLUMNS = frozenset(
 #: The counter after a second failure lands on an already-failing row.
 SECOND_CONSECUTIVE_FAILURE = 2
 
-SyncHealthTarget = tuple[type[SyncHealthManagerMixin], RetirableSQLModel]
+#: The union rather than a shared base: an entity carrying both an ``id`` and
+#: the sync-health columns has no single base to name — ``SyncHealthBase`` is
+#: mixed into the read responses too, so it cannot inherit the table identity.
+SyncHealthTarget = tuple[type[SyncHealthManagerMixin], Node | Service | Schema | Table]
 
 
 @pytest.fixture(
@@ -2157,6 +2160,7 @@ class TestRecordSyncHealth:
         )
 
         await session.refresh(entity)
+        assert entity.last_sync_error is not None
         assert len(entity.last_sync_error) <= SYNC_ERROR_MAX_LENGTH
 
     @pytest.mark.asyncio

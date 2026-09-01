@@ -282,19 +282,16 @@ class TestIdentityTablesCarryNoUniqueIndex:
 class TestSyncHealthWriteAttemptClock:
     """Test the bound a reported attempt time is held to."""
 
-    def test_an_attempt_within_the_tolerance_is_accepted(self) -> None:
-        """Admit the drift two containers of one deployment normally carry."""
-        attempted_at = utc_now() + SYNC_ATTEMPT_MAX_CLOCK_SKEW - timedelta(minutes=1)
-
-        body = SyncHealthWrite(
-            outcome=SyncOutcomeEnum.SUCCESS, attempted_at=attempted_at
-        )
-
-        assert body.attempted_at == attempted_at
-
-    def test_a_past_attempt_is_accepted(self) -> None:
-        """Leave the ordinary case — a report arriving after its attempt — alone."""
-        attempted_at = utc_now() - timedelta(days=30)
+    @pytest.mark.parametrize(
+        "offset",
+        [SYNC_ATTEMPT_MAX_CLOCK_SKEW - timedelta(minutes=1), -timedelta(days=30)],
+        ids=["ahead_within_tolerance", "in_the_past"],
+    )
+    def test_an_attempt_not_beyond_the_tolerance_is_accepted(
+        self, offset: timedelta
+    ) -> None:
+        """Admit both the ordinary late report and the drift two containers carry."""
+        attempted_at = utc_now() + offset
 
         body = SyncHealthWrite(
             outcome=SyncOutcomeEnum.SUCCESS, attempted_at=attempted_at

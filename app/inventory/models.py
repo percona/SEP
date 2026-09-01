@@ -15,10 +15,17 @@
 
 """Define models for the Inventory API."""
 
+from datetime import datetime
 from enum import auto, StrEnum
 from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, model_validator, PositiveInt
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    field_validator,
+    model_validator,
+    PositiveInt,
+)
 from sqlalchemy import Column, Index, JSON, Text, text
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
@@ -214,14 +221,15 @@ class SyncHealthWrite(SQLModel):
             raise ValueError("error must be omitted when outcome is success")
         return self
 
-    @model_validator(mode="after")
-    def _validate_attempted_at_is_not_ahead(self) -> Self:
-        if self.attempted_at > utc_now() + SYNC_ATTEMPT_MAX_CLOCK_SKEW:
+    @field_validator("attempted_at")
+    @classmethod
+    def _validate_attempted_at_is_not_ahead(cls, value: datetime) -> datetime:
+        if value > utc_now() + SYNC_ATTEMPT_MAX_CLOCK_SKEW:
             raise ValueError(
                 "attempted_at is further ahead of server time than the "
                 "tolerated clock skew"
             )
-        return self
+        return value
 
 
 class NodeBase(SQLModel):
