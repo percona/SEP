@@ -471,7 +471,12 @@ class PMMSyncer(BaseSyncer):
 
         :param created_service: The local service instance to synchronize.
         :param updated_service: The updated service data fetched from the PMM API.
+        :raises TypeError: If ``updated_service`` is not a ``PMMService``.
         """
+        if not isinstance(updated_service, PMMService):
+            raise TypeError(
+                f"PMMSyncer requires a PMMService, got {type(updated_service).__name__}"
+            )
         if created_service.node.external_id != updated_service.node_id:
             nodes = await self.get_inventory_nodes(
                 external_id=created_service.node.external_id,

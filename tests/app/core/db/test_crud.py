@@ -1103,6 +1103,42 @@ class TestDMLWhereGuards:
             await UniqueKeyManager.delete_where(session, returning=(), key="alpha")
 
     @pytest.mark.asyncio
+    async def test_update_where_rejects_an_empty_generator_returning(
+        self, session: AsyncSession
+    ) -> None:
+        """Refuse an empty one-shot ``returning`` the same as an empty sequence.
+
+        ``Iterable[str]`` admits a generator, which is truthy while empty, so a
+        guard reading its truthiness alone would pass it through to the row read
+        and raise ``TypeError`` from ``len()`` instead.
+        """
+        with pytest.raises(ValueError, match="returning must name at least one"):
+            await UniqueKeyManager.update_where(
+                session,
+                values={"label": "x"},
+                returning=(column for column in ()),
+                key="alpha",
+            )
+
+    @pytest.mark.asyncio
+    async def test_update_where_accepts_a_generator_returning(
+        self, session: AsyncSession
+    ) -> None:
+        """Honor a one-shot ``returning``, which is consumed more than once below."""
+        await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="alpha", label="before"),
+            filter_include={"key"},
+        )
+        returned = await UniqueKeyManager.update_where(
+            session,
+            values={"label": "after"},
+            returning=(column for column in ["label"]),
+            key="alpha",
+        )
+        assert returned == ["after"]
+
+    @pytest.mark.asyncio
     async def test_update_where_returns_named_columns(
         self, session: AsyncSession
     ) -> None:

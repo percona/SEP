@@ -287,14 +287,25 @@ GROUPS: tuple[Group, ...] = (
     _group(
         "runtime-computed-model-in-type-position",
         "invalid-type-form",
-        r"^(Variable of type `type\[[\w.]+\]` is not allowed in a "
-        r"(return type annotation|parameter annotation|type expression)|"
-        r"Function calls are not allowed in type expressions)$",
+        r"^Variable of type `type\[[\w.]+\]` is not allowed in a "
+        r"(return type annotation|parameter annotation|type expression)$",
         "the annotation names a class chosen at runtime -- a provider-selected "
         "user model, a `create_model` response model, a form model read back by "
         "`get_type_hints` -- so no static form can name it; Python has no "
         "spelling for `the class in this variable`, and the framework reads "
         "these annotations back at request time",
+    ),
+    _group(
+        "factory-built-annotated-alias",
+        "invalid-type-form",
+        r"^Function calls are not allowed in type expressions$",
+        "the annotation is a call to a field-type factory returning an "
+        "`Annotated` alias, which pydantic resolves at model-build time; unlike "
+        "the group above, the message names no discriminant of its own -- it "
+        "reads identically for an ordinary call mistakenly written in a type "
+        "position -- so the group is confined to the module holding the only "
+        "such site",
+        "app/sep/apps/mysql_backups/forms.py",
     ),
 )
 

@@ -112,7 +112,9 @@ async def tasks_api_detail(
         periodic_summary = [
             PeriodicTaskSummary.model_validate(item) for item in periodic_response
         ]
-        execution_history = await tasks_api.get(f"/{task.name}/history/")
+        execution_history = as_json_object(
+            await tasks_api.get(f"/{task.name}/history/")
+        )
 
     executor_hosts = [
         ExecutorHostMetadata(value=host["value"], label=host["label"])

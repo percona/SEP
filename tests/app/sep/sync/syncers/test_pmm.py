@@ -30,6 +30,7 @@ from app.sep.clients.pmm import (
     PMMFetchDiagnostics,
     PMMInventorySnapshot,
     PMMRemoteAPI,
+    PMMService,
 )
 from app.sep.crud import (
     SyncEntityAbsenceManager,
@@ -37,6 +38,7 @@ from app.sep.crud import (
     SyncItemManager,
 )
 from app.sep.inventory import CreatedNode, CreatedService, Node
+from app.sep.inventory import Service as SEPService
 from app.sep.models import (
     SyncInstance,
     SyncInventoryEntityTypeEnum,
@@ -815,10 +817,11 @@ async def test_fetch_service(created_service, pmmsyncer):
 @pytest.mark.asyncio
 async def test_perform_service_sync(created_service, created_node, pmmsyncer):
     """Test synchronizing data for a specific service."""
-    updated_service = Service(
+    updated_service = PMMService(
         external_id=created_service.external_id,
         type=ServiceTypeEnum.MYSQL,
         name="Remote Service",
+        node_id="a-different-node",
     )
     pmmsyncer.inventory_api.get.side_effect = [
         {"items": [created_node.model_dump()], "total": 1, "offset": 0, "limit": 50},
@@ -830,6 +833,26 @@ async def test_perform_service_sync(created_service, created_node, pmmsyncer):
     pmmsyncer.inventory_api.put.assert_awaited_once()
     expected_url = f"/services/{created_service.id}"
     assert pmmsyncer.inventory_api.put.call_args.args[0] == expected_url
+
+
+@pytest.mark.asyncio
+async def test_perform_service_sync_rejects_a_non_pmm_service(
+    created_service, pmmsyncer
+):
+    """Reject a carrier the base signature admits but this override cannot read.
+
+    ``node_id`` is a PMM addition, so a plain ``Service`` would fail on attribute
+    access several lines in; the guard names the contract instead.
+    """
+    with pytest.raises(TypeError, match="requires a PMMService"):
+        await pmmsyncer.perform_service_sync(
+            created_service,
+            SEPService(
+                external_id=created_service.external_id,
+                type=ServiceTypeEnum.MYSQL,
+                name="Remote Service",
+            ),
+        )
 
 
 @pytest.mark.asyncio

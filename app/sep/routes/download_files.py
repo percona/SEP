@@ -53,7 +53,9 @@ async def list_task_history_files(
         listing = await tasks_api.get(f"/history/{task_history.id}/files/")
         return {
             name: FileMetadata.model_validate(metadata)
-            for name, metadata in (as_json_object(listing) if listing else {}).items()
+            for name, metadata in (
+                as_json_object(listing) if listing is not None else {}
+            ).items()
         }
     except HTTPException as exc:
         if exc.status_code in (

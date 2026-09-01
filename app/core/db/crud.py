@@ -406,7 +406,9 @@ class BaseManager:
         :param whereclause: SQL expressions for the ``where`` clause of the statement.
         :param returning: If True, return the affected rows as objects of ``cls.Model``.
             If a list of column names is provided, return only those columns. Defaults
-            to False, meaning no rows are returned from the statement.
+            to False, meaning no rows are returned from the statement. A non-``bool``
+            argument is materialized before it is inspected, so a one-shot iterable
+            survives the emptiness check, the dialect branch and the row read below.
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
         :return: The result of the statement execution, or the returned rows when
@@ -419,10 +421,12 @@ class BaseManager:
             raise ValueError(
                 "You must specify at least one filter in *whereclause or **equal_filters"
             )
-        if returning is not True and returning is not False and not returning:
-            raise ValueError(
-                "returning must name at least one column, or be True or False"
-            )
+        if returning is not True and returning is not False:
+            returning = tuple(returning)
+            if not returning:
+                raise ValueError(
+                    "returning must name at least one column, or be True or False"
+                )
 
         if returning and session.get_bind().name == DatabaseDialect.MYSQL:
             return await cls._mutate_where_returning_with_for_update(
