@@ -25,9 +25,9 @@ edge into a package the image strips. This module walks the ``app/`` tree with
 configuration: no module holds an import-time edge into an activatable app
 package other than the one it lives in.
 
-Both halves bind. A module that lives in no app package -- everything outside
+Both halves bind. A module that lives in no app package — everything outside
 ``app/sep/apps/`` plus, inside it, ``framework``/``shared`` and the apps-level
-modules -- may reach none of them. A module inside app package ``X`` may reach
+modules — may reach none of them. A module inside app package ``X`` may reach
 ``X`` freely and nothing else.
 
 Two node shapes count, because both execute at import: a static ``import`` /
@@ -40,7 +40,7 @@ Two limitations are deliberate, so the guard is not mistaken for a total one:
 - A dynamic import whose target is *computed* cannot be resolved statically.
   Restricting the dynamic check to literal arguments is what keeps the
   registry's activation-list-driven ``import_module(plugin.module_name)`` from
-  tripping the guard -- that call is the blessed activation seam, not a
+  tripping the guard — that call is the blessed activation seam, not a
   violation.
 - A module-scope call to a function *imported from another module* whose body
   imports an app package is out of scope. Resolving it needs a whole-tree
@@ -58,6 +58,8 @@ request, which is how the side-car shipped unable to serve its main API.
 """
 
 import ast
+import os
+import shutil
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
@@ -149,7 +151,7 @@ def _call_names_in_expr(node: ast.AST) -> set[str]:
 def _call_names_skipping_function_bodies(node: ast.AST) -> set[str]:
     """Collect bare-name call targets while skipping nested function bodies.
 
-    Descends module and class bodies -- both execute on import -- but never into
+    Descends module and class bodies — both execute on import — but never into
     a ``FunctionDef`` / ``AsyncFunctionDef`` body. Decorator expressions and
     signature defaults on skipped functions are still scanned, because both
     evaluate at import time.
@@ -266,7 +268,7 @@ def _descend_import_time_nodes(
 def _import_time_imports(node: ast.AST, package: str) -> Iterator[tuple[str, int]]:
     """Yield ``(module, lineno)`` for each import executed when the module loads.
 
-    Descends the module body and class bodies -- both execute on import -- but
+    Descends the module body and class bodies — both execute on import — but
     never into a function body, at any nesting depth. :func:`ast.walk` cannot
     express that: it queues a node's children before yielding the node, so
     skipping a ``FunctionDef`` mid-walk still lets its already-queued body
@@ -274,8 +276,8 @@ def _import_time_imports(node: ast.AST, package: str) -> Iterator[tuple[str, int
     only, since that is the branch a real interpreter runs.
 
     For a module, also traces intra-module call chains: a top-level function
-    whose body imports and is reached from an import-time call site -- including
-    transitively through other local functions -- contributes its body imports.
+    whose body imports and is reached from an import-time call site — including
+    transitively through other local functions — contributes its body imports.
 
     :param node: The module or nested node to descend.
     :param package: The dotted package the importing module belongs to.
@@ -331,6 +333,117 @@ def _is_type_checking_guard(node: ast.AST) -> bool:
     return isinstance(test, ast.Name) and test.id == "TYPE_CHECKING"
 
 
+def _skip_vanished_directory(error: OSError) -> None:
+    """Swallow a directory that vanished mid-walk, and re-raise anything else.
+
+    :param error: The failure :func:`os.walk` hit while scanning a directory.
+    :raises OSError: When the scan failed for any reason other than the directory
+        being gone.
+    """
+    if not isinstance(error, FileNotFoundError):
+        raise error
+
+
+def _module_paths_under(root: Path) -> Iterator[Path]:
+    """Yield every ``*.py`` module under ``root``, tolerating a vanished directory.
+
+    ``Path.rglob`` is not usable here. It re-scans each directory it descends into,
+    and on the oldest Python this project supports that scan is guarded against a
+    permission failure only, so a scaffold package another worker removes after it was
+    listed but before the descent reaches it aborts the whole walk. :func:`os.walk`
+    reports such a failure to a handler instead, which lets a missing directory be
+    skipped while every other scan failure still raises.
+
+    Symlinked directories are left unwalked, matching what the ``rglob`` walk did and
+    keeping a link loop from trapping the walk.
+
+    :param root: The tree root to walk.
+    :return: An iterator of module paths, in whatever order the walk reaches them.
+    """
+    for directory, _, filenames in os.walk(root, onerror=_skip_vanished_directory):
+        for filename in filenames:
+            if filename.endswith(".py"):
+                yield Path(directory) / filename
+
+
+def test_skip_vanished_directory_swallows_a_directory_that_is_gone(
+    tmp_path: Path,
+) -> None:
+    """Let the walk continue past a directory removed since it was listed.
+
+    :param tmp_path: The directory the missing path is addressed under.
+    """
+    error = FileNotFoundError(2, "No such file or directory")
+    error.filename = str(tmp_path / "gone")
+    assert _skip_vanished_directory(error) is None
+
+
+def test_skip_vanished_directory_reraises_any_other_scan_failure() -> None:
+    """Fail loudly when a directory is there but cannot be scanned.
+
+    A directory the walk may not read is not a directory that vanished, and
+    swallowing it would drop every module under it from the guard silently.
+    """
+    with pytest.raises(PermissionError):
+        _skip_vanished_directory(PermissionError(13, "Permission denied"))
+
+
+def test_module_paths_under_yields_every_nested_module(tmp_path: Path) -> None:
+    """Yield modules at every depth, and nothing that is not a module.
+
+    :param tmp_path: The tree root the modules are written under.
+    """
+    (tmp_path / "pkg" / "sub").mkdir(parents=True)
+    (tmp_path / "top.py").touch()
+    (tmp_path / "pkg" / "mid.py").touch()
+    (tmp_path / "pkg" / "sub" / "deep.py").touch()
+    (tmp_path / "pkg" / "notes.txt").touch()
+    assert sorted(_module_paths_under(tmp_path)) == [
+        tmp_path / "pkg" / "mid.py",
+        tmp_path / "pkg" / "sub" / "deep.py",
+        tmp_path / "top.py",
+    ]
+
+
+def test_module_paths_under_walks_past_a_directory_that_vanished(
+    tmp_path: Path,
+) -> None:
+    """Keep walking when a directory disappears after it was listed.
+
+    This is the failure the tolerant read alone cannot cover: the walk re-scans each
+    directory it descends into, and on the oldest Python this project supports that
+    scan is guarded against a permission failure but not against the directory having
+    been removed in the meantime. Removing it between the root's own modules and the
+    descent reproduces exactly that window.
+
+    :param tmp_path: The tree root the modules are written under.
+    """
+    (tmp_path / "kept").mkdir()
+    (tmp_path / "kept" / "a.py").touch()
+    doomed = tmp_path / "doomed"
+    doomed.mkdir()
+    (doomed / "b.py").touch()
+    (tmp_path / "top.py").touch()
+
+    walk = _module_paths_under(tmp_path)
+    assert next(walk) == tmp_path / "top.py"
+    shutil.rmtree(doomed)
+    assert sorted(walk) == [tmp_path / "kept" / "a.py"]
+
+
+def test_module_paths_under_does_not_follow_a_symlinked_directory(
+    tmp_path: Path,
+) -> None:
+    """Leave a symlinked directory unwalked, so a link loop cannot trap the walk.
+
+    :param tmp_path: The tree root the modules and the link are created under.
+    """
+    (tmp_path / "real").mkdir()
+    (tmp_path / "real" / "a.py").touch()
+    (tmp_path / "link").symlink_to(tmp_path / "real", target_is_directory=True)
+    assert sorted(_module_paths_under(tmp_path)) == [tmp_path / "real" / "a.py"]
+
+
 def _guarded_module_paths() -> Iterator[Path]:
     """Yield every ``app/**/*.py`` module the boundary rule binds.
 
@@ -339,12 +452,13 @@ def _guarded_module_paths() -> Iterator[Path]:
     scaffold packages another worker creates mid-scan, but the names those tests use
     are not uniformly underscore-prefixed, the same prefix would catch
     ``app/sep/apps/__init__.py``, and any name-based skip leaves a real module
-    unchecked the day one is named to match. Churn is absorbed downstream instead, by
-    :func:`_parse_module` treating a path that vanished as no module to check.
+    unchecked the day one is named to match. Churn is absorbed by the walk and the
+    read instead: :func:`_module_paths_under` skips a directory that vanished, and
+    :func:`_parse_module` treats a path that vanished as no module to check.
 
     :return: An iterator of source paths, the whole ``app/`` tree.
     """
-    yield from sorted((BASE_DIR / "app").rglob("*.py"))
+    yield from sorted(_module_paths_under(BASE_DIR / "app"))
 
 
 def _apps_tree_module_paths() -> Iterator[Path]:
@@ -352,7 +466,7 @@ def _apps_tree_module_paths() -> Iterator[Path]:
 
     :return: An iterator of source paths under ``app/sep/apps/``.
     """
-    yield from sorted(APPS_ROOT.rglob("*.py"))
+    yield from sorted(_module_paths_under(APPS_ROOT))
 
 
 def _parse_module(path: Path) -> ast.Module | None:
@@ -365,7 +479,7 @@ def _parse_module(path: Path) -> ast.Module | None:
     is not a module to check.
 
     Only that case is tolerated. A parse or decode failure still raises, because those
-    are failures of a module that is really there -- swallowing them would narrow the
+    are failures of a module that is really there — swallowing them would narrow the
     guard to whatever happens to read cleanly.
 
     :param path: The source path to read and parse.
@@ -373,7 +487,7 @@ def _parse_module(path: Path) -> ast.Module | None:
     :raises SyntaxError: When the module is there but does not parse.
     :raises UnicodeDecodeError: When the module's bytes are not UTF-8.
     :raises OSError: When the read fails for any reason other than the path being
-        gone -- a permission failure, say.
+        gone — a permission failure, say.
     """
     try:
         source = path.read_text(encoding="utf-8")
@@ -500,8 +614,8 @@ def test_violations_over_a_synthetic_tree(
     """Reject an import-time edge driven over a synthetic tree attributed to a real path.
 
     Mirrors :func:`test_deferred_violations_over_a_synthetic_tree` for the import-time
-    collector, so the rule the live-tree case asserts vacuously -- a green tree yields
-    an empty list either way -- is pinned against a tree that does violate it. The
+    collector, so the rule the live-tree case asserts vacuously — a green tree yields
+    an empty list either way — is pinned against a tree that does violate it. The
     first case also pins the dedup collapsing one statement, since
     :func:`_direct_import_edges` yields the base module and the alias path for it.
 
@@ -691,8 +805,8 @@ def test_parse_module_skips_a_path_that_vanished(tmp_path: Path) -> None:
 def test_parse_module_skips_a_dangling_symlink(tmp_path: Path) -> None:
     """Treat a symlink with no target as not a module to check.
 
-    A scaffold case leaves exactly this shape under ``app/sep/apps/``: a symlink whose
-    target was never created.
+    A walk yields a dangling symlink like any other file, since it is not a directory
+    to descend into, so the read behind it must not be the thing that fails.
 
     :param tmp_path: The directory the symlink is created in.
     """
@@ -751,7 +865,7 @@ def test_parsed_modules_walks_past_a_path_that_vanished() -> None:
     """Keep parsing the paths that are still there after skipping one that is not.
 
     The vanished path comes first, so a walk that aborted on it would never reach the
-    real module behind it -- which is what the concurrent-scaffold failure looked like.
+    real module behind it — which is what the concurrent-scaffold failure looked like.
     """
     present = BASE_DIR / "app" / "sep" / "main.py"
     parsed = list(_parsed_modules([APPS_ROOT / "_vanished_app" / "app.py", present]))
@@ -811,7 +925,7 @@ def test_guarded_module_paths_leaves_no_apps_tree_module_out() -> None:
     """Reject any walk that covers only part of the activatable-app tree.
 
     The cases above sample the regions an outside-only walk skipped wholesale.
-    A narrower exclusion -- one app package, one subtree -- would leave every
+    A narrower exclusion — one app package, one subtree — would leave every
     sample present, and the live-tree test green, since a walk that reaches
     fewer files finds fewer violations.
     """
@@ -828,7 +942,7 @@ def test_apps_tree_gap_survives_the_transient_path_tolerance() -> None:
     up alongside the excluded subtree; ``framework`` is a committed package, so its own
     modules cannot come and go.
     """
-    framework_modules = set((APPS_ROOT / "framework").rglob("*.py"))
+    framework_modules = set(_module_paths_under(APPS_ROOT / "framework"))
     partial = {
         path for path in _guarded_module_paths() if path not in framework_modules
     }
