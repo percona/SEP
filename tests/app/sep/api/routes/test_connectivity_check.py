@@ -627,6 +627,29 @@ class TestConnectivityCheckDeliveryTarget:
         assert results["delivery"]["reachable"] is True
         assert results["delivery"]["status"] == ConnectivityStatusEnum.REACHABLE.value
 
+    def test_reports_reachable_when_the_receiver_answers_without_json(
+        self, admin_client: TestClient, configured_delivery: None
+    ) -> None:
+        """Report a plain-text acknowledgement reachable, not as an error.
+
+        A probe declares no response-body contract, so a receiver whose health
+        route answers ``200 text/plain`` is healthy.
+        """
+        with aioresponses() as mock:
+            mock.get(
+                _DELIVERY_PROBE_URL,
+                status=status.HTTP_200_OK,
+                body="OK",
+                content_type="text/plain",
+            )
+
+            results = _results_by_service(
+                admin_client.post(ENDPOINT, json=_DELIVERY_ONLY).json()
+            )
+
+        assert results["delivery"]["reachable"] is True
+        assert results["delivery"]["status"] == ConnectivityStatusEnum.REACHABLE.value
+
     def test_reports_auth_failed_on_a_rejected_credential(
         self, admin_client: TestClient, configured_delivery: None
     ) -> None:

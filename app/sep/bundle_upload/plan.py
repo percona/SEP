@@ -66,7 +66,7 @@ from pydantic import (
     SecretStr,
 )
 
-from app.core.requests.remote_api import RemoteAPI
+from app.core.requests.remote_api import is_non_json_success, RemoteAPI
 from app.core.utils import json_serializer, remove_falsy_values_from_dict
 from app.core.utils.fields import CredentialHttpUrl, JsonPointerStr, NonEmptyStr
 from app.core.utils.json_pointer import (
@@ -503,6 +503,12 @@ class DeliveryPlanExecutor:
         transport a real delivery uses, so a success means the credential this
         plan carries is accepted at the endpoint it names.
 
+        A probe declares no response-body contract, so any successful status is
+        a success whatever the receiver answered with. ``RemoteAPI.request``
+        parses the body before checking the status and would otherwise report a
+        healthy receiver's ``200 text/plain`` acknowledgement as an upstream
+        error, the way it does for an upload's.
+
         :raises DeliveryPlanError: When the plan declares no probe step.
         :raises HTTPException: Propagates the project exception ``RemoteAPI``
             raises for an upstream error status, including a redirect the
@@ -519,9 +525,13 @@ class DeliveryPlanExecutor:
         )
         logger.debug("Delivery plan: probing the receiver.")
         with self._api.redact_headers(_secret_valued_keys(step.headers)):
-            await self._api.request(
-                "GET", step.path, allow_redirects=False, **request_kwargs
-            )
+            try:
+                await self._api.request(
+                    "GET", step.path, allow_redirects=False, **request_kwargs
+                )
+            except HTTPException as err:
+                if not is_non_json_success(err):
+                    raise
 
     def _check_bundle_size(self, size: int) -> None:
         """Reject an over-cap bundle before the transport is touched.

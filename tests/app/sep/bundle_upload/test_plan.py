@@ -1332,6 +1332,43 @@ class TestDeliveryPlanProbe:
         assert requests[0].kwargs.get("json") is None
         assert requests[0].kwargs.get("data") is None
 
+    @pytest.mark.parametrize("content_type", ["text/plain", "text/html"])
+    async def test_probe_accepts_a_healthy_receivers_non_json_answer(
+        self, api: RemoteAPI, content_type: str
+    ):
+        """Pass a 200 whose body is not JSON, since a probe reads no body.
+
+        ``RemoteAPI.request`` parses the body before it checks the status, so a
+        receiver acknowledging with plain text or an HTML health page would
+        otherwise be reported as an upstream error.
+        """
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_probe_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _PROBE_URL,
+                status=status.HTTP_200_OK,
+                body="OK",
+                content_type=content_type,
+            )
+            async with api:
+                await executor.probe()
+
+    async def test_probe_still_fails_on_a_non_json_error_answer(self, api: RemoteAPI):
+        """Keep a non-JSON 401 a failure, so a rejected credential still reports."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_probe_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _PROBE_URL,
+                status=status.HTTP_401_UNAUTHORIZED,
+                body="<html>denied</html>",
+                content_type="text/html",
+            )
+            async with api:
+                with pytest.raises(HTTPException) as exc_info:
+                    await executor.probe()
+
+        assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
+
     async def test_probe_raises_on_a_redirect_instead_of_reporting_success(
         self, api: RemoteAPI
     ):
