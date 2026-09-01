@@ -28,6 +28,7 @@ worker.
 
 import importlib
 import json
+import os
 import shutil
 import sys
 from collections.abc import Iterator
@@ -1123,16 +1124,34 @@ def test_wizard_keyboard_interrupt_aborts_without_writing(
     assert tmp_settings.read_text() == before
 
 
-def test_makefile_forwards_quoted_values() -> None:
+def _makefile_startapp_env(settings_copy: Path) -> dict[str, str]:
+    """Return an env that keeps ``make startapp`` off the worktree ``settings.yaml``.
+
+    The make recipe spawns a fresh interpreter, so the in-process ``tmp_settings``
+    monkeypatch cannot reach it. ``SCAFFOLD_SETTINGS_FILE`` points that child at a
+    private copy instead, which stops xdist workers that construct ``SEPSettings``
+    from observing a throwaway ``MODULE_NAME`` after the package tree is cleaned.
+    """
+    env = os.environ.copy()
+    env["SCAFFOLD_SETTINGS_FILE"] = str(settings_copy)
+    return env
+
+
+def test_makefile_forwards_quoted_values(tmp_path: Path) -> None:
     """Forward a description with spaces and a quote intact through ``make startapp``.
 
     Exercises the real Makefile ``$$VAR`` shell-environment forwarding (not the
-    in-process ``tmp_settings`` copy), so it backs up and restores the worktree's
-    ``settings.yaml`` in a ``finally`` like ``startapp_check.py``.
+    in-process ``tmp_settings`` copy). Registration lands in a private settings
+    copy via ``SCAFFOLD_SETTINGS_FILE`` so the worktree file stays untouched under
+    xdist; the worktree backup in ``finally`` is defence in depth if the env var
+    never reaches the child.
     """
     name = "_scaffold_ci_makeforward"
     description = 'describe the "cool" widget here'
-    settings_backup = scaffold.SETTINGS_FILE.read_text()
+    worktree_settings = scaffold._REPO_ROOT / "settings.yaml"
+    settings_backup = worktree_settings.read_text()
+    settings_copy = tmp_path / "settings.yaml"
+    settings_copy.write_text(settings_backup)
     venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
@@ -1149,6 +1168,7 @@ def test_makefile_forwards_quoted_values() -> None:
             capture_output=True,
             text=True,
             check=False,
+            env=_makefile_startapp_env(settings_copy),
         )
         assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
         rendered = (scaffold.PLUGINS_DIR / name / "app.py").read_text()
@@ -1160,8 +1180,10 @@ def test_makefile_forwards_quoted_values() -> None:
             f"description={json.dumps(description)}" in rendered
             or f"description={description!r}" in rendered
         )
+        assert f"MODULE_NAME: {name}" in settings_copy.read_text()
+        assert f"MODULE_NAME: {name}" not in worktree_settings.read_text()
     finally:
-        scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
+        scaffold._atomic_write(worktree_settings, settings_backup)
         _cleanup(name)
 
 
@@ -1170,14 +1192,17 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
 
     The ``SCRIPT`` make variable forwards to the scaffolder's ``--script`` flag the
     way ``PAYLOAD`` forwards ``--payload``, so the script flavor is reachable through
-    the ``make startapp`` entry point. Exercises the real Makefile ``$$VAR``
-    forwarding, backing up and restoring ``settings.yaml`` like
-    :func:`test_makefile_forwards_quoted_values`.
+    the ``make startapp`` entry point. Uses a private settings copy like
+    :func:`test_makefile_forwards_quoted_values` so xdist cannot observe the
+    throwaway registration.
     """
     name = "_scaffold_ci_scriptforward"
     script_src = tmp_path / "seed.sh"
     script_src.write_text("#!/usr/bin/env bash\necho hi\n")
-    settings_backup = scaffold.SETTINGS_FILE.read_text()
+    worktree_settings = scaffold._REPO_ROOT / "settings.yaml"
+    settings_backup = worktree_settings.read_text()
+    settings_copy = tmp_path / "settings.yaml"
+    settings_copy.write_text(settings_backup)
     venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
@@ -1194,6 +1219,7 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
             capture_output=True,
             text=True,
             check=False,
+            env=_makefile_startapp_env(settings_copy),
         )
         assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
         snippets_dir = scaffold.PLUGINS_DIR / name / "snippets"
@@ -1201,6 +1227,8 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
             snippets_dir / "seed.sh"
         ).read_text() == "#!/usr/bin/env bash\necho hi\n"
         assert not (snippets_dir / "sample.sh").exists()
+        assert f"MODULE_NAME: {name}" in settings_copy.read_text()
+        assert f"MODULE_NAME: {name}" not in worktree_settings.read_text()
     finally:
-        scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
+        scaffold._atomic_write(worktree_settings, settings_backup)
         _cleanup(name)
