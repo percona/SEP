@@ -952,6 +952,44 @@ async def test_a_reused_account_below_admin_warns_after_mint(
 
 
 @pytest.mark.asyncio
+async def test_a_reused_account_with_unreachable_probe_warns_after_mint(
+    grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
+):
+    """Warn on UNREACHABLE after minting onto an existing account.
+
+    Grafana may go down between the mint and the probe; the token is still
+    returned and persisted, matching :func:`keep_persisted_token`.
+    """
+    grafana_stub.queue(
+        StubRoute.SEARCH,
+        StubResponse(
+            {
+                "totalCount": 1,
+                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "sep"}],
+            }
+        ),
+    )
+    grafana_stub.queue(StubRoute.VALIDATE, StubResponse(status=503))
+
+    run = await run_helper(
+        profile_cwd(tmp_path),
+        AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
+        SEP_STATE_DIR=str(state_dir),
+    )
+
+    assert run.returncode == 0, run.stderr
+    assert run.token == MINTED_TOKEN
+    assert helper.read_persisted_token(state_dir) == MINTED_TOKEN
+    assert (
+        grafana_stub.calls(StubRoute.VALIDATE)[0].headers["Authorization"]
+        == f"Bearer {MINTED_TOKEN}"
+    )
+    assert "Could not reach Grafana" in run.stderr
+    assert "probe the freshly minted token" in run.stderr
+    assert "using it unvalidated" in run.stderr
+
+
+@pytest.mark.asyncio
 async def test_a_race_recovery_reuse_probes_the_minted_token(
     grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
 ):

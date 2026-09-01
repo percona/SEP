@@ -513,7 +513,9 @@ async def resolve_token() -> str | None:
     When a token is minted onto a reused service account, the token is probed
     with :func:`validate_token`. A ``FORBIDDEN`` answer means the account's
     org role ranks below ``Admin``; a diagnostic is written and the token is
-    still returned, because a re-mint cannot raise the role.
+    still returned, because a re-mint cannot raise the role. An
+    ``UNREACHABLE`` answer gets the same keep-the-token treatment with a
+    reachability diagnostic, matching :func:`keep_persisted_token`.
 
     :return: The resolved token, or ``None`` when there is nothing to resolve.
     :raises MintError: When a token is needed and cannot be minted.
@@ -542,6 +544,11 @@ async def resolve_token() -> str | None:
                         f"{SERVICE_ACCOUNT_NAME!r} service account ranks below "
                         f"{SERVICE_ACCOUNT_ROLE} in its org; a re-mint would carry "
                         "the same role, so the token is kept."
+                    )
+                elif probe is TokenStateEnum.UNREACHABLE:
+                    warn(
+                        f"Could not reach Grafana at {provider.endpoint} to "
+                        "probe the freshly minted token; using it unvalidated."
                     )
     write_persisted_token(directory, token)
     return token
