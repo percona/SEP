@@ -480,10 +480,12 @@ def worker_logging_boot_fixture() -> None:
     }
     try:
         logging.config.dictConfig(boot_config)
-        settings._set_snapshot({"LOGGING": LogLevel.WARNING})
+        settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"LOGGING": LogLevel.WARNING}
+        )
         yield
     finally:
-        settings._set_snapshot({})
+        settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
         logging.config.dictConfig(settings.LOGGING_CONFIG)
 
 
@@ -559,7 +561,12 @@ class TestRepublishSepSettingsSnapshot:
             await republish_sep_settings_snapshot(session)
 
         assert sep_settings.SYNC_REFRESH_TIME == SEP_OVERRIDE_VALUE
-        assert sep_settings.get_snapshot()[SEP_OVERRIDE_KEY] == SEP_OVERRIDE_VALUE
+        assert (
+            sep_settings.get_snapshot()[  # ty: ignore[unresolved-attribute]
+                SEP_OVERRIDE_KEY
+            ]
+            == SEP_OVERRIDE_VALUE
+        )
 
     @pytest.mark.asyncio
     async def test_the_helper_fires_no_rebind_callback(

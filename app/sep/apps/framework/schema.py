@@ -462,10 +462,13 @@ class HostField(BaseField):
 
     :param field_type: The discriminator literal; always ``"host"`` for this
         class. Serialised as the JSON key ``"type"``.
-    :type field_type: Literal["host"]
     :param depends_on: Optional name of the field whose value drives the
         default executor selection. ``None`` (the default) omits the key from
         the wire so plugins that do not opt in stay byte-identical.
+    :param target_service: Optional service field for a non-blocking
+        co-location warning. Independent of ``depends_on`` (see
+        :class:`~app.sep.apps.framework.form_dsl.markers.HostRef`).
+        ``None`` (the default) omits the key from the wire.
     :param allow_custom: When ``True``, the selector also accepts a free-typed
         value alongside the inventory options. ``None`` (the default) omits the
         key from the wire so plugins that do not opt in stay byte-identical.
@@ -475,6 +478,7 @@ class HostField(BaseField):
         "host", alias="type", serialization_alias="type"
     )
     depends_on: NonEmptyStr | None = None
+    target_service: NonEmptyStr | None = None
     allow_custom: bool | None = None
 
 
@@ -488,6 +492,8 @@ class MultiHostField(BaseField):
     Cascade auto-select is single-host only (:class:`HostField`). ``depends_on``
     may still be emitted when ``Ui(depends_on=...)`` is set so derivation stays
     uniform, but the multi-host renderer does not honour it today.
+    ``target_service`` is mirrored the same way; the multi-host renderer
+    ignores it (no co-location warning).
 
     :param field_type: The discriminator literal; always ``"multi_host"`` for
         this class. Serialised as the JSON key ``"type"``.
@@ -495,6 +501,9 @@ class MultiHostField(BaseField):
         ``Ui(depends_on=...)``. Emitted for wire uniformity with
         :class:`HostField`; the current multi-host renderer ignores it (no
         cascade). ``None`` (the default) omits the key from the wire.
+    :param target_service: Optional service field name mirrored for wire
+        uniformity with :class:`HostField`; ignored by the multi-host
+        renderer. ``None`` (the default) omits the key from the wire.
     :param allow_custom: When ``True``, the selector also accepts free-typed
         values alongside the inventory options. ``None`` (the default) omits the
         key from the wire so plugins that do not opt in stay byte-identical.
@@ -504,6 +513,7 @@ class MultiHostField(BaseField):
         "multi_host", alias="type", serialization_alias="type"
     )
     depends_on: NonEmptyStr | None = None
+    target_service: NonEmptyStr | None = None
     allow_custom: bool | None = None
 
 
@@ -1560,8 +1570,10 @@ class AppSchema(SchemaBaseModel):
     :param task_type: Optional task-type identifier used when creating tasks
         via the shared task API. Defaults to ``None``.
     :type task_type: NonEmptyStr | None
-    :param forms: Form sections for single-entity / task plugins. Defaults to
-        an empty list when ``entities`` is used instead.
+    :param forms: Form sections for single-entity / task plugins. When
+        ``entities`` is non-empty, root ``forms`` must be empty (declare
+        forms on each entity instead); non-empty root ``forms`` are rejected
+        at construction. Defaults to an empty list.
     :type forms: list[FormSection]
     :param capabilities: Optional plugin-level feature flags. Defaults to
         ``None``.
@@ -1579,11 +1591,13 @@ class AppSchema(SchemaBaseModel):
         When non-empty, the React shell renders one list/create/detail flow
         per entity. Defaults to ``None`` (legacy single-entity mode).
     :param cardinality_rules: Optional plugin-wide cross-field cardinality
-        constraints (task-style plugins only; ignored when ``entities`` is set).
+        constraints (task-style plugins only). Rejected at construction when
+        ``entities`` is non-empty — declare rules on each entity instead.
         Defaults to ``None``.
     :type cardinality_rules: list[CardinalityRule] | None
     :param fail_when: Optional plugin-wide predicate-only invariants (task-style
-        plugins only; ignored when ``entities`` is set). Defaults to ``None``.
+        plugins only). Rejected at construction when ``entities`` is non-empty —
+        declare rules on each entity instead. Defaults to ``None``.
     :type fail_when: list[FailRule] | None
     :param derived: Optional declarative specs for sibling tasks derived from
         the parent task on cascade. Consumed by
@@ -1763,17 +1777,37 @@ class AppSchema(SchemaBaseModel):
         return self
 
     @model_validator(mode="after")
-    def _validate_unique_field_names(self) -> Self:
-        """Ensure every field name is unique within the active form set.
+    def _validate_form_configuration(self) -> Self:
+        """Validate root-level form configuration for plugin schemas.
 
-        When ``entities`` is set, each entity validates its own ``forms``.
-        Otherwise root ``forms`` are validated (task-style plugins).
+        When ``entities`` is non-empty, root ``forms``, ``cardinality_rules``,
+        and ``fail_when`` must be empty — those keys belong on the entity that
+        owns them. If any are set alongside non-empty ``entities``, construction
+        fails with a message naming the offending keys.
+
+        For task-style schemas (``entities`` unset or empty), requires
+        ``list_view`` and validates field-name uniqueness across root ``forms``.
 
         :return: The validated plugin schema instance.
-        :raises ValueError: If duplicate field names appear in the same form
-            set, or if neither ``entities`` nor ``list_view`` is usable.
+        :raises ValueError: If root form config is set on an entity-style
+            schema, if duplicate field names appear, or if neither
+            ``entities`` nor ``list_view`` is usable.
         """
         if self.entities:
+            conflicting: list[str] = []
+            if self.forms:
+                conflicting.append("forms")
+            if self.cardinality_rules:
+                conflicting.append("cardinality_rules")
+            if self.fail_when:
+                conflicting.append("fail_when")
+            if conflicting:
+                entity_names = ", ".join(repr(e.name) for e in self.entities)
+                raise ValueError(
+                    f"Root-level {', '.join(conflicting)} must not be set on an "
+                    f"entity-style schema — move the declaration onto the "
+                    f"relevant entity ({entity_names})."
+                )
             return self
         if self.list_view is None:
             raise ValueError(

@@ -330,6 +330,35 @@ jobs:
       - name: Smoke test - restricted image ships exactly the activated apps
         run: sidecar/verify_image_apps.sh "sep:HEAD" restricted
 
+      - name: Verify the purge layer is the last package-manager operation
+        run: python3 scripts/check_sidecar_purge.py --check-ordering
+
+      - name: Smoke test - purged packages are absent from the built image
+        run: |
+          pkgs="$(python3 scripts/check_sidecar_purge.py --print-packages | tr '\n' ' ')"
+          if [ -z "$pkgs" ]; then
+            echo "::error::the purge checker named no packages, so this check cannot run"
+            exit 1
+          fi
+          docker run --rm --entrypoint /bin/sh -e PURGED="$pkgs" "sep:HEAD" -c '
+            command -v dpkg-query > /dev/null 2>&1 || {
+              echo "::error::dpkg-query is absent, so package presence cannot be established"
+              exit 1
+            }
+            status=0
+            for p in $PURGED; do
+              if dpkg-query -s "$p" 2>/dev/null | grep -q "^Status: install ok installed"; then
+                echo "::error::$p is still installed in the built image"
+                status=1
+              fi
+            done
+            if command -v perl > /dev/null 2>&1; then
+              echo "::error::a perl binary resolves on PATH"
+              status=1
+            fi
+            exit $status
+          '
+
   pipeline-syntax:
     if: >-
       ${{

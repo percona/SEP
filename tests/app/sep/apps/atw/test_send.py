@@ -911,7 +911,7 @@ class TestRunSendStaleSnapshot:
         """
         rotated_secret = "rotated-api-key"
         new_endpoint = "https://intake-rotated.example.com"
-        sep_settings._set_snapshot(
+        sep_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
             {
                 "DIAGNOSTICS_DELIVERY_INPUTS": DeliveryPlanInputs(
                     endpoint="https://intake-stale.example.com",
