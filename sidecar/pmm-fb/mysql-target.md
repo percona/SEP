@@ -5,7 +5,9 @@ Behind the `mysql` compose profile. One container carrying Percona Server
 the `datacharmer/test_db` employees dataset — the target a MySQL Backups run
 executes *on*, not just against. The seed is baked into the image, so first
 boot needs no download; it lands as ~125 MB of real data (300,024 employees,
-2.8 M salary rows).
+2.8 M salary rows). For how long the import takes and how to tell it has
+finished, see [README.md](README.md#bring-up) — this file does not restate
+that timing.
 
 **Why one container.** SEP does no scheduling: it pins a Nomad job to the node
 name the operator picked and `raw_exec` runs it as a plain process in that
@@ -27,11 +29,12 @@ executor. Joining Nomad is not enough on its own — SEP's host list filters on
 so a node can be joined and still never appear. If it does not, check
 `nomad node status -verbose` inside `pmm-server` before suspecting SEP.
 
-**Prerequisites.** The service reaches SEP only through the PMM syncer, so
-trigger a sync (`POST https://127.0.0.1:8443/sep/api/apps/inventory/sync/`) once
-the node has registered. PMM publishes the Grafana token the syncer needs, so
-there is no minting step. Until a sync runs, the node registers with PMM and
-never appears in SEP.
+**Prerequisites.** The MySQL service reaches SEP's backup-source picker only
+through the PMM syncer, so trigger a sync (`POST
+https://127.0.0.1:8443/sep/api/apps/inventory/sync/`) once the node has
+registered. PMM publishes the Grafana token the syncer needs, so there is no
+minting step. Until a sync runs, `sep-mysql` can appear in SEP's executor-host
+list but its MySQL service is absent from the backup-source picker.
 
 **Credentials.** `./bootstrap.sh` generates three values into `.env`, like
 every other secret here — nothing is committed:

@@ -253,7 +253,10 @@ register_with_pmm() {
     # the agent id) and lands here with no such wait behind it. `pmm-admin
     # list`, which the already-registered check below needs anyway, cannot
     # succeed until the server connection is up, so gate on that instead.
-    retry_cmd 30 2 pmm-admin list > /dev/null || {
+    # Sized at ~2x the slowest observed pmm-server cold start (~90s), since
+    # this gate needs pmm-managed to accept the agent's channel, which lands
+    # after the server itself reports ready.
+    retry_cmd 90 2 pmm-admin list > /dev/null || {
         error 'pmm-agent never connected to PMM Server'
         exit 1
     }

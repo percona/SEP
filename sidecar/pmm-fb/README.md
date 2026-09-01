@@ -110,6 +110,12 @@ dataset` before expecting a backup to have data to copy. Then:
   serves no UI of its own, so `/sep/` itself answers `{"detail":"Not Found"}`;
   that is the embedded topology working, not a routing fault.
 - SEP APIs directly: http://127.0.0.1:9000-9002 (sep / inventory / tasks)
+- With the `mysql` profile up, `sep-mysql` is a working executor:
+  `GET /api/sep/hosts/` lists it alongside `pmm-server`. This is independent of
+  the PMM syncer — that endpoint sources its list from Nomad node status, not
+  from Inventory, so no inventory sync is needed for `sep-mysql` to appear here
+  (see [mysql-target.md](mysql-target.md) for the separate, syncer-gated
+  question of when the MySQL *service* shows up as a backup source).
 
 There is no manual token-minting step. The side-car obtains its own Grafana
 service-account token at container start when no token reaches it through
@@ -200,13 +206,13 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
 - `BASE_URL` is `http://sep-sidecar:9000/sep` — a compose service name, which
   `../README.md` explicitly tells you not to use because it defines `BASE_URL`
   as the side-car's address *as reachable from Nomad task executors*. That
-  prescription is for a real deployment, where PMM Client nodes run their own
-  Nomad clients and resolve no compose name. This harness has no PMM Client
-  nodes: its only executor is the Nomad client inside `pmm-server`, which shares
-  that container's network namespace and resolves `sep-sidecar` through Docker's
-  embedded DNS. The consequence is that **the harness does not exercise the
-  production artifact-download path**. The `/sep` suffix is required either way
-  — download URLs are joined onto `BASE_URL`'s path rather than replacing it.
+  prescription is for a real deployment, where PMM Client nodes may sit on a
+  network that cannot resolve a compose service name. Here every executor —
+  the Nomad client inside `pmm-server` and, with the `mysql` profile up,
+  `sep-mysql` — is a container on the same compose network, so both resolve
+  `sep-sidecar` through Docker's embedded DNS regardless of which one a task
+  lands on. The `/sep` suffix is required either way — download URLs are
+  joined onto `BASE_URL`'s path rather than replacing it.
 
 ## Caveats
 
