@@ -1059,8 +1059,8 @@ def _register_list_route(
             methods=["GET"],
             summary="List",
             response_model=PaginatedResponse[
-                list_detail_model
-            ],  # ty: ignore[invalid-type-form]
+                list_detail_model  # ty: ignore[invalid-type-form]
+            ],
             response_model_by_alias=True,
             dependencies=[IsApiAuthenticated],
         )
@@ -1802,8 +1802,8 @@ def derive_script_routes(
         paginated_param = Annotated[Pagination, Depends(pagination_dep)]
         paginated_list_model = (
             PaginatedResponse[
-                source.list_response_model
-            ]  # ty: ignore[invalid-type-form]
+                source.list_response_model  # ty: ignore[invalid-type-form]
+            ]
             if source.list_response_model is not None
             else PaginatedResponse
         )

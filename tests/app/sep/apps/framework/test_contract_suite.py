@@ -195,8 +195,8 @@ class _WrongStatusCreateApp(TaskExecutionApp):
     def build_router(self) -> APIRouter:
         router = APIRouter()
         form_param = Annotated[
-            self.create_model, Body()
-        ]  # ty: ignore[invalid-type-form]
+            self.create_model, Body()  # ty: ignore[invalid-type-form]
+        ]
 
         async def _create(form: form_param) -> SynthResponse:
             return SynthResponse(name=form.task_name)
@@ -222,8 +222,8 @@ class _NoGuardExecuteApp(TaskExecutionApp):
 
         async def _execute(
             task: task_dep,
-            body: write_model,
-            tasks_api: TaskAPI,  # ty: ignore[invalid-type-form]
+            body: write_model,  # ty: ignore[invalid-type-form]
+            tasks_api: TaskAPI,
         ) -> SynthExecuteResponse:
             await tasks_api.post(
                 f"/execute/{task.name}", json=body.model_dump(exclude_none=True)

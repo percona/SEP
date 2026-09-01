@@ -493,8 +493,8 @@ def _annotated_type(field_info: FieldInfo) -> Any:
     )
     if constraints:
         return Annotated[
-            (field_info.annotation, *constraints)
-        ]  # ty: ignore[invalid-type-form]
+            (field_info.annotation, *constraints)  # ty: ignore[invalid-type-form]
+        ]
     return field_info.annotation
 
 

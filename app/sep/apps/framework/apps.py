@@ -1396,8 +1396,8 @@ class TaskExecutionApp(BaseApp):
         run_result_recorder = self.run_result_recorder
         body_marker = Form() if self.create_form_encoded else Body()
         form_param = Annotated[
-            self.create_model, body_marker
-        ]  # ty: ignore[invalid-type-form]
+            self.create_model, body_marker  # ty: ignore[invalid-type-form]
+        ]
 
         async def _create_payload(
             form: form_param, inventory_api: InventoryAPI

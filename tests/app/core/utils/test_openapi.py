@@ -716,13 +716,15 @@ class TestNamespacedOpenapi:
         app = FastAPI()
 
         @app.get(
-            "/pg", response_model=PaginatedResponse[pg]
-        )  # ty: ignore[invalid-type-form]
+            "/pg",
+            response_model=PaginatedResponse[pg],  # ty: ignore[invalid-type-form]
+        )
         def _pg() -> Any: ...
 
         @app.get(
-            "/mongo", response_model=PaginatedResponse[mongo]
-        )  # ty: ignore[invalid-type-form]
+            "/mongo",
+            response_model=PaginatedResponse[mongo],  # ty: ignore[invalid-type-form]
+        )
         def _mongo() -> Any: ...
 
         @app.get("/solo", response_model=solo)
