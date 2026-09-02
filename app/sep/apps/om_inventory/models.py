@@ -558,6 +558,67 @@ class ProbeRunAccepted(BaseModel):
     scope: list[str] | None = None
 
 
+class BootstrapRequest(BaseModel):
+    """Configure a single-host, single-member replica set to bootstrap -- PoC only.
+
+    Every field bar ``replica_set_name`` and ``mongodb_version`` has a default,
+    matching the PoC's scope: one host, keyFile auth, TLS off, no project/cluster
+    (PMM-15347/questions.md Q10, unresolved). Not proto-shaped -- this app has no
+    proto surface of its own; PMM's future eligibility/bootstrap endpoint
+    (questions.md Q1, Q4) would translate its own request into this shape, or a
+    superset of it once sharded clusters and multi-host support land.
+
+    :param replica_set_name: The replica set's name. No uniqueness check here --
+        PMM-15347/questions.md Q3's "same name in the same project" rule needs a
+        project to check against, which this PoC does not have.
+    :param mongodb_version: The MongoDB version to install, e.g. ``"7.0.8"``. Only
+        the major version selects the percona-release series -- see
+        ``payload/bootstrap.py``'s ``percona_series_for_version``.
+    :param data_path: Where mongod stores its data.
+    :param log_path: Where mongod writes its log.
+    :param port: The port mongod listens on.
+    :param bind_ip: The address mongod binds to.
+    :param key_file_path: Where the generated keyFile is written on the host.
+    :param admin_username: The admin user created via the localhost exception once
+        the replica set has a primary.
+    """
+
+    replica_set_name: str = Field(min_length=1, max_length=64)
+    mongodb_version: str = Field(min_length=1)
+    data_path: str = "/var/lib/mongodb"
+    log_path: str = "/var/log/mongodb/mongod.log"
+    port: int = Field(default=27017, gt=0, le=65535)
+    bind_ip: str = "0.0.0.0"  # noqa: S104 - the PoC's own default, matching the mockup
+    key_file_path: str = "/etc/mongodb/keyfile"
+    admin_username: str = Field(default="admin", min_length=1)
+
+
+class BootstrapAccepted(BaseModel):
+    """Acknowledge a queued single-host bootstrap.
+
+    Returned with ``202``, the same shape as :class:`ProbeRunAccepted`: dispatch is
+    fast (one Nomad job, see ``bootstrap.py``'s module docstring), the *run* is what
+    takes minutes.
+
+    :param node_id: The host being bootstrapped.
+    :param task_history_id: The Tasks API's id for this run -- poll
+        ``GET /api/tasks/history/{task_history_id}`` and
+        ``GET /api/tasks/history/{task_history_id}/logs/`` for progress. Not
+        wrapped in any OM-specific run id: see ``bootstrap.py``'s module docstring
+        for why this PoC does not mint one.
+    :param admin_username: The admin user this run will create.
+    :param admin_password: The generated password, in the clear, **returned exactly
+        once**. Nothing stores it after this response -- PMM-15347/questions.md Q7
+        (secrets storage) is unresolved, and this is a PoC placeholder, not the
+        answer to it.
+    """
+
+    node_id: str
+    task_history_id: int
+    admin_username: str
+    admin_password: str
+
+
 class ServiceResponse(BaseModel):
     """One MongoDB service PMM has registered, as OM currently holds it.
 

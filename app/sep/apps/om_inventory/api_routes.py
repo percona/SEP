@@ -47,6 +47,7 @@ from fastapi import status as http_status
 
 from app.api.deps import require_minimum_role
 from app.core.auth.models import UserRole
+from app.core.config import settings
 from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
@@ -61,6 +62,7 @@ from app.core.settings_override.api import (
 )
 from app.core.utils.fields import UTCDatetime
 from app.sep.apps.framework.api import schema_endpoint
+from app.sep.apps.om_inventory.bootstrap import dispatch_bootstrap
 from app.sep.apps.om_inventory.celery import run_om_probe
 from app.sep.apps.om_inventory.config import (
     om_inventory_settings,
@@ -80,6 +82,8 @@ from app.sep.apps.om_inventory.crud import (
     recent_runs,
 )
 from app.sep.apps.om_inventory.models import (
+    BootstrapAccepted,
+    BootstrapRequest,
     HostResponse,
     OmHost,
     OmService,
@@ -93,6 +97,7 @@ from app.sep.apps.om_inventory.models import (
     TriggerRequest,
 )
 from app.sep.apps.om_inventory.schema import om_inventory_schema
+from app.sep.config import sep_settings
 from app.sep.deps import SessionDep
 
 router = APIRouter()
@@ -287,6 +292,63 @@ async def get_estate_host(node_id: str, session: SessionDep) -> HostResponse:
     if host is None:
         raise HTTPNotFoundException(detail=f"Host {node_id} not found")
     return _host_response(host, await list_services(session, node_id=node_id))
+
+
+@router.post(
+    "/hosts/{node_id}/bootstrap",
+    status_code=http_status.HTTP_202_ACCEPTED,
+)
+@require_minimum_role(UserRole.ADMIN)
+async def bootstrap_host(
+    node_id: str, request: BootstrapRequest, session: SessionDep
+) -> BootstrapAccepted:
+    """Install PSMDB on one host and initialize it as a single-member replica set.
+
+    **PoC, not the PMM-15347 feature.** One host, one member, keyFile auth, TLS
+    off, no project/cluster -- see ``bootstrap.py``'s and
+    ``payload/bootstrap.py``'s module docstrings for exactly what is and is not
+    built, and ``PMM-15347/questions.md`` for what is still undecided about the real
+    feature this exists to de-risk.
+
+    Admin-gated rather than editor like ``trigger_probe``: unlike a read-only probe,
+    this installs software and manages a systemd unit as whatever user Nomad's
+    ``raw_exec`` runs as on the target -- a materially bigger blast radius, and
+    ``PMM-15347/questions.md`` Q6 has not settled on a permission model yet. Admin is
+    the conservative default until it does.
+
+    Returns as soon as the Nomad job is queued, not once it finishes -- see
+    ``bootstrap.py``'s module docstring for why that does not violate this router's
+    "never wait for a Nomad job" rule, and poll
+    ``GET /api/tasks/history/{task_history_id}`` for progress.
+
+    :param node_id: PMM's node id for the host to bootstrap.
+    :param request: The requested replica set configuration.
+    :param session: The database session.
+    :raises HTTPNotFoundException: When OM holds no such host.
+    :raises HTTPUnprocessableEntityException: When the host has no usable executor --
+        the same check ``GET /hosts?executor=true`` filters on.
+    :return: The queued run's task history id and the generated admin credentials.
+    """
+    host = await get_host(session, node_id)
+    if host is None:
+        raise HTTPNotFoundException(detail=f"Host {node_id} not found")
+    if not _executor_usable(host):
+        raise HTTPUnprocessableEntityException(
+            detail=f"Host {node_id} has no usable Nomad executor"
+        )
+
+    tasks_api = await settings.get_remote_api(
+        endpoint=sep_settings.TASKS_ENDPOINT,
+        ssl_cafile=settings.SSL_CAFILE,
+        logger_name="tasks_api",
+    )
+    task_history_id, admin_password = await dispatch_bootstrap(tasks_api, host, request)
+    return BootstrapAccepted(
+        node_id=node_id,
+        task_history_id=task_history_id,
+        admin_username=request.admin_username,
+        admin_password=admin_password,
+    )
 
 
 @router.get("/services")
