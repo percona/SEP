@@ -12,19 +12,27 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-"""Cover the side-car PID 1's Grafana mint step."""
+"""Cover the side-car PID 1's Grafana mint step and its stale-sentinel clearing."""
 
 import os
+import re
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
-from tests.sidecar.conftest import SIDECAR_DIR
+from tests.sidecar.conftest import schema_steps, SIDECAR_DIR
 
 ENTRYPOINT = SIDECAR_DIR / "entrypoint.sh"
 SETTINGS_ENV_HELPER = SIDECAR_DIR / "settings-env.sh"
 MINT_HELPER_NAME = "grafana_service_account.py"
+
+SENTINEL_PATH = re.compile(r"/tmp/migrate-([a-z]+)\.ok")
+
+SENTINEL_PREFIX = "/tmp/migrate-"
+"""The prefix every sentinel path in the shipped entrypoint is built from."""
 
 CANONICAL_NAMES = (
     "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN",
@@ -35,8 +43,14 @@ MINTED_TOKEN = "glsa_minted_at_container_start"
 
 FAKE_SUPERVISORD = r"""#!/usr/bin/env bash
 env -0 > "$FAKE_SUPERVISORD_ENV"
+ls -1 /tmp/migrate-*.ok > "$FAKE_SUPERVISORD_SENTINELS" 2> /dev/null || true
 """
-"""A stand-in for supervisord recording the environment its children inherit."""
+"""A stand-in for supervisord recording what its children would inherit.
+
+The sentinel listing is taken here rather than after the run because what the
+clearing must guarantee is that no stale marker survives *into* the spawn — an
+assertion made once the entrypoint has exited could not tell the two apart.
+"""
 
 STUB_MINT_HELPER = """import os
 import sys
@@ -60,13 +74,27 @@ class FakeContainer:
     def __init__(self, root: Path):
         """Lay the copied application root and the fake runtime out under ``root``.
 
+        The copied entrypoint's sentinel paths are rewritten onto a prefix unique
+        to this container, so the two cases that exercise the clearing cannot
+        invalidate each other's precondition under the suite's parallel runner.
+        The substitution count is asserted, so renaming or dropping a sentinel in
+        the shipped entrypoint fails the test rather than silently leaving the
+        copy pointed at the real ``/tmp`` paths.
+
         :param root: The per-test temporary directory to build in.
         """
         self.app_dir = root / "app"
         self.app_dir.mkdir()
+        self.sentinel_prefix = f"{SENTINEL_PREFIX}{uuid4().hex}-"
         for source in (ENTRYPOINT, SETTINGS_ENV_HELPER):
             target = self.app_dir / source.name
-            target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+            text = source.read_text(encoding="utf-8")
+            if source is ENTRYPOINT:
+                assert text.count(SENTINEL_PREFIX) == len(schema_steps()), (
+                    "the entrypoint no longer clears one sentinel per schema step"
+                )
+                text = text.replace(SENTINEL_PREFIX, self.sentinel_prefix)
+            target.write_text(text, encoding="utf-8")
             target.chmod(0o755)
         (self.app_dir / MINT_HELPER_NAME).write_text(STUB_MINT_HELPER, encoding="utf-8")
 
@@ -78,6 +106,7 @@ class FakeContainer:
 
         self._environment_file = root / "supervisord-env"
         self._argv_file = root / "helper-argv"
+        self._sentinel_file = root / "supervisord-sentinels"
 
     def start(
         self, *, token: str = MINTED_TOKEN, exit_code: int = 0, **inputs: str
@@ -93,6 +122,7 @@ class FakeContainer:
             "PATH": f"{self._bin}{os.pathsep}{os.environ['PATH']}",
             "SECRET_KEY": "k",
             "FAKE_SUPERVISORD_ENV": str(self._environment_file),
+            "FAKE_SUPERVISORD_SENTINELS": str(self._sentinel_file),
             "FAKE_HELPER_ARGV": str(self._argv_file),
             "FAKE_HELPER_STDOUT": token,
             "FAKE_HELPER_EXIT": str(exit_code),
@@ -118,12 +148,28 @@ class FakeContainer:
         )
 
     @property
+    def sentinels_at_spawn(self) -> list[str]:
+        """Return the schema sentinels present when supervisord was reached.
+
+        :return: One path per surviving sentinel, empty when the clear worked.
+        """
+        return self._sentinel_file.read_text(encoding="utf-8").split()
+
+    @property
     def helper_argv(self) -> list[str]:
         """Return the argv the entrypoint invoked the mint helper with.
 
         :return: One entry per argument, in order.
         """
         return self._argv_file.read_text(encoding="utf-8").splitlines()
+
+    @property
+    def owned_sentinels(self) -> set[str]:
+        """Return the sentinel paths this container's entrypoint copy clears.
+
+        :return: One absolute path per schema step, under this container's prefix.
+        """
+        return {f"{self.sentinel_prefix}{step}.ok" for step in schema_steps()}
 
 
 @pytest.fixture
@@ -194,3 +240,78 @@ def test_the_grafana_admin_credential_stops_at_the_mint(container: FakeContainer
     supervised = container.supervised_environment
     assert "GF_SECURITY_ADMIN_USER" not in supervised
     assert "GF_SECURITY_ADMIN_PASSWORD" not in supervised
+
+
+def cleared_sentinels() -> set[str]:
+    """Return the schema steps whose sentinel the entrypoint clears.
+
+    :return: One bare step name per cleared sentinel path.
+    """
+    return set(SENTINEL_PATH.findall(ENTRYPOINT.read_text(encoding="utf-8")))
+
+
+@pytest.fixture
+def owned_sentinels(container: FakeContainer) -> Iterator[set[str]]:
+    """Return the sentinel paths this container owns, removing them afterwards.
+
+    Each container rewrites its entrypoint copy onto its own prefix, so the two
+    cases below never touch the same paths and neither can leave the other
+    asserting against markers a sibling removed. Cleaning up keeps a failed run
+    from leaving markers behind.
+
+    :param container: The fake container whose entrypoint copy names them.
+    :return: One absolute sentinel path per schema step.
+    """
+    paths = container.owned_sentinels
+    yield paths
+    for path in paths:
+        Path(path).unlink(missing_ok=True)
+
+
+def test_stale_sentinels_are_cleared_before_supervisord(
+    container: FakeContainer, owned_sentinels: set[str]
+):
+    """Clear a previous run's sentinels from PID 1, before any program is spawned.
+
+    ``/tmp`` survives a container restart and each one-shot clears its own
+    sentinel only *after* being spawned — concurrently with the apps now gated on
+    it — so a gate could otherwise read a previous run's marker and release an app
+    against a schema this run has not re-applied.
+
+    Only this suite's own sentinels are asserted on. The recording stub globs all
+    of ``/tmp``, and a sibling test holding an unrelated ``migrate-*.ok`` would
+    otherwise fail this one under the suite's parallel runner.
+    """
+    for path in owned_sentinels:
+        Path(path).touch()
+
+    result = container.start()
+
+    assert result.returncode == 0, result.stderr
+    assert set(container.sentinels_at_spawn) & owned_sentinels == set()
+
+
+def test_clearing_is_not_fatal_when_no_sentinel_exists(
+    container: FakeContainer, owned_sentinels: set[str]
+):
+    """Start supervisord on a first boot, where there is nothing to clear.
+
+    The entrypoint runs under ``errexit``, so a clear that failed on an unmatched
+    name would kill PID 1 instead of starting the container.
+    """
+    assert not any(Path(path).exists() for path in owned_sentinels)
+
+    result = container.start()
+
+    assert result.returncode == 0, result.stderr
+    assert container.supervised_environment
+
+
+def test_every_one_shot_sentinel_is_cleared():
+    """Assert the cleared names are exactly the one-shots supervisord runs.
+
+    The entrypoint names them rather than globbing, so this is what keeps the two
+    files from drifting: a schema step added to the program table without being
+    cleared here would survive a restart and release the gate on a stale marker.
+    """
+    assert cleared_sentinels() == set(schema_steps())
