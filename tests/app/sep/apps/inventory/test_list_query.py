@@ -18,16 +18,19 @@
 from __future__ import annotations
 
 import inspect
+from types import MappingProxyType
 
 import pytest
 from fastapi import status
 
+from app.core.db.in_memory_list_query import InMemoryListQuery
 from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
-from app.sep.apps.framework.list_query import InMemoryListQuery
+from app.sep.apps.inventory import list_query as inventory_list_query_module
 from app.sep.apps.inventory.list_query import (
+    _ENTITY_LIST_QUERY_APPLIERS,
     ENTITY_LIST_QUERY_SPECS,
     inventory_list_query,
     list_query_upstream_params,
@@ -62,14 +65,14 @@ class TestInventoryListQuery:
         with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
             inventory_list_query(entity="nodes", sort="bogus", search=None)
         assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-        assert "bogus" in str(excinfo.value.detail)
+        assert excinfo.value.detail == "Invalid sort key: 'bogus'"
 
     def test_cross_entity_sort_key_raises_422(self) -> None:
         """Reject a sort key that is legal for schemas but not for nodes."""
         with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
             inventory_list_query(entity="nodes", sort="service_id", search=None)
         assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-        assert "service_id" in str(excinfo.value.detail)
+        assert excinfo.value.detail == "Invalid sort key: 'service_id'"
 
     def test_unknown_entity_raises_404(self) -> None:
         """Reject an unknown entity segment with HTTP 404."""
@@ -90,6 +93,49 @@ class TestInventoryListQuery:
         assert query == InMemoryListQuery(
             sort_key="schema_id", descending=True, search=None
         )
+
+
+class TestEntityListQueryAppliers:
+    """Pin that each entity's applier is built at import and only selected per request."""
+
+    def test_covers_every_declared_entity(self) -> None:
+        """Bind an applier for every entity the specs declare, and no others."""
+        assert set(_ENTITY_LIST_QUERY_APPLIERS) == set(ENTITY_LIST_QUERY_SPECS)
+
+    def test_registry_is_read_only(self) -> None:
+        """Expose the registry immutably, so no request can swap an entity's applier."""
+        assert isinstance(_ENTITY_LIST_QUERY_APPLIERS, MappingProxyType)
+
+    @pytest.mark.parametrize("entity", ENTITY_LIST_QUERY_SPECS)
+    def test_applier_binds_that_entity_spec(self, entity: str) -> None:
+        """Bind each applier to its own entity's spec, not a copy of it."""
+        assert (
+            _ENTITY_LIST_QUERY_APPLIERS[entity].spec is ENTITY_LIST_QUERY_SPECS[entity]
+        )
+
+    @pytest.mark.parametrize("entity", ENTITY_LIST_QUERY_SPECS)
+    def test_repeated_requests_reuse_the_bound_applier(
+        self, entity: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Build no applier per request, across repeated calls.
+
+        Constructing one inside the dependency would satisfy the signature while
+        re-resolving the spec once per request, per entity — which is exactly the work
+        the module-level registry exists to do once.
+        """
+
+        def _boom(spec: object) -> None:
+            raise AssertionError(f"applier rebuilt per request for {spec!r}")
+
+        monkeypatch.setattr(
+            inventory_list_query_module, "InMemoryListQueryApplier", _boom
+        )
+
+        spec = ENTITY_LIST_QUERY_SPECS[entity]
+        for sort in (None, "name", "-name"):
+            assert inventory_list_query(
+                entity=entity, sort=sort, search="db1"
+            ) == InMemoryListQuery.from_sort(sort or spec.default_sort, "db1")
 
 
 class TestListQueryUpstreamParams:

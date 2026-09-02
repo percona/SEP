@@ -28,7 +28,7 @@ from app.core.exceptions import (
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.framework.spec import stamp_form_input
-from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.models import BackupType, UNKNOWN_SERVICE_SENTINEL
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate, RestoresResponse
 from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
@@ -37,8 +37,6 @@ from app.sep.apps.mysql_backups.restore.spec import (
 from app.sep.deps import get_created_entity, InventoryAPI
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
-
-UNKNOWN_SERVICE_SENTINEL = "-1"
 
 
 async def resolve_restore_entities(

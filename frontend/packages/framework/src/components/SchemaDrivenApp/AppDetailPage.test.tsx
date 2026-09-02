@@ -1986,3 +1986,107 @@ describe('AppDetailPage — write access', () => {
     expect(screen.getByText('mysql-01')).toBeInTheDocument();
   });
 });
+
+describe('AppDetailPage — write access', () => {
+  const taskSchema: AppSchema = {
+    pluginName: 'checksums',
+    display_name: 'Checksum',
+    description: 'Test',
+    capabilities: { scheduling: true },
+    list_view: {
+      columns: [
+        { key: 'name', label: 'Name' },
+        { key: 'status', label: 'Status', format: 'status' },
+      ],
+      default_sort: '-id',
+    },
+    formSchema: { sections: [] },
+  } as unknown as AppSchema;
+
+  const entitySchema = {
+    pluginName: 'inventory',
+    display_name: 'Inventory',
+    description: 'Test',
+    capabilities: {},
+    entities: [
+      {
+        name: 'services',
+        display_name: 'Services',
+        forms: [],
+        list_view: { columns: [{ key: 'name', label: 'Name' }], default_sort: '-name' },
+      },
+    ],
+    list_view: { columns: [{ key: 'name', label: 'Name' }], default_sort: '-name' },
+    formSchema: { sections: [] },
+  } as unknown as AppSchema;
+
+  function renderEntityDetail() {
+    mockUseAppEntityDetail.mockReturnValue({
+      data: { id: 1, name: 'mysql-01' },
+      isLoading: false,
+      error: null,
+    });
+    return render(
+      <QueryClientProvider client={makeClient()}>
+        <SnackbarProvider>
+          <MemoryRouter initialEntries={['/apps/inventory/services/1']}>
+            <Routes>
+              <Route
+                path="/apps/:plugin/:entityName/:id/*"
+                element={<AppDetailPage schema={entitySchema} pluginName="inventory" />}
+              />
+            </Routes>
+          </MemoryRouter>
+        </SnackbarProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  it('renders execute, edit and delete for a session that may mutate', () => {
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'success', data: { _form: { task_name: 'FECHK' } } },
+      isLoading: false,
+      error: null,
+    });
+
+    renderWithSchema(taskSchema);
+
+    expect(screen.getByTestId('plugin-task-execute')).toBeInTheDocument();
+    expect(screen.getByTestId('plugin-task-edit')).toBeInTheDocument();
+    expect(screen.getByTestId('plugin-task-delete')).toBeInTheDocument();
+  });
+
+  it('renders no execute, edit or delete for a non-admin, keeping the schedule link', () => {
+    mockCanMutate = false;
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'success', data: { _form: { task_name: 'FECHK' } } },
+      isLoading: false,
+      error: null,
+    });
+
+    renderWithSchema(taskSchema);
+
+    expect(screen.queryByTestId('plugin-task-execute')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('plugin-task-edit')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('plugin-task-delete')).not.toBeInTheDocument();
+    // Navigation-only affordance is untouched.
+    expect(screen.getByTestId('plugin-task-schedule')).toBeInTheDocument();
+  });
+
+  it('renders entity edit and delete for a session that may mutate', () => {
+    renderEntityDetail();
+
+    expect(screen.getByRole('link', { name: 'Edit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('renders no entity edit or delete for a non-admin', () => {
+    mockCanMutate = false;
+    renderEntityDetail();
+
+    expect(screen.queryByRole('link', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    // The record itself still renders.
+    expect(screen.getByText('mysql-01')).toBeInTheDocument();
+  });
+});

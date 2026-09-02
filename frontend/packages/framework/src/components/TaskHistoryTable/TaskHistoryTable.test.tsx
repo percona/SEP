@@ -135,6 +135,7 @@ describe('StatusBadge', () => {
     ['stopped', 'Stopped'],
     ['lost', 'Lost'],
     ['stale', 'Stale'],
+    ['unlaunchable', 'Not in executor'],
   ] as const)('renders %s as %s label', (status, label) => {
     render(<StatusBadge status={status} />);
     expect(screen.getByText(label)).toBeInTheDocument();

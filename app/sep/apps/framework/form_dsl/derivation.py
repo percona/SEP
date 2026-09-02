@@ -462,7 +462,12 @@ def _build_ref_field(
         # MultiHostField may carry the key for wire uniformity, but only the
         # single-value HostField renderer honours it today.
         return field_class(
-            **common, allow_custom=allow_custom, depends_on=ui.depends_on
+            **common,
+            allow_custom=allow_custom,
+            depends_on=ui.depends_on,
+            target_service=(
+                ref.target_service if ref.target_service is not None else ui.depends_on
+            ),
         )
     return field_class(**common, allow_custom=allow_custom)
 

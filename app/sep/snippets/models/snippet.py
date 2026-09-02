@@ -18,7 +18,6 @@
 __all__ = ["BaseSnippetArgs", "Snippet", "SnippetExecutionMeta"]
 
 
-import hashlib
 import json
 import logging
 import shlex
@@ -65,6 +64,7 @@ from app.core.utils.fields import (
 )
 from app.core.utils.pydantic import CustomFieldMetadata
 from app.sep.apps.field_names import EXTRA_ARGS_FIELD_NAME, SUDO_FIELD_NAME
+from app.sep.snippets.checksums import digest_file
 from app.sep.snippets.config import (
     DEFAULT_SNIPPETS_TASK,
     SnippetFilterType,
@@ -846,14 +846,9 @@ class BaseSnippet(BaseModel):
         :rtype: Snippet
         """
         path = cls.BASE_DIR / Path(path)
-        file_hash = hashlib.md5(usedforsecurity=False)
-        chunk_size = 8192
-        async with aiofiles.open(path, "rb") as f:
-            while chunk := await f.read(chunk_size):
-                file_hash.update(chunk)
         snippet = cls(
             filename=str(path.relative_to(cls.BASE_DIR)),
-            md5_digest=file_hash.hexdigest(),
+            md5_digest=await digest_file(path, "md5", usedforsecurity=False),
             size=await getsize(path),
         )
         if update_meta:

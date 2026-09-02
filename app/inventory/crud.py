@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Any, ClassVar, Final, TYPE_CHECKING
 
 from fastapi import HTTPException
-from sqlalchemy import and_, func, literal, Update, update
+from sqlalchemy import and_, case, func, literal, Update, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased, joinedload
 from sqlalchemy.sql import ColumnElement, ColumnExpressionArgument
@@ -38,7 +38,12 @@ from app.core.exceptions import (
 )
 from app.core.pagination import Pagination
 from app.core.utils.date_time import utc_now
-from app.inventory.constants import ACTIVE_RETIREMENT_KEY, RetirableEntityName
+from app.core.utils.strings import shorten_text
+from app.inventory.constants import (
+    ACTIVE_RETIREMENT_KEY,
+    RetirableEntityName,
+    SYNC_ERROR_MAX_LENGTH,
+)
 from app.inventory.models import (
     ExternalIdentityAlias,
     HostSystemObservation,
@@ -52,6 +57,9 @@ from app.inventory.models import (
     Service,
     ServiceSystemObservation,
     SourceEnum,
+    SyncHealthBase,
+    SyncHealthWrite,
+    SyncOutcomeEnum,
     Table,
 )
 
@@ -91,6 +99,135 @@ def _revive(
         update(model)
         .where(col(model.retired_at).is_not(None), *whereclause)
         .values(retired_at=None, retirement_key=ACTIVE_RETIREMENT_KEY)
+    )
+
+
+#: Keeps the sync-health writes off SQLAlchemy's post-UPDATE session sync. Its
+#: "evaluate" strategy re-runs the guards below in Python against whatever the
+#: identity map holds, comparing a stored timestamp that is naive on an engine
+#: dropping the offset (SQLite) against a timezone-aware attempt time — which
+#: raises ``TypeError`` rather than falling through to a fetch. Sessions are
+#: built with ``expire_on_commit=False``, so a loaded instance stays stale for
+#: the rest of the request; no route reads one of these rows back after the
+#: write, and one that starts to must re-read rather than trust the instance.
+_UNSYNCHRONIZED: Final = {"synchronize_session": False}
+
+
+def _not_superseded(
+    model: type[SyncHealthBase], attempted_at: datetime
+) -> ColumnElement[bool]:
+    """Match only rows whose recorded sync is not newer than this attempt.
+
+    Reports cross the service boundary over HTTP, so arrival order is not
+    attempt order. Comparing against ``last_synced_at`` discards a report from
+    an attempt that had already been superseded by a completed later one.
+
+    :param model: The table being written.
+    :param attempted_at: When the reporting syncer began its attempt.
+    :return: The guard predicate.
+    """
+    return or_(
+        col(model.last_synced_at).is_(None),
+        col(model.last_synced_at) <= attempted_at,
+    )
+
+
+def _no_newer_failure(
+    model: type[SyncHealthBase], attempted_at: datetime
+) -> ColumnElement[bool]:
+    """Match only rows whose open failure run did not start after this attempt.
+
+    A failure never moves ``last_synced_at``, so :func:`_not_superseded` cannot
+    see one: an older success arriving late would otherwise clear a run a newer
+    attempt had just opened, reporting a clean row whose latest attempt failed.
+    ``sync_failing_since`` names the *earliest* failure of the run, so a success
+    landing between two failures of one run is still admitted — closing that
+    would take a column recording the newest attempt seen.
+
+    :param model: The table being written.
+    :param attempted_at: When the reporting syncer began its attempt.
+    :return: The guard predicate.
+    """
+    return or_(
+        col(model.sync_failing_since).is_(None),
+        col(model.sync_failing_since) <= attempted_at,
+    )
+
+
+def _record_sync_success(
+    model: type[SyncHealthBase],
+    *whereclause: ColumnExpressionArgument[bool],
+    synced_at: datetime,
+) -> Update:
+    """Build the UPDATE stamping a clean sync on every row matching the clauses.
+
+    ``synced_at`` is the syncer's attempt time, not the moment this statement
+    runs, so ``last_synced_at`` answers "when was this confirmed against its
+    source" rather than "when did the report arrive".
+
+    :param model: The table to record the success in.
+    :param whereclause: Clauses narrowing the rows to write.
+    :param synced_at: When the reporting syncer began its attempt.
+    :return: The UPDATE statement.
+    """
+    return (
+        update(model)
+        .where(
+            _not_superseded(model, synced_at),
+            _no_newer_failure(model, synced_at),
+            *whereclause,
+        )
+        .values(
+            last_synced_at=synced_at,
+            last_sync_error=None,
+            sync_failing_since=None,
+            consecutive_failures=0,
+        )
+        .execution_options(**_UNSYNCHRONIZED)
+    )
+
+
+def _record_sync_failure(
+    model: type[SyncHealthBase],
+    *whereclause: ColumnExpressionArgument[bool],
+    error: str,
+    failed_at: datetime,
+) -> Update:
+    """Build the UPDATE recording a failed sync on every row matching the clauses.
+
+    ``sync_failing_since`` keeps the earlier of the stored value and this
+    attempt rather than being assigned, so it names the *first* failure after
+    the last success even when two failures of one run arrive out of order —
+    coalescing alone would leave it on whichever landed first. The counter is
+    incremented in SQL so concurrent runs cannot lose an increment to a
+    read-modify-write. ``last_sync_error`` is still assigned unconditionally,
+    so an out-of-order pair leaves the older message there; naming the newest
+    failure would take a column recording the newest attempt seen, which the
+    entity does not carry. ``last_synced_at`` is deliberately absent: a failure
+    never moves it — which is also why the guard compares against it rather
+    than being skipped here.
+
+    :param model: The table to record the failure in.
+    :param whereclause: Clauses narrowing the rows to write.
+    :param error: The bounded description to store.
+    :param failed_at: When the reporting syncer began its attempt.
+    :return: The UPDATE statement.
+    """
+    return (
+        update(model)
+        .where(_not_superseded(model, failed_at), *whereclause)
+        .values(
+            last_sync_error=error,
+            consecutive_failures=col(model.consecutive_failures) + 1,
+            sync_failing_since=case(
+                (
+                    col(model.sync_failing_since) < failed_at,
+                    col(model.sync_failing_since),
+                ),
+                else_=failed_at,
+            ),
+        )
+        .execution_options(**_UNSYNCHRONIZED)
     )
 
 
@@ -152,6 +289,55 @@ def _retained_descendant_exists(
         .where(col(getattr(model, foreign_key)) == parent_id, or_(*retained))
         .exists()
     )
+
+
+class SyncHealthManagerMixin(BaseSQLModelManager):
+    """Record the outcome of one syncer attempt on an entity."""
+
+    @classmethod
+    async def record_sync_health(
+        cls,
+        session: AsyncSession,
+        instance: RetirableSQLModel,
+        outcome: SyncHealthWrite,
+    ) -> None:
+        """Apply one sync outcome to an entity's four sync-health columns.
+
+        The statement is hand-built rather than routed through ``update``, for
+        the reason :meth:`RetirableManagerMixin.retire`'s is: the transitions
+        are expressed in SQL so an increment cannot be lost to a
+        read-modify-write, and the write must reach a row the manager's own
+        retired filter would hide.
+
+        :param session: The asynchronous database session to use.
+        :param instance: The entity the outcome was observed for. Typed as the
+            retirable base ``retire`` takes rather than as ``SyncHealthBase``,
+            which carries the columns but not the ``id`` this addresses the row
+            by; ``cls.Model`` is what confines the write to a level that has
+            them.
+        :param outcome: What the syncer reported.
+        :raises ValueError: If the outcome names no branch here, which an
+            outcome added to :class:`SyncOutcomeEnum` without a transition
+            would. Failing loudly beats routing it to the failure branch, where
+            the body model does not require an ``error``.
+        """
+        if outcome.outcome is SyncOutcomeEnum.SUCCESS:
+            statement = _record_sync_success(
+                cls.Model,
+                col(cls.Model.id) == instance.id,
+                synced_at=outcome.attempted_at,
+            )
+        elif outcome.error is not None:
+            statement = _record_sync_failure(
+                cls.Model,
+                col(cls.Model.id) == instance.id,
+                error=shorten_text(outcome.error, SYNC_ERROR_MAX_LENGTH),
+                failed_at=outcome.attempted_at,
+            )
+        else:
+            raise ValueError(f"No sync-health transition for {outcome.outcome!r}")
+        await cls._exec(session, statement)  # call-shape-dup-ok: the manager idiom
+        await session.commit()
 
 
 class RetirableManagerMixin(BaseSQLModelManager):
@@ -534,11 +720,7 @@ class IdentityLinkDecisionManager(BaseSQLModelManager):
         """Return a correlated subquery yielding a pairing's most recent decision.
 
         A correlated ``ORDER BY … LIMIT 1`` rather than a window function, which
-        renders identically on all three supported engines. MySQL is the one
-        that constrains the shape — it rejects ``LIMIT`` in a subquery that is
-        the *argument* of ``IN``/``ALL``/``ANY`` (error 1235) — and this
-        subquery is the left operand of the comparison instead, which it
-        accepts; exercised end to end by the MySQL case in the crud tests.
+        renders identically on both supported engines.
 
         :param entity_type: The inventory entity type the pairing names.
         :param predecessor_id: The column or value naming the older row.
@@ -1411,7 +1593,7 @@ class AliasableManagerMixin(RetirableManagerMixin):
         await cls._commit_identity_change(session, statements, rows)
 
 
-class NodeManager(AliasableManagerMixin, BaseSQLModelManager):
+class NodeManager(AliasableManagerMixin, SyncHealthManagerMixin, BaseSQLModelManager):
     """Manage Node operations, including retrieval, listing, and retirement.
 
     :ivar Model: The SQLModel class this manager is responsible for (``Node``).
@@ -1479,7 +1661,9 @@ class NodeManager(AliasableManagerMixin, BaseSQLModelManager):
         return entity.source
 
 
-class ServiceManager(AliasableManagerMixin, BaseSQLModelChildManager):
+class ServiceManager(
+    AliasableManagerMixin, SyncHealthManagerMixin, BaseSQLModelChildManager
+):
     """Manage Service operations, including retrieval, listing, and retirement.
 
     :ivar Model: The SQLModel class this manager is responsible for (``Service``).
@@ -1635,7 +1819,9 @@ class ServiceManager(AliasableManagerMixin, BaseSQLModelChildManager):
             )
 
 
-class SchemaManager(RetirableManagerMixin, BaseSQLModelChildManager):
+class SchemaManager(
+    RetirableManagerMixin, SyncHealthManagerMixin, BaseSQLModelChildManager
+):
     """Manage Schema operations, including retrieval, listing, and retirement.
 
     :ivar Model: The SQLModel class this manager is responsible for (`Schema`).
@@ -1664,7 +1850,9 @@ class SchemaManager(RetirableManagerMixin, BaseSQLModelChildManager):
     )
 
 
-class TableManager(RetirableManagerMixin, BaseSQLModelChildManager):
+class TableManager(
+    RetirableManagerMixin, SyncHealthManagerMixin, BaseSQLModelChildManager
+):
     """Manage Table operations, including retrieval, listing, and retirement.
 
     :ivar Model: The SQLModel class this manager is responsible for (`Table`).

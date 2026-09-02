@@ -56,6 +56,7 @@ from app.inventory.models import (
     ServiceTypeEnum,
     ServiceWrite,
     SourceEnum,
+    SyncHealthWrite,
 )
 
 logger = logging.getLogger(__name__)
@@ -226,6 +227,29 @@ async def revive_node(session: SessionDep, node: RetirableNodeDep) -> None:
     """
     logger.debug("Reviving node %s", node.id)
     await NodeManager.revive(session, node)
+
+
+@router.post(
+    "/{node_id}/sync-health",
+    dependencies=[IsServicePrincipalDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def record_node_sync_health(
+    session: SessionDep,
+    node: RetirableNodeDep,
+    outcome: SyncHealthWrite,
+) -> None:
+    """Record the outcome of one syncer attempt on a Node.
+
+    Addresses the node whether retired or not: the attempt happened, and a
+    concurrent retirement must not turn bookkeeping into a failed sync item.
+
+    :param session: The async database session.
+    :param node: The node the outcome was observed for, retired or not.
+    :param outcome: What the syncer reported.
+    """
+    logger.debug("Recording %s sync health on node %s", outcome.outcome, node.id)
+    await NodeManager.record_sync_health(session, node, outcome)
 
 
 @router.get("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])

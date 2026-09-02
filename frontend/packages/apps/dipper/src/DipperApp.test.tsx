@@ -285,3 +285,52 @@ describe('DipperApp — write access', () => {
     expect(screen.getByText('Execution history')).toBeInTheDocument();
   });
 });
+
+describe('DipperApp — write access', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authMock.canMutate = true;
+    mockAppSchema.mockReturnValue({
+      data: { display_name: 'Dipper', description: 'Collect' },
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useDipperAppSchema>);
+    mockFormSchema.mockReturnValue({
+      data: { forms: [] },
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useDipperFormSchema>);
+    mockHistory.mockReturnValue({
+      data: { items: [] },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useDipperHistory>);
+    mockExecution.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      isError: false,
+      error: null,
+    } as unknown as ReturnType<typeof useDipperExecution>);
+  });
+
+  it('renders the execute form for a session that may mutate', () => {
+    render(<DipperApp />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select service' }));
+
+    expect(screen.getByRole('button', { name: 'Execute' })).toBeInTheDocument();
+    expect(screen.queryByTestId('dipper-execute-read-only')).not.toBeInTheDocument();
+  });
+
+  it('renders no execute form for a non-admin, keeping the history readable', () => {
+    authMock.canMutate = false;
+    render(<DipperApp />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select service' }));
+
+    expect(screen.getByTestId('dipper-execute-read-only')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Execute' })).not.toBeInTheDocument();
+    expect(screen.getByText('Execution history')).toBeInTheDocument();
+  });
+});
