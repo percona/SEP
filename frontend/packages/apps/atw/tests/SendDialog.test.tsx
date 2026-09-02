@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -341,7 +341,7 @@ describe('SendDialog case search', () => {
     expect(screen.getByRole('option', { name: /CS0002/ })).toBeTruthy();
   });
 
-  it('shows the case title beside the reference', async () => {
+  it('shows the case title beneath the reference', async () => {
     mockApis();
     renderDialog(<SendDialog open incidentId="inc-1" executions={EXECUTIONS} onClose={() => {}} />);
 
@@ -349,6 +349,14 @@ describe('SendDialog case search', () => {
 
     const option = await screen.findByRole('option', { name: /CS0001/ }, { timeout: 3000 });
     expect(option).toHaveTextContent('Slow queries on the primary');
+
+    const reference = within(option).getByText('CS0001');
+    const title = within(option).getByText('Slow queries on the primary');
+    expect(title.parentElement).toBe(reference.parentElement);
+
+    const stack = getComputedStyle(reference.parentElement as HTMLElement);
+    expect(stack.display).toBe('flex');
+    expect(stack.flexDirection).toBe('column');
   });
 
   it('puts the picked case reference in the field', async () => {

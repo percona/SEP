@@ -174,11 +174,16 @@ export function SendDialog({
               renderOption={(props, option) => {
                 const { key, ...liProps } = props as typeof props & { key: string };
                 return (
-                  <Box component="li" key={key} {...liProps} sx={{ display: 'block' }}>
-                    <Typography variant="body2">{option.reference}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {option.title}
-                    </Typography>
+                  <Box component="li" key={key} {...liProps}>
+                    {/* MUI styles the option row as a flex row at a specificity
+                        the sx prop cannot outrank, so the two lines stack in a
+                        wrapper that rule does not reach. */}
+                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                      <Typography variant="body2">{option.reference}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {option.title}
+                      </Typography>
+                    </Box>
                   </Box>
                 );
               }}
