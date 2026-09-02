@@ -74,6 +74,14 @@ from tests.app.factories import build_task_history, TaskFactory
 from tests.app.tasks.conftest import HOOK_PATH_FIELDS, REJECTED_HOOK_PATHS
 
 MOCK_FILE_SIZE = 1024
+# Derived rather than spelled out: ``_chain_on_failure`` chains on any terminal
+# status but SUCCESS, so a literal list silently stops covering the policy the
+# moment a terminal status is added.
+NON_SUCCESS_TERMINAL_STATUSES = sorted(
+    status
+    for status in TaskHistoryStatusEnum
+    if status.is_terminal() and status is not TaskHistoryStatusEnum.SUCCESS
+)
 PAGINATION_TASK_COUNT = 3
 PARENT_FILTER_TASK_COUNT = 3
 SEARCH_MATCH_TOTAL = 2
@@ -1353,15 +1361,7 @@ class TestSyncTaskHistoryChainDispatch:
         assert args[0] == chain_target.name
         assert args[2] == []
 
-    @pytest.mark.parametrize(
-        "terminal_status",
-        [
-            TaskHistoryStatusEnum.FAILED,
-            TaskHistoryStatusEnum.STOPPED,
-            TaskHistoryStatusEnum.LOST,
-            TaskHistoryStatusEnum.STALE,
-        ],
-    )
+    @pytest.mark.parametrize("terminal_status", NON_SUCCESS_TERMINAL_STATUSES)
     async def test_dispatches_chain_on_failure_with_flag(
         self,
         test_client,

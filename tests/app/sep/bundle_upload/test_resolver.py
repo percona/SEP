@@ -20,9 +20,15 @@ import logging
 import pytest
 from pytest_mock import MockerFixture
 
-from app.sep.bundle_upload.plan import DeliveryPlan, UploadStep
+from app.sep.bundle_upload.plan import (
+    DeliveryPlan,
+    ProbeStep,
+    SecretValue,
+    UploadStep,
+)
 from app.sep.bundle_upload.resolver import (
     DeliveryPlanResolution,
+    DeliveryUnavailableCode,
     DRIFTED_INPUTS_REASON,
     resolve_delivery_plan,
     UNCONFIGURED_REASON,
@@ -74,6 +80,7 @@ class TestSkeletonOnly:
 
         assert resolution.plan is None
         assert resolution.unavailable_reason == UNCONFIGURED_REASON
+        assert resolution.code is DeliveryUnavailableCode.UNCONFIGURED
         assert caplog.records == []
 
     def test_returns_the_baked_plan_unchanged(self, mocker: MockerFixture) -> None:
@@ -101,6 +108,7 @@ class TestSkeletonOnly:
 
         assert resolution.plan is None
         assert resolution.unavailable_reason == UNCONFIGURED_REASON
+        assert resolution.code is DeliveryUnavailableCode.UNCONFIGURED
         assert "client_token, sn_api_key" in caplog.text
 
 
@@ -150,6 +158,7 @@ class TestMergedInputs:
 
         assert resolution.plan is None
         assert resolution.unavailable_reason == UNCONFIGURED_REASON
+        assert resolution.code is DeliveryUnavailableCode.UNCONFIGURED
         assert "client_token" in caplog.text
         assert "sn_api_key" not in caplog.text
 
@@ -212,6 +221,36 @@ class TestMergedInputs:
         assert plan is not None
         assert plan.secrets["client_token"].get_secret_value() == "baked-token"
 
+    def test_a_declared_probe_survives_the_merge(self, mocker: MockerFixture) -> None:
+        """Carry the probe through the rebuild the runtime inputs force.
+
+        Supplying inputs takes the resolver down its dump-merge-revalidate path
+        rather than handing the skeleton back whole, so this is the only route
+        on which a newly added plan field can be dropped.
+        """
+        skeleton = _plan({"sn_api_key": ""}).model_copy(
+            update={
+                "probe": ProbeStep(
+                    path="health",
+                    headers={"x-key": SecretValue(source="secret", name="sn_api_key")},
+                )
+            }
+        )
+        mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", skeleton)
+        mocker.patch.object(
+            sep_settings,
+            "DIAGNOSTICS_DELIVERY_INPUTS",
+            DeliveryPlanInputs(secrets={"sn_api_key": "key-value"}),
+        )
+
+        plan = resolve_delivery_plan().plan
+
+        assert plan is not None
+        assert plan.probe is not None
+        assert plan.probe.path == "health"
+        assert plan.probe.headers["x-key"].name == "sn_api_key"
+        assert plan.secrets["sn_api_key"].get_secret_value() == "key-value"
+
     def test_reports_the_unconfigured_reason_when_the_merged_plan_fails_validation(
         self, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
     ) -> None:
@@ -249,6 +288,7 @@ class TestMergedInputs:
 
         assert resolution.plan is None
         assert resolution.unavailable_reason == UNCONFIGURED_REASON
+        assert resolution.code is DeliveryUnavailableCode.UNCONFIGURED
         assert "client_token" in caplog.text
 
 
@@ -287,6 +327,7 @@ class TestDriftedInputs:
 
         assert resolution.plan is None
         assert resolution.unavailable_reason == DRIFTED_INPUTS_REASON
+        assert resolution.code is DeliveryUnavailableCode.DRIFTED_INPUTS
         assert "renamed_token" in caplog.text
 
     def test_drift_outranks_a_secret_the_rename_left_without_a_value(
@@ -415,10 +456,23 @@ class TestDeliveryPlanResolutionInvariant:
 
     def test_a_reason_alone_builds(self) -> None:
         """Accept the shape a deployment unable to deliver produces."""
-        assert (
-            DeliveryPlanResolution.unavailable(UNCONFIGURED_REASON).unavailable_reason
-            == UNCONFIGURED_REASON
+        resolution = DeliveryPlanResolution.unavailable(
+            UNCONFIGURED_REASON, DeliveryUnavailableCode.UNCONFIGURED
         )
+
+        assert resolution.unavailable_reason == UNCONFIGURED_REASON
+        assert resolution.code is DeliveryUnavailableCode.UNCONFIGURED
+
+    def test_a_resolved_plan_carries_no_code(self) -> None:
+        """Leave the code unset when there is a plan, so it tracks the reason."""
+        assert DeliveryPlanResolution.resolved(_plan({"sn_api_key": "v"})).code is None
+
+    def test_a_reason_without_a_code_is_refused(self) -> None:
+        """Refuse the shape that would force a consumer back onto the prose."""
+        with pytest.raises(ValueError, match="set together or not at all"):
+            DeliveryPlanResolution(
+                plan=None, unavailable_reason=UNCONFIGURED_REASON, code=None
+            )
 
     def test_carrying_both_outcomes_is_refused(self) -> None:
         """Refuse a resolution a caller would read two contradictory ways."""

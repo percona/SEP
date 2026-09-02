@@ -24,6 +24,7 @@ from fastapi import HTTPException, status
 
 from app.core.requests import RemoteAPI
 from app.core.requests.connectivity import (
+    build_connectivity_result,
     classify_connectivity_error,
     ConnectivityStatusEnum,
 )
@@ -99,6 +100,25 @@ class TestClassifyConnectivityError:
         assert classify_connectivity_error(TimeoutError()) is (
             ConnectivityStatusEnum.TIMEOUT
         )
+
+
+class TestBuildConnectivityResult:
+    """Cover the normalized result every probe reports through."""
+
+    @pytest.mark.parametrize("probe_status", list(ConnectivityStatusEnum))
+    def test_every_outcome_has_a_default_detail(
+        self, probe_status: ConnectivityStatusEnum
+    ) -> None:
+        """Give every outcome a detail, since the lookup behind it is unguarded.
+
+        Iterating the enum rather than a hand-picked subset is what makes this
+        catch a member added without one, which would otherwise raise only on
+        the first call that omits an explicit detail.
+        """
+        result = build_connectivity_result("svc", probe_status)
+
+        assert result.detail
+        assert result.reachable is (probe_status is ConnectivityStatusEnum.REACHABLE)
 
 
 class TestRemoteAPIDefaults:

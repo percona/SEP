@@ -40,6 +40,7 @@ from pathlib import Path
 from pydantic import BaseModel, create_model, Field
 from sqlalchemy import column
 
+from app.core.db.in_memory_list_query import InMemoryListQueryApplier
 from app.core.db.list_query import ListQuerySpec
 from app.core.exceptions import (
     HTTPBadRequestException,
@@ -347,7 +348,9 @@ def build_disk_script_source(
             if path.is_file()
         ]
 
-    list_scripts = in_memory_list_scripts(materialize_scripts, list_query_spec)
+    list_scripts = in_memory_list_scripts(
+        materialize_scripts, InMemoryListQueryApplier(list_query_spec)
+    )
 
     def build_form_schema(script: _DiskScript) -> AppSchema:
         return _build_form_schema(script, name=name)

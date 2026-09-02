@@ -23,6 +23,7 @@ __all__ = [
     "as_json_array",
     "as_json_object",
     "exception_for_status",
+    "is_non_json_success",
 ]
 
 import asyncio
@@ -204,6 +205,24 @@ def as_json_array(payload: JSONBody) -> list[dict[str, Any]]:
             detail="The server answered with an unexpected payload shape."
         )
     return payload
+
+
+def is_non_json_success(exc: HTTPException) -> bool:
+    """Return whether ``exc`` reports a successful answer whose body was not JSON.
+
+    :meth:`RemoteAPI.request` parses every body but a ``204`` before it checks
+    the status, so a receiver answering ``200 text/plain`` (an acknowledgement
+    string, an HTML health page, an empty non-``204`` body) surfaces as a
+    ``2xx`` :class:`fastapi.HTTPException` rather than as the success it is.
+    Callers that do not need the parsed body use this to tell that case from a
+    real upstream error.
+
+    :param exc: The exception :meth:`RemoteAPI.request` raised.
+    :return: ``True`` when the status is below 400 and the body was not JSON.
+    """
+    return exc.status_code < status.HTTP_400_BAD_REQUEST and bool(
+        (exc.headers or {}).get(UPSTREAM_NON_JSON_HEADER)
+    )
 
 
 def _sanitize_request_kwargs(
@@ -1153,8 +1172,6 @@ class RemoteAPI(BaseRemoteAPI):
                 "POST", path, data=payload, headers=headers, **kwargs
             )
         except HTTPException as exc:
-            if exc.status_code < status.HTTP_400_BAD_REQUEST and (
-                exc.headers or {}
-            ).get(UPSTREAM_NON_JSON_HEADER):
+            if is_non_json_success(exc):
                 return None
             raise

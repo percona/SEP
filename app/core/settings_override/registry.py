@@ -1150,10 +1150,9 @@ def _stored_key_matches_override_key(
     """Return whether a stored override key resolves to the same field as ``key``.
 
     Nested keys go through :func:`canonical_override_key`. Top-level keys also
-    match case-insensitively: the previous SQL ``WHERE key = ...`` lookup
-    inherited MySQL's ``utf8mb4_0900_ai_ci`` collation, so moving the filter
-    into Python must not drop a mixed-case top-level row that DELETE/PATCH
-    used to find. Snapshot application still ignores unknown casing via
+    match case-insensitively so mixed-case stored keys remain visible to
+    DELETE/PATCH after the filter moved into Python. Snapshot application still
+    ignores unknown casing via
     :func:`app.core.settings_override.cache._apply_top_level_row`; DELETE
     removes those inert rows, and PATCH heals their stored key to the
     canonical spelling so the next snapshot can read them.
@@ -1184,7 +1183,7 @@ async def override_rows_for_key(
     non-canonically-cased nested or top-level row visible to DELETE and PATCH,
     which previously matched the stored column with dialect-dependent SQL
     equality and, after the filter moved into Python, missed mixed-case
-    top-level rows on MySQL.
+    top-level rows.
 
     Inactive rows are included: both write paths currently match on
     ``(setting_class, key)`` alone, so an inactive row stays deletable and

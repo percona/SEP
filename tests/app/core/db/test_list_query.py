@@ -23,7 +23,7 @@ import pytest
 import pytest_asyncio
 from fastapi import Depends, FastAPI, params, status
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.dialects import mysql
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import col, select, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -187,16 +187,19 @@ class TestResolveSort:
             _spec().resolve_sort("-evil")
 
     @pytest.mark.parametrize("raw_sort", [None, "-name"], ids=["asc", "desc"])
-    def test_resolved_ordering_renders_mysql_isnull_idiom(self, raw_sort) -> None:
-        """Emit MySQL's ``ISNULL`` idiom instead of the unparsable ``NULLS LAST``."""
+    def test_resolved_ordering_renders_nulls_last_with_tie_breaker_last(
+        self, raw_sort
+    ) -> None:
+        """Render ``NULLS LAST`` on the sort column and keep the tie-breaker final."""
         order_by = _spec().resolve_sort(raw_sort)
 
         rendered = str(
-            select(col(LQItem.id)).order_by(*order_by).compile(dialect=mysql.dialect())
+            select(col(LQItem.id))
+            .order_by(*order_by)
+            .compile(dialect=postgresql.dialect())
         )
 
-        assert "NULLS LAST" not in rendered
-        assert "ISNULL(" in rendered
+        assert "NULLS LAST" in rendered
         assert rendered.rstrip().endswith("id ASC")
 
 

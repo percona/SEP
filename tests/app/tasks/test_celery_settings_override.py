@@ -64,7 +64,6 @@ from tests.app.db_schema import apply_schema
 from tests.app.factories import TaskFactory
 
 ANCHOR = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
-WorkerLoopEnv = tuple[asyncio.AbstractEventLoop, async_sessionmaker]
 
 
 def _write_cert(path: Path, *, not_valid_after: datetime) -> None:
@@ -304,9 +303,9 @@ class TestWorkerRefresherHandlers:
         stop_settings_override_refresher()
         assert celery_module._refresher.task is None
 
-    def test_shutdown_cancels_and_drains_started_refresher(self, worker_loop_env):
+    @pytest.mark.usefixtures("worker_loop_env")
+    def test_shutdown_cancels_and_drains_started_refresher(self):
         """Stop and drain the started refresher, clearing the handle."""
-        loop, _ = worker_loop_env
         start_settings_override_refresher()
         task = celery_module._refresher.task
         assert task is not None
@@ -316,9 +315,9 @@ class TestWorkerRefresherHandlers:
         assert celery_module._refresher.task is None
         assert task.cancelled() or task.done()
 
-    def test_init_is_idempotent_when_already_running(self, worker_loop_env):
+    @pytest.mark.usefixtures("worker_loop_env")
+    def test_init_is_idempotent_when_already_running(self):
         """Keep the running refresher and start no second task on re-entry."""
-        loop, _ = worker_loop_env
         start_settings_override_refresher()
         first_task = celery_module._refresher.task
         assert first_task is not None
@@ -344,9 +343,9 @@ class TestWorkerRefresherHandlers:
         loop.run_until_complete(refresh_all(lambda: maker, _tasks_proxies()))
         assert baseline + 1234 == tasks_settings.STALENESS_THRESHOLD_SECONDS
 
+    @pytest.mark.usefixtures("worker_loop_env")
     def test_init_forwards_a_budget_from_worker_proc_alive_timeout(
         self,
-        worker_loop_env: WorkerLoopEnv,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Derive the seed budget from Celery's prefork liveness deadline."""
@@ -358,9 +357,9 @@ class TestWorkerRefresherHandlers:
 
         assert recorded["seed_timeout"] == pytest.approx(6.0 * SEED_TIMEOUT_FRACTION)
 
+    @pytest.mark.usefixtures("worker_loop_env")
     def test_init_returns_with_a_running_refresher_when_the_seed_hangs(
         self,
-        worker_loop_env: WorkerLoopEnv,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Keep the periodic refresher after a hanging seed hits its budget."""

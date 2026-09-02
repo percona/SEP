@@ -35,6 +35,7 @@ from app.core.requests.remote_api import (
     _sanitize_request_kwargs,
     as_json_array,
     as_json_object,
+    is_non_json_success,
     UPSTREAM_NON_JSON_HEADER,
 )
 from app.core.requests.remote_api import (
@@ -356,6 +357,42 @@ class TestUpload:
                     await remote_api.upload("upload", files=_one_file())
 
         assert exc_info.value.detail == "An unexpected error occurred on the server."
+
+
+class TestIsNonJsonSuccess:
+    """Cover the predicate that tells a non-JSON 2xx from a real upstream error."""
+
+    @pytest.mark.parametrize(
+        "status_code", [status.HTTP_200_OK, status.HTTP_201_CREATED]
+    )
+    def test_a_stamped_success_status_is_a_success(self, status_code):
+        """Read a stamped 2xx as the success ``request`` parsed the body out of."""
+        exc = HTTPException(
+            status_code=status_code,
+            detail="An unexpected error occurred on the server.",
+            headers={UPSTREAM_NON_JSON_HEADER: "1"},
+        )
+
+        assert is_non_json_success(exc) is True
+
+    def test_a_stamped_error_status_stays_an_error(self):
+        """Keep a non-JSON 502 an error; the stamp alone does not excuse it."""
+        exc = HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="An unexpected error occurred on the server.",
+            headers={UPSTREAM_NON_JSON_HEADER: "1"},
+        )
+
+        assert is_non_json_success(exc) is False
+
+    def test_an_unstamped_success_status_is_not_one(self):
+        """Reject a 2xx raised for another reason, such as an unfollowed redirect."""
+        exc = HTTPException(
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            detail="The server answered with an unfollowed redirect.",
+        )
+
+        assert is_non_json_success(exc) is False
 
 
 class TestDrainOnRebind:

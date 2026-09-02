@@ -53,7 +53,6 @@ from app.core.pagination import (
     PaginatedResponse,
     Pagination,
 )
-from app.core.utils.fields import DatabaseDialect
 
 logger = logging.getLogger(__name__)
 
@@ -391,40 +390,6 @@ class BaseManager:
         return result
 
     @classmethod
-    async def _mutate_where_returning_with_for_update(
-        cls,
-        session: AsyncSession,
-        builder: _QueryBuilder[Any],
-        *whereclause: ColumnExpressionArgument[bool],
-        returning: Iterable[str] | bool,
-        **equal_filters: Any,
-    ) -> list[Any]:
-        """Execute a DML statement with `FOR UPDATE`.
-
-        This method is a workaround for MySQL, which does not support `RETURNING` in
-        UPDATE/DELETE statements. It first selects the rows with `FOR UPDATE`, then
-        executes the DML statement, and finally returns the selected rows.
-        """
-        query = cls._build_query(
-            *whereclause, builder=_select_builder(col(cls.Model.id)), **equal_filters
-        ).with_for_update()
-        result = await cls._exec(session, query)
-
-        if row_ids := result.all():
-            ids_filter = col(cls.Model.id).in_(row_ids)
-            await cls._mutate_where(session, builder, ids_filter, returning=False)
-        else:
-            return []
-
-        if returning is True:
-            return await cls.list(session, ids_filter)
-
-        if set(returning) == {"id"}:
-            return row_ids
-
-        return await cls.values_list(session, returning, ids_filter)
-
-    @classmethod
     async def _dml_where(
         cls,
         session: AsyncSession,
@@ -436,25 +401,23 @@ class BaseManager:
         """Execute a DML statement (UPDATE or DELETE) with the specified filters.
 
         This method ensures that at least one filter is provided to avoid unintentional
-        mass updates or deletions, and checks for database dialect-specific handling of
-        the `RETURNING` clause.
+        mass updates or deletions.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :param builder: The query builder producing the UPDATE or DELETE statement.
-        :param whereclause: SQL expressions for the ``where`` clause of the statement.
-        :param returning: If True, return the affected rows as objects of ``cls.Model``.
-            If a list of column names is provided, return only those columns. Defaults
-            to False, meaning no rows are returned from the statement. A non-``bool``
-            argument is materialized before it is inspected, so a one-shot iterable
-            survives the emptiness check, the dialect branch and the row read below.
-        :param equal_filters: Keyword arguments representing column names and their
-            respective filter values.
-        :return: The result of the statement execution, or the returned rows when
-            ``returning`` asks for them.
-        :raises ValueError: If no filter is given, or if ``returning`` is an empty
-            iterable — the overloads promise a list of rows for any non-``bool``
-            ``returning``, and an empty one names no column to return.
+        :param builder: The builder producing the UPDATE or DELETE statement.
+        :param whereclause: The filter expressions applied to the statement.
+        :param returning: The column names to return, ``True`` for whole rows, or
+            ``False`` for none. A non-``bool`` argument is materialized before it is
+            inspected, so a one-shot iterable survives the emptiness check and the row
+            read below.
+        :param equal_filters: Additional equality filters applied to the statement.
+        :return: The raw cursor result when nothing is returned, a list of rows when
+            more than one column is requested, or a list of scalars for a single one.
+        :raises ValueError: If neither ``whereclause`` nor ``equal_filters`` is given,
+            or if ``returning`` is an empty iterable — the overloads promise a list of
+            rows for any non-``bool`` ``returning``, and an empty one names no column
+            to return.
         """
         if not whereclause and not equal_filters:
             raise ValueError(
@@ -466,15 +429,6 @@ class BaseManager:
                 raise ValueError(
                     "returning must name at least one column, or be True or False"
                 )
-
-        if returning and session.get_bind().name == DatabaseDialect.MYSQL:
-            return await cls._mutate_where_returning_with_for_update(
-                session,
-                builder,
-                *whereclause,
-                returning=returning,
-                **equal_filters,
-            )
 
         result = await cls._mutate_where(
             session,
@@ -523,9 +477,8 @@ class BaseManager:
     ) -> CursorResult[Any] | ChunkedIteratorResult[Any] | list[Any]:
         """Execute an UPDATE statement.
 
-        A truthy ``returning`` always yields a list — both the RETURNING path and
-        the MySQL FOR UPDATE workaround materialize one — so the overloads let a
-        caller state which of the two shapes it asked for.
+        A truthy ``returning`` always yields a list, so the overloads let a caller
+        state which of the two shapes it asked for.
 
         This method executes an UPDATE statement to update specific values for rows
         matching the specified filters.
@@ -992,26 +945,21 @@ class BaseManager:
         instance exists, it returns it. Otherwise, it creates and saves a new one.
 
         The creation step is conflict-tolerant: it uses a dialect-aware idempotent
-        insert (``INSERT ... ON CONFLICT DO NOTHING`` / ``INSERT IGNORE``) so that two
-        calls racing to create the same row do not surface a duplicate-key error. The
-        losing call no-ops on the insert and refetches the winning row with
-        ``created=False``. ``created`` is ``True`` only for the call whose insert
+        insert (``INSERT ... ON CONFLICT DO NOTHING`` on PostgreSQL and SQLite) so
+        that two calls racing to create the same row do not surface a duplicate-key
+        error. The losing call no-ops on the insert and refetches the winning row
+        with ``created=False``. ``created`` is ``True`` only for the call whose insert
         actually landed.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param instance_create: The data used to filter and possibly create the
             instance.
-        :type instance_create: B
         :param filter_include: The set of fields of `instance_create` to be included in
             the search filter. Use None (default) for all fields.
-        :type filter_include: set[str] | None
         :param extra_fields: Additional fields to be set on the created instance.
-        :type extra_fields: Any
         :return: The existing or newly created instance of `cls.Model`, and a bool
             specifying whether a new instance was created.
-        :rtype: tuple[T, bool]
         :raises HTTPBadRequestException: If a ``DatabaseError`` occurs during the
             insert commit.
         :raises RuntimeError: If the post-conflict refetch matches no row, meaning

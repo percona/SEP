@@ -30,18 +30,17 @@ from pydantic import (
 from app.core.utils.fields import AsyncDatabaseEngine
 
 #: The driver kwarg each async dialect uses for its connect timeout. asyncpg
-#: takes ``timeout``, aiomysql takes ``connect_timeout``; aiosqlite's
-#: ``timeout`` means lock wait, not connect, so SQLite is absent.
+#: takes ``timeout``; aiosqlite's ``timeout`` means lock wait, not connect, so
+#: SQLite is absent.
 _CONNECT_TIMEOUT_KEYS: dict[AsyncDatabaseEngine, str] = {
     AsyncDatabaseEngine.POSTGRESQL: "timeout",
-    AsyncDatabaseEngine.MYSQL: "connect_timeout",
 }
 
 
 class DatabaseOptions(BaseModel):
     """Define configuration options for a database connection.
 
-    :param ENGINE: The database engine to use (e.g., SQLite, MySQL, PostgreSQL).
+    :param ENGINE: The database engine to use (e.g., SQLite, PostgreSQL).
         Defaults to SQLite.
     :param USER: The username for the database connection.
     :param PASSWORD: The password for the database connection.
@@ -58,9 +57,8 @@ class DatabaseOptions(BaseModel):
         SQLAlchemy's default. Must be ``> 0``.
     :param CONNECT_TIMEOUT: Seconds to wait for a TCP connect. Unset passes no
         ``connect_args``, leaving the driver's own default. Forwarded as
-        ``timeout`` for asyncpg and ``connect_timeout`` for aiomysql; omitted
-        for SQLite, where that key means lock wait rather than connect. Must
-        be ``> 0``.
+        ``timeout`` for asyncpg; omitted for SQLite, where that key means lock
+        wait rather than connect. Must be ``> 0``.
     :param POOL_PRE_PING: Whether to test each pooled connection for liveness
         before handing it out. Defaults to ``True`` so a dead connection is
         discarded and replaced transparently. Unlike the sizing fields, this

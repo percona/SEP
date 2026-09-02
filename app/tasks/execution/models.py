@@ -44,6 +44,7 @@ _TERMINAL_STATUS_EVENT_MAP = {
     TaskHistoryStatusEnum.STOPPED: "STOPPED",
     TaskHistoryStatusEnum.LOST: "LOST",
     TaskHistoryStatusEnum.STALE: "STALE",
+    TaskHistoryStatusEnum.UNLAUNCHABLE: "UNLAUNCHABLE",
 }
 
 
