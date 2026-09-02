@@ -82,6 +82,10 @@ _NOTHING_TO_SEND_ERROR = (
 #: ``NOMAD_EXEC_ARTIFACT`` and ``NOMAD_EXEC_PYTHON_ARTIFACT`` in
 #: ``app/tasks/db/seed.py``.
 _MAIN_LOG_STEP = "run-script"
+#: The step carrying an unlaunchable execution's whole diagnostic. That
+#: execution never starts :data:`_MAIN_LOG_STEP` and writes no output files, so
+#: the general "prestart is setup machinery" rule would leave its bundle empty.
+_LAUNCH_CHECK_LOG_STEP = "check-launchable"
 _WORKER_LOST_ERROR = (
     "The worker running this send did not report back in time; it was most "
     "likely lost. Re-send to try again."
@@ -424,13 +428,30 @@ class _LogMember:
         }
 
 
-async def _add_execution_logs(
-    archive: zipfile.ZipFile, tasks_api: RemoteAPI, execution: dict[str, Any]
-) -> tuple[list[dict[str, Any]], int]:
-    """Stream one execution's captured main-step logs into the archive.
+def _log_step_for(status: TaskHistoryStatusEnum | None) -> str:
+    """Return the step whose logs carry this execution's diagnostic.
 
-    Only :data:`_MAIN_LOG_STEP` is fetched: the prestart and poststop steps
-    surrounding it log setup machinery, which is noise on a support case.
+    :param status: The execution's terminal status.
+    :return: :data:`_LAUNCH_CHECK_LOG_STEP` for an execution the node could not
+        launch, :data:`_MAIN_LOG_STEP` otherwise.
+    """
+    if status == TaskHistoryStatusEnum.UNLAUNCHABLE:
+        return _LAUNCH_CHECK_LOG_STEP
+    return _MAIN_LOG_STEP
+
+
+async def _add_execution_logs(
+    archive: zipfile.ZipFile,
+    tasks_api: RemoteAPI,
+    execution: dict[str, Any],
+    step: str,
+) -> tuple[list[dict[str, Any]], int]:
+    """Stream one execution's captured logs for ``step`` into the archive.
+
+    A single step is fetched: for a run that happened, the prestart and poststop
+    steps surrounding :data:`_MAIN_LOG_STEP` log setup machinery, which is noise
+    on a support case. The one exception is a run that never started, whose only
+    diagnostic lives in a prestart step — see :func:`_log_step_for`.
 
     Members are keyed by a record's ``(step, stream)`` group and replaced when it
     changes -- the two upstream read paths both deliver contiguous runs per group
@@ -441,6 +462,7 @@ async def _add_execution_logs(
     :param archive: The open archive to write into.
     :param tasks_api: The authenticated Tasks API client.
     :param execution: The selected execution descriptor.
+    :param step: The Nomad step whose logs to stream.
     :return: One manifest entry per log group written, and the total number of
         uncompressed bytes they carry.
     :raises AtwSendError: When the execution's logs cannot be streamed.
@@ -456,7 +478,7 @@ async def _add_execution_logs(
     member: _LogMember | None = None
     try:
         async for line in tasks_api.stream(
-            f"/history/{task_history_id}/logs/", params={"step": _MAIN_LOG_STEP}
+            f"/history/{task_history_id}/logs/", params={"step": step}
         ):
             record = _decode_log_line(line, task_history_id)
             if record is None:
@@ -540,7 +562,9 @@ async def _stage_bundle(
             file_count += len(files)
             logs: list[dict[str, Any]] = []
             if status is not None and status.is_finished():
-                logs, written = await _add_execution_logs(archive, tasks_api, execution)
+                logs, written = await _add_execution_logs(
+                    archive, tasks_api, execution, _log_step_for(status)
+                )
                 log_bytes += written
             manifest_executions.append({**execution, "files": files, "logs": logs})
         if not file_count and not log_bytes:
