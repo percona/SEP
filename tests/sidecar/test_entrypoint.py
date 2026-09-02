@@ -19,6 +19,7 @@ import re
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -29,6 +30,9 @@ SETTINGS_ENV_HELPER = SIDECAR_DIR / "settings-env.sh"
 MINT_HELPER_NAME = "grafana_service_account.py"
 
 SENTINEL_PATH = re.compile(r"/tmp/migrate-([a-z]+)\.ok")
+
+SENTINEL_PREFIX = "/tmp/migrate-"
+"""The prefix every sentinel path in the shipped entrypoint is built from."""
 
 CANONICAL_NAMES = (
     "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN",
@@ -70,13 +74,27 @@ class FakeContainer:
     def __init__(self, root: Path):
         """Lay the copied application root and the fake runtime out under ``root``.
 
+        The copied entrypoint's sentinel paths are rewritten onto a prefix unique
+        to this container, so the two cases that exercise the clearing cannot
+        invalidate each other's precondition under the suite's parallel runner.
+        The substitution count is asserted, so renaming or dropping a sentinel in
+        the shipped entrypoint fails the test rather than silently leaving the
+        copy pointed at the real ``/tmp`` paths.
+
         :param root: The per-test temporary directory to build in.
         """
         self.app_dir = root / "app"
         self.app_dir.mkdir()
+        self.sentinel_prefix = f"{SENTINEL_PREFIX}{uuid4().hex}-"
         for source in (ENTRYPOINT, SETTINGS_ENV_HELPER):
             target = self.app_dir / source.name
-            target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+            text = source.read_text(encoding="utf-8")
+            if source is ENTRYPOINT:
+                assert text.count(SENTINEL_PREFIX) == len(schema_steps()), (
+                    "the entrypoint no longer clears one sentinel per schema step"
+                )
+                text = text.replace(SENTINEL_PREFIX, self.sentinel_prefix)
+            target.write_text(text, encoding="utf-8")
             target.chmod(0o755)
         (self.app_dir / MINT_HELPER_NAME).write_text(STUB_MINT_HELPER, encoding="utf-8")
 
@@ -144,6 +162,14 @@ class FakeContainer:
         :return: One entry per argument, in order.
         """
         return self._argv_file.read_text(encoding="utf-8").splitlines()
+
+    @property
+    def owned_sentinels(self) -> set[str]:
+        """Return the sentinel paths this container's entrypoint copy clears.
+
+        :return: One absolute path per schema step, under this container's prefix.
+        """
+        return {f"{self.sentinel_prefix}{step}.ok" for step in schema_steps()}
 
 
 @pytest.fixture
@@ -225,17 +251,18 @@ def cleared_sentinels() -> set[str]:
 
 
 @pytest.fixture
-def owned_sentinels() -> Iterator[set[str]]:
-    """Return the sentinel paths this suite owns, removing them afterwards.
+def owned_sentinels(container: FakeContainer) -> Iterator[set[str]]:
+    """Return the sentinel paths this container owns, removing them afterwards.
 
-    The paths are hardcoded across the entrypoint, the program table and the
-    healthcheck alike, so these tests act on the real ``/tmp`` ones rather than
-    introducing a directory knob that would exist only for them. Cleaning up
-    keeps a failed run from leaving markers behind.
+    Each container rewrites its entrypoint copy onto its own prefix, so the two
+    cases below never touch the same paths and neither can leave the other
+    asserting against markers a sibling removed. Cleaning up keeps a failed run
+    from leaving markers behind.
 
+    :param container: The fake container whose entrypoint copy names them.
     :return: One absolute sentinel path per schema step.
     """
-    paths = {f"/tmp/migrate-{step}.ok" for step in schema_steps()}
+    paths = container.owned_sentinels
     yield paths
     for path in paths:
         Path(path).unlink(missing_ok=True)
@@ -272,8 +299,7 @@ def test_clearing_is_not_fatal_when_no_sentinel_exists(
     The entrypoint runs under ``errexit``, so a clear that failed on an unmatched
     name would kill PID 1 instead of starting the container.
     """
-    for path in owned_sentinels:
-        Path(path).unlink(missing_ok=True)
+    assert not any(Path(path).exists() for path in owned_sentinels)
 
     result = container.start()
 

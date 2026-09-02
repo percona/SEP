@@ -58,7 +58,7 @@ def sentinel_names() -> Iterator[list[str]]:
 
     :return: One name per schema step, positionally aligned with them.
     """
-    names = [f"sep1946-{step}-{uuid4().hex}" for step in SCHEMA_STEPS]
+    names = [f"wait-for-schema-{step}-{uuid4().hex}" for step in SCHEMA_STEPS]
     yield names
     for name in names:
         Path(f"/tmp/migrate-{name}.ok").unlink(missing_ok=True)
@@ -107,6 +107,16 @@ def run_gate(tmp_path: Path) -> RunGate:
         )
 
     return run
+
+
+def test_the_program_table_declares_schema_steps():
+    """Pin the derived step list, so a parse that yields nothing fails here.
+
+    ``SCHEMA_STEPS`` is derived at import. An empty tuple would leave the gate
+    assertion below matching ``./wait_for_schema.sh`` with no arguments, which
+    the real command contains — so it would pass while asserting nothing.
+    """
+    assert SCHEMA_STEPS
 
 
 def test_the_gate_passes_once_every_sentinel_is_present(
