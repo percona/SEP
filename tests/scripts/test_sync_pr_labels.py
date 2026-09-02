@@ -226,7 +226,7 @@ def test_sync_blast_radius_labels_adds_and_removes_labels():
 def _event(
     *,
     event="labeled",
-    label="skip-test",
+    label="qa not required",
     actor_type="User",
     created_at="2026-08-27T04:42:09Z",
     event_id=1,
@@ -240,7 +240,7 @@ def _event(
     )
 
 
-def _skip_test_client(present, events=()):
+def _qa_not_required_client(present, events=()):
     """Build a mock client whose PR carries ``present`` labels and ``events``."""
     client = Mock(spec=sync_pr_labels.GitHubClient)
     client.list_issue_labels.return_value = set(present)
@@ -248,79 +248,81 @@ def _skip_test_client(present, events=()):
     return client
 
 
-def _sync_skip_test(client, *, eligible):
-    """Run the ``skip-test`` sync against a mock client for one eligibility."""
-    sync_pr_labels.sync_skip_test_label(
+def _sync_qa_not_required(client, *, eligible):
+    """Run the ``qa not required`` sync against a mock client for one eligibility."""
+    sync_pr_labels.sync_qa_not_required_label(
         client, "percona", "SEP", 42, eligible=eligible, log=lambda _message: None
     )
 
 
-def test_skip_test_eligible_on_dependabot_branch():
+def test_qa_not_required_eligible_on_dependabot_branch():
     """Qualify a Dependabot branch regardless of which files it changes."""
-    assert sync_pr_labels.skip_test_eligible(
+    assert sync_pr_labels.qa_not_required_eligible(
         [_file("poetry.lock"), _file("pyproject.toml")],
         "dependabot/pip/urllib3-2.5.0",
     )
 
 
-def test_skip_test_eligible_on_doc_only_pr():
+def test_qa_not_required_eligible_on_doc_only_pr():
     """Qualify a branch whose every changed file is documentation."""
-    assert sync_pr_labels.skip_test_eligible(
+    assert sync_pr_labels.qa_not_required_eligible(
         [_file("README.md"), _file(".gitignore")], "SEP-1"
     )
 
 
-def test_skip_test_eligible_covers_dist_subtree():
+def test_qa_not_required_eligible_covers_dist_subtree():
     """Qualify built assets at any depth under ``dist/``."""
-    assert sync_pr_labels.skip_test_eligible(
+    assert sync_pr_labels.qa_not_required_eligible(
         [_file("dist/app.js"), _file("dist/a/b.css")], "SEP-1"
     )
 
 
-def test_skip_test_eligible_on_a_codeowners_only_pr():
+def test_qa_not_required_eligible_on_a_codeowners_only_pr():
     """Qualify a CODEOWNERS-only PR through the repaired glob.
 
     The rule this replaces spelled the path root-relative as ``CODEOWNERS``,
     which never matched, so this case asserts the corrected literal.
     """
-    assert sync_pr_labels.skip_test_eligible([_file(".github/CODEOWNERS")], "SEP-1")
+    assert sync_pr_labels.qa_not_required_eligible(
+        [_file(".github/CODEOWNERS")], "SEP-1"
+    )
 
 
-def test_skip_test_glob_targets_the_real_codeowners_path():
+def test_qa_not_required_glob_targets_the_real_codeowners_path():
     """Point the CODEOWNERS glob at the path the repository actually uses."""
-    assert ".github/CODEOWNERS" in sync_pr_labels.SKIP_TEST_GLOBS
+    assert ".github/CODEOWNERS" in sync_pr_labels.QA_NOT_REQUIRED_GLOBS
     assert (_PROJECT_ROOT / ".github" / "CODEOWNERS").is_file()
     assert not (_PROJECT_ROOT / "CODEOWNERS").exists()
 
 
-def test_skip_test_not_eligible_when_codeowners_moves_to_the_root():
+def test_qa_not_required_not_eligible_when_codeowners_moves_to_the_root():
     """Reject a root-level ``CODEOWNERS``, which the literal glob excludes."""
-    assert not sync_pr_labels.skip_test_eligible([_file("CODEOWNERS")], "SEP-1")
+    assert not sync_pr_labels.qa_not_required_eligible([_file("CODEOWNERS")], "SEP-1")
 
 
-def test_skip_test_not_eligible_on_mixed_pr():
+def test_qa_not_required_not_eligible_on_mixed_pr():
     """Reject a PR that mixes documentation with code."""
-    assert not sync_pr_labels.skip_test_eligible(
+    assert not sync_pr_labels.qa_not_required_eligible(
         [_file("README.md"), _file("app/main.py")], "SEP-1"
     )
 
 
-def test_skip_test_not_eligible_on_empty_file_list():
+def test_qa_not_required_not_eligible_on_empty_file_list():
     """Reject an empty file list instead of matching every glob vacuously."""
-    assert not sync_pr_labels.skip_test_eligible([], "SEP-1")
+    assert not sync_pr_labels.qa_not_required_eligible([], "SEP-1")
 
 
-def test_skip_test_manual_when_newest_event_is_a_user():
+def test_qa_not_required_manual_when_newest_event_is_a_user():
     """Treat the newest non-bot application as a human override."""
     events = [
         _event(actor_type="Bot", created_at="2026-08-27T04:42:09Z", event_id=1),
         _event(actor_type="User", created_at="2026-08-27T13:09:50Z", event_id=2),
     ]
 
-    assert sync_pr_labels.skip_test_manually_applied(events)
+    assert sync_pr_labels.qa_not_required_manually_applied(events)
 
 
-def test_skip_test_not_manual_when_newest_event_is_the_bot():
+def test_qa_not_required_not_manual_when_newest_event_is_the_bot():
     """Discard an earlier human application once the bot re-applies the label."""
     events = [
         _event(actor_type="User", created_at="2026-08-27T04:42:09Z", event_id=1),
@@ -333,10 +335,10 @@ def test_skip_test_not_manual_when_newest_event_is_the_bot():
         _event(actor_type="Bot", created_at="2026-08-27T13:09:50Z", event_id=3),
     ]
 
-    assert not sync_pr_labels.skip_test_manually_applied(events)
+    assert not sync_pr_labels.qa_not_required_manually_applied(events)
 
 
-def test_skip_test_not_manual_when_newest_event_is_an_unlabel():
+def test_qa_not_required_not_manual_when_newest_event_is_an_unlabel():
     """Treat a removal as the end of any standing human override."""
     events = [
         _event(actor_type="User", created_at="2026-08-27T04:42:09Z", event_id=1),
@@ -348,18 +350,18 @@ def test_skip_test_not_manual_when_newest_event_is_an_unlabel():
         ),
     ]
 
-    assert not sync_pr_labels.skip_test_manually_applied(events)
+    assert not sync_pr_labels.qa_not_required_manually_applied(events)
 
 
-def test_skip_test_manual_when_no_events_exist():
+def test_qa_not_required_manual_when_no_events_exist():
     """Keep a label whose provenance the events API cannot explain."""
-    assert sync_pr_labels.skip_test_manually_applied([])
-    assert sync_pr_labels.skip_test_manually_applied(
+    assert sync_pr_labels.qa_not_required_manually_applied([])
+    assert sync_pr_labels.qa_not_required_manually_applied(
         [_event(label="large-diff", actor_type="Bot")]
     )
 
 
-def test_skip_test_provenance_ignores_response_order():
+def test_qa_not_required_provenance_ignores_response_order():
     """Reach the same verdict however the events endpoint orders its payload."""
     ascending = [
         _event(actor_type="User", created_at="2026-08-27T04:42:09Z", event_id=1),
@@ -375,10 +377,10 @@ def test_skip_test_provenance_ignores_response_order():
     shuffled = [ascending[index] for index in (1, 2, 0)]
 
     for ordering in (ascending, list(reversed(ascending)), shuffled):
-        assert sync_pr_labels.skip_test_manually_applied(ordering) is False
+        assert sync_pr_labels.qa_not_required_manually_applied(ordering) is False
 
 
-def test_skip_test_provenance_breaks_same_second_ties_by_id():
+def test_qa_not_required_provenance_breaks_same_second_ties_by_id():
     """Break a same-second tie with the monotonic event id."""
     tied = [
         _event(
@@ -392,74 +394,81 @@ def test_skip_test_provenance_breaks_same_second_ties_by_id():
         ),
     ]
 
-    assert sync_pr_labels.skip_test_manually_applied(tied) is False
-    assert sync_pr_labels.skip_test_manually_applied(list(reversed(tied))) is False
+    assert sync_pr_labels.qa_not_required_manually_applied(tied) is False
+    assert (
+        sync_pr_labels.qa_not_required_manually_applied(list(reversed(tied))) is False
+    )
 
 
-def test_skip_test_not_manual_for_a_bot_created_pr_label():
+def test_qa_not_required_not_manual_for_a_bot_created_pr_label():
     """Classify a label applied under ``GITHUB_TOKEN`` as automatic.
 
-    ``scripts/release.py`` opens the dev-bump PR with ``--label skip-test``
+    ``scripts/release.py`` opens the dev-bump PR with the ``qa not required`` label
     through a token whose actor is ``github-actions[bot]``, so that label stays
     removable exactly as it is today.
     """
     events = [_event(actor_type="Bot", created_at="2026-08-27T13:09:50Z", event_id=9)]
 
-    assert not sync_pr_labels.skip_test_manually_applied(events)
+    assert not sync_pr_labels.qa_not_required_manually_applied(events)
 
 
-def test_sync_skip_test_adds_when_eligible_and_absent():
+def test_sync_qa_not_required_adds_when_eligible_and_absent():
     """Apply the label to an eligible PR that does not carry it yet."""
-    client = _skip_test_client(present=set())
+    client = _qa_not_required_client(present=set())
 
-    _sync_skip_test(client, eligible=True)
+    _sync_qa_not_required(client, eligible=True)
 
-    client.add_issue_labels.assert_called_once_with("percona", "SEP", 42, ["skip-test"])
+    client.add_issue_labels.assert_called_once_with(
+        "percona", "SEP", 42, ["qa not required"]
+    )
     client.remove_issue_label.assert_not_called()
 
 
-def test_sync_skip_test_removes_a_bot_applied_stale_label():
+def test_sync_qa_not_required_removes_a_bot_applied_stale_label():
     """Strip a label the bot applied once the PR stops qualifying."""
-    client = _skip_test_client(
-        present={"skip-test"}, events=[_event(actor_type="Bot", event_id=1)]
+    client = _qa_not_required_client(
+        present={"qa not required"}, events=[_event(actor_type="Bot", event_id=1)]
     )
 
-    _sync_skip_test(client, eligible=False)
+    _sync_qa_not_required(client, eligible=False)
 
-    client.remove_issue_label.assert_called_once_with("percona", "SEP", 42, "skip-test")
+    client.remove_issue_label.assert_called_once_with(
+        "percona", "SEP", 42, "qa not required"
+    )
     client.add_issue_labels.assert_not_called()
 
 
-def test_sync_skip_test_keeps_a_human_applied_label():
+def test_sync_qa_not_required_keeps_a_human_applied_label():
     """Leave a human-applied label in place on a PR that no longer qualifies."""
-    client = _skip_test_client(
-        present={"skip-test"}, events=[_event(actor_type="User", event_id=1)]
+    client = _qa_not_required_client(
+        present={"qa not required"}, events=[_event(actor_type="User", event_id=1)]
     )
 
-    _sync_skip_test(client, eligible=False)
+    _sync_qa_not_required(client, eligible=False)
 
     client.remove_issue_label.assert_not_called()
     client.add_issue_labels.assert_not_called()
 
 
-def test_sync_skip_test_is_idempotent_when_already_correct():
+def test_sync_qa_not_required_is_idempotent_when_already_correct():
     """Issue no request when the label already matches eligibility."""
-    client = _skip_test_client(present={"skip-test"})
+    client = _qa_not_required_client(present={"qa not required"})
 
-    _sync_skip_test(client, eligible=True)
+    _sync_qa_not_required(client, eligible=True)
 
     client.add_issue_labels.assert_not_called()
     client.remove_issue_label.assert_not_called()
     client.list_issue_events.assert_not_called()
 
 
-def test_labeler_config_declares_no_skip_test_rule():
-    """Keep ``skip-test`` out of the labeler config that ``sync-labels`` walks.
+def test_labeler_config_declares_no_qa_not_required_rule():
+    """Keep the label out of the labeler config that ``sync-labels`` walks.
 
     A rule here would put the label back into the action's sync loop, which is
     what strips a manually-applied instance.
     """
-    assert "skip-test:" not in {line.strip() for line in _LABELER_TEXT.splitlines()}
+    declared = {line.strip() for line in _LABELER_TEXT.splitlines()}
+    assert f"{sync_pr_labels.QA_NOT_REQUIRED_LABEL}:" not in declared
 
 
 def test_ci_python_filter_covers_the_labeler_config():
@@ -671,7 +680,7 @@ def test_list_issue_events_walks_every_page(monkeypatch):
         {
             "id": 30105340137,
             "event": "labeled",
-            "label": {"name": "skip-test"},
+            "label": {"name": "qa not required"},
             "actor": {"login": "yyyyyyyan", "type": "User"},
             "created_at": "2026-08-27T13:09:50Z",
         },
@@ -690,12 +699,12 @@ def test_list_issue_events_walks_every_page(monkeypatch):
     assert len(events) == page_size - unfiltered_on_first_page + 1
     assert events[-1] == sync_pr_labels.LabelEvent(
         event="labeled",
-        label="skip-test",
+        label="qa not required",
         actor_type="User",
         created_at="2026-08-27T13:09:50Z",
         event_id=30105340137,
     )
-    assert sync_pr_labels.skip_test_manually_applied(events)
+    assert sync_pr_labels.qa_not_required_manually_applied(events)
 
 
 def test_list_issue_events_treats_a_missing_actor_as_non_bot(monkeypatch):
@@ -704,7 +713,7 @@ def test_list_issue_events_treats_a_missing_actor_as_non_bot(monkeypatch):
         {
             "id": 7,
             "event": "labeled",
-            "label": {"name": "skip-test"},
+            "label": {"name": "qa not required"},
             "actor": None,
             "created_at": "2026-08-27T13:09:50Z",
         }
@@ -715,7 +724,7 @@ def test_list_issue_events_treats_a_missing_actor_as_non_bot(monkeypatch):
     events = client.list_issue_events("percona", "SEP", 1)
 
     assert events[0].actor_type == ""
-    assert sync_pr_labels.skip_test_manually_applied(events)
+    assert sync_pr_labels.qa_not_required_manually_applied(events)
 
 
 def test_request_raises_on_unexpected_not_found(monkeypatch):
@@ -780,7 +789,7 @@ def test_main_fetches_the_file_list_once_and_feeds_both_label_syncs(
 ):
     """Reuse a single file fetch across both label syncs.
 
-    ``main`` owns the fetch so that blast-radius and ``skip-test`` share one
+    ``main`` owns the fetch so that blast-radius and ``qa not required`` share one
     result; this pins that wiring, which no single-function test can observe.
     """
     monkeypatch.setenv("GITHUB_TOKEN", "test-token")
@@ -830,4 +839,4 @@ def test_main_fetches_the_file_list_once_and_feeds_both_label_syncs(
         for method, _url, body in recorded
         if body is not None
     ]
-    assert writes == [("POST", {"labels": ["skip-test"]})]
+    assert writes == [("POST", {"labels": ["qa not required"]})]

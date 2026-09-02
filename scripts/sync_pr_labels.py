@@ -18,16 +18,16 @@
 
 The action matches path globs only, so three labels need code: ``large-diff``
 (a changed-line count), ``app-isolated`` (every file inside one app slice), and
-``skip-test`` (a Dependabot or doc-only PR). This script reads ``app:<name>``
+``qa not required`` (a Dependabot or doc-only PR). This script reads ``app:<name>``
 globs from the base-branch ``.github/labeler.yml``, fetches the PR file list via
 the GitHub REST API, and adds or removes those labels.
 
-``skip-test`` is computed here rather than declared in ``.github/labeler.yml``
+``qa not required`` is computed here rather than declared in ``.github/labeler.yml``
 because the action's ``sync-labels`` loop removes any label it holds a rule for,
 which strips an instance a maintainer applied by hand and leaves the merge
 gate's only QA bypass unusable. Provenance comes from the issue-events API, and
 the signal it offers is *identity class*, never intent: the predicate
-implemented below is "the newest ``skip-test`` event applied the label and its
+implemented below is "the newest ``qa not required`` event applied the label and its
 actor was not a bot". That is exact for the two actors that matter — the labeler
 and this script are both ``github-actions[bot]``, a maintainer is a ``User`` —
 and deliberately inexact in one direction, since automation authenticating with
@@ -70,9 +70,9 @@ GENERATED_PREFIXES = (
 )
 GENERATED_EXACT = frozenset({"poetry.lock", "frontend/pnpm-lock.yaml"})
 
-SKIP_TEST_LABEL = "skip-test"
-SKIP_TEST_GLOBS = (".github/CODEOWNERS", "README.md", ".gitignore", "dist/**")
-SKIP_TEST_HEAD_BRANCH = re.compile(r"^dependabot/")
+QA_NOT_REQUIRED_LABEL = "qa not required"
+QA_NOT_REQUIRED_GLOBS = (".github/CODEOWNERS", "README.md", ".gitignore", "dist/**")
+QA_NOT_REQUIRED_HEAD_BRANCH = re.compile(r"^dependabot/")
 BOT_ACTOR_TYPE = "Bot"
 
 _LABEL_KEY = re.compile(r"^([A-Za-z0-9:_-]+):\s*$")
@@ -315,23 +315,23 @@ def sync_blast_radius_labels(
             log(f"Removed {name}")
 
 
-def skip_test_eligible(files: list[PrFile], head_ref: str) -> bool:
-    """Return whether a pull request qualifies for an automatic ``skip-test``.
+def qa_not_required_eligible(files: list[PrFile], head_ref: str) -> bool:
+    """Return whether a pull request qualifies for an automatic ``qa not required``.
 
     :param files: Changed files from the pulls list-files API.
     :param head_ref: Bare head branch name of the pull request.
     :return: ``True`` for a Dependabot branch or an all-documentation diff.
     """
-    if SKIP_TEST_HEAD_BRANCH.match(head_ref):
+    if QA_NOT_REQUIRED_HEAD_BRANCH.match(head_ref):
         return True
     return bool(files) and all(
-        any(match_glob(glob, file.filename) for glob in SKIP_TEST_GLOBS)
+        any(match_glob(glob, file.filename) for glob in QA_NOT_REQUIRED_GLOBS)
         for file in files
     )
 
 
-def skip_test_manually_applied(events: list[LabelEvent]) -> bool:
-    """Return whether the newest ``skip-test`` event was a non-bot application.
+def qa_not_required_manually_applied(events: list[LabelEvent]) -> bool:
+    """Return whether the newest ``qa not required`` event was a non-bot application.
 
     An empty history yields ``True``: a label this script cannot account for is
     never stripped.
@@ -339,7 +339,7 @@ def skip_test_manually_applied(events: list[LabelEvent]) -> bool:
     :param events: Label events recorded against the pull request.
     :return: ``True`` when the label must survive an automatic removal.
     """
-    relevant = [event for event in events if event.label == SKIP_TEST_LABEL]
+    relevant = [event for event in events if event.label == QA_NOT_REQUIRED_LABEL]
     if not relevant:
         return True
     newest = max(relevant, key=lambda event: event.order_key)
@@ -348,7 +348,7 @@ def skip_test_manually_applied(events: list[LabelEvent]) -> bool:
     )
 
 
-def sync_skip_test_label(
+def sync_qa_not_required_label(
     client: GitHubClient,
     owner: str,
     repo: str,
@@ -357,7 +357,7 @@ def sync_skip_test_label(
     eligible: bool,
     log: Callable[[str], None] = print,
 ) -> None:
-    """Add or remove ``skip-test``, leaving a human-applied label in place.
+    """Add or remove ``qa not required``, leaving a human-applied label in place.
 
     The events endpoint is consulted only on the removal branch, so the common
     path costs no extra request.
@@ -369,18 +369,18 @@ def sync_skip_test_label(
     :param eligible: Whether the pull request qualifies for the label.
     :param log: Callable for informational messages.
     """
-    present = SKIP_TEST_LABEL in client.list_issue_labels(owner, repo, pr_number)
+    present = QA_NOT_REQUIRED_LABEL in client.list_issue_labels(owner, repo, pr_number)
 
     if eligible and not present:
-        client.add_issue_labels(owner, repo, pr_number, [SKIP_TEST_LABEL])
-        log(f"Added {SKIP_TEST_LABEL}")
+        client.add_issue_labels(owner, repo, pr_number, [QA_NOT_REQUIRED_LABEL])
+        log(f"Added {QA_NOT_REQUIRED_LABEL}")
     elif not eligible and present:
         events = client.list_issue_events(owner, repo, pr_number)
-        if skip_test_manually_applied(events):
-            log(f"Kept {SKIP_TEST_LABEL} (applied by hand)")
+        if qa_not_required_manually_applied(events):
+            log(f"Kept {QA_NOT_REQUIRED_LABEL} (applied by hand)")
         else:
-            client.remove_issue_label(owner, repo, pr_number, SKIP_TEST_LABEL)
-            log(f"Removed {SKIP_TEST_LABEL}")
+            client.remove_issue_label(owner, repo, pr_number, QA_NOT_REQUIRED_LABEL)
+            log(f"Removed {QA_NOT_REQUIRED_LABEL}")
 
 
 class UrllibGitHubClient:
@@ -624,12 +624,12 @@ def main(argv: list[str] | None = None) -> int:
         apply_blast_radius_labels(
             client, args.owner, args.repo, args.pr_number, files, args.labeler, log=log
         )
-        sync_skip_test_label(
+        sync_qa_not_required_label(
             client,
             args.owner,
             args.repo,
             args.pr_number,
-            eligible=skip_test_eligible(files, args.head_ref),
+            eligible=qa_not_required_eligible(files, args.head_ref),
             log=log,
         )
     except urllib.error.URLError as exc:
