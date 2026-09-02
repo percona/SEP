@@ -114,6 +114,19 @@ _SUDO_VALUE_OPTIONS = (
     "|--role|--command-timeout|--type|--other-user|--user"
 )
 
+#: ``sudo`` options that take no value, so stepping over one leaves the next
+#: word still the command. Every other ``-*`` declines: an option outside both
+#: tables may consume the token after it, and resolving that token as a command
+#: would abort a run the node would have completed. ``-e``/``-i``/``-l``/``-s``
+#: are deliberately absent — they change how the remaining words are read
+#: rather than merely preceding them, so the check declines them too.
+_SUDO_FLAG_OPTIONS = (
+    "-A|-B|-b|-E|-H|-K|-k|-n|-P|-S|-V|-v"
+    "|--askpass|--background|--bell|--help|--non-interactive|--preserve-env"
+    "|--preserve-groups|--remove-timestamp|--reset-timestamp|--set-home"
+    "|--stdin|--validate|--version"
+)
+
 #: The interpreter ``prepare-env`` builds its virtualenv with, and therefore the
 #: one ``exec-python-artifact`` actually needs on the node. That spec's
 #: ``run-script`` always execs the venv python, never the interpreter meta, so
@@ -167,6 +180,19 @@ def _launch_check_shell(
     decides where the command resolves, and resolving against the step's own
     environment instead would report a runnable execution as unlaunchable.
 
+    A first token beginning with ``-`` is declined for the same reason ``env``
+    is: ``env -S`` parses leading options itself, so ``-u FOO bash`` unsets
+    ``FOO`` and runs ``bash``, and resolving ``-u`` as a command name would
+    abort an execution the node would have completed.
+
+    A non-absolute path holding a slash is declined because it resolves against
+    this step's cwd, which is not the launcher's — ``run-script`` pins a
+    ``work_dir`` under the task dir and this step pins none. That answers about
+    the wrong directory in both directions, and the direction that hurts is a
+    payload-relative interpreter present only under that ``work_dir``, which
+    resolving here would abort despite the launcher running it. The check
+    cannot inspect that cwd, so the whole form is declined.
+
     ``run-command`` is checked against a single word-split of its meta, which
     its launcher passes to ``xargs`` as one argv element rather than splitting.
     Every producer emits a single token today, so the two agree; a multi-token
@@ -198,14 +224,21 @@ def _launch_check_shell(
         )
 
     def resolve_or_abort(token: str, name: str) -> str:
-        # `command -v` answers "would the shell accept this word", which for a
-        # token holding a slash is not "can the node exec it": dash and busybox
-        # ash both report a bare-existing path as found, so a non-executable
-        # interpreter -- or a directory -- passes here and the run lands in
-        # FAILED, the outcome this step exists to separate out. Only bash
-        # checks the mode. Test the path directly and keep `command -v` for the
-        # bare names it is right for, where it does search PATH for an
-        # executable.
+        """Return the sh that resolves ``token`` or aborts naming ``name``.
+
+        A token holding a slash is tested with ``[ -x ]`` and ``[ ! -d ]``
+        rather than ``command -v``, which answers "would the shell accept this
+        word" and not "can the node exec it": dash and busybox ash both report
+        a bare-existing path as found whatever its mode, so a non-executable
+        interpreter — or a directory — would pass and the run would land in
+        ``FAILED``, the outcome this step exists to separate out. Only bash
+        checks the mode. Bare names keep ``command -v``, which does search
+        ``PATH`` for an executable and is right for them.
+
+        :param token: The already-quoted shell word to resolve.
+        :param name: The command to name in the abort diagnostic.
+        :return: The POSIX sh fragment performing the resolution.
+        """
         return (
             f"case {token} in "
             f"*/*) [ -x {token} ] && [ ! -d {token} ];; "
@@ -213,12 +246,6 @@ def _launch_check_shell(
             f"esac || {{ {abort(name)}; }}; "
         )
 
-    # `env -S` applies a leading NAME=VALUE before locating the command, so a
-    # `PATH=/opt/toolchain bash` resolves against the assigned PATH there and
-    # against the step's own PATH here. Rather than skip the assignment and
-    # resolve the wrong environment -- which aborts an execution the launcher
-    # would run -- decline the form entirely, exactly as for the other
-    # constructs the two tokenizers disagree about.
     decline_assignment = f'case "$1" in *=*) {decline};; esac; '
     # Records the strip rather than announcing it, so the notice is emitted only
     # once the run is known to launch. Reporting it above an abort would head an
@@ -239,8 +266,7 @@ def _launch_check_shell(
         "--) shift; break;; "
         "--*=*) shift;; "
         f"{_SUDO_VALUE_OPTIONS}) shift; if [ $# -gt 0 ]; then shift; fi;; "
-        "--?*) shift;; "
-        "-?) shift;; "
+        f"{_SUDO_FLAG_OPTIONS}) shift;; "
         f"-*) {decline};; "
         "*) break;; "
         "esac; done; "
@@ -278,14 +304,7 @@ def _launch_check_shell(
         "set -f; "
         "set -- $m; "
         "[ $# -gt 0 ] || exit 0; "
-        f'case "$1" in env|*/env) {decline};; esac; '
-        # A relative path resolves against the step's cwd, which is not the
-        # launcher's — run-script pins a work_dir under the task dir and this
-        # step pins none. Resolving one here answers about the wrong directory
-        # in both directions, and the direction that hurts is a payload-relative
-        # interpreter that exists only under that work_dir: resolving it here
-        # would abort an execution the launcher runs. The check cannot inspect
-        # that cwd, so every non-absolute path is declined.
+        f'case "$1" in env|*/env|-*) {decline};; esac; '
         f'case "$1" in /*) ;; */*) {decline};; esac; '
         + ("eff=$m; " + strip if allow_strip else "")
         + resolution

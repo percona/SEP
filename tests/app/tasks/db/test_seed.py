@@ -842,6 +842,24 @@ class TestLaunchCheckShell:
                 "env FOO=1 nosuchinterp",
             ),
             ("user-no-sudo", "/tmp/g/ba*", LAUNCH_CHECK_EXIT_CODE, None),
+            ("user-no-sudo", "-u FOO bash", 0, "-u FOO bash"),
+            ("user-no-sudo", "-i bash", 0, "-i bash"),
+            ("user-sudo", "sudo -x dbuser bash", 0, "sudo -x dbuser bash"),
+            (
+                "user-sudo",
+                "sudo --unknown-opt dbuser bash",
+                0,
+                "sudo --unknown-opt dbuser bash",
+            ),
+            ("user-sudo", "sudo -i nosuchinterp", 0, "sudo -i nosuchinterp"),
+            ("user-sudo", "sudo -n nosuchinterp", LAUNCH_CHECK_EXIT_CODE, None),
+            (
+                "user-sudo",
+                "sudo --non-interactive nosuchinterp",
+                LAUNCH_CHECK_EXIT_CODE,
+                None,
+            ),
+            ("user-sudo", "sudo -E -H psql", 0, "sudo -E -H psql"),
         ],
     )
     def test_resolves_the_launch_chain(
@@ -871,6 +889,8 @@ class TestLaunchCheckShell:
             ("user-sudo", "sudo -u postgres nosuchinterp", "nosuchinterp"),
             ("user-no-sudo", "nosuchinterp", "nosuchinterp"),
             ("user-no-sudo", "/tmp/g/ba*", "/tmp/g/ba*"),
+            ("user-sudo", "sudo -n nosuchinterp", "nosuchinterp"),
+            ("user-sudo", "sudo --non-interactive nosuchinterp", "nosuchinterp"),
         ],
     )
     def test_abort_line_names_the_unresolvable_command_and_node(
