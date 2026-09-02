@@ -75,6 +75,9 @@ COPY --chown=0:1001 --chmod=440 ./alembic.ini .
 COPY --chown=0:1001 --chmod=440 ./sidecar/supervisord.conf ./supervisord.conf
 COPY --chown=0:1001 --chmod=550 ./sidecar/healthcheck.sh ./healthcheck.sh
 COPY --chown=0:1001 --chmod=550 ./sidecar/entrypoint.sh ./entrypoint.sh
+# Invoked directly by each API program's command rather than through an
+# interpreter, hence 550 where the python helpers below are 440
+COPY --chown=0:1001 --chmod=550 ./sidecar/wait_for_schema.sh ./wait_for_schema.sh
 # Sourced by entrypoint.sh, never executed, hence 440 rather than 550
 COPY --chown=0:1001 --chmod=440 ./sidecar/settings-env.sh ./settings-env.sh
 # Run through the interpreter and never executed directly -- grafana_service_account.py
