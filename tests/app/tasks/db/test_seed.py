@@ -20,6 +20,7 @@ import re
 import subprocess
 import time
 from pathlib import Path
+from typing import TypedDict
 
 import pytest
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
@@ -96,10 +97,24 @@ NODE_SHAPES = {
     "user-no-sudo": (UNPRIVILEGED_UID, False),
     "user-sudo": (UNPRIVILEGED_UID, True),
 }
+
+
+class LaunchCheckVariant(TypedDict):
+    """Carry one launch-check variant's keyword arguments.
+
+    Typed because the mapping is unpacked as ``**kwargs``: a bare dict of
+    heterogeneous values discards every argument's type at the call.
+    """
+
+    meta_key: str
+    allow_strip: bool
+    launches: str | None
+
+
 #: The launch-check variants the seeded specs build, as the keyword arguments
 #: that build each. ``python-artifact`` resolves the venv builder rather than the
 #: interpreter meta, because its ``run-script`` never execs the meta.
-LAUNCH_CHECK_VARIANTS = {
+LAUNCH_CHECK_VARIANTS: dict[str, LaunchCheckVariant] = {
     "artifact": {"meta_key": "interpreter", "allow_strip": True, "launches": None},
     "command": {"meta_key": "command", "allow_strip": False, "launches": None},
     "python-artifact": {
@@ -627,6 +642,16 @@ class TestLaunchCheckTemplateShape:
             None,
         )
 
+    def _check_script(self, template: dict) -> str:
+        """Return the shell body of the template's launch-check step.
+
+        Names the missing step when there is none, rather than subscripting
+        ``None`` and reporting a ``TypeError`` several frames from the cause.
+        """
+        task = self._check_task(template)
+        assert task is not None, "template carries no check-launchable step"
+        return task["Config"]["args"][1]
+
     @pytest.mark.parametrize("template", NOMAD_TEMPLATES_WITH_LAUNCH_CHECK)
     def test_check_is_a_non_sidecar_prestart_task(self, template) -> None:
         """Assert the check runs, and can abort the allocation, before the payload."""
@@ -658,7 +683,7 @@ class TestLaunchCheckTemplateShape:
         assertion would report as healthy.
         """
         meta_key = "command" if template is NOMAD_RUN_COMMAND else "interpreter"
-        script = self._check_task(template)["Config"]["args"][1]
+        script = self._check_script(template)
         # An unprivileged node with no `sudo`, so a bare `sudo ` prefix aborts
         # in every variant: the python spec's launcher prefixes the venv python
         # with it, so that variant resolves `sudo` even though it deliberately
@@ -688,7 +713,7 @@ class TestLaunchCheckTemplateShape:
     @pytest.mark.parametrize("template", ARTIFACT_TEMPLATES_WITH_STRIP)
     def test_artifact_checks_hand_the_interpreter_forward(self, template) -> None:
         """Assert the artifact specs' checks write the effective interpreter."""
-        script = self._check_task(template)["Config"]["args"][1]
+        script = self._check_script(template)
 
         assert EFFECTIVE_INTERPRETER_PATH in script
 
@@ -699,8 +724,9 @@ class TestLaunchCheckTemplateShape:
         here would never be read — and its meta carries no SEP-applied ``sudo``
         prefix to strip in the first place.
         """
-        script = self._check_task(NOMAD_RUN_COMMAND)["Config"]["args"][1]
+        script = self._check_script(NOMAD_RUN_COMMAND)
 
+        assert script
         assert EFFECTIVE_INTERPRETER_PATH not in script
 
     @pytest.mark.parametrize("template", NOMAD_TEMPLATES_WITH_LAUNCH_CHECK)

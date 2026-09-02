@@ -27,6 +27,12 @@ import type { FinishStatus } from '../../hooks/useTaskLogs';
 
 export type BadgeStatus = FinishStatus | 'stream-error' | 'executor-gone';
 
+const NOT_IN_EXECUTOR = {
+  label: 'Not in executor',
+  color: 'warning',
+  icon: <CloudOffIcon />,
+} as const;
+
 const MAP: Record<
   BadgeStatus,
   {
@@ -40,12 +46,11 @@ const MAP: Record<
   lost: { label: 'Lost', color: 'warning', icon: <HelpIcon /> },
   failed: { label: 'Failed', color: 'error', icon: <ReportIcon /> },
   stale: { label: 'Stale', color: 'default', icon: <HourglassDisabledIcon /> },
-  // Reuses the `executor-gone` vocabulary rather than adding a parallel one:
-  // to the operator both mean the node could not run this, not that the
-  // script failed.
-  unlaunchable: { label: 'Not in executor', color: 'warning', icon: <CloudOffIcon /> },
+  // Shared rather than spelled twice: to the operator both mean the node could
+  // not run this, not that the script failed, so the two must stay identical.
+  unlaunchable: NOT_IN_EXECUTOR,
   'stream-error': { label: 'Stream error', color: 'error', icon: <ErrorIcon /> },
-  'executor-gone': { label: 'Not in executor', color: 'warning', icon: <CloudOffIcon /> },
+  'executor-gone': NOT_IN_EXECUTOR,
 };
 
 export interface StatusBadgeProps {
