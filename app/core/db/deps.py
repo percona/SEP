@@ -63,7 +63,9 @@ def make_in_memory_list_query_dep(
     """
 
     # Core re-passes the spec it was given; the applier already binds it.
-    def resolve(_spec: ListQuerySpec, sort: str, search: str | None) -> InMemoryListQuery:
+    def resolve(
+        _spec: ListQuerySpec, sort: str, search: str | None
+    ) -> InMemoryListQuery:
         return applier.resolve_query(sort, search)
 
     return make_query_param_dep(applier.spec, resolve)

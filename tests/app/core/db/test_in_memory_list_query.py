@@ -323,9 +323,7 @@ class TestApplyPagination:
         row_count, page_limit = 10, 3
         rows = list_query_rows(*[(f"{i:02d}.sh", "T", i) for i in range(row_count)])
         query = InMemoryListQuery(sort_key="filename", descending=False, search="T")
-        page, total = APPLIER.apply(
-            rows, query, Pagination(offset=0, limit=page_limit)
-        )
+        page, total = APPLIER.apply(rows, query, Pagination(offset=0, limit=page_limit))
         assert len(page) == page_limit
         assert total == row_count
 
