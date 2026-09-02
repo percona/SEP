@@ -268,24 +268,29 @@ def install_packages(os_family):
 def write_keyfile(config):
     """Write the intra-cluster auth keyFile and lock down its permissions.
 
+    MongoDB's keyFile format is the base64 *text* itself, used directly as the
+    shared secret string (6-1024 base64 characters) -- not a base64 encoding of
+    some other binary payload to decode back out. ``key_file_b64`` is already in
+    exactly that shape (see ``bootstrap.py``'s ``generate_keyfile_b64``), so it
+    is written to disk as-is. Decoding it first, which an earlier version of
+    this function did, writes raw binary that trips mongod's own keyfile
+    parser: ``yaml-cpp: error ... unknown escape character`` -- it does not even
+    fail as "wrong length," it fails trying to parse the binary as text.
+
     MongoDB refuses to start with a keyFile that is group- or world-readable, so the
     ``chmod`` here is not cosmetic -- an over-permissive file fails mongod's own
     startup check.
 
     :param config: The task config, carrying ``key_file_path`` and ``key_file_b64``.
-    :raises StageFailed: On a missing/malformed key, or the file operations failing.
+    :raises StageFailed: On a missing key, or the file operations failing.
     """
     path = config.get("key_file_path") or DEFAULT_KEY_FILE_PATH
     encoded = config.get("key_file_b64")
     if not encoded:
         raise StageFailed("config carries no key_file_b64")
-    try:
-        content = base64.b64decode(encoded)
-    except (ValueError, TypeError) as err:
-        raise StageFailed(f"key_file_b64 is not valid base64: {err}") from err
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "wb") as handle:
-        handle.write(content)
+    with open(path, "w", encoding="ascii") as handle:
+        handle.write(encoded)
     os.chmod(path, 0o400)
     try:
         run(["chown", f"{MONGOD_OS_USER}:{MONGOD_OS_USER}", path])
