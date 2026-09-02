@@ -44,8 +44,7 @@ async def digest_file(
 ) -> str:
     """Return the hex digest of a file for the given hash algorithm.
 
-    Read through ``aiofiles`` so async callers (snippet sync, ``Snippet.from_path``)
-    do not block the event loop on disk I/O.
+    Read through ``aiofiles`` so hashing does not block the event loop on disk I/O.
 
     :param path: The file to hash.
     :param algorithm: A ``hashlib`` algorithm name, such as ``sha256`` or ``md5``.

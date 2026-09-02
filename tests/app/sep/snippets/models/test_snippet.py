@@ -973,7 +973,7 @@ class TestFromPath:
         """Verify from_path creates a snippet with correct hash and filename."""
         content = "echo hello\n"
         snippet_file = base_dir / "hello.sh"
-        snippet_file.write_text(content)
+        snippet_file.write_text(content, encoding="utf-8")
 
         snippet = await BaseSnippet.from_path("hello.sh")
 
