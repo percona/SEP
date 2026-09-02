@@ -168,7 +168,7 @@ class TermValue(BaseModel):
     """Provide the caller's typed search term, wrapped in literal affixes.
 
     The affixes exist because a receiver's search parameter is rarely the bare
-    term: ServiceNow's Table API expects an encoded query whose operator
+    term: a table-query API typically expects an encoded query whose operator
     precedes it. ``separator`` covers the case where one term must be compared
     against two of the receiver's fields, which a receiver refusing a caller the
     text index leaves as the only form that caller may run.
@@ -801,7 +801,10 @@ class DeliveryPlanExecutor:
 
         A row whose per-row pointers miss, or land on a container, is skipped
         rather than failing the search: one malformed row must not blank a
-        dropdown the rest of the response can still fill. A results pointer that
+        dropdown the rest of the response can still fill. A row whose reference
+        is empty is skipped on the same grounds, since the reference is the
+        match's identity and an empty one identifies nothing; an empty title
+        costs the row only its subtitle, so it is kept. A results pointer that
         addresses no list is fatal instead, because that is a misconfigured plan
         rather than bad data. A response whose rows all skip is logged, since a
         pointer that no longer matches the receiver's contract is otherwise
@@ -835,7 +838,7 @@ class DeliveryPlanExecutor:
         matched = (
             CaseMatch(reference=reference, title=title)
             for row in rows
-            if (reference := _row_scalar(row, step.reference_pointer)) is not None
+            if (reference := _row_scalar(row, step.reference_pointer))
             and (title := _row_scalar(row, step.title_pointer)) is not None
         )
         matches = list(unique_everseen(matched, lambda match: match.reference))

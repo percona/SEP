@@ -2216,6 +2216,48 @@ class TestDeliveryPlanCaseSearch:
         assert matches == []
         assert any("2 rows" in record.getMessage() for record in caplog.records)
 
+    async def test_a_row_whose_reference_is_empty_is_skipped(self, api: RemoteAPI):
+        """Drop a row the reference pointer addresses as an empty string.
+
+        The reference is the match's identity, so an empty one identifies
+        nothing and would offer a blank option that clears the field.
+        """
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL,
+                status=status.HTTP_200_OK,
+                payload={
+                    "result": [
+                        {"number": "", "short_description": "Slow queries"},
+                        {"number": "CS0002", "short_description": "Replica lag"},
+                    ]
+                },
+            )
+            async with api:
+                matches = await executor.search_cases("CS00")
+
+        assert matches == [CaseMatch(reference="CS0002", title="Replica lag")]
+
+    async def test_a_row_whose_title_is_empty_is_still_offered(self, api: RemoteAPI):
+        """Keep a row whose title is empty: the reference alone is sendable.
+
+        The counterpart to the reference case above. An empty title costs the
+        row its subtitle and nothing else, so dropping it would withhold a case
+        the caller can legitimately send against.
+        """
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": [{"number": "CS0001", "short_description": ""}]},
+            )
+            async with api:
+                matches = await executor.search_cases("CS00")
+
+        assert matches == [CaseMatch(reference="CS0001", title="")]
+
     async def test_an_empty_result_list_yields_no_matches(self, api: RemoteAPI):
         """Report a search that matched nothing as an empty list, not an error."""
         executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
