@@ -84,6 +84,7 @@ jobs:
               - 'sidecar/Containerfile.sidecar'
               - 'Makefile'
               - 'frontend/packages/api/specs/**'
+              - '.github/labeler.yml'
             precommit:
               - '.pre-commit-config.yaml'
               - '.github/workflows/ci.yml'
