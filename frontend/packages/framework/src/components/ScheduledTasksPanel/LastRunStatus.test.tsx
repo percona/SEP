@@ -40,6 +40,7 @@ describe('LastRunStatus', () => {
       'stopped',
       'lost',
       'stale',
+      'unlaunchable',
     ];
     for (const status of statuses) {
       const { unmount } = render(

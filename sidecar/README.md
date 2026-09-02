@@ -18,8 +18,9 @@ the app packages the settings profile activates — see [App set](#app-set).
 |---|---|
 | `Containerfile.sidecar` | Final stage; ships the backend only, with no frontend-builder stage, and reuses the shared `sep:builder` wheel image. |
 | `entrypoint.sh` | PID 1. Mints the broker credential for the container run, resolves SEP's Grafana service-account token, then hands off to `supervisord`. |
-| `supervisord.conf` | Runs `valkey`, three `migrate-*` one-shots, the `sep`/`inventory`/`tasks` APIs, and the Celery worker and beat. |
+| `supervisord.conf` | Runs `valkey`, four `migrate-*` one-shots, the `sep`/`inventory`/`tasks` APIs, and the Celery worker and beat. |
 | `wait_for_api.py` | Run by `supervisord` ahead of the beat command; holds beat until the three APIs answer `/health`, then starts it whatever the outcome. |
+| `wait_for_schema.sh` | Run by `supervisord` ahead of each API command; holds the API until all four schema one-shots have published their sentinel, and fails rather than starting it if they do not. |
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables, leaving unexported any name a file under `SECRETS_DIR` already supplies. |
 | `grafana_service_account.py` | Run by `entrypoint.sh` before `supervisord`; resolves SEP's Grafana service-account token, minting one when no source supplies it. |
@@ -403,11 +404,36 @@ rather than only a restart:
 ## Health
 
 `healthcheck.sh` exits 0 only when every non-one-shot program is `RUNNING`, all
-three `migrate-*` one-shots have written their `/tmp/migrate-<svc>.ok` sentinel,
+four `migrate-*` one-shots have written their `/tmp/migrate-<step>.ok` sentinel,
 the three `/health` endpoints return 200, and the bundled Valkey answers `PING`.
 The sentinels matter because a failed `alembic upgrade` ends in `EXITED` — the
 same state a successful one reaches — so program state alone cannot distinguish
 them.
+
+The same four sentinels gate the API programs: each runs `wait_for_schema.sh sep
+inventory tasks beat` before `exec`-ing its app, so no API starts against a
+database whose schema has not been applied. The gate is uniform — `inventory`
+reads no beat table, but container health already requires all three APIs to
+answer, so gating them alike costs nothing and cannot drift out of step with
+which service seeds what. A step that never completes holds the APIs for
+`WAIT_BUDGET_SECONDS` (300) and then fails them — and because they keep
+`autorestart=true`, each one restarts into a fresh gate rather than stopping, so
+`supervisorctl status` shows the three APIs cycling every five minutes for as
+long as the sentinel is missing. The container is reported unhealthy well before
+the first budget expires, because its one-shot's sentinel is already missing.
+
+Each one-shot waits for its own store without a bound — the three alembic steps
+in the shell, `migrate-beat` inside its bootstrap, against whatever
+`CELERY__BEAT_DBURI` resolves to. None of them is re-run once it exits, so a
+step that gave up could never publish its sentinel and would hold every gated
+program for the life of the container; waiting instead means the sentinel still
+lands whenever the store appears.
+
+An API still inside its gate reports `RUNNING`, so the program-state assertion
+is weaker than it reads for those three — the `/health` probe is what keeps a
+healthy container meaning the APIs answer. `entrypoint.sh` clears the four
+sentinels before any program is spawned, so a restart cannot release a gate on
+the previous run's markers.
 
 `HEALTHCHECK` is configured `--interval=15s --timeout=15s --start-period=150s
 --retries=5`, so a program going down surfaces as an unhealthy container after

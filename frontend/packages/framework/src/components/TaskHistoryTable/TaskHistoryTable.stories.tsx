@@ -56,7 +56,16 @@ function makeEntry(
 }
 
 const ALL_STATUSES: TaskHistoryEntry[] = (
-  ['success', 'failed', 'running', 'pending', 'stopped', 'lost', 'stale'] as TaskHistoryStatus[]
+  [
+    'success',
+    'failed',
+    'running',
+    'pending',
+    'stopped',
+    'lost',
+    'stale',
+    'unlaunchable',
+  ] as TaskHistoryStatus[]
 ).map((status, idx) => makeEntry(idx + 1, status));
 
 const COMPLETED_ONLY: TaskHistoryEntry[] = [
