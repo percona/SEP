@@ -230,8 +230,8 @@ class SyncInstanceManager(BaseSQLModelManager):
 
         When ``stale_after`` is supplied, abandoned runs are reclaimed whether or not
         an item conflict was detected, because a worker killed after its last item
-        write leaves a stale run that no item conflict would ever surface. An
-        in-progress conflict is re-examined after the reclaim, as before.
+        write leaves a stale run that no item conflict would ever surface. Whatever
+        the reclaim spared is then re-examined for a conflict before inserting.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
@@ -248,10 +248,12 @@ class SyncInstanceManager(BaseSQLModelManager):
         )
         if stale_after is not None:
             await cls.reclaim_stale_runs(session, instance_create.syncer, stale_after)
-            if syncs_in_progress:
-                syncs_in_progress = await cls._items_in_progress(
-                    session, instance_create.syncer
-                )
+            # Re-read unconditionally: the reclaim commits separately, so a run it
+            # spared for resuming mid-reclaim can hold an item the first read never
+            # saw, and refusing on a stale empty list would start a second run.
+            syncs_in_progress = await cls._items_in_progress(
+                session, instance_create.syncer
+            )
         if syncs_in_progress:
             raise SyncInstanceAlreadyInProgressError(syncs_in_progress)
         return await super().create(session, instance_create, **extra_fields)

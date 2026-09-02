@@ -1008,6 +1008,37 @@ class TestSyncInstanceManagerStaleReclaim:
         )
 
     @pytest.mark.asyncio
+    async def test_create_refuses_a_run_that_resumed_during_the_reclaim(
+        self, session
+    ) -> None:
+        """Refuse to start when a run the reclaim spared opened an item meanwhile.
+
+        The conflict read that precedes the reclaim cannot see an item the resumed
+        worker opens during it, so trusting that read would start a second run
+        alongside the one the fence just decided to leave alone.
+        """
+        stale = await _seed_run(
+            session,
+            item_status=SyncStatusEnum.SUCCESS,
+            age=timedelta(hours=3),
+        )
+
+        async def _start_the_next_item() -> None:
+            await _seed_item(session, stale, status=SyncStatusEnum.PENDING, entity_id=2)
+
+        with (
+            _committing_before_the_fence(session, _start_the_next_item),
+            pytest.raises(SyncInstanceAlreadyInProgressError),
+        ):
+            await SyncInstanceManager.create(
+                session,
+                SyncInstanceWrite(syncer="test-syncer"),
+                stale_after=timedelta(hours=1),
+            )
+
+        assert [run.id for run in await SyncInstanceManager.list(session)] == [stale.id]
+
+    @pytest.mark.asyncio
     async def test_reclaim_ignores_an_idle_run_still_pending(self, session) -> None:
         """Leave an idle stale run that never reached ``RUNNING`` untouched.
 
