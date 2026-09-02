@@ -59,6 +59,8 @@ from app.tasks.execution.executors.nomad.models import (
     _capture_hold_step_state,
     _detect_capture_hold_ready,
     _detect_stale_skip,
+    _detect_unlaunchable,
+    _LAUNCH_CHECK_TASK_NAME,
     _NOMAD_LOG_STREAM_CLIENT_ERROR,
     _NOMAD_LOG_STREAM_SOCK_TIMEOUT,
     _should_anonymize,
@@ -69,7 +71,10 @@ from app.tasks.execution.executors.nomad.models import (
     NomadAllocStatusEnum,
     NomadExecutor,
 )
-from app.tasks.execution.executors.nomad.steps import NomadStep
+from app.tasks.execution.executors.nomad.steps import (
+    LAUNCH_CHECK_EXIT_CODE,
+    NomadStep,
+)
 from app.tasks.execution.utils import gzip_compress, minify_file_content
 from app.tasks.logs.line_split import WithheldLineBuffer
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
@@ -280,6 +285,11 @@ class TestAnonymizedStepClassification:
         """Assert the stale-skip sentinel is NomadStep.CHECK_STALENESS."""
         assert _STALE_SKIP_TASK_NAME is NomadStep.CHECK_STALENESS
         assert _STALE_SKIP_TASK_NAME == "check-staleness"
+
+    def test_launch_check_task_name_is_nomad_step(self) -> None:
+        """Assert the launch-check sentinel is NomadStep.CHECK_LAUNCHABLE."""
+        assert _LAUNCH_CHECK_TASK_NAME is NomadStep.CHECK_LAUNCHABLE
+        assert _LAUNCH_CHECK_TASK_NAME == "check-launchable"
 
 
 class TestNomadExecutorTlsClassification:
@@ -826,6 +836,93 @@ class TestAllocStepState:
             )
 
         assert "non-mapping task states" in caplog.text
+
+
+class TestDetectUnlaunchable:
+    """Test the module-level ``_detect_unlaunchable`` helper.
+
+    Mirrors :class:`TestDetectStaleSkip` — both sentinels are read off the same
+    defensive walk, so both need the same shape-drift coverage.
+    """
+
+    def test_returns_false_when_task_states_none(self):
+        """Assert a missing ``TaskStates`` object classifies as not unlaunchable."""
+        assert _detect_unlaunchable(None) is False
+
+    def test_returns_false_when_task_states_not_dict(self):
+        """Assert ``_detect_unlaunchable`` tolerates a non-dict input."""
+        assert _detect_unlaunchable("not a dict") is False
+
+    def test_returns_false_when_task_absent(self):
+        """Assert an allocation with no check step classifies as not unlaunchable.
+
+        Allocations dispatched from a job registered before this step existed
+        carry no such key, and must keep resolving as they did.
+        """
+        assert _detect_unlaunchable({"other-task": {"Events": []}}) is False
+
+    def test_returns_false_when_events_missing(self):
+        """Assert a check step with no ``Events`` short-circuits to ``False``."""
+        assert _detect_unlaunchable({"check-launchable": {"State": "dead"}}) is False
+
+    def test_returns_true_on_terminated_sentinel_exit(self):
+        """Assert the sentinel exit code on a ``Terminated`` event classifies."""
+        task_states = {
+            "check-launchable": {
+                "Events": [
+                    {"Type": "Started"},
+                    {"Type": "Terminated", "ExitCode": LAUNCH_CHECK_EXIT_CODE},
+                ],
+            }
+        }
+        assert _detect_unlaunchable(task_states) is True
+
+    def test_returns_false_on_terminated_exit_1(self):
+        """Assert a check step that failed for another reason is not classified."""
+        task_states = {
+            "check-launchable": {
+                "Events": [{"Type": "Terminated", "ExitCode": 1}],
+            }
+        }
+        assert _detect_unlaunchable(task_states) is False
+
+    def test_returns_false_on_non_terminated_event(self):
+        """Assert the sentinel is only read off a ``Terminated`` event."""
+        task_states = {
+            "check-launchable": {
+                "Events": [{"Type": "Started", "ExitCode": LAUNCH_CHECK_EXIT_CODE}],
+            }
+        }
+        assert _detect_unlaunchable(task_states) is False
+
+    def test_reads_exit_code_from_details_nested_shape(self):
+        """Assert exit-code falls back to the ``Details.exit_code`` shape."""
+        task_states = {
+            "check-launchable": {
+                "Events": [
+                    {
+                        "Type": "Terminated",
+                        "Details": {"exit_code": LAUNCH_CHECK_EXIT_CODE},
+                    },
+                ],
+            }
+        }
+        assert _detect_unlaunchable(task_states) is True
+
+    def test_does_not_read_the_staleness_step(self):
+        """Assert each detector reads only its own step's task state.
+
+        The two sentinels differ, but reading the wrong step would still
+        misreport whenever the exit codes happened to coincide.
+        """
+        task_states = {
+            "check-staleness": {
+                "Events": [
+                    {"Type": "Terminated", "ExitCode": LAUNCH_CHECK_EXIT_CODE},
+                ],
+            }
+        }
+        assert _detect_unlaunchable(task_states) is False
 
 
 class TestDetectStaleSkip:
@@ -1464,6 +1561,103 @@ class TestSyncTaskHistory:
 
         assert result.status == TaskHistoryStatusEnum.STALE
         assert result.finished_at is not None
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_sync_task_history_unlaunchable_override(self, mock_nomad_cls):
+        """Assert an aborted launch check maps to UNLAUNCHABLE, not FAILED.
+
+        The prestart step is persistable, so without the arm the failed step
+        would derive an ordinary ``FAILED`` — indistinguishable from a script
+        that ran and exited non-zero on its own terms.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "ClientStatus": NomadAllocStatusEnum.FAILED,
+            "TaskStates": {
+                "check-launchable": {
+                    "Events": [
+                        {"Type": "Terminated", "ExitCode": LAUNCH_CHECK_EXIT_CODE}
+                    ],
+                },
+            },
+            "ModifyTime": 1_700_000_000_000_000_000,
+        }
+        mock_backend.client.stream_logs.stream.return_value = ""
+        mock_backend.job.get_job.return_value = {
+            "ID": "job-1",
+            "Status": NOMAD_DEAD_JOB_STATUS,
+            "Stop": False,
+        }
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            },
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+
+        result = await executor._sync_task_history(queue_item)
+
+        assert result.status == TaskHistoryStatusEnum.UNLAUNCHABLE
+        assert result.finished_at is not None
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_sync_task_history_stale_wins_over_unlaunchable(self, mock_nomad_cls):
+        """Assert a run that was both stale and unlaunchable reports STALE.
+
+        A stale run should not have been dispatched at all, so its verdict
+        outranks anything learned about the node it happened to land on.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+
+        mock_backend.allocation.get_allocation.return_value = {
+            "ID": "alloc-1",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "ClientStatus": NomadAllocStatusEnum.FAILED,
+            "TaskStates": {
+                "check-staleness": {
+                    "Events": [{"Type": "Terminated", "ExitCode": 75}],
+                },
+                "check-launchable": {
+                    "Events": [
+                        {"Type": "Terminated", "ExitCode": LAUNCH_CHECK_EXIT_CODE}
+                    ],
+                },
+            },
+            "ModifyTime": 1_700_000_000_000_000_000,
+        }
+        mock_backend.client.stream_logs.stream.return_value = ""
+        mock_backend.job.get_job.return_value = {
+            "ID": "job-1",
+            "Status": NOMAD_DEAD_JOB_STATUS,
+            "Stop": False,
+        }
+
+        executor = _build_executor()
+        queue_item = _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            },
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+
+        result = await executor._sync_task_history(queue_item)
+
+        assert result.status == TaskHistoryStatusEnum.STALE
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
@@ -6439,6 +6633,66 @@ class TestNomadSyncWithCaptureHold:
                     "Events": [{"Type": "Terminated", "ExitCode": 75}],
                 },
                 "run-script": {"State": "dead", "Failed": False},
+                NomadStep.LOG_CAPTURE_HOLD: {"State": "running", "Failed": False},
+            },
+            job={"ID": "job-1", "Status": "running", "Stop": False},
+        )
+        executor = _build_executor()
+
+        result = await executor._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.STALE
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_unlaunchable_wins_over_step_derivation(self, mock_nomad_cls):
+        """Assert an unlaunchable allocation resolves behind a live hold too.
+
+        Both branches of the terminal-status resolution special-case the
+        sentinels; covering only the dead-job one leaves the held path
+        reporting the failed prestart step as an ordinary ``FAILED``.
+        """
+        self._backend(
+            mock_nomad_cls,
+            {
+                "check-launchable": {
+                    "State": "dead",
+                    "Failed": True,
+                    "Events": [
+                        {"Type": "Terminated", "ExitCode": LAUNCH_CHECK_EXIT_CODE}
+                    ],
+                },
+                NomadStep.LOG_CAPTURE_HOLD: {"State": "running", "Failed": False},
+            },
+            job={"ID": "job-1", "Status": "running", "Stop": False},
+        )
+        executor = _build_executor()
+
+        result = await executor._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.UNLAUNCHABLE
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_stale_skip_wins_over_unlaunchable_behind_a_hold(
+        self, mock_nomad_cls
+    ):
+        """Assert staleness outranks unlaunchability on the held path as well."""
+        self._backend(
+            mock_nomad_cls,
+            {
+                "check-staleness": {
+                    "State": "dead",
+                    "Failed": True,
+                    "Events": [{"Type": "Terminated", "ExitCode": 75}],
+                },
+                "check-launchable": {
+                    "State": "dead",
+                    "Failed": True,
+                    "Events": [
+                        {"Type": "Terminated", "ExitCode": LAUNCH_CHECK_EXIT_CODE}
+                    ],
+                },
                 NomadStep.LOG_CAPTURE_HOLD: {"State": "running", "Failed": False},
             },
             job={"ID": "job-1", "Status": "running", "Stop": False},
