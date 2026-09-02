@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 import pytest
 import pytest_asyncio
 from sqlalchemy import Column, Integer, JSON, MetaData, select, Table, Text
-from sqlalchemy.dialects import mysql, postgresql, sqlite
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.sql import column
@@ -91,13 +91,6 @@ class TestIdempotentInsert:
                 nullcontext(),
             ),
             (
-                "mysql",
-                mysql.dialect(),
-                mysql.Insert,
-                "INSERT IGNORE",
-                nullcontext(),
-            ),
-            (
                 "oracle",
                 None,
                 None,
@@ -105,7 +98,7 @@ class TestIdempotentInsert:
                 pytest.raises(NotImplementedError, match="oracle"),
             ),
         ],
-        ids=["postgresql", "sqlite", "mysql", "unknown_dialect_raises"],
+        ids=["postgresql", "sqlite", "unknown_dialect_raises"],
     )
     def test_idempotent_insert_dispatch(
         self,
@@ -118,8 +111,8 @@ class TestIdempotentInsert:
     ):
         """Assert dialect dispatch produces the right idempotent insert, or raises for unknown dialects.
 
-        PostgreSQL and SQLite emit ``ON CONFLICT DO NOTHING``; MySQL emits
-        ``INSERT IGNORE``; an unsupported dialect raises ``NotImplementedError``.
+        PostgreSQL and SQLite emit ``ON CONFLICT DO NOTHING``; an unsupported
+        dialect raises ``NotImplementedError``.
         """
         with expectation:
             stmt = idempotent_insert(dialect_name, sample_table)
@@ -168,7 +161,7 @@ def ordering_table():
 
 
 class TestNullsLastOrdering:
-    """Cover the dialect-aware ``NullsLastOrdering`` construct and its two hooks."""
+    """Cover the ``NullsLastOrdering`` construct and its compiler hook."""
 
     @pytest.mark.parametrize(
         "dialect",
@@ -189,35 +182,16 @@ class TestNullsLastOrdering:
 
         assert rendered == _compile(baseline.nulls_last(), dialect)
 
-    @pytest.mark.parametrize(
-        ("descending", "expected"),
-        [
-            (False, "ISNULL(item.parent_id) ASC, item.parent_id ASC"),
-            (True, "ISNULL(item.parent_id) ASC, item.parent_id DESC"),
-        ],
-        ids=["asc", "desc"],
-    )
-    def test_renders_isnull_prefix_on_mysql(self, ordering_table, descending, expected):
-        """Pin NULLs last on MySQL through a leading ``ISNULL(<expr>) ASC`` term."""
-        rendered = _compile(
-            NullsLastOrdering(ordering_table.c.parent_id, descending=descending),
-            mysql.dialect(),
-        )
-
-        assert rendered == expected
-
-    def test_tie_breaker_remains_final_order_by_term_on_mysql(self, ordering_table):
-        """Keep the tie-breaker final on MySQL even though the hook prepends a term."""
+    def test_tie_breaker_remains_final_order_by_term(self, ordering_table):
+        """Keep the tie-breaker as the final ``ORDER BY`` term."""
         query = select(ordering_table.c.id).order_by(
             NullsLastOrdering(ordering_table.c.parent_id, descending=True),
             ordering_table.c.id.asc(),
         )
 
-        rendered = _compile(query, mysql.dialect())
+        rendered = _compile(query, postgresql.dialect())
 
-        assert rendered.endswith(
-            "ORDER BY ISNULL(item.parent_id) ASC, item.parent_id DESC, item.id ASC"
-        )
+        assert rendered.endswith("ORDER BY item.parent_id DESC NULLS LAST, item.id ASC")
 
     def test_nulls_last_ordering_is_cacheable(self, ordering_table):
         """Produce a real cache key that discriminates both column and direction."""
@@ -239,26 +213,23 @@ class TestNullsLastOrdering:
     def test_wrapped_expression_inlines_only_its_code_constant_path(
         self, ordering_table
     ):
-        """Render the ``literal_execute`` JSON path inline, identically in both terms.
+        """Render the ``literal_execute`` JSON path inline in the single ordering term.
 
         ``func_json_extract`` builds its path with ``literal_execute``, so the
-        dialect's literal processor -- not a bound parameter -- emits it at
-        execution. The value is a code constant, and the wrapper renders the
-        expression once and reuses it, so both terms carry the same text.
+        dialect's literal processor — not a bound parameter — emits it at
+        execution. The value is a code constant inlined into the one
+        ``NULLS LAST`` term the standard hook renders.
         """
         extract = func_json_extract(
-            DatabaseDialect.MYSQL, ordering_table.c.meta, "title"
+            DatabaseDialect.POSTGRESQL, ordering_table.c.meta, "title"
         )
         query = select(ordering_table.c.id).order_by(NullsLastOrdering(extract))
 
         executed = query.compile(
-            dialect=mysql.dialect(), compile_kwargs={"render_postcompile": True}
+            dialect=postgresql.dialect(), compile_kwargs={"render_postcompile": True}
         )
 
-        assert str(executed).endswith(
-            "ORDER BY ISNULL(json_extract(item.meta, '$.title')) ASC, "
-            "json_extract(item.meta, '$.title') ASC"
-        )
+        assert str(executed).endswith("ORDER BY item.meta ->> 'title' ASC NULLS LAST")
         assert executed.params == {}
 
     def test_raw_string_column_becomes_a_bound_parameter(self, ordering_table):
@@ -268,7 +239,7 @@ class TestNullsLastOrdering:
         compiled = (
             select(ordering_table.c.id)
             .order_by(NullsLastOrdering(injected))
-            .compile(dialect=mysql.dialect())
+            .compile(dialect=postgresql.dialect())
         )
 
         assert "DROP TABLE" not in str(compiled)
@@ -363,21 +334,13 @@ def test_func_json_extract_postgresql_auto_json_column_does_not_wrap_in_cast():
     assert "CAST" not in rendered.upper()
 
 
-@pytest.mark.parametrize(
-    ("dialect_name", "dialect"),
-    [
-        ("sqlite", sqlite.dialect()),
-        ("mysql", mysql.dialect()),
-    ],
-    ids=["sqlite", "mysql"],
-)
-def test_func_json_extract_single_key_renders_json_extract(dialect_name, dialect):
-    """Render ``json_extract(col, '$.task')`` on SQLite and MySQL for a single-element path."""
+def test_func_json_extract_single_key_renders_json_extract():
+    """Render ``json_extract(col, '$.task')`` on SQLite for a single-element path."""
     json_column = column("execution_request", type_=JSON)
 
-    expression = func_json_extract(dialect_name, json_column, "task")
+    expression = func_json_extract("sqlite", json_column, "task")
 
-    rendered = _compile(expression, dialect)
+    rendered = _compile(expression, sqlite.dialect())
     assert "json_extract" in rendered.lower()
     assert "'$.task'" in rendered
 

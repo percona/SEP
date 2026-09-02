@@ -44,19 +44,10 @@ def test_database_options_url_with_empty_host():
     assert expected_url == db_options.URL
 
 
-def test_database_options_url_with_host():
-    """Test DatabaseOptions URL construction with actual HOST."""
-    db_options = DatabaseOptions(
-        ENGINE=AsyncDatabaseEngine.MYSQL,
-        HOST="localhost",
-        PORT=3306,
-        USER="user",
-        PASSWORD="pass",
-        NAME="testdb",
-    )
-
-    expected_url = "mysql+aiomysql://user:pass@localhost:3306/testdb"
-    assert expected_url == db_options.URL
+def test_database_options_rejects_mysql_engine():
+    """Reject a removed MySQL backing-store engine at config load."""
+    with pytest.raises(ValidationError):
+        DatabaseOptions(ENGINE="mysql", NAME="testdb", HOST="localhost")
 
 
 def test_database_options_url_with_postgresql():
@@ -107,7 +98,7 @@ def test_database_options_url_round_trips_a_user_with_reserved_characters():
 def test_database_options_password_masked_in_repr():
     """Test that PASSWORD is masked in repr output."""
     db_options = DatabaseOptions(
-        ENGINE=AsyncDatabaseEngine.MYSQL,
+        ENGINE=AsyncDatabaseEngine.POSTGRESQL,
         HOST="localhost",
         USER="user",
         PASSWORD="supersecret",
@@ -168,11 +159,6 @@ def test_pool_engine_kwargs_respects_pre_ping_opt_out():
             AsyncDatabaseEngine.POSTGRESQL,
             {"connect_args": {"timeout": 2.5}},
             id="asyncpg-timeout",
-        ),
-        pytest.param(
-            AsyncDatabaseEngine.MYSQL,
-            {"connect_args": {"connect_timeout": 2.5}},
-            id="aiomysql-connect-timeout",
         ),
         pytest.param(AsyncDatabaseEngine.SQLITE, {}, id="sqlite-omitted"),
     ],
