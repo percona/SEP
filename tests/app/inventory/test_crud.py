@@ -16,7 +16,8 @@
 """Test inventory CRUD manager database-layer behavior."""
 
 import asyncio
-from datetime import datetime, UTC
+from collections.abc import Callable
+from datetime import datetime, timedelta, UTC
 
 import pytest
 from pytest_mock import MockerFixture
@@ -30,7 +31,12 @@ from app.core.exceptions import (
     HTTPNotFoundException,
 )
 from app.core.pagination import Pagination
-from app.inventory.constants import ACTIVE_RETIREMENT_KEY, RetirableEntityName
+from app.core.utils.date_time import utc_now
+from app.inventory.constants import (
+    ACTIVE_RETIREMENT_KEY,
+    RetirableEntityName,
+    SYNC_ERROR_MAX_LENGTH,
+)
 from app.inventory.crud import (
     ExternalIdentityAliasManager,
     HostSystemObservationManager,
@@ -42,6 +48,7 @@ from app.inventory.crud import (
     SchemaManager,
     ServiceManager,
     ServiceSystemObservationManager,
+    SyncHealthManagerMixin,
     TableManager,
 )
 from app.inventory.models import (
@@ -49,10 +56,13 @@ from app.inventory.models import (
     IdentityLinkDecision,
     IdentityLinkDecisionEnum,
     Node,
+    RetirableSQLModel,
     Schema,
     Service,
     ServiceSystemObservation,
     SourceEnum,
+    SyncHealthWrite,
+    SyncOutcomeEnum,
     Table,
 )
 from tests.app.factories import NodeWriteFactory, ServiceWriteFactory
@@ -1846,67 +1856,388 @@ class TestIdentityLinkLockingOnPostgreSQL:
             )
 
 
-@pytest.mark.mysql
-class TestIdentitySurfacesOnMySQL:
-    """Drive the identity schema and every new query shape against real MySQL.
+#: Every manager carrying the sync-health writes, paired with the fixture that
+#: builds an entity at that manager's level.
+_SYNC_HEALTH_TARGETS = (
+    (NodeManager, "node"),
+    (ServiceManager, "service"),
+    (SchemaManager, "schema"),
+    (TableManager, "table"),
+)
 
-    MySQL is the strictest of the three supported engines and the only one that
-    scopes CHECK constraint names to the schema rather than the table, so the
-    SQLite suite and the PostgreSQL cases above can both be green while
-    ``CREATE TABLE`` fails here. Until this class existed the only thing
-    exercising the inventory schema on MySQL was an unrelated pagination test's
-    fixture, which reported the collision far from the tables that caused it.
+#: Columns the health writes own, so a test asserting the rest stayed put can
+#: subtract them from a dump.
+_SYNC_HEALTH_COLUMNS = frozenset(
+    {
+        "last_synced_at",
+        "last_sync_error",
+        "sync_failing_since",
+        "consecutive_failures",
+        "updated_at",
+    }
+)
+
+#: The counter after a second failure lands on an already-failing row.
+SECOND_CONSECUTIVE_FAILURE = 2
+
+#: The union rather than a shared base: an entity carrying both an ``id`` and
+#: the sync-health columns has no single base to name — ``SyncHealthBase`` is
+#: mixed into the read responses too, so it cannot inherit the table identity.
+SyncHealthTarget = tuple[type[SyncHealthManagerMixin], Node | Service | Schema | Table]
+
+
+@pytest.fixture(
+    params=_SYNC_HEALTH_TARGETS,
+    ids=[fixture_name for _, fixture_name in _SYNC_HEALTH_TARGETS],
+)
+def sync_health_target(request: pytest.FixtureRequest) -> SyncHealthTarget:
+    """Return one sync-health manager and a persisted entity of its level."""
+    manager, fixture_name = request.param
+    return manager, request.getfixturevalue(fixture_name)
+
+
+async def _stamp_sync_health(
+    session: AsyncSession, instance: RetirableSQLModel, **values: object
+) -> None:
+    """Seed sync-health columns directly, bypassing the manager under test."""
+    for name, value in values.items():
+        setattr(instance, name, value)
+    session.add(instance)
+    await session.commit()
+    await session.refresh(instance)
+
+
+def _as_utc(value: object) -> object:
+    """Return a naive datetime as UTC-aware, leaving every other value untouched.
+
+    A ``DateTime(timezone=True)`` column keeps its offset on PostgreSQL and
+    loses it on the suite's SQLite engine, so a value read back here is naive
+    while the same read is aware in production.
     """
+    if isinstance(value, datetime) and value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
+def _success(attempted_at: datetime) -> SyncHealthWrite:
+    """Build the body reporting a successful attempt started at ``attempted_at``."""
+    return SyncHealthWrite(outcome=SyncOutcomeEnum.SUCCESS, attempted_at=attempted_at)
+
+
+def _failure(attempted_at: datetime, error: str = "boom") -> SyncHealthWrite:
+    """Build the body reporting a failed attempt started at ``attempted_at``."""
+    return SyncHealthWrite(
+        outcome=SyncOutcomeEnum.FAILURE, error=error, attempted_at=attempted_at
+    )
+
+
+class TestRecordSyncHealth:
+    """Test how a reported sync outcome lands on an entity's health columns."""
 
     @pytest.mark.asyncio
-    async def test_the_identity_schema_and_queries_run_on_mysql(
-        self, mysql_session: AsyncSession
+    async def test_first_success_records_a_clean_state(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
     ) -> None:
-        """Create both tables, then confirm, resolve and reverse a node pairing.
+        """Leave every failure column empty and stamp the attempt as the freshness."""
+        manager, entity = sync_health_target
+        attempted_at = utc_now()
 
-        Every construct this branch added is on the path: the correlated
-        ``ORDER BY ... LIMIT 1`` candidate subquery, the correlated ``MAX(id)``
-        the collection pins read, the ``FOR UPDATE`` pairing lock, and the
-        chain walk behind identifier resolution.
+        await manager.record_sync_health(session, entity, _success(attempted_at))
+
+        await session.refresh(entity)
+        assert _as_utc(entity.last_synced_at) == attempted_at
+        assert entity.last_sync_error is None
+        assert entity.sync_failing_since is None
+        assert entity.consecutive_failures == 0
+
+    @pytest.mark.asyncio
+    async def test_success_stores_the_attempt_time_not_the_write_time(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Answer "when was this confirmed", not "when did the report arrive"."""
+        manager, entity = sync_health_target
+        attempted_at = utc_now() - timedelta(hours=3)
+
+        await manager.record_sync_health(session, entity, _success(attempted_at))
+
+        await session.refresh(entity)
+        assert _as_utc(entity.last_synced_at) == attempted_at
+
+    @pytest.mark.asyncio
+    async def test_success_clears_a_standing_failure_run(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Reset the error, the run start and the counter in one statement."""
+        manager, entity = sync_health_target
+        failing_since = utc_now() - timedelta(days=3)
+        await _stamp_sync_health(
+            session,
+            entity,
+            last_sync_error="previous",
+            sync_failing_since=failing_since,
+            consecutive_failures=3,
+        )
+        attempted_at = utc_now()
+
+        await manager.record_sync_health(session, entity, _success(attempted_at))
+
+        await session.refresh(entity)
+        assert _as_utc(entity.last_synced_at) == attempted_at
+        assert entity.last_sync_error is None
+        assert entity.sync_failing_since is None
+        assert entity.consecutive_failures == 0
+
+    @pytest.mark.asyncio
+    async def test_first_failure_opens_the_run(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Open the failure run at the attempt time and leave the freshness alone."""
+        manager, entity = sync_health_target
+        failed_at = utc_now()
+
+        await manager.record_sync_health(session, entity, _failure(failed_at))
+
+        await session.refresh(entity)
+        assert entity.last_synced_at is None
+        assert entity.last_sync_error == "boom"
+        assert _as_utc(entity.sync_failing_since) == failed_at
+        assert entity.consecutive_failures == 1
+
+    @pytest.mark.asyncio
+    async def test_subsequent_failure_keeps_the_first_failure_time(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Keep ``sync_failing_since`` naming the first failure after the last success."""
+        manager, entity = sync_health_target
+        opened_at = utc_now() - timedelta(days=2)
+        await _stamp_sync_health(
+            session,
+            entity,
+            last_sync_error="first",
+            sync_failing_since=opened_at,
+            consecutive_failures=1,
+        )
+
+        await manager.record_sync_health(
+            session, entity, _failure(utc_now(), error="second")
+        )
+
+        await session.refresh(entity)
+        assert _as_utc(entity.sync_failing_since) == opened_at
+        assert entity.last_sync_error == "second"
+        assert entity.consecutive_failures == SECOND_CONSECUTIVE_FAILURE
+
+    @pytest.mark.asyncio
+    async def test_out_of_order_failures_still_open_the_run_at_the_earlier_one(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Keep ``sync_failing_since`` at the earlier attempt whichever lands first.
+
+        Reports cross the service boundary over HTTP, so two failures of one run
+        can arrive newest-first. Coalescing alone would leave the run opened at
+        whichever landed first, which is not the run's start.
+
+        ``last_sync_error`` is the residual gap: it is assigned unconditionally,
+        so the late older report leaves its own message behind. Naming the newest
+        failure would take a column recording the newest attempt seen, which the
+        entity does not carry; the assertion states today's behaviour so a future
+        fix has a failing test to flip.
         """
-        predecessor = await NodeManager.create(mysql_session, NodeWriteFactory.build())
-        successor = await NodeManager.create(
-            mysql_session,
-            NodeWriteFactory.build(name=predecessor.name, address=predecessor.address),
-        )
-        superseded = predecessor.external_id
-        transferred = successor.external_id
+        manager, entity = sync_health_target
+        earlier = utc_now() - timedelta(minutes=10)
+        later = utc_now()
 
-        _, total = await NodeManager.identity_candidates(mysql_session, pagination=PAGE)
-        assert total == 1
-
-        await NodeManager.confirm_identity_link(
-            mysql_session, predecessor, successor.id, principal=PRINCIPAL
+        await manager.record_sync_health(session, entity, _failure(later, error="new"))
+        await manager.record_sync_health(
+            session, entity, _failure(earlier, error="old")
         )
 
-        for external_id in (superseded, transferred):
-            assert (
-                await ExternalIdentityAliasManager.resolve_entity_id(
-                    mysql_session,
-                    RetirableEntityName.NODE,
-                    SourceEnum.PMM,
-                    external_id,
-                )
-                == predecessor.id
-            )
+        await session.refresh(entity)
+        assert _as_utc(entity.sync_failing_since) == earlier
+        assert entity.consecutive_failures == SECOND_CONSECUTIVE_FAILURE
+        assert entity.last_sync_error == "old"
 
-        collectible = await RetiredInclusiveNodeManager.collectible_ids(
-            mysql_session,
-            retired_before=datetime(2999, 1, 1, tzinfo=UTC),
-            keep_by_model={},
-            limit=10,
+    @pytest.mark.parametrize(
+        "outcome", [_success, _failure], ids=["success", "failure"]
+    )
+    @pytest.mark.asyncio
+    async def test_the_mirrored_columns_are_left_untouched(
+        self,
+        session: AsyncSession,
+        sync_health_target: SyncHealthTarget,
+        outcome: Callable[[datetime], SyncHealthWrite],
+    ) -> None:
+        """Write only the health columns, never the entity's own mirrored fields."""
+        manager, entity = sync_health_target
+        before = {
+            name: _as_utc(value)
+            for name, value in entity.model_dump().items()
+            if name not in _SYNC_HEALTH_COLUMNS
+        }
+
+        await manager.record_sync_health(session, entity, outcome(utc_now()))
+
+        await session.refresh(entity)
+        after = {name: _as_utc(getattr(entity, name)) for name in before}
+        assert after == before
+
+    @pytest.mark.asyncio
+    async def test_error_is_truncated_to_the_cap(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Accept an error of any length and store it within the column contract."""
+        manager, entity = sync_health_target
+        oversized = "e" * (SYNC_ERROR_MAX_LENGTH + 500)
+
+        await manager.record_sync_health(
+            session, entity, _failure(utc_now(), error=oversized)
         )
-        assert successor.id not in collectible
 
-        await NodeManager.unlink_identity(
-            mysql_session, predecessor, successor.id, principal=PRINCIPAL
+        await session.refresh(entity)
+        assert entity.last_sync_error is not None
+        assert len(entity.last_sync_error) <= SYNC_ERROR_MAX_LENGTH
+
+    @pytest.mark.asyncio
+    async def test_write_reaches_a_retired_row(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Record the outcome even once the entity was retired concurrently."""
+        manager, entity = sync_health_target
+        await retire_in_place(session, entity)
+
+        await manager.record_sync_health(session, entity, _failure(utc_now()))
+
+        await session.refresh(entity)
+        assert entity.consecutive_failures == 1
+
+    @pytest.mark.asyncio
+    async def test_counter_increments_in_sql(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Add to the stored counter rather than to a value read beforehand."""
+        manager, entity = sync_health_target
+
+        await manager.record_sync_health(session, entity, _failure(utc_now()))
+        await manager.record_sync_health(session, entity, _failure(utc_now()))
+
+        await session.refresh(entity)
+        assert entity.consecutive_failures == SECOND_CONSECUTIVE_FAILURE
+
+    @pytest.mark.asyncio
+    async def test_superseded_success_is_discarded(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Refuse a success from an attempt a completed later one already superseded."""
+        manager, entity = sync_health_target
+        newer = utc_now()
+        await _stamp_sync_health(session, entity, last_synced_at=newer)
+
+        await manager.record_sync_health(
+            session, entity, _success(newer - timedelta(minutes=5))
         )
 
-        assert (
-            await NodeManager.first(mysql_session, external_id=superseded)
-        ).id == predecessor.id
+        await session.refresh(entity)
+        assert _as_utc(entity.last_synced_at) == newer
+
+    @pytest.mark.asyncio
+    async def test_superseded_failure_is_discarded(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Stop a stale failure restarting a run a newer success already closed."""
+        manager, entity = sync_health_target
+        newer = utc_now()
+        await _stamp_sync_health(session, entity, last_synced_at=newer)
+
+        await manager.record_sync_health(
+            session, entity, _failure(newer - timedelta(minutes=5))
+        )
+
+        await session.refresh(entity)
+        assert entity.sync_failing_since is None
+        assert entity.consecutive_failures == 0
+        assert entity.last_sync_error is None
+
+    @pytest.mark.asyncio
+    async def test_failure_then_newer_success_clears_the_run(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Let a success from a later attempt close a run an earlier failure opened."""
+        manager, entity = sync_health_target
+        failed_at = utc_now() - timedelta(minutes=5)
+        await manager.record_sync_health(session, entity, _failure(failed_at))
+        succeeded_at = utc_now()
+
+        await manager.record_sync_health(session, entity, _success(succeeded_at))
+
+        await session.refresh(entity)
+        assert _as_utc(entity.last_synced_at) == succeeded_at
+        assert entity.sync_failing_since is None
+        assert entity.consecutive_failures == 0
+
+    @pytest.mark.asyncio
+    async def test_failure_behind_a_recorded_success_is_rejected(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Reject a failure whose attempt predates a success already recorded."""
+        manager, entity = sync_health_target
+        succeeded_at = utc_now()
+        await manager.record_sync_health(session, entity, _success(succeeded_at))
+
+        await manager.record_sync_health(
+            session, entity, _failure(succeeded_at - timedelta(minutes=5))
+        )
+
+        await session.refresh(entity)
+        assert entity.consecutive_failures == 0
+        assert entity.last_sync_error is None
+
+    @pytest.mark.asyncio
+    async def test_success_behind_a_newer_failure_is_rejected(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Refuse a success whose attempt predates the open failure run.
+
+        A failure never moves ``last_synced_at``, so the freshness guard alone
+        cannot see it; the failure-run guard is what keeps a late success from
+        reporting a clean row whose latest attempt failed.
+        """
+        manager, entity = sync_health_target
+        failed_at = utc_now()
+        await manager.record_sync_health(session, entity, _failure(failed_at))
+
+        await manager.record_sync_health(
+            session, entity, _success(failed_at - timedelta(minutes=5))
+        )
+
+        await session.refresh(entity)
+        assert _as_utc(entity.sync_failing_since) == failed_at
+        assert entity.consecutive_failures == 1
+        assert entity.last_sync_error == "boom"
+        assert entity.last_synced_at is None
+
+    @pytest.mark.asyncio
+    async def test_success_between_two_failures_of_one_run_still_clears_it(
+        self, session: AsyncSession, sync_health_target: SyncHealthTarget
+    ) -> None:
+        """Pin the residual gap the failure-run guard does not close.
+
+        ``sync_failing_since`` names the *first* failure of the run, so a
+        success attempted after it but before a later failure passes the guard
+        and clears a run whose newest attempt failed. Closing this would take a
+        column recording the newest attempt seen, which the entity does not
+        carry; the assertion states today's behaviour so a future fix has a
+        failing test to flip.
+        """
+        manager, entity = sync_health_target
+        opened_at = utc_now() - timedelta(minutes=10)
+        await manager.record_sync_health(session, entity, _failure(opened_at))
+        await manager.record_sync_health(session, entity, _failure(utc_now()))
+
+        await manager.record_sync_health(
+            session, entity, _success(opened_at + timedelta(minutes=5))
+        )
+
+        await session.refresh(entity)
+        assert entity.sync_failing_since is None
+        assert entity.consecutive_failures == 0
+        assert entity.last_sync_error is None

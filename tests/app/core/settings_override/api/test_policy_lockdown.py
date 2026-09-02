@@ -579,8 +579,8 @@ class TestLegacyCasedOverrideRows:
     ) -> None:
         """Assert DELETE of a top-level key removes a mixed-case stored row.
 
-        Mirrors MySQL's historical case-insensitive key match after the lookup
-        moved from SQL into Python.
+        Mixed-case stored keys stay visible to DELETE now that the lookup moved
+        from SQL into Python.
         """
         await insert_override_row(
             override_session,
