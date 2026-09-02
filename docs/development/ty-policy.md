@@ -110,8 +110,8 @@ ty check        ->  Found 3926 diagnostics, exit 1
 The two agree because they now carry identical argument lists — none.
 
 That figure predates both the artifact suppressions and SEP-1908's first-party
-fixes. Under the tree as it now stands, measured at `6721844a8` with the pinned
-`ty 0.0.49`, the same command reports **3,169 — 0 error, 3,169 warning**, and
+fixes. Under the tree as it now stands, measured at `5f465e11d` with the pinned
+`ty 0.0.49`, the same command reports **3,201 — 0 error, 3,201 warning**, and
 `make typecheck` exits **0**. The before/after split for the suppressions alone,
 and what moved between them, are in *Neutralized dependency-typing artifacts*
 below.
