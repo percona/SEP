@@ -68,6 +68,7 @@ from tests.app.factories import (
     MOCK_CREATED_NODE_ID,
 )
 from tests.app.scan_recording import ScanRecordingBytearray
+from tests.app.sep.sync.conftest import entity_posts, sync_health_posts
 
 # Pinned verbatim rather than imported: this syncer opting into tombstones is what
 # lets it match a reappearing entity, so losing the parameter must fail the test.
@@ -77,7 +78,9 @@ RETIRED_INCLUSIVE_PARAMS = {"include_retired": "true"}
 @pytest.fixture
 def mock_mysql_syncer(mock_remote_api) -> MySQLSyncer:
     """Test fixture: return a MySQLSyncer with mocked APIs."""
-    return MySQLSyncer(tasks_api=mock_remote_api, inventory_api=mock_remote_api)
+    return MySQLSyncer(  # ty: ignore[missing-argument]
+        tasks_api=mock_remote_api, inventory_api=mock_remote_api
+    )
 
 
 @pytest_asyncio.fixture
@@ -92,7 +95,7 @@ async def bound_mysql_syncer(session, mock_remote_api) -> MySQLSyncer:
         session,
         SyncInstanceWrite(syncer=MySQLSyncer.get_name()),
     )
-    syncer = MySQLSyncer(
+    syncer = MySQLSyncer(  # ty: ignore[missing-argument]
         tasks_api=mock_remote_api,
         inventory_api=mock_remote_api,
         sync_instance=sync_instance,
@@ -258,7 +261,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_strict_raises_on_no_match(self, mock_remote_api):
         """Assert ``ExecutorHostNotFoundError`` is raised when strict and no match."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,
@@ -279,7 +282,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_strict_name_matches(self, mock_remote_api):
         """Assert matched name is returned when strict and name is in hosts."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,
@@ -294,7 +297,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_strict_address_matches(self, mock_remote_api):
         """Assert matched target is returned when strict and address matches."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,
@@ -309,7 +312,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_non_strict_fallback(self, mock_remote_api):
         """Assert first host is returned as fallback when non-strict and no match."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
         )
@@ -323,7 +326,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_force_overrides_strict(self, mock_remote_api):
         """Assert ``force_executor_host`` takes priority over strict matching."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,
@@ -701,11 +704,9 @@ class TestPerformMethods:
 
         await bound_mysql_syncer.perform_service_sync(created_service, updated)
 
-        bound_mysql_syncer.inventory_api.post.assert_awaited_once()
-        assert (
-            bound_mysql_syncer.inventory_api.post.await_args.args[0]
-            == f"/services/{created_service.id}/schemas/"
-        )
+        assert entity_posts(bound_mysql_syncer.inventory_api) == [
+            f"/services/{created_service.id}/schemas/"
+        ]
         # The stale schema is retired in inventory.
         bound_mysql_syncer.inventory_api.delete.assert_awaited_once_with(
             f"/schemas/{stale_schema.id}"
@@ -759,11 +760,9 @@ class TestPerformMethods:
 
         await bound_mysql_syncer.perform_schema_sync(created_schema, mysql_schema)
 
-        bound_mysql_syncer.inventory_api.post.assert_awaited_once()
-        assert (
-            bound_mysql_syncer.inventory_api.post.await_args.args[0]
-            == f"/schemas/{created_schema.id}/tables/"
-        )
+        assert entity_posts(bound_mysql_syncer.inventory_api) == [
+            f"/schemas/{created_schema.id}/tables/"
+        ]
         bound_mysql_syncer.inventory_api.delete.assert_awaited_once_with(
             f"/tables/{stale_table.id}"
         )
@@ -1438,5 +1437,61 @@ class TestTombstoneReconciliation:
         await bound_mysql_syncer.perform_schema_sync(created_schema, mysql_schema)
 
         # The live row matched, so nothing was created, revived, or retired.
-        bound_mysql_syncer.inventory_api.post.assert_not_awaited()
+        assert entity_posts(bound_mysql_syncer.inventory_api) == []
         bound_mysql_syncer.inventory_api.delete.assert_not_awaited()
+
+
+class TestMirroredEntityLevels:
+    """Test which entity levels this syncer's attempts write sync health for."""
+
+    def test_schema_and_table_are_the_mirrored_levels(self) -> None:
+        """Own exactly the two levels ``update_schema`` and ``update_table`` write."""
+        assert MySQLSyncer.mirrors_entity_levels == frozenset(
+            {
+                SyncInventoryEntityTypeEnum.SCHEMA,
+                SyncInventoryEntityTypeEnum.TABLE,
+            }
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_traversed_service_is_never_reported(
+        self, bound_mysql_syncer, created_node, created_service, session, mocker
+    ) -> None:
+        """Confirm nothing about a service this syncer only walks through.
+
+        ``perform_node_sync`` reaches the node's services to get at their
+        schemas and never calls ``update_service``, so a service's mirrored
+        values are PMM's to confirm — refreshing them here would report a
+        confirmation this run never made, and mask a failing PMM mirror.
+
+        The cascade runs for real: only ``alert_service.trigger`` is mocked, so
+        the walk reaches the shared ``sync_service`` boundary the reporter is
+        wired into.
+        """
+        mocker.patch.object(alert_service, "trigger", new_callable=AsyncMock)
+        created_node.services = [created_service]
+        await _seed_sync_item(
+            bound_mysql_syncer,
+            session,
+            SyncInventoryEntityTypeEnum.SERVICE,
+            created_service.id,
+        )
+        # No schemas_path, so the real fetch_service yields an empty schemas index.
+        bound_mysql_syncer._inventory_index_cache[
+            _MySQLSyncResultEntityTypeEnum.SERVICES
+        ][created_service.address] = (None, {})
+        bound_mysql_syncer.inventory_api.get.side_effect = [
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+        ]
+
+        await bound_mysql_syncer.perform_node_sync(created_node, created_node)
+
+        assert (
+            bound_mysql_syncer.sync_items[
+                (SyncInventoryEntityTypeEnum.SERVICE, created_service.id)
+            ].status
+            == SyncStatusEnum.SUCCESS
+        ), (
+            "the walk must have reached the service for the absence below to mean anything"
+        )
+        assert sync_health_posts(bound_mysql_syncer.inventory_api) == []

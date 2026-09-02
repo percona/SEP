@@ -3677,7 +3677,10 @@ export interface components {
       | 'error'
       | 'unreachable'
       | 'ssl_error'
-      | 'timeout';
+      | 'timeout'
+      | 'not_configured'
+      | 'inputs_drifted'
+      | 'probe_undeclared';
     /**
      * DashboardStatsResponse
      * @description Represent aggregate counts for the four dashboard stat cards.
@@ -3810,11 +3813,23 @@ export interface components {
      *     :param retired_at: When the node stopped being reported upstream, or None while
      *         it is active.
      *     :param retirement_key: The discriminator carried inside every unique index.
+     *     :param last_synced_at: When a syncer last confirmed the node against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the node is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      *     :param services: A list of services associated with the node.
      */
     Node: {
       /** Address */
       address: string;
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -3824,11 +3839,17 @@ export interface components {
       external_id: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
       source: components['schemas']['SourceEnum'];
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /**
        * Type
        * @default generic
@@ -3946,9 +3967,21 @@ export interface components {
      *     :param retired_at: When the schema stopped being reported upstream, or None
      *         while it is active.
      *     :param retirement_key: The discriminator carried inside every unique index.
+     *     :param last_synced_at: When a syncer last confirmed the schema against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the schema is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      *     :param tables: A list of tables within the schema.
      */
     Schema: {
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -3956,12 +3989,18 @@ export interface components {
       created_at?: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
       /** Service Id */
       service_id: number;
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -3970,7 +4009,7 @@ export interface components {
      * @description Enumerate the probeable services, used as stable ``service`` identifiers.
      * @enum {string}
      */
-    ServiceEnum: 'pmm' | 'inventory' | 'tasks' | 'nomad';
+    ServiceEnum: 'pmm' | 'inventory' | 'tasks' | 'nomad' | 'delivery';
     /**
      * ServiceResponse
      * @description Define the service API response.
@@ -3993,10 +4032,22 @@ export interface components {
      *     :param node: The node to which the service is associated.
      *     :param retired_at: When the service stopped being reported upstream, or None
      *         while it is active.
+     *     :param last_synced_at: When a syncer last confirmed the service against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the service is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      */
     ServiceResponse: {
       /** Cluster */
       cluster?: string | null;
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -4012,6 +4063,10 @@ export interface components {
       external_id: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       node: components['schemas']['Node'];
@@ -4025,6 +4080,8 @@ export interface components {
       retired_at?: string | null;
       /** Schemas */
       schemas: components['schemas']['Schema'][];
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       type: components['schemas']['ServiceTypeEnum'];
       /** Updated At */
       updated_at?: string | null;
@@ -6797,8 +6854,10 @@ export interface components {
      *     :param task_type: Optional task-type identifier used when creating tasks
      *         via the shared task API. Defaults to ``None``.
      *     :type task_type: NonEmptyStr | None
-     *     :param forms: Form sections for single-entity / task plugins. Defaults to
-     *         an empty list when ``entities`` is used instead.
+     *     :param forms: Form sections for single-entity / task plugins. When
+     *         ``entities`` is non-empty, root ``forms`` must be empty (declare
+     *         forms on each entity instead); non-empty root ``forms`` are rejected
+     *         at construction. Defaults to an empty list.
      *     :type forms: list[FormSection]
      *     :param capabilities: Optional plugin-level feature flags. Defaults to
      *         ``None``.
@@ -6816,11 +6875,13 @@ export interface components {
      *         When non-empty, the React shell renders one list/create/detail flow
      *         per entity. Defaults to ``None`` (legacy single-entity mode).
      *     :param cardinality_rules: Optional plugin-wide cross-field cardinality
-     *         constraints (task-style plugins only; ignored when ``entities`` is set).
+     *         constraints (task-style plugins only). Rejected at construction when
+     *         ``entities`` is non-empty — declare rules on each entity instead.
      *         Defaults to ``None``.
      *     :type cardinality_rules: list[CardinalityRule] | None
      *     :param fail_when: Optional plugin-wide predicate-only invariants (task-style
-     *         plugins only; ignored when ``entities`` is set). Defaults to ``None``.
+     *         plugins only). Rejected at construction when ``entities`` is non-empty —
+     *         declare rules on each entity instead. Defaults to ``None``.
      *     :type fail_when: list[FailRule] | None
      *     :param derived: Optional declarative specs for sibling tasks derived from
      *         the parent task on cascade. Consumed by
@@ -7701,10 +7762,13 @@ export interface components {
      *
      *     :param field_type: The discriminator literal; always ``"host"`` for this
      *         class. Serialised as the JSON key ``"type"``.
-     *     :type field_type: Literal["host"]
      *     :param depends_on: Optional name of the field whose value drives the
      *         default executor selection. ``None`` (the default) omits the key from
      *         the wire so plugins that do not opt in stay byte-identical.
+     *     :param target_service: Optional service field for a non-blocking
+     *         co-location warning. Independent of ``depends_on`` (see
+     *         :class:`~app.sep.apps.framework.form_dsl.markers.HostRef`).
+     *         ``None`` (the default) omits the key from the wire.
      *     :param allow_custom: When ``True``, the selector also accepts a free-typed
      *         value alongside the inventory options. ``None`` (the default) omits the
      *         key from the wire so plugins that do not opt in stay byte-identical.
@@ -7731,6 +7795,8 @@ export interface components {
       required: boolean;
       /** Requires */
       requires?: components['schemas']['framework__FieldGate'][] | null;
+      /** Target Service */
+      target_service?: string | null;
       /**
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
@@ -7871,6 +7937,8 @@ export interface components {
      *     Cascade auto-select is single-host only (:class:`HostField`). ``depends_on``
      *     may still be emitted when ``Ui(depends_on=...)`` is set so derivation stays
      *     uniform, but the multi-host renderer does not honour it today.
+     *     ``target_service`` is mirrored the same way; the multi-host renderer
+     *     ignores it (no co-location warning).
      *
      *     :param field_type: The discriminator literal; always ``"multi_host"`` for
      *         this class. Serialised as the JSON key ``"type"``.
@@ -7878,6 +7946,9 @@ export interface components {
      *         ``Ui(depends_on=...)``. Emitted for wire uniformity with
      *         :class:`HostField`; the current multi-host renderer ignores it (no
      *         cascade). ``None`` (the default) omits the key from the wire.
+     *     :param target_service: Optional service field name mirrored for wire
+     *         uniformity with :class:`HostField`; ignored by the multi-host
+     *         renderer. ``None`` (the default) omits the key from the wire.
      *     :param allow_custom: When ``True``, the selector also accepts free-typed
      *         values alongside the inventory options. ``None`` (the default) omits the
      *         key from the wire so plugins that do not opt in stay byte-identical.
@@ -7904,6 +7975,8 @@ export interface components {
       required: boolean;
       /** Requires */
       requires?: components['schemas']['framework__FieldGate'][] | null;
+      /** Target Service */
+      target_service?: string | null;
       /**
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}

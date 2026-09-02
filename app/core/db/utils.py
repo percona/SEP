@@ -33,7 +33,7 @@ from sqlalchemy import (
     text,
     TypeDecorator,
 )
-from sqlalchemy.dialects import mysql, postgresql, sqlite
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine, create_async_engine
@@ -153,9 +153,6 @@ def func_json_extract(
       expression indexes keep matching.
     - SQLite: ``json_extract(col, '$.a.b')``. SQLite auto-unquotes scalars, so
       the result is directly comparable to a string.
-    - MySQL: ``json_extract(col, '$.a.b')``. No functional index is created on
-      MySQL because a width-limited ``CAST`` would introduce comparison
-      truncation; MySQL dev environments fall back to non-indexed filtering.
 
     :param db_engine: The database engine type (e.g., ``"postgresql"``).
     :type db_engine: str
@@ -183,39 +180,29 @@ def func_json_extract(
 def idempotent_insert(engine_name: str, table: Any) -> GenericInsert:
     """Return a dialect-specific INSERT that ignores duplicate-key conflicts.
 
-    PostgreSQL and SQLite use ``INSERT ... ON CONFLICT DO NOTHING``; MySQL uses
-    ``INSERT IGNORE ...``. The caller chains ``.values(...)`` and passes the
-    result to ``session.execute``.
+    PostgreSQL and SQLite use ``INSERT ... ON CONFLICT DO NOTHING``. The caller
+    chains ``.values(...)`` and passes the result to ``session.execute``.
 
-    :param engine_name: SQLAlchemy engine ``name`` (``"postgresql"``, ``"sqlite"``,
-        or ``"mysql"``).
-    :type engine_name: str
+    :param engine_name: SQLAlchemy engine ``name`` (``"postgresql"`` or
+        ``"sqlite"``).
     :param table: The target table or ORM model class.
-    :type table: Any
     :return: A dialect-specific insert construct.
-    :rtype: GenericInsert
     :raises NotImplementedError: If the dialect is not supported.
     """
     if engine_name == DatabaseDialect.POSTGRESQL:
         return postgresql.insert(table).on_conflict_do_nothing()
     if engine_name == DatabaseDialect.SQLITE:
         return sqlite.insert(table).on_conflict_do_nothing()
-    if engine_name == DatabaseDialect.MYSQL:
-        return mysql.insert(table).prefix_with("IGNORE")
     raise NotImplementedError(f"idempotent_insert: unsupported dialect {engine_name!r}")
 
 
 class NullsLastOrdering(ColumnElement):
     """Render an ``ORDER BY`` term that places NULLs last on every supported dialect.
 
-    PostgreSQL and SQLite render the standard ``NULLS LAST`` clause. MySQL has no
-    such syntax, so its hook prepends ``ISNULL(<expr>) ASC`` -- ``ISNULL`` yields
-    ``1`` for NULL and ``0`` otherwise, pinning NULLs last independently of the
-    primary direction.
+    PostgreSQL and SQLite render the standard ``NULLS LAST`` clause.
 
     Takes the direction as a flag rather than a pre-directed expression: wrapping an
-    already-``desc()``-ed expression would make the MySQL hook emit the invalid
-    ``ISNULL(<expr> DESC)``.
+    already-``desc()``-ed expression would render ``<expr> DESC ASC NULLS LAST``.
 
     Participates in SQLAlchemy's compiled-statement cache, with a key that
     discriminates both column and direction.
@@ -251,30 +238,6 @@ def _compile_nulls_last_ordering(
     """
     direction = "DESC" if element.descending else "ASC"
     return f"{compiler.process(element.column, **kw)} {direction} NULLS LAST"
-
-
-@compiles(NullsLastOrdering, DatabaseDialect.MYSQL)
-def _compile_nulls_last_ordering_mysql(
-    element: NullsLastOrdering, compiler: SQLCompiler, **kw: Any
-) -> str:
-    """Render MySQL's ``ISNULL(<expr>) ASC, <expr> <direction>`` equivalent.
-
-    The interpolated text is the compiler's own rendering of the wrapped
-    expression, never a client-supplied value: sort keys are allowlisted by
-    :attr:`~app.core.db.list_query.ListQuerySpec.sortable` before they reach the
-    construct, and :class:`NullsLastOrdering` coerces a raw string argument into a
-    bound parameter rather than SQL text. Path literals carried by
-    :func:`func_json_extract` use ``literal_execute``, so the dialect's literal
-    processor inlines them at execution -- the same rendering that function
-    documents, unchanged by the wrapper.
-
-    :param element: The ordering construct being compiled.
-    :param compiler: The active SQL compiler.
-    :return: The rendered pair of ``ORDER BY`` terms.
-    """
-    rendered = compiler.process(element.column, **kw)
-    direction = "DESC" if element.descending else "ASC"
-    return f"ISNULL({rendered}) ASC, {rendered} {direction}"
 
 
 def prepare_unsafe_value_for_json_comparison(db_engine: str, value: Any) -> Any:

@@ -121,10 +121,10 @@ async def apply_schema(conn: AsyncConnection, metadata: MetaData) -> None:
 
     Drop-in replacement for ``await conn.run_sync(metadata.create_all)`` **on an
     async in-memory SQLite connection only** — ``executescript`` is an
-    aiosqlite-specific API with no asyncpg equivalent, so a real-PostgreSQL or
-    real-MySQL call site must keep calling ``create_all``. The
-    ``schema_translate_map`` is read off the connection, so a call site that sets
-    one on its engine needs no extra argument.
+    aiosqlite-specific API with no asyncpg equivalent, so a real-PostgreSQL call
+    site must keep calling ``create_all``. The ``schema_translate_map`` is read
+    off the connection, so a call site that sets one on its engine needs no extra
+    argument.
 
     ``executescript`` issues an implicit ``COMMIT`` before it runs, so it ends
     any transaction already open on ``conn`` — writes issued after it in the same

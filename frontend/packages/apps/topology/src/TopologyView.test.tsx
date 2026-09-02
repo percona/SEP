@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
+import { ADMIN_SESSION, apiClient, AuthContext, UNAUTHENTICATED_SESSION } from '@sep/api';
 import { TOPOLOGY_TASK_IDS_STORAGE_KEY, TopologyView } from './TopologyView';
 import type { TopologyGraph } from './types';
 
@@ -63,12 +63,14 @@ const SAMPLE_GRAPH: TopologyGraph = {
   },
 };
 
-function renderTopology() {
+function renderTopology({ canMutate = true }: { canMutate?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={client}>
-      <TopologyView />
-    </QueryClientProvider>,
+    <AuthContext value={canMutate ? ADMIN_SESSION : UNAUTHENTICATED_SESSION}>
+      <QueryClientProvider client={client}>
+        <TopologyView />
+      </QueryClientProvider>
+    </AuthContext>,
   );
 }
 
@@ -145,5 +147,38 @@ describe('TopologyView', () => {
 
     await screen.findByText('collect failed');
     expect(sessionStorage.getItem(TOPOLOGY_TASK_IDS_STORAGE_KEY)).toBeNull();
+  });
+});
+
+describe('TopologyView — write access', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    sessionStorage.clear();
+  });
+
+  it('renders the collect button for a session that may mutate', async () => {
+    vi.spyOn(apiClient, 'get');
+
+    renderTopology();
+
+    expect(await screen.findByTestId('topology-refresh-button')).toBeInTheDocument();
+  });
+
+  it('renders no collect button for a non-admin, keeping the graph readable', async () => {
+    sessionStorage.setItem(TOPOLOGY_TASK_IDS_STORAGE_KEY, '[42]');
+    const post = vi.spyOn(apiClient, 'post');
+    vi.spyOn(apiClient, 'get').mockResolvedValue({
+      data: { status: 'ok', graph: SAMPLE_GRAPH },
+    } as Awaited<ReturnType<typeof apiClient.get>>);
+
+    renderTopology({ canMutate: false });
+
+    await screen.findByTestId('mysql-node-host-a:3306');
+    expect(screen.queryByTestId('topology-refresh-button')).not.toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
   });
 });
