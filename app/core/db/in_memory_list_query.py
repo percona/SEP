@@ -284,14 +284,16 @@ def _search(
     A whitespace-only term is discarded, but surrounding whitespace on a term that has
     content is *not* stripped — :func:`~app.core.db.list_query.build_search_predicate`
     escapes the term as submitted, so stripping here would make a padded term match
-    in-memory rows the SQL path rejects.
+    in-memory rows the SQL path rejects. A spec with nothing searchable keeps every row,
+    matching the SQL path, which builds no predicate at all in that case.
 
     :param items: The rows to filter.
     :param attrs: The resolved attribute names to match against.
     :param search: The raw search term; empty or whitespace-only keeps every row.
-    :return: The rows matching the term (all rows when the term is blank).
+    :return: The rows matching the term (all rows when the term is blank, or when the
+        spec declares nothing searchable).
     """
-    if search is None or not search.strip():
+    if not attrs.search_attrs or search is None or not search.strip():
         return list(items)
     term = search.lower()
 

@@ -37,7 +37,11 @@ from app.core.db.in_memory_list_query import (
     resolve_in_memory_list_query,
     validate_in_memory_spec,
 )
-from app.core.db.list_query import ListQuerySpec, UnknownSortKeyError
+from app.core.db.list_query import (
+    build_search_predicate,
+    ListQuerySpec,
+    UnknownSortKeyError,
+)
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import Pagination
 from tests.app.list_query_data import (
@@ -160,7 +164,6 @@ class TestApplyInMemorySort:
         desc = InMemoryListQuery(sort_key="created_at", descending=True, search=None)
         asc_page, _ = apply_in_memory(rows, LIST_QUERY_SPEC, asc, Pagination())
         desc_page, _ = apply_in_memory(rows, LIST_QUERY_SPEC, desc, Pagination())
-        # Equal primary → filename tie-breaker ascending in BOTH directions.
         assert [r.filename for r in asc_page] == ["a", "b", "c"]
         assert [r.filename for r in desc_page] == ["a", "b", "c"]
 
@@ -212,9 +215,30 @@ class TestApplyInMemorySearch:
         )
 
         page, total = apply_in_memory(rows, LIST_QUERY_SPEC, query, Pagination())
+        predicate = build_search_predicate("  alpha  ", LIST_QUERY_SPEC.searchable)
 
         assert page == []
         assert total == 0
+        assert predicate is not None
+        assert set(predicate.compile().params.values()) == {"%  alpha  %"}
+
+    def test_non_searchable_spec_keeps_every_row(self) -> None:
+        """Keep every row when the spec declares nothing searchable.
+
+        ``build_search_predicate`` builds no predicate for an empty searchable set, so
+        a SQL-backed source answers such a request with the unfiltered set. Matching
+        nothing here instead would drop every row for the same query.
+        """
+        rows = list_query_rows(("a", "A", 1), ("b", "B", 2))
+        query = InMemoryListQuery(sort_key="filename", descending=False, search="a")
+
+        page, total = apply_in_memory(
+            rows, NO_SEARCH_LIST_QUERY_SPEC, query, Pagination()
+        )
+
+        assert [r.filename for r in page] == ["a", "b"]
+        assert total == len(rows)
+        assert build_search_predicate("a", NO_SEARCH_LIST_QUERY_SPEC.searchable) is None
 
     def test_none_search_returns_all(self) -> None:
         """Return every row when no search term is supplied."""
@@ -447,6 +471,7 @@ class TestApplierIsBackingAgnostic:
             for alias in node.names
         }
 
+        assert "app.core.db.list_query" in imported
         assert not [name for name in imported if name.startswith(_APP_PACKAGE_PREFIXES)]
 
 

@@ -18,7 +18,7 @@
 The replay itself — sort, search, pagination against in-process objects — belongs to
 every service, so it lives in :mod:`app.core.db.in_memory_list_query`. What stays here
 is the app-framework-shaped adapter: a callable honouring the
-:meth:`~app.sep.apps.framework.script_source.ScriptSource.list_scripts` protocol, which
+:attr:`~app.sep.apps.framework.script_source.ScriptSource.list_scripts` protocol, which
 is framework vocabulary rather than a Core concern.
 """
 

@@ -27,6 +27,7 @@ from fastapi import Depends, FastAPI, status
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import cast, column, String
 
+from app.core import db as core_db_package
 from app.core.db.deps import make_in_memory_list_query_dep
 from app.core.db.in_memory_list_query import apply_in_memory, InMemoryListQuery
 from app.core.db.list_query import (
@@ -44,17 +45,41 @@ from tests.app.list_query_data import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Callable
+
+
+@pytest.fixture(name="dep")
+def dep_fixture() -> Callable[..., InMemoryListQuery]:
+    """Return the dependency the searchable spec wires.
+
+    :return: A dependency callable built from ``LIST_QUERY_SPEC``.
+    """
+    return make_in_memory_list_query_dep(LIST_QUERY_SPEC)
 
 
 class TestMakeInMemoryListQueryDep:
     """Exercise the FastAPI dependency the paginated list route injects."""
 
-    def test_exposes_sort_and_search_params_when_searchable(self) -> None:
-        """Expose ``sort`` and ``search`` when the spec has searchable columns."""
-        dep = make_in_memory_list_query_dep(LIST_QUERY_SPEC)
-        params = inspect.signature(dep).parameters
-        assert set(params) == {"sort", "search"}
+    def test_exposed_from_the_package(self) -> None:
+        """Re-export the factory beside its SQL sibling on the package surface.
+
+        Both consumers reach ``make_list_query_dep`` through ``app.core.db``, so the
+        in-memory factory answering only from the submodule would leave one kind of
+        construct with two import homes.
+        """
+        assert (
+            core_db_package.make_in_memory_list_query_dep
+            is make_in_memory_list_query_dep
+        )
+
+    def test_exposes_sort_and_search_params_when_searchable(
+        self, dep: Callable[..., InMemoryListQuery]
+    ) -> None:
+        """Expose ``sort`` and ``search`` when the spec has searchable columns.
+
+        :param dep: The dependency built from the searchable spec.
+        """
+        assert set(inspect.signature(dep).parameters) == {"sort", "search"}
 
     def test_exposes_only_sort_when_no_searchable(self) -> None:
         """Expose only ``sort`` when the spec has no searchable columns."""
@@ -62,33 +87,53 @@ class TestMakeInMemoryListQueryDep:
         params = inspect.signature(dep).parameters
         assert set(params) == {"sort"}
 
-    def test_default_sort_resolves_to_spec_default(self) -> None:
-        """Resolve the spec's default sort, honoring its descending prefix."""
-        dep = make_in_memory_list_query_dep(LIST_QUERY_SPEC)
+    def test_default_sort_resolves_to_spec_default(
+        self, dep: Callable[..., InMemoryListQuery]
+    ) -> None:
+        """Resolve the spec's default sort, honoring its descending prefix.
+
+        :param dep: The dependency built from the searchable spec.
+        """
         query = dep(sort=LIST_QUERY_SPEC.default_sort, search=None)
         assert query == InMemoryListQuery(
             sort_key="created_at", descending=True, search=None
         )
 
-    def test_ascending_sort_key_parsed(self) -> None:
-        """Parse a bare (unprefixed) sort key as ascending."""
-        dep = make_in_memory_list_query_dep(LIST_QUERY_SPEC)
+    def test_ascending_sort_key_parsed(
+        self, dep: Callable[..., InMemoryListQuery]
+    ) -> None:
+        """Parse a bare (unprefixed) sort key as ascending.
+
+        :param dep: The dependency built from the searchable spec.
+        """
         assert dep(sort="filename", search=None).descending is False
 
-    def test_search_term_passed_through(self) -> None:
-        """Carry the raw search term onto the resolved query."""
-        dep = make_in_memory_list_query_dep(LIST_QUERY_SPEC)
+    def test_search_term_passed_through(
+        self, dep: Callable[..., InMemoryListQuery]
+    ) -> None:
+        """Carry the raw search term onto the resolved query.
+
+        :param dep: The dependency built from the searchable spec.
+        """
         assert dep(sort="filename", search="needle").search == "needle"
 
-    def test_unknown_sort_key_raises_422(self) -> None:
-        """Reject an out-of-allowlist sort key with HTTP 422."""
-        dep = make_in_memory_list_query_dep(LIST_QUERY_SPEC)
+    def test_unknown_sort_key_raises_422(
+        self, dep: Callable[..., InMemoryListQuery]
+    ) -> None:
+        """Reject an out-of-allowlist sort key with HTTP 422.
+
+        :param dep: The dependency built from the searchable spec.
+        """
         with pytest.raises(HTTPUnprocessableEntityException):
             dep(sort="bogus", search=None)
 
-    def test_unknown_sort_key_with_descending_prefix_raises_422(self) -> None:
-        """Reject an out-of-allowlist descending sort key with HTTP 422."""
-        dep = make_in_memory_list_query_dep(LIST_QUERY_SPEC)
+    def test_unknown_sort_key_with_descending_prefix_raises_422(
+        self, dep: Callable[..., InMemoryListQuery]
+    ) -> None:
+        """Reject an out-of-allowlist descending sort key with HTTP 422.
+
+        :param dep: The dependency built from the searchable spec.
+        """
         with pytest.raises(HTTPUnprocessableEntityException):
             dep(sort="-bogus", search=None)
 
@@ -103,9 +148,13 @@ class TestMakeInMemoryListQueryDep:
         with pytest.raises(ValueError, match="exposes no name"):
             make_in_memory_list_query_dep(spec)
 
-    def test_params_carry_the_allowlist_enum_and_descriptions(self) -> None:
-        """Declare the params through Core, so both paths document one contract."""
-        dep = make_in_memory_list_query_dep(LIST_QUERY_SPEC)
+    def test_params_carry_the_allowlist_enum_and_descriptions(
+        self, dep: Callable[..., InMemoryListQuery]
+    ) -> None:
+        """Declare the params through Core, so both paths document one contract.
+
+        :param dep: The dependency built from the searchable spec.
+        """
         declarations = {
             name: param.default
             for name, param in inspect.signature(dep).parameters.items()
