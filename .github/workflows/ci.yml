@@ -79,6 +79,9 @@ jobs:
               - 'sidecar/settings-env.sh'
               - 'sidecar/supervisord.conf'
               - 'sidecar/healthcheck.sh'
+              - 'sidecar/entrypoint.sh'
+              - 'sidecar/wait_for_schema.sh'
+              - 'sidecar/Containerfile.sidecar'
               - 'Makefile'
               - 'frontend/packages/api/specs/**'
             precommit:
@@ -301,6 +304,7 @@ jobs:
             test -f /home/sep/app/supervisord.conf
             test -f /home/sep/app/healthcheck.sh
             test -x /home/sep/app/entrypoint.sh
+            test -x /home/sep/app/wait_for_schema.sh
             test -f /home/sep/app/settings-env.sh
             test -f /home/sep/app/settings.yaml
           '
