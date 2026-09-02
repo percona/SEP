@@ -815,7 +815,7 @@ class TestLaunchCheckShell:
                 0,
                 "env FOO=1 nosuchinterp",
             ),
-            ("user-no-sudo", "g/ba*", LAUNCH_CHECK_EXIT_CODE, None),
+            ("user-no-sudo", "/tmp/g/ba*", LAUNCH_CHECK_EXIT_CODE, None),
         ],
     )
     def test_resolves_the_launch_chain(
@@ -844,7 +844,7 @@ class TestLaunchCheckShell:
             ("user-no-sudo", "sudo bash", "sudo"),
             ("user-sudo", "sudo -u postgres nosuchinterp", "nosuchinterp"),
             ("user-no-sudo", "nosuchinterp", "nosuchinterp"),
-            ("user-no-sudo", "g/ba*", "g/ba*"),
+            ("user-no-sudo", "/tmp/g/ba*", "/tmp/g/ba*"),
         ],
     )
     def test_abort_line_names_the_unresolvable_command_and_node(
@@ -999,6 +999,57 @@ class TestLaunchCheckShell:
 
         assert result.returncode == 0, result.stderr
         assert handoff.read_text() == str(relative)
+
+    def test_declines_a_relative_interpreter_path_that_does_not_resolve_here(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert an unresolvable relative path is passed through, not aborted.
+
+        The inverse of the case above and the one that hurts: ``run-script``
+        pins a ``work_dir`` under the task dir and this step pins none, so a
+        payload-relative interpreter can be executable where the launcher runs
+        while being absent here. Resolving it against this step's cwd would
+        abort an execution the launcher completes.
+        """
+        relative = "rel/interp"
+
+        result, handoff = self._run(tmp_path, node="user-no-sudo", meta=relative)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert handoff.read_text() == relative
+
+    @pytest.mark.parametrize(
+        ("kind", "mode"),
+        [("non-executable file", 0o644), ("directory", 0o755)],
+    )
+    def test_aborts_on_a_path_that_exists_but_cannot_be_executed(
+        self, tmp_path: Path, kind: str, mode: int
+    ) -> None:
+        """Assert an unexecutable absolute interpreter aborts rather than runs.
+
+        ``command -v`` answers whether the shell would accept the word, not
+        whether the node can exec it: ``dash`` and ``busybox ash`` both report
+        a bare-existing path as found, so an interpreter without the execute
+        bit — or a directory — would reach ``run-script``, fail with 126 and
+        land in ``FAILED``, which is the outcome this step exists to separate
+        out. Only ``bash`` checks the mode, so the guard cannot be left to the
+        node's choice of ``sh``.
+        """
+        target = tmp_path / "interp"
+        if kind == "directory":
+            target.mkdir()
+        else:
+            target.write_text("#!/bin/sh\nexit 0\n")
+        target.chmod(mode)
+
+        result, handoff = self._run(tmp_path, node="user-no-sudo", meta=str(target))
+
+        assert result.returncode == LAUNCH_CHECK_EXIT_CODE, result.stdout
+        assert (
+            result.stdout.decode().strip()
+            == f"SEP_UNLAUNCHABLE: command={target} node=node-1"
+        )
+        assert not handoff.exists()
 
     @pytest.mark.parametrize(
         ("node", "meta", "expected_exit", "expected_effective"),

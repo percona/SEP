@@ -198,7 +198,20 @@ def _launch_check_shell(
         )
 
     def resolve_or_abort(token: str, name: str) -> str:
-        return f"command -v {token} > /dev/null 2>&1 || {{ {abort(name)}; }}; "
+        # `command -v` answers "would the shell accept this word", which for a
+        # token holding a slash is not "can the node exec it": dash and busybox
+        # ash both report a bare-existing path as found, so a non-executable
+        # interpreter -- or a directory -- passes here and the run lands in
+        # FAILED, the outcome this step exists to separate out. Only bash
+        # checks the mode. Test the path directly and keep `command -v` for the
+        # bare names it is right for, where it does search PATH for an
+        # executable.
+        return (
+            f"case {token} in "
+            f"*/*) [ -x {token} ] && [ ! -d {token} ];; "
+            f"*) command -v {token} > /dev/null 2>&1;; "
+            f"esac || {{ {abort(name)}; }}; "
+        )
 
     # `env -S` applies a leading NAME=VALUE before locating the command, so a
     # `PATH=/opt/toolchain bash` resolves against the assigned PATH there and
@@ -267,11 +280,13 @@ def _launch_check_shell(
         "[ $# -gt 0 ] || exit 0; "
         f'case "$1" in env|*/env) {decline};; esac; '
         # A relative path resolves against the step's cwd, which is not the
-        # launcher's — run-script pins a work_dir and this step does not. Only
-        # one that resolves *here* is declined; one that resolves in neither
-        # place is still reported, so this cannot mask a genuine failure.
-        f'case "$1" in /*) ;; */*) command -v "$1" > /dev/null 2>&1 && '
-        f"{{ {decline}; }};; esac; "
+        # launcher's — run-script pins a work_dir under the task dir and this
+        # step pins none. Resolving one here answers about the wrong directory
+        # in both directions, and the direction that hurts is a payload-relative
+        # interpreter that exists only under that work_dir: resolving it here
+        # would abort an execution the launcher runs. The check cannot inspect
+        # that cwd, so every non-absolute path is declined.
+        f'case "$1" in /*) ;; */*) {decline};; esac; '
         + ("eff=$m; " + strip if allow_strip else "")
         + resolution
         + announce
@@ -638,7 +653,8 @@ NOMAD_EXEC_PYTHON_ARTIFACT = {
                         "args": [
                             "-c",
                             f"{STALENESS_PREAMBLE_SHELL}; "
-                            "python3 -m venv --copies ${NOMAD_ALLOC_DIR}/venv;"
+                            f"{_VENV_BUILDER_COMMAND} -m venv --copies "
+                            "${NOMAD_ALLOC_DIR}/venv;"
                             "${NOMAD_ALLOC_DIR}/venv/bin/pip install -r requirements.txt",
                         ],
                     },
