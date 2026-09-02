@@ -62,4 +62,13 @@ fi
 # Grafana administrator credential for the life of the container.
 unset grafana_token GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD
 
+# /tmp survives a container restart, and each schema one-shot clears its own
+# sentinel only after being spawned -- concurrently with the API programs now
+# gated on it, which could therefore read a previous run's marker. PID 1 runs
+# before supervisord starts anything, so clearing here covers every container
+# start and restart. A `supervisorctl restart` does not re-enter this script and
+# still races; nothing in the documented operation of the image does that.
+rm -f /tmp/migrate-sep.ok /tmp/migrate-inventory.ok /tmp/migrate-tasks.ok \
+    /tmp/migrate-beat.ok
+
 exec supervisord -c "$app_dir/supervisord.conf" "$@"
