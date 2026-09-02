@@ -257,17 +257,17 @@
 | app/sep/apps/mysql\_backups/app.py                                                                                           |       14 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/backup\_source\_choices.py                                                                       |       62 |       11 |       24 |        1 |     77% |   148-158 |
 | app/sep/apps/mysql\_backups/crud.py                                                                                          |       22 |        0 |        2 |        0 |    100% |           |
-| app/sep/apps/mysql\_backups/deps.py                                                                                          |       66 |        1 |       12 |        2 |     96% |65, 218-\>221 |
+| app/sep/apps/mysql\_backups/deps.py                                                                                          |       65 |        1 |       12 |        2 |     96% |65, 218-\>221 |
 | app/sep/apps/mysql\_backups/form\_backfill.py                                                                                |       56 |        6 |       20 |        7 |     83% |73-\>95, 76-77, 78-\>95, 80-\>95, 82-\>95, 86-\>95, 89, 119-120, 130 |
 | app/sep/apps/mysql\_backups/forms.py                                                                                         |      186 |        2 |       14 |        2 |     98% |  647, 662 |
 | app/sep/apps/mysql\_backups/inventory\_references.py                                                                         |        8 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/migrations/versions/2026\_07\_29\_1200-f0a1b2c3d4e5\_create\_mysql\_backup\_run\_table.py        |       22 |        6 |        4 |        1 |     65% |40-\>exit, 89-98 |
 | app/sep/apps/mysql\_backups/migrations/versions/2026\_08\_06\_1200-b7c8d9e0f1a2\_add\_service\_id\_to\_mysql\_backup\_run.py |       30 |        0 |       12 |        2 |     95% |66-\>exit, 74-\>exit |
-| app/sep/apps/mysql\_backups/models.py                                                                                        |       49 |        0 |        4 |        0 |    100% |           |
+| app/sep/apps/mysql\_backups/models.py                                                                                        |       50 |        0 |        4 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/payload\_variants.py                                                                             |       13 |        0 |        4 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/recorder.py                                                                                      |       43 |        0 |       10 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/restore/app.py                                                                                   |        7 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/mysql\_backups/restore/deps.py                                                                                  |       80 |       14 |       20 |        5 |     79% |70, 83-\>87, 104-115, 154-155, 159, 164, 167-168 |
+| app/sep/apps/mysql\_backups/restore/deps.py                                                                                  |       79 |       14 |       20 |        5 |     79% |68, 81-\>85, 102-113, 152-153, 157, 162, 165-166 |
 | app/sep/apps/mysql\_backups/restore/form\_backfill.py                                                                        |       55 |        3 |       18 |        1 |     95% |127-128, 141 |
 | app/sep/apps/mysql\_backups/restore/models.py                                                                                |      141 |        2 |       14 |        2 |     97% |   52, 477 |
 | app/sep/apps/mysql\_backups/restore/spec.py                                                                                  |       35 |        1 |        8 |        1 |     95% |       106 |
@@ -456,7 +456,7 @@
 | app/tasks/routes.py                                                                                                          |      237 |       20 |       46 |        4 |     91% |153-157, 240-246, 279, 329-335, 342, 432, 475, 490, 650, 664, 672, 698, 706-\>708, 729-730 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **28149** | **1719** | **6916** |  **637** | **92%** |           |
+| **TOTAL**                                                                                                                    | **28148** | **1719** | **6916** |  **637** | **92%** |           |
 
 
 ## Setup coverage badge
