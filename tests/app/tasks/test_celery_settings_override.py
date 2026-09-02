@@ -63,7 +63,6 @@ from tests.app.db_schema import apply_schema
 from tests.app.factories import TaskFactory
 
 ANCHOR = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
-WorkerLoopEnv = tuple[asyncio.AbstractEventLoop, async_sessionmaker]
 
 
 def _write_cert(path: Path, *, not_valid_after: datetime) -> None:
