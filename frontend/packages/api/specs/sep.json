@@ -341,7 +341,10 @@
           "error",
           "unreachable",
           "ssl_error",
-          "timeout"
+          "timeout",
+          "not_configured",
+          "inputs_drifted",
+          "probe_undeclared"
         ],
         "title": "ConnectivityStatusEnum",
         "type": "string"
@@ -901,7 +904,8 @@
           "pmm",
           "inventory",
           "tasks",
-          "nomad"
+          "nomad",
+          "delivery"
         ],
         "title": "ServiceEnum",
         "type": "string"
