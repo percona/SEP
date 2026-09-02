@@ -228,10 +228,10 @@ class SyncInstanceManager(BaseSQLModelManager):
         it raises a `SyncInstanceAlreadyInProgressError`. Otherwise, it creates and
         saves the new `SyncInstance`.
 
-        When ``stale_after`` is supplied, an in-progress conflict is first re-examined
-        for abandoned runs: items left behind by a killed worker would otherwise
-        block the syncer permanently, because the hanging-item sweep runs only when
-        the run exits through its context manager.
+        When ``stale_after`` is supplied, abandoned runs are reclaimed whether or not
+        an item conflict was detected, because a worker killed after its last item
+        write leaves a stale run that no item conflict would ever surface. An
+        in-progress conflict is re-examined after the reclaim, as before.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
@@ -246,12 +246,12 @@ class SyncInstanceManager(BaseSQLModelManager):
         syncs_in_progress = await cls._items_in_progress(
             session, instance_create.syncer
         )
-        if syncs_in_progress and stale_after is not None:
+        if stale_after is not None:
             await cls.reclaim_stale_runs(session, instance_create.syncer, stale_after)
-            syncs_in_progress = await cls._items_in_progress(
-                session,
-                instance_create.syncer,
-            )
+            if syncs_in_progress:
+                syncs_in_progress = await cls._items_in_progress(
+                    session, instance_create.syncer
+                )
         if syncs_in_progress:
             raise SyncInstanceAlreadyInProgressError(syncs_in_progress)
         return await super().create(session, instance_create, **extra_fields)
@@ -291,12 +291,13 @@ class SyncInstanceManager(BaseSQLModelManager):
         """Fail the runs of a syncer whose items stopped progressing long ago.
 
         A run is stale when the newest activity across **all** of its items predates
-        ``stale_after``, so a run still making progress is never reclaimed. The item
-        flip is a single conditional statement, so a second reclaimer arriving
-        concurrently matches no rows rather than reclaiming twice. It covers every
-        stale run already fenced as ``FAILED``, not only the ones this call fenced,
-        so a reclaim interrupted between its two statements resumes on the next
-        attempt instead of leaving the syncer blocked.
+        ``stale_after``, so a run still making progress is never reclaimed. Two
+        classes qualify: a run still holding ``PENDING``/``RUNNING`` items, and a
+        ``RUNNING`` run whose items have all gone terminal. A run that wrote no item
+        carries no activity to measure and is left alone.
+
+        Both the fence and the item flip are single conditional statements, so a
+        concurrent reclaimer matches no rows rather than reclaiming twice.
 
         ``snapshot_complete`` is deliberately left untouched: a partially applied run
         must never be counted as a complete generation.
@@ -323,36 +324,49 @@ class SyncInstanceManager(BaseSQLModelManager):
         last_activity = func.max(
             func.coalesce(col(SyncItem.updated_at), col(SyncItem.created_at)),
         )
-        query = (
+        cutoff = utc_now() - stale_after
+        stale_activity = (
             select(col(SyncItem.sync_instance_id))
-            .where(col(SyncItem.sync_instance_id).in_(in_progress))
             .group_by(col(SyncItem.sync_instance_id))
-            .having(last_activity < utc_now() - stale_after)
+            .having(last_activity < cutoff)
         )
-        result = await cls._exec(session, query)
-        stale_instance_ids = list(result.all())
+        blocked = stale_activity.where(col(SyncItem.sync_instance_id).in_(in_progress))
+        # Kept as a second query rather than folded into the one above: that one must
+        # stay item-keyed so a reclaim interrupted after fencing still finds its run
+        # and releases the items. Excluding those runs makes the two sets disjoint,
+        # and grouping over items is what leaves a run that wrote none out of both.
+        idle = stale_activity.join(SyncInstance).where(
+            col(SyncInstance.syncer) == syncer,
+            col(SyncInstance.status) == SyncStatusEnum.RUNNING,
+            col(SyncItem.sync_instance_id).not_in(in_progress),
+        )
+        blocked_result = await cls._exec(session, blocked)
+        idle_result = await cls._exec(session, idle)
+        stale_instance_ids = [*blocked_result.all(), *idle_result.all()]
         if not stale_instance_ids:
             return []
         # The instance is fenced first, and only then are its items released.
         # Each statement commits on its own, so flipping the items first would
         # leave a window in which a reclaimed-but-live worker still reads
-        # ``RUNNING`` and walks into its retire phase. The status predicate keeps
-        # a run that finished between the query above and this update: it has
-        # already written its own verdict, and is no longer anyone's to reclaim.
+        # ``RUNNING`` and walks into its retire phase. Both predicates re-assert
+        # what the query above selected on, because it committed separately: a run
+        # that finished meanwhile has written its own verdict, and one whose worker
+        # resumed and touched an item is progressing after all.
         reclaimed_ids = await cls.update_where(
             session,
             {"status": SyncStatusEnum.FAILED},
             col(SyncInstance.id).in_(stale_instance_ids),
+            col(SyncInstance.id).in_(stale_activity),
             col(SyncInstance.status).in_(
                 [SyncStatusEnum.PENDING, SyncStatusEnum.RUNNING],
             ),
             returning=["id"],
         )
         # Items are released for every stale instance already fenced, not only the
-        # ones this call fenced. A crash between the two statements leaves a FAILED
+        # ones this call fenced: a crash between the two statements leaves a FAILED
         # instance whose items were never released, and the update above then matches
-        # nothing on every later attempt -- so without this the syncer would stay
-        # blocked by exactly the abandoned run the reclaim exists to clear.
+        # nothing on every later attempt, blocking the syncer with exactly the
+        # abandoned run the reclaim exists to clear.
         fenced = await cls._exec(
             session,
             select(col(SyncInstance.id)).where(

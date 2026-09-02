@@ -15,11 +15,14 @@
 
 """Define tests for the app.sep.crud module."""
 
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import Update
 
 from app.core.exceptions import HTTPConflictException
 from app.core.utils.date_time import utc_now
@@ -499,6 +502,36 @@ class TestAppStateManager:
 # ---------------------------------------------------------------------------
 
 
+async def _seed_item(
+    session,
+    instance: SyncInstance,
+    *,
+    status: SyncStatusEnum = SyncStatusEnum.RUNNING,
+    age: timedelta = _NO_AGE,
+    entity_id: int = 1,
+) -> SyncItem:
+    """Persist one item on ``instance``, aged ``age`` into the past.
+
+    :param session: The database session to persist through.
+    :param instance: The run the item belongs to.
+    :param status: The item's synchronization status.
+    :param age: How far into the past both of the item's timestamps are set.
+    :param entity_id: The inventory entity the item covers, unique per instance.
+    :return: The persisted item.
+    """
+    return await SyncItemManager.save(
+        session,
+        SyncItem(
+            entity_id=entity_id,
+            entity_type=SyncInventoryEntityTypeEnum.NODE,
+            status=status,
+            sync_instance_id=instance.id,
+            created_at=utc_now() - age,
+            updated_at=utc_now() - age,
+        ),
+    )
+
+
 async def _seed_run(
     session,
     *,
@@ -512,18 +545,37 @@ async def _seed_run(
         session,
         SyncInstance(syncer=syncer, status=instance_status),
     )
-    await SyncItemManager.save(
-        session,
-        SyncItem(
-            entity_id=1,
-            entity_type=SyncInventoryEntityTypeEnum.NODE,
-            status=item_status,
-            sync_instance_id=instance.id,
-            created_at=utc_now() - age,
-            updated_at=utc_now() - age,
-        ),
-    )
+    await _seed_item(session, instance, status=item_status, age=age)
     return instance
+
+
+@contextmanager
+def _committing_before_the_fence(
+    session,
+    mutate: Callable[[], Awaitable[None]],
+) -> Iterator[None]:
+    """Run ``mutate`` against ``session`` just before the reclaim's fencing UPDATE.
+
+    The candidate query and the fence commit separately, so the state the fence
+    re-asserts against can move in between. Wrapping the session's own ``exec``
+    rather than a manager keeps every statement the reclaim issues, and the rows
+    they match, entirely real.
+
+    :param session: The database session the reclaim runs on.
+    :param mutate: The concurrent write to commit before the fence executes.
+    """
+    original = session.exec
+    mutated = False
+
+    async def _exec_around_fence(statement, *args, **kwargs):
+        nonlocal mutated
+        if not mutated and isinstance(statement, Update):
+            mutated = True
+            await mutate()
+        return await original(statement, *args, **kwargs)
+
+    with patch.object(session, "exec", new=_exec_around_fence):
+        yield
 
 
 class TestSyncInstanceManagerStaleReclaim:
@@ -690,6 +742,308 @@ class TestSyncInstanceManagerStaleReclaim:
         assert reclaimed == []
         untouched = await SyncInstanceManager.first(session, id=other.id)
         assert untouched.status == SyncStatusEnum.RUNNING
+
+    @pytest.mark.asyncio
+    async def test_reclaim_fails_an_idle_run_with_no_active_items(
+        self, session
+    ) -> None:
+        """Fail a run left behind with every item already terminal.
+
+        A worker killed after its last item write and before the run verdict leaves
+        no active item, so the item-conflict path never sees the run at all.
+        """
+        stale = await _seed_run(
+            session,
+            item_status=SyncStatusEnum.SUCCESS,
+            age=timedelta(hours=3),
+        )
+
+        reclaimed = await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        assert reclaimed == [stale.id]
+        fenced = await SyncInstanceManager.first(session, id=stale.id)
+        assert fenced.status == SyncStatusEnum.FAILED
+
+    @pytest.mark.asyncio
+    async def test_idle_reclaim_leaves_snapshot_complete_null(self, session) -> None:
+        """Leave ``snapshot_complete`` unset on an idle run reclaimed as abandoned."""
+        stale = await _seed_run(
+            session,
+            item_status=SyncStatusEnum.SUCCESS,
+            age=timedelta(hours=3),
+        )
+
+        await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        reclaimed = await SyncInstanceManager.first(session, id=stale.id)
+        assert reclaimed.status == SyncStatusEnum.FAILED
+        assert reclaimed.snapshot_complete is None
+
+    @pytest.mark.asyncio
+    async def test_create_reclaims_an_idle_run_without_an_item_conflict(
+        self, session
+    ) -> None:
+        """Reconcile an idle abandoned run on a path no item conflict triggers."""
+        stale = await _seed_run(
+            session,
+            item_status=SyncStatusEnum.SUCCESS,
+            age=timedelta(hours=3),
+        )
+
+        created = await SyncInstanceManager.create(
+            session,
+            SyncInstanceWrite(syncer="test-syncer"),
+            stale_after=timedelta(hours=1),
+        )
+
+        assert created.id != stale.id
+        fenced = await SyncInstanceManager.first(session, id=stale.id)
+        assert fenced.status == SyncStatusEnum.FAILED
+
+    @pytest.mark.asyncio
+    async def test_reclaim_leaves_a_recent_idle_run_running(self, session) -> None:
+        """Leave an idle run whose last item write is newer than ``stale_after``."""
+        live = await _seed_run(
+            session,
+            item_status=SyncStatusEnum.SUCCESS,
+            age=timedelta(minutes=1),
+        )
+
+        reclaimed = await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        assert reclaimed == []
+        untouched = await SyncInstanceManager.first(session, id=live.id)
+        assert untouched.status == SyncStatusEnum.RUNNING
+
+    @pytest.mark.asyncio
+    async def test_reclaim_measures_idle_time_from_the_newest_item(
+        self, session
+    ) -> None:
+        """Keep a run whose oldest item is stale but whose newest one is not."""
+        live = await _seed_run(
+            session,
+            item_status=SyncStatusEnum.SUCCESS,
+            age=timedelta(hours=3),
+        )
+        await _seed_item(
+            session,
+            live,
+            status=SyncStatusEnum.SUCCESS,
+            age=timedelta(minutes=1),
+            entity_id=2,
+        )
+
+        reclaimed = await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        assert reclaimed == []
+        untouched = await SyncInstanceManager.first(session, id=live.id)
+        assert untouched.status == SyncStatusEnum.RUNNING
+
+    @pytest.mark.asyncio
+    async def test_reclaim_ignores_an_idle_run_without_items(self, session) -> None:
+        """Leave a run that never wrote an item alone, for want of a heartbeat.
+
+        Its only timestamps live on the instance row, which no item write bumps, so
+        reconciling it needs a staleness source this path does not have.
+        """
+        itemless = await SyncInstanceManager.save(
+            session,
+            SyncInstance(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+        )
+
+        reclaimed = await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        assert reclaimed == []
+        untouched = await SyncInstanceManager.first(session, id=itemless.id)
+        assert untouched.status == SyncStatusEnum.RUNNING
+
+    @pytest.mark.asyncio
+    async def test_reclaim_ignores_an_idle_run_of_another_syncer(self, session) -> None:
+        """Leave another syncer's idle stale run untouched."""
+        other = await _seed_run(
+            session,
+            syncer="other-syncer",
+            item_status=SyncStatusEnum.SUCCESS,
+            age=timedelta(hours=3),
+        )
+
+        reclaimed = await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        assert reclaimed == []
+        untouched = await SyncInstanceManager.first(session, id=other.id)
+        assert untouched.status == SyncStatusEnum.RUNNING
+
+    @pytest.mark.asyncio
+    async def test_reclaim_leaves_a_finished_run_alone(self, session) -> None:
+        """Keep the verdict a run wrote for itself before going idle."""
+        finished = await _seed_run(
+            session,
+            item_status=SyncStatusEnum.SUCCESS,
+            age=timedelta(hours=3),
+            instance_status=SyncStatusEnum.SUCCESS,
+        )
+
+        reclaimed = await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        assert reclaimed == []
+        untouched = await SyncInstanceManager.first(session, id=finished.id)
+        assert untouched.status == SyncStatusEnum.SUCCESS
+
+    @pytest.mark.asyncio
+    async def test_idle_reclaim_is_idempotent_under_repeat(self, session) -> None:
+        """Reclaim an idle run once, then match nothing on a second attempt."""
+        stale = await _seed_run(
+            session,
+            item_status=SyncStatusEnum.SUCCESS,
+            age=timedelta(hours=3),
+        )
+
+        first = await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+        second = await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        assert first == [stale.id]
+        assert second == []
+        fenced = await SyncInstanceManager.first(session, id=stale.id)
+        assert fenced.status == SyncStatusEnum.FAILED
+
+    @pytest.mark.asyncio
+    async def test_reclaim_leaves_a_run_that_finished_mid_reclaim(
+        self, session
+    ) -> None:
+        """Keep the verdict of a run that finished after it was picked as stale.
+
+        The candidate query and the fence commit separately, so a run that writes
+        its own verdict in between must keep it rather than be failed retroactively.
+        """
+        stale = await _seed_run(session, age=timedelta(hours=3))
+
+        async def _finish_the_run() -> None:
+            finishing = await SyncInstanceManager.first(session, id=stale.id)
+            finishing.status = SyncStatusEnum.SUCCESS
+            await SyncInstanceManager.save(session, finishing)
+
+        with _committing_before_the_fence(session, _finish_the_run):
+            reclaimed = await SyncInstanceManager.reclaim_stale_runs(
+                session, "test-syncer", timedelta(hours=1)
+            )
+
+        assert reclaimed == []
+        untouched = await SyncInstanceManager.first(session, id=stale.id)
+        assert untouched.status == SyncStatusEnum.SUCCESS
+
+    @pytest.mark.asyncio
+    async def test_reclaim_spares_a_run_whose_worker_touched_an_item(
+        self, session
+    ) -> None:
+        """Keep a run whose worker wrote to an item after it was picked as stale.
+
+        A resumed worker proves the run is progressing, so the fence must re-read
+        item activity rather than trust the candidate query's snapshot.
+        """
+        stale = await _seed_run(session, age=timedelta(hours=3))
+
+        async def _touch_the_item() -> None:
+            item = await SyncItemManager.first(session, sync_instance_id=stale.id)
+            item.updated_at = utc_now()
+            await SyncItemManager.save(session, item)
+
+        with _committing_before_the_fence(session, _touch_the_item):
+            reclaimed = await SyncInstanceManager.reclaim_stale_runs(
+                session, "test-syncer", timedelta(hours=1)
+            )
+
+        assert reclaimed == []
+        untouched = await SyncInstanceManager.first(session, id=stale.id)
+        assert untouched.status == SyncStatusEnum.RUNNING
+        items = await SyncItemManager.list(session, sync_instance_id=stale.id)
+        assert [item.status for item in items] == [SyncStatusEnum.RUNNING]
+
+    @pytest.mark.asyncio
+    async def test_reclaim_spares_an_idle_run_that_started_a_new_item(
+        self, session
+    ) -> None:
+        """Keep an idle run whose worker opened a new item before the fence.
+
+        The new item makes the run active again, and failing it here would strand
+        that item under a ``FAILED`` run the worker still believes it owns.
+        """
+        stale = await _seed_run(
+            session,
+            item_status=SyncStatusEnum.SUCCESS,
+            age=timedelta(hours=3),
+        )
+
+        async def _start_the_next_item() -> None:
+            await _seed_item(session, stale, status=SyncStatusEnum.PENDING, entity_id=2)
+
+        with _committing_before_the_fence(session, _start_the_next_item):
+            reclaimed = await SyncInstanceManager.reclaim_stale_runs(
+                session, "test-syncer", timedelta(hours=1)
+            )
+
+        assert reclaimed == []
+        untouched = await SyncInstanceManager.first(session, id=stale.id)
+        assert untouched.status == SyncStatusEnum.RUNNING
+        items = await SyncItemManager.list(session, sync_instance_id=stale.id)
+        assert sorted(item.status for item in items) == sorted(
+            [SyncStatusEnum.SUCCESS, SyncStatusEnum.PENDING]
+        )
+
+    @pytest.mark.asyncio
+    async def test_reclaim_ignores_an_idle_run_still_pending(self, session) -> None:
+        """Leave an idle stale run that never reached ``RUNNING`` untouched.
+
+        Only a run that started and stopped reporting is presumed abandoned here;
+        a run still ``PENDING`` was never claimed by a worker.
+        """
+        pending = await _seed_run(
+            session,
+            item_status=SyncStatusEnum.SUCCESS,
+            age=timedelta(hours=3),
+            instance_status=SyncStatusEnum.PENDING,
+        )
+
+        reclaimed = await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        assert reclaimed == []
+        untouched = await SyncInstanceManager.first(session, id=pending.id)
+        assert untouched.status == SyncStatusEnum.PENDING
+
+    @pytest.mark.asyncio
+    async def test_reclaim_returns_both_stale_classes_once(self, session) -> None:
+        """Reclaim an idle run and an item-blocked one together, without repeats."""
+        blocked = await _seed_run(session, age=timedelta(hours=3))
+        idle = await _seed_run(
+            session,
+            item_status=SyncStatusEnum.SUCCESS,
+            age=timedelta(hours=3),
+        )
+
+        reclaimed = await SyncInstanceManager.reclaim_stale_runs(
+            session, "test-syncer", timedelta(hours=1)
+        )
+
+        assert sorted(reclaimed) == sorted([blocked.id, idle.id])
 
 
 # ---------------------------------------------------------------------------
