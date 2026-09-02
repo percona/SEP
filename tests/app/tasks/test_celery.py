@@ -78,6 +78,15 @@ from tests.app.db_schema import apply_schema
 from tests.app.factories import TaskFactory
 
 MODULE = "app.tasks.celery"
+# Derived rather than spelled out: ``_chain_on_failure`` chains on any terminal
+# status but SUCCESS, so a literal list silently stops covering the policy the
+# moment a terminal status is added -- which is exactly how the last one landed
+# with no test turning red.
+NON_SUCCESS_TERMINAL_STATUSES = sorted(
+    status
+    for status in TaskHistoryStatusEnum
+    if status.is_terminal() and status is not TaskHistoryStatusEnum.SUCCESS
+)
 EXPECTED_NOMAD_CERT_RESOLVE_CALLS = 2
 ANCHOR = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 
@@ -2067,15 +2076,7 @@ class TestSyncQueueItemChainDispatch:
         mock_chain.assert_not_awaited()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "status",
-        [
-            TaskHistoryStatusEnum.FAILED,
-            TaskHistoryStatusEnum.STOPPED,
-            TaskHistoryStatusEnum.LOST,
-            TaskHistoryStatusEnum.STALE,
-        ],
-    )
+    @pytest.mark.parametrize("status", NON_SUCCESS_TERMINAL_STATUSES)
     async def test_dispatches_chain_on_failure_with_flag(self, status) -> None:
         """Assert sync_queue_item dispatches chain on non-success terminal status with flag."""
         main_task = _make_chain_task("main-task")

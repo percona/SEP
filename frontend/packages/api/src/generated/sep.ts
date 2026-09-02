@@ -4579,6 +4579,10 @@ export interface components {
      *     :cvar STALE: Enum value for tasks skipped because executor placement
      *         exceeded the configured staleness threshold (for example a Nomad
      *         allocation that never left the queue).
+     *     :cvar UNLAUNCHABLE: Enum value for tasks the executor node could not
+     *         launch at all, because some command in the invocation does not
+     *         resolve there. The payload never ran, so this is not a script
+     *         failure.
      * @enum {string}
      */
     TaskHistoryStatusEnum:
@@ -4588,7 +4592,8 @@ export interface components {
       | 'success'
       | 'stopped'
       | 'lost'
-      | 'stale';
+      | 'stale'
+      | 'unlaunchable';
     /**
      * TaskResponse
      * @description Represent a task API response.

@@ -33,6 +33,10 @@ ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 # ALERT_SETTINGS were added to the setting_class CHECK constraint.
 _TASKS_PRE_ENUM_REVISION = "fafdb0445092"
 
+# The revision immediately below drop_setting_class_check_constraint, so
+# downgrading to it runs exactly that revision's ``downgrade()``.
+_CHECK_DROP_PARENT_REVISION = "c8e4a2b91f70"
+
 
 @pytest.fixture
 def tasks_alembic_config(tmp_path, monkeypatch):
@@ -129,7 +133,9 @@ def test_setting_class_check_downgrade_deletes_unknown_rows(
     # alembic fileConfig routes ``app.*`` to its console handler with
     # ``propagate = 0``, so the delete notice is on stderr, not in caplog.
     capsys.readouterr()
-    command.downgrade(cfg, "-1")
+    # Named rather than relative: ``-1`` means "one step back from head", so a
+    # revision landing after the CHECK drop silently retargets it.
+    command.downgrade(cfg, _CHECK_DROP_PARENT_REVISION)
     assert "Deleted 1 settingoverride row(s)" in capsys.readouterr().err
 
     engine = create_engine(sync_url)

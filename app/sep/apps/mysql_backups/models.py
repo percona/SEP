@@ -45,6 +45,8 @@ from sqlmodel import Field as SQLField
 from app.core.db.models import BaseSQLModel, DateTimeWithTimezone
 from app.core.utils.fields import EnumFieldMixin, UTCDatetime
 
+UNKNOWN_SERVICE_SENTINEL = "-1"
+
 
 class BackupType(EnumFieldMixin, StrEnum):
     """Backup types."""
