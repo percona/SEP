@@ -309,6 +309,16 @@ def write_keyfile(config):
 #: the ticket's "Only keyFile is available for intra-cluster authentication" does not
 #: ask for -- keyFile is the *intra-cluster* mechanism, SCRAM is client auth, and this
 #: PoC always turns both on together.
+#: processManagement.fork/pidFilePath matter more than they look: the packaged
+#: mongod.service is Type=forking with PIDFile=/var/run/mongod.pid, which
+#: means systemd starts the unit, then waits for mongod to daemonize (fork)
+#: and for that PID file to appear before considering the start complete.
+#: Without processManagement.fork, mongod stays in the foreground -- it runs
+#: perfectly healthily, but systemd never sees a fork or a PID file, so it
+#: waits out the full start timeout (90s) and then kills a mongod that was
+#: never actually broken. Found by watching a "failed" run's own mongod.log
+#: show a clean, deliberate shutdown at the exact moment systemd's timeout
+#: fired.
 MONGOD_CONF_TEMPLATE = """\
 storage:
   dbPath: {data_path}
@@ -324,6 +334,9 @@ security:
   keyFile: {key_file_path}
 replication:
   replSetName: {replica_set_name}
+processManagement:
+  fork: true
+  pidFilePath: /var/run/mongod.pid
 """
 
 
