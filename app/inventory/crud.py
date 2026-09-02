@@ -964,10 +964,6 @@ class AliasableManagerMixin(RetirableManagerMixin):
     ) -> SourceEnum:
         """Return the upstream system this entity's identifiers belong to.
 
-        Positional-only: a subclass that needs no session names the parameter
-        ``_session`` to satisfy ruff's unused-argument rule, and only
-        positional-only parameters keep that rename out of the override check.
-
         :param session: The asynchronous database session to use.
         :param entity: The row whose provenance is wanted.
         :return: The source.

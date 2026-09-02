@@ -53,6 +53,7 @@ from app.inventory.models import (
     ServiceDetailResponse,
     ServiceIdentityCandidateResponse,
     ServiceResponse,
+    ServiceSystemObservation,
     ServiceSystemObservationResponse,
     ServiceSystemObservationWrite,
     ServiceTypeEnum,
@@ -220,14 +221,16 @@ async def record_service_sync_health(
     await ServiceManager.record_sync_health(session, service, outcome)
 
 
-@router.get("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])
+@router.get(
+    "/{service_id}/system-observation",
+    dependencies=[IsAuthenticatedDep],
+    response_model=ServiceSystemObservationResponse,
+)
 async def retrieve_service_system_observation(
     observation: ServiceSystemObservationDep,
-) -> ServiceSystemObservationResponse:
+) -> ServiceSystemObservation:
     """Retrieve service system observation for a service."""
-    return ServiceSystemObservationResponse.model_validate(
-        observation, from_attributes=True
-    )
+    return observation
 
 
 @router.put("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])

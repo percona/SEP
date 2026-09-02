@@ -44,6 +44,7 @@ from app.inventory.deps import (
 from app.inventory.models import (
     ExternalIdentityAlias,
     ExternalIdentityAliasResponse,
+    HostSystemObservation,
     HostSystemObservationResponse,
     HostSystemObservationWrite,
     IdentityLinkDecisionWrite,
@@ -252,14 +253,16 @@ async def record_node_sync_health(
     await NodeManager.record_sync_health(session, node, outcome)
 
 
-@router.get("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])
+@router.get(
+    "/{node_id}/system-observation",
+    dependencies=[IsAuthenticatedDep],
+    response_model=HostSystemObservationResponse,
+)
 async def retrieve_host_system_observation(
     observation: HostSystemObservationDep,
-) -> HostSystemObservationResponse:
+) -> HostSystemObservation:
     """Retrieve host system observation for a node."""
-    return HostSystemObservationResponse.model_validate(
-        observation, from_attributes=True
-    )
+    return observation
 
 
 @router.put("/{node_id}/system-observation", dependencies=[IsAuthenticatedDep])

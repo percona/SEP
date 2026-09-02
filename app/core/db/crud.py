@@ -460,7 +460,7 @@ class BaseManager:
             raise ValueError(
                 "You must specify at least one filter in *whereclause or **equal_filters"
             )
-        if returning is not True and returning is not False:
+        if not isinstance(returning, bool):
             returning = tuple(returning)
             if not returning:
                 raise ValueError(
