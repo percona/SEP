@@ -141,25 +141,6 @@ class TestApplierConstruction:
         with pytest.raises(ValueError, match=f"spec {role}"):
             InMemoryListQueryApplier(spec)
 
-    def test_no_applier_escapes_a_misdeclared_spec(self) -> None:
-        """Leave no half-built applier behind: construction is the only way in.
-
-        The applier is the sole entry point to the in-memory path, so a spec whose
-        tie-breaker cannot be read off a row cannot reach a request at all.
-        """
-        spec = ListQuerySpec(
-            sortable={"filename": column("filename")},
-            default_sort="filename",
-            tie_breaker=cast(column("filename"), String),
-        )
-
-        with pytest.raises(ValueError, match="tie_breaker"):
-            InMemoryListQueryApplier(spec).apply(
-                make_rows(("a.sh", None, 1)),
-                InMemoryListQuery(sort_key="filename", descending=False, search=None),
-                Pagination(),
-            )
-
 
 class TestBuildQuery:
     """Cover the public builder a hand-written route calls without a FastAPI dep."""
@@ -499,7 +480,7 @@ class TestApplierIsBackingAgnostic:
     seam in as an import.
     """
 
-    def test_applies_over_pydanticrows(self) -> None:
+    def test_applies_over_pydantic_rows(self) -> None:
         """Sort, search, and total plain Pydantic rows, not just script dataclasses."""
 
         class _Node(BaseModel):

@@ -65,14 +65,14 @@ class TestInventoryListQuery:
         with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
             inventory_list_query(entity="nodes", sort="bogus", search=None)
         assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-        assert "bogus" in str(excinfo.value.detail)
+        assert excinfo.value.detail == "Invalid sort key: 'bogus'"
 
     def test_cross_entity_sort_key_raises_422(self) -> None:
         """Reject a sort key that is legal for schemas but not for nodes."""
         with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
             inventory_list_query(entity="nodes", sort="service_id", search=None)
         assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-        assert "service_id" in str(excinfo.value.detail)
+        assert excinfo.value.detail == "Invalid sort key: 'service_id'"
 
     def test_unknown_entity_raises_404(self) -> None:
         """Reject an unknown entity segment with HTTP 404."""
@@ -131,8 +131,11 @@ class TestEntityListQueryAppliers:
             inventory_list_query_module, "InMemoryListQueryApplier", _boom
         )
 
+        spec = ENTITY_LIST_QUERY_SPECS[entity]
         for sort in (None, "name", "-name"):
-            assert inventory_list_query(entity=entity, sort=sort, search="db1")
+            assert inventory_list_query(
+                entity=entity, sort=sort, search="db1"
+            ) == InMemoryListQuery.from_sort(sort or spec.default_sort, "db1")
 
 
 class TestListQueryUpstreamParams:

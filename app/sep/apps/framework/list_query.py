@@ -200,10 +200,9 @@ class InMemoryListQueryApplier:
         """Resolve a request's sort and search into an :class:`InMemoryListQuery`.
 
         Validation delegates to :meth:`ListQuerySpec.resolve_sort`, and the rejection
-        surfaces as the domain error rather than an HTTP one: the generated dependency
-        lets Core map it, so the 422 boundary is stated in exactly one place. A route
-        resolving the request itself — one dispatching across several appliers, say —
-        translates it the same way.
+        surfaces as the domain error rather than an HTTP one: the applier states no
+        HTTP boundary at all. Each request boundary maps it — Core's generated
+        dependency, or a hand-written route dispatching across several appliers.
 
         :param sort: The requested public sort key (possibly ``-`` prefixed).
         :param search: The raw search term, or ``None`` when search is disabled or
