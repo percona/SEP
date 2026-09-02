@@ -113,6 +113,33 @@ def cookie_only_client(test_client: TestClient) -> TestClient:
 
 
 @pytest_asyncio.fixture
+async def admin_api_client(
+    admin_user: CasdoorUser, session: AsyncSession
+) -> AsyncClient:
+    """Yield the authenticated async client as an administrator.
+
+    Mirrors :func:`async_api_client`, whose user is a viewer. Routes declaring
+    their own admin dependency answer that client with 403, so a test covering
+    one needs this fixture and a test covering the refusal needs the other.
+    """
+    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[get_current_user] = lambda: admin_user
+    sep_app.dependency_overrides[get_session] = lambda: session
+    transport = ASGITransport(app=sep_app)
+    client = AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": "Bearer test"},
+    )
+    try:
+        yield client
+    finally:
+        await client.aclose()
+        sep_app.dependency_overrides = {}
+
+
+@pytest_asyncio.fixture
 async def async_api_client(
     regular_user: CasdoorUser, session: AsyncSession
 ) -> AsyncClient:

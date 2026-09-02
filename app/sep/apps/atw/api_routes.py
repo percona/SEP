@@ -65,11 +65,14 @@ from app.sep.apps.atw.deps import (
     AtwIncidentDep,
     AtwSnippetSearchQueryDep,
     ClosedAtwIncidentDep,
+    diagnostics_case_search_available,
     diagnostics_send_disabled_reasons,
     IsDiagnosticsSendConfigured,
     OpenAtwIncidentDep,
 )
 from app.sep.apps.atw.models import (
+    AtwCaseMatch,
+    AtwCaseSearchResponse,
     AtwConfigResponse,
     AtwIncident,
     AtwIncidentExecution,
@@ -83,7 +86,9 @@ from app.sep.apps.atw.models import (
 )
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.api import schema_endpoint
-from app.sep.deps import ApiCurrentUser, SessionDep, TaskAPI
+from app.sep.bundle_upload.factory import get_delivery_executor
+from app.sep.bundle_upload.resolver import resolve_delivery_plan
+from app.sep.deps import ApiCurrentUser, IsApiAdmin, SessionDep, TaskAPI
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import mask_snippet_args
 from app.sep.snippets.models import Snippet
@@ -104,6 +109,18 @@ ATW_SNIPPET_RESOLUTION_WARNING = (
 )
 NO_TASK_ID_ERROR = "Dispatched, but the Tasks API returned no task id; not recorded."
 UNRECORDED_EXECUTION_ERROR = "Dispatched, but the execution row could not be recorded"
+
+#: How long a case search may take before the field falls back to free text.
+#: Deliberately far below the delivery probe's 15s and the intra-cluster 5s:
+#: those bound a one-off operator action, while this is issued while someone is
+#: still typing. ``RemoteAPI`` carries only a session-level timeout
+#: (``sock_read=120``), so this is what actually bounds the call.
+CASE_SEARCH_TIMEOUT_SECONDS = 3
+
+#: The longest search term the route forwards to the receiver. A case reference
+#: or a title fragment is far shorter; the cap is what keeps an arbitrary string
+#: out of the provider's query.
+MAX_CASE_SEARCH_TERM_LENGTH = 128
 
 
 class ATWSnippetSummary(BaseModel):
@@ -631,9 +648,61 @@ async def atw_config() -> AtwConfigResponse:
     Not gated by the send guard -- this endpoint is what reports that guard, so
     it must answer whether or not a receiver is configured.
 
-    :return: The reasons the send action is withheld; empty when it is offered.
+    :return: The reasons the send action is withheld, and whether the
+        case-reference field may search the receiver.
     """
-    return AtwConfigResponse(send_disabled_reasons=diagnostics_send_disabled_reasons())
+    return AtwConfigResponse(
+        send_disabled_reasons=diagnostics_send_disabled_reasons(),
+        case_search_available=diagnostics_case_search_available(),
+    )
+
+
+@router.get("/case-search/", dependencies=[IsApiAdmin])
+async def atw_case_search(
+    term: Annotated[
+        str,
+        Query(
+            min_length=1,
+            max_length=MAX_CASE_SEARCH_TERM_LENGTH,
+            description="The support case reference or title fragment to match.",
+        ),
+    ],
+) -> AtwCaseSearchResponse:
+    """Search the configured delivery provider for support cases matching ``term``.
+
+    No way the search itself can fail reaches the caller as an error: a
+    deployment that declares no case-search section, stored inputs that no
+    longer fit the plan, a refused credential, an unreachable receiver and a
+    search that outran its bound all report the same unavailability, which the
+    caller renders as the plain text field rather than as a search that found
+    nothing.
+
+    Restricted to administrators, unlike the app's other reads. The router
+    resolves a minimum role for unsafe methods only, so a safe method carries
+    whatever guard it declares itself; this one issues the deployment's own
+    receiver credential, and the dialog that calls it is already offered to
+    administrators alone.
+
+    :param term: The caller's typed search term, the only input it accepts.
+    :return: The matched cases, or that the search could not run.
+    """
+    plan = resolve_delivery_plan().plan
+    if plan is None or plan.case_search is None:
+        return AtwCaseSearchResponse(available=False, matches=[])
+    try:
+        async with asyncio.timeout(CASE_SEARCH_TIMEOUT_SECONDS):
+            async with get_delivery_executor(plan) as executor:
+                matches = await executor.search_cases(term)
+    except Exception:  # noqa: BLE001 -- degraded, never surfaced to the dialog
+        logger.warning("Diagnostics case search failed.", exc_info=True)
+        return AtwCaseSearchResponse(available=False, matches=[])
+    return AtwCaseSearchResponse(
+        available=True,
+        matches=[
+            AtwCaseMatch(reference=match.reference, title=match.title)
+            for match in matches
+        ],
+    )
 
 
 async def _resolve_selected_executions(

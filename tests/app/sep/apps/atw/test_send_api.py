@@ -15,34 +15,49 @@
 
 """Define tests for the ATW diagnostics send-job endpoints."""
 
+import asyncio
+import re
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from aioresponses import aioresponses
 from fastapi import status
 from httpx import AsyncClient
 from kombu.exceptions import OperationalError
 from pytest_mock import MockerFixture
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.testclient import TestClient
 
 from app.core.utils.date_time import utc_now
+from app.sep.apps.atw import api_routes
 from app.sep.apps.atw.crud import (
     AtwIncidentExecutionManager,
     AtwIncidentManager,
     AtwSendLogManager,
 )
 from app.sep.apps.atw.models import (
+    AtwConfigResponse,
     AtwIncident,
     AtwIncidentExecution,
     AtwSendLog,
     AtwSendStatusEnum,
 )
-from app.sep.bundle_upload.plan import DeliveryPlan
+from app.sep.bundle_upload.plan import DeliveryPlan, DeliveryPlanExecutor
 from app.sep.bundle_upload.resolver import DRIFTED_INPUTS_REASON
 from app.sep.config import DeliveryPlanInputs, sep_settings
 
 _BASE = "/api/apps/atw"
+_CASE_SEARCH_PATH = f"{_BASE}/case-search/"
+#: The transport logger whose request records carry the resolved headers.
+_TRANSPORT_LOGGER = "app.core.requests.remote_api"
+#: The case-search plan's declared secret, which must reach no log record.
+_DELIVERY_SECRET = "real-api-key"
+#: One over ``MAX_CASE_SEARCH_TERM_LENGTH``, so the route's own cap is what
+#: rejects it rather than anything downstream.
+_OVERLONG_TERM = "C" * 129
 _EXPECTED_PAGE_TOTAL = 3
 _EXPECTED_CONCURRENT_SENDS = 2
 
@@ -481,6 +496,33 @@ class TestAtwConfig:
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["send_disabled_reasons"] == [DRIFTED_INPUTS_REASON]
 
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_reports_case_search_available_when_the_plan_declares_one(
+        self, async_api_client: AsyncClient
+    ) -> None:
+        """Let the dialog issue searches only where a search is actually declared."""
+        response = await async_api_client.get(f"{_BASE}/config/")
+
+        assert response.json()["case_search_available"] is True
+
+    @pytest.mark.usefixtures("configured")
+    async def test_reports_no_case_search_for_a_send_only_receiver(
+        self, async_api_client: AsyncClient
+    ) -> None:
+        """Keep a deployment that declares no search from issuing one per keystroke."""
+        response = await async_api_client.get(f"{_BASE}/config/")
+
+        assert response.json()["case_search_available"] is False
+
+    @pytest.mark.usefixtures("unconfigured")
+    async def test_reports_no_case_search_when_delivery_is_unconfigured(
+        self, async_api_client: AsyncClient
+    ) -> None:
+        """Report no search where there is no receiver to search."""
+        response = await async_api_client.get(f"{_BASE}/config/")
+
+        assert response.json()["case_search_available"] is False
+
 
 @pytest.mark.asyncio
 class TestStartSendJobRuntimeInputs:
@@ -549,3 +591,303 @@ class TestStartSendJobRuntimeInputs:
 
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
         assert response.json()["detail"] == DRIFTED_INPUTS_REASON
+
+
+def _case_search_plan() -> DeliveryPlan:
+    """Build a configured receiver that also declares a case search.
+
+    :return: The plan a deployment ships once case search is configured.
+    """
+    return DeliveryPlan(
+        endpoint="https://intake.example.com/",
+        secrets={"api_key": "real-api-key"},
+        case_search={
+            "path": "api/now/table/case",
+            "headers": {"x-sn-apikey": {"source": "secret", "name": "api_key"}},
+            "query": {"sysparm_query": {"source": "term", "prefix": "123TEXTQUERY321"}},
+            "term_pattern": r"[A-Za-z0-9 ._-]+",
+            "results_pointer": "/result",
+            "reference_pointer": "/number",
+            "title_pointer": "/short_description",
+        },
+        upload={
+            "path": "attachment/upload",
+            "reference_pointer": "/result/sys_id",
+        },
+    )
+
+
+@pytest.fixture(name="case_search_configured")
+def case_search_configured_fixture(mocker: MockerFixture) -> None:
+    """Configure a receiver whose plan declares a case-search section."""
+    mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY", _case_search_plan())
+    mocker.patch.object(sep_settings, "DIAGNOSTICS_DELIVERY_INPUTS", None)
+
+
+@pytest.mark.asyncio
+class TestAtwCaseSearch:
+    """Cover the case-search endpoint the send dialog's field queries."""
+
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_returns_the_matches_the_plans_pointers_address(
+        self, admin_api_client: AsyncClient
+    ) -> None:
+        """Answer with the reference and title the configured pointers name."""
+        with aioresponses() as mock:
+            mock.get(
+                re.compile(r"https://intake\.example\.com/api/now/table/case.*"),
+                status=status.HTTP_200_OK,
+                payload={
+                    "result": [
+                        {"number": "CS0001", "short_description": "Slow queries"},
+                        {"number": "CS0002", "short_description": "Replica lag"},
+                    ]
+                },
+            )
+            response = await admin_api_client.get(
+                _CASE_SEARCH_PATH, params={"term": "CS00"}
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {
+            "available": True,
+            "matches": [
+                {"reference": "CS0001", "title": "Slow queries"},
+                {"reference": "CS0002", "title": "Replica lag"},
+            ],
+        }
+
+    @pytest.mark.usefixtures("configured")
+    async def test_reports_unavailable_when_the_plan_declares_no_case_search(
+        self, admin_api_client: AsyncClient
+    ) -> None:
+        """Degrade to the plain field on a receiver configured for sends only."""
+        response = await admin_api_client.get(
+            _CASE_SEARCH_PATH, params={"term": "CS00"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"available": False, "matches": []}
+
+    @pytest.mark.usefixtures("unconfigured")
+    async def test_reports_unavailable_when_delivery_is_unconfigured(
+        self, admin_api_client: AsyncClient
+    ) -> None:
+        """Answer for an unconfigured deployment rather than refusing it."""
+        response = await admin_api_client.get(
+            _CASE_SEARCH_PATH, params={"term": "CS00"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"available": False, "matches": []}
+
+    @pytest.mark.usefixtures("drifted_inputs")
+    async def test_reports_unavailable_when_the_stored_inputs_drifted(
+        self, admin_api_client: AsyncClient
+    ) -> None:
+        """Withhold the search while the stored inputs no longer fit the plan."""
+        response = await admin_api_client.get(
+            _CASE_SEARCH_PATH, params={"term": "CS00"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"available": False, "matches": []}
+
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_reports_unavailable_when_the_receiver_errors(
+        self, admin_api_client: AsyncClient
+    ) -> None:
+        """Keep a failing receiver from reaching the dialog as a 5xx."""
+        with aioresponses() as mock:
+            mock.get(
+                re.compile(r"https://intake\.example\.com/api/now/table/case.*"),
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                payload={"error": "boom"},
+            )
+            response = await admin_api_client.get(
+                _CASE_SEARCH_PATH, params={"term": "CS00"}
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"available": False, "matches": []}
+
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_a_failed_search_leaves_no_secret_in_the_logs(
+        self, admin_api_client: AsyncClient, caplog
+    ) -> None:
+        """Mask the plan's credential in everything a failed search records.
+
+        Two records are in play and only one is the executor's: the transport
+        logs the outgoing request, and the route logs the failure with a
+        traceback after the executor's redaction context has already closed.
+        """
+        caplog.set_level("DEBUG", logger=_TRANSPORT_LOGGER)
+        with aioresponses() as mock:
+            mock.get(
+                re.compile(r"https://intake\.example\.com/api/now/table/case.*"),
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                payload={"error": "boom"},
+            )
+            response = await admin_api_client.get(
+                _CASE_SEARCH_PATH, params={"term": "CS00"}
+            )
+
+        assert response.json() == {"available": False, "matches": []}
+        transport = [
+            record.getMessage()
+            for record in caplog.records
+            if record.name == _TRANSPORT_LOGGER
+        ]
+        # Without this the secret assertions below hold vacuously, since a run
+        # that logged nothing carries nothing to leak.
+        assert any("****" in message for message in transport)
+        assert any(
+            "case search failed" in record.getMessage() for record in caplog.records
+        )
+        assert all(
+            _DELIVERY_SECRET not in record.getMessage() for record in caplog.records
+        )
+        assert all(
+            _DELIVERY_SECRET not in str(record.exc_info) for record in caplog.records
+        )
+
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_reports_unavailable_when_the_search_outruns_its_bound(
+        self, admin_api_client: AsyncClient, mocker: MockerFixture
+    ) -> None:
+        """Bound a search issued while someone is still typing."""
+
+        async def _slow_search(_self: Any, _term: str) -> list[Any]:
+            await asyncio.sleep(1)
+            return []
+
+        mocker.patch.object(api_routes, "CASE_SEARCH_TIMEOUT_SECONDS", 0.01)
+        mocker.patch.object(DeliveryPlanExecutor, "search_cases", _slow_search)
+
+        response = await admin_api_client.get(
+            _CASE_SEARCH_PATH, params={"term": "CS00"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"available": False, "matches": []}
+
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_the_bound_also_covers_opening_the_transport(
+        self, admin_api_client: AsyncClient, mocker: MockerFixture
+    ) -> None:
+        """Bound the connect phase too, which opens inside the executor's context.
+
+        A timeout placed only around ``search_cases`` would let a receiver that
+        never completes the connection hang the request indefinitely.
+        """
+
+        @asynccontextmanager
+        async def _hanging_executor(*_args: Any, **_kwargs: Any) -> Any:
+            await asyncio.sleep(1)
+            yield None
+
+        mocker.patch.object(api_routes, "CASE_SEARCH_TIMEOUT_SECONDS", 0.01)
+        mocker.patch.object(api_routes, "get_delivery_executor", _hanging_executor)
+
+        response = await admin_api_client.get(
+            _CASE_SEARCH_PATH, params={"term": "CS00"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"available": False, "matches": []}
+
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_a_term_carrying_receiver_query_syntax_reaches_no_receiver(
+        self, admin_api_client: AsyncClient
+    ) -> None:
+        """Answer a query-widening term with unavailability and no request.
+
+        The receiver's encoded query separates clauses with a character it gives
+        no escape for, so a term carrying one would return rows the plan never
+        selected. ``aioresponses`` registers no route here, so any request at
+        all would fail the mock rather than pass silently.
+        """
+        with aioresponses() as mock:
+            response = await admin_api_client.get(
+                _CASE_SEARCH_PATH, params={"term": "CS00^ORsys_idISNOTEMPTY"}
+            )
+
+            assert not mock.requests
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"available": False, "matches": []}
+
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_the_term_is_required(self, admin_api_client: AsyncClient) -> None:
+        """Refuse a search with nothing to match on."""
+        response = await admin_api_client.get(_CASE_SEARCH_PATH)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_an_empty_term_is_refused(
+        self, admin_api_client: AsyncClient
+    ) -> None:
+        """Refuse an empty term rather than issuing an unbounded search."""
+        response = await admin_api_client.get(_CASE_SEARCH_PATH, params={"term": ""})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_a_term_over_the_cap_is_refused(
+        self, admin_api_client: AsyncClient
+    ) -> None:
+        """Reject a term longer than the route forwards to the receiver."""
+        response = await admin_api_client.get(
+            _CASE_SEARCH_PATH, params={"term": _OVERLONG_TERM}
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+class TestAtwCaseSearchContract:
+    """Cover the case-search surfaces that need no event loop to check.
+
+    Kept apart from the asyncio-marked classes above: a sync test inheriting a
+    class-level ``asyncio`` mark is never run as a coroutine, and pytest warns
+    on every collection rather than failing, so the mark would go unnoticed.
+    """
+
+    def test_case_search_available_is_optional_in_the_published_schema(self) -> None:
+        """Keep a client validating the previous contract passing.
+
+        A new *required* field on an existing response is a breaking change; the
+        default is what keeps this one additive.
+        """
+        schema = AtwConfigResponse.model_json_schema()
+
+        assert "case_search_available" in schema["properties"]
+        assert "case_search_available" not in schema.get("required", [])
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_case_search_refuses_a_non_administrator(
+        self, async_api_client: AsyncClient
+    ) -> None:
+        """Match the search's authorization to the action it serves.
+
+        The router resolves a minimum role for unsafe methods only, so this safe
+        method would otherwise answer any authenticated caller, while the dialog
+        that issues it is offered to administrators alone.
+        """
+        response = await async_api_client.get(
+            _CASE_SEARCH_PATH, params={"term": "CS00"}
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_case_search_requires_authentication(
+        self, unauthenticated_client: TestClient
+    ) -> None:
+        """Ensure unauthenticated callers receive JSON 401, as every ATW GET does."""
+        response = unauthenticated_client.get(
+            _CASE_SEARCH_PATH, params={"term": "CS00"}, follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.headers["content-type"].startswith("application/json")
