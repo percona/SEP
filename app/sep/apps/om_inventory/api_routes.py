@@ -53,6 +53,7 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.core.security import require_internal_token
 from app.core.settings_override.api import (
     apply_class_overrides,
     clear_class_override,
@@ -342,7 +343,13 @@ async def bootstrap_host(
         ssl_cafile=settings.SSL_CAFILE,
         logger_name="tasks_api",
     )
-    task_history_id, admin_password = await dispatch_bootstrap(tasks_api, host, request)
+    # tasks_api carries no auth by default -- .auth() is a context manager setting an
+    # Authorization header for its block, same pattern service.py's probe dispatch
+    # uses. The Tasks API's own /execute/{task_name} only requires *some* authenticated
+    # caller (IsAuthenticatedDep, no minimum role), so the internal service token is
+    # sufficient here, same as it is for the scheduled probe sweep.
+    with tasks_api.auth(require_internal_token()):
+        task_history_id, admin_password = await dispatch_bootstrap(tasks_api, host, request)
     return BootstrapAccepted(
         node_id=node_id,
         task_history_id=task_history_id,

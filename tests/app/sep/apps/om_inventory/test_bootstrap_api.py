@@ -21,6 +21,7 @@ itself accepts a dispatch (that is ``payload/bootstrap.py``'s job, exercised by
 running it, not by a unit test -- see its module docstring).
 """
 
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -111,11 +112,18 @@ class FakeTasksApi:
     def __init__(self, *, task_history_id: int = FAKE_TASK_HISTORY_ID) -> None:
         self.task_history_id = task_history_id
         self.calls: list[dict] = []
+        self.auth_tokens_used: list[str] = []
 
     async def post(self, path: str, *, json: dict) -> dict:
         """Record the dispatch call and answer with the canned task history id."""
         self.calls.append({"path": path, "json": json})
         return {"id": self.task_history_id}
+
+    @contextmanager
+    def auth(self, api_key: str, auth_scheme: str = "Bearer"):
+        """Record the token a caller authenticated with, matching RemoteAPI.auth's shape."""
+        self.auth_tokens_used.append(api_key)
+        yield self
 
 
 class TestBootstrapHost:
@@ -149,6 +157,14 @@ class TestBootstrapHost:
         assert call["path"] == "/execute/run-python"
         assert call["json"]["meta"]["target"] == "app-prod-01"
         assert call["json"]["payload"].endswith("payload/bootstrap.py")
+
+        # Regression guard: the dispatch call must actually be authenticated. The
+        # first version of this route built tasks_api and called it directly, never
+        # wrapping the call in .auth() -- it dispatched with no Authorization header
+        # at all, which the real Tasks API answers with a 401 and this fake would not
+        # have caught without asserting the token was set.
+        assert len(fake.auth_tokens_used) == 1
+        assert fake.auth_tokens_used[0]
 
     @pytest.mark.asyncio
     async def test_unknown_host_is_404(self, api: AsyncClient, estate: AsyncSession) -> None:
