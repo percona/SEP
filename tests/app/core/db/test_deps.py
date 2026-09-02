@@ -29,7 +29,10 @@ from sqlalchemy import cast, column, String
 
 from app.core import db as core_db_package
 from app.core.db.deps import make_in_memory_list_query_dep
-from app.core.db.in_memory_list_query import apply_in_memory, InMemoryListQuery
+from app.core.db.in_memory_list_query import (
+    InMemoryListQuery,
+    InMemoryListQueryApplier,
+)
 from app.core.db.list_query import (
     ListQuerySpec,
     SEARCH_PARAM_DESCRIPTION,
@@ -47,14 +50,17 @@ from tests.app.list_query_data import (
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
 
+APPLIER = InMemoryListQueryApplier(LIST_QUERY_SPEC)
+NO_SEARCH_APPLIER = InMemoryListQueryApplier(NO_SEARCH_LIST_QUERY_SPEC)
+
 
 @pytest.fixture(name="dep")
 def dep_fixture() -> Callable[..., InMemoryListQuery]:
     """Return the dependency the searchable spec wires.
 
-    :return: A dependency callable built from ``LIST_QUERY_SPEC``.
+    :return: A dependency callable built from the searchable spec's applier.
     """
-    return make_in_memory_list_query_dep(LIST_QUERY_SPEC)
+    return make_in_memory_list_query_dep(APPLIER)
 
 
 class TestMakeInMemoryListQueryDep:
@@ -83,7 +89,7 @@ class TestMakeInMemoryListQueryDep:
 
     def test_exposes_only_sort_when_no_searchable(self) -> None:
         """Expose only ``sort`` when the spec has no searchable columns."""
-        dep = make_in_memory_list_query_dep(NO_SEARCH_LIST_QUERY_SPEC)
+        dep = make_in_memory_list_query_dep(NO_SEARCH_APPLIER)
         params = inspect.signature(dep).parameters
         assert set(params) == {"sort"}
 
@@ -137,8 +143,12 @@ class TestMakeInMemoryListQueryDep:
         with pytest.raises(HTTPUnprocessableEntityException):
             dep(sort="-bogus", search=None)
 
-    def test_misdeclared_spec_rejected_at_construction(self) -> None:
-        """Validate the spec while wiring, so a misdeclaration cannot reach a request."""
+    def test_misdeclared_spec_rejected_before_a_dependency_exists(self) -> None:
+        """Reject a misdeclaration where the applier is built, never at a request.
+
+        The factory takes an applier, so a spec that cannot be read off a row fails one
+        step earlier than the wiring — there is no dependency to reach a request with.
+        """
         spec = ListQuerySpec(
             sortable={"size": cast(column("size"), String)},
             default_sort="size",
@@ -146,7 +156,23 @@ class TestMakeInMemoryListQueryDep:
         )
 
         with pytest.raises(ValueError, match="exposes no name"):
-            make_in_memory_list_query_dep(spec)
+            make_in_memory_list_query_dep(InMemoryListQueryApplier(spec))
+
+    def test_each_call_declares_its_own_query_parameters(self) -> None:
+        """Hand every route its own parameter declarations, never a shared one.
+
+        FastAPI binds a ``Query`` declaration to each parameter it reflects, so two
+        routes built from the same applier must not share one object — the dependency
+        is rebuilt per call rather than memoized on the instance.
+        """
+        first = make_in_memory_list_query_dep(APPLIER)
+        second = make_in_memory_list_query_dep(APPLIER)
+
+        assert first is not second
+        first_sort = inspect.signature(first).parameters["sort"].default
+        second_sort = inspect.signature(second).parameters["sort"].default
+        assert first_sort is not second_sort
+        assert first_sort.json_schema_extra == second_sort.json_schema_extra
 
     def test_params_carry_the_allowlist_enum_and_descriptions(
         self, dep: Callable[..., InMemoryListQuery]
@@ -179,8 +205,8 @@ _ROUTE_ROWS = list_query_rows(
     ("a.sh", "Alpha", 1), ("b.sh", "Beta", 2), ("c.sh", "Gamma", 3)
 )
 
-_search_dep = make_in_memory_list_query_dep(LIST_QUERY_SPEC)
-_no_search_dep = make_in_memory_list_query_dep(NO_SEARCH_LIST_QUERY_SPEC)
+_search_dep = make_in_memory_list_query_dep(APPLIER)
+_no_search_dep = make_in_memory_list_query_dep(NO_SEARCH_APPLIER)
 
 
 @_ROUTE_APP.get("/scripts")
@@ -188,7 +214,7 @@ async def _list_scripts(
     list_query: Annotated[InMemoryListQuery, Depends(_search_dep)],
     pagination: Annotated[Pagination, Depends(pagination_dep)],
 ) -> dict[str, Any]:
-    page, total = apply_in_memory(_ROUTE_ROWS, LIST_QUERY_SPEC, list_query, pagination)
+    page, total = APPLIER.apply(_ROUTE_ROWS, list_query, pagination)
     return {"items": [row.filename for row in page], "total": total}
 
 
@@ -197,9 +223,7 @@ async def _list_scripts_no_search(
     list_query: Annotated[InMemoryListQuery, Depends(_no_search_dep)],
     pagination: Annotated[Pagination, Depends(pagination_dep)],
 ) -> dict[str, Any]:
-    page, total = apply_in_memory(
-        _ROUTE_ROWS, NO_SEARCH_LIST_QUERY_SPEC, list_query, pagination
-    )
+    page, total = NO_SEARCH_APPLIER.apply(_ROUTE_ROWS, list_query, pagination)
     return {"items": [row.filename for row in page], "total": total}
 
 

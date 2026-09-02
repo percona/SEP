@@ -30,12 +30,8 @@ from sqlalchemy import cast, column, String
 
 from app.core.db import in_memory_list_query as in_memory_list_query_module
 from app.core.db.in_memory_list_query import (
-    apply_in_memory,
-    build_in_memory_list_query,
-    default_in_memory_query,
     InMemoryListQuery,
-    resolve_in_memory_list_query,
-    validate_in_memory_spec,
+    InMemoryListQueryApplier,
 )
 from app.core.db.list_query import (
     build_search_predicate,
@@ -57,13 +53,63 @@ _CHILD_TIMEOUT_SEC = 300
 #: them here would put the applier out of reach of the other two.
 _APP_PACKAGE_PREFIXES = ("app.inventory", "app.sep", "app.tasks")
 
+#: The applier under test, bound to the shared spec once for the whole suite —
+#: which is how a caller holds one.
+APPLIER = InMemoryListQueryApplier(LIST_QUERY_SPEC)
 
-class TestValidateInMemorySpec:
+
+class TestApplierConstruction:
     """Pin that a misdeclared spec is rejected up front, not once per request."""
 
-    def test_accepts_a_named_spec(self) -> None:
-        """Accept a spec whose every expression exposes a name to read off a row."""
-        assert validate_in_memory_spec(LIST_QUERY_SPEC) is None
+    def test_binds_the_spec_and_its_resolved_attributes(self) -> None:
+        """Bind the spec given and resolve its expressions once, at construction."""
+        applier = InMemoryListQueryApplier(LIST_QUERY_SPEC)
+
+        assert applier.spec is LIST_QUERY_SPEC
+        assert applier._attrs.sort_attrs == {
+            "filename": "filename",
+            "title": "title",
+            "created_at": "created_at",
+        }
+        assert applier._attrs.tie_attr == "filename"
+        assert applier._attrs.search_attrs == ("filename", "title")
+
+    def test_resolved_mapping_cannot_be_mutated(self) -> None:
+        """Expose the resolved sort mapping immutably, so no caller can rewrite it.
+
+        Appliers are built once and shared across requests, so a mutable mapping would
+        let one request repoint a public sort key at another attribute for every later
+        one.
+        """
+        applier = InMemoryListQueryApplier(LIST_QUERY_SPEC)
+
+        with pytest.raises(TypeError):
+            applier._attrs.sort_attrs["filename"] = "title"  # type: ignore[index]
+
+    def test_attributes_are_never_resolved_again(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Resolve the spec at construction only, never again on a later call.
+
+        Re-resolving per call would satisfy every behavioural assertion here while
+        undoing the reason the spec is bound at construction, so this makes a second
+        resolution fatal rather than merely unasserted.
+        """
+        applier = InMemoryListQueryApplier(LIST_QUERY_SPEC)
+
+        def _boom(spec: ListQuerySpec) -> None:
+            raise AssertionError(f"spec resolved again for {spec!r}")
+
+        monkeypatch.setattr(in_memory_list_query_module, "_spec_attrs", _boom)
+
+        query = applier.resolve_query("-filename", "a")
+        page, total = applier.apply(
+            list_query_rows(("a.sh", "Alpha", 1)), query, Pagination()
+        )
+
+        assert applier.default_query().sort_key == "created_at"
+        assert [row.filename for row in page] == ["a.sh"]
+        assert total == 1
 
     def test_unnamed_sortable_column_rejected(self) -> None:
         """Reject an unnamed sort expression."""
@@ -74,7 +120,7 @@ class TestValidateInMemorySpec:
         )
 
         with pytest.raises(ValueError, match="exposes no name"):
-            validate_in_memory_spec(spec)
+            InMemoryListQueryApplier(spec)
 
     @pytest.mark.parametrize("role", ["tie_breaker", "searchable"])
     def test_unnamed_non_sortable_expression_also_rejected(self, role: str) -> None:
@@ -91,15 +137,15 @@ class TestValidateInMemorySpec:
         )
 
         with pytest.raises(ValueError, match=f"spec {role}"):
-            validate_in_memory_spec(spec)
+            InMemoryListQueryApplier(spec)
 
 
-class TestResolveInMemoryListQuery:
+class TestResolveQuery:
     """Cover the raw resolver, whose rejection the caller is expected to translate."""
 
     def test_resolves_sort_and_search(self) -> None:
         """Carry a vetted sort key and search term onto the resolved query."""
-        query = resolve_in_memory_list_query(LIST_QUERY_SPEC, "-filename", "needle")
+        query = APPLIER.resolve_query("-filename", "needle")
 
         assert query == InMemoryListQuery(
             sort_key="filename", descending=True, search="needle"
@@ -108,15 +154,15 @@ class TestResolveInMemoryListQuery:
     def test_unknown_sort_key_raises_untranslated(self) -> None:
         """Leave the rejection as ``UnknownSortKeyError`` for the caller to map."""
         with pytest.raises(UnknownSortKeyError):
-            resolve_in_memory_list_query(LIST_QUERY_SPEC, "bogus", None)
+            APPLIER.resolve_query("bogus", None)
 
 
-class TestBuildInMemoryListQuery:
+class TestBuildQuery:
     """Cover the public builder a hand-written route can call without a FastAPI dep."""
 
     def test_resolves_sort_and_search(self) -> None:
         """Carry a vetted sort key and search term onto the resolved query."""
-        query = build_in_memory_list_query(LIST_QUERY_SPEC, "-filename", "needle")
+        query = APPLIER.build_query("-filename", "needle")
         assert query == InMemoryListQuery(
             sort_key="filename", descending=True, search="needle"
         )
@@ -124,18 +170,18 @@ class TestBuildInMemoryListQuery:
     def test_unknown_sort_key_raises_422(self) -> None:
         """Reject an out-of-allowlist sort key with HTTP 422."""
         with pytest.raises(HTTPUnprocessableEntityException) as excinfo:
-            build_in_memory_list_query(LIST_QUERY_SPEC, "bogus", None)
+            APPLIER.build_query("bogus", None)
         assert "bogus" in str(excinfo.value.detail)
 
 
-class TestApplyInMemorySort:
+class TestApplySort:
     """Verify ordering matches the SQL path: direction, NULLS-LAST, tie-breaker."""
 
     def test_descending_primary(self) -> None:
         """Order rows by the primary key descending."""
         rows = list_query_rows(("a", "A", 1), ("b", "B", 3), ("c", "C", 2))
         query = InMemoryListQuery(sort_key="created_at", descending=True, search=None)
-        page, total = apply_in_memory(rows, LIST_QUERY_SPEC, query, Pagination())
+        page, total = APPLIER.apply(rows, query, Pagination())
         assert [r.filename for r in page] == ["b", "c", "a"]
         assert total == len(rows)
 
@@ -143,7 +189,7 @@ class TestApplyInMemorySort:
         """Order rows by the primary key ascending."""
         rows = list_query_rows(("a", "A", 1), ("b", "B", 3), ("c", "C", 2))
         query = InMemoryListQuery(sort_key="created_at", descending=False, search=None)
-        page, _ = apply_in_memory(rows, LIST_QUERY_SPEC, query, Pagination())
+        page, _ = APPLIER.apply(rows, query, Pagination())
         assert [r.filename for r in page] == ["a", "c", "b"]
 
     def test_nulls_sort_last_regardless_of_direction(self) -> None:
@@ -151,8 +197,8 @@ class TestApplyInMemorySort:
         rows = list_query_rows(("a", None, 1), ("b", "B", 2), ("c", None, 3))
         asc = InMemoryListQuery(sort_key="title", descending=False, search=None)
         desc = InMemoryListQuery(sort_key="title", descending=True, search=None)
-        asc_page, _ = apply_in_memory(rows, LIST_QUERY_SPEC, asc, Pagination())
-        desc_page, _ = apply_in_memory(rows, LIST_QUERY_SPEC, desc, Pagination())
+        asc_page, _ = APPLIER.apply(rows, asc, Pagination())
+        desc_page, _ = APPLIER.apply(rows, desc, Pagination())
         # Non-null "B" leads both directions; NULL rows trail, ordered by tie-breaker.
         assert [r.filename for r in asc_page] == ["b", "a", "c"]
         assert [r.filename for r in desc_page] == ["b", "a", "c"]
@@ -162,20 +208,20 @@ class TestApplyInMemorySort:
         rows = list_query_rows(("c", "X", 5), ("a", "X", 5), ("b", "X", 5))
         asc = InMemoryListQuery(sort_key="created_at", descending=False, search=None)
         desc = InMemoryListQuery(sort_key="created_at", descending=True, search=None)
-        asc_page, _ = apply_in_memory(rows, LIST_QUERY_SPEC, asc, Pagination())
-        desc_page, _ = apply_in_memory(rows, LIST_QUERY_SPEC, desc, Pagination())
+        asc_page, _ = APPLIER.apply(rows, asc, Pagination())
+        desc_page, _ = APPLIER.apply(rows, desc, Pagination())
         assert [r.filename for r in asc_page] == ["a", "b", "c"]
         assert [r.filename for r in desc_page] == ["a", "b", "c"]
 
 
-class TestApplyInMemorySearch:
+class TestApplySearch:
     """Verify case-insensitive substring search and the filtered total."""
 
     def test_case_insensitive_substring_over_searchable_attrs(self) -> None:
         """Match a term case-insensitively as a substring of a searchable attr."""
         rows = list_query_rows(("alpha.sh", "First", 1), ("beta.sh", "Second", 2))
         query = InMemoryListQuery(sort_key="filename", descending=False, search="FIR")
-        page, total = apply_in_memory(rows, LIST_QUERY_SPEC, query, Pagination())
+        page, total = APPLIER.apply(rows, query, Pagination())
         assert [r.filename for r in page] == ["alpha.sh"]
         assert total == 1
 
@@ -183,7 +229,7 @@ class TestApplyInMemorySearch:
         """Match the term against the filename attribute."""
         rows = list_query_rows(("alpha.sh", None, 1), ("beta.sh", None, 2))
         query = InMemoryListQuery(sort_key="filename", descending=False, search="beta")
-        page, total = apply_in_memory(rows, LIST_QUERY_SPEC, query, Pagination())
+        page, total = APPLIER.apply(rows, query, Pagination())
         assert [r.filename for r in page] == ["beta.sh"]
         assert total == 1
 
@@ -191,7 +237,7 @@ class TestApplyInMemorySearch:
         """Skip a row whose only match candidate is a ``None`` attribute."""
         rows = list_query_rows(("alpha.sh", None, 1))
         query = InMemoryListQuery(sort_key="filename", descending=False, search="x")
-        page, total = apply_in_memory(rows, LIST_QUERY_SPEC, query, Pagination())
+        page, total = APPLIER.apply(rows, query, Pagination())
         assert page == []
         assert total == 0
 
@@ -199,7 +245,7 @@ class TestApplyInMemorySearch:
         """Treat a whitespace-only term as no search."""
         rows = list_query_rows(("a", "A", 1), ("b", "B", 2))
         query = InMemoryListQuery(sort_key="filename", descending=False, search="   ")
-        _, total = apply_in_memory(rows, LIST_QUERY_SPEC, query, Pagination())
+        _, total = APPLIER.apply(rows, query, Pagination())
         assert total == len(rows)
 
     def test_padded_term_is_not_stripped(self) -> None:
@@ -214,7 +260,7 @@ class TestApplyInMemorySearch:
             sort_key="filename", descending=False, search="  alpha  "
         )
 
-        page, total = apply_in_memory(rows, LIST_QUERY_SPEC, query, Pagination())
+        page, total = APPLIER.apply(rows, query, Pagination())
         predicate = build_search_predicate("  alpha  ", LIST_QUERY_SPEC.searchable)
 
         assert page == []
@@ -232,8 +278,8 @@ class TestApplyInMemorySearch:
         rows = list_query_rows(("a", "A", 1), ("b", "B", 2))
         query = InMemoryListQuery(sort_key="filename", descending=False, search="a")
 
-        page, total = apply_in_memory(
-            rows, NO_SEARCH_LIST_QUERY_SPEC, query, Pagination()
+        page, total = InMemoryListQueryApplier(NO_SEARCH_LIST_QUERY_SPEC).apply(
+            rows, query, Pagination()
         )
 
         assert [r.filename for r in page] == ["a", "b"]
@@ -244,7 +290,7 @@ class TestApplyInMemorySearch:
         """Return every row when no search term is supplied."""
         rows = list_query_rows(("a", "A", 1), ("b", "B", 2))
         query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
-        _, total = apply_in_memory(rows, LIST_QUERY_SPEC, query, Pagination())
+        _, total = APPLIER.apply(rows, query, Pagination())
         assert total == len(rows)
 
     def test_non_string_searchable_value_matched_as_text(self) -> None:
@@ -263,13 +309,13 @@ class TestApplyInMemorySearch:
         rows = list_query_rows(("a", "A", 17), ("b", "B", 42))
         query = InMemoryListQuery(sort_key="filename", descending=False, search="17")
 
-        page, total = apply_in_memory(rows, spec, query, Pagination())
+        page, total = InMemoryListQueryApplier(spec).apply(rows, query, Pagination())
 
         assert [row.filename for row in page] == ["a"]
         assert total == 1
 
 
-class TestApplyInMemoryPagination:
+class TestApplyPagination:
     """Verify slicing and that the total reflects the filtered set, not the page."""
 
     def test_total_is_filtered_count_before_slice(self) -> None:
@@ -277,9 +323,7 @@ class TestApplyInMemoryPagination:
         row_count, page_limit = 10, 3
         rows = list_query_rows(*[(f"{i:02d}.sh", "T", i) for i in range(row_count)])
         query = InMemoryListQuery(sort_key="filename", descending=False, search="T")
-        page, total = apply_in_memory(
-            rows, LIST_QUERY_SPEC, query, Pagination(offset=0, limit=page_limit)
-        )
+        page, total = APPLIER.apply(rows, query, Pagination(offset=0, limit=page_limit))
         assert len(page) == page_limit
         assert total == row_count
 
@@ -287,25 +331,23 @@ class TestApplyInMemoryPagination:
         """Return exactly the offset/limit window of the ordered set."""
         rows = list_query_rows(*[(f"{i:02d}.sh", None, i) for i in range(5)])
         query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
-        page, _ = apply_in_memory(
-            rows, LIST_QUERY_SPEC, query, Pagination(offset=2, limit=2)
-        )
+        page, _ = APPLIER.apply(rows, query, Pagination(offset=2, limit=2))
         assert [r.filename for r in page] == ["02.sh", "03.sh"]
 
     def test_empty_items(self) -> None:
         """Return an empty page and zero total for an empty input."""
         query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
-        page, total = apply_in_memory([], LIST_QUERY_SPEC, query, Pagination())
+        page, total = APPLIER.apply([], query, Pagination())
         assert page == []
         assert total == 0
 
 
-class TestDefaultInMemoryQuery:
+class TestDefaultQuery:
     """Cover the query a caller with no request-derived selections falls back to."""
 
     def test_descending_default_strips_the_prefix(self) -> None:
         """Split a ``-`` prefixed default into a bare key plus a descending flag."""
-        query = default_in_memory_query(LIST_QUERY_SPEC)
+        query = APPLIER.default_query()
 
         assert (query.sort_key, query.descending, query.search) == (
             "created_at",
@@ -315,12 +357,12 @@ class TestDefaultInMemoryQuery:
 
     def test_ascending_default_is_not_descending(self) -> None:
         """Keep an unprefixed default ascending."""
-        query = default_in_memory_query(NO_SEARCH_LIST_QUERY_SPEC)
+        query = InMemoryListQueryApplier(NO_SEARCH_LIST_QUERY_SPEC).default_query()
 
         assert (query.sort_key, query.descending) == ("filename", False)
 
 
-class TestApplyInMemoryWithoutPagination:
+class TestApplyWithoutPagination:
     """Cover the whole-collection call shape the derived non-paginated route makes."""
 
     def test_returns_every_row_unsliced(self) -> None:
@@ -329,7 +371,7 @@ class TestApplyInMemoryWithoutPagination:
         rows = list_query_rows(*[(f"{i:02d}.sh", "T", i) for i in range(row_count)])
         query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
 
-        page, total = apply_in_memory(rows, LIST_QUERY_SPEC, query, None)
+        page, total = APPLIER.apply(rows, query, None)
 
         assert len(page) == row_count
         assert total == row_count
@@ -342,7 +384,7 @@ class TestApplyInMemoryWithoutPagination:
         )
         query = InMemoryListQuery(sort_key="filename", descending=True, search="a")
 
-        page, total = apply_in_memory(rows, LIST_QUERY_SPEC, query, None)
+        page, total = APPLIER.apply(rows, query, None)
 
         assert [row.filename for row in page] == ["c.sh", "b.sh", "a.sh"]
         assert total == len(rows)
@@ -350,20 +392,6 @@ class TestApplyInMemoryWithoutPagination:
 
 class TestApplierRejectsUnvettedInput:
     """Pin the gate that keeps an unvetted sort key away from attribute access."""
-
-    def test_unnamed_tie_breaker_rejected_by_applier(self) -> None:
-        """Reject an unnamed tie-breaker even when the dependency was bypassed."""
-        spec = ListQuerySpec(
-            sortable={"filename": column("filename")},
-            default_sort="filename",
-            tie_breaker=cast(column("filename"), String),
-        )
-        query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
-
-        with pytest.raises(ValueError, match="tie_breaker"):
-            apply_in_memory(
-                list_query_rows(("a.sh", None, 1)), spec, query, Pagination()
-            )
 
     def test_row_missing_spec_attribute_names_both_sides(self) -> None:
         """Name the row type and the attribute instead of raising ``AttributeError``."""
@@ -374,18 +402,14 @@ class TestApplierRejectsUnvettedInput:
         query = InMemoryListQuery(sort_key="created_at", descending=False, search=None)
 
         with pytest.raises(ValueError, match="_Sparse has no attribute 'created_at'"):
-            apply_in_memory(
-                [_Sparse(filename="a.sh")], LIST_QUERY_SPEC, query, Pagination()
-            )
+            APPLIER.apply([_Sparse(filename="a.sh")], query, Pagination())
 
     def test_out_of_allowlist_sort_key_rejected(self) -> None:
         """Reject a hand-built query whose sort key was never vetted by the spec."""
         query = InMemoryListQuery(sort_key="secret", descending=False, search=None)
 
         with pytest.raises(UnknownSortKeyError):
-            apply_in_memory(
-                list_query_rows(("a.sh", None, 1)), LIST_QUERY_SPEC, query, Pagination()
-            )
+            APPLIER.apply(list_query_rows(("a.sh", None, 1)), query, Pagination())
 
     @pytest.mark.parametrize("sort_key", ["__class__", "__dict__"])
     def test_dunder_sort_key_rejected(self, sort_key: str) -> None:
@@ -399,9 +423,7 @@ class TestApplierRejectsUnvettedInput:
         query = InMemoryListQuery(sort_key=sort_key, descending=False, search=None)
 
         with pytest.raises(UnknownSortKeyError):
-            apply_in_memory(
-                list_query_rows(("a.sh", None, 1)), LIST_QUERY_SPEC, query, Pagination()
-            )
+            APPLIER.apply(list_query_rows(("a.sh", None, 1)), query, Pagination())
 
     def test_row_missing_searchable_attribute_names_both_sides(self) -> None:
         """Reject a searchable-only mismatch on the first list call, not the first search.
@@ -418,9 +440,7 @@ class TestApplierRejectsUnvettedInput:
         query = InMemoryListQuery(sort_key="filename", descending=False, search=None)
 
         with pytest.raises(ValueError, match="_Untitled has no attribute 'title'"):
-            apply_in_memory(
-                [_Untitled(filename="a.sh")], LIST_QUERY_SPEC, query, Pagination()
-            )
+            APPLIER.apply([_Untitled(filename="a.sh")], query, Pagination())
 
 
 class TestApplierIsBackingAgnostic:
@@ -447,7 +467,7 @@ class TestApplierIsBackingAgnostic:
         ]
         query = InMemoryListQuery(sort_key="filename", descending=False, search="alpha")
 
-        page, total = apply_in_memory(rows, LIST_QUERY_SPEC, query, Pagination())
+        page, total = APPLIER.apply(rows, query, Pagination())
 
         assert [row.filename for row in page] == ["a-node", "c-node"]
         assert total == matching
@@ -549,6 +569,6 @@ class TestApplierReachesEveryAppPackage:
             "import importlib\n"
             f"importlib.import_module({first!r})\n"
             f"importlib.import_module({second!r})\n"
-            "from app.core.db.in_memory_list_query import apply_in_memory\n"
-            "assert apply_in_memory.__name__ == 'apply_in_memory'\n"
+            "from app.core.db.in_memory_list_query import InMemoryListQueryApplier\n"
+            "assert InMemoryListQueryApplier.__name__ == 'InMemoryListQueryApplier'\n"
         )

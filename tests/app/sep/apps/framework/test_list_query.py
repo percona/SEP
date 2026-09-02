@@ -24,7 +24,10 @@ import pytest
 
 from app.core.db import deps as core_deps
 from app.core.db import in_memory_list_query as core_applier
-from app.core.db.in_memory_list_query import InMemoryListQuery
+from app.core.db.in_memory_list_query import (
+    InMemoryListQuery,
+    InMemoryListQueryApplier,
+)
 from app.core.pagination import Pagination
 from app.sep.apps.framework import list_query as list_query_module
 from app.sep.apps.framework.list_query import in_memory_list_scripts
@@ -42,8 +45,9 @@ if TYPE_CHECKING:
 _MOVED_TO_CORE = tuple(core_applier.__all__) + tuple(core_deps.__all__)
 
 #: The moved names the adapter itself imports at runtime, and so the only ones this
-#: module is allowed to leave reachable.
-_ADAPTER_NEEDS = frozenset({"apply_in_memory", "default_in_memory_query"})
+#: module is allowed to leave reachable. Empty because the adapter reaches the replay
+#: through the applier it is handed, so it imports the moved names for typing only.
+_ADAPTER_NEEDS: frozenset[str] = frozenset()
 
 
 if TYPE_CHECKING:
@@ -69,7 +73,9 @@ class TestInMemoryListScripts:
         async def _materialize() -> list[ListQueryRow]:
             return rows
 
-        return in_memory_list_scripts(_materialize, LIST_QUERY_SPEC)
+        return in_memory_list_scripts(
+            _materialize, InMemoryListQueryApplier(LIST_QUERY_SPEC)
+        )
 
     @pytest.mark.asyncio
     async def test_no_query_no_pagination_returns_all_in_spec_order(
