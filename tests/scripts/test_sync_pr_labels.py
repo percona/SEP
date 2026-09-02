@@ -656,9 +656,13 @@ def test_list_issue_labels_walks_every_page(monkeypatch):
 def test_list_issue_events_walks_every_page(monkeypatch):
     """Walk every page before the newest label event is selected.
 
-    A single page can miss the decisive event entirely on a long-lived PR.
+    A single page can miss the decisive event entirely on a long-lived PR. The
+    first page mixes in events the mapper drops, so its raw length is a full
+    page while its mapped length is not — a continuation check on the mapped
+    count would stop the walk one page early and never reach the newest event.
     """
     page_size = sync_pr_labels.GITHUB_PAGE_SIZE
+    unfiltered_on_first_page = 3
     full_page = [
         {
             "id": index,
@@ -667,7 +671,10 @@ def test_list_issue_events_walks_every_page(monkeypatch):
             "actor": {"login": "github-actions[bot]", "type": "Bot"},
             "created_at": "2026-08-27T04:42:09Z",
         }
-        for index in range(page_size)
+        for index in range(page_size - unfiltered_on_first_page)
+    ] + [
+        {"id": 900 + index, "event": "renamed", "created_at": "2026-08-27T04:42:10Z"}
+        for index in range(unfiltered_on_first_page)
     ]
     last_page = [
         {
@@ -689,7 +696,7 @@ def test_list_issue_events_walks_every_page(monkeypatch):
     events = client.list_issue_events("percona", "SEP", 1)
 
     assert [_requested_page(url) for url in requested] == ["1", "2"]
-    assert len(events) == page_size + 1
+    assert len(events) == page_size - unfiltered_on_first_page + 1
     assert events[-1] == sync_pr_labels.LabelEvent(
         event="labeled",
         label="skip-test",
@@ -735,3 +742,101 @@ def test_remove_issue_label_tolerates_a_missing_label(monkeypatch):
     client = sync_pr_labels.UrllibGitHubClient("token")
 
     client.remove_issue_label("percona", "SEP", 1, "large-diff")
+
+
+def _patch_urlopen_routes(monkeypatch, routes):
+    """Serve responses by URL fragment and record every request made.
+
+    ``_patch_urlopen_pages`` replays one payload per request in order, which
+    cannot serve a flow that hits several endpoints; this routes on the URL
+    instead.
+
+    :param monkeypatch: The pytest monkeypatch fixture.
+    :param routes: ``(fragment, payload)`` pairs; the first fragment contained
+        in the request URL wins. A ``None`` payload serves an empty body.
+    :return: The list accumulating ``(method, url, body)`` per request.
+    """
+    recorded: list[tuple[str, str, bytes | None]] = []
+
+    class _Response:
+        def __init__(self, payload):
+            self._payload = (
+                b"" if payload is None else json.dumps(payload).encode("utf-8")
+            )
+
+        def read(self):
+            return self._payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    def _urlopen(request, *_args, **_kwargs):
+        recorded.append((request.method, request.full_url, request.data))
+        for fragment, payload in routes:
+            if fragment in request.full_url:
+                return _Response(payload)
+        raise AssertionError(f"unrouted request: {request.full_url}")
+
+    monkeypatch.setattr(sync_pr_labels.urllib.request, "urlopen", _urlopen)
+    return recorded
+
+
+def test_main_fetches_the_file_list_once_and_feeds_both_label_syncs(
+    tmp_path, monkeypatch
+):
+    """Reuse a single file fetch across both label syncs.
+
+    ``main`` owns the fetch so that blast-radius and ``skip-test`` share one
+    result; this pins that wiring, which no single-function test can observe.
+    """
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    labeler = tmp_path / "labeler.yml"
+    labeler.write_text(
+        "app:demo:\n"
+        "- any:\n"
+        "  - changed-files:\n"
+        "    - any-glob-to-any-file:\n"
+        "      - 'app/sep/apps/demo/**'\n",
+        encoding="utf-8",
+    )
+    recorded = _patch_urlopen_routes(
+        monkeypatch,
+        [
+            (
+                "/pulls/7/files",
+                [{"filename": "poetry.lock", "additions": 9000, "deletions": 0}],
+            ),
+            ("/issues/7/labels", []),
+        ],
+    )
+
+    assert (
+        sync_pr_labels.main(
+            [
+                "--owner",
+                "percona",
+                "--repo",
+                "SEP",
+                "--pr-number",
+                "7",
+                "--labeler",
+                str(labeler),
+                "--head-ref",
+                "dependabot/pip/urllib3-2.5.0",
+            ]
+        )
+        == 0
+    )
+
+    file_fetches = [url for _method, url, _body in recorded if "/pulls/7/files" in url]
+    assert len(file_fetches) == 1, "the PR file list must be fetched exactly once"
+
+    writes = [
+        (method, json.loads(body))
+        for method, _url, body in recorded
+        if body is not None
+    ]
+    assert writes == [("POST", {"labels": ["skip-test"]})]
