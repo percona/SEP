@@ -13,12 +13,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Provide the shared in-memory list-query test setup: specs and materialized rows.
+"""Provide the row type and specs the in-memory list-query suites drive.
 
-The applier's own tests and its dependency factory's tests query the same declared
-contract from opposite sides, so the specs and the row type they read attributes off
-live here rather than once per test module. Kept as plain module-level values, not
-fixtures, because both suites build appliers — and one builds routes — at import time.
+Shared rather than copied per module because every suite exercising the applier, its
+dependency, or an adapter over it must assert against the same declaration; a spec
+that drifts in one copy leaves the others asserting a contract the subject no longer
+has.
 """
 
 from __future__ import annotations
@@ -29,8 +29,29 @@ from sqlalchemy import column
 
 from app.core.db.list_query import ListQuerySpec
 
-#: A spec with a multi-key allowlist and two searchable attributes.
-SPEC = ListQuerySpec(
+__all__ = [
+    "LIST_QUERY_SPEC",
+    "NO_SEARCH_LIST_QUERY_SPEC",
+    "ListQueryRow",
+    "list_query_rows",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class ListQueryRow:
+    """Stand in for a materialized row an in-memory list-query spec describes.
+
+    :param filename: The sortable, searchable, tie-breaking identifier.
+    :param title: A nullable sortable and searchable attribute, for NULLS-LAST cover.
+    :param created_at: A non-string sortable attribute.
+    """
+
+    filename: str
+    title: str | None
+    created_at: int
+
+
+LIST_QUERY_SPEC = ListQuerySpec(
     sortable={
         "filename": column("filename"),
         "title": column("title"),
@@ -41,33 +62,17 @@ SPEC = ListQuerySpec(
     searchable=(column("filename"), column("title")),
 )
 
-#: The same shape with search disabled, so ``search`` is never declared.
-NO_SEARCH_SPEC = ListQuerySpec(
+NO_SEARCH_LIST_QUERY_SPEC = ListQuerySpec(
     sortable={"filename": column("filename")},
     default_sort="filename",
     tie_breaker=column("filename"),
 )
 
 
-@dataclass(frozen=True, slots=True)
-class Row:
-    """Stand in for a materialized in-memory row the applier queries.
-
-    :param filename: The tie-breaker and a sortable, searchable attribute.
-    :param title: A nullable sortable, searchable attribute, exercising NULLS-LAST
-        ordering and a missing search value.
-    :param created_at: The default sort's attribute.
-    """
-
-    filename: str
-    title: str | None
-    created_at: int
-
-
-def make_rows(*specs: tuple[str, str | None, int]) -> list[Row]:
+def list_query_rows(*specs: tuple[str, str | None, int]) -> list[ListQueryRow]:
     """Build materialized rows from ``(filename, title, created_at)`` triples.
 
     :param specs: One triple per row, in the order the source materialized them.
     :return: The rows to hand to the applier.
     """
-    return [Row(filename=f, title=t, created_at=c) for f, t, c in specs]
+    return [ListQueryRow(filename=f, title=t, created_at=c) for f, t, c in specs]

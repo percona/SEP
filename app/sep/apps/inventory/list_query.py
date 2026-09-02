@@ -41,16 +41,14 @@ from typing import Annotated
 from fastapi import Depends, Query
 from sqlalchemy import column
 
+from app.core.db.in_memory_list_query import (
+    InMemoryListQuery,
+    InMemoryListQueryApplier,
+)
 from app.core.db.list_query import (
     ListQuerySpec,
     search_query_param,
     SORT_PARAM_DESCRIPTION,
-    UnknownSortKeyError,
-)
-from app.core.exceptions import HTTPUnprocessableEntityException
-from app.sep.apps.framework.list_query import (
-    InMemoryListQuery,
-    InMemoryListQueryApplier,
 )
 from app.sep.apps.inventory.deps import require_inventory_plugin_entity
 
@@ -169,8 +167,9 @@ def inventory_list_query(
     OpenAPI declaration cannot carry four different entity defaults; an omitted
     ``sort`` resolves to the matching spec's ``default_sort``.
 
-    This dependency is hand-written rather than generated, so the rejection Core's
-    generated dependency would map is translated here, to the same 422 body.
+    This dependency is hand-written rather than generated, so it maps the rejection
+    through the applier's translating form — the same 422 body Core's generated
+    dependency would produce.
 
     :param entity: Inventory entity URL segment (``nodes``, ``services``,
         ``schemas``, or ``tables``).
@@ -184,12 +183,7 @@ def inventory_list_query(
     """
     entity = require_inventory_plugin_entity(entity)
     applier = _ENTITY_LIST_QUERY_APPLIERS[entity]
-    try:
-        return applier.build_query(sort or applier.spec.default_sort, search)
-    except UnknownSortKeyError as exc:
-        raise HTTPUnprocessableEntityException(
-            detail=f"Invalid sort key: {exc.key!r}"
-        ) from exc
+    return applier.build_query(sort or applier.spec.default_sort, search)
 
 
 InventoryListQueryDep = Annotated[InMemoryListQuery, Depends(inventory_list_query)]

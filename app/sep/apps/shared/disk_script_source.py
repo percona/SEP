@@ -40,6 +40,7 @@ from pathlib import Path
 from pydantic import BaseModel, create_model, Field
 from sqlalchemy import column
 
+from app.core.db.in_memory_list_query import InMemoryListQueryApplier
 from app.core.db.list_query import ListQuerySpec
 from app.core.exceptions import (
     HTTPBadRequestException,
@@ -47,7 +48,7 @@ from app.core.exceptions import (
     HTTPUnprocessableEntityException,
 )
 from app.sep.apps.field_names import EXECUTOR_HOST_FIELD_NAME, SUDO_FIELD_NAME
-from app.sep.apps.framework.list_query import InMemoryListQueryApplier
+from app.sep.apps.framework.list_query import in_memory_list_scripts
 from app.sep.apps.framework.schema import (
     AppSchema,
     BoolField,
@@ -347,8 +348,8 @@ def build_disk_script_source(
             if path.is_file()
         ]
 
-    list_scripts = InMemoryListQueryApplier(list_query_spec).list_scripts(
-        materialize_scripts
+    list_scripts = in_memory_list_scripts(
+        materialize_scripts, InMemoryListQueryApplier(list_query_spec)
     )
 
     def build_form_schema(script: _DiskScript) -> AppSchema:

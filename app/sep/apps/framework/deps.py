@@ -17,11 +17,6 @@
 
 from collections.abc import Awaitable, Callable
 
-from app.core.db.list_query import ListQuerySpec, make_query_param_dep
-from app.sep.apps.framework.list_query import (
-    InMemoryListQuery,
-    InMemoryListQueryApplier,
-)
 from app.sep.deps import get_task_by_name, TaskAPI
 from app.tasks.models import Task
 
@@ -69,31 +64,3 @@ def make_parent_resolver(
         return task
 
     return resolve_parent_task
-
-
-def make_in_memory_list_query_dep(
-    applier: InMemoryListQueryApplier,
-) -> Callable[..., InMemoryListQuery]:
-    """Build the request-boundary dependency for an in-memory list-query applier.
-
-    The boundary itself is Core's, through
-    :func:`~app.core.db.list_query.make_query_param_dep`, so the in-memory path and the
-    SQL one expose the same parameters, publish the same allowlist ``enum`` and
-    descriptions, and reject an out-of-allowlist sort key with the same HTTP 422 — Core
-    maps the applier's :class:`~app.core.db.list_query.UnknownSortKeyError`. Only the
-    resolved value object differs.
-
-    Call this at wiring time and hand the result to ``Depends``; a fresh dependency is
-    built per call rather than cached, because FastAPI binds each reflected parameter's
-    ``Query`` declaration to the route it found it on.
-
-    :param applier: The spec-bound applier whose allowlist bounds the request.
-    :return: A dependency callable resolving the request into an
-        :class:`~app.sep.apps.framework.list_query.InMemoryListQuery`.
-    """
-
-    # Core re-passes the spec it was given; the applier already binds it.
-    def build(_spec: ListQuerySpec, sort: str, search: str | None) -> InMemoryListQuery:
-        return applier.build_query(sort, search)
-
-    return make_query_param_dep(applier.spec, build)

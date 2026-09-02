@@ -23,11 +23,11 @@ from types import MappingProxyType
 import pytest
 from fastapi import status
 
+from app.core.db.in_memory_list_query import InMemoryListQuery
 from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
-from app.sep.apps.framework.list_query import InMemoryListQuery
 from app.sep.apps.inventory import list_query as inventory_list_query_module
 from app.sep.apps.inventory.list_query import (
     _ENTITY_LIST_QUERY_APPLIERS,
