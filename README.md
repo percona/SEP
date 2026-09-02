@@ -403,7 +403,7 @@ SEP supports multiple database engines for different components. Each component 
 ```yaml
 SEP:
   DATABASE:
-    ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
+    ENGINE: sqlite  # Database engine: sqlite, postgresql
     USER: null
     PASSWORD: null
     HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
@@ -429,18 +429,6 @@ TASKS:
     NAME: tasks.db
 ```
 
-#### MySQL/MariaDB Configuration
-```yaml
-SEP:
-  DATABASE:
-    ENGINE: mysql
-    USER: sep_user
-    PASSWORD: your_secure_password
-    HOST: localhost
-    PORT: 3306
-    NAME: sep_database
-```
-
 #### PostgreSQL Configuration
 ```yaml
 SEP:
@@ -455,7 +443,6 @@ SEP:
 
 Supported database engines:
 - `sqlite`: SQLite database (default for development)
-- `mysql`: MySQL/MariaDB database
 - `postgresql`: PostgreSQL database
 
 > [!NOTE]

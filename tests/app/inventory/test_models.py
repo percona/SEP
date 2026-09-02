@@ -15,12 +15,14 @@
 
 """Test inventory model validators and enums."""
 
+from datetime import timedelta
+
 import pytest
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.utils.date_time import utc_now
-from app.inventory.constants import ACTIVE_RETIREMENT_KEY
+from app.inventory.constants import ACTIVE_RETIREMENT_KEY, SYNC_ATTEMPT_MAX_CLOCK_SKEW
 from app.inventory.crud import RetiredInclusiveServiceManager, ServiceManager
 from app.inventory.models import (
     ExternalIdentityAlias,
@@ -32,6 +34,8 @@ from app.inventory.models import (
     ServiceTypeEnum,
     ServiceWrite,
     SourceEnum,
+    SyncHealthWrite,
+    SyncOutcomeEnum,
 )
 from tests.app.factories import ServiceWriteFactory
 
@@ -273,3 +277,37 @@ class TestIdentityTablesCarryNoUniqueIndex:
         indexes = IdentityLinkDecision.__table__.indexes
         assert indexes
         assert not any(index.unique for index in indexes)
+
+
+class TestSyncHealthWriteAttemptClock:
+    """Test the bound a reported attempt time is held to."""
+
+    @pytest.mark.parametrize(
+        "offset",
+        [SYNC_ATTEMPT_MAX_CLOCK_SKEW - timedelta(minutes=1), -timedelta(days=30)],
+        ids=["ahead_within_tolerance", "in_the_past"],
+    )
+    def test_an_attempt_not_beyond_the_tolerance_is_accepted(
+        self, offset: timedelta
+    ) -> None:
+        """Admit both the ordinary late report and the drift two containers carry."""
+        attempted_at = utc_now() + offset
+
+        body = SyncHealthWrite(
+            outcome=SyncOutcomeEnum.SUCCESS, attempted_at=attempted_at
+        )
+
+        assert body.attempted_at == attempted_at
+
+    def test_an_attempt_beyond_the_tolerance_is_refused(self) -> None:
+        """Refuse a freshness no later report could supersede.
+
+        The ordering guards admit any attempt not older than the stored one, so
+        a clock running fast would stamp a ``last_synced_at`` that locks the row
+        until wall-clock time catches up — and locks out the same reporter once
+        its clock is corrected.
+        """
+        attempted_at = utc_now() + SYNC_ATTEMPT_MAX_CLOCK_SKEW + timedelta(minutes=1)
+
+        with pytest.raises(ValidationError, match="clock skew"):
+            SyncHealthWrite(outcome=SyncOutcomeEnum.SUCCESS, attempted_at=attempted_at)

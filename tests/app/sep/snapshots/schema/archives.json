@@ -54,6 +54,7 @@
           "label": "Execution Host",
           "name": "hostname",
           "required": true,
+          "target_service": "service_id",
           "type": "host"
         },
         {

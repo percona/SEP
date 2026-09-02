@@ -16,7 +16,7 @@
 """Define test fixtures for inventory tests."""
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -36,6 +36,7 @@ from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.core.utils.date_time import utc_now
+from app.inventory.constants import SYNC_ATTEMPT_MAX_CLOCK_SKEW
 from app.inventory.crud import (
     HostSystemObservationManager,
     NodeManager,
@@ -53,6 +54,7 @@ from app.inventory.models import (
     Schema,
     Service,
     ServiceSystemObservation,
+    SyncOutcomeEnum,
     Table,
 )
 from tests.app.db_schema import apply_schema
@@ -281,3 +283,65 @@ async def split_nodes_with_services(
         node_id=successor.id,
     )
     return predecessor, successor, predecessor_service, successor_service
+
+
+#: The keys every sync-health-carrying read response exposes.
+SYNC_HEALTH_RESPONSE_KEYS = frozenset(
+    {
+        "last_synced_at",
+        "last_sync_error",
+        "sync_failing_since",
+        "consecutive_failures",
+    }
+)
+
+#: A fixed attempt time for the bodies below, so a rejection is attributable to
+#: the field under test rather than to a moving timestamp.
+SYNC_HEALTH_ATTEMPTED_AT = "2026-08-31T12:00:00+00:00"
+
+#: An attempt time past the tolerated clock skew. Relative rather than fixed:
+#: the rejection is about the distance from *this run's* clock, so a literal
+#: would stop testing the boundary the moment it fell into the past. Read once
+#: at collection and overshot by a day, because the margin has to survive the
+#: whole run — a value only minutes past the tolerance falls back inside it
+#: while the suite is still executing, and the route then answers 204.
+#: The tolerance boundary itself is pinned precisely in ``test_models.py``.
+SYNC_HEALTH_FUTURE_ATTEMPTED_AT = (
+    utc_now() + SYNC_ATTEMPT_MAX_CLOCK_SKEW + timedelta(days=1)
+).isoformat()
+
+#: Bodies the sync-health routes must refuse, one per rejection ``SyncHealthWrite``
+#: declares. Raw dicts rather than model dumps: the wire shape is the contract
+#: these route tests exercise, and none of these can be produced by the model
+#: that is supposed to refuse them.
+INVALID_SYNC_HEALTH_BODIES = [
+    {"outcome": "failure", "attempted_at": SYNC_HEALTH_ATTEMPTED_AT},
+    {"outcome": "failure", "error": "", "attempted_at": SYNC_HEALTH_ATTEMPTED_AT},
+    {"outcome": "success", "error": "boom", "attempted_at": SYNC_HEALTH_ATTEMPTED_AT},
+    {"outcome": "nope", "attempted_at": SYNC_HEALTH_ATTEMPTED_AT},
+    {"outcome": "success"},
+    {"outcome": "success", "attempted_at": SYNC_HEALTH_FUTURE_ATTEMPTED_AT},
+]
+INVALID_SYNC_HEALTH_BODY_IDS = [
+    "failure_without_error",
+    "failure_with_empty_error",
+    "success_with_error",
+    "unknown_outcome",
+    "missing_attempted_at",
+    "attempted_at_beyond_clock_skew",
+]
+
+
+def sync_health_payload(
+    outcome: SyncOutcomeEnum, error: str | None = None
+) -> dict[str, str]:
+    """Build the JSON body one sync-health POST sends.
+
+    :param outcome: The outcome the syncer reports.
+    :param error: The failure description, omitted entirely when None.
+    :return: The request body.
+    """
+    body = {"outcome": outcome.value, "attempted_at": SYNC_HEALTH_ATTEMPTED_AT}
+    if error is not None:
+        body["error"] = error
+    return body
