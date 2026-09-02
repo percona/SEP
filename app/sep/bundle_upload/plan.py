@@ -803,7 +803,9 @@ class DeliveryPlanExecutor:
         rather than failing the search: one malformed row must not blank a
         dropdown the rest of the response can still fill. A results pointer that
         addresses no list is fatal instead, because that is a misconfigured plan
-        rather than bad data.
+        rather than bad data. A response whose rows all skip is logged, since a
+        pointer that no longer matches the receiver's contract is otherwise
+        indistinguishable from a term that matched nothing.
 
         Matches are deduplicated on the reference, keeping the first occurrence
         and so the receiver's own ordering. That is what lets the reference
@@ -836,7 +838,14 @@ class DeliveryPlanExecutor:
             if (reference := _row_scalar(row, step.reference_pointer)) is not None
             and (title := _row_scalar(row, step.title_pointer)) is not None
         )
-        return list(unique_everseen(matched, lambda match: match.reference))
+        matches = list(unique_everseen(matched, lambda match: match.reference))
+        if rows and not matches:
+            logger.warning(
+                "Delivery plan: the case search returned %d rows, none of which "
+                "carried both of the pointers the plan declares.",
+                len(rows),
+            )
+        return matches
 
     def _check_bundle_size(self, size: int) -> None:
         """Reject an over-cap bundle before the transport is touched.

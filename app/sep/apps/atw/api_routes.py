@@ -34,6 +34,7 @@ from app.core.exceptions import (
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.core.utils.date_time import utc_now
+from app.core.utils.fields import StrippedNonEmptyStr
 from app.core.utils.iterators import unique_everseen
 from app.sep.apps.atw.batch import (
     ATWBatchExecuteItemResponse,
@@ -121,6 +122,11 @@ CASE_SEARCH_TIMEOUT_SECONDS = 3
 #: or a title fragment is far shorter; the cap is what keeps an arbitrary string
 #: out of the provider's query.
 MAX_CASE_SEARCH_TERM_LENGTH = 128
+
+#: The most matches the route offers the dialog. ``CaseSearchStep`` declares no
+#: limit of its own, so without this the response's cardinality is whatever the
+#: receiver returns.
+MAX_CASE_SEARCH_MATCHES = 25
 
 
 class ATWSnippetSummary(BaseModel):
@@ -645,7 +651,7 @@ def _build_execution_response(
 async def atw_config() -> AtwConfigResponse:
     """Report whether the incident send action is available.
 
-    Not gated by the send guard -- this endpoint is what reports that guard, so
+    Not gated by the send guard: this endpoint is what reports that guard, so
     it must answer whether or not a receiver is configured.
 
     :return: The reasons the send action is withheld, and whether the
@@ -660,9 +666,8 @@ async def atw_config() -> AtwConfigResponse:
 @router.get("/case-search/", dependencies=[IsApiAdmin])
 async def atw_case_search(
     term: Annotated[
-        str,
+        StrippedNonEmptyStr,
         Query(
-            min_length=1,
             max_length=MAX_CASE_SEARCH_TERM_LENGTH,
             description="The support case reference or title fragment to match.",
         ),
@@ -684,7 +689,12 @@ async def atw_case_search(
     administrators alone.
 
     :param term: The caller's typed search term, the only input it accepts.
-    :return: The matched cases, or that the search could not run.
+        Surrounding whitespace is stripped, so a whitespace-only term is
+        refused rather than reaching the receiver as a match-everything
+        fragment.
+    :return: The matched cases, or that the search could not run. At most
+        ``MAX_CASE_SEARCH_MATCHES`` are offered, so a plan that declares no
+        provider-side limit still cannot hand the dialog an unbounded list.
     """
     plan = resolve_delivery_plan().plan
     if plan is None or plan.case_search is None:
@@ -700,7 +710,7 @@ async def atw_case_search(
         available=True,
         matches=[
             AtwCaseMatch(reference=match.reference, title=match.title)
-            for match in matches
+            for match in matches[:MAX_CASE_SEARCH_MATCHES]
         ],
     )
 

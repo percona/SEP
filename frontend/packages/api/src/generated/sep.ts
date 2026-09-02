@@ -681,7 +681,12 @@ export interface paths {
      *     administrators alone.
      *
      *     :param term: The caller's typed search term, the only input it accepts.
-     *     :return: The matched cases, or that the search could not run.
+     *         Surrounding whitespace is stripped, so a whitespace-only term is
+     *         refused rather than reaching the receiver as a match-everything
+     *         fragment.
+     *     :return: The matched cases, or that the search could not run. At most
+     *         ``MAX_CASE_SEARCH_MATCHES`` are offered, so a plan that declares no
+     *         provider-side limit still cannot hand the dialog an unbounded list.
      */
     get: operations['atw_atw_case_search_api_apps_atw_case_search__get'];
     put?: never;
@@ -703,7 +708,7 @@ export interface paths {
      * Atw Config
      * @description Report whether the incident send action is available.
      *
-     *     Not gated by the send guard -- this endpoint is what reports that guard, so
+     *     Not gated by the send guard: this endpoint is what reports that guard, so
      *     it must answer whether or not a receiver is configured.
      *
      *     :return: The reasons the send action is withheld, and whether the

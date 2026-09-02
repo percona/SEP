@@ -657,6 +657,36 @@ class TestAtwCaseSearch:
             ],
         }
 
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_matches_beyond_the_cap_are_dropped_keeping_the_receivers_order(
+        self, admin_api_client: AsyncClient
+    ) -> None:
+        """Offer at most the capped number of matches, in the receiver's order."""
+        row_count = api_routes.MAX_CASE_SEARCH_MATCHES + 5
+        with aioresponses() as mock:
+            mock.get(
+                re.compile(r"https://intake\.example\.com/api/now/table/case.*"),
+                status=status.HTTP_200_OK,
+                payload={
+                    "result": [
+                        {"number": f"CS{index:04d}", "short_description": "Case"}
+                        for index in range(row_count)
+                    ]
+                },
+            )
+            response = await admin_api_client.get(
+                _CASE_SEARCH_PATH, params={"term": "CS00"}
+            )
+
+        body = response.json()
+        assert response.status_code == status.HTTP_200_OK
+        assert body["available"] is True
+        assert len(body["matches"]) == api_routes.MAX_CASE_SEARCH_MATCHES
+        assert body["matches"] == [
+            {"reference": f"CS{index:04d}", "title": "Case"}
+            for index in range(api_routes.MAX_CASE_SEARCH_MATCHES)
+        ]
+
     @pytest.mark.usefixtures("configured")
     async def test_reports_unavailable_when_the_plan_declares_no_case_search(
         self, admin_api_client: AsyncClient
@@ -832,6 +862,35 @@ class TestAtwCaseSearch:
         response = await admin_api_client.get(_CASE_SEARCH_PATH, params={"term": ""})
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_a_whitespace_only_term_is_refused(
+        self, admin_api_client: AsyncClient
+    ) -> None:
+        """Refuse a term that strips to nothing rather than matching everything."""
+        response = await admin_api_client.get(_CASE_SEARCH_PATH, params={"term": "   "})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_a_padded_term_is_trimmed_before_it_reaches_the_receiver(
+        self, admin_api_client: AsyncClient
+    ) -> None:
+        """Strip surrounding whitespace rather than forwarding it to the query."""
+        with aioresponses() as mock:
+            mock.get(
+                re.compile(r"https://intake\.example\.com/api/now/table/case.*"),
+                status=status.HTTP_200_OK,
+                payload={"result": []},
+            )
+            response = await admin_api_client.get(
+                _CASE_SEARCH_PATH, params={"term": "  CS00  "}
+            )
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert response.status_code == status.HTTP_200_OK
+        assert requests[0].kwargs["params"]["sysparm_query"] == "123TEXTQUERY321CS00"
 
     @pytest.mark.usefixtures("case_search_configured")
     async def test_a_term_over_the_cap_is_refused(

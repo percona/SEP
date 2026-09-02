@@ -4302,7 +4302,7 @@
     },
     "/api/apps/atw/case-search/": {
       "get": {
-        "description": "Search the configured delivery provider for support cases matching ``term``.\n\nNo way the search itself can fail reaches the caller as an error: a\ndeployment that declares no case-search section, stored inputs that no\nlonger fit the plan, a refused credential, an unreachable receiver and a\nsearch that outran its bound all report the same unavailability, which the\ncaller renders as the plain text field rather than as a search that found\nnothing.\n\nRestricted to administrators, unlike the app's other reads. The router\nresolves a minimum role for unsafe methods only, so a safe method carries\nwhatever guard it declares itself; this one issues the deployment's own\nreceiver credential, and the dialog that calls it is already offered to\nadministrators alone.\n\n:param term: The caller's typed search term, the only input it accepts.\n:return: The matched cases, or that the search could not run.",
+        "description": "Search the configured delivery provider for support cases matching ``term``.\n\nNo way the search itself can fail reaches the caller as an error: a\ndeployment that declares no case-search section, stored inputs that no\nlonger fit the plan, a refused credential, an unreachable receiver and a\nsearch that outran its bound all report the same unavailability, which the\ncaller renders as the plain text field rather than as a search that found\nnothing.\n\nRestricted to administrators, unlike the app's other reads. The router\nresolves a minimum role for unsafe methods only, so a safe method carries\nwhatever guard it declares itself; this one issues the deployment's own\nreceiver credential, and the dialog that calls it is already offered to\nadministrators alone.\n\n:param term: The caller's typed search term, the only input it accepts.\n    Surrounding whitespace is stripped, so a whitespace-only term is\n    refused rather than reaching the receiver as a match-everything\n    fragment.\n:return: The matched cases, or that the search could not run. At most\n    ``MAX_CASE_SEARCH_MATCHES`` are offered, so a plan that declares no\n    provider-side limit still cannot hand the dialog an unbounded list.",
         "operationId": "atw_atw_case_search_api_apps_atw_case_search__get",
         "parameters": [
           {
@@ -4349,7 +4349,7 @@
     },
     "/api/apps/atw/config/": {
       "get": {
-        "description": "Report whether the incident send action is available.\n\nNot gated by the send guard -- this endpoint is what reports that guard, so\nit must answer whether or not a receiver is configured.\n\n:return: The reasons the send action is withheld, and whether the\n    case-reference field may search the receiver.",
+        "description": "Report whether the incident send action is available.\n\nNot gated by the send guard: this endpoint is what reports that guard, so\nit must answer whether or not a receiver is configured.\n\n:return: The reasons the send action is withheld, and whether the\n    case-reference field may search the receiver.",
         "operationId": "atw_atw_config_api_apps_atw_config__get",
         "responses": {
           "200": {

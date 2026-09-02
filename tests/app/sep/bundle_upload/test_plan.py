@@ -2127,9 +2127,13 @@ class TestDeliveryPlanCaseSearch:
         ]
 
     async def test_a_row_whose_pointer_does_not_resolve_is_skipped(
-        self, api: RemoteAPI
+        self, api: RemoteAPI, caplog
     ):
-        """Drop one malformed row rather than blanking every match beside it."""
+        """Drop one malformed row rather than blanking every match beside it.
+
+        A search that still yielded matches is not the all-skipped shape, so it
+        must not log the warning reserved for that case.
+        """
         executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
         with aioresponses() as mock:
             mock.get(
@@ -2142,10 +2146,12 @@ class TestDeliveryPlanCaseSearch:
                     ]
                 },
             )
-            async with api:
-                matches = await executor.search_cases("CS00")
+            with caplog.at_level("WARNING", logger=_PLAN_LOGGER):
+                async with api:
+                    matches = await executor.search_cases("CS00")
 
         assert matches == [CaseMatch(reference="CS0002", title="Replica lag")]
+        assert caplog.records == []
 
     async def test_a_row_addressing_a_non_scalar_is_skipped(self, api: RemoteAPI):
         """Drop a row whose pointer lands on a container rather than a value."""
@@ -2186,6 +2192,29 @@ class TestDeliveryPlanCaseSearch:
                 matches = await executor.search_cases("CS00")
 
         assert matches == [CaseMatch(reference="CS0001", title="First")]
+
+    async def test_all_rows_skipping_logs_a_warning_naming_the_row_count(
+        self, api: RemoteAPI, caplog
+    ):
+        """Flag rows that all skip, the shape a stale or misconfigured pointer takes."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL,
+                status=status.HTTP_200_OK,
+                payload={
+                    "result": [
+                        {"number": "CS0001"},
+                        {"short_description": "Replica lag"},
+                    ]
+                },
+            )
+            with caplog.at_level("WARNING", logger=_PLAN_LOGGER):
+                async with api:
+                    matches = await executor.search_cases("CS00")
+
+        assert matches == []
+        assert any("2 rows" in record.getMessage() for record in caplog.records)
 
     async def test_an_empty_result_list_yields_no_matches(self, api: RemoteAPI):
         """Report a search that matched nothing as an empty list, not an error."""
