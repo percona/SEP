@@ -24,6 +24,7 @@
 | app/core/auth/providers/grafana/provider.py                                                                                  |       25 |        0 |        4 |        0 |    100% |           |
 | app/core/auth/providers/grafana/sdk.py                                                                                       |       54 |        0 |        6 |        0 |    100% |           |
 | app/core/auth/utils.py                                                                                                       |        6 |        1 |        0 |        0 |     83% |        35 |
+| app/core/celery/bootstrap.py                                                                                                 |       31 |        2 |        2 |        1 |     91% |  141, 145 |
 | app/core/celery/config.py                                                                                                    |       34 |        0 |        2 |        0 |    100% |           |
 | app/core/celery/crud.py                                                                                                      |       26 |        2 |        4 |        1 |     90% |     91-97 |
 | app/core/celery/db.py                                                                                                        |        8 |        0 |        0 |        0 |    100% |           |
@@ -455,7 +456,7 @@
 | app/tasks/routes.py                                                                                                          |      237 |       20 |       46 |        4 |     91% |153-157, 240-246, 279, 329-335, 342, 432, 475, 490, 650, 664, 672, 698, 706-\>708, 729-730 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **28118** | **1717** | **6914** |  **636** | **92%** |           |
+| **TOTAL**                                                                                                                    | **28149** | **1719** | **6916** |  **637** | **92%** |           |
 
 
 ## Setup coverage badge
