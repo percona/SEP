@@ -31,7 +31,7 @@ from app.sep.apps.mysql_backups.form_backfill import (
     FORM_BACKFILL_ENTRIES,
     reconstruct_mysql_backups_form,
 )
-from app.sep.apps.mysql_backups.forms import BackupCreate
+from app.sep.apps.mysql_backups.forms import BackupCreate, EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.payload_variants import PROVIDERS
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
@@ -78,6 +78,7 @@ def _legacy_mysql_backup_task(
     backup_type: BackupType = BackupType.XTRABACKUP,
     upload: list[str] | None = None,
     all_servers: dict[str, object] | None = None,
+    server_extra: dict[str, object] | None = None,
     alert_on_fail: bool = False,
 ) -> Task:
     """Build a legacy mysql_backups task row without ``data['_form']``."""
@@ -86,6 +87,7 @@ def _legacy_mysql_backup_task(
         "HOST": service_host,
         "PORT": service_port,
         "BACKUP_TYPE": backup_type.value,
+        **(server_extra or {}),
     }
     if upload is not None:
         server_list_entry["UPLOAD"] = upload
@@ -371,3 +373,85 @@ class TestUploadBackfillDropsNothingSilently:
         assert [error["loc"] for error in excinfo.value.errors()] == [
             ("upload", extracted.index("azure"))
         ]
+
+
+class TestEncryptionFormatBackfill:
+    """Reconstruct the encryption format of tasks stamped before it existed.
+
+    A legacy task's encryption lived only in the fields the payload happened to
+    read. Stamping a form that lost that state would let the next save turn an
+    encrypted backup into a plaintext one, so each state has to survive the round
+    trip -- or be refused outright when it cannot.
+    """
+
+    _RECIPIENT_BLOCK = {
+        "dir_encrypt_config": {"encryption_recipient": "ops@example.com"}
+    }
+
+    @staticmethod
+    def _backfill(
+        all_servers: dict[str, object],
+        server_extra: dict[str, object] | None = None,
+    ):
+        service_id = 9
+        lookup = _lookup(
+            _service(service_id, name="mysql-prod", address="10.0.0.5", port=3306),
+        )
+        task = _legacy_mysql_backup_task(
+            name="mysql-encrypted",
+            upload=["RSYNC"],
+            all_servers={"RSYNC_PATH": "/remote/backups", **all_servers},
+            server_extra=server_extra,
+        )
+        return _backfill_single_task(task, FORM_BACKFILL_ENTRIES[0], _ctx(lookup))
+
+    def _stamped_form(
+        self, *args: dict[str, object] | None, **kwargs: dict[str, object] | None
+    ) -> dict:
+        outcome = self._backfill(*args, **kwargs)
+        assert outcome.label == "stamped"
+        return outcome.stamped_data[RESERVED_FORM_KEY]
+
+    def test_unencrypted_task_stamps_no_encryption(self):
+        """Stamp an unencrypted task as ``none`` rather than inventing a format."""
+        stamped_form = self._stamped_form({"ENCRYPT": False})
+        assert stamped_form["encryption_format"] == EncryptionFormat.NONE
+
+    def test_aes256_task_stamps_the_aes256_format(self):
+        """Stamp an AES-256 task as ``aes256`` and keep its key file."""
+        stamped_form = self._stamped_form(
+            {"ENCRYPT": False, "XTRABACKUP_AES256_KEYFILE": "/keys/aes.key"}
+        )
+        assert stamped_form["encryption_format"] == EncryptionFormat.AES256
+        assert stamped_form["xtrabackup_aes256_keyfile"] == "/keys/aes.key"
+
+    def test_post_run_gpg_task_stamps_the_gpg_format(self):
+        """Stamp a post-run GPG task as ``gpg`` with its timing intact."""
+        stamped_form = self._stamped_form(
+            {"ENCRYPT": False, "POST_RUN_ENCRYPT": True}, self._RECIPIENT_BLOCK
+        )
+        assert stamped_form["encryption_format"] == EncryptionFormat.GPG
+        assert stamped_form["post_run_encrypt"] is True
+
+    def test_dual_task_stamps_the_dual_format(self):
+        """Stamp a task carrying both an AES-256 key file and GPG as ``dual``."""
+        stamped_form = self._stamped_form(
+            {
+                "ENCRYPT": False,
+                "POST_RUN_ENCRYPT": True,
+                "XTRABACKUP_AES256_KEYFILE": "/keys/aes.key",
+            },
+            self._RECIPIENT_BLOCK,
+        )
+        assert stamped_form["encryption_format"] == EncryptionFormat.DUAL
+
+    def test_gpg_task_without_a_recoverable_recipient_is_refused(self):
+        """Refuse to stamp a GPG task whose recipient cannot be read back.
+
+        The recipient is required by a GPG format, so a reconstruction that lost
+        it is invalid. Being counted invalid leaves the task un-stamped and its
+        encryption untouched, where stamping the form without the recipient -- or
+        with no format at all -- would let the next save drop the encryption.
+        """
+        outcome = self._backfill({"ENCRYPT": False, "POST_RUN_ENCRYPT": True})
+        assert outcome.label == "skipped_invalid"

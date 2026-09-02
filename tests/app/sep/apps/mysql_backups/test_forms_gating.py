@@ -22,6 +22,7 @@ from app.sep.apps.framework.form_dsl.derivation import derive_form_sections
 from app.sep.apps.mysql_backups.forms import (
     BackupConfigAll,
     BackupCreate,
+    EncryptionFormat,
     UploadProvider,
 )
 from app.sep.apps.mysql_backups.models import BackupType
@@ -139,17 +140,19 @@ class TestPerModeBoolGates:
 
 
 class TestEncryptionGate:
-    """Enforce the independent-modes encryption model.
+    """Enforce the independent-modes encryption model within the GPG formats.
 
-    ``encrypt`` (in-place) and ``post_run_encrypt`` are independent modes;
+    ``encrypt`` (in-place) and ``post_run_encrypt`` are independent timings;
     ``encrypt_using_tmpdir`` requires ``encrypt`` and is mutually exclusive with
-    ``post_run_encrypt``; and ``encryption_recipient`` is required iff either mode
-    is enabled.
+    ``post_run_encrypt``; and ``encryption_recipient`` is required iff either
+    timing is enabled. Every case here selects a GPG-bearing
+    ``encryption_format``, which is what makes the timing fields reachable.
     """
 
     def test_defaults_yield_valid_disabled_config(self):
         """Accept an untouched Encryption section (all defaults) as a disabled config."""
         form = BackupCreate(**_base_payload(BackupType.MYDUMPER))
+        assert form.encryption_format is EncryptionFormat.NONE
         assert form.encrypt is False
         assert form.encrypt_using_tmpdir is False
         assert form.post_run_encrypt is False
@@ -160,6 +163,7 @@ class TestEncryptionGate:
         BackupCreate(
             **_base_payload(
                 BackupType.MYDUMPER,
+                encryption_format=EncryptionFormat.GPG,
                 encrypt=True,
                 encryption_recipient="ops@example.com",
             )
@@ -168,10 +172,16 @@ class TestEncryptionGate:
     def test_encrypt_without_recipient_fails(self):
         """encrypt=True without recipient → 422."""
         with pytest.raises(ValidationError, match="encryption_recipient"):
-            BackupCreate(**_base_payload(BackupType.MYDUMPER, encrypt=True))
+            BackupCreate(
+                **_base_payload(
+                    BackupType.MYDUMPER,
+                    encryption_format=EncryptionFormat.GPG,
+                    encrypt=True,
+                )
+            )
 
     def test_recipient_without_any_encryption_fails(self):
-        """Reject a recipient set with no encryption mode enabled → 422."""
+        """Reject a recipient set with no encryption timing enabled → 422."""
         with pytest.raises(ValidationError, match="encryption_recipient"):
             BackupCreate(
                 **_base_payload(
@@ -182,10 +192,11 @@ class TestEncryptionGate:
             )
 
     def test_tmpdir_with_encrypt_ok(self):
-        """Accept encrypt with encrypt_using_tmpdir and a recipient (tmpdir mode)."""
+        """Accept encrypt with encrypt_using_tmpdir and a recipient (tmpdir timing)."""
         BackupCreate(
             **_base_payload(
                 BackupType.MYDUMPER,
+                encryption_format=EncryptionFormat.GPG,
                 encrypt=True,
                 encrypt_using_tmpdir=True,
                 encryption_recipient="ops@example.com",
@@ -193,10 +204,11 @@ class TestEncryptionGate:
         )
 
     def test_post_run_with_encrypt_ok(self):
-        """Accept encrypt with post_run_encrypt and a recipient (post-run mode)."""
+        """Accept encrypt with post_run_encrypt and a recipient (both timings)."""
         BackupCreate(
             **_base_payload(
                 BackupType.MYDUMPER,
+                encryption_format=EncryptionFormat.GPG,
                 encrypt=True,
                 post_run_encrypt=True,
                 encryption_recipient="ops@example.com",
@@ -219,6 +231,7 @@ class TestEncryptionGate:
         BackupCreate(
             **_base_payload(
                 BackupType.MYDUMPER,
+                encryption_format=EncryptionFormat.GPG,
                 encrypt=False,
                 post_run_encrypt=True,
                 encryption_recipient="ops@example.com",
@@ -228,7 +241,13 @@ class TestEncryptionGate:
     def test_post_run_without_recipient_fails(self):
         """Reject post_run_encrypt without a recipient (post-run GPG needs one)."""
         with pytest.raises(ValidationError, match="encryption_recipient"):
-            BackupCreate(**_base_payload(BackupType.MYDUMPER, post_run_encrypt=True))
+            BackupCreate(
+                **_base_payload(
+                    BackupType.MYDUMPER,
+                    encryption_format=EncryptionFormat.GPG,
+                    post_run_encrypt=True,
+                )
+            )
 
     def test_tmpdir_and_post_run_together_fails(self):
         """Reject encrypt_using_tmpdir combined with post_run_encrypt."""
@@ -236,12 +255,180 @@ class TestEncryptionGate:
             BackupCreate(
                 **_base_payload(
                     BackupType.MYDUMPER,
+                    encryption_format=EncryptionFormat.GPG,
                     encrypt=True,
                     encrypt_using_tmpdir=True,
                     post_run_encrypt=True,
                     encryption_recipient="ops@example.com",
                 )
             )
+
+
+class TestEncryptionFormatGate:
+    """``encryption_format`` decides which encryption runs, not field presence.
+
+    The format is the signal; the key file and the GPG timing bools are its
+    format-specific parameters and are unreachable outside their format.
+    """
+
+    @pytest.mark.parametrize(
+        ("override", "rejected_field"),
+        [
+            (
+                {"encrypt": True, "encryption_recipient": "ops@example.com"},
+                "encrypt",
+            ),
+            (
+                {"post_run_encrypt": True, "encryption_recipient": "ops@example.com"},
+                "post_run_encrypt",
+            ),
+            (
+                {"xtrabackup_aes256_keyfile": "/etc/keyfile"},
+                "xtrabackup_aes256_keyfile",
+            ),
+        ],
+    )
+    def test_none_leaves_every_encryption_field_unreachable(
+        self, override: dict[str, object], rejected_field: str
+    ):
+        """Reject each encryption parameter under the default ``none`` format."""
+        with pytest.raises(ValidationError, match=rejected_field):
+            BackupCreate(**_base_payload(BackupType.XTRABACKUP, **override))
+
+    @pytest.mark.parametrize("timing", ["encrypt", "post_run_encrypt"])
+    def test_gpg_accepts_either_timing(self, timing: str):
+        """Accept ``gpg`` with in-place or post-run timing (both are GPG modes)."""
+        BackupCreate(
+            **_base_payload(
+                BackupType.XTRABACKUP,
+                encryption_format=EncryptionFormat.GPG,
+                encryption_recipient="ops@example.com",
+                **{timing: True},
+            )
+        )
+
+    def test_gpg_without_a_timing_fails(self):
+        """Reject ``gpg`` with neither timing selected — nothing would encrypt."""
+        with pytest.raises(ValidationError, match="encrypt"):
+            BackupCreate(
+                **_base_payload(
+                    BackupType.XTRABACKUP, encryption_format=EncryptionFormat.GPG
+                )
+            )
+
+    def test_gpg_forbids_the_key_file(self):
+        """Reject a key file under ``gpg`` — a stale one must not reach the backend."""
+        with pytest.raises(ValidationError, match="xtrabackup_aes256_keyfile"):
+            BackupCreate(
+                **_base_payload(
+                    BackupType.XTRABACKUP,
+                    encryption_format=EncryptionFormat.GPG,
+                    encrypt=True,
+                    encryption_recipient="ops@example.com",
+                    xtrabackup_aes256_keyfile="/etc/keyfile",
+                )
+            )
+
+    def test_aes256_requires_the_key_file(self):
+        """Reject ``aes256`` without a key file."""
+        with pytest.raises(ValidationError, match="xtrabackup_aes256_keyfile"):
+            BackupCreate(
+                **_base_payload(
+                    BackupType.XTRABACKUP, encryption_format=EncryptionFormat.AES256
+                )
+            )
+
+    def test_aes256_with_the_key_file_ok(self):
+        """Accept ``aes256`` with a key file and no GPG timing."""
+        BackupCreate(
+            **_base_payload(
+                BackupType.XTRABACKUP,
+                encryption_format=EncryptionFormat.AES256,
+                xtrabackup_aes256_keyfile="/etc/keyfile",
+            )
+        )
+
+    def test_aes256_forbids_a_gpg_timing(self):
+        """Reject a GPG timing under ``aes256`` — a stale flag must not run GPG."""
+        with pytest.raises(ValidationError, match="post_run_encrypt"):
+            BackupCreate(
+                **_base_payload(
+                    BackupType.XTRABACKUP,
+                    encryption_format=EncryptionFormat.AES256,
+                    xtrabackup_aes256_keyfile="/etc/keyfile",
+                    post_run_encrypt=True,
+                    encryption_recipient="ops@example.com",
+                )
+            )
+
+    def test_dual_requires_the_key_file(self):
+        """Reject ``dual`` with a GPG timing but no key file."""
+        with pytest.raises(ValidationError, match="xtrabackup_aes256_keyfile"):
+            BackupCreate(
+                **_base_payload(
+                    BackupType.XTRABACKUP,
+                    encryption_format=EncryptionFormat.DUAL,
+                    post_run_encrypt=True,
+                    encryption_recipient="ops@example.com",
+                )
+            )
+
+    def test_dual_requires_a_gpg_timing(self):
+        """Reject ``dual`` with a key file but neither GPG timing."""
+        with pytest.raises(ValidationError, match="encrypt"):
+            BackupCreate(
+                **_base_payload(
+                    BackupType.XTRABACKUP,
+                    encryption_format=EncryptionFormat.DUAL,
+                    xtrabackup_aes256_keyfile="/etc/keyfile",
+                )
+            )
+
+    def test_dual_with_both_halves_ok(self):
+        """Accept ``dual`` with a key file and a GPG timing."""
+        BackupCreate(
+            **_base_payload(
+                BackupType.XTRABACKUP,
+                encryption_format=EncryptionFormat.DUAL,
+                xtrabackup_aes256_keyfile="/etc/keyfile",
+                post_run_encrypt=True,
+                encryption_recipient="ops@example.com",
+            )
+        )
+
+    @pytest.mark.parametrize("backup_type", [BackupType.MYDUMPER, BackupType.BINLOG])
+    @pytest.mark.parametrize(
+        "encryption_format", [EncryptionFormat.AES256, EncryptionFormat.DUAL]
+    )
+    def test_aes_formats_rejected_outside_xtrabackup(
+        self, backup_type, encryption_format
+    ):
+        """Reject the AES-bearing formats for backup types with no AES-256 path."""
+        with pytest.raises(ValidationError, match="encryption_format"):
+            BackupCreate(
+                **_base_payload(backup_type, encryption_format=encryption_format)
+            )
+
+    @pytest.mark.parametrize(
+        "backup_type", [BackupType.MYDUMPER, BackupType.XTRABACKUP, BackupType.BINLOG]
+    )
+    def test_gpg_allowed_for_every_backup_type(self, backup_type):
+        """Accept ``gpg`` for every backup type — GPG is engine-independent."""
+        BackupCreate(
+            **_base_payload(
+                backup_type,
+                encryption_format=EncryptionFormat.GPG,
+                post_run_encrypt=True,
+                encryption_recipient="ops@example.com",
+            )
+        )
+
+    def test_empty_string_coerces_to_none(self):
+        """Treat an unselected ``<select>`` (posting ``""``) as ``none``."""
+        form = BackupCreate(
+            **_base_payload(BackupType.XTRABACKUP, encryption_format="")
+        )
+        assert form.encryption_format is EncryptionFormat.NONE
 
 
 class TestUploadProviderGate:

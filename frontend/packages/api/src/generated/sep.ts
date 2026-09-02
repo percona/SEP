@@ -8873,12 +8873,14 @@ export interface components {
      *     declaration order, so the derived section and field order matches the
      *     hand-written schema. The conditional gating that the legacy ``schema.py`` declared
      *     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
-     *     encryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are
-     *     independent encryption modes that both produce an encrypted backup;
-     *     ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside
-     *     ``post_run_encrypt`` so post-run takes precedence (matching the backend at
-     *     ``mydumper_payload``), and ``encryption_recipient`` is required iff either mode
-     *     is on — and the per-mode bool
+     *     encryption gates — ``encryption_format`` selects which encryption runs and the
+     *     rest of the section parameterises it: the key file is required by the
+     *     AES-bearing formats and forbidden outside them, a GPG-bearing format needs one
+     *     of the two independent timings (``encrypt`` in place, ``post_run_encrypt``
+     *     after), ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden
+     *     alongside ``post_run_encrypt`` so post-run takes precedence (matching the
+     *     backend at ``mydumper_payload``), and ``encryption_recipient`` is required iff
+     *     either timing is on — and the per-mode and encryption-format bool
      *     ``FailRule``s in
      *     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
      *     into the conditional-rule plan at class definition, so no
@@ -8886,8 +8888,9 @@ export interface components {
      *     (:class:`BackupConfigAll` and friends) stay the serialization target the
      *     payload builder populates, not this model's base class.
      *
-     *     :cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool
-     *         outside its mode fails validation with a per-field message.
+     *     :cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside
+     *         its mode, or a GPG timing outside a GPG ``encryption_format``, fails
+     *         validation with a per-field message, as does a GPG format with no timing.
      */
     mysql_backups__BackupCreate: {
       /**
@@ -8943,6 +8946,8 @@ export interface components {
        * @default false
        */
       encrypt_using_tmpdir: boolean;
+      /** @default none */
+      encryption_format: components['schemas']['mysql_backups__EncryptionFormat'];
       /** Encryption Recipient */
       encryption_recipient?: string | null;
       /** Gs Bucket */
@@ -9189,6 +9194,12 @@ export interface components {
      * @enum {string}
      */
     mysql_backups__CompressionAlgorithm: 'zstd' | 'lz4' | 'gzip' | 'quicklz';
+    /**
+     * EncryptionFormat
+     * @description Enumeration for backup-time encryption formats.
+     * @enum {string}
+     */
+    mysql_backups__EncryptionFormat: 'none' | 'gpg' | 'aes256' | 'dual';
     /** PaginatedResponse[BackupRunResponse] */
     mysql_backups__PaginatedResponse_BackupRunResponse_: {
       /** Items */

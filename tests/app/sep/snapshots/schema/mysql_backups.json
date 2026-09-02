@@ -242,6 +242,95 @@
         ]
       },
       "message": "'xtrabackup_quiet' must not be set when backup_type is not 'X'."
+    },
+    {
+      "error_fields": [
+        "encrypt"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "encrypt"
+          },
+          {
+            "not": {
+              "any": [
+                {
+                  "equals": {
+                    "encryption_format": "gpg"
+                  }
+                },
+                {
+                  "equals": {
+                    "encryption_format": "dual"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "message": "'encrypt' must not be set when 'encryption_format' does not include GPG."
+    },
+    {
+      "error_fields": [
+        "post_run_encrypt"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "post_run_encrypt"
+          },
+          {
+            "not": {
+              "any": [
+                {
+                  "equals": {
+                    "encryption_format": "gpg"
+                  }
+                },
+                {
+                  "equals": {
+                    "encryption_format": "dual"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "message": "'post_run_encrypt' must not be set when 'encryption_format' does not include GPG."
+    },
+    {
+      "error_fields": [
+        "encrypt",
+        "post_run_encrypt"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "any": [
+              {
+                "equals": {
+                  "encryption_format": "gpg"
+                }
+              },
+              {
+                "equals": {
+                  "encryption_format": "dual"
+                }
+              }
+            ]
+          },
+          {
+            "all_falsy": [
+              "encrypt",
+              "post_run_encrypt"
+            ]
+          }
+        ]
+      },
+      "message": "A GPG 'encryption_format' requires 'encrypt' or 'post_run_encrypt' to select when the backup is encrypted."
     }
   ],
   "forms": [
@@ -743,22 +832,6 @@
           "type": "string"
         },
         {
-          "forbidden": [
-            {
-              "when": {
-                "not_equals": {
-                  "backup_type": "X"
-                }
-              }
-            }
-          ],
-          "label": "AES-256 key file path",
-          "min_length": 1,
-          "name": "xtrabackup_aes256_keyfile",
-          "required": false,
-          "type": "string"
-        },
-        {
           "default": false,
           "description": "Passes --safe-slave-backup so xtrabackup pauses the replica SQL thread during the backup (required for --slave-info on a multi-threaded replica with GTID off).",
           "label": "Safe replica backup",
@@ -944,11 +1017,91 @@
     {
       "collapsed_by_default": false,
       "collapsible": true,
-      "description": "GPG-encrypt the backup. In-place ('Encrypt backup', optionally with 'Encrypt using tmpdir') and post-run ('Encrypt after backup completes') are independent — enable either or both. 'Encrypt using tmpdir' and 'Encrypt after backup completes' are mutually exclusive. Either mode needs a recipient.",
+      "description": "Pick an 'Encryption format' first; the fields below are that format's parameters. GPG timings are independent — in-place ('Encrypt backup', optionally with 'Encrypt using tmpdir'), applied during upload, and post-run ('Encrypt after backup completes'), applied on the host; enable either or both, and either needs a recipient. 'Encrypt using tmpdir' and 'Encrypt after backup completes' are mutually exclusive. AES-256 needs a key file and is XtraBackup-only.",
       "fields": [
         {
+          "choices": [
+            {
+              "label": "No encryption",
+              "value": "none"
+            },
+            {
+              "label": "GPG",
+              "value": "gpg"
+            },
+            {
+              "label": "AES-256 (XtraBackup only)",
+              "value": "aes256"
+            },
+            {
+              "label": "AES-256 + GPG (XtraBackup only)",
+              "value": "dual"
+            }
+          ],
+          "default": "none",
+          "description": "Which encryption this task applies. 'GPG' needs a recipient and a timing below: 'Encrypt backup' encrypts in place as part of an upload, so it needs an upload target, while 'Encrypt after backup completes' encrypts on the host. 'AES-256' and 'AES-256 + GPG' need a key file and are XtraBackup-only. 'AES-256 + GPG' selects XtraBackup's built-in AES-256 and skips the GPG pass, which the backend cannot apply on top of it.",
+          "label": "Encryption format",
+          "name": "encryption_format",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "backup_type": "X"
+                }
+              }
+            },
+            {
+              "message": "'xtrabackup_aes256_keyfile' must not be set when 'encryption_format' does not include AES-256.",
+              "when": {
+                "not": {
+                  "any": [
+                    {
+                      "equals": {
+                        "encryption_format": "aes256"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "encryption_format": "dual"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "label": "AES-256 key file path",
+          "min_length": 1,
+          "name": "xtrabackup_aes256_keyfile",
+          "required": false,
+          "requires": [
+            {
+              "message": "'xtrabackup_aes256_keyfile' is required when 'encryption_format' includes AES-256.",
+              "when": {
+                "any": [
+                  {
+                    "equals": {
+                      "encryption_format": "aes256"
+                    }
+                  },
+                  {
+                    "equals": {
+                      "encryption_format": "dual"
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "type": "string"
+        },
+        {
           "default": false,
-          "description": "GPG-encrypt the backup in place. Combine with 'Encrypt using tmpdir', or use 'Encrypt after backup completes' for post-run encryption instead. Either encryption option needs a recipient.",
+          "description": "GPG-encrypt the backup in place as part of an upload, so it needs an upload target. Combine with 'Encrypt using tmpdir', or use 'Encrypt after backup completes' to encrypt on the host instead. Needs a GPG 'Encryption format' and a recipient.",
           "label": "Encrypt backup",
           "name": "encrypt",
           "required": false,
@@ -978,14 +1131,14 @@
         },
         {
           "default": false,
-          "description": "GPG-encrypt the finished backup once it completes. Independent of 'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. Needs an encryption recipient.",
+          "description": "GPG-encrypt the finished backup once it completes. Independent of 'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. Needs a GPG 'Encryption format' and a recipient.",
           "label": "Encrypt after backup completes",
           "name": "post_run_encrypt",
           "required": false,
           "type": "bool"
         },
         {
-          "description": "GPG recipient/key the backup is encrypted for. Required when either encryption mode is enabled.",
+          "description": "GPG recipient/key the backup is encrypted for. Required when either GPG timing is enabled.",
           "forbidden": [
             {
               "message": "'encryption_recipient' must not be set when no encryption mode is enabled.",
