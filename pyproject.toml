@@ -89,12 +89,6 @@ optional = true
 # Pinned exactly: ty is beta (0.0.x), breaking changes between any two versions.
 ty = "0.0.49"
 
-[tool.poetry.group.mysql]
-optional = true
-
-[tool.poetry.group.mysql.dependencies]
-aiomysql = "^0.3.0"
-
 [tool.poetry.group.postgresql]
 optional = true
 
@@ -549,7 +543,6 @@ timeout = 120
 timeout_method = "thread"
 markers = [
     "postgres: require a real PostgreSQL service (SEP_TEST_POSTGRES_DSN)",
-    "mysql: require a real MySQL service (SEP_TEST_MYSQL_DSN)",
 ]
 # A developer dotenv file must never reach the suite: CI runs with no .env, so
 # any setting it carries makes the local run a weaker experiment than CI. This

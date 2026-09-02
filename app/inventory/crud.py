@@ -720,11 +720,7 @@ class IdentityLinkDecisionManager(BaseSQLModelManager):
         """Return a correlated subquery yielding a pairing's most recent decision.
 
         A correlated ``ORDER BY … LIMIT 1`` rather than a window function, which
-        renders identically on all three supported engines. MySQL is the one
-        that constrains the shape — it rejects ``LIMIT`` in a subquery that is
-        the *argument* of ``IN``/``ALL``/``ANY`` (error 1235) — and this
-        subquery is the left operand of the comparison instead, which it
-        accepts; exercised end to end by the MySQL case in the crud tests.
+        renders identically on both supported engines.
 
         :param entity_type: The inventory entity type the pairing names.
         :param predecessor_id: The column or value naming the older row.
