@@ -53,6 +53,14 @@ export interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status }: StatusBadgeProps) {
-  const entry = MAP[status];
+  // The SSE `finish` event forwards the backend's status verbatim, so a member
+  // added there before this union reaches the badge as an unmapped key however
+  // the prop is typed. Reading `.color` off the miss throws and unmounts the
+  // whole viewer, so render the raw status instead — the same degradation
+  // `LastRunStatus` applies to a status it does not recognize.
+  const entry: (typeof MAP)[BadgeStatus] | undefined = MAP[status];
+  if (!entry) {
+    return <Chip size="small" color="default" icon={<HelpIcon />} label={String(status)} />;
+  }
   return <Chip size="small" color={entry.color} icon={entry.icon} label={entry.label} />;
 }

@@ -37,4 +37,14 @@ describe('TaskLogViewer StatusBadge', () => {
 
     expect(screen.getByText(label)).toBeInTheDocument();
   });
+
+  it('renders a status it does not recognise instead of throwing', () => {
+    // The union is a promise about the backend, not a check on it: the `finish`
+    // event carries whatever the backend sends. Completing the map fixes the
+    // statuses known today; this is what keeps the next one from blanking the
+    // viewer before the union catches up.
+    render(<StatusBadge status={'brand-new-status' as never} />);
+
+    expect(screen.getByText('brand-new-status')).toBeInTheDocument();
+  });
 });
