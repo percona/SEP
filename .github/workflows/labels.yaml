@@ -30,12 +30,13 @@ jobs:
           sparse-checkout: |
             .github
             scripts
-      - name: Compute blast-radius labels
+      - name: Sync computed PR labels
         if: github.event_name == 'pull_request_target'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          python3 scripts/compute_blast_radius_labels.py \
+          python3 scripts/sync_pr_labels.py \
             --owner "${{ github.repository_owner }}" \
             --repo "${{ github.event.repository.name }}" \
-            --pr-number "${{ github.event.pull_request.number }}"
+            --pr-number "${{ github.event.pull_request.number }}" \
+            --head-ref "$GITHUB_HEAD_REF"
