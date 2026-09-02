@@ -85,6 +85,7 @@ jobs:
               - 'Makefile'
               - 'frontend/packages/api/specs/**'
               - '.github/labeler.yml'
+              - '.github/workflows/ci.yml'
             precommit:
               - '.pre-commit-config.yaml'
               - '.github/workflows/ci.yml'

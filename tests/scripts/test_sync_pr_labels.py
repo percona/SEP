@@ -17,13 +17,13 @@
 
 import importlib.util
 import json
-import re
 import sys
 import urllib.parse
 from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
+import yaml
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "sync_pr_labels.py"
@@ -47,7 +47,6 @@ def _file(name: str, additions: int = 0, deletions: int = 0):
 
 
 _CI_WORKFLOW_PATH = _PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
-_CI_GLOB_ENTRY = re.compile(r"^-\s*'([^']+)'$")
 
 
 def _ci_filter_globs(name: str) -> list[str]:
@@ -56,28 +55,12 @@ def _ci_filter_globs(name: str) -> list[str]:
     :param name: Filter key, such as ``python``.
     :return: Glob entries declared under that key, in file order.
     """
-    globs: list[str] = []
-    in_filters = False
-    key_indent: int | None = None
-
-    for line in _CI_WORKFLOW_PATH.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not in_filters:
-            in_filters = stripped == "filters: |"
-            continue
-        indent = len(line) - len(line.lstrip())
-        if key_indent is None:
-            if stripped == f"{name}:":
-                key_indent = indent
-            continue
-        if stripped and indent <= key_indent:
-            break
-        entry = _CI_GLOB_ENTRY.match(stripped)
-        if entry:
-            globs.append(entry.group(1))
-
-    assert key_indent is not None, f"ci.yml declares no '{name}' paths filter"
-    return globs
+    workflow = yaml.safe_load(_CI_WORKFLOW_PATH.read_text(encoding="utf-8"))
+    for step in workflow["jobs"]["changes"]["steps"]:
+        filters = step.get("with", {}).get("filters")
+        if filters is not None:
+            return yaml.safe_load(filters)[name]
+    raise AssertionError("ci.yml declares no paths-filter step")
 
 
 def test_parse_app_globs_discovers_all_app_labels():
@@ -249,7 +232,7 @@ def _event(
     event_id=1,
 ):
     return sync_pr_labels.LabelEvent(
-        event=event,
+        event=sync_pr_labels.LabelEventKind(event),
         label=label,
         actor_type=actor_type,
         created_at=created_at,
@@ -263,6 +246,13 @@ def _skip_test_client(present, events=()):
     client.list_issue_labels.return_value = set(present)
     client.list_issue_events.return_value = list(events)
     return client
+
+
+def _sync_skip_test(client, *, eligible):
+    """Run the ``skip-test`` sync against a mock client for one eligibility."""
+    sync_pr_labels.sync_skip_test_label(
+        client, "percona", "SEP", 42, eligible=eligible, log=lambda _message: None
+    )
 
 
 def test_skip_test_eligible_on_dependabot_branch():
@@ -422,9 +412,7 @@ def test_sync_skip_test_adds_when_eligible_and_absent():
     """Apply the label to an eligible PR that does not carry it yet."""
     client = _skip_test_client(present=set())
 
-    sync_pr_labels.sync_skip_test_label(
-        client, "percona", "SEP", 42, eligible=True, log=lambda _message: None
-    )
+    _sync_skip_test(client, eligible=True)
 
     client.add_issue_labels.assert_called_once_with("percona", "SEP", 42, ["skip-test"])
     client.remove_issue_label.assert_not_called()
@@ -436,9 +424,7 @@ def test_sync_skip_test_removes_a_bot_applied_stale_label():
         present={"skip-test"}, events=[_event(actor_type="Bot", event_id=1)]
     )
 
-    sync_pr_labels.sync_skip_test_label(
-        client, "percona", "SEP", 42, eligible=False, log=lambda _message: None
-    )
+    _sync_skip_test(client, eligible=False)
 
     client.remove_issue_label.assert_called_once_with("percona", "SEP", 42, "skip-test")
     client.add_issue_labels.assert_not_called()
@@ -450,9 +436,7 @@ def test_sync_skip_test_keeps_a_human_applied_label():
         present={"skip-test"}, events=[_event(actor_type="User", event_id=1)]
     )
 
-    sync_pr_labels.sync_skip_test_label(
-        client, "percona", "SEP", 42, eligible=False, log=lambda _message: None
-    )
+    _sync_skip_test(client, eligible=False)
 
     client.remove_issue_label.assert_not_called()
     client.add_issue_labels.assert_not_called()
@@ -462,9 +446,7 @@ def test_sync_skip_test_is_idempotent_when_already_correct():
     """Issue no request when the label already matches eligibility."""
     client = _skip_test_client(present={"skip-test"})
 
-    sync_pr_labels.sync_skip_test_label(
-        client, "percona", "SEP", 42, eligible=True, log=lambda _message: None
-    )
+    _sync_skip_test(client, eligible=True)
 
     client.add_issue_labels.assert_not_called()
     client.remove_issue_label.assert_not_called()
@@ -487,6 +469,15 @@ def test_ci_python_filter_covers_the_labeler_config():
     can reintroduce the rule.
     """
     assert ".github/labeler.yml" in _ci_filter_globs("python")
+
+
+def test_ci_python_filter_covers_itself():
+    """Run the pytest tier on a PR that changes only the workflow itself.
+
+    The filter declares which paths reach the tests, so a PR editing only it
+    would otherwise drop the guard above without any test observing the loss.
+    """
+    assert ".github/workflows/ci.yml" in _ci_filter_globs("python")
 
 
 def test_main_requires_github_token(tmp_path, monkeypatch, capsys):

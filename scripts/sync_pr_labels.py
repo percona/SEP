@@ -49,6 +49,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol, TYPE_CHECKING
 
@@ -72,7 +73,6 @@ GENERATED_EXACT = frozenset({"poetry.lock", "frontend/pnpm-lock.yaml"})
 SKIP_TEST_LABEL = "skip-test"
 SKIP_TEST_GLOBS = (".github/CODEOWNERS", "README.md", ".gitignore", "dist/**")
 SKIP_TEST_HEAD_BRANCH = re.compile(r"^dependabot/")
-LABEL_EVENT_TYPES = frozenset({"labeled", "unlabeled"})
 BOT_ACTOR_TYPE = "Bot"
 
 _LABEL_KEY = re.compile(r"^([A-Za-z0-9:_-]+):\s*$")
@@ -99,11 +99,21 @@ class BlastRadiusResult:
     touched_apps: tuple[str, ...]
 
 
+class LabelEventKind(StrEnum):
+    """Name the issue-event kinds that carry a label change."""
+
+    LABELED = "labeled"
+    UNLABELED = "unlabeled"
+
+
+LABEL_EVENT_TYPES = frozenset(LabelEventKind)
+
+
 @dataclass(frozen=True, slots=True)
 class LabelEvent:
     """Represent one ``labeled`` / ``unlabeled`` entry from the issue-events API."""
 
-    event: str
+    event: LabelEventKind
     label: str
     actor_type: str
     created_at: str
@@ -333,7 +343,9 @@ def skip_test_manually_applied(events: list[LabelEvent]) -> bool:
     if not relevant:
         return True
     newest = max(relevant, key=lambda event: event.order_key)
-    return newest.event == "labeled" and newest.actor_type != BOT_ACTOR_TYPE
+    return (
+        newest.event == LabelEventKind.LABELED and newest.actor_type != BOT_ACTOR_TYPE
+    )
 
 
 def sync_skip_test_label(
@@ -484,7 +496,7 @@ class UrllibGitHubClient:
                 break
             events.extend(
                 LabelEvent(
-                    event=item["event"],
+                    event=LabelEventKind(item["event"]),
                     label=item["label"]["name"],
                     actor_type=(item.get("actor") or {}).get("type", ""),
                     created_at=item["created_at"],
