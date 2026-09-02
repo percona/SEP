@@ -16,8 +16,9 @@
 
 ``supervisord.conf`` runs this immediately before the ``celery-beat`` command.
 supervisord orders its spawn calls by ``priority`` but never waits for readiness —
-it has no ``depends_on``, which is why the ``migrate-*`` one-shots carry their own
-``until nc -z`` loops. ``celery-beat`` is therefore spawned in the same tick as the
+it has no ``depends_on``, which is why the alembic one-shots carry their own
+``until nc -z`` loops and the API programs carry ``wait_for_schema.sh``.
+``celery-beat`` is therefore spawned in the same tick as the
 priority-20 API programs it is ordered behind, and those need seconds to accept
 connections. Beat's schedule is persisted by the ``sqlalchemy`` scheduler, so
 anything already overdue is dispatched about a second in, and a periodic task whose

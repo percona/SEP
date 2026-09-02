@@ -30,8 +30,8 @@ from app.sep.apps.mysql_backups.models import (
     BackupType,
     CatalogServiceKey,
     extract_backup_type_marker,
+    UNKNOWN_SERVICE_SENTINEL,
 )
-from app.sep.apps.mysql_backups.restore.deps import UNKNOWN_SERVICE_SENTINEL
 from app.sep.apps.shared.backups.edit_form import parse_server_list_config
 from app.sep.deps import InventoryAPI
 from app.sep.inventory import CreatedService
