@@ -2371,6 +2371,8 @@ class TestDeliveryPlanCaseSearch:
             async with api:
                 await executor.search_cases("CS00")
 
-            requested = [str(key[1]) for key in mock.requests]
+            requested = [
+                str(key[1]) for key, calls in mock.requests.items() for _ in calls
+            ]
 
         assert requested == [_CASE_SEARCH_URL]
