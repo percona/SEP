@@ -228,10 +228,11 @@ class SyncInstanceManager(BaseSQLModelManager):
         it raises a `SyncInstanceAlreadyInProgressError`. Otherwise, it creates and
         saves the new `SyncInstance`.
 
-        When ``stale_after`` is supplied, abandoned runs are reclaimed whether or not
-        an item conflict was detected, because a worker killed after its last item
-        write leaves a stale run that no item conflict would ever surface. Whatever
-        the reclaim spared is then re-examined for a conflict before inserting.
+        When ``stale_after`` is supplied, abandoned runs are reclaimed before that
+        check runs and without waiting for an item conflict to justify it, because a
+        worker killed after its last item write leaves a stale run that no item
+        conflict would ever surface. Whatever the reclaim spared is what the conflict
+        check then sees.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
@@ -243,17 +244,14 @@ class SyncInstanceManager(BaseSQLModelManager):
         :raises SyncInstanceAlreadyInProgressError: If a SyncInstance with the same
             ``syncer`` is already in progress and could not be reclaimed as stale.
         """
+        if stale_after is not None:
+            await cls.reclaim_stale_runs(session, instance_create.syncer, stale_after)
+        # Read after the reclaim, never before it: the reclaim commits separately, so
+        # a run it spared for resuming mid-reclaim can hold an item an earlier read
+        # never saw, and refusing on a stale empty list would start a second run.
         syncs_in_progress = await cls._items_in_progress(
             session, instance_create.syncer
         )
-        if stale_after is not None:
-            await cls.reclaim_stale_runs(session, instance_create.syncer, stale_after)
-            # Re-read unconditionally: the reclaim commits separately, so a run it
-            # spared for resuming mid-reclaim can hold an item the first read never
-            # saw, and refusing on a stale empty list would start a second run.
-            syncs_in_progress = await cls._items_in_progress(
-                session, instance_create.syncer
-            )
         if syncs_in_progress:
             raise SyncInstanceAlreadyInProgressError(syncs_in_progress)
         return await super().create(session, instance_create, **extra_fields)
@@ -353,12 +351,19 @@ class SyncInstanceManager(BaseSQLModelManager):
         # ``RUNNING`` and walks into its retire phase. Both predicates re-assert
         # what the query above selected on, because it committed separately: a run
         # that finished meanwhile has written its own verdict, and one whose worker
-        # resumed and touched an item is progressing after all.
+        # resumed and touched an item is progressing after all. The re-assertion
+        # repeats the candidate narrowing so its grouping is index-seekable rather
+        # than spanning every item row; restricting the rows cannot change a
+        # surviving group's ``max()``, since every group is one instance's items.
         reclaimed_ids = await cls.update_where(
             session,
             {"status": SyncStatusEnum.FAILED},
             col(SyncInstance.id).in_(stale_instance_ids),
-            col(SyncInstance.id).in_(stale_activity),
+            col(SyncInstance.id).in_(
+                stale_activity.where(
+                    col(SyncItem.sync_instance_id).in_(stale_instance_ids),
+                ),
+            ),
             col(SyncInstance.status).in_(
                 [SyncStatusEnum.PENDING, SyncStatusEnum.RUNNING],
             ),
