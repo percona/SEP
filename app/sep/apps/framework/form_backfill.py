@@ -225,12 +225,18 @@ def _backfill_single_task(
     entry: FormBackfillEntry,
     ctx: FormBackfillContext,
 ) -> _TaskBackfillOutcome:
-    """Skip ineligible tasks, then run the reconstruct → validate → stamp pipeline.
+    """Route a task to the pipeline its ``data`` calls for, or skip it.
 
-    :param task: The legacy task row to backfill.
+    An already-stamped task goes to the repair pipeline, which hands the stored
+    stamp to the app's repairer and re-validates whatever comes back. Anything
+    else goes through reconstruct → validate → stamp, which needs an inventory
+    lookup and the app's own reconstruction to reach a form at all.
+
+    :param task: The task row to backfill.
     :param entry: The declaring app's backfill entry.
     :param ctx: Shared backfill context.
-    :return: The outcome label and optional stamped ``data`` dict to persist.
+    :return: The outcome label and, for a stamped or repaired form, the ``data``
+        dict to persist.
     """
     if RESERVED_FORM_KEY in task.data:
         return _repair_existing_stamp(task, entry, ctx)
@@ -295,12 +301,14 @@ def _repair_existing_stamp(
     try:
         validated_form = entry.create_model.model_validate(repaired_form)
     except ValidationError as exc:
+        # Without ``include_input``: an error carries the value that failed, and a
+        # form body can hold a GPG recipient or a key-file path.
         ctx.log.info(
             "[%s] %s: repaired form failed validation; leaving %r as it is: %s",
             entry.app_key,
             task.name,
             RESERVED_FORM_KEY,
-            exc.errors(),
+            exc.errors(include_input=False),
         )
         return _TaskBackfillOutcome("skipped_invalid")
 
@@ -363,11 +371,13 @@ def _reconstruct_validate_stamp(
     try:
         validated_form = entry.create_model.model_validate(raw_form)
     except ValidationError as exc:
+        # Without ``include_input``: an error carries the value that failed, and a
+        # form body can hold a GPG recipient or a key-file path.
         ctx.log.info(
             "[%s] %s: reconstructed form failed validation; skipping: %s",
             entry.app_key,
             task.name,
-            exc.errors(),
+            exc.errors(include_input=False),
         )
         return _TaskBackfillOutcome("skipped_invalid")
 
@@ -477,10 +487,9 @@ async def _backfill_app(
                         task_name=task.name,
                     )
                 stats.skipped_error += 1
-            else:
-                setattr(stats, outcome.label, getattr(stats, outcome.label) + 1)
-        else:
-            setattr(stats, outcome.label, getattr(stats, outcome.label) + 1)
+                continue
+
+        setattr(stats, outcome.label, getattr(stats, outcome.label) + 1)
 
     return stats
 

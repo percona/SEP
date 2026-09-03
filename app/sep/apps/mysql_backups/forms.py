@@ -166,16 +166,9 @@ _FMT = F("encryption_format")
 _FMT_HAS_AES = any_(_FMT == EncryptionFormat.AES256, _FMT == EncryptionFormat.DUAL)
 _FMT_HAS_GPG = any_(_FMT == EncryptionFormat.GPG, _FMT == EncryptionFormat.DUAL)
 
-# The GPG timing bools, gated by ``encryption_format`` rather than by
-# ``Forbidden``: ``_field_is_present`` treats ``False`` as absent, so a field gate
-# would never fire on their default.
+# The GPG timing bools. Being bools they are gated by the ``FailRule``s below
+# rather than by a ``Forbidden`` like the mode gates above.
 _GPG_TIMING_FIELDS = ("encrypt", "post_run_encrypt")
-
-# Each timing also needs a runtime that reaches it. In-place GPG runs inside the
-# upload provider loop for every engine, and a Binlog backup encrypts nowhere else,
-# so those combinations require an upload target — accepting them would let a task
-# report a GPG format and still finish in plaintext. Post-run GPG on Mydumper and
-# XtraBackup encrypts the finished directory on the host, so it needs no target.
 
 _S3_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_S3)))
 _GSUTIL_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_GSUTIL)))
@@ -349,25 +342,6 @@ class BackupCreate(TaskFormModel):
                 message=(
                     "A GPG 'encryption_format' requires 'encrypt' or "
                     "'post_run_encrypt' to select when the backup is encrypted."
-                ),
-            ),
-            FailRule(
-                fail_when=truthy("encrypt") & falsy("upload"),
-                error_fields=["encrypt", "upload"],
-                message=(
-                    "'encrypt' encrypts the backup in place as part of an upload, "
-                    "so it requires at least one upload provider. Use "
-                    "'post_run_encrypt' to encrypt on the host instead."
-                ),
-            ),
-            FailRule(
-                fail_when=truthy("post_run_encrypt")
-                & (F("backup_type") == "B")
-                & falsy("upload"),
-                error_fields=["post_run_encrypt", "upload"],
-                message=(
-                    "A Binlog backup encrypts only as part of an upload, so "
-                    "'post_run_encrypt' requires at least one upload provider."
                 ),
             ),
         )

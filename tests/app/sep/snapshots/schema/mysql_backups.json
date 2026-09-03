@@ -331,49 +331,6 @@
         ]
       },
       "message": "A GPG 'encryption_format' requires 'encrypt' or 'post_run_encrypt' to select when the backup is encrypted."
-    },
-    {
-      "error_fields": [
-        "encrypt",
-        "upload"
-      ],
-      "fail_when": {
-        "all": [
-          {
-            "truthy": "encrypt"
-          },
-          {
-            "falsy": "upload"
-          }
-        ]
-      },
-      "message": "'encrypt' encrypts the backup in place as part of an upload, so it requires at least one upload provider. Use 'post_run_encrypt' to encrypt on the host instead."
-    },
-    {
-      "error_fields": [
-        "post_run_encrypt",
-        "upload"
-      ],
-      "fail_when": {
-        "all": [
-          {
-            "all": [
-              {
-                "truthy": "post_run_encrypt"
-              },
-              {
-                "equals": {
-                  "backup_type": "B"
-                }
-              }
-            ]
-          },
-          {
-            "falsy": "upload"
-          }
-        ]
-      },
-      "message": "A Binlog backup encrypts only as part of an upload, so 'post_run_encrypt' requires at least one upload provider."
     }
   ],
   "forms": [

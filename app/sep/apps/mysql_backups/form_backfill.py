@@ -182,12 +182,12 @@ def repair_mysql_backups_stamp(
     edit form fills that gap from the schema default — ``none`` — so an encrypted
     task reloads looking unencrypted. The format is derived from the stamp's own
     fields rather than from the task config, because the stamp is the record of
-    what the operator submitted.
+    what the operator submitted. Neither the task row nor the backfill context is
+    read: the stamp carries every field the derivation needs.
 
     :param stored_form: A copy of the task's existing ``data['_form']``.
-    :param _task: The stamped task row, unused: the stamp carries every field the
-        derivation reads.
-    :param _ctx: Shared backfill context, unused for the same reason.
+    :param _task: The stamped task row.
+    :param _ctx: Shared backfill context.
     :return: The repaired form, or ``None`` when the stamp already names a format.
     """
     if stored_form.get("encryption_format") is not None:

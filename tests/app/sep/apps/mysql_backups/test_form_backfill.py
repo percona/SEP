@@ -487,8 +487,6 @@ class TestEncryptionFormatStampRepair:
             "service_id": 9,
             "backup_type": BackupType.XTRABACKUP.value,
             "alias": "db1-mysql",
-            "upload": ["RSYNC"],
-            "rsync_path": "/remote/backups",
             "alert_on_fail": False,
             **overrides,
         }
@@ -561,6 +559,8 @@ class TestEncryptionFormatStampRepair:
 
         The derived format has to satisfy the form's own gates against the rest of
         the stored body — a format is only a repair if the create model accepts it.
+        The body encrypts in place with no upload provider, the shape most of these
+        stamps carry, so a gate demanding a target would leave them un-repaired.
         """
         task = _legacy_mysql_backup_task(name="mysql-encrypted")
         task.data[RESERVED_FORM_KEY] = self._stamp(

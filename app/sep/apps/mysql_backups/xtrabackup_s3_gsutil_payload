@@ -1506,7 +1506,7 @@ class Upload(Backup):
         self.encrypt = settings.get("ENCRYPT", True)
         self.post_run_encrypt = settings.get("POST_RUN_ENCRYPT", False)
         self.prepare_backup = settings.get("XTRABACKUP_PREPARE")
-        self.xtrabackup_aes256 = settings.get("XTRABACKUP_AES256_KEYFILE", False)
+        self.xtrabackup_aes256 = settings.get("XTRABACKUP_AES256_KEYFILE")
 
         # The upload phase reads the same fields as the backup phase but from its
         # own object, so it resolves the format itself rather than inheriting a

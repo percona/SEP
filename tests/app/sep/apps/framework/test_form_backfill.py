@@ -265,6 +265,36 @@ def test_backfill_single_task_skips_invalid_reconstructed_form():
     assert RESERVED_FORM_KEY not in task.data
 
 
+def test_an_invalid_reconstruction_is_logged_without_the_submitted_values(caplog):
+    """Keep the rejected values out of the log a reconstruction failure writes.
+
+    A form body can carry a GPG recipient or a key-file path, and pydantic attaches
+    the value that failed to every error it raises, so the errors reach the log
+    with the field names and messages but without the inputs.
+    """
+    task = _minimal_task(data={"meta": {}})
+    secret = "gpg-recipient@example.com"
+
+    def _invalid_body(_task: Task, _ctx: FormBackfillContext) -> dict:
+        return {
+            "task_name": "legacy-task",
+            "hostname": "executor-1",
+            "service_id": secret,
+        }
+
+    entry = _entry(_invalid_body)
+    ctx = FormBackfillContext(
+        log=logging.getLogger("test"), service_lookup=_EMPTY_SERVICE_LOOKUP
+    )
+
+    with caplog.at_level(logging.INFO, logger="test"):
+        outcome = _backfill_single_task(task, entry, ctx)
+
+    assert outcome.label == "skipped_invalid"
+    assert secret not in caplog.text
+    assert "service_id" in caplog.text
+
+
 def test_backfill_single_task_stamps_a_row_whose_hook_path_predates_the_allow_list():
     """Stamp a row whose stored hook path the write model would reject.
 
@@ -606,6 +636,24 @@ class TestRepairExistingStamp:
         assert outcome.label == "skipped_invalid"
         assert outcome.stamped_data is None
         assert task.data[RESERVED_FORM_KEY] == _STALE_STAMP
+
+    def test_an_invalid_repair_is_logged_without_the_stamped_values(self, caplog):
+        """Keep the rejected values out of the log an invalid repair writes.
+
+        The stamp is a whole submitted form, so the errors pydantic raises against
+        it carry every value the operator typed unless the input is suppressed.
+        """
+        secret = "gpg-recipient@example.com"
+
+        with caplog.at_level(logging.INFO, logger="test"):
+            outcome, _ = self._run(
+                dict(_STALE_STAMP),
+                lambda form, _t, _c: {**form, "service_id": secret},
+            )
+
+        assert outcome.label == "skipped_invalid"
+        assert secret not in caplog.text
+        assert "service_id" in caplog.text
 
     def test_a_raising_repairer_costs_only_its_own_task(self):
         """Count a raising repairer an error, leaving the stamp for the next run."""

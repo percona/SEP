@@ -693,86 +693,43 @@ class TestMydumperVerbose:
         assert field.le == expected_max
 
 
-class TestEncryptionNeedsAReachableRuntime:
-    """Refuse a GPG timing no backup script would reach.
+class TestEncryptionWithoutAnUploadTarget:
+    """Accept every encryption timing with no upload provider selected.
 
-    In-place GPG happens inside the upload provider loop, so with no target the
-    ``Upload`` that would apply it is never constructed. A Binlog backup has no
-    host-side pass either, so its post-run timing is upload-bound too. Accepted
-    without a target, both make the reported format a claim rather than a fact:
-    the task finishes green with a plaintext backup.
+    Which timing runs is governed by the timing fields and their own gates; the
+    form does not additionally require an upload target for any of them, so a
+    task encrypting only on the host stays valid.
     """
 
     @staticmethod
     def _no_upload(backup_type: BackupType, **overrides) -> dict:
-        """Return a payload with the default upload target removed."""
+        """Return a payload with the default upload target removed.
+
+        :param backup_type: The backup engine the payload targets.
+        :param overrides: Field values layered over the base payload.
+        :return: ``BackupCreate`` kwargs carrying no upload provider.
+        """
         return _base_payload(backup_type, upload=[], s3_bucket=None, **overrides)
 
     @pytest.mark.parametrize(
         "backup_type", [BackupType.MYDUMPER, BackupType.XTRABACKUP, BackupType.BINLOG]
     )
-    def test_in_place_gpg_without_an_upload_target_fails(self, backup_type: BackupType):
-        """Reject in-place GPG with no upload target, for every backup type."""
-        with pytest.raises(
-            ValidationError, match="encrypts the backup in place as part of an upload"
-        ):
-            BackupCreate(
-                **self._no_upload(
-                    backup_type,
-                    encryption_format=EncryptionFormat.GPG,
-                    encrypt=True,
-                    encryption_recipient="ops@example.com",
-                )
-            )
-
-    def test_in_place_gpg_with_an_upload_target_validates(self):
-        """Accept in-place GPG once a target exists for it to run inside."""
+    def test_in_place_gpg_needs_no_upload_target(self, backup_type: BackupType):
+        """Accept in-place GPG with no target, for every backup type."""
         BackupCreate(
-            **_base_payload(
-                BackupType.MYDUMPER,
+            **self._no_upload(
+                backup_type,
                 encryption_format=EncryptionFormat.GPG,
                 encrypt=True,
                 encryption_recipient="ops@example.com",
             )
         )
 
-    def test_binlog_post_run_gpg_without_an_upload_target_fails(self):
-        """Reject a Binlog post-run timing with no upload target."""
-        with pytest.raises(
-            ValidationError, match="Binlog backup encrypts only as part of an upload"
-        ):
-            BackupCreate(
-                **self._no_upload(
-                    BackupType.BINLOG,
-                    encryption_format=EncryptionFormat.GPG,
-                    post_run_encrypt=True,
-                    encryption_recipient="ops@example.com",
-                )
-            )
-
-    def test_binlog_post_run_gpg_with_an_upload_target_validates(self):
-        """Accept a Binlog post-run timing once a target exists."""
-        BackupCreate(
-            **_base_payload(
-                BackupType.BINLOG,
-                encryption_format=EncryptionFormat.GPG,
-                post_run_encrypt=True,
-                encryption_recipient="ops@example.com",
-            )
-        )
-
     @pytest.mark.parametrize(
-        "backup_type", [BackupType.MYDUMPER, BackupType.XTRABACKUP]
+        "backup_type", [BackupType.MYDUMPER, BackupType.XTRABACKUP, BackupType.BINLOG]
     )
-    def test_host_side_post_run_gpg_needs_no_upload_target(
-        self, backup_type: BackupType
-    ):
-        """Accept a post-run timing with no target where the host applies it.
-
-        Mydumper and XtraBackup encrypt the finished directory in ``run``, before
-        any upload, so requiring a target there would reject the one GPG
-        configuration that works without one.
-        """
+    def test_post_run_gpg_needs_no_upload_target(self, backup_type: BackupType):
+        """Accept a post-run timing with no target, for every backup type."""
         BackupCreate(
             **self._no_upload(
                 backup_type,
