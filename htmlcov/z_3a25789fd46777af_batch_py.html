@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_3a25789fd46777af_categories_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-03 19:26 +0000
+            created at 2026-09-03 19:59 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -114,7 +114,7 @@
     <p class="run"><span class="n"><a id="t30" href="#t30">30</a></span><span class="t"><span class="key">from</span> <span class="nam">fastapi</span> <span class="key">import</span> <span class="nam">HTTPException</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t31" href="#t31">31</a></span><span class="t"><span class="key">from</span> <span class="nam">pydantic</span> <span class="key">import</span> <span class="nam">BaseModel</span><span class="op">,</span> <span class="nam">Field</span><span class="op">,</span> <span class="nam">UUID4</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t32" href="#t32">32</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t33" href="#t33">33</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">requests</span> <span class="key">import</span> <span class="nam">RemoteAPI</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t33" href="#t33">33</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">requests</span> <span class="key">import</span> <span class="nam">as_json_object</span><span class="op">,</span> <span class="nam">RemoteAPI</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t34" href="#t34">34</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">utils</span><span class="op">.</span><span class="nam">fields</span> <span class="key">import</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t35" href="#t35">35</a></span><span class="t">    <span class="nam">ARBITRARY_ARGS_SCHEMA</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t36" href="#t36">36</a></span><span class="t">    <span class="nam">ArbitraryMapping</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -484,7 +484,7 @@
     <p class="pln"><span class="n"><a id="t400" href="#t400">400</a></span><span class="t"><span class="str">    :return: The upstream task-history payload, or an empty mapping on failure.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t401" href="#t401">401</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t402" href="#t402">402</a></span><span class="t">    <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t403" href="#t403">403</a></span><span class="t">        <span class="key">return</span> <span class="key">await</span> <span class="nam">tasks_api</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="fst">f&quot;</span><span class="fst">/history/</span><span class="op">{</span><span class="nam">task_history_id</span><span class="op">}</span><span class="fst">&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t403" href="#t403">403</a></span><span class="t">        <span class="key">return</span> <span class="nam">as_json_object</span><span class="op">(</span><span class="key">await</span> <span class="nam">tasks_api</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="fst">f&quot;</span><span class="fst">/history/</span><span class="op">{</span><span class="nam">task_history_id</span><span class="op">}</span><span class="fst">&quot;</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t404" href="#t404">404</a></span><span class="t">    <span class="key">except</span> <span class="op">(</span><span class="nam">HTTPException</span><span class="op">,</span> <span class="nam">OSError</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t405" href="#t405">405</a></span><span class="t">        <span class="nam">logger</span><span class="op">.</span><span class="nam">warning</span><span class="op">(</span><span class="nam">ATW_HYDRATION_WARNING</span><span class="op">,</span> <span class="nam">task_history_id</span><span class="op">,</span> <span class="nam">exc_info</span><span class="op">=</span><span class="key">True</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t406" href="#t406">406</a></span><span class="t">        <span class="key">return</span> <span class="op">{</span><span class="op">}</span>&nbsp;</span><span class="r"></span></p>
@@ -497,7 +497,7 @@
             <a class="nav" href="z_3a25789fd46777af_categories_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-03 19:26 +0000
+            created at 2026-09-03 19:59 +0000
         </p>
     </div>
 </footer>
