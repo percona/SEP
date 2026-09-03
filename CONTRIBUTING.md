@@ -95,7 +95,7 @@ We enforce code style guidelines using [Ruff](https://docs.astral.sh/ruff/). The
 
 - **Type checking** (opt-in):
 
-Because the project is fully type-annotated, you can check the annotations locally with [`ty`](https://github.com/astral-sh/ty) (Astral's type checker) by running `make typecheck`. It is **not** enforced in CI or pre-commit yet, so it is safe to run on demand and will currently report a backlog of existing diagnostics. Which trees are checked and what severity each diagnostic rule carries are recorded in [docs/development/ty-policy.md](docs/development/ty-policy.md).
+Because the project is fully type-annotated, you can check the annotations locally with [`ty`](https://github.com/astral-sh/ty) (Astral's type checker) by running `make typecheck`. It is **not** enforced in CI or pre-commit yet, so it is safe to run on demand and will currently report a backlog of existing warning-severity diagnostics. Where enforcement will run and what it will read is decided and recorded in [docs/development/ty-policy.md](docs/development/ty-policy.md) under [Enforcement](docs/development/ty-policy.md#enforcement), alongside which trees are checked and what severity each diagnostic rule carries.
 
 - **Docstrings**:
 
