@@ -292,12 +292,12 @@ def test_iter_nested_leaf_keys_enumerates_secret_leaf() -> None:
 def test_settings_response_redacts_secret_leaf_with_key_path() -> None:
     """A secret leaf response redacts the value and carries the canonical key_path."""
     proxy = OverridableSettingsProxy(
-        _SecretLeafParent, setting_class=SettingClassEnum.SEP_SETTINGS
+        _SecretLeafParent, setting_class=SEPSettings.__name__
     )
     leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
     assert leaf_meta is not None
     response = _settings_response_from_field(
-        setting_class=SettingClassEnum.SEP_SETTINGS,
+        setting_class=SEPSettings.__name__,
         settings_cls=_SecretLeafParent,
         proxy=proxy,
         field_meta=leaf_meta,
@@ -311,11 +311,11 @@ def test_settings_response_redacts_secret_leaf_with_key_path() -> None:
 def test_settings_response_applicable_defaults_true() -> None:
     """Mark a field response applicable when no applicability predicate is given."""
     proxy = OverridableSettingsProxy(
-        _FixtureSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+        _FixtureSettings, setting_class=SEPSettings.__name__
     )
     meta = next(m for m in iter_class_fields(_FixtureSettings) if m.key == "HOT_BOOL")
     response = _settings_response_from_field(
-        setting_class=SettingClassEnum.SEP_SETTINGS,
+        setting_class=SEPSettings.__name__,
         settings_cls=_FixtureSettings,
         proxy=proxy,
         field_meta=meta,
@@ -327,11 +327,11 @@ def test_settings_response_applicable_defaults_true() -> None:
 def test_settings_response_honors_applicability_predicate() -> None:
     """Mark the field response not applicable when the predicate returns ``False``."""
     proxy = OverridableSettingsProxy(
-        _FixtureSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+        _FixtureSettings, setting_class=SEPSettings.__name__
     )
     meta = next(m for m in iter_class_fields(_FixtureSettings) if m.key == "HOT_BOOL")
     response = _settings_response_from_field(
-        setting_class=SettingClassEnum.SEP_SETTINGS,
+        setting_class=SEPSettings.__name__,
         settings_cls=_FixtureSettings,
         proxy=proxy,
         field_meta=meta,

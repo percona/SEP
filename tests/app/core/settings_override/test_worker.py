@@ -54,14 +54,12 @@ def _make_registry() -> ProxyRegistry:
     """Compose a two-entry proxy registry over freshly-built proxies."""
     return {
         SettingClassEnum.SEP_SETTINGS: ProxyEntry(
-            OverridableSettingsProxy(
-                SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
-            ),
+            OverridableSettingsProxy(SEPSettings, setting_class=SEPSettings.__name__),
             SEPSettings,
         ),
         SettingClassEnum.TASKS_SETTINGS: ProxyEntry(
             OverridableSettingsProxy(
-                TasksSettings, setting_class=SettingClassEnum.TASKS_SETTINGS
+                TasksSettings, setting_class=TasksSettings.__name__
             ),
             TasksSettings,
         ),
