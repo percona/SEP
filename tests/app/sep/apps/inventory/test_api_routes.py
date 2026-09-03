@@ -20,6 +20,7 @@ implemented in ``app.sep.apps.inventory.deps``; see
 ``tests/app/sep/apps/inventory/test_deps.py`` for direct unit coverage.
 """
 
+from collections.abc import Iterator
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -934,7 +935,7 @@ class TestInventoryServiceCheckConnectivity:
         sep_app.dependency_overrides.pop(get_created_service, None)
 
     @pytest.fixture
-    def mock_tasks_api_dep(self, created_node) -> AsyncMock:
+    def mock_tasks_api_dep(self, created_node) -> Iterator[AsyncMock]:
         """Mock ``TaskAPI`` with a host mapping that resolves ``created_node``."""
         mock = AsyncMock(spec=RemoteAPI)
         mock.get.return_value = {created_node.name: created_node.address}

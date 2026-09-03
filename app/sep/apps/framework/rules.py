@@ -160,12 +160,12 @@ class FieldExpr:
             )
         self.name = name
 
-    def __eq__(self, other: object) -> Predicate:  # type: ignore[override]
+    def __eq__(self, other: object) -> Predicate:  # ty: ignore[invalid-method-override]
         if isinstance(other, FieldExpr):
             return AllEqual([self.name, other.name])
         return Equals(self.name, other)
 
-    def __ne__(self, other: object) -> Predicate:  # type: ignore[override]
+    def __ne__(self, other: object) -> Predicate:  # ty: ignore[invalid-method-override]
         if isinstance(other, FieldExpr):
             return Not(AllEqual([self.name, other.name]))
         return NotEquals(self.name, other)

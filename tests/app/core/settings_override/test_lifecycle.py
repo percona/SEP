@@ -16,6 +16,7 @@
 """Cover the override-snapshot lifecycle helpers and the background refresher."""
 
 import asyncio
+from collections.abc import AsyncGenerator
 from datetime import timedelta
 
 import pytest
@@ -56,8 +57,11 @@ from tests.app.db_schema import apply_schema
 
 
 @pytest_asyncio.fixture(name="session_maker")
-async def session_maker_fixture() -> async_sessionmaker:
+async def session_maker_fixture() -> AsyncGenerator[async_sessionmaker, None]:
     """Provide an in-memory SQLite session maker bound to a fresh schema."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -378,7 +382,9 @@ _NOMAD_CALLBACK_KEY = (SettingClassEnum.TASKS_SETTINGS, "NOMAD")
 _NOMAD_LEAF_TIMEOUT = 30
 
 
-def _make_tasks_proxy_registry() -> tuple[OverridableSettingsProxy, dict]:
+def _make_tasks_proxy_registry() -> tuple[
+    TasksSettings, dict[SettingClassEnum, ProxyEntry]
+]:
     """Construct the global Tasks proxy and a single-entry registry."""
     registry = {
         SettingClassEnum.TASKS_SETTINGS: ProxyEntry(tasks_settings, TasksSettings),

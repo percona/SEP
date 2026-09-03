@@ -16,6 +16,7 @@
 """Define test fixtures for inventory tests."""
 
 import sqlite3
+from collections.abc import AsyncGenerator, Iterator
 from datetime import datetime, timedelta
 
 import pytest
@@ -69,7 +70,7 @@ from tests.app.factories import (
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an async database session for testing."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",
@@ -96,7 +97,9 @@ async def session_fixture() -> AsyncSession:
 
 
 @pytest.fixture
-def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
+def test_client(
+    regular_user: CasdoorUser, session: AsyncSession
+) -> Iterator[TestClient]:
     """Create an authenticated test client for the inventory app.
 
     Mirrors the SEP ``test_client``'s ``require_minimum_role_for_unsafe_methods``

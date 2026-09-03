@@ -20,13 +20,23 @@ import hmac
 import logging.config
 import re
 import secrets
-from collections.abc import AsyncGenerator, Callable, Sequence
+from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Literal, NoReturn, Self, TypeVar
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Literal,
+    NoReturn,
+    Protocol,
+    runtime_checkable,
+    Self,
+    TypeVar,
+)
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, FastAPI, params
@@ -53,7 +63,7 @@ from pydantic_settings import (
     SettingsConfigDict,
     YamlConfigSettingsSource,
 )
-from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource, PathType
+from pydantic_settings.sources import DotEnvSettingsSource, PathType
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import Lifespan
 
@@ -107,7 +117,19 @@ def _sanitize_client_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     return safe
 
 
-LOGGING_CONFIG = {
+@runtime_checkable
+class _EnvVarsSource(Protocol):
+    """Expose the environment variables a settings source collected.
+
+    ``settings_customise_sources`` must declare its parameters as the widest
+    source type its base does, and this is the only capability it needs from the
+    environment and dotenv ones.
+    """
+
+    env_vars: Mapping[str, str | None]
+
+
+LOGGING_CONFIG: dict[str, Any] = {
     "version": 1,
     "disable_existing_loggers": False,
     "filters": {
@@ -272,8 +294,8 @@ class BaseYamlSettings(BaseSettings):
         cls,
         settings_cls: type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
-        env_settings: EnvSettingsSource,
-        dotenv_settings: DotEnvSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Return the settings sources, highest priority first.
@@ -300,7 +322,19 @@ class BaseYamlSettings(BaseSettings):
         :return: The settings sources, ordered highest-priority first.
         :raises SettingsError: When ``SECRETS_DIR`` names a path that is not a
             directory, or one whose contents exceed the source's size ceiling.
+        :raises TypeError: If pydantic-settings supplies an environment or dotenv
+            source that carries no ``env_vars`` mapping.
         """
+        # The base declares the widest source type for every parameter, so the
+        # two this reads ``env_vars`` off are narrowed here rather than in the
+        # signature, which would not be a valid override.
+        if not isinstance(env_settings, _EnvVarsSource) or not isinstance(
+            dotenv_settings, _EnvVarsSource
+        ):
+            raise TypeError(
+                "settings_customise_sources expects env and dotenv sources that "
+                "expose env_vars"
+            )
         secret_settings = NestedSecretsSettingsSource(file_secret_settings)
         env_key = "fastapi_env"
         yaml_prefix = (
@@ -703,8 +737,8 @@ class Settings(BaseYamlSettings):
         cls,
         settings_cls: type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
-        env_settings: EnvSettingsSource,
-        dotenv_settings: DotEnvSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Append the beat-store default below every configured source.

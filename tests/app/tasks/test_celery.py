@@ -60,7 +60,7 @@ from app.tasks.celery import (
     task_revoked_handler,
 )
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
-from app.tasks.execution.executors.nomad import NomadExecutor
+from app.tasks.execution.executors.nomad.models import NomadExecutor
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
@@ -1333,6 +1333,7 @@ class TestPurgeTaskHistoryLogs:
                 await _purge_task_history_logs()
 
             mock_alert.assert_awaited_once()
+            assert mock_alert.await_args is not None
             alert = mock_alert.await_args[0][0]
             assert alert["severity"] == AlertSeverity.ERROR
             assert alert["dedup_key"] == "purge_task_history_logs"
@@ -1589,6 +1590,7 @@ class TestSyncQueueItem:
             result = await sync_queue_item(pending_item.id)
 
         mock_executor.sync_task_history.assert_awaited_once()
+        assert mock_executor.sync_task_history.await_args is not None
         called_args, called_kwargs = mock_executor.sync_task_history.await_args
         assert called_args == (running_item,)
         assert "writer_session" in called_kwargs

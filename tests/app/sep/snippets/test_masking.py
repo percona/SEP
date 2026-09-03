@@ -19,7 +19,7 @@ import shlex
 from typing import Any
 
 import pytest
-from pydantic import Field
+from pydantic import BaseModel, create_model, Field
 
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.masking import (
@@ -484,7 +484,7 @@ class TestNonArgumentFieldsAreSkipped:
     """Cover which of the model's fields the spec derives a parameter shape from."""
 
     @staticmethod
-    def _model_with_base_fields() -> type:
+    def _model_with_base_fields() -> type[BaseModel]:
         """Return an execution model carrying every non-argument base field.
 
         ``extra_args`` and ``sudo`` only exist on the model when the frontmatter
@@ -539,13 +539,10 @@ class TestNonArgumentFieldsAreSkipped:
     def test_an_excluded_field_is_skipped_by_its_marking_not_its_name(self):
         """Skip a field marked ``exclude`` even under an unrecognised name."""
         model = self._model_with_base_fields()
-        renamed = type(
+        renamed = create_model(
             "RenamedBaseField",
-            (model,),
-            {
-                "__annotations__": {"target_host": str},
-                "target_host": Field(default="host1", exclude=True),
-            },
+            __base__=model,
+            target_host=(str, Field(default="host1", exclude=True)),
         )
 
         spec_names = {spec.name for spec in _masking_spec(renamed)}

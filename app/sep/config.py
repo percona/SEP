@@ -37,7 +37,6 @@ from pydantic import (
     SecretStr,
 )
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
-from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource
 
 from app import BASE_DIR
 from app.core.celery.models import IntervalSchedule, Period
@@ -733,8 +732,8 @@ class SEPSettings(BaseYamlAppSettings):
         cls,
         settings_cls: type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
-        env_settings: EnvSettingsSource,
-        dotenv_settings: DotEnvSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Emit a deprecation warning when the legacy ``SEP__PLUGINS`` env key supplies the app list.

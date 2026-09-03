@@ -497,7 +497,9 @@ class TestEncryptionFormatStampRepair:
     def _repaired_format(self, **overrides: object) -> EncryptionFormat:
         repaired = self._repair(**overrides)
         assert repaired is not None
-        return repaired["encryption_format"]
+        repaired_format = repaired["encryption_format"]
+        assert isinstance(repaired_format, EncryptionFormat)
+        return repaired_format
 
     @pytest.mark.parametrize(
         ("stamped_fields", "expected"),
@@ -573,6 +575,7 @@ class TestEncryptionFormatStampRepair:
         outcome = _backfill_single_task(task, FORM_BACKFILL_ENTRIES[0], _ctx(lookup))
 
         assert outcome.label == "repaired"
+        assert outcome.stamped_data is not None
         assert (
             outcome.stamped_data[RESERVED_FORM_KEY]["encryption_format"]
             == EncryptionFormat.GPG

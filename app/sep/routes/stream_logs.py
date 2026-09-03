@@ -25,6 +25,7 @@ from aiohttp import ClientTimeout
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import StreamingResponse
 
+from app.core.requests import as_json_object
 from app.core.security import require_internal_token
 from app.sep.deps import (
     ApiCurrentUser,
@@ -101,7 +102,9 @@ async def task_history_events_event_stream(
                     yield f"data: {json.dumps(event, default=str)}\n\n"
                 emitted_count = len(events)
 
-                task_history = await tasks_api.get(f"/history/{task_history_id}")
+                task_history = as_json_object(
+                    await tasks_api.get(f"/history/{task_history_id}")
+                )
                 if task_history["status"] != TaskHistoryStatusEnum.RUNNING:
                     payload = {"status": task_history["status"]}
                     yield f"event: finish\ndata: {json.dumps(payload)}\n\n"
@@ -185,7 +188,9 @@ async def task_history_logs_event_stream(
                 if log_entry:
                     yield f"data: {log_entry.decode()}\n\n"
         with tasks_client.auth(require_internal_token()) as sync_api:
-            task_history = await sync_api.post(f"/history/{task_history_id}/sync/")
+            task_history = as_json_object(
+                await sync_api.post(f"/history/{task_history_id}/sync/")
+            )
         yield f"event: finish\ndata: {json.dumps({'status': task_history['status']})}\n\n"
     except TimeoutError as exc:
         logger.warning(

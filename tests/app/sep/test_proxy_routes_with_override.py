@@ -29,7 +29,7 @@ exercised. The Tasks-side equivalent lives next to the Tasks app at
 ``tests/app/tasks/test_settings_override_integration.py``.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from unittest.mock import AsyncMock
 
 import pytest
@@ -63,8 +63,11 @@ from tests.app.db_schema import apply_schema
 
 
 @pytest_asyncio.fixture
-async def override_session_maker() -> async_sessionmaker:
+async def override_session_maker() -> AsyncGenerator[async_sessionmaker, None]:
     """Provide an in-memory SQLite session maker for the override store."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},

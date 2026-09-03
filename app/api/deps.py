@@ -31,7 +31,7 @@ from app.core.auth.exceptions import (
     HTTPUnauthorizedException,
     InactiveUserException,
 )
-from app.core.auth.models import UserRole
+from app.core.auth.models import BaseUser, UserRole
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.log import set_log_context
@@ -39,6 +39,10 @@ from app.core.security import is_bearer_authenticated, SAFE_HTTP_METHODS
 from app.sep.config import sep_settings
 
 logger = logging.getLogger(__name__)
+#: The provider-selected concrete user class, resolved from configuration at
+#: import time. Annotations below name ``BaseUser`` instead, which is the
+#: strongest type that is statically knowable here; nothing reads those
+#: annotations at runtime.
 User = get_user_model()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/oauth/token")
@@ -59,7 +63,7 @@ _SERVICE_PRINCIPAL = User.build_service_principal(
 )
 
 
-def _build_service_principal(secret: str) -> User:
+def _build_service_principal(secret: str) -> BaseUser:
     """Return a per-request copy of the service principal with ``access_token`` set.
 
     ``access_token`` is a property-backed private attribute on ``BaseUser``;
@@ -76,7 +80,7 @@ def _build_service_principal(secret: str) -> User:
     return user
 
 
-async def authenticate_bearer_token(token: str) -> User:
+async def authenticate_bearer_token(token: str) -> BaseUser:
     """Return the authenticated user from an OAuth2 token.
 
     When ``settings.SEP_INTERNAL_TOKEN`` is configured and the incoming Bearer
@@ -124,7 +128,7 @@ async def authenticate_bearer_token(token: str) -> User:
 _RESOLVED_USERS_KEY: Final = "app.api.deps.resolved_users"
 
 
-async def get_current_user(request: Request, token: AuthToken) -> User:
+async def get_current_user(request: Request, token: AuthToken) -> BaseUser:
     """Return the authenticated user, resolving each credential once per request.
 
     The cache is keyed on a digest of the credential, so a resolution is never
@@ -146,7 +150,7 @@ async def get_current_user(request: Request, token: AuthToken) -> User:
     :raises BaseAuthProviderException: If the auth provider errors while
         validating the credential.
     """
-    resolved: dict[bytes, User] = request.scope.setdefault(_RESOLVED_USERS_KEY, {})
+    resolved: dict[bytes, BaseUser] = request.scope.setdefault(_RESOLVED_USERS_KEY, {})
     key = sha256(token.encode()).digest()
     if (user := resolved.get(key)) is not None:
         set_log_context(user=user.username)
@@ -156,10 +160,10 @@ async def get_current_user(request: Request, token: AuthToken) -> User:
 
 
 IsAuthenticatedDep = Depends(get_current_user)
-CurrentUser = Annotated[User, IsAuthenticatedDep]
+CurrentUser = Annotated[BaseUser, IsAuthenticatedDep]
 
 
-async def get_current_admin(current_user: CurrentUser) -> User:
+async def get_current_admin(current_user: CurrentUser) -> BaseUser:
     """Return the authenticated admin from an OAuth2 token.
 
     :param current_user: The current logged-in user.
@@ -176,7 +180,7 @@ async def get_current_admin(current_user: CurrentUser) -> User:
 IsAdminDep = Depends(get_current_admin)
 
 
-async def get_current_service_principal(current_user: CurrentUser) -> User:
+async def get_current_service_principal(current_user: CurrentUser) -> BaseUser:
     """Return the authenticated caller only when it is the service principal.
 
     Gates writes whose rows a syncer owns: those writes authenticate with

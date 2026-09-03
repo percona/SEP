@@ -109,15 +109,14 @@ class SnippetFilterType(EnumFieldMixin, StrEnum):
 
     @classmethod
     @lru_cache(maxsize=2)
-    def get_validation_type(
-        cls, filter_type: str
-    ) -> type[FilenameExtension] | type[MimeType]:
+    def get_validation_type(cls, filter_type: str) -> Any:
         """Get the validation type associated with the specified filter type.
 
+        Annotated ``Any`` because both results are ``Annotated[str, ...]``
+        aliases — type expressions rather than classes.
+
         :param filter_type: The filter type value.
-        :type filter_type: str
         :return: The corresponding validation type.
-        :rtype: type[FilenameExtension] | type[MimeType]
         :raises ValueError: If the filter type is unknown.
         """
         if filter_type == cls.EXTENSION:

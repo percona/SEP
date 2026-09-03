@@ -18,7 +18,10 @@
 __all__ = [
     "UPSTREAM_NON_JSON_HEADER",
     "BaseRemoteAPI",
+    "JSONBody",
     "RemoteAPI",
+    "as_json_array",
+    "as_json_object",
     "exception_for_status",
     "is_non_json_success",
 ]
@@ -109,6 +112,10 @@ FileContent = bytes | BinaryIO | AsyncIterable[bytes]
 #: A single multipart file part: ``(filename, content, content_type)``.
 FileSpec = tuple[str, FileContent, str]
 
+#: The parsed body of a JSON response: an object, an array of objects, or
+#: ``None`` when the server answered HTTP 204 with no body.
+JSONBody = dict[str, Any] | list[dict[str, Any]] | None
+
 # Maps an upstream error status to the project exception that represents it, so
 # RemoteAPI raises app/core/exceptions classes instead of a bare HTTPException.
 _HTTP_EXCEPTION_BY_STATUS: dict[int, type[HTTPException]] = {
@@ -158,6 +165,46 @@ def exception_for_status(
     if exc_class is None or (is_non_json and exc_class is HTTPNotFoundException):
         return HTTPException(status_code=status_code, detail=detail, headers=headers)
     return exc_class(detail, headers=headers)
+
+
+def as_json_object(payload: JSONBody) -> dict[str, Any]:
+    """Return ``payload`` as a JSON object, rejecting any other shape.
+
+    The verb methods declare the whole union a JSON body may take — an object,
+    an array, or ``None`` on HTTP 204. A caller that reads the result as a
+    mapping is asserting a shape the transport never checked; this checks it and
+    turns a mis-shaped upstream answer into a 502 rather than a ``TypeError``
+    further down.
+
+    :param payload: The parsed body returned by a :class:`BaseRemoteAPI` verb.
+    :return: The payload as a plain dict.
+    :raises HTTPBadGatewayException: If the payload is not a JSON object.
+    """
+    if not isinstance(payload, dict):
+        raise HTTPBadGatewayException(
+            detail="The server answered with an unexpected payload shape."
+        )
+    return payload
+
+
+def as_json_array(payload: JSONBody) -> list[dict[str, Any]]:
+    """Return ``payload`` as a JSON array of objects, rejecting any other shape.
+
+    The elements are checked too, so the returned ``list[dict[str, Any]]`` is a
+    verified claim rather than an asserted one.
+
+    :param payload: The parsed body returned by a :class:`BaseRemoteAPI` verb.
+    :return: The payload itself, once every element is confirmed to be an object.
+    :raises HTTPBadGatewayException: If the payload is not a JSON array, or any
+        element of it is not a JSON object.
+    """
+    if not isinstance(payload, list) or not all(
+        isinstance(item, dict) for item in payload
+    ):
+        raise HTTPBadGatewayException(
+            detail="The server answered with an unexpected payload shape."
+        )
+    return payload
 
 
 def is_non_json_success(exc: HTTPException) -> bool:
@@ -548,11 +595,12 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         return logging.getLogger(self.logger_name)
 
     @property
-    def session(self) -> ClientSession:
+    def session(self) -> ClientSession | None:
         """Get the ClientSession used in requests.
 
-        :return: The ClientSession used in requests.
-        :rtype: ClientSession
+        :return: The ClientSession used in requests, or ``None`` before the
+            client is opened and after it is closed — which is what callers
+            test for to decide whether to enter it.
         """
         return self._session
 
@@ -968,6 +1016,7 @@ class RemoteAPI(BaseRemoteAPI):
                     response.status,
                     detail="The server answered with an unfollowed redirect.",
                 )
+            response_data: JSONBody = None
             try:
                 response_data = await response.json()
                 self.logger.debug(

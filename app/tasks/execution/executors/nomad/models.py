@@ -2435,10 +2435,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :param queue_item: The task history record whose tracking carries the ids.
         :return: The job and evaluation identifiers, in that order.
         """
-        return (
-            queue_item.execution_request.tracking["job_id"],
-            queue_item.execution_request.tracking["evaluation_id"],
-        )
+        tracking = queue_item.execution_request.tracking or {}
+        return (tracking["job_id"], tracking["evaluation_id"])
 
     async def stream_logs(
         self,

@@ -17,7 +17,7 @@
 
 import uuid
 from datetime import timedelta
-from typing import ClassVar
+from typing import ClassVar, TypeVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -154,9 +154,12 @@ class StubTestSyncer(BaseSyncer):
         self._perform_calls.append(f"table:{created_table.id}")
 
 
+SyncerT = TypeVar("SyncerT", bound=BaseSyncer)
+
+
 def _build_syncer(
-    syncer_cls: type[BaseSyncer], session: AsyncSession, **kwargs
-) -> BaseSyncer:
+    syncer_cls: type[SyncerT], session: AsyncSession, **kwargs
+) -> SyncerT:
     """Construct a syncer and bind a real session (mirrors ``__aenter__`` assignment)."""
     syncer = syncer_cls(**kwargs)
     syncer._session = session

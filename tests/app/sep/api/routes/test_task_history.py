@@ -15,6 +15,7 @@
 
 """Tests for the SEP merged task-history JSON API at ``/api/sep/task-history/``."""
 
+from collections.abc import Iterator
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -438,7 +439,7 @@ class TestSepTaskHistoryAuth:
     """Tests for ``/api/sep/task-history/`` authentication enforcement."""
 
     @pytest.fixture
-    def unauthenticated_client(self) -> TestClient:
+    def unauthenticated_client(self) -> Iterator[TestClient]:
         """Yield a TestClient with no auth dependency overrides applied."""
         previous = sep_app.dependency_overrides
         sep_app.dependency_overrides = {}

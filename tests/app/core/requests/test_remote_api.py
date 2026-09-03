@@ -33,6 +33,8 @@ from app.core.requests.remote_api import (
     _iter_lines_from_chunks,
     _REDACTED_VALUE,
     _sanitize_request_kwargs,
+    as_json_array,
+    as_json_object,
     is_non_json_success,
     UPSTREAM_NON_JSON_HEADER,
 )
@@ -756,3 +758,54 @@ class TestIterLinesFromChunks:
 
         assert lines == [b"x" * 64 + b"end\n"]
         assert recorded_buffers[0].scans[-2:] == [(64, 68), (68, 68)]
+
+
+class TestJSONShapeNarrowing:
+    """Cover the helpers that narrow a verb method's JSON return union."""
+
+    def test_object_passes_a_mapping_through(self) -> None:
+        """Assert a JSON object is returned as a plain dict."""
+        assert as_json_object({"a": 1}) == {"a": 1}
+
+    def test_object_accepts_an_empty_mapping(self) -> None:
+        """Assert an empty object is a valid payload, not a fault."""
+        assert as_json_object({}) == {}
+
+    def test_object_rejects_an_array(self) -> None:
+        """Assert a JSON array is reported as an upstream fault."""
+        with pytest.raises(HTTPBadGatewayException) as exc_info:
+            as_json_object([{"a": 1}])
+
+        assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
+
+    def test_object_rejects_no_content(self) -> None:
+        """Assert HTTP 204's ``None`` is reported rather than returned."""
+        with pytest.raises(HTTPBadGatewayException) as exc_info:
+            as_json_object(None)
+
+        assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
+
+    def test_array_passes_a_list_of_objects_through(self) -> None:
+        """Assert a JSON array of objects is returned unchanged."""
+        assert as_json_array([{"a": 1}, {"b": 2}]) == [{"a": 1}, {"b": 2}]
+
+    def test_array_accepts_an_empty_list(self) -> None:
+        """Assert an empty array is a valid payload, not a fault."""
+        assert as_json_array([]) == []
+
+    def test_array_rejects_non_object_elements(self) -> None:
+        """Assert the declared ``list[dict]`` is checked, not merely asserted."""
+        with pytest.raises(HTTPBadGatewayException) as exc_info:
+            as_json_array([1, 2])
+
+        assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
+
+    def test_array_rejects_an_object(self) -> None:
+        """Assert a JSON object is reported as an upstream fault."""
+        with pytest.raises(HTTPBadGatewayException):
+            as_json_array({"a": 1})
+
+    def test_array_rejects_no_content(self) -> None:
+        """Assert HTTP 204's ``None`` is reported rather than returned."""
+        with pytest.raises(HTTPBadGatewayException):
+            as_json_array(None)
