@@ -15,8 +15,11 @@
 
 """Define database utilities."""
 
+import hashlib
+import logging
 import re
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
+from contextlib import asynccontextmanager
 from typing import Any
 
 from alembic.runtime.migration import MigrationContext
@@ -36,7 +39,12 @@ from sqlalchemy import (
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    async_sessionmaker,
+    AsyncConnection,
+    AsyncEngine,
+    create_async_engine,
+)
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
 from sqlalchemy.sql import coercions, ColumnExpressionArgument, roles
@@ -51,6 +59,8 @@ from app.core.db.config import DatabaseOptions
 from app.core.db.sql_types import AutoJSON
 from app.core.utils.fields import DatabaseDialect
 from app.core.utils.serialization import json_serializer
+
+logger = logging.getLogger(__name__)
 
 SQLAlchemyColumn = ColumnClause | Column | InstrumentedAttribute
 
@@ -306,6 +316,81 @@ def acquire_pg_advisory_xact_lock(bind: Connection, lock_key: int) -> None:
     """
     if bind.dialect.name == DatabaseDialect.POSTGRESQL:
         bind.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
+
+
+def advisory_lock_key(name: str) -> int:
+    """Derive a stable advisory-lock key from the name of the locked object.
+
+    Digest rather than :func:`hash`: the builtin is salted per process, so every
+    worker would derive its own key, put itself in its own lock, and fence
+    nothing while still reporting success.
+
+    :param name: The name of the locked object; every caller racing on it must
+        pass the same name.
+    :return: A key inside the signed 32-bit range PostgreSQL's two-argument
+        advisory-lock form accepts.
+    """
+    digest = hashlib.blake2b(name.encode(), digest_size=4).digest()
+    return int.from_bytes(digest, "big", signed=True)
+
+
+@asynccontextmanager
+async def try_pg_advisory_xact_lock(
+    session: AsyncSession,
+    namespace: int,
+    key: int,
+) -> AsyncIterator[bool]:
+    """Fence a check-then-write sequence against concurrent callers on PostgreSQL.
+
+    Take the lock on a connection of the helper's own rather than the caller's, so
+    it outlives the commits the guarded sequence issues along the way — a lock on
+    the caller's connection would be released by the first of them and fence only
+    its own final statement. The lock is transaction-scoped on that connection, so
+    it is released by exiting the block, by an exception inside it, and by the
+    death of the worker holding it, without an unlock call to leak. It does need a
+    connection spare in the pool for as long as the block runs, so a deployment
+    pinned to a single connection trades the fence for a checkout timeout.
+
+    Acquisition never waits: contention yields ``False`` for the caller to refuse
+    on, because a caller blocking here would hold its connection while a peer
+    completes the very sequence that would make the caller refuse anyway.
+
+    No-op yielding ``True`` on a dialect that has no advisory lock, silently:
+    SQLite backs single-writer test runs, not the concurrent workers this fences,
+    so there is nothing there to serialize. A bind that cannot be introspected as
+    an asynchronous engine also grants — refusing would turn an unrecognised bind
+    into a total refusal of the guarded work — but it leaves the caller unfenced
+    rather than not needing a fence, so that case is logged.
+
+    :param session: The session whose engine the lock connection is drawn from.
+    :param namespace: The lock-space classifier, shared by every caller racing on
+        the same class of object. Pairs live in a lock space disjoint from
+        single-``bigint`` locks, so a namespace cannot collide with one of those.
+    :param key: The key identifying the locked object within ``namespace``.
+    :return: ``True`` while the lock is held for the duration of the block.
+    """
+    bind = session.bind
+    engine = bind.engine if isinstance(bind, AsyncConnection) else bind
+    if not isinstance(engine, AsyncEngine):
+        logger.warning(
+            "Advisory lock %s/%s not taken: bind %s cannot be introspected as an "
+            "asynchronous engine, so concurrent callers are not fenced.",
+            namespace,
+            key,
+            type(bind).__name__,
+        )
+        yield True
+        return
+    if engine.dialect.name != DatabaseDialect.POSTGRESQL:
+        yield True
+        return
+    async with engine.connect() as connection:
+        await connection.begin()
+        acquired = await connection.scalar(
+            text("SELECT pg_try_advisory_xact_lock(:namespace, :key)"),
+            {"namespace": namespace, "key": key},
+        )
+        yield bool(acquired)
 
 
 def table_exists(bind: Connection, table_name: str) -> bool:

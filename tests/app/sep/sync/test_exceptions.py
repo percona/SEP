@@ -94,6 +94,20 @@ class TestSyncInstanceAlreadyInProgressError:
         assert repr(item_a) in str(exc)
         assert repr(item_b) in str(exc)
 
+    def test_detail_replaces_the_item_message(self):
+        """Describe a conflict no item evidences without inventing an empty item list.
+
+        The whole message is persisted to ``last_sync_error`` and served from the
+        inventory read routes, so it has to read as the conflict it is rather than
+        as a run conflicting with nothing.
+        """
+        exc = SyncInstanceAlreadyInProgressError(
+            detail="A run of syncer 'pmm' is being created already.",
+        )
+
+        assert exc.sync_items == ()
+        assert str(exc) == "A run of syncer 'pmm' is being created already."
+
     def test_inherits_from_sync_error(self):
         """Assert SyncInstanceAlreadyInProgressError is a subclass of SyncError."""
         assert issubclass(SyncInstanceAlreadyInProgressError, SyncError)

@@ -15,12 +15,14 @@
 
 """Define tests for the app.core.db.utils module."""
 
+import logging
 from contextlib import nullcontext
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import Column, Integer, JSON, MetaData, select, Table, Text
+from sqlalchemy import Column, Integer, JSON, MetaData, select, Table, Text, text
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -30,13 +32,16 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.config import DatabaseOptions
 from app.core.db.utils import (
+    advisory_lock_key,
     compare_type,
     create_app_async_engine,
     func_json_extract,
     get_async_session_maker_from_engine,
     idempotent_insert,
     NullsLastOrdering,
+    try_pg_advisory_xact_lock,
 )
+from app.core.settings_override.constants import SETTINGOVERRIDE_MIGRATION_LOCK_KEY
 from app.core.utils.fields import AsyncDatabaseEngine, DatabaseDialect
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.models import TaskExecutionRequestJSON, TaskHistory, TaskWrite
@@ -703,3 +708,238 @@ class TestCreateAppAsyncEngine:
         create_app_async_engine(self._postgres_options())
 
         assert "connect_args" not in recorded
+
+
+#: ``blake2b`` digest of ``"pmm"``, pinned so a derivation that varies per
+#: process cannot pass the stability test by agreeing with itself.
+_PMM_ADVISORY_LOCK_KEY = -732591903
+
+
+class TestAdvisoryLockKey:
+    """Test the name-to-key derivation feeding the advisory-lock helper."""
+
+    def test_key_is_stable_across_processes(self):
+        """Pin the derived key so workers in separate processes agree on it.
+
+        A ``hash()``-based derivation would vary with ``PYTHONHASHSEED`` and give
+        each worker its own key, voting every worker into its own lock and voiding
+        the fence without failing anything.
+        """
+        assert advisory_lock_key("pmm") == _PMM_ADVISORY_LOCK_KEY
+
+    def test_key_fits_signed_int32(self):
+        """Keep the key inside the range PostgreSQL's two-argument form accepts."""
+        for name in ("pmm", "PMMSyncer", "mysql", "a" * 512, ""):
+            assert -(2**31) <= advisory_lock_key(name) < 2**31
+
+    def test_distinct_names_derive_distinct_keys(self):
+        """Give each syncer its own key so one syncer cannot fence another."""
+        names = ("pmm", "PMMSyncer", "mysql")
+
+        keys = {advisory_lock_key(name) for name in names}
+
+        assert len(keys) == len(names)
+
+
+class TestTryPgAdvisoryXactLockNoOp:
+    """Test the helper's behaviour where no PostgreSQL advisory lock exists."""
+
+    @pytest.mark.asyncio
+    async def test_grants_silently_and_issues_no_sql_on_sqlite(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ):
+        """Grant the lock without touching the bind on a non-PostgreSQL dialect.
+
+        Quiet as well as no-op: a dialect with no advisory lock needs no fence, so
+        saying so on every call would bury the case that wanted one and lost it.
+        """
+
+        def _fail(*_args, **_kwargs):
+            pytest.fail("SQLite must not open a connection for the advisory lock")
+
+        monkeypatch.setattr(AsyncEngine, "connect", _fail)
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        try:
+            with caplog.at_level(logging.WARNING, logger="app.core.db.utils"):
+                async with (
+                    get_async_session_maker_from_engine(engine)() as session,
+                    try_pg_advisory_xact_lock(session, 1, 2) as held,
+                ):
+                    assert held is True
+        finally:
+            await engine.dispose()
+
+        assert caplog.text == ""
+
+    @pytest.mark.asyncio
+    async def test_warns_and_grants_when_bind_is_not_an_async_engine(
+        self, caplog: pytest.LogCaptureFixture
+    ):
+        """Report the one no-op case that is not a dialect without advisory locks.
+
+        Granting is the safe direction — refusing would turn an unrecognised bind
+        into a total refusal of the guarded work — but it leaves the caller
+        unfenced, which a dialect that simply has no advisory locks does not, so
+        only this branch says so.
+        """
+        session = MagicMock(spec=AsyncSession)
+        session.bind = MagicMock()
+
+        with caplog.at_level(logging.WARNING, logger="app.core.db.utils"):
+            async with try_pg_advisory_xact_lock(session, 1, 2) as held:
+                assert held is True
+
+        assert "cannot be introspected" in caplog.text
+
+
+@pytest_asyncio.fixture
+async def contending_sessions(postgres_engine: AsyncEngine):
+    """Yield two sessions on independent connections of the same engine.
+
+    One session cannot contend with itself: the helper draws its lock connection
+    from the engine, and a second lock attempt on the same session would be a
+    second connection under the same caller rather than a competing one. Built on
+    the bare engine rather than on ``postgres_session_maker`` because an advisory
+    lock needs no table, so creating the whole schema here would be paid per test
+    for nothing.
+    """
+    session_maker = get_async_session_maker_from_engine(postgres_engine)
+    async with session_maker() as first, session_maker() as second:
+        yield first, second
+
+
+class TestTryPgAdvisoryXactLockOnRealPostgres:
+    """Exercise the advisory lock against a real PostgreSQL server.
+
+    SQLite cannot substitute: it has no advisory locks, so the helper no-ops
+    there and every contention assertion below would pass vacuously.
+    """
+
+    @staticmethod
+    def _unique_key() -> int:
+        """Return a key no other test or xdist worker can be holding.
+
+        Advisory locks are database-wide, while the test fixtures isolate workers
+        by schema only, so a shared key would make two workers running this test
+        contend with each other and read a real refusal as this test's own.
+        """
+        return advisory_lock_key(uuid4().hex)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_second_caller_is_refused_then_granted_after_release(
+        self, contending_sessions
+    ):
+        """Refuse a concurrent holder and grant the lock once the holder exits."""
+        first, second = contending_sessions
+        key = self._unique_key()
+
+        async with try_pg_advisory_xact_lock(first, 1, key) as held_first:
+            assert held_first is True
+            async with try_pg_advisory_xact_lock(second, 1, key) as held_second:
+                assert held_second is False
+
+        async with try_pg_advisory_xact_lock(second, 1, key) as held_after:
+            assert held_after is True
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_lock_survives_a_commit_on_the_holder_session(
+        self, contending_sessions
+    ):
+        """Hold the lock across the holder's own commits.
+
+        The sequence the lock protects commits several times while it runs, so a
+        lock bound to the caller's transaction would be released by the first of
+        those commits and fence nothing.
+        """
+        first, second = contending_sessions
+        key = self._unique_key()
+
+        async with try_pg_advisory_xact_lock(first, 1, key) as held_first:
+            assert held_first is True
+            await first.exec(select(1))
+            await first.commit()
+            async with try_pg_advisory_xact_lock(second, 1, key) as held_second:
+                assert held_second is False
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_lock_is_released_when_the_body_raises(self, contending_sessions):
+        """Release the lock when the guarded sequence fails."""
+        first, second = contending_sessions
+        key = self._unique_key()
+
+        with pytest.raises(RuntimeError):
+            async with try_pg_advisory_xact_lock(first, 1, key):
+                raise RuntimeError("guarded sequence failed")
+
+        async with try_pg_advisory_xact_lock(second, 1, key) as held_second:
+            assert held_second is True
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_does_not_contend_with_the_migration_lock_key(
+        self, postgres_engine: AsyncEngine
+    ):
+        """Keep the two-argument lock space disjoint from the migration key's.
+
+        PostgreSQL keeps ``(int, int)`` and ``bigint`` advisory locks in separate
+        spaces, which is why the helper takes a namespace and a key instead of one
+        ``bigint`` that would have to be proven not to collide with
+        ``SETTINGOVERRIDE_MIGRATION_LOCK_KEY``. Hold that exact bit pattern as a
+        ``bigint`` and claim it again as a pair.
+        """
+        session_maker = get_async_session_maker_from_engine(postgres_engine)
+        namespace = SETTINGOVERRIDE_MIGRATION_LOCK_KEY >> 32
+        key = SETTINGOVERRIDE_MIGRATION_LOCK_KEY & 0xFFFFFFFF
+
+        async with postgres_engine.connect() as migration_conn:
+            await migration_conn.begin()
+            await migration_conn.execute(
+                text("SELECT pg_advisory_xact_lock(:key)"),
+                {"key": SETTINGOVERRIDE_MIGRATION_LOCK_KEY},
+            )
+            async with (
+                session_maker() as session,
+                try_pg_advisory_xact_lock(session, namespace, key) as held,
+            ):
+                assert held is True
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_fences_a_session_bound_to_a_connection(
+        self, postgres_engine: AsyncEngine
+    ):
+        """Fence a session bound to a connection rather than to an engine.
+
+        A session bound that way still has to fence against the workers bound to
+        the engine, so the lock connection is drawn from the bind's own engine.
+        """
+        key = self._unique_key()
+        session_maker = get_async_session_maker_from_engine(postgres_engine)
+
+        async with (
+            postgres_engine.connect() as connection,
+            AsyncSession(bind=connection) as bound_session,
+            try_pg_advisory_xact_lock(bound_session, 1, key) as held,
+        ):
+            assert held is True
+            async with (
+                session_maker() as peer,
+                try_pg_advisory_xact_lock(peer, 1, key) as held_peer,
+            ):
+                assert held_peer is False
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_distinct_keys_do_not_contend(self, contending_sessions):
+        """Fence one object at a time so unrelated callers proceed in parallel."""
+        first, second = contending_sessions
+
+        async with (
+            try_pg_advisory_xact_lock(first, 1, self._unique_key()) as held_first,
+            try_pg_advisory_xact_lock(second, 1, self._unique_key()) as held_second,
+        ):
+            assert held_first is True
+            assert held_second is True
