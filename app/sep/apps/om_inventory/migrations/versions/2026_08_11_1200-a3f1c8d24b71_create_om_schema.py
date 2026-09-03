@@ -34,8 +34,8 @@ OM ships, this file freezes and changes become new revisions.
 The schema is named symbolically throughout -- ``schema="om_schema"``, translated by
 the connection (``app/sep/migrations/env.py``) -- with the single exception of
 ``CREATE SCHEMA``, which is raw DDL and therefore untranslated. That statement asks
-:func:`app.sep.om.config.om_schema` for the real name and does nothing when the
-bind has no schemas.
+:func:`app.sep.apps.shared.om.config.om_schema` for the real name and does nothing
+when the bind has no schemas.
 
 Hand-written, and it has to stay that way: Alembic applies no ``schema_translate_map``
 during autogenerate and ``include_schemas`` is off, so ``--autogenerate`` proposes
@@ -49,8 +49,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from app.sep.apps.shared.om.config import OM_SCHEMA_SYMBOL, om_schema
 from app.sep.config import sep_settings
-from app.sep.om.config import OM_SCHEMA_SYMBOL, om_schema
 
 
 # revision identifiers, used by Alembic.
@@ -268,9 +268,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # The schema itself is deliberately left behind: it is shared by every OM app
-    # (app/sep/om/__init__.py), so dropping it here would take another app's tables
-    # with it, and each app's migrations are an independent branch with no ordering
-    # between them.
+    # (app/sep/apps/shared/om/__init__.py), so dropping it here would take another
+    # app's tables with it, and each app's migrations are an independent branch with
+    # no ordering between them.
     op.drop_index(
         op.f("ix_om_inventory_run_status"),
         table_name="inventory_run",

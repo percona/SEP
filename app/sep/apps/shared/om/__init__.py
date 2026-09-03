@@ -21,6 +21,5 @@ tables in one ``om`` schema. The schema is therefore owned here rather than by
 whichever app happened to be written first -- an app that later ships without the
 others must not take the schema definition with it.
 
-Deliberately empty of imports. Anything placed here is loaded by every OM app and,
-through the engine, by processes that use none of them.
+Deliberately empty of imports. Anything placed here is loaded by every OM app.
 """
