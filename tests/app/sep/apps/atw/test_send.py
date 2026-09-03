@@ -37,7 +37,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
 from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.exceptions import HTTPConflictException
+from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.requests import RemoteAPI
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
@@ -67,6 +67,7 @@ _EXPECTED_ENTRY_COUNT = 9
 _EXPECTED_LOG_GROUP_COUNT = 3
 _STALE_ROW_COUNT = 2
 _MAIN_STEP = "run-script"
+_LAUNCH_CHECK_STEP = "check-launchable"
 _STORED_SECRET = "stored-api-key"
 _DEFAULT_FILES: dict[str, Any] = {
     "stdout.log": {"is_dir": False, "size": 5},
@@ -460,8 +461,18 @@ class TestRunSendHappyPath:
 
         reloaded = await _reload(send_session, row.id)
         assert reloaded.detail["steps"] == [
-            {"name": "lookup", "status": "running", "outputs": None},
-            {"name": "lookup", "status": "success", "outputs": {"sys_id": "c-1"}},
+            {
+                "name": "lookup",
+                "kind": "resolution",
+                "status": "running",
+                "outputs": None,
+            },
+            {
+                "name": "lookup",
+                "kind": "resolution",
+                "status": "success",
+                "outputs": {"sys_id": "c-1"},
+            },
         ]
 
     async def test_a_non_json_upload_response_still_succeeds(
@@ -579,6 +590,54 @@ class TestRunSendExecutionLogs:
         api.stream.assert_called_once_with(
             "/history/11/logs/", params={"step": _MAIN_STEP}
         )
+
+    @pytest.mark.usefixtures("uploader")
+    async def test_a_failed_execution_still_requests_only_the_main_step(
+        self, send_session: AsyncSession, mocker: MockerFixture
+    ) -> None:
+        """Keep the prestart-is-noise rule intact for every other status."""
+        api = _fake_tasks_api(mocker, status=TaskHistoryStatusEnum.FAILED.value)
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        api.stream.assert_called_once_with(
+            "/history/11/logs/", params={"step": _MAIN_STEP}
+        )
+
+    async def test_an_unlaunchable_execution_bundles_the_launch_check_log(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Send the one step that says what could not be launched, and where.
+
+        An unlaunchable allocation never starts ``run-script`` and produces no
+        output files, so streaming only the main step would leave the bundle
+        empty and fail the send outright — with the diagnostic the support case
+        exists for sitting in a step the default rule filters out.
+        """
+        api = _fake_tasks_api(
+            mocker,
+            files={},
+            logs=[
+                _log_record(
+                    "SEP_UNLAUNCHABLE: command=sudo node=node-1\n",
+                    step=_LAUNCH_CHECK_STEP,
+                )
+            ],
+            status=TaskHistoryStatusEnum.UNLAUNCHABLE.value,
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        api.stream.assert_called_once_with(
+            "/history/11/logs/", params={"step": _LAUNCH_CHECK_STEP}
+        )
+        assert uploader.bundle_bytes is not None
+        with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
+            logged = zf.read(f"11-cpu.sh/logs/{_LAUNCH_CHECK_STEP}.stdout.log")
+
+        assert logged == b"SEP_UNLAUNCHABLE: command=sudo node=node-1\n"
 
     async def test_a_step_that_logged_nothing_leaves_no_member(
         self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
@@ -1135,15 +1194,16 @@ class TestRunSendFailures:
         assert reloaded.detail["error"] == "Bundle is 99 bytes, above the cap."
 
     @pytest.mark.usefixtures("tasks_api")
-    async def test_a_failed_resolution_step_keeps_its_running_record(
+    async def test_a_failed_resolution_step_is_persisted_with_its_terminal_record(
         self, send_session: AsyncSession, uploader: _FakeUploader
     ) -> None:
-        """Leave the failing step as the last recorded one so the log names it."""
+        """Persist the failing step's terminal record so the trail names its end."""
         row = await _seed_send_log(send_session)
 
         async def _upload(**kwargs: Any) -> UploadResult:
             assert uploader.step_observer is not None
             uploader.step_observer(StepRecord(name="lookup", status="running"))
+            uploader.step_observer(StepRecord(name="lookup", status="failed"))
             raise HTTPConflictException(detail="ticket locked")
 
         uploader.upload_bundle = _upload
@@ -1153,8 +1213,163 @@ class TestRunSendFailures:
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
         assert reloaded.detail["steps"] == [
-            {"name": "lookup", "status": "running", "outputs": None}
+            {
+                "name": "lookup",
+                "kind": "resolution",
+                "status": "running",
+                "outputs": None,
+            },
+            {
+                "name": "lookup",
+                "kind": "resolution",
+                "status": "failed",
+                "outputs": None,
+            },
         ]
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_a_failed_send_names_the_step_and_the_input_it_reads(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Name the failed step and its input ahead of the receiver's message."""
+        row = await _seed_send_log(send_session)
+
+        async def _upload(**kwargs: Any) -> UploadResult:
+            assert uploader.step_observer is not None
+            uploader.step_observer(
+                StepRecord(name="lookup", status="failed", cited_inputs=("case_ref",))
+            )
+            raise HTTPBadRequestException(
+                detail="An unexpected error occurred on the server."
+            )
+
+        uploader.upload_bundle = _upload
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.detail["error"] == (
+            "The send failed in delivery step 'lookup', which reads case_ref: "
+            "An unexpected error occurred on the server."
+        )
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_a_failed_upload_is_attributed_to_the_upload_not_the_last_step(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Name the bundle upload when the send died there, not the step before it."""
+        row = await _seed_send_log(send_session)
+
+        async def _upload(**kwargs: Any) -> UploadResult:
+            assert uploader.step_observer is not None
+            uploader.step_observer(
+                StepRecord(name="lookup", status="success", outputs={"sys_id": "c-1"})
+            )
+            uploader.step_observer(
+                StepRecord(name="upload", status="failed", kind="upload")
+            )
+            raise HTTPConflictException(detail="attachment rejected")
+
+        uploader.upload_bundle = _upload
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.detail["error"] == (
+            "The send failed in the bundle upload: attachment rejected"
+        )
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_a_step_reading_no_input_is_named_without_an_input_clause(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Name a step that reads nothing the send supplied without an input clause."""
+        row = await _seed_send_log(send_session)
+
+        async def _upload(**kwargs: Any) -> UploadResult:
+            assert uploader.step_observer is not None
+            uploader.step_observer(StepRecord(name="lookup", status="failed"))
+            raise HTTPConflictException(detail="ticket locked")
+
+        uploader.upload_bundle = _upload
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.detail["error"] == (
+            "The send failed in delivery step 'lookup': ticket locked"
+        )
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_a_step_reading_two_inputs_names_both(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Join every input a failed step reads into the one recorded reason."""
+        row = await _seed_send_log(send_session)
+
+        async def _upload(**kwargs: Any) -> UploadResult:
+            assert uploader.step_observer is not None
+            uploader.step_observer(
+                StepRecord(
+                    name="lookup",
+                    status="failed",
+                    cited_inputs=("case_ref", "manifest.incident_id"),
+                )
+            )
+            raise HTTPConflictException(detail="ticket locked")
+
+        uploader.upload_bundle = _upload
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.detail["error"] == (
+            "The send failed in delivery step 'lookup', which reads case_ref, "
+            "manifest.incident_id: ticket locked"
+        )
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_a_failure_before_any_step_keeps_the_upstream_message_alone(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Record the receiver's own message when no step ever reported a failure."""
+        uploader.error = HTTPConflictException(detail="ticket locked")
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.detail["error"] == "ticket locked"
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_no_secret_reaches_the_recorded_error_or_the_step_trail(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Keep the plan's secret values out of everything a failed send persists."""
+        row = await _seed_send_log(send_session)
+
+        async def _upload(**kwargs: Any) -> UploadResult:
+            assert uploader.step_observer is not None
+            uploader.step_observer(
+                StepRecord(name="lookup", status="failed", cited_inputs=("case_ref",))
+            )
+            raise HTTPConflictException(detail="ticket locked")
+
+        uploader.upload_bundle = _upload
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert uploader.plan is not None
+        secrets = [
+            secret.get_secret_value() for secret in uploader.plan.secrets.values()
+        ]
+        assert secrets
+        trail = json.dumps(reloaded.detail["steps"])
+        assert all(
+            secret not in reloaded.detail["error"] and secret not in trail
+            for secret in secrets
+        )
 
     @pytest.mark.usefixtures("tasks_api")
     async def test_an_unexpected_error_still_writes_a_terminal_row(

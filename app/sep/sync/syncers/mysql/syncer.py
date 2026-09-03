@@ -184,6 +184,11 @@ class MySQLSyncer(BaseTaskSyncer):
 
     :cvar SYNC_TO_LIMIT: The highest entity type that can be synchronized. Set to
         `SyncInventoryEntityTypeEnum.TABLE`.
+    :cvar mirrors_entity_levels: The schema and table levels, the only two whose
+        own fields this syncer writes. Its node and service passes are traversal
+        to reach the schemas: ``perform_node_sync`` and ``perform_service_sync``
+        walk to their children and never call ``update_node`` or
+        ``update_service``, so neither level's freshness is theirs to refresh.
     :cvar reads_retired_entities: The schema and table levels, the only two this
         syncer matches by name against a live fetch. Its node and service passes
         walk the inventory unconditionally, so they stay active-only — reading a
@@ -196,6 +201,9 @@ class MySQLSyncer(BaseTaskSyncer):
 
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.TABLE
+    )
+    mirrors_entity_levels: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = frozenset(
+        {SyncInventoryEntityTypeEnum.SCHEMA, SyncInventoryEntityTypeEnum.TABLE}
     )
     reads_retired_entities: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
         frozenset(

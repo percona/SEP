@@ -39,21 +39,37 @@ BUILTIN_CHECKSUM_MANIFEST = "builtin-snippets.sha256"
 _CHUNK_SIZE = 8192
 
 
+async def digest_file(
+    path: Path, algorithm: str, *, usedforsecurity: bool = True
+) -> str:
+    """Return the hex digest of a file for the given hash algorithm.
+
+    Read through ``aiofiles`` so hashing does not block the event loop on disk I/O.
+
+    :param path: The file to hash.
+    :param algorithm: A ``hashlib`` algorithm name, such as ``sha256`` or ``md5``.
+    :param usedforsecurity: Whether the digest is used in a security context. Pass
+        ``False`` for non-security digests such as the MD5 used to detect snippet
+        file changes. Defaults to True.
+    :return: The hex-encoded digest of the file contents.
+    :raises OSError: If the file cannot be opened or read.
+    :raises ValueError: If ``algorithm`` is not available in ``hashlib``.
+    """
+    digest = hashlib.new(algorithm, usedforsecurity=usedforsecurity)
+    async with aiofiles.open(path, "rb") as handle:
+        while chunk := await handle.read(_CHUNK_SIZE):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 async def sha256_file(path: Path) -> str:
     """Return the SHA-256 hex digest of a file.
-
-    Read through ``aiofiles`` so async callers (snippet sync) do not block the
-    event loop on disk I/O — the same pattern as ``Snippet.from_path``.
 
     :param path: The file to hash.
     :return: The hex-encoded SHA-256 digest of the file contents.
     :raises OSError: If the file cannot be opened or read.
     """
-    digest = hashlib.sha256()
-    async with aiofiles.open(path, "rb") as handle:
-        while chunk := await handle.read(_CHUNK_SIZE):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return await digest_file(path, "sha256")
 
 
 def manifest_relative_path(path: Path, snippets_dir: Path) -> str:
