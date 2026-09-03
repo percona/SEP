@@ -231,7 +231,7 @@ class TestLoadAndListScripts:
         request_less_session: AsyncSession,
         create_snippet: Callable[..., Awaitable[Snippet]],
     ) -> None:
-        """Honour a query with no pagination, matching ``in_memory_list_scripts``.
+        """Honour a query with no pagination, matching the framework applier.
 
         The framework's own adapter filters and orders the whole set unsliced for this
         shape, so the SQL-backed hook must not fall back to the unfiltered set.
