@@ -25,7 +25,6 @@ from pydantic import BaseModel, SecretStr, ValidationError
 
 from app.core.middleware.security_headers import SecurityHeadersOptions
 from app.core.settings_override.api.routes import _settings_response_from_field
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
     _clear_cached_properties,
@@ -362,7 +361,7 @@ class _OptionalIntermediateParent(BaseModel):
 def test_resolve_nested_value_missing_mapping_segment_returns_sentinel() -> None:
     """Return :data:`NESTED_VALUE_MISSING` for a dict snapshot missing a segment."""
     proxy = OverridableSettingsProxy(
-        _SecretLeafParent, setting_class=SettingClassEnum.SEP_SETTINGS
+        _SecretLeafParent, setting_class=SEPSettings.__name__
     )
     proxy._set_snapshot({"GROUP": {"LABEL": "visible"}})
     _, value = resolve_nested_value(
@@ -374,7 +373,7 @@ def test_resolve_nested_value_missing_mapping_segment_returns_sentinel() -> None
 def test_resolve_nested_value_optional_none_intermediate_returns_none() -> None:
     """Collapse the leaf to ``None`` for a present-``None`` optional intermediate."""
     proxy = OverridableSettingsProxy(
-        _OptionalIntermediateParent, setting_class=SettingClassEnum.SEP_SETTINGS
+        _OptionalIntermediateParent, setting_class=SEPSettings.__name__
     )
     _, value = resolve_nested_value(
         settings_cls=_OptionalIntermediateParent,
@@ -388,7 +387,7 @@ def test_resolve_nested_value_optional_none_intermediate_returns_none() -> None:
 def test_resolve_nested_value_present_none_secret_leaf_returns_none() -> None:
     """Distinguish a present-``None`` secret leaf from a missing segment."""
     proxy = OverridableSettingsProxy(
-        _SecretLeafParent, setting_class=SettingClassEnum.SEP_SETTINGS
+        _SecretLeafParent, setting_class=SEPSettings.__name__
     )
     proxy._set_snapshot(
         {"GROUP": _SecretLeafModel.model_construct(TOKEN=None, LABEL="public")}
@@ -403,13 +402,13 @@ def test_resolve_nested_value_present_none_secret_leaf_returns_none() -> None:
 def test_settings_response_serializes_missing_mapping_segment_as_null() -> None:
     """LIST projection maps a missing nested segment to JSON ``null``."""
     proxy = OverridableSettingsProxy(
-        _SecretLeafParent, setting_class=SettingClassEnum.SEP_SETTINGS
+        _SecretLeafParent, setting_class=SEPSettings.__name__
     )
     proxy._set_snapshot({"GROUP": {"LABEL": "visible"}})
     leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
     assert leaf_meta is not None
     response = _settings_response_from_field(
-        setting_class=SettingClassEnum.SEP_SETTINGS,
+        setting_class=SEPSettings.__name__,
         settings_cls=_SecretLeafParent,
         proxy=proxy,
         field_meta=leaf_meta,
@@ -422,7 +421,7 @@ def test_settings_response_serializes_missing_mapping_segment_as_null() -> None:
 def test_settings_response_serializes_present_none_secret_leaf_as_null() -> None:
     """LIST projection renders an unresolved secret leaf as JSON ``null``."""
     proxy = OverridableSettingsProxy(
-        _SecretLeafParent, setting_class=SettingClassEnum.SEP_SETTINGS
+        _SecretLeafParent, setting_class=SEPSettings.__name__
     )
     proxy._set_snapshot(
         {"GROUP": _SecretLeafModel.model_construct(TOKEN=None, LABEL="public")}
@@ -430,7 +429,7 @@ def test_settings_response_serializes_present_none_secret_leaf_as_null() -> None
     leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
     assert leaf_meta is not None
     response = _settings_response_from_field(
-        setting_class=SettingClassEnum.SEP_SETTINGS,
+        setting_class=SEPSettings.__name__,
         settings_cls=_SecretLeafParent,
         proxy=proxy,
         field_meta=leaf_meta,

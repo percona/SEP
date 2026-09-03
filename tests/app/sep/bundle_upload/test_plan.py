@@ -28,6 +28,7 @@ from pydantic import ValidationError
 from app.core.exceptions import HTTPBadGatewayException, HTTPConflictException
 from app.core.requests import RemoteAPI
 from app.sep.bundle_upload.plan import (
+    CaseMatch,
     DeliveryPlan,
     DeliveryPlanError,
     DeliveryPlanExecutor,
@@ -40,6 +41,7 @@ _UPLOAD_URL = "http://localhost:8000/attachment/upload"
 _TICKET_URL = "http://localhost:8000/ticket_details"
 _ACCOUNT_URL = "http://localhost:8000/case_account"
 _PROBE_URL = "http://localhost:8000/health"
+_CASE_SEARCH_URL = "http://localhost:8000/case"
 _MANIFEST: dict[str, Any] = {"bundle": "diag", "size": 12}
 _PLAN_LOGGER = "app.sep.bundle_upload.plan"
 
@@ -188,6 +190,27 @@ def _probe_plan(**probe_overrides: Any) -> dict[str, Any]:
     payload = _upload_only_plan()
     payload["secrets"] = {"api_key": "real-api-key"}
     payload["probe"] = probe
+    return payload
+
+
+def _case_search_plan(**case_search_overrides: Any) -> dict[str, Any]:
+    """Return an upload-only plan payload carrying an overridable case-search step.
+
+    :param case_search_overrides: Case-search-step keys replacing the defaults
+        below.
+    :return: The plan payload to validate.
+    """
+    case_search = {
+        "path": "case",
+        "term_pattern": r"[A-Za-z0-9 ._-]+",
+        "results_pointer": "/result",
+        "reference_pointer": "/number",
+        "title_pointer": "/short_description",
+    }
+    case_search.update(case_search_overrides)
+    payload = _upload_only_plan()
+    payload["secrets"] = {"api_key": "real-api-key"}
+    payload["case_search"] = case_search
     return payload
 
 
@@ -459,6 +482,129 @@ class TestProbeStepValidation:
         plan = DeliveryPlan(**_one_step_plan())
 
         assert plan.probe is None
+
+
+class TestCaseSearchStepValidation:
+    """Cover the case-search step's narrowed value sources and same-origin path rule."""
+
+    def test_literal_secret_and_term_values_are_accepted(self):
+        """Accept the three sources a search can resolve with no send in flight."""
+        payload = _case_search_plan(
+            headers={"x-sn-apikey": {"source": "secret", "name": "api_key"}},
+            query={
+                "sysparm_limit": {"source": "literal", "value": "10"},
+                "sysparm_query": {"source": "term", "prefix": "123TEXTQUERY321"},
+            },
+        )
+
+        plan = DeliveryPlan(**payload)
+
+        assert plan.case_search.headers["x-sn-apikey"].name == "api_key"
+        assert plan.case_search.query["sysparm_limit"].value == "10"
+        assert plan.case_search.query["sysparm_query"].prefix == "123TEXTQUERY321"
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            {"source": "input", "field": "case_ref"},
+            {"source": "manifest_key", "key": "collected_at"},
+            {"source": "output", "step": "lookup", "output": "sys_id"},
+        ],
+        ids=["input", "manifest_key", "output"],
+    )
+    def test_send_scoped_sources_are_refused(self, source: dict[str, Any]):
+        """Reject every source that only a send in flight could supply."""
+        payload = _case_search_plan(headers={"x-search": source})
+
+        with pytest.raises(ValidationError, match="does not match any of the expected"):
+            DeliveryPlan(**payload)
+
+    def test_a_refused_source_fails_as_an_invalid_tag(self):
+        """Refuse a send-scoped source by its tag, so no message wording is load-bearing.
+
+        The refusal comes from the case-search value type itself rather than from
+        the cross-reference validator, so a caller distinguishing this rejection
+        from a resolvable-but-wrong value has a stable error type to match on.
+        """
+        payload = _case_search_plan(
+            headers={"x-search": {"source": "input", "field": "case_ref"}}
+        )
+
+        with pytest.raises(ValidationError) as exc_info:
+            DeliveryPlan(**payload)
+
+        assert exc_info.value.errors()[0]["type"] == "union_tag_invalid"
+
+    def test_a_send_step_may_not_cite_the_search_term(self):
+        """Keep the typed term out of the send steps, where no term exists.
+
+        The term joins the case-search union only. A send step citing one would
+        have nothing to resolve it from, so the refusal belongs at parse time.
+        """
+        payload = _upload_only_plan(headers={"x-term": {"source": "term"}})
+
+        with pytest.raises(ValidationError, match="does not match any of the expected"):
+            DeliveryPlan(**payload)
+
+    def test_undeclared_secret_is_refused(self):
+        """Reject a search secret the plan never declares, as any other step's is."""
+        payload = _case_search_plan(
+            headers={"x-search": {"source": "secret", "name": "missing"}}
+        )
+
+        with pytest.raises(ValidationError, match="undefined secret 'missing'"):
+            DeliveryPlan(**payload)
+
+    def test_secret_in_the_query_map_is_refused(self):
+        """Keep a search credential out of the query string, as every other step does."""
+        payload = _case_search_plan(
+            query={"key": {"source": "secret", "name": "api_key"}}
+        )
+
+        with pytest.raises(ValidationError, match="may not use a secret"):
+            DeliveryPlan(**payload)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "https://attacker.example/case",
+            "//attacker.example/case",
+            "//",
+            "///case",
+        ],
+        ids=[
+            "absolute_url",
+            "network_path_reference",
+            "bare_authority_marker",
+            "empty_authority",
+        ],
+    )
+    def test_an_off_origin_path_is_refused(self, path: str):
+        """Reject every spelling that is not a path under the plan's endpoint."""
+        payload = _case_search_plan(path=path)
+
+        with pytest.raises(ValidationError, match="must be relative"):
+            DeliveryPlan(**payload)
+
+    @pytest.mark.parametrize(
+        "path", ["api/now/table/x", "/api/now/table/x"], ids=["relative", "rooted"]
+    )
+    def test_ordinary_paths_are_accepted(self, path: str):
+        """Accept both spellings of a path that stays under the plan's endpoint."""
+        assert DeliveryPlan(**_case_search_plan(path=path)).case_search.path == path
+
+    def test_a_term_pattern_that_is_not_a_regex_is_refused(self):
+        """Reject an unusable constraint when the plan is parsed, not per search."""
+        payload = _case_search_plan(term_pattern="[unclosed")
+
+        with pytest.raises(ValidationError, match="not a valid regular expression"):
+            DeliveryPlan(**payload)
+
+    def test_a_plan_without_a_case_search_still_validates(self):
+        """Leave every already-deployed plan valid, with no case search declared."""
+        plan = DeliveryPlan(**_one_step_plan())
+
+        assert plan.case_search is None
 
 
 @pytest.mark.asyncio
@@ -1770,3 +1916,459 @@ class TestDeliveryPlanProbe:
             requested = [str(key[1]) for key in mock.requests]
 
         assert requested == [_PROBE_URL]
+
+
+@pytest.mark.asyncio
+class TestDeliveryPlanCaseSearch:
+    """Cover searching the receiver for support cases without sending a bundle."""
+
+    async def test_search_issues_one_get_carrying_the_resolved_secret(
+        self, api: RemoteAPI
+    ):
+        """Issue one request carrying the plan's own credential to the receiver."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(
+                **_case_search_plan(
+                    headers={"x-sn-apikey": {"source": "secret", "name": "api_key"}}
+                )
+            ),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL, status=status.HTTP_200_OK, payload={"result": []}
+            )
+            async with api:
+                await executor.search_cases("CS00")
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert len(requests) == 1
+        assert requests[0].kwargs["headers"]["x-sn-apikey"] == "real-api-key"
+
+    async def test_the_term_is_wrapped_in_its_declared_affixes(self, api: RemoteAPI):
+        """Send the term inside the literals the plan wraps it in, exactly once."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(
+                **_case_search_plan(
+                    query={
+                        "sysparm_query": {
+                            "source": "term",
+                            "prefix": "123TEXTQUERY321",
+                            "suffix": "^ORDERBYnumber",
+                        }
+                    }
+                )
+            ),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(
+                re.compile(rf"{re.escape(_CASE_SEARCH_URL)}.*"),
+                status=status.HTTP_200_OK,
+                payload={"result": []},
+            )
+            async with api:
+                await executor.search_cases("CS00")
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert requests[0].kwargs["params"] == {
+            "sysparm_query": "123TEXTQUERY321CS00^ORDERBYnumber"
+        }
+
+    async def test_the_term_resolves_bare_when_no_affixes_are_declared(
+        self, api: RemoteAPI
+    ):
+        """Send the term as-is when the plan declares neither affix."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**_case_search_plan(query={"number": {"source": "term"}})),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(
+                re.compile(rf"{re.escape(_CASE_SEARCH_URL)}.*"),
+                status=status.HTTP_200_OK,
+                payload={"result": []},
+            )
+            async with api:
+                await executor.search_cases("CS00")
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert requests[0].kwargs["params"] == {"number": "CS00"}
+
+    async def test_a_separator_emits_the_term_on_both_sides_of_it(self, api: RemoteAPI):
+        """Let one typed term match two receiver fields in a single query value.
+
+        The receiver's own credential may be refused the text index that would
+        match several fields from one operand, leaving an ``OR`` of two
+        field-level comparisons as the only form it may run.
+        """
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(
+                **_case_search_plan(
+                    query={
+                        "sysparm_query": {
+                            "source": "term",
+                            "prefix": "numberLIKE",
+                            "separator": "^ORshort_descriptionLIKE",
+                        }
+                    }
+                )
+            ),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(
+                re.compile(rf"{re.escape(_CASE_SEARCH_URL)}.*"),
+                status=status.HTTP_200_OK,
+                payload={"result": []},
+            )
+            async with api:
+                await executor.search_cases("CS00")
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert requests[0].kwargs["params"] == {
+            "sysparm_query": "numberLIKECS00^ORshort_descriptionLIKECS00"
+        }
+
+    async def test_without_a_separator_the_term_is_emitted_once(self, api: RemoteAPI):
+        """Keep a single-field query a single occurrence of the term."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(
+                **_case_search_plan(
+                    query={"sysparm_query": {"source": "term", "prefix": "numberLIKE"}}
+                )
+            ),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(
+                re.compile(rf"{re.escape(_CASE_SEARCH_URL)}.*"),
+                status=status.HTTP_200_OK,
+                payload={"result": []},
+            )
+            async with api:
+                await executor.search_cases("CS00")
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert requests[0].kwargs["params"] == {"sysparm_query": "numberLIKECS00"}
+
+    async def test_search_sends_no_body_and_refuses_to_follow_redirects(
+        self, api: RemoteAPI
+    ):
+        """Issue a bodiless GET that will not replay the credential elsewhere."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL, status=status.HTTP_200_OK, payload={"result": []}
+            )
+            async with api:
+                await executor.search_cases("CS00")
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert requests[0].kwargs["allow_redirects"] is False
+        assert "json" not in requests[0].kwargs
+
+    async def test_search_secret_is_sent_but_masked_in_logs(
+        self, api: RemoteAPI, caplog
+    ):
+        """Send the real API key on the wire while the debug log shows only a mask."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(
+                **_case_search_plan(
+                    headers={"x-sn-apikey": {"source": "secret", "name": "api_key"}}
+                )
+            ),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL, status=status.HTTP_200_OK, payload={"result": []}
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    await executor.search_cases("CS00")
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("****" in message for message in messages)
+        assert all("real-api-key" not in message for message in messages)
+
+    async def test_matches_are_extracted_through_the_declared_pointers(
+        self, api: RemoteAPI
+    ):
+        """Return only the reference and title the plan's own pointers address."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL,
+                status=status.HTTP_200_OK,
+                payload={
+                    "result": [
+                        {
+                            "number": "CS0001",
+                            "short_description": "Slow queries",
+                            "sys_id": "not-returned",
+                        },
+                        {"number": "CS0002", "short_description": "Replica lag"},
+                    ]
+                },
+            )
+            async with api:
+                matches = await executor.search_cases("CS00")
+
+        assert matches == [
+            CaseMatch(reference="CS0001", title="Slow queries"),
+            CaseMatch(reference="CS0002", title="Replica lag"),
+        ]
+
+    async def test_a_row_whose_pointer_does_not_resolve_is_skipped(
+        self, api: RemoteAPI, caplog
+    ):
+        """Drop one malformed row rather than blanking every match beside it.
+
+        A search that still yielded matches is not the all-skipped shape, so it
+        must not log the warning reserved for that case.
+        """
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL,
+                status=status.HTTP_200_OK,
+                payload={
+                    "result": [
+                        {"number": "CS0001"},
+                        {"number": "CS0002", "short_description": "Replica lag"},
+                    ]
+                },
+            )
+            with caplog.at_level("WARNING", logger=_PLAN_LOGGER):
+                async with api:
+                    matches = await executor.search_cases("CS00")
+
+        assert matches == [CaseMatch(reference="CS0002", title="Replica lag")]
+        assert caplog.records == []
+
+    async def test_a_row_addressing_a_non_scalar_is_skipped(self, api: RemoteAPI):
+        """Drop a row whose pointer lands on a container rather than a value."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL,
+                status=status.HTTP_200_OK,
+                payload={
+                    "result": [
+                        {"number": {"value": "CS0001"}, "short_description": "Nested"},
+                        {"number": "CS0002", "short_description": "Replica lag"},
+                    ]
+                },
+            )
+            async with api:
+                matches = await executor.search_cases("CS00")
+
+        assert matches == [CaseMatch(reference="CS0002", title="Replica lag")]
+
+    async def test_repeated_references_are_deduplicated_keeping_the_first(
+        self, api: RemoteAPI
+    ):
+        """Answer at most once per reference, so it identifies a match on its own."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL,
+                status=status.HTTP_200_OK,
+                payload={
+                    "result": [
+                        {"number": "CS0001", "short_description": "First"},
+                        {"number": "CS0001", "short_description": "Duplicate"},
+                    ]
+                },
+            )
+            async with api:
+                matches = await executor.search_cases("CS00")
+
+        assert matches == [CaseMatch(reference="CS0001", title="First")]
+
+    async def test_all_rows_skipping_logs_a_warning_naming_the_row_count(
+        self, api: RemoteAPI, caplog
+    ):
+        """Flag rows that all skip, the shape a stale or misconfigured pointer takes."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL,
+                status=status.HTTP_200_OK,
+                payload={
+                    "result": [
+                        {"number": "CS0001"},
+                        {"short_description": "Replica lag"},
+                    ]
+                },
+            )
+            with caplog.at_level("WARNING", logger=_PLAN_LOGGER):
+                async with api:
+                    matches = await executor.search_cases("CS00")
+
+        assert matches == []
+        assert any("2 rows" in record.getMessage() for record in caplog.records)
+
+    async def test_a_row_whose_reference_is_empty_is_skipped(self, api: RemoteAPI):
+        """Drop a row the reference pointer addresses as an empty string.
+
+        The reference is the match's identity, so an empty one identifies
+        nothing and would offer a blank option that clears the field.
+        """
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL,
+                status=status.HTTP_200_OK,
+                payload={
+                    "result": [
+                        {"number": "", "short_description": "Slow queries"},
+                        {"number": "CS0002", "short_description": "Replica lag"},
+                    ]
+                },
+            )
+            async with api:
+                matches = await executor.search_cases("CS00")
+
+        assert matches == [CaseMatch(reference="CS0002", title="Replica lag")]
+
+    async def test_a_row_whose_title_is_empty_is_still_offered(self, api: RemoteAPI):
+        """Keep a row whose title is empty: the reference alone is sendable.
+
+        The counterpart to the reference case above. An empty title costs the
+        row its subtitle and nothing else, so dropping it would withhold a case
+        the caller can legitimately send against.
+        """
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": [{"number": "CS0001", "short_description": ""}]},
+            )
+            async with api:
+                matches = await executor.search_cases("CS00")
+
+        assert matches == [CaseMatch(reference="CS0001", title="")]
+
+    async def test_an_empty_result_list_yields_no_matches(self, api: RemoteAPI):
+        """Report a search that matched nothing as an empty list, not an error."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL, status=status.HTTP_200_OK, payload={"result": []}
+            )
+            async with api:
+                matches = await executor.search_cases("CS00")
+
+        assert matches == []
+
+    async def test_a_non_list_results_pointer_is_fatal(self, api: RemoteAPI):
+        """Fail a plan whose results pointer does not address a list of rows."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL, status=status.HTTP_200_OK, payload={"result": {}}
+            )
+            async with api:
+                with pytest.raises(DeliveryPlanError, match="did not address a list"):
+                    await executor.search_cases("CS00")
+
+    async def test_an_unresolvable_results_pointer_is_fatal(self, api: RemoteAPI):
+        """Fail a plan whose results pointer addresses nothing in the response."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL, status=status.HTTP_200_OK, payload={"records": []}
+            )
+            async with api:
+                with pytest.raises(DeliveryPlanError, match="did not resolve"):
+                    await executor.search_cases("CS00")
+
+    async def test_a_response_carrying_no_body_is_fatal(self, api: RemoteAPI):
+        """Fail a receiver that answers a search with no body at all."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(_CASE_SEARCH_URL, status=status.HTTP_204_NO_CONTENT)
+            async with api:
+                with pytest.raises(DeliveryPlanError, match="carried no body"):
+                    await executor.search_cases("CS00")
+
+    @pytest.mark.parametrize(
+        "term",
+        ["CS00^ORsys_idISNOTEMPTY", "CS00^ORactive=true", "CS00^NQnumberISNOTEMPTY"],
+        ids=["or_clause", "and_clause", "new_query"],
+    )
+    async def test_a_term_the_pattern_refuses_is_never_sent(
+        self, api: RemoteAPI, term: str
+    ):
+        """Refuse a term carrying the receiver's own query syntax.
+
+        The plan composes the term into a provider query language whose clause
+        separators are ordinary characters, so a term carrying them widens the
+        query the plan declared and answers with rows the plan never selected.
+        The receiver has no escape for them, which is why the plan states what a
+        term may contain and this refuses everything else.
+        """
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+
+        with aioresponses() as mock:
+            with pytest.raises(DeliveryPlanError, match="does not match"):
+                await executor.search_cases(term)
+
+            assert not mock.requests
+
+    async def test_a_term_the_pattern_admits_is_sent(self, api: RemoteAPI):
+        """Leave an ordinary case reference or title fragment untouched."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**_case_search_plan(query={"q": {"source": "term"}})),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(
+                re.compile(rf"{re.escape(_CASE_SEARCH_URL)}.*"),
+                status=status.HTTP_200_OK,
+                payload={"result": []},
+            )
+            async with api:
+                await executor.search_cases("CS0062778")
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert requests[0].kwargs["params"] == {"q": "CS0062778"}
+
+    async def test_search_without_a_declared_step_raises(self, api: RemoteAPI):
+        """Refuse to guess a search request for a plan that declares none."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
+
+        with pytest.raises(DeliveryPlanError, match="declares no case-search step"):
+            await executor.search_cases("CS00")
+
+    async def test_search_runs_none_of_the_plans_resolution_steps(self, api: RemoteAPI):
+        """Leave a mutating resolution step unrun, reaching only the search path."""
+        payload = _one_step_plan()
+        payload["case_search"] = {
+            "path": "case",
+            "term_pattern": r"[A-Za-z0-9 ._-]+",
+            "results_pointer": "/result",
+            "reference_pointer": "/number",
+            "title_pointer": "/short_description",
+        }
+        executor = DeliveryPlanExecutor(DeliveryPlan(**payload), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL, status=status.HTTP_200_OK, payload={"result": []}
+            )
+            async with api:
+                await executor.search_cases("CS00")
+
+            requested = [str(key[1]) for key in mock.requests]
+
+        assert requested == [_CASE_SEARCH_URL]

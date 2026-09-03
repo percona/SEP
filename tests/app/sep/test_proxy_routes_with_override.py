@@ -42,10 +42,15 @@ from sqlmodel.pool import StaticPool
 
 from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.config import BaseYamlSettings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import (
+    setting_class_token,
+    SettingClassEnum,
+    SettingOverride,
+)
 from app.core.utils import json_serializer
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import (
@@ -86,15 +91,23 @@ def _sep_proxies() -> dict:
 
 async def _insert_override(
     session_maker: async_sessionmaker,
-    setting_class: SettingClassEnum,
+    settings_cls: type[BaseYamlSettings],
     key: str,
     value: object,
 ) -> None:
-    """Insert one active override row into the override store."""
+    """Insert one active override row into the override store.
+
+    :param session_maker: Async session maker bound to the override store.
+    :param settings_cls: Settings class whose :func:`~app.core.settings_override.models.setting_class_token`
+        is persisted as ``setting_class`` on the row.
+    :param key: Canonical override key (``SCREAMING_SNAKE`` or nested path).
+    :param value: JSON-serializable override payload.
+    """
+    token = setting_class_token(settings_cls)
     async with session_maker() as session:
         await SettingsOverrideManager.create(
             session,
-            SettingOverride(setting_class=setting_class, key=key, value=value),
+            SettingOverride(setting_class=token, key=key, value=value),
         )
 
 
@@ -141,7 +154,7 @@ async def test_snippets_refresh_route_observes_enable_manual_sync_override(
 
         await _insert_override(
             override_session_maker,
-            SettingClassEnum.SNIPPETS_SETTINGS,
+            SnippetsSettings,
             "ENABLE_MANUAL_SYNC",
             value=False,
         )
@@ -172,7 +185,7 @@ async def test_sep_proxy_visible_after_refresh(
     override_value = not yaml_default
     await _insert_override(
         override_session_maker,
-        SettingClassEnum.SEP_SETTINGS,
+        SEPSettings,
         "CONNECTIVITY_CHECK_DEFAULT",
         value=override_value,
     )
