@@ -45,6 +45,8 @@ from typing import Annotated, Any, cast, TypeVar
 from fastapi import APIRouter, Depends, params, Query, status
 from pydantic import BaseModel
 
+from app.core.db.deps import make_in_memory_list_query_dep
+from app.core.db.in_memory_list_query import InMemoryListQueryApplier
 from app.core.db.list_query import ListQuerySpec, make_list_query_dep
 from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
 from app.core.requests.remote_api import RemoteAPI
@@ -54,7 +56,6 @@ from app.sep.apps.framework.connectivity import (
     CONNECTIVITY_WARNING_FIELD,
     maybe_record_connectivity_warning,
 )
-from app.sep.apps.framework.list_query import make_in_memory_list_query_dep
 from app.sep.apps.framework.responses import (
     build_task_list_responses,
     derive_create_response_model,
@@ -1812,7 +1813,7 @@ def derive_script_routes(
             # A source that adds filter params supplies a dependency composing the
             # Core one, so the spec stays the sole sort/search authority either way.
             query_dep = source.list_query_dep or (
-                make_in_memory_list_query_dep(list_query_spec)
+                make_in_memory_list_query_dep(InMemoryListQueryApplier(list_query_spec))
                 if source.in_memory_list_query
                 else make_list_query_dep(list_query_spec)
             )
