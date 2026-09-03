@@ -36,6 +36,7 @@ from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableE
 from app.core.health import build_health_router
 from app.core.requests import RemoteAPI
 from app.core.settings_override.lifecycle import (
+    CallbackRegistry,
     previous_or_base,
     RefreshCallback,
     settings_override_refresher,
@@ -47,6 +48,7 @@ from app.core.utils.fields import CredentialHttpUrl
 from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
 from app.sep.apps.framework.registry import (
+    collect_app_owned_settings_classes,
     get_app_registry,
 )
 from app.sep.config import sep_settings, warn_if_base_url_lacks_root_path
@@ -169,9 +171,12 @@ def _make_remote_api_rebinder(
 async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     """Re-seed the SEP beat schedule after a hot interval override.
 
-    Wired for both ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``) and
-    ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``). Rebuilds the
-    system periodic-task set via
+    Wired for ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``),
+    ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``) and
+    ``InventoryAppSettings.COLLECTION_INTERVAL`` (``sep__inventory_collection``,
+    which the rebuild seeds or drops as the interval is set or cleared, since
+    the app's schedule thunk contributes nothing while it is unset).
+    Rebuilds the system periodic-task set via
     :func:`app.sep.db.seed.get_system_periodic_tasks` -- which re-reads the now-live
     interval from the refreshed proxy snapshot -- and re-invokes
     :func:`app.core.celery.utils.init_periodic_tasks_db` under the ``sep__`` prefix.
@@ -209,47 +214,65 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     block) or ``app.sep.main:sep_app`` standalone (in which case
     ``sep_lifespan`` enters it). The refresher therefore starts exactly once.
 
+    The app-owned half of the callback registry is collected from the
+    activation list, so this function names no app package: the PMM-embedded
+    side-car image strips every deactivated app, and an entry spelled by
+    importing one cannot resolve there. ``collect_app_owned_settings_classes``
+    imports every activated app module, so it runs at call time. Hoisting it
+    to this module's scope would relocate the app-tree import to import time.
+
     :param app: The FastAPI application instance, used to wire endpoint rebind
         callbacks against ``app.state``.
     :return: None
+    :raises TypeError: Propagates from ``collect_app_owned_settings_classes``
+        when an app's ``APP_OWNED_SETTINGS_CLASSES`` declaration is malformed.
+    :raises ValueError: Propagates from ``collect_app_owned_settings_classes``
+        when an activated app's declaration is invalid; that function
+        enumerates the cases.
     """
-    callbacks = {
-        (
-            SettingClassEnum.SEP_SETTINGS,
-            "INVENTORY_ENDPOINT",
-        ): _make_remote_api_rebinder(
-            app,
-            "inventory_api",
-            sep_settings,
-            "INVENTORY_ENDPOINT",
-            ssl_cafile=settings.SSL_CAFILE,
-            ssl_keyfile=inventory_settings.SSL_KEYFILE,
-            ssl_certfile=inventory_settings.SSL_CERTFILE,
-        ),
-        (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"): _make_remote_api_rebinder(
-            app,
-            "tasks_api",
-            sep_settings,
-            "TASKS_ENDPOINT",
-            ssl_cafile=settings.SSL_CAFILE,
-            ssl_keyfile=tasks_settings.SSL_KEYFILE,
-            ssl_certfile=tasks_settings.SSL_CERTFILE,
-        ),
-        (SettingClassEnum.SETTINGS, "PMM"): invalidate_pmm_clients,
-        (SettingClassEnum.SETTINGS, "LOGGING"): apply_logging_dictconfig,
-        (
-            SettingClassEnum.SNIPPETS_SETTINGS,
-            "SYNC_INTERVAL",
-        ): _reseed_system_periodic_tasks,
-        (
-            SettingClassEnum.ALERTS_SETTINGS,
-            "BACKUP_INTERVAL",
-        ): _reseed_system_periodic_tasks,
-        (
-            SettingClassEnum.SEP_SETTINGS,
-            "APP_DRAIN",
-        ): _reseed_system_periodic_tasks,
+    callbacks: CallbackRegistry = {
+        (entry.setting_class, key): _reseed_system_periodic_tasks
+        for entry in collect_app_owned_settings_classes()
+        for key in entry.reseed_keys
     }
+    callbacks.update(
+        {
+            (
+                SettingClassEnum.SEP_SETTINGS,
+                "INVENTORY_ENDPOINT",
+            ): _make_remote_api_rebinder(
+                app,
+                "inventory_api",
+                sep_settings,
+                "INVENTORY_ENDPOINT",
+                ssl_cafile=settings.SSL_CAFILE,
+                ssl_keyfile=inventory_settings.SSL_KEYFILE,
+                ssl_certfile=inventory_settings.SSL_CERTFILE,
+            ),
+            (
+                SettingClassEnum.SEP_SETTINGS,
+                "TASKS_ENDPOINT",
+            ): _make_remote_api_rebinder(
+                app,
+                "tasks_api",
+                sep_settings,
+                "TASKS_ENDPOINT",
+                ssl_cafile=settings.SSL_CAFILE,
+                ssl_keyfile=tasks_settings.SSL_KEYFILE,
+                ssl_certfile=tasks_settings.SSL_CERTFILE,
+            ),
+            (SettingClassEnum.SETTINGS, "PMM"): invalidate_pmm_clients,
+            (SettingClassEnum.SETTINGS, "LOGGING"): apply_logging_dictconfig,
+            (
+                SettingClassEnum.SNIPPETS_SETTINGS,
+                "SYNC_INTERVAL",
+            ): _reseed_system_periodic_tasks,
+            (
+                SettingClassEnum.SEP_SETTINGS,
+                "APP_DRAIN",
+            ): _reseed_system_periodic_tasks,
+        }
+    )
     # On ``sep_app``'s state, not the lifespan's parent ``app``: requests to
     # ``/api/sep/...`` resolve ``request.app`` to the mounted ``sep_app``, where
     # the settings-API handlers read it.

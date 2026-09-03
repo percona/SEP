@@ -36,7 +36,9 @@ const MOCK_USER = {
   email: 'smoke@percona.com',
   firstName: 'Smoke',
   lastName: 'Test',
-  isAdmin: false,
+  // Admin: the app pages under test render their create / execute / delete
+  // controls only for a session that may mutate.
+  isAdmin: true,
 };
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -83,8 +85,8 @@ const MOCK_SERVICE_DETAIL = { ...MOCK_SERVICE, schemas: [MOCK_SCHEMA_ROW] };
 
 // ── App schema ─────────────────────────────────────────────────────────────
 //
-// Mirrors app/sep/plugins/inventory/schema.py.  All four entities include an
-// _actions column so that allowListEntityDelete wires up the delete button.
+// Mirrors app/sep/apps/inventory/schema.py: every entity is browse-only, so no
+// entity declares a form or an _actions column.
 
 const MOCK_INVENTORY_SCHEMA = {
   name: 'inventory',
@@ -95,12 +97,7 @@ const MOCK_INVENTORY_SCHEMA = {
       name: 'nodes',
       display_name: 'Nodes',
       description: 'Physical or logical hosts tracked in inventory.',
-      forms: [
-        {
-          title: 'Node',
-          fields: [{ type: 'string', name: 'name', label: 'Name', required: true }],
-        },
-      ],
+      forms: [],
       list_view: {
         columns: [
           { key: 'name', label: 'Name', sortable: true },
@@ -108,7 +105,6 @@ const MOCK_INVENTORY_SCHEMA = {
           { key: 'type', label: 'Type', format: 'chip' },
           { key: 'source', label: 'Source', format: 'chip' },
           { key: 'created_at', label: 'Created', format: 'relative' },
-          { key: '_actions', label: 'Actions', format: 'actions' },
         ],
         default_sort: '-created_at',
       },
@@ -117,12 +113,7 @@ const MOCK_INVENTORY_SCHEMA = {
       name: 'services',
       display_name: 'Services',
       description: 'Database services attached to nodes.',
-      forms: [
-        {
-          title: 'Service',
-          fields: [{ type: 'string', name: 'name', label: 'Name', required: true }],
-        },
-      ],
+      forms: [],
       list_view: {
         columns: [
           { key: 'name', label: 'Name', sortable: true },
@@ -131,7 +122,6 @@ const MOCK_INVENTORY_SCHEMA = {
           { key: 'environment', label: 'Environment' },
           { key: 'cluster', label: 'Cluster' },
           { key: 'replication_set', label: 'Replication set' },
-          { key: '_actions', label: 'Actions', format: 'actions' },
         ],
         default_sort: '-name',
       },
@@ -140,18 +130,12 @@ const MOCK_INVENTORY_SCHEMA = {
       name: 'schemas',
       display_name: 'Schemas',
       description: 'Database schemas within a service.',
-      forms: [
-        {
-          title: 'Schema',
-          fields: [{ type: 'string', name: 'name', label: 'Schema name', required: true }],
-        },
-      ],
+      forms: [],
       list_view: {
         columns: [
           { key: 'name', label: 'Name', sortable: true },
           { key: 'service_id', label: 'Service ID', sortable: true },
           { key: 'created_at', label: 'Created', format: 'relative' },
-          { key: '_actions', label: 'Actions', format: 'actions' },
         ],
         default_sort: '-created_at',
       },
@@ -160,18 +144,12 @@ const MOCK_INVENTORY_SCHEMA = {
       name: 'tables',
       display_name: 'Tables',
       description: 'Tables within a schema.',
-      forms: [
-        {
-          title: 'Table',
-          fields: [{ type: 'string', name: 'name', label: 'Table name', required: true }],
-        },
-      ],
+      forms: [],
       list_view: {
         columns: [
           { key: 'name', label: 'Name', sortable: true },
           { key: 'schema_id', label: 'Schema ID', sortable: true },
           { key: 'created_at', label: 'Created', format: 'relative' },
-          { key: '_actions', label: 'Actions', format: 'actions' },
         ],
         default_sort: '-created_at',
       },
@@ -296,9 +274,11 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    // DELETE: return 204 No Content for any inventory entity delete
+    // The plugin API no longer routes DELETE; the path still matches a GET route, so
+    // the real backend answers 405. Keep the handler so an unexpected delete cannot
+    // fall through to the catch-all 200 below.
     if (req.method() === 'DELETE' && pathname.startsWith('/api/apps/inventory/')) {
-      return route.fulfill({ status: 204 });
+      return route.fulfill({ status: 405 });
     }
 
     return route.fulfill({
@@ -398,9 +378,7 @@ test.describe('Inventory app smoke', () => {
     expect(criticalErrors).toEqual([]);
   });
 
-  test('delete confirmation appears and can be cancelled without issuing a DELETE request', async ({
-    page,
-  }) => {
+  test('inventory offers no delete control on list or nested detail lists', async ({ page }) => {
     const deleteRequests: string[] = [];
     page.on('request', (req) => {
       if (req.method() === 'DELETE') {
@@ -409,49 +387,18 @@ test.describe('Inventory app smoke', () => {
     });
 
     const po = new InventoryAppPage(page);
+
     await po.goto();
-
     await expect(po.cell('node-1')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'Delete' })).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: 'Actions' })).toHaveCount(0);
 
-    // Click the Delete icon button rendered in the _actions column
-    await page.getByRole('button', { name: 'Delete' }).first().click();
-
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible({ timeout: 5_000 });
-    await expect(dialog.getByText('Delete from Inventory?')).toBeVisible();
-
-    // Cancel — no DELETE request should have been sent
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
-    await expect(dialog).not.toBeVisible({ timeout: 5_000 });
+    await po.gotoNodeDetail(NODE_ID);
+    await expect(page.getByText('Services on this node')).toBeVisible({ timeout: 10_000 });
+    await expect(po.cell('mysql-service')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'Delete' })).toHaveCount(0);
 
     expect(deleteRequests).toEqual([]);
-  });
-
-  test('delete confirm path issues DELETE request and dialog closes', async ({ page }) => {
-    const deleteRequests: string[] = [];
-    page.on('request', (req) => {
-      if (req.method() === 'DELETE') {
-        deleteRequests.push(new URL(req.url()).pathname);
-      }
-    });
-
-    const po = new InventoryAppPage(page);
-    await po.goto();
-
-    await expect(po.cell('node-1')).toBeVisible({ timeout: 10_000 });
-
-    await page.getByRole('button', { name: 'Delete' }).first().click();
-
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible({ timeout: 5_000 });
-
-    // Confirm — scope to dialog so we click the confirm button, not the row action
-    await dialog.getByRole('button', { name: 'Delete' }).click();
-    await expect(dialog).not.toBeVisible({ timeout: 5_000 });
-
-    await expect
-      .poll(() => deleteRequests, { timeout: 5_000 })
-      .toContain(`/api/apps/inventory/nodes/${NODE_ID}`);
   });
 
   test('flat service detail route renders service name in breadcrumb', async ({ page }) => {

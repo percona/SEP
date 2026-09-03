@@ -24,21 +24,17 @@ module constants, a fake ``subprocess`` recording commands, and a stub
 "plaintext removed on success" behaviour is observed for real.
 """
 
-import ast
 import os
+import shutil
+import subprocess
 import types
+from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
-from tests.app.sep.apps.mysql_backups.conftest import (
-    XTRABACKUP_PAYLOAD_PATH,
-    xtrabackup_payload_tree,
-)
 from tests.app.sep.apps.mysql_backups.payload_harness import (
-    base_namespace as _base_namespace,
-)
-from tests.app.sep.apps.mysql_backups.payload_harness import (
-    const_nodes as _const_nodes,
+    gpg_probe as _gpg_probe,
 )
 from tests.app.sep.apps.mysql_backups.payload_harness import (
     load_function as _load_function,
@@ -49,6 +45,9 @@ from tests.app.sep.apps.mysql_backups.payload_harness import (
 from tests.app.sep.apps.mysql_backups.payload_harness import (
     XBCRYPT_BIN as _XBCRYPT_BIN,
 )
+
+GPG_BIN = shutil.which("gpg")
+needs_gpg = pytest.mark.skipif(GPG_BIN is None, reason="gpg is not installed")
 
 
 class TestIsEncryptedDirAes256:
@@ -95,34 +94,10 @@ class TestIsEncryptedDirAes256:
 class TestIsEncryptedDirGpgUnchanged:
     """Assert the gpg path keeps its per-file ``gpg --decrypt`` return-code check."""
 
-    def _fn_with_proc(self, returncode: int):
-        namespace = _base_namespace()
-        tree = xtrabackup_payload_tree()
-        calls: list[list[str]] = []
-
-        class _Popen:
-            def __init__(self, cmd, **_kwargs):
-                calls.append(cmd)
-                self.returncode = returncode
-
-            def communicate(self):
-                return b"", b"err"
-
-        namespace["subprocess"] = types.SimpleNamespace(Popen=_Popen, PIPE=-1)
-        fn_nodes = [
-            node
-            for node in tree.body
-            if isinstance(node, ast.FunctionDef) and node.name == "is_encrypted_dir"
-        ]
-        exec(
-            compile(
-                ast.Module(body=_const_nodes(tree) + fn_nodes, type_ignores=[]),
-                str(XTRABACKUP_PAYLOAD_PATH),
-                "exec",
-            ),
-            namespace,
-        )
-        return namespace["is_encrypted_dir"], calls
+    def _fn_with_proc(
+        self, returncode: int
+    ) -> tuple[Callable[..., bool], list[list[str]]]:
+        return _gpg_probe(returncode=returncode)
 
     def test_gpg_zero_return_is_true(self, tmp_path) -> None:
         """Assert gpg return-code 0 for every file means encrypted (True)."""
@@ -137,6 +112,54 @@ class TestIsEncryptedDirGpgUnchanged:
         (tmp_path / "plain.txt").write_text("x")
         fn, _ = self._fn_with_proc(2)
         assert fn(str(tmp_path)) is False
+
+
+@needs_gpg
+class TestIsEncryptedDirAgainstRealGpg:
+    """Assert the gpg verification runs a real ``gpg``, not only a faked one."""
+
+    def _fn(self, monkeypatch: pytest.MonkeyPatch) -> Callable[..., bool]:
+        """Return ``is_encrypted_dir`` bound to the installed ``gpg`` binary."""
+        monkeypatch.setenv("PERCONA_BACKUP_GPG_BIN", str(GPG_BIN))
+        return _load_function("is_encrypted_dir")
+
+    def _encrypt(self, path: Path) -> None:
+        """Encrypt ``path`` in place with a passphrase, the way a backup leaves it.
+
+        Symmetric encryption keeps the test off the machine's keyring while still
+        producing a file only a real ``gpg`` recognizes.
+        """
+        subprocess.run(
+            [
+                str(GPG_BIN),
+                "--batch",
+                "--yes",
+                "--passphrase",
+                "backup",
+                "--symmetric",
+                "--output",
+                f"{path}.gpg",
+                str(path),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        path.unlink()
+
+    def test_real_encrypted_file_is_recognized(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert a genuinely gpg-encrypted directory verifies as encrypted."""
+        (tmp_path / "ibdata1").write_text("x")
+        self._encrypt(tmp_path / "ibdata1")
+        assert self._fn(monkeypatch)(str(tmp_path)) is True
+
+    def test_real_plaintext_file_is_rejected(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert a plaintext file the real ``gpg`` cannot decrypt fails verification."""
+        (tmp_path / "ibdata1").write_text("x")
+        assert self._fn(monkeypatch)(str(tmp_path)) is False
 
 
 _ENCRYPT_METHODS = ("encrypt_files_aes256", "_run_encrypt_file_aes256", "_run_xbcrypt")
@@ -254,8 +277,7 @@ class TestEncryptFilesAes256WorkerCount:
 
 _DECRYPT_METHODS = (
     "_decrypt_file_aes256",
-    "_decrypt_checkpoint_file",
-    "_decrypt_info_file",
+    "_decrypt_metadata_file",
     "_run_xbcrypt",
 )
 
@@ -276,7 +298,9 @@ class TestDecryptFileAes256:
         enc = tmp_path / "xtrabackup_checkpoints.xbcrypt"
         enc.write_text("enc")
         inst, _, calls = _payload_instance(_DECRYPT_METHODS)
-        inst._decrypt_checkpoint_file("/keys/aes.key", str(tmp_path))
+        inst._decrypt_metadata_file(
+            "/keys/aes.key", str(tmp_path), "xtrabackup_checkpoints"
+        )
         assert calls == [
             [
                 _XBCRYPT_BIN,
@@ -289,17 +313,46 @@ class TestDecryptFileAes256:
         ]
         assert not enc.exists()
 
-    def test_info_decrypt_honors_compression_ext(self, tmp_path) -> None:
-        """Assert the info file input/output names carry the compression extension."""
+    def test_compressible_decrypt_honors_the_compression_ext(self, tmp_path) -> None:
+        """Assert a compressible file is decrypted under its compressed name.
+
+        The AES-256 pass runs after compression, so on disk the info file is
+        ``xtrabackup_info.zst.xbcrypt``. A name composed without the extension
+        misses it, and the decrypt no-ops on the absent path rather than failing,
+        leaving the file encrypted with nothing said.
+        """
         (tmp_path / "xtrabackup_info.zst.xbcrypt").write_text("enc")
         inst, _, calls = _payload_instance(_DECRYPT_METHODS)
         inst.compress = True
         inst.get_compression_ext = lambda: ".zst"
-        inst._decrypt_info_file("/keys/aes.key", str(tmp_path))
+        inst._decrypt_metadata_file(
+            "/keys/aes.key", str(tmp_path), "xtrabackup_info", compressible=True
+        )
         io_args = [a for a in calls[0] if a.startswith(("--input=", "--output="))]
         assert io_args == [
             f"--input={tmp_path}/xtrabackup_info.zst.xbcrypt",
             f"--output={tmp_path}/xtrabackup_info.zst",
+        ]
+
+    def test_non_compressible_decrypt_ignores_the_compression_ext(
+        self, tmp_path
+    ) -> None:
+        """Assert the checkpoints file keeps its plain name in a compressed backup.
+
+        Only the info file is compressed, so composing the extension onto every
+        metadata file would miss the one that is not.
+        """
+        (tmp_path / "xtrabackup_checkpoints.xbcrypt").write_text("enc")
+        inst, _, calls = _payload_instance(_DECRYPT_METHODS)
+        inst.compress = True
+        inst.get_compression_ext = lambda: ".zst"
+        inst._decrypt_metadata_file(
+            "/keys/aes.key", str(tmp_path), "xtrabackup_checkpoints"
+        )
+        io_args = [a for a in calls[0] if a.startswith(("--input=", "--output="))]
+        assert io_args == [
+            f"--input={tmp_path}/xtrabackup_checkpoints.xbcrypt",
+            f"--output={tmp_path}/xtrabackup_checkpoints",
         ]
 
     def test_decrypt_failure_raises_and_cleans(self, tmp_path) -> None:
@@ -309,5 +362,7 @@ class TestDecryptFileAes256:
         cleaned = {"n": 0}
         inst._clean_after_error = lambda: cleaned.__setitem__("n", cleaned["n"] + 1)
         with pytest.raises(backup_error):
-            inst._decrypt_checkpoint_file("/keys/aes.key", str(tmp_path))
+            inst._decrypt_metadata_file(
+                "/keys/aes.key", str(tmp_path), "xtrabackup_checkpoints"
+            )
         assert cleaned["n"] == 1

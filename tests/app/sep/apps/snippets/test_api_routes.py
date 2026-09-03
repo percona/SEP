@@ -15,7 +15,9 @@
 
 """HTTP integration tests for the snippets plugin's JSON API routes."""
 
+from collections.abc import Awaitable, Callable
 from datetime import datetime, UTC
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -44,24 +46,30 @@ from app.sep.snippets.models.responses import (
     SnippetsCapabilitiesResponse,
 )
 from app.tasks.models import TaskHistoryStatusEnum
+from tests.app.sep.snippets.snippet_kit import persist_meta
 
 API_BASE = "/api/apps/snippets"
 
+SnippetFactory = Callable[..., Awaitable[Snippet]]
+
 
 async def _seed_gated_snippet(
-    create_snippet, session, parameters, *, filename="gated.sh"
-):
+    create_snippet: SnippetFactory,
+    session: AsyncSession,
+    parameters: list[dict[str, Any]],
+    *,
+    filename: str = "gated.sh",
+) -> Snippet:
     """Seed an approved snippet whose meta declares ``parameters`` (persisted).
 
-    The execute route reloads the snippet from the DB by filename, so the gated
-    parameter metadata must be persisted (not just mutated in memory). The
-    ``validated_parameters`` cache is dropped so the new meta is re-validated.
+    :param create_snippet: The snippet-seeding factory fixture.
+    :param session: The in-memory test session.
+    :param parameters: The gated parameter declarations to write to the meta.
+    :param filename: The filename to seed under.
+    :return: The persisted snippet.
     """
     snippet = await create_snippet(filename, approved=True)
-    snippet.meta = {**snippet.meta, "parameters": parameters}
-    snippet.__dict__.pop("validated_parameters", None)
-    await SnippetManager.save(session, snippet, flag_modified_fields=["meta"])
-    return snippet
+    return await persist_meta(session, snippet, {"parameters": parameters})
 
 
 @pytest.fixture
@@ -113,24 +121,51 @@ class TestSnippetsApprovalApiReviewContracts:
 
 
 async def _seed_meta_snippet(
-    create_snippet,
-    session,
-    filename,
+    create_snippet: SnippetFactory,
+    session: AsyncSession,
+    filename: str,
     *,
-    title=None,
-    service_type=None,
-    approved=False,
-):
-    """Seed a snippet with persisted meta title/service_type and approval state."""
+    title: str | None = None,
+    service_type: str | None = None,
+    approved: bool = False,
+) -> Snippet:
+    """Seed a snippet with persisted meta title/service_type and approval state.
+
+    :param create_snippet: The snippet-seeding factory fixture.
+    :param session: The in-memory test session.
+    :param filename: The filename to seed under.
+    :param title: The title to declare, or ``None`` to leave the key out.
+    :param service_type: The service type to declare, or ``None`` to leave it out.
+    :param approved: Whether the seeded snippet is approved.
+    :return: The persisted snippet.
+    """
     snippet = await create_snippet(filename, approved=approved)
-    meta = dict(snippet.meta)
-    if title is not None:
-        meta["title"] = title
-    if service_type is not None:
-        meta["service_type"] = service_type
-    snippet.meta = meta
-    await SnippetManager.save(session, snippet, flag_modified_fields=["meta"])
-    return snippet
+    declared = {"title": title, "service_type": service_type}
+    updates = {key: value for key, value in declared.items() if value is not None}
+    return await persist_meta(session, snippet, updates)
+
+
+async def _seed_blank_meta_snippet(
+    create_snippet: SnippetFactory,
+    session: AsyncSession,
+    filename: str,
+    *,
+    key: str,
+    declared: str | None,
+    approved: bool = True,
+) -> Snippet:
+    """Seed an approved snippet declaring ``key`` with a blank ``declared`` value.
+
+    :param create_snippet: The snippet-seeding factory fixture.
+    :param session: The in-memory test session.
+    :param filename: The filename to seed under.
+    :param key: The metadata key to declare.
+    :param declared: The blank value to declare — ``None``, ``""``, or whitespace.
+    :param approved: Whether the seeded snippet is approved.
+    :return: The persisted snippet.
+    """
+    snippet = await create_snippet(filename, approved=approved)
+    return await persist_meta(session, snippet, {key: declared})
 
 
 @pytest.mark.asyncio
@@ -163,6 +198,45 @@ class TestSnippetsApiList:
         assert row["md5_digest"] == "a" * 32
         assert row["sudo_optional"] is False
         assert row["service_type"] == snippet.service_type
+
+    @pytest.mark.parametrize("declared_title", [None, "", "   "])
+    async def test_blank_declared_title_labels_the_row_with_its_filename(
+        self, test_client, create_snippet, session, declared_title
+    ):
+        """Label a blank-titled row with its filename instead of failing the page."""
+        healthy = await create_snippet("ops/normal.sh", approved=True)
+        await _seed_blank_meta_snippet(
+            create_snippet,
+            session,
+            "ops/blank-title.sh",
+            key="title",
+            declared=declared_title,
+        )
+
+        response = test_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        rows = {row["filename"]: row["title"] for row in response.json()["items"]}
+        assert rows["ops/blank-title.sh"] == "ops/blank-title.sh"
+        assert healthy.filename in rows
+
+    @pytest.mark.parametrize("declared_description", [None, "", "   "])
+    async def test_blank_declared_description_reads_as_empty(
+        self, test_client, create_snippet, session, declared_description
+    ):
+        """Return an empty description for a blank declared one."""
+        await _seed_blank_meta_snippet(
+            create_snippet,
+            session,
+            "ops/blank-description.sh",
+            key="description",
+            declared=declared_description,
+        )
+
+        response = test_client.get(f"{API_BASE}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["description"] == ""
 
     async def test_search_filters_rows_and_total_over_whole_dataset(
         self, test_client, create_snippet, session
@@ -464,6 +538,31 @@ class TestSnippetsApiPerSnippetSchema:
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.parametrize("declared_title", [None, "", "   "])
+    async def test_blank_declared_title_names_the_schema_after_the_file(
+        self, test_client, create_snippet, session, declared_title
+    ):
+        """Fall back to the filename for the schema's display name.
+
+        ``AppSchema.display_name`` is a ``NonEmptyStr``, so a blank title fails the
+        whole schema rather than rendering a blank heading.
+        """
+        snippet = await _seed_blank_meta_snippet(
+            create_snippet,
+            session,
+            "ops/blank-title.sh",
+            key="title",
+            declared=declared_title,
+        )
+
+        response = test_client.get(
+            f"{API_BASE}/snippet/schema",
+            params={"snippet_filename": snippet.filename},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["display_name"] == snippet.filename
 
     async def test_returns_per_snippet_schema_with_preview_field(
         self, test_client, create_snippet
@@ -965,6 +1064,27 @@ class TestSnippetsApiPutApproval:
 
         await session.refresh(snippet)
         assert snippet.is_approved is True
+
+    async def test_blank_declared_title_labels_the_approval_response(
+        self, api_admin_client, create_snippet, session: AsyncSession
+    ):
+        """Approve a blank-titled snippet and label the response with its filename."""
+        snippet = await _seed_blank_meta_snippet(
+            create_snippet,
+            session,
+            "ops/blank-title.sh",
+            key="title",
+            declared=None,
+            approved=False,
+        )
+
+        response = api_admin_client.put(
+            f"{API_BASE}/snippet/approval",
+            params={"snippet_filename": snippet.filename},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["title"] == snippet.filename
 
     async def test_idempotent_re_approval_does_not_overwrite_approved_at(
         self, api_admin_client, create_snippet, session: AsyncSession

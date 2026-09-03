@@ -68,6 +68,7 @@ from app.tasks.execution.executors.nomad.exceptions import (
     JobNotFoundError,
 )
 from app.tasks.execution.executors.nomad.steps import (
+    LAUNCH_CHECK_EXIT_CODE,
     LOG_CAPTURE_HOLD_DEFAULT_SECONDS,
     NomadStep,
 )
@@ -97,6 +98,13 @@ NOMAD_DEAD_JOB_STATUS = "dead"
 NOMAD_DEAD_TASK_STATE = "dead"
 NOMAD_RUNNING_TASK_STATE = "running"
 _CAPTURE_HOLD_RELEASE_SIGNAL = "SIGTERM"
+# The hold is a poststop step, so it stays ``pending`` for a sub-second after
+# Nomad kills the payload, and a signal delivered then is dropped. These bound
+# that start window and are deliberately not operator-settable: a budget that
+# could reach zero would silently forfeit the release, leaving the allocation
+# held until its own deadline.
+_CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS = 5
+_CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS = 0.5
 # Internal states returned by :meth:`NomadExecutor._consume_nomad_log_stream` (not Nomad task states).
 _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
@@ -185,6 +193,7 @@ def _nomad_event_exit_code(ev: dict) -> Any:
 
 _STALE_SKIP_TASK_NAME = NomadStep.CHECK_STALENESS
 _STALE_SKIP_EXIT_CODE = 75
+_LAUNCH_CHECK_TASK_NAME = NomadStep.CHECK_LAUNCHABLE
 
 # Statuses a RUNNING row may reach on the allocation status alone, when the
 # allocation carries no task states to corroborate it. SUCCESS is excluded: an
@@ -322,24 +331,27 @@ def _status_from_step_states(alloc: dict[str, Any]) -> TaskHistoryStatusEnum:
     return TaskHistoryStatusEnum.FAILED if failed else TaskHistoryStatusEnum.SUCCESS
 
 
-def _detect_stale_skip(task_states: dict[str, Any] | None) -> bool:
-    """Return ``True`` when the ``check-staleness`` prestart task exited 75.
+def _detect_step_sentinel(
+    task_states: dict[str, Any] | None, *, task_name: str, exit_code: int
+) -> bool:
+    """Return whether one prestart task terminated with its sentinel exit code.
 
-    Walk the Nomad ``TaskStates`` dict produced by an allocation sync and
-    look for a ``Terminated`` event on the ``check-staleness`` task whose
-    exit code matches the stale-skip sentinel. Shape drift across Nomad API
-    responses is tolerated — missing keys or unexpected types simply short
-    circuit to ``False``.
+    Walk the Nomad ``TaskStates`` dict produced by an allocation sync and look
+    for a ``Terminated`` event on ``task_name`` whose exit code matches. Shape
+    drift across Nomad API responses is tolerated — missing keys or unexpected
+    types simply short circuit to ``False``.
+
+    Each caller reads only its own step's state, so which sentinel fired is
+    decided per step rather than by the order Nomad happened to run them in.
 
     :param task_states: The ``TaskStates`` object from a Nomad allocation.
-    :type task_states: dict[str, Any] | None
-    :return: ``True`` when the allocation aborted because of the staleness
-        preamble; ``False`` otherwise.
-    :rtype: bool
+    :param task_name: The Nomad task whose termination carries the sentinel.
+    :param exit_code: The sentinel exit code that step aborts with.
+    :return: ``True`` when that step terminated with that code.
     """
     if not isinstance(task_states, dict):
         return False
-    state = task_states.get(_STALE_SKIP_TASK_NAME)
+    state = task_states.get(task_name)
     if not isinstance(state, dict):
         return False
     events = state.get("Events")
@@ -350,13 +362,65 @@ def _detect_stale_skip(task_states: dict[str, Any] | None) -> bool:
             continue
         if event.get("Type") != "Terminated":
             continue
-        exit_code = _nomad_event_exit_code(event)
+        event_exit_code = _nomad_event_exit_code(event)
         try:
-            if int(exit_code) == _STALE_SKIP_EXIT_CODE:
+            if int(event_exit_code) == exit_code:
                 return True
         except (TypeError, ValueError):
             continue
     return False
+
+
+def _detect_stale_skip(task_states: dict[str, Any] | None) -> bool:
+    """Return ``True`` when the ``check-staleness`` prestart task exited 75.
+
+    :param task_states: The ``TaskStates`` object from a Nomad allocation.
+    :return: ``True`` when the allocation aborted because of the staleness
+        preamble; ``False`` otherwise.
+    """
+    return _detect_step_sentinel(
+        task_states,
+        task_name=_STALE_SKIP_TASK_NAME,
+        exit_code=_STALE_SKIP_EXIT_CODE,
+    )
+
+
+def _detect_unlaunchable(task_states: dict[str, Any] | None) -> bool:
+    """Return ``True`` when the ``check-launchable`` prestart task aborted.
+
+    An allocation from a job registered before that step existed carries no
+    such task state and resolves ``False``, so in-flight runs are unaffected.
+
+    :param task_states: The ``TaskStates`` object from a Nomad allocation.
+    :return: ``True`` when the node could not resolve the launch command chain;
+        ``False`` otherwise.
+    """
+    return _detect_step_sentinel(
+        task_states,
+        task_name=_LAUNCH_CHECK_TASK_NAME,
+        exit_code=LAUNCH_CHECK_EXIT_CODE,
+    )
+
+
+def _sentinel_status(
+    *, stale_skip: bool, unlaunchable: bool
+) -> TaskHistoryStatusEnum | None:
+    """Return the terminal status a prestart sentinel abort implies, if any.
+
+    Staleness wins where both fired: a run that should not have been dispatched
+    at all outranks anything learned about the node it landed on. Stating the
+    precedence once keeps the two branches of
+    :meth:`NomadExecutor._apply_terminal_status` from drifting apart.
+
+    :param stale_skip: Whether the staleness preamble aborted the run.
+    :param unlaunchable: Whether the launch check aborted the run.
+    :return: The status to stamp, or ``None`` when no sentinel fired.
+    """
+    if stale_skip:
+        return TaskHistoryStatusEnum.STALE
+    if unlaunchable:
+        return TaskHistoryStatusEnum.UNLAUNCHABLE
+    return None
 
 
 def _append_exit_code_suffix(
@@ -532,22 +596,38 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     # ``FieldInfo`` and force ``frozen=True`` repeated. ``endpoint`` left unmarked.
     # Reuses the shared TLS overlay so every remote-api model marks these the same.
     INHERITED_MARKERS: ClassVar[InheritedMarkers] = REMOTE_API_TLS_MARKERS
-    secure: bool = hot_field(default=False, advanced=True)
-    timeout: int = hot_field(10, advanced=True)
-    minify_payload: bool = hot_field(default=True, advanced=True)
-    log_socket_read_timeout: int = hot_field(10, advanced=True)
-    cert_expiry_warn_days: int = hot_field(7, ge=1, advanced=True)
-    terminal_log_drain_max_attempts: int = hot_field(5, ge=0, advanced=True)
-    terminal_log_drain_interval: float = hot_field(0.5, gt=0, advanced=True)
-    log_anonymization_max_withheld_bytes: int = hot_field(
-        _ONE_MEBIBYTE, gt=0, advanced=True
+    secure: bool = hot_field(  # ty: ignore[invalid-assignment]
+        default=False, advanced=True
     )
-    log_capture_hold_seconds: int = hot_field(
+    timeout: int = hot_field(10, advanced=True)  # ty: ignore[invalid-assignment]
+    minify_payload: bool = hot_field(  # ty: ignore[invalid-assignment]
+        default=True, advanced=True
+    )
+    log_socket_read_timeout: int = hot_field(  # ty: ignore[invalid-assignment]
+        10, advanced=True
+    )
+    cert_expiry_warn_days: int = hot_field(  # ty: ignore[invalid-assignment]
+        7, ge=1, advanced=True
+    )
+    terminal_log_drain_max_attempts: int = hot_field(  # ty: ignore[invalid-assignment]
+        5, ge=0, advanced=True
+    )
+    terminal_log_drain_interval: float = hot_field(  # ty: ignore[invalid-assignment]
+        0.5, gt=0, advanced=True
+    )
+    log_anonymization_max_withheld_bytes: int = (  # ty: ignore[invalid-assignment]
+        hot_field(_ONE_MEBIBYTE, gt=0, advanced=True)
+    )
+    log_capture_hold_seconds: int = hot_field(  # ty: ignore[invalid-assignment]
         LOG_CAPTURE_HOLD_DEFAULT_SECONDS, ge=1, advanced=True
     )
-    check_cert_expiry_interval: IntervalSchedule | None = field_with_metadata(
-        metadata={"reload": ReloadClassification.HOT, "advanced": True},
-        default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
+    check_cert_expiry_interval: (
+        IntervalSchedule | None
+    ) = (  # ty: ignore[invalid-assignment]
+        field_with_metadata(
+            metadata={"reload": ReloadClassification.HOT, "advanced": True},
+            default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
+        )
     )
 
     @cached_property
@@ -964,11 +1044,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         allocation: the job goes ``dead`` while the allocation stays ``running``
         for the rest of the hold's deadline. Nothing is being captured on this
         path — the stop route persists no logs — so the hold is released
-        explicitly. The release polls for the hold to start, because the
-        poststop step only runs once Nomad has finished killing the payload:
-        signalling straight after the deregister would almost always find it
-        still ``pending``. A hold that never starts within that window still
-        expires on its own deadline.
+        explicitly. Signalling straight after the deregister would almost always
+        find the poststop step still ``pending``, which is why
+        :meth:`_release_capture_hold` polls for it to start. A hold that never
+        starts within that budget still expires on its own deadline.
 
         :param queue_item: The task history record for tracking this execution.
         :raises ValueError: When the task history carries no Nomad job id.
@@ -985,7 +1064,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 queue_item.id,
             )
             return
-        await self._release_capture_hold(alloc, await_hold_start=True)
+        await self._release_capture_hold(alloc)
 
     def _fetch_step_log_delta(
         self,
@@ -1296,6 +1375,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         task_states = _alloc_task_states(alloc)
         stale_skip = _detect_stale_skip(task_states)
+        unlaunchable = _detect_unlaunchable(task_states)
         capture_hold_ready = _detect_capture_hold_ready(alloc)
 
         try:
@@ -1308,6 +1388,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 alloc,
                 job,
                 stale_skip=stale_skip,
+                unlaunchable=unlaunchable,
                 capture_hold_ready=capture_hold_ready,
             )
 
@@ -1336,6 +1417,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         job: dict[str, Any],
         *,
         stale_skip: bool,
+        unlaunchable: bool,
         capture_hold_ready: bool,
     ) -> None:
         """Resolve and stamp the task history's status from the allocation.
@@ -1347,8 +1429,15 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         jobs registered before the hold step existed and as the fallback for any
         case where Nomad skips a step rather than marking it ``dead``.
 
-        A stale-skip abort overrides the derived status on either path. An
-        operator stop overrides a success but never a failure, matching
+        A prestart sentinel abort overrides the derived status on either path:
+        both aborts leave a *failed* prestart step behind and a failed
+        allocation, either of which would otherwise be reported as an ordinary
+        payload failure. Where both fired, staleness wins — see
+        :func:`_sentinel_status`. Each sentinel is read off its own step's task
+        state, so the resolved status does not depend on the order Nomad ran the
+        two prestart tasks in.
+
+        An operator stop overrides a success but never a failure, matching
         :meth:`get_task_history_status_from_alloc_status`, where ``stopped``
         guards only the ``COMPLETE`` arm: a payload that already failed is
         reported ``FAILED`` even when a stop lands in the same window, so the
@@ -1358,14 +1447,17 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :param alloc: The current Nomad allocation dict.
         :param job: The Nomad job dict backing the allocation.
         :param stale_skip: Whether the staleness preamble aborted the run.
+        :param unlaunchable: Whether the launch check aborted the run because
+            the node could not resolve the command chain.
         :param capture_hold_ready: Whether every producing step has stopped
             behind a live hold step.
         """
         task_states = _alloc_task_states(alloc)
+        sentinel = _sentinel_status(stale_skip=stale_skip, unlaunchable=unlaunchable)
         if capture_hold_ready:
             self._stamp_finished_at(queue_item, alloc)
-            if stale_skip:
-                queue_item.status = TaskHistoryStatusEnum.STALE
+            if sentinel is not None:
+                queue_item.status = sentinel
                 return
             status = _status_from_step_states(alloc)
             if job.get("Stop", False) and status is not TaskHistoryStatusEnum.FAILED:
@@ -1375,8 +1467,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         if job["Status"] == NOMAD_DEAD_JOB_STATUS:
             self._stamp_finished_at(queue_item, alloc)
-            if stale_skip:
-                queue_item.status = TaskHistoryStatusEnum.STALE
+            if sentinel is not None:
+                queue_item.status = sentinel
                 return
             status = self.get_task_history_status_from_alloc_status(
                 alloc.get("ClientStatus"),
@@ -1553,42 +1645,33 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     producer_epoch=alloc_epoch,
                 )
 
-    async def _release_capture_hold(
-        self, alloc: dict[str, Any], *, await_hold_start: bool = False
-    ) -> None:
+    async def _release_capture_hold(self, alloc: dict[str, Any]) -> None:
         """Signal the log-capture-hold step so Nomad may collect the allocation.
 
         Re-reads the allocation first, because ``alloc`` is stale by the time a
         release is due and the hold only reaches ``running`` shortly after the
         last producing step dies. This is the only chance to release: the caller
         has already stamped a terminal status, and the sync sweep only revisits
-        ``RUNNING`` histories. A hold still not running when the attempts run out
-        keeps the allocation until its own deadline, which is the bound the
-        design accepts.
-
-        How much slack the re-read needs differs by caller, which is what
-        ``await_hold_start`` selects. The sync path arrives after the terminal
-        drain's sleeps, so one read almost always finds the hold running. A stop
-        arrives immediately after deregistering, *before* Nomad has killed the
-        payload, so the poststop hold is typically still ``pending`` and a single
-        read would forfeit the release it exists to issue.
+        ``RUNNING`` histories. So the re-read polls on
+        :data:`_CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS` and
+        :data:`_CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS` to wait out the hold's poststop
+        start window, which both callers can land inside. The budget is only
+        ever spent there: a hold already running is signalled on the first read,
+        and one past signalling is abandoned on it. A hold still not running
+        when the attempts run out keeps the allocation until its own deadline,
+        which is the bound the design accepts.
 
         A failed release is not a failed capture. The bytes are already
         persisted by the time this runs, and the step self-expires at its
         deadline, so the failure is logged and the verdicts stand.
 
         :param alloc: The Nomad allocation dict read at the start of the sync.
-        :param await_hold_start: Whether to poll for a hold that has not started
-            yet, on the terminal drain's cadence. ``False`` reads once.
         """
         alloc_id = alloc["ID"]
-        attempts = (
-            max(1, self.terminal_log_drain_max_attempts) if await_hold_start else 1
-        )
         hold_state = None
-        for attempt in range(attempts):
+        for attempt in range(_CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS):
             if attempt:
-                await asyncio.sleep(self.terminal_log_drain_interval)
+                await asyncio.sleep(_CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS)
             try:
                 current = self.backend.allocation.get_allocation(alloc_id)
             except BaseNomadException:
@@ -2352,10 +2435,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :param queue_item: The task history record whose tracking carries the ids.
         :return: The job and evaluation identifiers, in that order.
         """
-        return (
-            queue_item.execution_request.tracking["job_id"],
-            queue_item.execution_request.tracking["evaluation_id"],
-        )
+        tracking = queue_item.execution_request.tracking or {}
+        return (tracking["job_id"], tracking["evaluation_id"])
 
     async def stream_logs(
         self,

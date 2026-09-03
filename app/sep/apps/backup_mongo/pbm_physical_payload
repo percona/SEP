@@ -56,7 +56,7 @@ def _creds_path_from_config(config: object, config_source: str = "restore") -> s
     """
     if isinstance(config, dict):
         path = config.get("credentials_path")
-        if path:
+        if isinstance(path, str) and path:
             return path
     envhome = os.environ.get("HOME")
     if not envhome:

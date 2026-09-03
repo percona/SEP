@@ -16,6 +16,8 @@
 """Define tests for RemoteAPI request-logging helpers and the upload primitive."""
 
 import asyncio
+from collections.abc import AsyncGenerator
+from unittest.mock import patch
 
 import pytest
 from aioresponses import aioresponses
@@ -28,10 +30,18 @@ from app.core.exceptions import (
 )
 from app.core.requests import RemoteAPI
 from app.core.requests.remote_api import (
+    _iter_lines_from_chunks,
     _REDACTED_VALUE,
     _sanitize_request_kwargs,
+    as_json_array,
+    as_json_object,
+    is_non_json_success,
     UPSTREAM_NON_JSON_HEADER,
 )
+from app.core.requests.remote_api import (
+    _MAX_STREAM_LINE_BYTES as _REAL_CAP,
+)
+from tests.app.scan_recording import ScanRecordingBytearray
 
 _UPLOAD_URL = "http://localhost:8000/upload"
 
@@ -349,6 +359,42 @@ class TestUpload:
         assert exc_info.value.detail == "An unexpected error occurred on the server."
 
 
+class TestIsNonJsonSuccess:
+    """Cover the predicate that tells a non-JSON 2xx from a real upstream error."""
+
+    @pytest.mark.parametrize(
+        "status_code", [status.HTTP_200_OK, status.HTTP_201_CREATED]
+    )
+    def test_a_stamped_success_status_is_a_success(self, status_code):
+        """Read a stamped 2xx as the success ``request`` parsed the body out of."""
+        exc = HTTPException(
+            status_code=status_code,
+            detail="An unexpected error occurred on the server.",
+            headers={UPSTREAM_NON_JSON_HEADER: "1"},
+        )
+
+        assert is_non_json_success(exc) is True
+
+    def test_a_stamped_error_status_stays_an_error(self):
+        """Keep a non-JSON 502 an error; the stamp alone does not excuse it."""
+        exc = HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="An unexpected error occurred on the server.",
+            headers={UPSTREAM_NON_JSON_HEADER: "1"},
+        )
+
+        assert is_non_json_success(exc) is False
+
+    def test_an_unstamped_success_status_is_not_one(self):
+        """Reject a 2xx raised for another reason, such as an unfollowed redirect."""
+        exc = HTTPException(
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            detail="The server answered with an unfollowed redirect.",
+        )
+
+        assert is_non_json_success(exc) is False
+
+
 class TestDrainOnRebind:
     """Cover the in-flight accounting behind ``hold`` and ``close_when_idle``."""
 
@@ -470,3 +516,296 @@ class TestDrainOnRebind:
         async with remote_api.hold():
             await remote_api.close()
             assert remote_api._session is None
+
+
+async def _achunks(chunks: list[bytes]) -> AsyncGenerator[bytes, None]:
+    """Yield each chunk from ``chunks`` as an async iterator.
+
+    :param chunks: The chunk payloads, in arrival order.
+    :yield: Each chunk unchanged.
+    """
+    for chunk in chunks:
+        yield chunk
+
+
+def _replay_with_full_scans(
+    chunks: list[bytes], cap: int
+) -> tuple[list[bytes], int | None, bytes]:
+    """Replay ``chunks`` through the unnarrowed loop as an equivalence oracle.
+
+    Mirrors what ``_iter_lines_from_chunks`` did before the search was narrowed:
+    one cursor, restarting the search at ``0`` on every chunk.
+
+    :param chunks: The chunk payloads, in arrival order.
+    :param cap: The per-line byte cap to enforce.
+    :return: The lines yielded, the size reported by the cap violation that
+        stopped the replay (``None`` when none did), and the bytes still
+        buffered when the replay ended.
+    """
+    lines: list[bytes] = []
+    buffer = bytearray()
+    for chunk in chunks:
+        if not chunk:
+            continue
+        buffer.extend(chunk)
+        offset = 0
+        while True:
+            newline_pos = buffer.find(b"\n", offset)
+            if newline_pos == -1:
+                break
+            line_end = newline_pos + 1
+            line_size = line_end - offset
+            if line_size > cap:
+                return lines, line_size, bytes(buffer)
+            lines.append(bytes(buffer[offset:line_end]))
+            offset = line_end
+        if offset:
+            del buffer[:offset]
+        if len(buffer) > cap:
+            return lines, len(buffer), bytes(buffer)
+    if buffer:
+        if len(buffer) > cap:
+            return lines, len(buffer), bytes(buffer)
+        lines.append(bytes(buffer))
+    return lines, None, bytes(buffer)
+
+
+@pytest.fixture
+def recorded_buffers(monkeypatch: pytest.MonkeyPatch) -> list[ScanRecordingBytearray]:
+    """Make ``_iter_lines_from_chunks`` build scan-recording buffers.
+
+    The function owns its buffer and takes no injection point, so the module
+    global shadows the builtin for the duration of the test.
+
+    :param monkeypatch: The pytest monkeypatch fixture.
+    :return: The list the factory appends each buffer it builds to.
+    """
+    created: list[ScanRecordingBytearray] = []
+
+    def factory(*args: object) -> ScanRecordingBytearray:
+        buffer = ScanRecordingBytearray(*args)
+        created.append(buffer)
+        return buffer
+
+    monkeypatch.setattr(
+        "app.core.requests.remote_api.bytearray", factory, raising=False
+    )
+    return created
+
+
+CHUNK_SEQUENCES = [
+    pytest.param([], id="no-chunks"),
+    pytest.param([b""], id="empty-chunk"),
+    pytest.param([b"", b"", b""], id="only-empty-chunks"),
+    pytest.param([b"line\n"], id="single-terminated"),
+    pytest.param([b"no-newline"], id="single-unterminated"),
+    pytest.param([b"a", b"b", b"c"], id="newline-free-run"),
+    pytest.param([b"x" * 16] * 8 + [b"end\n"], id="long-run-then-completion"),
+    pytest.param([b"one-", b"line-", b"split\nnext\n"], id="straddles-three-chunks"),
+    pytest.param([b"tail", b"\nlead"], id="newline-is-first-arriving-byte"),
+    pytest.param([b"a\nb\nc\n"], id="multiple-terminators-one-chunk"),
+    pytest.param([b"\n\n\n"], id="only-terminators"),
+    pytest.param([b"x\n", b"\n"], id="empty-line-in-its-own-chunk"),
+    pytest.param([b"a\r", b"\nb"], id="carriage-return-is-not-a-terminator"),
+    pytest.param([b"tail", b"", b"\n"], id="empty-chunk-mid-run"),
+    pytest.param(
+        ["café=x\n".encode()[:5], "café=x\n".encode()[5:]], id="multibyte-split"
+    ),
+]
+
+CAP_BOUNDARIES = [
+    pytest.param([b"x" * 8], 8, id="remainder-exactly-at-cap"),
+    pytest.param([b"x" * 9], 8, id="remainder-over-cap"),
+    pytest.param([b"x" * 7 + b"\n"], 8, id="line-exactly-at-cap"),
+    pytest.param([b"x" * 8 + b"\n"], 8, id="line-over-cap"),
+    pytest.param([b"x" * 4, b"x" * 4], 8, id="remainder-reaches-cap-across-chunks"),
+    pytest.param([b"x" * 5, b"x" * 5], 8, id="remainder-passes-cap-across-chunks"),
+    pytest.param([b"x" * 4, b"x" * 4 + b"\n"], 8, id="line-over-cap-across-chunks"),
+]
+
+
+class TestIterLinesFromChunks:
+    """Test the narrowed newline search in ``_iter_lines_from_chunks``."""
+
+    @staticmethod
+    async def _collect(
+        chunks: list[bytes], cap: int
+    ) -> tuple[list[bytes], ValueError | None]:
+        """Run ``chunks`` through ``_iter_lines_from_chunks`` under ``cap``.
+
+        :param chunks: The chunk payloads, in arrival order.
+        :param cap: The per-line byte cap to patch in for the run.
+        :return: The lines yielded, and the ``ValueError`` that stopped the run
+            (``None`` when none did).
+        """
+        lines: list[bytes] = []
+        with patch("app.core.requests.remote_api._MAX_STREAM_LINE_BYTES", cap):
+            try:
+                async for line in _iter_lines_from_chunks(_achunks(chunks), "/p/"):
+                    # A comprehension would discard the lines yielded before the
+                    # cap raised, which is half of what these tests compare.
+                    lines.append(line)  # noqa: PERF401
+            except ValueError as exc:
+                return lines, exc
+        return lines, None
+
+    async def _assert_matches_the_oracle(
+        self,
+        chunks: list[bytes],
+        cap: int,
+        buffers: list[ScanRecordingBytearray],
+    ) -> None:
+        """Assert a narrowed run is indistinguishable from an unnarrowed one.
+
+        The remainder is compared through the recorded buffer because the
+        generator owns it: on a cap violation it never reaches the end-of-stream
+        flush, so the bytes left behind are otherwise unobservable.
+
+        :param chunks: The chunk payloads, in arrival order.
+        :param cap: The per-line byte cap to enforce on both runs.
+        :param buffers: The buffers the narrowed run built.
+        """
+        expected_lines, expected_size, expected_buffer = _replay_with_full_scans(
+            chunks, cap
+        )
+        lines, exc = await self._collect(chunks, cap)
+
+        assert lines == expected_lines
+        assert bytes(buffers[0]) == expected_buffer
+        if expected_size is None:
+            assert exc is None
+        else:
+            assert f"size={expected_size}, path=/p/" in str(exc)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("chunks", CHUNK_SEQUENCES)
+    @pytest.mark.parametrize("cap", [8, 64, _REAL_CAP], ids=["tiny", "small", "real"])
+    async def test_matches_the_unnarrowed_loop(
+        self,
+        chunks: list[bytes],
+        cap: int,
+        recorded_buffers: list[ScanRecordingBytearray],
+    ) -> None:
+        """Assert the narrowed search yields what a search from zero yields."""
+        await self._assert_matches_the_oracle(chunks, cap, recorded_buffers)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("chunks", "cap"), CAP_BOUNDARIES)
+    async def test_cap_boundary_matches_the_unnarrowed_loop(
+        self,
+        chunks: list[bytes],
+        cap: int,
+        recorded_buffers: list[ScanRecordingBytearray],
+    ) -> None:
+        """Assert the cap fires on the same inputs, naming the same size."""
+        await self._assert_matches_the_oracle(chunks, cap, recorded_buffers)
+
+    @pytest.mark.asyncio
+    async def test_straddling_line_keeps_the_carried_remainder(self) -> None:
+        """Assert the first line a chunk completes still carries earlier bytes.
+
+        Collapsing the search cursor into the line-start cursor drops the
+        remainder from this line and hands a truncated line to the consumer.
+        """
+        lines, exc = await self._collect([b"head-", b"tail\n"], 64)
+
+        assert lines == [b"head-tail\n"]
+        assert exc is None
+
+    @pytest.mark.asyncio
+    async def test_cap_measures_the_whole_line_not_the_arriving_chunk(self) -> None:
+        """Assert an oversized line built from several chunks still raises.
+
+        Measuring the line from the search cursor would report only the arriving
+        chunk's share, letting an over-cap line through.
+        """
+        lines, exc = await self._collect([b"x" * 700, b"y" * 700 + b"\n"], 1024)
+
+        assert lines == []
+        assert "size=1401, path=/p/" in str(exc)
+
+    @pytest.mark.asyncio
+    async def test_scan_starts_at_the_pre_append_length(
+        self, recorded_buffers: list[ScanRecordingBytearray]
+    ) -> None:
+        """Assert each chunk's search begins where the previous one stopped."""
+        lines, _ = await self._collect([b"x" * 4] * 4, 64)
+
+        assert lines == [b"x" * 16]
+        assert [start for start, _ in recorded_buffers[0].scans] == [0, 4, 8, 12]
+
+    @pytest.mark.asyncio
+    async def test_total_scan_work_is_linear_in_the_delivered_bytes(
+        self, recorded_buffers: list[ScanRecordingBytearray]
+    ) -> None:
+        """Assert a newline-free run never re-examines the carried remainder."""
+        chunks = [b"x" * 32] * 16 + [b"end\n"]
+        await self._collect(chunks, _REAL_CAP)
+
+        scanned = sum(end - start for start, end in recorded_buffers[0].scans)
+        assert scanned == sum(map(len, chunks))
+
+    @pytest.mark.asyncio
+    async def test_releasing_chunk_still_scans_only_its_own_bytes(
+        self, recorded_buffers: list[ScanRecordingBytearray]
+    ) -> None:
+        """Assert the chunk that yields the buffer narrows its search too.
+
+        Work proportional to the buffer is legitimate on the chunk that hands
+        those bytes to the consumer; the search for the terminator is not.
+        """
+        lines, _ = await self._collect([b"x" * 64, b"end\n"], _REAL_CAP)
+
+        assert lines == [b"x" * 64 + b"end\n"]
+        assert recorded_buffers[0].scans[-2:] == [(64, 68), (68, 68)]
+
+
+class TestJSONShapeNarrowing:
+    """Cover the helpers that narrow a verb method's JSON return union."""
+
+    def test_object_passes_a_mapping_through(self) -> None:
+        """Assert a JSON object is returned as a plain dict."""
+        assert as_json_object({"a": 1}) == {"a": 1}
+
+    def test_object_accepts_an_empty_mapping(self) -> None:
+        """Assert an empty object is a valid payload, not a fault."""
+        assert as_json_object({}) == {}
+
+    def test_object_rejects_an_array(self) -> None:
+        """Assert a JSON array is reported as an upstream fault."""
+        with pytest.raises(HTTPBadGatewayException) as exc_info:
+            as_json_object([{"a": 1}])
+
+        assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
+
+    def test_object_rejects_no_content(self) -> None:
+        """Assert HTTP 204's ``None`` is reported rather than returned."""
+        with pytest.raises(HTTPBadGatewayException) as exc_info:
+            as_json_object(None)
+
+        assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
+
+    def test_array_passes_a_list_of_objects_through(self) -> None:
+        """Assert a JSON array of objects is returned unchanged."""
+        assert as_json_array([{"a": 1}, {"b": 2}]) == [{"a": 1}, {"b": 2}]
+
+    def test_array_accepts_an_empty_list(self) -> None:
+        """Assert an empty array is a valid payload, not a fault."""
+        assert as_json_array([]) == []
+
+    def test_array_rejects_non_object_elements(self) -> None:
+        """Assert the declared ``list[dict]`` is checked, not merely asserted."""
+        with pytest.raises(HTTPBadGatewayException) as exc_info:
+            as_json_array([1, 2])
+
+        assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
+
+    def test_array_rejects_an_object(self) -> None:
+        """Assert a JSON object is reported as an upstream fault."""
+        with pytest.raises(HTTPBadGatewayException):
+            as_json_array({"a": 1})
+
+    def test_array_rejects_no_content(self) -> None:
+        """Assert HTTP 204's ``None`` is reported rather than returned."""
+        with pytest.raises(HTTPBadGatewayException):
+            as_json_array(None)

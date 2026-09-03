@@ -18,8 +18,12 @@
 __all__ = [
     "UPSTREAM_NON_JSON_HEADER",
     "BaseRemoteAPI",
+    "JSONBody",
     "RemoteAPI",
+    "as_json_array",
+    "as_json_object",
     "exception_for_status",
+    "is_non_json_success",
 ]
 
 import asyncio
@@ -108,6 +112,10 @@ FileContent = bytes | BinaryIO | AsyncIterable[bytes]
 #: A single multipart file part: ``(filename, content, content_type)``.
 FileSpec = tuple[str, FileContent, str]
 
+#: The parsed body of a JSON response: an object, an array of objects, or
+#: ``None`` when the server answered HTTP 204 with no body.
+JSONBody = dict[str, Any] | list[dict[str, Any]] | None
+
 # Maps an upstream error status to the project exception that represents it, so
 # RemoteAPI raises app/core/exceptions classes instead of a bare HTTPException.
 _HTTP_EXCEPTION_BY_STATUS: dict[int, type[HTTPException]] = {
@@ -159,6 +167,64 @@ def exception_for_status(
     return exc_class(detail, headers=headers)
 
 
+def as_json_object(payload: JSONBody) -> dict[str, Any]:
+    """Return ``payload`` as a JSON object, rejecting any other shape.
+
+    The verb methods declare the whole union a JSON body may take — an object,
+    an array, or ``None`` on HTTP 204. A caller that reads the result as a
+    mapping is asserting a shape the transport never checked; this checks it and
+    turns a mis-shaped upstream answer into a 502 rather than a ``TypeError``
+    further down.
+
+    :param payload: The parsed body returned by a :class:`BaseRemoteAPI` verb.
+    :return: The payload as a plain dict.
+    :raises HTTPBadGatewayException: If the payload is not a JSON object.
+    """
+    if not isinstance(payload, dict):
+        raise HTTPBadGatewayException(
+            detail="The server answered with an unexpected payload shape."
+        )
+    return payload
+
+
+def as_json_array(payload: JSONBody) -> list[dict[str, Any]]:
+    """Return ``payload`` as a JSON array of objects, rejecting any other shape.
+
+    The elements are checked too, so the returned ``list[dict[str, Any]]`` is a
+    verified claim rather than an asserted one.
+
+    :param payload: The parsed body returned by a :class:`BaseRemoteAPI` verb.
+    :return: The payload itself, once every element is confirmed to be an object.
+    :raises HTTPBadGatewayException: If the payload is not a JSON array, or any
+        element of it is not a JSON object.
+    """
+    if not isinstance(payload, list) or not all(
+        isinstance(item, dict) for item in payload
+    ):
+        raise HTTPBadGatewayException(
+            detail="The server answered with an unexpected payload shape."
+        )
+    return payload
+
+
+def is_non_json_success(exc: HTTPException) -> bool:
+    """Return whether ``exc`` reports a successful answer whose body was not JSON.
+
+    :meth:`RemoteAPI.request` parses every body but a ``204`` before it checks
+    the status, so a receiver answering ``200 text/plain`` (an acknowledgement
+    string, an HTML health page, an empty non-``204`` body) surfaces as a
+    ``2xx`` :class:`fastapi.HTTPException` rather than as the success it is.
+    Callers that do not need the parsed body use this to tell that case from a
+    real upstream error.
+
+    :param exc: The exception :meth:`RemoteAPI.request` raised.
+    :return: ``True`` when the status is below 400 and the body was not JSON.
+    """
+    return exc.status_code < status.HTTP_400_BAD_REQUEST and bool(
+        (exc.headers or {}).get(UPSTREAM_NON_JSON_HEADER)
+    )
+
+
 def _sanitize_request_kwargs(
     kwargs: dict[str, Any],
     *,
@@ -206,9 +272,7 @@ def _raise_stream_line_too_big(size: int, path: str) -> NoReturn:
     """Raise :class:`ValueError` for a stream line larger than the cap.
 
     :param size: Size in bytes of the offending line or pending buffer.
-    :type size: int
     :param path: The stream path, included in the error message.
-    :type path: str
     :raises ValueError: Always — this function never returns.
     """
     msg = (
@@ -229,36 +293,43 @@ async def _iter_lines_from_chunks(
     line larger than ``_MAX_STREAM_LINE_BYTES`` to protect consumers from a
     runaway producer.
 
+    Every chunk consumes the newlines it introduced and drops what precedes
+    them, so the carried remainder is newline-free when the next chunk arrives.
+    Searching only the arriving bytes therefore finds exactly what a search from
+    the front finds, at a cost proportional to the chunk rather than to the
+    remainder behind it.
+
     :param chunks: An async iterator producing byte chunks (e.g. from
         ``aiohttp`` ``StreamReader.iter_any()``).
-    :type chunks: AsyncIterator[bytes]
     :param path: The stream path, included in the error message when a single
         line exceeds the cap.
-    :type path: str
     :yield: Each line as ``bytes`` with its trailing newline preserved; the
         final unterminated chunk is also yielded when the stream ends without
         a newline.
-    :rtype: AsyncGenerator[bytes, None]
     :raises ValueError: If a single line exceeds ``_MAX_STREAM_LINE_BYTES``.
     """
     buffer = bytearray()
     async for chunk in chunks:
         if not chunk:
             continue
+        # Two cursors, not one: the terminator can only be in the arriving
+        # bytes, but the line it ends begins at the front of the buffer, where
+        # the remainder carried from earlier chunks sits.
+        search_from = len(buffer)
         buffer.extend(chunk)
-        offset = 0
+        line_start = 0
         while True:
-            newline_pos = buffer.find(b"\n", offset)
+            newline_pos = buffer.find(b"\n", search_from)
             if newline_pos == -1:
                 break
             line_end = newline_pos + 1
-            line_size = line_end - offset
+            line_size = line_end - line_start
             if line_size > _MAX_STREAM_LINE_BYTES:
                 _raise_stream_line_too_big(line_size, path)
-            yield bytes(buffer[offset:line_end])
-            offset = line_end
-        if offset:
-            del buffer[:offset]
+            yield bytes(buffer[line_start:line_end])
+            line_start = search_from = line_end
+        if line_start:
+            del buffer[:line_start]
         if len(buffer) > _MAX_STREAM_LINE_BYTES:
             _raise_stream_line_too_big(len(buffer), path)
     if buffer:
@@ -524,11 +595,12 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         return logging.getLogger(self.logger_name)
 
     @property
-    def session(self) -> ClientSession:
+    def session(self) -> ClientSession | None:
         """Get the ClientSession used in requests.
 
-        :return: The ClientSession used in requests.
-        :rtype: ClientSession
+        :return: The ClientSession used in requests, or ``None`` before the
+            client is opened and after it is closed — which is what callers
+            test for to decide whether to enter it.
         """
         return self._session
 
@@ -944,6 +1016,7 @@ class RemoteAPI(BaseRemoteAPI):
                     response.status,
                     detail="The server answered with an unfollowed redirect.",
                 )
+            response_data: JSONBody = None
             try:
                 response_data = await response.json()
                 self.logger.debug(
@@ -1099,8 +1172,6 @@ class RemoteAPI(BaseRemoteAPI):
                 "POST", path, data=payload, headers=headers, **kwargs
             )
         except HTTPException as exc:
-            if exc.status_code < status.HTTP_400_BAD_REQUEST and (
-                exc.headers or {}
-            ).get(UPSTREAM_NON_JSON_HEADER):
+            if is_non_json_success(exc):
                 return None
             raise

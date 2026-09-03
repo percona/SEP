@@ -25,19 +25,82 @@ from fastapi import Depends, Query
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response
-from app.sep.apps.mysql_backups.forms import BackupTaskResponse
+from app.sep.apps.mysql_backups.forms import (
+    BackupTaskResponse,
+    encryption_format_for_passes,
+    EncryptionFormat,
+)
 from app.sep.apps.mysql_backups.models import (
     BackupType,
     CatalogServiceKey,
     extract_backup_type_marker,
+    UNKNOWN_SERVICE_SENTINEL,
 )
-from app.sep.apps.mysql_backups.restore.deps import UNKNOWN_SERVICE_SENTINEL
 from app.sep.apps.shared.backups.edit_form import parse_server_list_config
 from app.sep.deps import InventoryAPI
 from app.sep.inventory import CreatedService
 from app.tasks.models import Task, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
+
+
+def _infer_encryption_format(
+    backup_type: str | None, all_servers: dict[str, Any]
+) -> EncryptionFormat:
+    """Return the encryption format a task stored before the selector was running.
+
+    Derived from the fields that used to be the only signal, so a task keeps the
+    encryption it already ran when its edit form reloads.
+
+    An absent ``ENCRYPT`` reads as disabled. The payload treats the same absence as
+    *enabled*, but that fail-safe guards a standalone run against hand-authored
+    config, which never reaches this function: every config SEP itself writes names
+    ``ENCRYPT`` explicitly, an invariant its own contract test pins.
+
+    A key file left on a Mydumper or Binlog task is ignored: AES-256 is
+    XtraBackup-only, so inferring it would produce a format that backup type
+    rejects and a form that could never validate.
+
+    :param backup_type: The stored ``BACKUP_TYPE``, if any.
+    :param all_servers: The stored ``ALL_SERVERS`` config block.
+    :return: The inferred format.
+    """
+    return encryption_format_for_passes(
+        aes256=backup_type == BackupType.XTRABACKUP
+        and bool(all_servers.get("XTRABACKUP_AES256_KEYFILE")),
+        gpg=bool(all_servers.get("ENCRYPT") or all_servers.get("POST_RUN_ENCRYPT")),
+    )
+
+
+# The create path writes the recipient block through ``BackupConfigServer``, whose
+# case-insensitive aliases uppercase the outer key, and through ``DirEncryptConfig``,
+# which renames the recipient to the space-separated spelling the directory
+# encryptor reads. The models' own attribute names are accepted as fallbacks so a
+# config written against them rather than against the serialized shape still
+# reloads.
+_DIR_ENCRYPT_CONFIG_KEYS = ("DIR_ENCRYPT_CONFIG", "dir_encrypt_config")
+_ENCRYPTION_RECIPIENT_KEYS = ("encryption recipient", "encryption_recipient")
+
+
+def _extract_encryption_recipient(server_config: dict[str, Any]) -> str | None:
+    """Return the GPG recipient a stored ``SERVER_LIST`` entry names, if any.
+
+    Losing the recipient is not a cosmetic gap: a GPG ``encryption_format``
+    requires one, so a reconstruction that drops it cannot validate and the task
+    keeps whatever it already had instead of being re-stamped.
+
+    :param server_config: The first ``SERVER_LIST`` entry.
+    :return: The recipient, or ``None`` when the entry names none.
+    """
+    for config_key in _DIR_ENCRYPT_CONFIG_KEYS:
+        block = server_config.get(config_key)
+        if not isinstance(block, dict):
+            continue
+        for recipient_key in _ENCRYPTION_RECIPIENT_KEYS:
+            recipient = block.get(recipient_key)
+            if recipient:
+                return recipient
+    return None
 
 
 def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
@@ -48,7 +111,8 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     Delegates the shared ``SERVER_LIST`` parsing to
     :func:`~app.sep.apps.shared.backups.edit_form.parse_server_list_config`, layering on the
     mysql-specific alias, encryption recipient, and the mydumper / xtrabackup /
-    binlog / upload-quiet keys.
+    binlog / upload-quiet keys. A task stored before ``ENCRYPTION_FORMAT`` existed
+    has its format inferred by :func:`_infer_encryption_format`.
 
     :param task: The task data retrieved from the Tasks API.
     :return: A dictionary containing parsed backup configuration.
@@ -61,9 +125,12 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
         "port": server_config.get("PORT"),
         "alias": server_config.get("ALIAS"),
     }
-    if "dir_encrypt_config" in server_config:
-        extra_fields["encryption_recipient"] = server_config["dir_encrypt_config"].get(
-            "encryption_recipient"
+    recipient = _extract_encryption_recipient(server_config)
+    if recipient is not None:
+        extra_fields["encryption_recipient"] = recipient
+    if "ENCRYPTION_FORMAT" not in all_servers_config:
+        extra_fields["encryption_format"] = _infer_encryption_format(
+            server_config.get("BACKUP_TYPE"), all_servers_config
         )
     extra_fields["binlog_alternative_host"] = all_servers_config.get(
         "BINLOG_ALTERNATIVE_HOST"
@@ -91,12 +158,18 @@ async def resolve_mysql_service(
     id, so serving a non-MySQL service would let it leak the runs of a MySQL
     service that happens to share its name.
 
+    Retired services resolve too: the catalog is a historical record, and a service
+    the inventory stopped seeing upstream is exactly the one whose past runs are
+    still wanted.
+
     :param service_id: The inventory id of the service to resolve.
     :param inventory_api: The Inventory API client used to resolve the service.
     :return: The resolved service.
     :raises HTTPNotFoundException: When the resolved service is not a MySQL service.
     """
-    service_data = await inventory_api.get(f"/services/{service_id}")
+    service_data = await inventory_api.get(
+        f"/services/{service_id}", params={"include_retired": "true"}
+    )
     service = CreatedService.model_validate(service_data)
     if service.type is not ServiceTypeEnum.MYSQL:
         raise HTTPNotFoundException(detail="Service not found")

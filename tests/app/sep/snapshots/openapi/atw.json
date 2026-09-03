@@ -29,7 +29,7 @@
         "type": "string"
       },
       "TaskHistoryStatusEnum": {
-        "description": "Define status codes for task executions.\n\n:cvar FAILED: Enum value for failed tasks.\n:cvar PENDING: Enum value for pending tasks.\n:cvar RUNNING: Enum value for running tasks.\n:cvar SUCCESS: Enum value for successfully completed tasks.\n:cvar STOPPED: Enum value for stopped tasks.\n:cvar LOST: Enum value for tasks that are lost.\n:cvar STALE: Enum value for tasks skipped because executor placement\n    exceeded the configured staleness threshold (for example a Nomad\n    allocation that never left the queue).",
+        "description": "Define status codes for task executions.\n\n:cvar FAILED: Enum value for failed tasks.\n:cvar PENDING: Enum value for pending tasks.\n:cvar RUNNING: Enum value for running tasks.\n:cvar SUCCESS: Enum value for successfully completed tasks.\n:cvar STOPPED: Enum value for stopped tasks.\n:cvar LOST: Enum value for tasks that are lost.\n:cvar STALE: Enum value for tasks skipped because executor placement\n    exceeded the configured staleness threshold (for example a Nomad\n    allocation that never left the queue).\n:cvar UNLAUNCHABLE: Enum value for tasks the executor node could not\n    launch at all, because some command in the invocation does not\n    resolve there. The payload never ran, so this is not a script\n    failure.",
         "enum": [
           "failed",
           "pending",
@@ -37,7 +37,8 @@
           "success",
           "stopped",
           "lost",
-          "stale"
+          "stale",
+          "unlaunchable"
         ],
         "title": "TaskHistoryStatusEnum",
         "type": "string"
@@ -603,9 +604,55 @@
         "title": "ATWSnippetSummary",
         "type": "object"
       },
-      "atw__AtwConfigResponse": {
-        "description": "Report whether the incident send action is available.\n\n:param send_disabled_reasons: Why sending is unavailable; empty when the\n    receiver is configured and the action is offered.",
+      "atw__AtwCaseMatch": {
+        "description": "Represent one support case the delivery provider matched.\n\n:param reference: The case reference to send diagnostics against.\n:param title: The case title, shown beside the reference to tell two\n    similar references apart.",
         "properties": {
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "title"
+        ],
+        "title": "AtwCaseMatch",
+        "type": "object"
+      },
+      "atw__AtwCaseSearchResponse": {
+        "description": "Report the cases matching a typed term, or that the search could not run.\n\n:param available: Whether the search ran at all. This is what keeps an\n    unavailable search distinct from an available one that matched nothing:\n    a caller must not render the first as the second.\n:param matches: The matched cases, empty when there are none and when the\n    search could not run.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/atw__AtwCaseMatch"
+            },
+            "title": "Matches",
+            "type": "array"
+          }
+        },
+        "required": [
+          "available",
+          "matches"
+        ],
+        "title": "AtwCaseSearchResponse",
+        "type": "object"
+      },
+      "atw__AtwConfigResponse": {
+        "description": "Report whether the incident send action is available.\n\n:param send_disabled_reasons: Why sending is unavailable; empty when the\n    receiver is configured and the action is offered.\n:param case_search_available: Whether the case-reference field may query the\n    receiver for matches. Defaults to ``False`` so a client built against\n    the response before this field existed keeps validating.",
+        "properties": {
+          "case_search_available": {
+            "default": false,
+            "title": "Case Search Available",
+            "type": "boolean"
+          },
           "send_disabled_reasons": {
             "items": {
               "type": "string"
@@ -1054,7 +1101,7 @@
       },
       "framework__AppSchema": {
         "additionalProperties": false,
-        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:type name: NonEmptyStr\n:param display_name: The human-readable plugin title displayed in the UI.\n:type display_name: NonEmptyStr\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:type task_type: NonEmptyStr | None\n:param forms: Form sections for single-entity / task plugins. Defaults to\n    an empty list when ``entities`` is used instead.\n:type forms: list[FormSection]\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:type capabilities: Capabilities | None\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:type list_view: ListView | None\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:type detail_view: DetailView | None\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only; ignored when ``entities`` is set).\n    Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only; ignored when ``entities`` is set). Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:type derived: list[DerivedTask] | None\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:type predecessors: list[ChainedPredecessor] | None\n:param related_apps: Optional separately registered apps the React shell\n    surfaces as sibling tabs (for example a restore app nested under a\n    backups parent). Defaults to ``None``.\n:type related_apps: list[RelatedApp] | None",
+        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:type name: NonEmptyStr\n:param display_name: The human-readable plugin title displayed in the UI.\n:type display_name: NonEmptyStr\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:type task_type: NonEmptyStr | None\n:param forms: Form sections for single-entity / task plugins. When\n    ``entities`` is non-empty, root ``forms`` must be empty (declare\n    forms on each entity instead); non-empty root ``forms`` are rejected\n    at construction. Defaults to an empty list.\n:type forms: list[FormSection]\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:type capabilities: Capabilities | None\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:type list_view: ListView | None\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:type detail_view: DetailView | None\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only). Rejected at construction when\n    ``entities`` is non-empty — declare rules on each entity instead.\n    Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only). Rejected at construction when ``entities`` is non-empty —\n    declare rules on each entity instead. Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:type derived: list[DerivedTask] | None\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:type predecessors: list[ChainedPredecessor] | None\n:param related_apps: Optional separately registered apps the React shell\n    surfaces as sibling tabs (for example a restore app nested under a\n    backups parent). Defaults to ``None``.\n:type related_apps: list[RelatedApp] | None",
         "properties": {
           "capabilities": {
             "anyOf": [
@@ -2300,7 +2347,7 @@
       },
       "framework__HostField": {
         "additionalProperties": false,
-        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). When ``depends_on`` is set (typically\na ``ServiceField``), the renderer may auto-select an executor from the\nupstream service; when omitted every available executor is listed and no\ncascade runs.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"host\"]\n:param depends_on: Optional name of the field whose value drives the\n    default executor selection. ``None`` (the default) omits the key from\n    the wire so plugins that do not opt in stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). When ``depends_on`` is set (typically\na ``ServiceField``), the renderer may auto-select an executor from the\nupstream service; when omitted every available executor is listed and no\ncascade runs.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional name of the field whose value drives the\n    default executor selection. ``None`` (the default) omits the key from\n    the wire so plugins that do not opt in stay byte-identical.\n:param target_service: Optional service field for a non-blocking\n    co-location warning. Independent of ``depends_on`` (see\n    :class:`~app.sep.apps.framework.form_dsl.markers.HostRef`).\n    ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
         "properties": {
           "allow_custom": {
             "anyOf": [
@@ -2389,6 +2436,18 @@
               }
             ],
             "title": "Requires"
+          },
+          "target_service": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Service"
           },
           "type": {
             "const": "host",
@@ -2672,7 +2731,7 @@
       },
       "framework__MultiHostField": {
         "additionalProperties": false,
-        "description": "Represent a multi-value executor-target selector field.\n\nThe multi-value counterpart of :class:`HostField`: the renderer commits a\nlist of executor targets instead of a single one. Derived from a\n``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\nCascade auto-select is single-host only (:class:`HostField`). ``depends_on``\nmay still be emitted when ``Ui(depends_on=...)`` is set so derivation stays\nuniform, but the multi-host renderer does not honour it today.\n\n:param field_type: The discriminator literal; always ``\"multi_host\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional upstream field name mirrored from\n    ``Ui(depends_on=...)``. Emitted for wire uniformity with\n    :class:`HostField`; the current multi-host renderer ignores it (no\n    cascade). ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts free-typed\n    values alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "description": "Represent a multi-value executor-target selector field.\n\nThe multi-value counterpart of :class:`HostField`: the renderer commits a\nlist of executor targets instead of a single one. Derived from a\n``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\nCascade auto-select is single-host only (:class:`HostField`). ``depends_on``\nmay still be emitted when ``Ui(depends_on=...)`` is set so derivation stays\nuniform, but the multi-host renderer does not honour it today.\n``target_service`` is mirrored the same way; the multi-host renderer\nignores it (no co-location warning).\n\n:param field_type: The discriminator literal; always ``\"multi_host\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional upstream field name mirrored from\n    ``Ui(depends_on=...)``. Emitted for wire uniformity with\n    :class:`HostField`; the current multi-host renderer ignores it (no\n    cascade). ``None`` (the default) omits the key from the wire.\n:param target_service: Optional service field name mirrored for wire\n    uniformity with :class:`HostField`; ignored by the multi-host\n    renderer. ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts free-typed\n    values alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
         "properties": {
           "allow_custom": {
             "anyOf": [
@@ -2761,6 +2820,18 @@
               }
             ],
             "title": "Requires"
+          },
+          "target_service": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Service"
           },
           "type": {
             "const": "multi_host",
@@ -4229,9 +4300,56 @@
         ]
       }
     },
+    "/api/apps/atw/case-search/": {
+      "get": {
+        "description": "Search the configured delivery provider for support cases matching ``term``.\n\nNo way the search itself can fail reaches the caller as an error: a\ndeployment that declares no case-search section, stored inputs that no\nlonger fit the plan, a refused credential, an unreachable receiver and a\nsearch that outran its bound all report the same unavailability, which the\ncaller renders as the plain text field rather than as a search that found\nnothing.\n\nRestricted to administrators, unlike the app's other reads. The router\nresolves a minimum role for unsafe methods only, so a safe method carries\nwhatever guard it declares itself; this one issues the deployment's own\nreceiver credential, and the dialog that calls it is already offered to\nadministrators alone.\n\n:param term: The caller's typed search term, the only input it accepts.\n    Surrounding whitespace is stripped, so a whitespace-only term is\n    refused rather than reaching the receiver as a match-everything\n    fragment.\n:return: The matched cases, or that the search could not run. At most\n    ``MAX_CASE_SEARCH_MATCHES`` are offered, so a plan that declares no\n    provider-side limit still cannot hand the dialog an unbounded list.",
+        "operationId": "atw_atw_case_search_api_apps_atw_case_search__get",
+        "parameters": [
+          {
+            "description": "The support case reference or title fragment to match.",
+            "in": "query",
+            "name": "term",
+            "required": true,
+            "schema": {
+              "description": "The support case reference or title fragment to match.",
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Term",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwCaseSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Case Search",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
     "/api/apps/atw/config/": {
       "get": {
-        "description": "Report whether the incident send action is available.\n\nNot gated by the send guard -- this endpoint is what reports that guard, so\nit must answer whether or not a receiver is configured.\n\n:return: The reasons the send action is withheld; empty when it is offered.",
+        "description": "Report whether the incident send action is available.\n\nNot gated by the send guard: this endpoint is what reports that guard, so\nit must answer whether or not a receiver is configured.\n\n:return: The reasons the send action is withheld, and whether the\n    case-reference field may search the receiver.",
         "operationId": "atw_atw_config_api_apps_atw_config__get",
         "responses": {
           "200": {

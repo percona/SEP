@@ -33,6 +33,7 @@ from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.inventory.config import inventory_settings, InventorySettings
 from app.inventory.deps import get_session
 from app.inventory.main import inventory_app
+from tests.app.core.settings_override.conftest import INVENTORY_SETTINGS_TOKEN
 
 
 @pytest.fixture(name="admin_client")
@@ -89,7 +90,7 @@ class TestInventorySettingsBootstrap:
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.INVENTORY_SETTINGS,
+                setting_class=INVENTORY_SETTINGS_TOKEN,
                 key="UVICORN_PORT",
                 value=9999,
                 is_active=True,

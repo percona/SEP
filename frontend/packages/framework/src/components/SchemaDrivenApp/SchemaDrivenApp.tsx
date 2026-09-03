@@ -27,10 +27,12 @@ import { useSnackbar } from 'notistack';
 import {
   useAppSchema,
   useAppEntityDetail,
+  useAuth,
   useUpdateAppEntity,
   type AppEntitySchema,
   type AppSchema,
 } from '@sep/api';
+import { ReadOnlyNotice } from '../ReadOnlyNotice';
 import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
 import type { RenderFieldOverride } from '../SchemaFormRenderer/types';
 import { EMPTY_SUBMIT_ERROR, mapSubmitError, type SubmitErrorState } from './submitErrorMapping';
@@ -75,7 +77,7 @@ interface SchemaDrivenAppProps {
   hideEntityTabs?: boolean;
   /**
    * When true, entity list tables that declare an ``actions`` column show a per-row delete
-   * control (inventory uses this with browse-only detail chrome).
+   * control. No app enables it today; it stays for a future multi-entity app.
    */
   allowListEntityDelete?: boolean;
   renderEntityDetailChildren?: (args: {
@@ -120,6 +122,7 @@ function AppEditPage({
   renderEditForm?: RenderFormSlot;
 }) {
   const navigate = useNavigate();
+  const { canMutate } = useAuth();
   const { entityName, id } = useParams<{ entityName?: string; id: string }>();
   const entitySchema = useMemo(
     () => schema.entities?.find((e: AppEntitySchema) => e.name === entityName),
@@ -169,15 +172,34 @@ function AppEditPage({
           navigate('..', { relative: 'path' });
         },
         onError: (error: unknown) => {
-          const message = error instanceof Error ? error.message : 'Failed to update';
-          // Transient toast is unchanged; 422s additionally map to a persistent
-          // banner plus inline per-field errors.
-          enqueueSnackbar(message, { variant: 'error' });
-          setSubmitErrorState(mapSubmitError(error, sections, message));
+          // Reported by the form's own persistent banner (plus inline per-field
+          // errors for a 422) and by nothing else: one signal per failure, and
+          // one that does not depend on a host-provided snackbar.
+          setSubmitErrorState(mapSubmitError(error, sections, 'Failed to update'));
         },
       },
     );
   };
+
+  // Editing is a mutation, so the whole page is the control (see AppCreatePage).
+  if (!canMutate) {
+    return (
+      <Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+          <IconButton
+            onClick={() => navigate('..', { relative: 'path' })}
+            aria-label={`Back to ${title}`}
+          >
+            <ArrowBackIcon />
+          </IconButton>
+          <Typography variant="h4">
+            {title} #{id}
+          </Typography>
+        </Box>
+        <ReadOnlyNotice action={`edit ${title}`} testId="app-entity-edit-read-only" />
+      </Box>
+    );
+  }
 
   if (!multi || !entitySchema) {
     return (

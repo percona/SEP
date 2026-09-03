@@ -18,12 +18,13 @@
 from datetime import timedelta
 from string import Template
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
+from app.core.requests import RemoteAPI
 from app.core.settings_override.registry import (
     chain_is_locked,
     is_advanced_field,
@@ -33,6 +34,7 @@ from app.core.settings_override.registry import (
     MaterializerPurpose,
     SECRET_STR_MASK,
 )
+from app.sep.apps.inventory.deps import get_syncers
 from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import (
     App,
@@ -140,7 +142,12 @@ class TestDiagnosticsDelivery:
 
     def test_defaults_to_not_configured(self):
         """Keep the block unset so a consumer can gate on ``None``."""
-        assert SEPSettings(_env_file=None).DIAGNOSTICS_DELIVERY is None
+        assert (
+            SEPSettings(
+                _env_file=None  # ty: ignore[unknown-argument]
+            ).DIAGNOSTICS_DELIVERY
+            is None
+        )
 
     def test_is_not_overridable_from_the_database(self):
         """Keep the block out of the override layer, whole-object and per-leaf alike.
@@ -210,7 +217,12 @@ class TestDiagnosticsDeliveryInputs:
 
     def test_defaults_to_not_configured(self):
         """Leave the inputs unset so a standalone deployment behaves unchanged."""
-        assert SEPSettings(_env_file=None).DIAGNOSTICS_DELIVERY_INPUTS is None
+        assert (
+            SEPSettings(
+                _env_file=None  # ty: ignore[unknown-argument]
+            ).DIAGNOSTICS_DELIVERY_INPUTS
+            is None
+        )
 
     def test_is_hot_reloadable_and_advanced(self):
         """Expose the whole object to the settings API, grouped as advanced."""
@@ -340,7 +352,7 @@ class TestFooterTemplate:
         worktree hook may set ``SEP__FOOTER_TEMPLATE`` to the branch name) does
         not mask the built-in default.
         """
-        settings = SEPSettings(_env_file=None)
+        settings = SEPSettings(_env_file=None)  # ty: ignore[unknown-argument]
         assert settings.FOOTER_TEMPLATE.template == "$summary $version"
 
     def test_footer_template_coerced_from_string(self):
@@ -628,7 +640,10 @@ class TestCredentialUrlMaskRejection:
     def test_mask_is_rejected_on_the_yaml_path(self, field: str) -> None:
         """Fail settings construction when a masked export is re-fed as configuration."""
         with pytest.raises(ValidationError, match=field):
-            SEPSettings(**{field: self._MASKED_ENDPOINT}, _env_file=None)
+            SEPSettings(
+                **{field: self._MASKED_ENDPOINT},
+                _env_file=None,  # ty: ignore[unknown-argument]
+            )
 
     @pytest.mark.parametrize(
         ("field", "env_name"),
@@ -643,4 +658,38 @@ class TestCredentialUrlMaskRejection:
         """Fail settings construction when a masked endpoint arrives via the environment."""
         monkeypatch.setenv(env_name, self._MASKED_ENDPOINT)
         with pytest.raises(ValidationError, match=field):
-            SEPSettings(_env_file=None)
+            SEPSettings(_env_file=None)  # ty: ignore[unknown-argument]
+
+
+class TestSyncerRetirementThresholdsOverConfig:
+    """``SEP.SYNCERS[]`` forwards extra keys verbatim, so the floors must hold there."""
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("missing_grace_generations", 0),
+            ("missing_grace_generations", 1),
+            ("stale_run_after", 0),
+        ],
+    )
+    def test_unsafe_threshold_from_config_is_rejected(
+        self, field, value, mocker: MockerFixture
+    ) -> None:
+        """Reject a threshold that would restore single-absence deletion.
+
+        ``SyncOptions`` carries ``extra="allow"`` and does not validate these keys
+        itself, so syncer construction is the only thing standing between a
+        deployment's settings and a syncer that deletes on first absence.
+        """
+        option = SyncOptions(
+            syncer="app.sep.sync.syncers.pmm.PMMSyncer", **{field: value}
+        )
+        assert getattr(option, field) == value
+        mocker.patch.object(sep_settings, "SYNCERS", [option])
+
+        # ``BaseCaseInsensitiveModel`` reports the field uppercased.
+        with pytest.raises(ValidationError, match=f"(?i){field}"):
+            get_syncers(
+                inventory_api=MagicMock(spec=RemoteAPI),
+                tasks_api=MagicMock(spec=RemoteAPI),
+            )

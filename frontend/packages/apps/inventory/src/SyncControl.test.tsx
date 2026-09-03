@@ -20,19 +20,21 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SnackbarProvider } from 'notistack';
-import { apiClient } from '@sep/api';
+import { ADMIN_SESSION, apiClient, AuthContext, UNAUTHENTICATED_SESSION } from '@sep/api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SyncControl } from './SyncControl';
 
-function makeWrapper() {
+function makeWrapper({ canMutate = true }: { canMutate?: boolean } = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
-      <QueryClientProvider client={client}>
-        <SnackbarProvider>{children}</SnackbarProvider>
-      </QueryClientProvider>
+      <AuthContext value={canMutate ? ADMIN_SESSION : UNAUTHENTICATED_SESSION}>
+        <QueryClientProvider client={client}>
+          <SnackbarProvider>{children}</SnackbarProvider>
+        </QueryClientProvider>
+      </AuthContext>
     );
   };
 }
@@ -179,25 +181,50 @@ describe('SyncControl', () => {
     });
   });
 
-  describe('snackbar-on-400', () => {
+  describe('failure reporting', () => {
     afterEach(() => vi.restoreAllMocks());
 
-    it('shows error snackbar with server message when POST returns 400', async () => {
+    it("reports a 400 with the server's message", async () => {
       const user = userEvent.setup();
       stubGet([{ name: 'myapp.MySyncer', display_name: 'My Syncer' }]);
       await stubPost(400, { detail: 'Unknown syncer: myapp.MySyncer' });
       render(<SyncControl />, { wrapper: makeWrapper() });
       await user.click(await screen.findByRole('button', { name: /sync all/i }));
-      await screen.findByText(/Unknown syncer: myapp\.MySyncer/i);
+      expect(await screen.findByTestId('sync-action-error')).toHaveTextContent(
+        /Unknown syncer: myapp\.MySyncer/i,
+      );
     });
 
-    it('shows generic snackbar for non-400 errors', async () => {
+    it("reports a refusal with the server's message, not a generic string", async () => {
+      const user = userEvent.setup();
+      stubGet([{ name: 'myapp.MySyncer', display_name: 'My Syncer' }]);
+      await stubPost(403, { detail: "You don't have permission to perform this action" });
+      render(<SyncControl />, { wrapper: makeWrapper() });
+      await user.click(await screen.findByRole('button', { name: /sync all/i }));
+      expect(await screen.findByTestId('sync-action-error')).toHaveTextContent(
+        "You don't have permission to perform this action",
+      );
+    });
+
+    it('reports a 500 with its message', async () => {
       const user = userEvent.setup();
       stubGet([{ name: 'myapp.MySyncer', display_name: 'My Syncer' }]);
       await stubPost(500, { detail: 'Internal server error' });
       render(<SyncControl />, { wrapper: makeWrapper() });
       await user.click(await screen.findByRole('button', { name: /sync all/i }));
-      await screen.findByText(/Failed to start sync/i);
+      expect(await screen.findByTestId('sync-action-error')).toHaveTextContent(
+        /Internal server error/i,
+      );
+    });
+
+    it('reports nothing when the sync starts', async () => {
+      const user = userEvent.setup();
+      stubGet([{ name: 'myapp.MySyncer', display_name: 'My Syncer' }]);
+      await stubPost(200, { started: true });
+      render(<SyncControl />, { wrapper: makeWrapper() });
+      await user.click(await screen.findByRole('button', { name: /sync all/i }));
+      await waitFor(() => expect(apiClient.post).toHaveBeenCalled());
+      expect(screen.queryByTestId('sync-action-error')).not.toBeInTheDocument();
     });
   });
 
@@ -235,9 +262,11 @@ describe('SyncControl', () => {
       });
       const invalidate = vi.spyOn(client, 'invalidateQueries');
       const wrapper = ({ children }: { children: ReactNode }) => (
-        <QueryClientProvider client={client}>
-          <SnackbarProvider>{children}</SnackbarProvider>
-        </QueryClientProvider>
+        <AuthContext value={ADMIN_SESSION}>
+          <QueryClientProvider client={client}>
+            <SnackbarProvider>{children}</SnackbarProvider>
+          </QueryClientProvider>
+        </AuthContext>
       );
 
       render(<SyncControl />, { wrapper });
@@ -249,5 +278,36 @@ describe('SyncControl', () => {
       await waitFor(() => expect(hasStatusInvalidation(invalidate)).toBe(true));
       expect(hasEntityInvalidation(invalidate)).toBe(false);
     });
+  });
+});
+
+describe('SyncControl — write access', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('renders the sync control for a session that may mutate', async () => {
+    stubGet([{ name: 'pmm', display_name: 'PMM' }]);
+
+    render(<SyncControl />, { wrapper: makeWrapper() });
+
+    expect(
+      await screen.findByRole('button', { name: 'Sync all configured syncers' }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders no sync control for a non-admin', async () => {
+    const get = stubGet([{ name: 'pmm', display_name: 'PMM' }]);
+
+    render(<SyncControl />, { wrapper: makeWrapper({ canMutate: false }) });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: 'Sync all configured syncers' }),
+      ).not.toBeInTheDocument();
+    });
+    // The syncer listing is a GET the component still needs for nothing here,
+    // but the control itself never renders.
+    expect(get).toHaveBeenCalled();
   });
 });

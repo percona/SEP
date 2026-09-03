@@ -15,6 +15,7 @@
 
 """Tests for BaseSnippet and Snippet models."""
 
+import hashlib
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -128,6 +129,87 @@ class TestBaseSnippetProperties:
         """Verify description defaults to empty string."""
         snippet = BaseSnippet(filename="test.sh", size=100, md5_digest="a" * 32)
         assert snippet.description == ""
+
+    @pytest.mark.parametrize("declared", [None, "", "   ", "\t\n"])
+    def test_title_falls_back_for_blank_declared_value(self, declared):
+        """Verify a blank declared title falls back to the filename."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"title": declared},
+        )
+        assert snippet.title == "test.sh"
+
+    @pytest.mark.parametrize("declared", [None, "", "   ", "\t\n"])
+    def test_description_falls_back_for_blank_declared_value(self, declared):
+        """Verify a blank declared description falls back to an empty string."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"description": declared},
+        )
+        assert snippet.description == ""
+
+    def test_title_preserves_padded_value(self):
+        """Verify a padded but non-blank title is returned unchanged."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"title": "  My Title  "},
+        )
+        assert snippet.title == "  My Title  "
+
+    def test_description_preserves_padded_value(self):
+        """Verify a padded but non-blank description is returned unchanged."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"description": "  A useful snippet  "},
+        )
+        assert snippet.description == "  A useful snippet  "
+
+    @pytest.mark.parametrize(
+        ("declared", "expected"), [(5, "5"), (True, "True"), (1.5, "1.5")]
+    )
+    def test_title_renders_a_non_string_declared_value_as_text(
+        self, declared, expected
+    ):
+        """Verify a non-string declared title is rendered as text.
+
+        ``meta`` is whatever YAML parsed, and the consumers type both properties
+        ``str``, so handing on the raw scalar fails the whole response.
+        """
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"title": declared},
+        )
+        assert snippet.title == expected
+
+    def test_description_renders_a_non_string_declared_value_as_text(self):
+        """Verify a non-string declared description is rendered as text."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"description": 42},
+        )
+        assert snippet.description == "42"
+
+    def test_service_type_keeps_blank_declared_value(self):
+        """Verify the blank-aware fallback does not extend to service_type."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"service_type": ""},
+        )
+        assert snippet.service_type == ""
 
     def test_service_type_from_meta(self):
         """Verify service_type is extracted from meta."""
@@ -889,13 +971,18 @@ class TestFromPath:
     @pytest.mark.asyncio
     async def test_creates_snippet_from_file(self, base_dir):
         """Verify from_path creates a snippet with correct hash and filename."""
+        content = "echo hello\n"
         snippet_file = base_dir / "hello.sh"
-        snippet_file.write_text("echo hello\n")
+        snippet_file.write_text(content, encoding="utf-8")
 
         snippet = await BaseSnippet.from_path("hello.sh")
 
         assert snippet.filename == "hello.sh"
         assert len(snippet.md5_digest) == MD5_DIGEST_LENGTH
+        assert (
+            snippet.md5_digest
+            == hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()
+        )
         assert snippet.size > 0
 
     @pytest.mark.asyncio

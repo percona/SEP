@@ -20,14 +20,18 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { SnackbarProvider } from 'notistack';
-import type { AppSchema } from '@sep/api';
+import { ApiError, type AppSchema } from '@sep/api';
 import { AppTaskEditPage, normalizeChoiceDefaults } from './AppTaskEditPage';
 import type { RenderFormSlot } from './types';
 
 const mockUpdateTaskMutate = vi.fn();
 const mockUseAppTask = vi.fn();
 
+/** Flipped per test to cover the read-only (non-admin) rendering. */
+let mockCanMutate = true;
+
 vi.mock('@sep/api', () => ({
+  useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
   useUpdateAppTask: () => ({
     mutate: mockUpdateTaskMutate,
     isPending: false,
@@ -36,6 +40,22 @@ vi.mock('@sep/api', () => ({
   }),
   useAppTask: (...args: unknown[]) => mockUseAppTask(...args),
   useAlertConfig: () => ({ data: { available: true }, isLoading: false, isError: false }),
+  ApiError: class ApiError extends Error {
+    status?: number;
+    data?: unknown;
+    constructor(details: { status?: number; message: string; data?: unknown }) {
+      super(details.message);
+      this.status = details.status;
+      this.data = details.data;
+    }
+  },
+  parseFieldErrors: (error: { data?: { detail?: unknown } }) =>
+    Array.isArray(error?.data?.detail)
+      ? (error.data.detail as { loc?: string[]; msg?: string }[]).map((entry) => ({
+          path: (entry.loc ?? []).filter((seg) => seg !== 'body').join('.'),
+          message: entry.msg ?? 'Invalid value',
+        }))
+      : [],
 }));
 
 const schema: AppSchema = {
@@ -85,6 +105,7 @@ function renderAt(
 beforeEach(() => {
   mockUpdateTaskMutate.mockReset();
   mockUseAppTask.mockReset();
+  mockCanMutate = true;
 });
 
 describe('AppTaskEditPage', () => {
@@ -375,5 +396,97 @@ describe('normalizeChoiceDefaults', () => {
     expect(result.source).toEqual({ mode: 'rsync', transport: 'SSH' });
     // The input is not mutated: `setAtPath` clones the intermediates it walks.
     expect(form.source.transport).toBe('ssh');
+  });
+});
+
+/** Alerts rendered by the page itself, excluding notistack's toast region. */
+function inTreeAlerts(): HTMLElement[] {
+  return screen.queryAllByRole('alert').filter((el) => !el.className.includes('notistack'));
+}
+
+describe('AppTaskEditPage — failure reporting', () => {
+  beforeEach(() => {
+    mockUseAppTask.mockReturnValue({
+      data: { name: 'check1', data: { _form: { task_name: 'check1', title: 'Nightly' } } },
+      isLoading: false,
+    });
+  });
+
+  it("banners a refusal with the server's own reason, with no toast alongside it", async () => {
+    mockUpdateTaskMutate.mockImplementation((_vars, opts) =>
+      opts.onError?.(
+        new ApiError({
+          kind: 'http',
+          status: 403,
+          message: "You don't have permission to perform this action",
+        }),
+      ),
+    );
+
+    renderAt();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(inTreeAlerts()).toHaveLength(1));
+    expect(inTreeAlerts()[0]).toHaveTextContent("You don't have permission to perform this action");
+    expect(screen.queryAllByRole('alert')).toHaveLength(1);
+  });
+
+  it('keeps the per-field path for a 422', async () => {
+    mockUpdateTaskMutate.mockImplementation((_vars, opts) =>
+      opts.onError?.(
+        new ApiError({
+          kind: 'http',
+          status: 422,
+          message: 'HTTP 422',
+          data: {
+            detail: [{ loc: ['body', 'count'], msg: 'ensure this value is greater than 0' }],
+          },
+        }),
+      ),
+    );
+
+    renderAt();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(inTreeAlerts()[0]).toHaveTextContent('ensure this value is greater than 0'),
+    );
+  });
+
+  it('shows no banner on a successful save', async () => {
+    mockUpdateTaskMutate.mockImplementation((_vars, opts) => opts.onSuccess?.());
+
+    renderAt();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdateTaskMutate).toHaveBeenCalledTimes(1));
+    expect(inTreeAlerts()).toEqual([]);
+  });
+});
+
+describe('AppTaskEditPage — write access', () => {
+  it('renders the edit form for a session that may mutate', () => {
+    mockUseAppTask.mockReturnValue({
+      data: { name: 'check1', data: { _form: { task_name: 'check1', title: 'Nightly' } } },
+      isLoading: false,
+    });
+
+    renderAt();
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(screen.queryByTestId('app-task-edit-read-only')).not.toBeInTheDocument();
+  });
+
+  it('renders the read-only guard instead of the edit form for a non-admin', () => {
+    mockCanMutate = false;
+    mockUseAppTask.mockReturnValue({
+      data: { name: 'check1', data: { _form: { task_name: 'check1', title: 'Nightly' } } },
+      isLoading: false,
+    });
+
+    renderAt();
+
+    expect(screen.getByTestId('app-task-edit-read-only')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
   });
 });

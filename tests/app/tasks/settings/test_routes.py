@@ -33,6 +33,10 @@ from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.execution.nomad_lifecycle import normalize_nomad_config_value
 from app.tasks.main import tasks_app
+from tests.app.core.settings_override.conftest import (
+    ANONYMIZER_SETTINGS_TOKEN,
+    TASKS_SETTINGS_TOKEN,
+)
 
 
 def _nomad_endpoint_value() -> str:
@@ -142,7 +146,7 @@ class TestTasksSettingsApi:
         )
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.ANONYMIZER_SETTINGS
+            session, setting_class=ANONYMIZER_SETTINGS_TOKEN
         )
         assert [r.key for r in rows] == ["DEFAULT_ENTITIES"]
 
@@ -159,7 +163,7 @@ class TestTasksSettingsApi:
         )
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            session, setting_class=TASKS_SETTINGS_TOKEN
         )
         assert len(rows) == 1
         assert rows[0].value == new_value
@@ -178,7 +182,7 @@ class TestTasksSettingsApi:
         types = {entry["type"] for entry in response.json()["detail"]}
         assert "not_overridable" in types
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            session, setting_class=TASKS_SETTINGS_TOKEN
         )
         assert rows == []
 
@@ -197,7 +201,7 @@ class TestTasksSettingsApi:
         )
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            session, setting_class=TASKS_SETTINGS_TOKEN
         )
         expected_rows = 2
         assert len(rows) == expected_rows
@@ -232,7 +236,7 @@ class TestTasksSettingsApi:
             assert response.status_code == status.HTTP_200_OK
             assert new_value == tasks_settings.STALENESS_THRESHOLD_SECONDS
         finally:
-            tasks_settings._set_snapshot({})
+            tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     async def test_patch_partial_failure_rolls_back(
         self,
@@ -249,7 +253,7 @@ class TestTasksSettingsApi:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            session, setting_class=TASKS_SETTINGS_TOKEN
         )
         assert rows == []
 
@@ -294,7 +298,7 @@ class TestTasksSettingsApi:
         locs = [tuple(entry["loc"]) for entry in response.json()["detail"]]
         assert any(loc[:2] == ("body", "LOG_RETENTION_DAYS") for loc in locs)
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            session, setting_class=TASKS_SETTINGS_TOKEN
         )
         assert rows == []
 
@@ -313,12 +317,12 @@ class TestTasksSettingsApi:
             assert response.status_code == status.HTTP_200_OK
             assert new_value == tasks_settings.LOG_RETENTION_DAYS
             rows = await SettingsOverrideManager.list(
-                session, setting_class=SettingClassEnum.TASKS_SETTINGS
+                session, setting_class=TASKS_SETTINGS_TOKEN
             )
             assert len(rows) == 1
             assert rows[0].value == new_value
         finally:
-            tasks_settings._set_snapshot({})
+            tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     async def test_delete_idempotent(self, admin_test_client: TestClient) -> None:
         """Assert deleting a HOT field with no row still succeeds with 204."""
@@ -348,7 +352,7 @@ class TestTasksSettingsNestedOverrides:
     def _reset_proxy_snapshot(self) -> Iterator[None]:
         """Clear the global proxy snapshot after each nested test."""
         yield
-        tasks_settings._set_snapshot({})
+        tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     async def test_patch_per_leaf_nomad_round_trip(
         self,
@@ -367,12 +371,12 @@ class TestTasksSettingsNestedOverrides:
         assert body[0]["value"] == override_timeout
         rows = await SettingsOverrideManager.list(
             session,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="NOMAD__timeout",
         )
         assert len(rows) == 1
         assert rows[0].value == override_timeout
-        snapshot = tasks_settings.get_snapshot()
+        snapshot = tasks_settings.get_snapshot()  # ty: ignore[unresolved-attribute]
         assert isinstance(snapshot["NOMAD"], NomadExecutor)
         assert snapshot["NOMAD"].timeout == override_timeout
         assert tasks_settings.NOMAD.timeout == override_timeout
@@ -429,7 +433,7 @@ class TestTasksSettingsNestedOverrides:
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            session, setting_class=TASKS_SETTINGS_TOKEN
         )
         assert rows == []
 
@@ -576,7 +580,7 @@ class TestTasksSettingsNestedOverrides:
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            session, setting_class=TASKS_SETTINGS_TOKEN
         )
         assert rows == []
 
@@ -681,7 +685,7 @@ class TestTasksSettingsNestedOverrides:
                 by_key["NOMAD__check_cert_expiry_interval__every"]["value"] is not None
             )
         finally:
-            tasks_settings._set_snapshot({})
+            tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 def _nomad_snapshot_with_endpoint(full_url: str) -> dict[str, object]:
@@ -699,13 +703,15 @@ class TestTasksSettingsCredentialUrlRedaction:
     def _reset_snapshot(self) -> Iterator[None]:
         """Clear override snapshots after each test."""
         yield
-        tasks_settings._set_snapshot({})
+        tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     async def test_list_redacts_nomad_endpoint_leaf(
         self, admin_test_client: TestClient
     ) -> None:
         """Assert ``GET /settings/`` masks ``NOMAD__endpoint`` password components."""
-        tasks_settings._set_snapshot(_nomad_snapshot_with_endpoint(self._FULL_URL))
+        tasks_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            _nomad_snapshot_with_endpoint(self._FULL_URL)
+        )
         response = admin_test_client.get("/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         settings = response.json()["groups"][0]["settings"]
@@ -719,7 +725,9 @@ class TestTasksSettingsCredentialUrlRedaction:
         self, admin_test_client: TestClient
     ) -> None:
         """Assert ``GET /settings/{class}/{key}`` masks ``NOMAD__endpoint`` passwords."""
-        tasks_settings._set_snapshot(_nomad_snapshot_with_endpoint(self._FULL_URL))
+        tasks_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            _nomad_snapshot_with_endpoint(self._FULL_URL)
+        )
         response = admin_test_client.get(
             "/admin/settings/TasksSettings/NOMAD__endpoint"
         )
@@ -742,7 +750,7 @@ class TestTasksSettingsCredentialUrlWriteback:
         redacted_url = "http://nomad-user:****@nomad.internal:4646"
         snapshot = _nomad_snapshot_with_endpoint(full_url)
         try:
-            tasks_settings._set_snapshot(snapshot)
+            tasks_settings._set_snapshot(snapshot)  # ty: ignore[unresolved-attribute]
             response = admin_test_client.patch(
                 "/admin/settings/TasksSettings",
                 json={"NOMAD__endpoint": redacted_url},
@@ -752,7 +760,7 @@ class TestTasksSettingsCredentialUrlWriteback:
             assert "nomad-secret" in endpoint
             assert "****" not in endpoint
         finally:
-            tasks_settings._set_snapshot({})
+            tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     async def test_patch_redacted_whole_nomad_preserves_password(
         self, admin_test_client: TestClient
@@ -762,7 +770,7 @@ class TestTasksSettingsCredentialUrlWriteback:
         redacted_url = "http://nomad-user:****@nomad.internal:4646"
         snapshot = _nomad_snapshot_with_endpoint(full_url)
         try:
-            tasks_settings._set_snapshot(snapshot)
+            tasks_settings._set_snapshot(snapshot)  # ty: ignore[unresolved-attribute]
             response = admin_test_client.patch(
                 "/admin/settings/TasksSettings",
                 json={"NOMAD": {"endpoint": redacted_url}},
@@ -772,7 +780,7 @@ class TestTasksSettingsCredentialUrlWriteback:
             assert "nomad-secret" in endpoint
             assert "****" not in endpoint
         finally:
-            tasks_settings._set_snapshot({})
+            tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.asyncio
@@ -801,10 +809,10 @@ class TestTasksSettingsInlineRebind:
         tasks_app.state.override_callbacks = {
             (SettingClassEnum.TASKS_SETTINGS, "NOMAD"): spy,
         }
-        tasks_settings._set_snapshot({})
+        tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
         yield spy
         tasks_app.state.override_callbacks = original
-        tasks_settings._set_snapshot({})
+        tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     async def test_patch_nomad_fires_rebind_callback(
         self, admin_test_client: TestClient, nomad_callback_spy: AsyncMock

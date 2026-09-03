@@ -28,7 +28,7 @@ from app.core.auth.exceptions import (
     BaseAuthProviderException,
     HTTPUnauthorizedException,
 )
-from app.core.requests import RemoteAPI
+from app.core.requests import as_json_array, as_json_object, RemoteAPI
 from app.core.utils.fields import NonEmptyStr, TimedeltaSeconds
 
 
@@ -158,7 +158,7 @@ class GrafanaSDK(RemoteAPI):
         :return: The Grafana ``/api/user`` record for the session's user.
         """
         with self.extra_headers({"Cookie": f"{self.session_cookie_name}={session}"}):
-            return await self.get("/api/user")
+            return as_json_object(await self.get("/api/user"))
 
     async def get_current_user_orgs(self, session: str) -> list[dict[str, Any]]:
         """Read the org memberships of the user owning ``session``.
@@ -167,7 +167,7 @@ class GrafanaSDK(RemoteAPI):
         :return: The Grafana ``/api/user/orgs`` records for the session's user.
         """
         with self.extra_headers({"Cookie": f"{self.session_cookie_name}={session}"}):
-            return await self.get("/api/user/orgs")
+            return as_json_array(await self.get("/api/user/orgs"))
 
     @alru_cache(ttl=300)
     async def get_org_users(self) -> list[dict[str, Any]]:
@@ -176,7 +176,7 @@ class GrafanaSDK(RemoteAPI):
         :return: The Grafana ``/api/org/users`` records.
         """
         with self.auth(self.service_account_token.get_secret_value()):
-            return await self.get("/api/org/users")
+            return as_json_array(await self.get("/api/org/users"))
 
     async def lookup_user(self, login: str) -> dict[str, Any]:
         """Fetch a single user by login or email via the service account.
@@ -185,4 +185,6 @@ class GrafanaSDK(RemoteAPI):
         :return: The Grafana ``/api/users/lookup`` record for the user.
         """
         with self.auth(self.service_account_token.get_secret_value()):
-            return await self.get("/api/users/lookup", params={"loginOrEmail": login})
+            return as_json_object(
+                await self.get("/api/users/lookup", params={"loginOrEmail": login})
+            )

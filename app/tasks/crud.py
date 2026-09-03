@@ -19,8 +19,9 @@ import logging
 from collections import defaultdict
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import CursorResult, delete, func, or_, update
+from sqlalchemy import ChunkedIteratorResult, CursorResult, delete, func, or_, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import and_, col, select
@@ -99,10 +100,12 @@ class TaskManager(BaseSQLModelManager):
         """Append JSON ``Task.data`` predicates used by active-task list queries."""
         if target is not None:
             where.append(Task.data["meta"]["target"].as_string() == target)
-        if parent_is_null is not None or self_parent:
-            parent_value = func_json_extract(
-                session.get_bind().name, col(Task.data), "parent"
-            )
+        # Bound unconditionally: it only builds a SQL expression, and the guard
+        # it used to sit behind was the disjunction of the two guards below, so
+        # no path ever reached an unbound read.
+        parent_value = func_json_extract(
+            session.get_bind().name, col(Task.data), "parent"
+        )
         if parent_is_null is not None:
             if parent_is_null:
                 where.append(parent_value.is_(None))
@@ -262,7 +265,7 @@ class TaskManager(BaseSQLModelManager):
     @classmethod
     async def delete_unattached_system_tasks(
         cls, session: AsyncSession, exclude_task_names: Sequence[str]
-    ) -> CursorResult:
+    ) -> CursorResult[Any] | ChunkedIteratorResult[Any]:
         """Delete unattached system tasks that are not in the provided sequence.
 
         This method identifies system tasks that are not attached to any task history
@@ -318,6 +321,33 @@ class TaskManager(BaseSQLModelManager):
             return await cls.retrieve_by_name(session=session, name=task.data["task"])
         return task
 
+    @classmethod
+    async def envelope_meta_values(
+        cls, session: AsyncSession, meta_key: str
+    ) -> list[str]:  # pagination-ok: an exhaustive read is the contract
+        """Return every value tasks carry under ``data["meta"][meta_key]``.
+
+        Deliberately unfiltered by ``deleted_at``: a soft-deleted task still
+        satisfies ``TaskHistory.task``, so its envelope can still be read back by
+        a run-result recorder, and a caller asking what the envelopes still name
+        needs those rows too.
+
+        Unpaginated for the same reason. A caller asks this to learn what it must
+        *not* act on, so a truncated answer is not a shorter list but a wrong one.
+        The result is distinct values of one meta key, bounded by how many
+        distinct ids the fleet ever stamped.
+
+        :param session: The SQLAlchemy asynchronous session to use.
+        :param meta_key: The envelope ``meta`` key to read.
+        :return: The distinct values present under that key.
+        """
+        extracted = func_json_extract(
+            session.get_bind().name, Task.data, "meta", meta_key
+        )
+        query = cls._filter_query(select(extracted).distinct(), extracted.is_not(None))
+        result = await cls._exec(session, query)
+        return list(result.all())
+
 
 class TaskHistoryManager(BaseSQLModelManager):
     """Manage task history operations, including listing task histories by task name.
@@ -340,6 +370,39 @@ class TaskHistoryManager(BaseSQLModelManager):
         tie_breaker=col(TaskHistory.id),
         searchable=[col(TaskHistory.executed_by)],
     )
+
+    @classmethod
+    async def in_flight_meta_values(
+        cls, session: AsyncSession, meta_key: str
+    ) -> list[str]:  # pagination-ok: an exhaustive read is the contract
+        """Return the values in-flight executions carry under that ``meta`` key.
+
+        Scoped to :meth:`TaskHistoryStatusEnum.active_statuses` rather than a
+        literal status set, so a future non-terminal status is picked up by
+        adding it there. A terminal execution is history and is deliberately
+        excluded: it can no longer produce a write.
+
+        Unpaginated: a caller asks this to learn what it must *not* act on, so a
+        truncated answer is wrong rather than short. In-flight executions are
+        bounded by concurrency, not by history.
+
+        :param session: The SQLAlchemy asynchronous session to use.
+        :param meta_key: The execution-request ``meta`` key to read.
+        :return: The distinct values present under that key.
+        """
+        extracted = func_json_extract(
+            session.get_bind().name,
+            col(TaskHistory.execution_request),
+            "meta",
+            meta_key,
+        )
+        query = cls._filter_query(
+            select(extracted).distinct(),
+            extracted.is_not(None),
+            col(TaskHistory.status).in_(TaskHistoryStatusEnum.active_statuses()),
+        )
+        result = await cls._exec(session, query)
+        return list(result.all())
 
     @classmethod
     async def get_log_producer_epoch(
@@ -758,18 +821,14 @@ class TaskHistoryLogManager(BaseSQLModelManager):
 
         Select up to ``batch_size`` ``taskhistory_log`` rows whose parent
         ``TaskHistory`` is no longer active (any status except ``PENDING`` /
-        ``RUNNING``) and whose effective completion time --
-        ``COALESCE(finished_at, started_at, created_at)`` -- is strictly older
+        ``RUNNING``) and whose effective completion time —
+        ``COALESCE(finished_at, started_at, created_at)`` — is strictly older
         than ``cutoff``, then delete them in a single committed statement. The
         parent ``taskhistory`` audit row is never touched.
 
         On PostgreSQL the inner selection takes ``FOR UPDATE ... SKIP LOCKED``
         on the log rows so concurrent workers never contend on or double-delete
-        the same batch; other dialects (SQLite in tests) omit the clause. On
-        MySQL the limited selection is wrapped in a derived table because MySQL
-        rejects ``LIMIT`` inside an ``IN (SELECT ...)`` subquery (error 1235)
-        and deleting from a table referenced in its own subquery (error 1093);
-        the derived table sidesteps both while keeping the batch semantics.
+        the same batch; SQLite omits the clause.
 
         :param session: The async session bound to the Tasks database.
         :param cutoff: The age boundary; rows with an effective completion time
@@ -797,8 +856,6 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         dialect = session.get_bind().name
         if dialect == DatabaseDialect.POSTGRESQL:
             doomed = doomed.with_for_update(skip_locked=True, of=TaskHistoryLog)
-        elif dialect == DatabaseDialect.MYSQL:
-            doomed = select(doomed.subquery().c.id)
 
         result = await cls.delete_where(session, col(TaskHistoryLog.id).in_(doomed))
         return result.rowcount

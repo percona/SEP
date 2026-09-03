@@ -24,12 +24,18 @@ from starlette.testclient import TestClient
 
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.inventory.crud import TableManager
-from app.inventory.models import Node, Schema, Service, Table
+from app.inventory.models import Node, Schema, Service, SyncOutcomeEnum, Table
 from tests.app.factories import (
     NodeWriteFactory,
     SchemaWriteFactory,
     ServiceWriteFactory,
     TableWriteFactory,
+)
+from tests.app.inventory.conftest import (
+    INVALID_SYNC_HEALTH_BODIES,
+    INVALID_SYNC_HEALTH_BODY_IDS,
+    sync_health_payload,
+    SYNC_HEALTH_RESPONSE_KEYS,
 )
 
 SCHEMA_COUNT_WITH_SECOND = 2
@@ -49,6 +55,16 @@ class TestListSchemas:
         assert data["total"] == 0
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+
+    def test_list_schemas_excludes_retired(
+        self, test_client: TestClient, retired_schema: Schema
+    ) -> None:
+        """Omit a retired schema from the default list."""
+        response = test_client.get("/schemas/")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
 
     def test_list_schemas_rejects_unknown_sort_key(
         self, test_client: TestClient
@@ -247,6 +263,21 @@ class TestRetrieveSchema:
         response = test_client.get("/schemas/99999")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    def test_retrieve_schema_retired_returns_404(
+        self, test_client: TestClient, retired_schema: Schema
+    ) -> None:
+        """Hide a retired schema from the default read."""
+        response = test_client.get(f"/schemas/{retired_schema.id}")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_retrieve_schema_hides_retired_table_nested_in_active_schema(
+        self, test_client: TestClient, retired_table: Table
+    ) -> None:
+        """Drop a retired table from the tables nested in an active schema."""
+        response = test_client.get(f"/schemas/{retired_table.schema_id}")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["tables"] == []
+
 
 class TestUpdateSchema:
     """Test PUT /schemas/{schema_id} endpoint."""
@@ -326,7 +357,7 @@ class TestDeleteSchema:
     """Test DELETE /schemas/{schema_id} endpoint."""
 
     def test_delete_schema(self, test_client: TestClient, schema: Schema) -> None:
-        """Delete a schema and confirm it is gone."""
+        """Retire a schema and confirm the default read no longer resolves it."""
         response = test_client.delete(f"/schemas/{schema.id}")
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
@@ -337,6 +368,54 @@ class TestDeleteSchema:
         """Return 404 for deleting a nonexistent schema."""
         response = test_client.delete("/schemas/99999")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_delete_schema_retires_tables(
+        self, test_client: TestClient, schema: Schema, table: Table
+    ) -> None:
+        """Retire the schema's tables along with it."""
+        response = test_client.delete(f"/schemas/{schema.id}")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+        assert test_client.get(f"/tables/{table.id}").status_code == (
+            status.HTTP_404_NOT_FOUND
+        )
+        retired = test_client.get(
+            f"/tables/{table.id}", params={"include_retired": True}
+        )
+        assert retired.status_code == status.HTTP_200_OK
+        assert retired.json()["retired_at"] is not None
+
+
+class TestReviveSchema:
+    """Test the POST /schemas/{schema_id}/revive endpoint."""
+
+    def test_revive_schema_revives_ancestors(
+        self,
+        test_client: TestClient,
+        node: Node,
+        service: Service,
+        schema: Schema,
+        table: Table,
+    ) -> None:
+        """Revive the schema's service and node, but not its retired tables."""
+        assert (
+            test_client.delete(f"/nodes/{node.id}").status_code
+            == status.HTTP_204_NO_CONTENT
+        )
+
+        response = test_client.post(f"/schemas/{schema.id}/revive")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        for path, entity_id in (
+            ("nodes", node.id),
+            ("services", service.id),
+            ("schemas", schema.id),
+        ):
+            assert test_client.get(f"/{path}/{entity_id}").status_code == (
+                status.HTTP_200_OK
+            )
+        assert test_client.get(f"/tables/{table.id}").status_code == (
+            status.HTTP_404_NOT_FOUND
+        )
 
 
 class TestListTablesBySchema:
@@ -353,6 +432,16 @@ class TestListTablesBySchema:
         assert data["total"] == 0
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
+
+    def test_list_tables_by_schema_excludes_retired(
+        self, test_client: TestClient, retired_table: Table
+    ) -> None:
+        """Omit a retired table from an active schema's tables."""
+        response = test_client.get(f"/schemas/{retired_table.schema_id}/tables/")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
 
     def test_list_tables_by_schema_rejects_unknown_sort_key(
         self, test_client: TestClient, schema: Schema
@@ -534,3 +623,107 @@ class TestCreateTableForSchema:
         payload = TableWriteFactory.build().model_dump()
         response = test_client.post("/schemas/99999/tables/", json=payload)
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestRecordSchemaSyncHealth:
+    """Test the POST /schemas/{schema_id}/sync-health endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_success_outcome_clears_the_failure_state(
+        self, test_client: TestClient, session: AsyncSession, schema: Schema
+    ) -> None:
+        """Record the freshness and answer 204."""
+        response = test_client.post(
+            f"/schemas/{schema.id}/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.SUCCESS),
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        await session.refresh(schema)
+        assert schema.last_synced_at is not None
+        assert schema.last_sync_error is None
+        assert schema.consecutive_failures == 0
+
+    @pytest.mark.asyncio
+    async def test_failure_outcome_opens_the_failure_run(
+        self, test_client: TestClient, session: AsyncSession, schema: Schema
+    ) -> None:
+        """Record the failure columns and answer 204."""
+        response = test_client.post(
+            f"/schemas/{schema.id}/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.FAILURE, "boom"),
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        await session.refresh(schema)
+        assert schema.last_synced_at is None
+        assert schema.last_sync_error == "boom"
+        assert schema.sync_failing_since is not None
+        assert schema.consecutive_failures == 1
+
+    @pytest.mark.parametrize(
+        "body", INVALID_SYNC_HEALTH_BODIES, ids=INVALID_SYNC_HEALTH_BODY_IDS
+    )
+    def test_rejects_an_inconsistent_or_incomplete_body(
+        self, test_client: TestClient, schema: Schema, body: dict[str, str]
+    ) -> None:
+        """Refuse every body shape the write model declares invalid."""
+        response = test_client.post(f"/schemas/{schema.id}/sync-health", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_unknown_schema_is_not_found(self, test_client: TestClient) -> None:
+        """Answer 404 when the addressed schema does not exist."""
+        response = test_client.post(
+            "/schemas/99999/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.SUCCESS),
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_retired_schema_still_records_the_outcome(
+        self,
+        test_client: TestClient,
+        session: AsyncSession,
+        retired_schema: Schema,
+    ) -> None:
+        """Record the attempt against a schema retired concurrently with the sync."""
+        response = test_client.post(
+            f"/schemas/{retired_schema.id}/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.FAILURE, "boom"),
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        await session.refresh(retired_schema)
+        assert retired_schema.consecutive_failures == 1
+
+
+class TestSchemaSyncHealthReads:
+    """Test that the schema read responses expose the sync-health columns."""
+
+    def test_detail_exposes_the_columns(
+        self, test_client: TestClient, schema: Schema, table: Table
+    ) -> None:
+        """Carry the four fields on the schema detail response.
+
+        The nested tables carry them through the table model the response
+        nests, so a table read from inside a schema reports the same state.
+        """
+        response = test_client.get(f"/schemas/{schema.id}")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data.keys() >= SYNC_HEALTH_RESPONSE_KEYS
+        assert data["tables"][0].keys() >= SYNC_HEALTH_RESPONSE_KEYS
+
+    def test_list_items_expose_the_columns(
+        self, test_client: TestClient, schema: Schema
+    ) -> None:
+        """Carry the four fields on every row of the paginated list."""
+        response = test_client.get("/schemas/")
+
+        assert response.status_code == status.HTTP_200_OK
+        items = response.json()["items"]
+        assert items, "the schema fixture should have produced a row to read back"
+        assert items[0].keys() >= SYNC_HEALTH_RESPONSE_KEYS

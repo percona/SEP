@@ -23,6 +23,7 @@ from typing import Any, cast, overload, Protocol, TypeVar
 from pydantic import BaseModel, computed_field, create_model, Field, FutureDatetime
 
 from app.core.pagination import build_proxied_page, PaginatedResponse, Pagination
+from app.core.requests import as_json_object
 from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.connectivity import (
@@ -72,6 +73,12 @@ def serialized_field_names(model: type[BaseModel]) -> frozenset[str]:
 
 def root_segment(path: str) -> str:
     """Return the leading field name of a dotted/indexed view path.
+
+    Stripping the index is only sound for paths resolved against serialized
+    rows, where ``[N]`` is a real segment. Conditional-rule references are not
+    such paths — the decoration-time gate in
+    :func:`~app.sep.apps.framework.rules._validate_plan_against_model_fields`
+    keeps its own index-rejecting split on purpose.
 
     :param path: A list-view column key or detail-view field path (for example
         ``"target.service"`` or ``"data.meta[0]"``).
@@ -411,8 +418,10 @@ async def build_task_list_responses(
         bound into every per-row build as a ``context`` keyword argument.
     :return: The built responses, paginated when ``pagination`` is supplied.
     """
-    response = await tasks_api.get(
-        "/", params=_owner_list_params(owner, pagination, extra_params)
+    response = as_json_object(
+        await tasks_api.get(
+            "/", params=_owner_list_params(owner, pagination, extra_params)
+        )
     )
     tasks = [Task.model_validate(item) for item in response["items"]]
     if task_filter is not None:

@@ -16,11 +16,11 @@
  */
 
 import { useState } from 'react';
-import { Button, ButtonGroup, CircularProgress, Menu, MenuItem } from '@mui/material';
+import { Button, ButtonGroup, CircularProgress, Menu, MenuItem, Stack } from '@mui/material';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { ApiError } from '@sep/api';
-import { useSnackbar } from 'notistack';
+import { useAuth } from '@sep/api';
+import { ActionErrorAlert } from '@sep/framework';
 import {
   useAvailableSyncers,
   useRefreshEntitiesOnSyncComplete,
@@ -29,6 +29,7 @@ import {
 } from './hooks';
 
 export function SyncControl() {
+  const { canMutate } = useAuth();
   const { data: syncers = [], isLoading: syncersLoading } = useAvailableSyncers();
   const hasSyncers = !syncersLoading && syncers.length > 0;
   const { data: syncStatus } = useSyncStatus(hasSyncers);
@@ -37,10 +38,9 @@ export function SyncControl() {
   // "Sync all" and single-syncer dropdown triggers, since both share one status.
   useRefreshEntitiesOnSyncComplete(syncStatus?.is_running);
   const triggerSync = useTriggerSync();
-  const { enqueueSnackbar } = useSnackbar();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
-  if (syncersLoading || syncers.length === 0) {
+  if (!canMutate || syncersLoading || syncers.length === 0) {
     return null;
   }
 
@@ -50,19 +50,11 @@ export function SyncControl() {
 
   function handleTrigger(syncerName?: string) {
     setAnchorEl(null);
-    triggerSync.mutate(syncerName, {
-      onError: (err) => {
-        if (err instanceof ApiError && err.status === 400) {
-          enqueueSnackbar(err.message, { variant: 'error' });
-        } else {
-          enqueueSnackbar('Failed to start sync. Please try again.', { variant: 'error' });
-        }
-      },
-    });
+    triggerSync.mutate(syncerName);
   }
 
   return (
-    <>
+    <Stack spacing={1} alignItems="flex-start">
       <ButtonGroup variant="outlined" size="small" disabled={isDisabled}>
         <Button
           aria-label="Sync all configured syncers"
@@ -99,6 +91,15 @@ export function SyncControl() {
           ))}
         </Menu>
       )}
-    </>
+      {/* Every refusal reports here with the server's own reason — a 403 from a
+          read-only session as much as the 400 for a sync already running — and
+          in-tree, so it does not need a host-provided snackbar. */}
+      <ActionErrorAlert
+        error={triggerSync.error}
+        onClose={triggerSync.reset}
+        fallback="Failed to start sync. Please try again."
+        testId="sync-action-error"
+      />
+    </Stack>
   );
 }

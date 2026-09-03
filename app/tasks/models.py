@@ -152,28 +152,33 @@ class TaskHistoryStatusEnum(StrEnum):
     :cvar STALE: Enum value for tasks skipped because executor placement
         exceeded the configured staleness threshold (for example a Nomad
         allocation that never left the queue).
+    :cvar UNLAUNCHABLE: Enum value for tasks the executor node could not
+        launch at all, because some command in the invocation does not
+        resolve there. The payload never ran, so this is not a script
+        failure.
     """
 
-    FAILED = auto()
-    PENDING = auto()
-    RUNNING = auto()
-    SUCCESS = auto()
-    STOPPED = auto()
-    LOST = auto()
-    STALE = auto()
+    FAILED = "failed"
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    STOPPED = "stopped"
+    LOST = "lost"
+    STALE = "stale"
+    UNLAUNCHABLE = "unlaunchable"
 
     def is_finished(self) -> bool:
         """Check if the task status indicates that it is finished.
 
         :return: True if the task status is one of FAILED, SUCCESS, STOPPED,
-            or STALE; False otherwise.
-        :rtype: bool
+            STALE, or UNLAUNCHABLE; False otherwise.
         """
         return self in [
             TaskHistoryStatusEnum.FAILED,
             TaskHistoryStatusEnum.SUCCESS,
             TaskHistoryStatusEnum.STOPPED,
             TaskHistoryStatusEnum.STALE,
+            TaskHistoryStatusEnum.UNLAUNCHABLE,
         ]
 
     def is_terminal(self) -> bool:
@@ -460,7 +465,7 @@ class Task(TaskBase, BaseSQLModel, table=True):
     )
     history: list["TaskHistory"] = Relationship(back_populates="task")
     deleted_at: UTCDatetime | None = SQLField(
-        sa_type=DateTimeWithTimezone,
+        sa_type=DateTimeWithTimezone,  # ty: ignore[invalid-argument-type]
         default=None,
         index=True,
     )
@@ -663,13 +668,22 @@ class TaskExecuteRequest(BaseModel):
         :type data: Any
         :return: The modified data with the meta field populated.
         :rtype: Any
+        :raises ValueError: If ``meta_``-prefixed keys are present but ``meta``
+            is not a mapping, so Pydantic reports a 422 instead of a 500.
         """
         if isinstance(data, dict):
-            meta = data.get("meta", {})
-            for key, value in data.items():
-                if key.startswith("meta_"):
-                    meta[key.replace("meta_", "")] = value
-            data["meta"] = meta
+            prefixed = {
+                key.replace("meta_", ""): value
+                for key, value in data.items()
+                if key.startswith("meta_")
+            }
+            if prefixed:
+                meta = data.get("meta", {})
+                if not isinstance(meta, dict):
+                    msg = "meta must be a mapping"
+                    raise ValueError(msg)
+                meta.update(prefixed)
+                data["meta"] = meta
         return data
 
 
@@ -704,10 +718,12 @@ class TaskHistoryBase(SQLModel):
         ),
     )
     started_at: UTCDatetime | None = SQLField(
-        default=None, sa_type=DateTimeWithTimezone
+        default=None,
+        sa_type=DateTimeWithTimezone,  # ty: ignore[invalid-argument-type]
     )
     finished_at: UTCDatetime | None = SQLField(
-        default=None, sa_type=DateTimeWithTimezone
+        default=None,
+        sa_type=DateTimeWithTimezone,  # ty: ignore[invalid-argument-type]
     )
     anonymize_mask: AnonymizeMask | None = None
     executed_by: str | None = None
@@ -759,7 +775,7 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     task: Task = Relationship(back_populates="history")
     sync_in_progress_started_at: UTCDatetime | None = SQLField(
         default=None,
-        sa_type=DateTimeWithTimezone,
+        sa_type=DateTimeWithTimezone,  # ty: ignore[invalid-argument-type]
     )
     log_producer_epoch: int = SQLField(
         sa_column=Column(
@@ -791,10 +807,11 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
 
         Generate a deterministic dedup key from the task name and target so
         that PagerDuty deduplicates successive failures into a single incident
-        and can resolve it when the task succeeds. The stale-skip alert uses
-        a ``:stale`` suffix on the same base key so it is a distinct
-        incident from a plain failure while still being scoped to the same
-        task/target pair.
+        and can resolve it when the task succeeds. The stale-skip and
+        unlaunchable alerts each suffix that base key so they stay distinct
+        incidents from a plain failure while still being scoped to the same
+        task/target pair. Every suffixed key needs its own resolve on the
+        ``SUCCESS`` arm — an unresolved suffixed incident never clears.
         """
         base_dedup_key = (
             f"task:{self.execution_request.task}:{self.execution_request.target}"
@@ -803,6 +820,7 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         if self.status == TaskHistoryStatusEnum.SUCCESS:
             await alert_service.resolve(base_dedup_key)
             await alert_service.resolve(f"{base_dedup_key}:stale")
+            await alert_service.resolve(f"{base_dedup_key}:unlaunchable")
             return
 
         owner_details = None
@@ -824,6 +842,14 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
             )
             severity = AlertSeverity.WARNING
             alert_class = "task_stale"
+        elif self.status == TaskHistoryStatusEnum.UNLAUNCHABLE:
+            dedup_key = f"{base_dedup_key}:unlaunchable"
+            summary_action = (
+                "could not be launched (the executor node cannot run the "
+                "requested command)"
+            )
+            severity = AlertSeverity.WARNING
+            alert_class = "task_unlaunchable"
         else:
             return
 
@@ -1032,6 +1058,7 @@ GENERIC_EXECUTOR_TASK_NAMES: frozenset[str] = frozenset(
 )
 
 INVENTORY_SYNC_TASK_NAME = "inventory-sync"
+INVENTORY_COLLECTION_TASK_NAME = "inventory-collection"
 SYNC_RUNNING_TASKS_TASK_NAME = "tasks__sync_running_tasks"
 
 #: Maintenance / system task names excluded from user-facing task lists.
@@ -1041,6 +1068,7 @@ SYNC_RUNNING_TASKS_TASK_NAME = "tasks__sync_running_tasks"
 INTERNAL_TASK_NAMES: frozenset[str] = frozenset(
     {
         INVENTORY_SYNC_TASK_NAME,
+        INVENTORY_COLLECTION_TASK_NAME,
         SYNC_RUNNING_TASKS_TASK_NAME,
         "tasks__check_nomad_cert_expiry",
     }
@@ -1176,7 +1204,7 @@ class TaskStats(BaseModel):
         """
         if self._durations["average_seconds"] is None:
             self._process()
-        return self._durations
+        return ArbitraryMapping(self._durations)
 
     @computed_field
     @property

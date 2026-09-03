@@ -27,7 +27,7 @@ from typing import Any, TYPE_CHECKING
 from pydantic import BaseModel, ValidationError
 
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import setting_class_token, SettingOverride
 from app.core.settings_override.registry import (
     _clear_cached_properties,
     _resolve_field_in_model,
@@ -76,32 +76,28 @@ async def build_snapshot(
     fields, or hit a non-Pydantic intermediate are logged and skipped without
     affecting their siblings.
 
-    The :class:`SettingClassEnum` member used to filter override rows is
-    derived from ``settings_cls`` -- each member's value equals the Pydantic
-    class ``__name__``, so the pair is recoverable from the class alone.
+    The storage token used to filter override rows is derived from
+    ``settings_cls`` via :func:`setting_class_token`: the SCREAMING_SNAKE
+    form of the Pydantic class ``__name__``, matching the spelling already
+    stored in ``settingoverride.setting_class``.
 
     :param session: The async SQLModel session used to query overrides. Must
         be bound to the engine of the service that owns ``settings_cls``.
-    :type session: AsyncSession
     :param settings_cls: The Pydantic settings class being snapshotted.
-    :type settings_cls: type[BaseYamlSettings]
     :param base_settings: The resolved (YAML/env) settings instance whose
         nested-parent attributes seed each merged copy, so leaves with no
         override row fall back to their YAML/env values. When ``None``, parent
         bases are taken from each field's declared default -- sufficient for
         direct callers that only exercise top-level rows.
-    :type base_settings: BaseModel | None
     :return: An immutable mapping of field name to coerced typed value.
-    :rtype: MappingProxyType[str, Any]
     :raises sqlalchemy.exc.SQLAlchemyError: If the database query fails
         (connection lost, schema mismatch, transaction aborted, ...). This
         family is not caught here; the caller is expected to log-and-skip
         or swallow at a higher level (e.g. the background refresher's
         per-cycle ``except``).
     """
-    setting_class = SettingClassEnum(settings_cls.__name__)
     rows = await SettingsOverrideManager.list(
-        session, setting_class=setting_class, is_active=True
+        session, setting_class=setting_class_token(settings_cls), is_active=True
     )
     snapshot = {}
     nested_groups = defaultdict(list)
@@ -111,10 +107,15 @@ async def build_snapshot(
             # into a single group instead of clobbering each other.
             nested_groups[row.key.split("__", 1)[0].lower()].append(row)
             continue
-        _apply_top_level_row(snapshot, settings_cls, setting_class, row)
+        _apply_top_level_row(snapshot, settings_cls, settings_cls.__name__, row)
     for prefix, group in nested_groups.items():
         _apply_nested_group(
-            snapshot, settings_cls, setting_class, prefix, group, base_settings
+            snapshot,
+            settings_cls,
+            settings_cls.__name__,
+            prefix,
+            group,
+            base_settings,
         )
     return MappingProxyType(snapshot)
 
@@ -122,32 +123,28 @@ async def build_snapshot(
 def _apply_top_level_row(
     snapshot: dict[str, Any],
     settings_cls: type[BaseYamlSettings],
-    setting_class: SettingClassEnum,
+    setting_class: str,
     row: SettingOverride,
 ) -> None:
     """Coerce and store one whole-field override row into ``snapshot``.
 
     :param snapshot: The in-progress snapshot mapping, mutated in place.
-    :type snapshot: dict[str, Any]
     :param settings_cls: The Pydantic settings class being snapshotted.
-    :type settings_cls: type[BaseYamlSettings]
     :param setting_class: The class identifier, for log messages.
-    :type setting_class: SettingClassEnum
     :param row: The override row to apply.
-    :type row: SettingOverride
     """
     field_info = settings_cls.model_fields.get(row.key)
     if field_info is None:
         logger.warning(
             "Override for unknown field ignored: %s.%s",
-            setting_class.name,
+            setting_class,
             row.key,
         )
         return
     if not is_hot_reloadable(settings_cls, row.key):
         logger.warning(
             "Override for non-HOT field ignored: %s.%s",
-            setting_class.name,
+            setting_class,
             row.key,
         )
         return
@@ -162,7 +159,7 @@ def _apply_top_level_row(
     except ValueError as exc:
         logger.warning(
             "Override for %s.%s failed type coercion: %s",
-            setting_class.name,
+            setting_class,
             row.key,
             exc,
         )
@@ -171,7 +168,7 @@ def _apply_top_level_row(
 def _apply_nested_group(
     snapshot: dict[str, Any],
     settings_cls: type[BaseYamlSettings],
-    setting_class: SettingClassEnum,
+    setting_class: str,
     prefix: str,
     group: list[SettingOverride],
     base_settings: BaseModel | None,
@@ -179,24 +176,18 @@ def _apply_nested_group(
     """Merge every nested-override row sharing ``prefix`` into one parent copy.
 
     :param snapshot: The in-progress snapshot mapping, mutated in place.
-    :type snapshot: dict[str, Any]
     :param settings_cls: The Pydantic settings class being snapshotted.
-    :type settings_cls: type[BaseYamlSettings]
     :param setting_class: The class identifier, for log messages.
-    :type setting_class: SettingClassEnum
     :param prefix: The shared top-level field name for this group.
-    :type prefix: str
     :param group: The nested rows whose key starts with ``prefix__``.
-    :type group: list[SettingOverride]
     :param base_settings: The resolved settings instance seeding the parent
         base value, or ``None`` to fall back to the field default.
-    :type base_settings: BaseModel | None
     """
     resolved_parent = _resolve_field_in_model(settings_cls, prefix)
     if resolved_parent is None:
         logger.warning(
             "Nested override for unknown parent ignored: %s.%s",
-            setting_class.name,
+            setting_class,
             prefix,
         )
         return
@@ -206,7 +197,7 @@ def _apply_nested_group(
     if not is_nested_overridable_parent(settings_cls, canonical_prefix):
         logger.warning(
             "Nested override for non-overridable parent ignored: %s.%s",
-            setting_class.name,
+            setting_class,
             canonical_prefix,
         )
         return
@@ -214,7 +205,7 @@ def _apply_nested_group(
     if parent_cls is None:
         logger.warning(
             "Nested override for non-model parent ignored: %s.%s",
-            setting_class.name,
+            setting_class,
             canonical_prefix,
         )
         return
@@ -225,14 +216,14 @@ def _apply_nested_group(
         except KeyError:
             logger.warning(
                 "Nested override for unknown or not-overridable field ignored: %s.%s",
-                setting_class.name,
+                setting_class,
                 row.key,
             )
             continue
         except ValidationError as exc:
             logger.warning(
                 "Nested override for %s.%s failed type coercion: %s",
-                setting_class.name,
+                setting_class,
                 row.key,
                 exc,
             )
@@ -252,7 +243,7 @@ def _apply_nested_group(
     except ValidationError as exc:
         logger.warning(
             "Nested override group for %s.%s failed to build a merged model: %s",
-            setting_class.name,
+            setting_class,
             canonical_prefix,
             exc,
         )
@@ -280,16 +271,11 @@ def _parent_base_value(
 
     :param snapshot: The in-progress snapshot mapping; consulted for a
         whole-object override already stored under ``prefix``.
-    :type snapshot: dict[str, Any]
     :param field_info: The parent field's metadata.
-    :type field_info: FieldInfo
     :param prefix: The parent field name.
-    :type prefix: str
     :param base_settings: The resolved settings instance, or ``None``.
-    :type base_settings: BaseModel | None
     :return: The base parent model, or ``None`` when the parent is unset and
         must be instantiated from the nested leaves alone.
-    :rtype: BaseModel | None
     """
     stored = snapshot.get(prefix)
     if isinstance(stored, BaseModel):

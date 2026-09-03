@@ -16,7 +16,6 @@
 """Tests for the snippets plugin schema synthesiser."""
 
 from collections.abc import Awaitable, Callable
-from functools import cached_property
 from typing import Any
 from urllib.parse import urlencode
 
@@ -59,6 +58,7 @@ from tests.app.sep.form_schema_utils import (
     form_field_names,
     form_field_types,
 )
+from tests.app.sep.snippets.snippet_kit import drop_cached_reads
 
 
 def test_static_schema_has_no_forms_and_keyed_columns():
@@ -219,18 +219,11 @@ _SYNTHESIZED_FIELD_TYPES = {
 def _reset_cached_meta(snippet: Snippet, **meta: Any) -> None:
     """Re-apply snippet meta and drop every cached property derived from it.
 
-    Every ``cached_property`` on the class is dropped rather than a named few,
-    so a property added later cannot leave a test asserting against a stale
-    value computed from the pre-mutation meta.
-
     :param snippet: The already-created snippet whose meta is being replaced.
     :param meta: Frontmatter keys merged over the snippet's existing meta.
     """
     snippet.meta = {**snippet.meta, **meta}
-    for klass in type(snippet).__mro__:
-        for name, attribute in vars(klass).items():
-            if isinstance(attribute, cached_property):
-                snippet.__dict__.pop(name, None)
+    drop_cached_reads(snippet)
 
 
 class TestReservedParameterNames:
@@ -436,6 +429,7 @@ class TestVisibilityGates:
         field = field_for(
             SnippetMetaParameter(name="start", type="str", visible_when_not="list")
         )
+        assert field.forbidden is not None
         assert len(field.forbidden) == 1
         assert field.forbidden[0].when.to_dict() == {"truthy": "list"}
 
@@ -444,6 +438,7 @@ class TestVisibilityGates:
         field = field_for(
             SnippetMetaParameter(name="start", type="str", visible_when="list")
         )
+        assert field.forbidden is not None
         assert len(field.forbidden) == 1
         assert field.forbidden[0].when.to_dict() == {"not": {"truthy": "list"}}
 
@@ -456,6 +451,7 @@ class TestVisibilityGates:
                 visible_when_not={"parameter": "mode", "equals": "advanced"},
             )
         )
+        assert field.forbidden is not None
         assert field.forbidden[0].when.to_dict() == {"equals": {"mode": "advanced"}}
 
     def test_condition_on_choice_field(self):
@@ -468,6 +464,7 @@ class TestVisibilityGates:
                 visible_when_not="list",
             )
         )
+        assert field.forbidden is not None
         assert field.forbidden[0].when.to_dict() == {"truthy": "list"}
 
 
@@ -494,6 +491,7 @@ class TestGateLowering:
         field = field_for(
             SnippetMetaParameter(name="reason", type="str", requires_when_not="mode")
         )
+        assert field.requires is not None
         assert field.requires[0].when.to_dict() == {"not": {"truthy": "mode"}}
 
     def test_requires_when_equals_lowers_to_equals_gate(self):
@@ -505,6 +503,7 @@ class TestGateLowering:
                 requires_when={"parameter": "mode", "equals": "write"},
             )
         )
+        assert field.requires is not None
         assert field.requires[0].when.to_dict() == {"equals": {"mode": "write"}}
 
     def test_forbidden_when_lowers_to_forbidden_gate(self):
@@ -512,6 +511,7 @@ class TestGateLowering:
         field = field_for(
             SnippetMetaParameter(name="reason", type="str", forbidden_when="mode")
         )
+        assert field.forbidden is not None
         assert field.forbidden[0].when.to_dict() == {"truthy": "mode"}
         assert field.requires is None
 
@@ -520,6 +520,7 @@ class TestGateLowering:
         field = field_for(
             SnippetMetaParameter(name="reason", type="str", forbidden_when_not="mode")
         )
+        assert field.forbidden is not None
         assert field.forbidden[0].when.to_dict() == {"not": {"truthy": "mode"}}
 
     def test_requires_and_forbidden_both_lowered(self):
@@ -532,7 +533,9 @@ class TestGateLowering:
                 forbidden_when="read_mode",
             )
         )
+        assert field.requires is not None
         assert field.requires[0].when.to_dict() == {"truthy": "write_mode"}
+        assert field.forbidden is not None
         assert field.forbidden[0].when.to_dict() == {"truthy": "read_mode"}
 
     def test_requires_when_not_equals_lowers_to_negated_equals_gate(self):
@@ -544,6 +547,7 @@ class TestGateLowering:
                 requires_when_not={"parameter": "mode", "equals": "write"},
             )
         )
+        assert field.requires is not None
         assert field.requires[0].when.to_dict() == {
             "not": {"equals": {"mode": "write"}}
         }
@@ -557,6 +561,7 @@ class TestGateLowering:
                 forbidden_when_not={"parameter": "mode", "equals": "read"},
             )
         )
+        assert field.forbidden is not None
         assert field.forbidden[0].when.to_dict() == {
             "not": {"equals": {"mode": "read"}}
         }
@@ -591,6 +596,7 @@ async def test_build_snippet_schema_with_gated_field_validates(create_snippet):
 
     parameters_section = next(s for s in schema.forms if s.title == "Parameters")
     start_field = next(f for f in parameters_section.fields if f.name == "start")
+    assert start_field.forbidden is not None
     assert start_field.forbidden[0].when.to_dict() == {"truthy": "list"}
 
 

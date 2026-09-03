@@ -75,17 +75,50 @@ def _replica_backup_flags(replica_info: bool, stop_replica: bool) -> list[str]:
     return flags
 
 
-def _should_inline_encrypt(bin_cmd: str, keyfile: str | None) -> bool:
+ENCRYPTION_FORMATS = ('none', 'gpg', 'aes256', 'dual')
+
+
+def _resolve_encryption(selected: str | None, keyfile: str | None, *,
+                        gpg: bool) -> tuple[str, bool, bool]:
+    """Return ``(format, aes256, gpg)`` for the encryption this run must apply.
+
+    ``ENCRYPTION_FORMAT`` is authoritative: it, not which fields happen to be
+    populated, decides whether AES-256 and GPG run, so a key file or post-run flag
+    left behind by an earlier config cannot add an encryption pass of its own.
+
+    A config predating the selector — or carrying a value this payload does not
+    know — falls back to the historical inference so its behaviour is unchanged.
+    The unknown-value case deliberately shares that branch: silently reading it as
+    "no encryption" would ship a plaintext backup for a job that asked to be
+    encrypted.
+
+    :data:`ENCRYPTION_FORMATS` is ordered so a format's index encodes its passes —
+    bit 1 is AES-256, bit 0 is GPG — which is what makes the inference a lookup
+    rather than a second copy of the mode table.
+
+    :param selected: The configured ``ENCRYPTION_FORMAT``, if any.
+    :param keyfile: Path to the AES-256 keyfile, or falsy if not configured.
+    :param gpg: Whether any GPG timing is configured. The two phases read
+        different ones — the backup phase only ever applies GPG post-run, while
+        the upload phase applies it in place too — so each passes its own.
+    :return: The resolved format name and whether it runs AES-256 and GPG.
+    """
+    if selected not in ENCRYPTION_FORMATS:
+        selected = ENCRYPTION_FORMATS[bool(keyfile) * 2 + bool(gpg)]
+    return selected, selected in ('aes256', 'dual'), selected in ('gpg', 'dual')
+
+
+def _should_inline_encrypt(bin_cmd: str, aes256: bool) -> bool:
     """Return whether ``_run_backup_cmd`` should append the inline AES-256 flags.
 
     ``mariadb-backup`` has no ``--encrypt`` option; it is encrypted post-run by
     ``encrypt_files_aes256`` instead, so it keeps inline verify (``verify_innodb``).
 
     :param bin_cmd: The selected backup binary command name.
-    :param keyfile: Path to the AES-256 keyfile, or falsy if not configured.
+    :param aes256: Whether the selected encryption format includes AES-256.
     :return: True if the inline ``--encrypt=AES256`` flags should be appended.
     """
-    return bool(keyfile) and bin_cmd != 'mariadb-backup'
+    return aes256 and bin_cmd != 'mariadb-backup'
 
 
 BACKUP_DIR_REGEX = {
@@ -713,8 +746,6 @@ class DirectoryEncryptor:
                 self._set_default_config()
         else:
             self._set_default_config()
-
-        gpg_bin = self.config.get("gpg bin", "/usr/bin/gpg")
 
     def _set_default_config(self) -> None:
         """Set default configuration values."""
@@ -1464,8 +1495,6 @@ class Upload(Backup):
             logging_dir, "upload-xtrabackup.log", self.alias, logger.level
         )
         self.upload_provider = upload_provider(settings, self.logger.level)
-        self.last_uploaded_number = 0
-        self.last_to_upload_number = 0
         log_path = Path(logging_dir) / "upload-xtrabackup.log"
         self.log_stream = log_path.open("a")
         self.backup_type = BACKUP_TYPES[self.backup_code]
@@ -1475,16 +1504,29 @@ class Upload(Backup):
         # the form/config model default (False, an unchecked box); do not align
         # the two.
         self.encrypt = settings.get("ENCRYPT", True)
-        self.encrypt_using_tmpdir = settings.get("ENCRYPT_USING_TMPDIR", False)
         self.post_run_encrypt = settings.get("POST_RUN_ENCRYPT", False)
         self.prepare_backup = settings.get("XTRABACKUP_PREPARE")
-        self.xtrabackup_aes256 = settings.get("XTRABACKUP_AES256_KEYFILE", False)
+        self.xtrabackup_aes256 = settings.get("XTRABACKUP_AES256_KEYFILE")
 
-        if self.post_run_encrypt or not self.encrypt:
-            self.encrypt_using_tmpdir = False
-
-        if self.backup_code == "X" and self.xtrabackup_aes256:
-            self.encrypt_using_tmpdir = False
+        # The upload phase reads the same fields as the backup phase but from its
+        # own object, so it resolves the format itself rather than inheriting a
+        # decision. Without this an ``aes256`` selection that still carries a stale
+        # in-place flag would GPG-encrypt on the way out, and a ``gpg`` selection
+        # that still carries a stale key file would not GPG-encrypt at all.
+        encryption_format, aes256, gpg = _resolve_encryption(
+            settings.get("ENCRYPTION_FORMAT"), self.xtrabackup_aes256,
+            gpg=self.encrypt or self.post_run_encrypt)
+        self.encrypt = gpg and self.encrypt
+        self.post_run_encrypt = gpg and self.post_run_encrypt
+        if not aes256:
+            self.xtrabackup_aes256 = False
+        # Fully derived, not configured: in-place GPG is the only claim on a tmpdir,
+        # and post-run GPG and AES-256 each encrypt the backup where it already is.
+        # The three rules this replaces left ENCRYPT_USING_TMPDIR overridden in
+        # every reachable combination.
+        self.encrypt_using_tmpdir = self.encrypt and not (
+            self.post_run_encrypt or aes256
+        )
 
         self.cdba_report = {}
         self.cdba_report["upload"] = 1
@@ -1492,20 +1534,14 @@ class Upload(Backup):
             "upload_to": self.upload_type,
             "encrypt": self.encrypt or self.post_run_encrypt,
         }
-
-        if self.encrypt or self.post_run_encrypt:
-            self.report_options["encryption"] = "gpg"
+        self.report_options["encryption"] = encryption_format
 
         root_backup_dir = settings["BACKUP_DIR"]
         root_backup_path = Path(root_backup_dir)
-        self.backup_type_dir = {
-            "M": "mydumper",
-            "X": "xtrabackup",
-            "B": "binlogs",
-            "T": "tokudb",
-            "O": "oplog",
-            "H": "hotbackup",
-        }.get(self.backup_code, "")
+        # Not a lookup: ``BACKUP_TYPES`` holds only "X", so ``self.backup_type``
+        # above already raised for anything else. The engine-keyed branches that
+        # remain elsewhere in this file are left as they are.
+        self.backup_type_dir = "xtrabackup"
 
         self.relative_backup_path = Path(self.backup_type_dir) / self.alias
         self.full_backup_path = root_backup_path / self.relative_backup_path
@@ -1519,7 +1555,7 @@ class Upload(Backup):
         """If there are backups to upload, add them to the upload list.
         Otherwise, with empty self.paths, the upload will be skipped.
         """
-        if self.backup_code == "X" and self.prepare_backup:
+        if self.prepare_backup:
             self.logger.warning("Skipping upload as XTRABACKUP_PREPARE is enabled.")
             return
 
@@ -1540,9 +1576,7 @@ class Upload(Backup):
                         }
                     )
                 # loop inside xb incrementals dirs too
-                if self.backup_code == "X" and re.search(
-                    BACKUP_DIR_REGEX["I"], datedir.name
-                ):
+                if re.search(BACKUP_DIR_REGEX["I"], datedir.name):
                     for inc_datedir in datedir.iterdir():
                         if inc_datedir.is_dir():
                             conditions_to_upload = [
@@ -1599,7 +1633,7 @@ class Upload(Backup):
 
     def _encrypt(self) -> None:
         """Encrypt backup directories prior to upload if encryption is enabled."""
-        if self.backup_code == "X" and self.xtrabackup_aes256:
+        if self.xtrabackup_aes256:
             return
 
         if not (self.encrypt or self.post_run_encrypt):
@@ -1624,10 +1658,7 @@ class Upload(Backup):
         :param dir_: Path to the backup directory.
         """
         uploadme_file = Path(dir_) / UPLOADME_FILE
-        if self.backup_code in ["B", "O"]:
-            with uploadme_file.open("w+") as file_:
-                file_.write(str(self.last_to_upload_number))
-        elif uploadme_file.is_file():
+        if uploadme_file.is_file():
             uploadme_file.unlink(missing_ok=True)
 
     def _cleanup(self) -> None:
@@ -1676,13 +1707,7 @@ class Upload(Backup):
 
 
 class XtraBackupUpload(Upload):
-
     """Implements uploading of XtraBackup backups."""
-
-    def __init__(self, *args, **kwargs):
-        super(XtraBackupUpload, self).__init__(*args, **kwargs)
-        if self.encrypt and not self.post_run_encrypt and not self.xtrabackup_aes256:
-            self.encrypt_using_tmpdir = True
 
 
 class S3UploadProvider:
@@ -2025,7 +2050,9 @@ class Xtrabackup(Backup):
         self.local_ssh_dest = server_data.get('XTRABACKUP_LOCAL_SSH_DESTINATION')
         self.xtrabackup_replica_info = server_data.get('XTRABACKUP_REPLICA_INFO', True)
         self.xtrabackup_rsync = server_data.get('XTRABACKUP_RSYNC', True)
-        self.xtrabackup_aes256_keyfile = server_data.get('XTRABACKUP_AES256_KEYFILE')
+        # Shorter than its siblings on purpose: attribute names survive
+        # minification, and this file sits within bytes of the Nomad payload limit.
+        self.aes_keyfile = server_data.get('XTRABACKUP_AES256_KEYFILE')
         self.xtrabackup_desync_pxc = server_data.get('XTRABACKUP_DESYNC_PXC', False)
         self.xtrabackup_stop_replica = server_data.get('XTRABACKUP_STOP_REPLICA', False)
         self.xtrabackup_lock_ddl = server_data.get('XTRABACKUP_LOCK_DDL', False)
@@ -2044,13 +2071,11 @@ class Xtrabackup(Backup):
         # enable textfile collector metric
         self.textfile_collector_write_enable("X", self.alias, True, "backup")
 
-        if self.xtrabackup_aes256_keyfile and self.post_run_encrypt:
-            self.report_options['encryption'] = 'dual'
-        else:
-            if self.xtrabackup_aes256_keyfile:
-                self.report_options['encryption'] = 'aes256'
-            if self.post_run_encrypt:
-                self.report_options['encryption'] = 'gpg'
+        (self.report_options['encryption'],
+         self.enc_aes,
+         self.enc_gpg) = _resolve_encryption(
+            server_data.get('ENCRYPTION_FORMAT'), self.aes_keyfile,
+            gpg=self.post_run_encrypt)
 
         # Paths
         self.backup_server_dir = os.path.join(server_data['BACKUP_DIR'], 'xtrabackup', self.alias)
@@ -2148,7 +2173,7 @@ class Xtrabackup(Backup):
         # Runs for xtrabackup too (not just mariadb-backup): it mops up plaintext
         # stragglers inline encryption misses (the copied my.cnf) and closes the
         # gap where the aes256 path shipped entirely unverified.
-        if self.xtrabackup_aes256_keyfile:
+        if self.enc_aes:
             self.encrypt_files_aes256(self.last_backup_dir)
             if not is_encrypted_dir(
                 self.last_backup_dir, method='aes256', logger=self.logger
@@ -2157,16 +2182,15 @@ class Xtrabackup(Backup):
 
         # Encrypt backup w/o upload as a separate option.
         # No hardlinking or rsync upload to avoid the mess.
-        if self.post_run_encrypt:
+        if self.enc_gpg and self.post_run_encrypt:
             self.logger.info('Post-run backup encryption is enabled.')
-            if self.xtrabackup_aes256_keyfile:
+            if self.enc_aes:
                 self.logger.info('Backup used PXB built-in encryption.')
             else:
                 encrypt_dir(self.last_backup_dir, self.logger)
-        else:
-            # Try to save some disk space
-            if self.hardlink and self.max_copies > 1:
-                self._save_disk_space()
+        # Try to save some disk space
+        elif self.hardlink and self.max_copies > 1:
+            self._save_disk_space()
 
         # Upload if needed
         upload_providers = {
@@ -2274,7 +2298,7 @@ class Xtrabackup(Backup):
         if os.path.exists(file_path):
             self._run_xbcrypt(
                 [XBCRYPT_BIN, '--encrypt-algo=AES256',
-                 '--encrypt-key-file=%s' % (self.xtrabackup_aes256_keyfile,),
+                 '--encrypt-key-file=%s' % (self.aes_keyfile,),
                  '--input=%s' % (file_path,), '--output=%s.xbcrypt' % (file_path,)],
                 file_path,
             )
@@ -2350,10 +2374,10 @@ class Xtrabackup(Backup):
             self.logger.info('Enabling compression using %s', self.compression_algorithm)
             xtrabackup_cmd.append('--compress={}'.format(self.compression_algorithm))
 
-        if _should_inline_encrypt(self.xtrabackup_bin_cmd, self.xtrabackup_aes256_keyfile):
+        if _should_inline_encrypt(self.xtrabackup_bin_cmd, self.enc_aes):
             self.verify_innodb = False
             xtrabackup_cmd.append('--encrypt=AES256')
-            xtrabackup_cmd.append('--encrypt-key-file=%s' % (self.xtrabackup_aes256_keyfile,))
+            xtrabackup_cmd.append('--encrypt-key-file=%s' % (self.aes_keyfile,))
 
         if self.xtrabackup_extra_args:
             xtrabackup_cmd.extend(self.xtrabackup_extra_args.split(' '))
@@ -2443,9 +2467,11 @@ class Xtrabackup(Backup):
                 os.unlink(self.latest_link)
             os.symlink(new_backup, self.latest_link)
 
-        if self.xtrabackup_aes256_keyfile:
-            self._decrypt_checkpoint_file(self.xtrabackup_aes256_keyfile, self.last_backup_dir)
-            self._decrypt_info_file(self.xtrabackup_aes256_keyfile, self.last_backup_dir)
+        if self.enc_aes:
+            self._decrypt_metadata_file(self.aes_keyfile, self.last_backup_dir,
+                                        XTRABACKUP_CHECKPOINTS)
+            self._decrypt_metadata_file(self.aes_keyfile, self.last_backup_dir,
+                                        XTRABACKUP_INFO, compressible=True)
 
         if self.compress:
             self._decompress_info_file(self.last_backup_dir)
@@ -2472,22 +2498,22 @@ class Xtrabackup(Backup):
                 input_path,
             )
 
-    def _decrypt_checkpoint_file(self, keyfile, path):
-        """Decrypt xtrabackup_checkpoints after backup."""
-        self._decrypt_file_aes256(
-            keyfile,
-            '%s/xtrabackup_checkpoints.xbcrypt' % (path,),
-            '%s/xtrabackup_checkpoints' % (path,),
-        )
+    def _decrypt_metadata_file(self, keyfile, path, name, *, compressible=False):
+        """Decrypt one metadata file SEP keeps readable after the AES-256 pass.
 
-    def _decrypt_info_file(self, keyfile, path):
-        """Decrypt xtrabackup_info after backup."""
-        ext = self.get_compression_ext() if self.compress else ''
-        self._decrypt_file_aes256(
-            keyfile,
-            '%s/xtrabackup_info%s.xbcrypt' % (path, ext),
-            '%s/xtrabackup_info%s' % (path, ext),
-        )
+        The AES-256 pass runs after compression, so a compressible file is on disk
+        under its compressed name. Composing that name here rather than at the call
+        site keeps it where a test can reach it.
+
+        :param keyfile: Path to the AES-256 keyfile.
+        :param path: The backup directory holding the file.
+        :param name: The file's name within ``path``, without the ``.xbcrypt`` suffix.
+        :param compressible: Whether compression renames this file.
+        """
+        if compressible and self.compress:
+            name += self.get_compression_ext()
+        target = '%s/%s' % (path, name)
+        self._decrypt_file_aes256(keyfile, target + '.xbcrypt', target)
 
     def _decompress_info_file(self, path):
         """Decompress xtrabackup_info after backup."""
@@ -2752,9 +2778,18 @@ class Xtrabackup(Backup):
 
         self.logger.info('OK Checksummed %d InnoDB files.', count)
 
-    @staticmethod
-    def _is_good_base_backup(path):
-        """Check if the base backup is good for incrementals, specially not fully prepared or encrypted."""
+    def _is_good_base_backup(self, path: str) -> bool:
+        """Return whether the base backup can seed an incremental run.
+
+        A fully prepared base cannot, and under ``fast_restore`` neither can an
+        encrypted one: that method copies the base and feeds it to ``--prepare``,
+        which needs real InnoDB files rather than their encrypted renames.
+        ``less_space`` never feeds the base's InnoDB files to anything -- it reads
+        only the plaintext checkpoints for an LSN -- so it tolerates one.
+
+        :param path: Base backup directory.
+        :return: True if the base can seed an incremental, False otherwise.
+        """
         chk_file = os.path.join(path, 'xtrabackup_checkpoints')
         if not os.path.isfile(chk_file):
             return False
@@ -2764,7 +2799,27 @@ class Xtrabackup(Backup):
             if row == 'backup_type = full-prepared':
                 return False
 
-        return True
+        if self.incremental_method != 'fast_restore':
+            return True
+
+        return not self._is_encrypted_base(path)
+
+    def _is_encrypted_base(self, path: str) -> bool:
+        """Return whether the base backup holds any encrypted file.
+
+        Detection cannot rely on the job's own encryption settings: a base encrypted
+        by an earlier run stays encrypted after those settings are turned off. Nor can
+        it require the whole directory to be encrypted, the way ``is_encrypted_dir``
+        does -- an encryption pass that dies part-way leaves a mixed base behind after
+        the backup has already been moved into the retained directory, and one renamed
+        table is enough to break ``--prepare``. The renames both formats leave are the
+        whole answer, so no file is opened and no ``gpg`` process is spawned: a host
+        that only ever encrypted with xbcrypt has no reason to have that binary.
+
+        :param path: Base backup directory.
+        :return: True if any file in the base is encrypted, False otherwise.
+        """
+        return any(p.suffix in ('.xbcrypt', '.gpg') for p in Path(path).rglob('*'))
 
     def _is_track_changed_pages(self):
         """Returns true if innodb_track_changed_pages is enabled."""
@@ -2799,29 +2854,26 @@ class Xtrabackup(Backup):
         return to_lsn
 
     @staticmethod
-    def _is_compressed_backup(backup_path, strict_mode=False):
-        """Check if the backup is compressed."""
-        checkpoint = os.path.join(backup_path, 'xtrabackup_checkpoints')
-        for ipath in (
-                'ibdata1.qp.xbcrypt',
-                'ibdata1.zst.xbcrypt',
-                'ibdata1.lz4.xbcrypt',
-                'ibdata1.qp.xbcrypt.gpg',
-                'ibdata1.zst.xbcrypt.gpg',
-                'ibdata1.lz4.xbcrypt.gpg',
-                'ibdata1.qp.gpg',
-                'ibdata1.zst.gpg',
-                'ibdata1.lz4.gpg',
-                'ibdata1.qp',
-                'ibdata1.zst',
-                'ibdata1.lz4',
-        ):
-            ibdata = os.path.join(backup_path, ipath)
-            if os.path.exists(checkpoint) and os.path.exists(ibdata):
+    def _is_compressed_backup(backup_path: str) -> bool:
+        """Return whether the base backup can be merged as uncompressed plaintext.
+
+        Only the plaintext compression suffixes are probed, because an encrypted
+        base is already rejected by :meth:`_is_good_base_backup` before this runs.
+        The closing fallback is wider than compression by design: any base whose
+        ``ibdata1`` is missing or renamed cannot be merged as it stands, whatever
+        did the renaming.
+
+        :param backup_path: Base backup directory.
+        :return: True if the base cannot be merged without unpacking it first.
+        """
+        if not os.path.exists(os.path.join(backup_path, 'xtrabackup_checkpoints')):
+            return False
+
+        for comp in ('qp', 'zst', 'lz4'):
+            if os.path.exists(os.path.join(backup_path, 'ibdata1.%s' % (comp,))):
                 return True
-        if strict_mode and not os.path.exists(checkpoint):
-            raise BackupError('Unable to locate xtrabackup_checkpoints in {}'.format(backup_path))
-        return os.path.exists(checkpoint) and not os.path.exists(os.path.join(backup_path, 'ibdata1'))
+
+        return not os.path.exists(os.path.join(backup_path, 'ibdata1'))
 
     def _is_ongoing_incremental_cycle(self, path, cycle):
         """Check if the current incremental cycle is ongoing for the given path name.

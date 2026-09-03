@@ -37,6 +37,7 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import LOGGING_CONFIG
+from app.core.db.utils import check_constraint_name
 from app.sep.apps.alerts.models import AlertBackup
 
 from .conftest import ALEMBIC_INI, ALERTS_HEAD, UNKNOWN_REVISION
@@ -51,20 +52,25 @@ _SEP_PRE_LIFECYCLE_REVISION = "64f10ead74f6"
 # The add_lifecycle_state_to_app_state revision under test.
 _SEP_LIFECYCLE_REVISION = "a7c4e9f1b2d3"
 
+#: The revision preceding drop_setting_class_check_constraint: downgrading to it
+#: is what runs that migration's downgrade.
+_SETTING_CLASS_CHECK_PARENT = "d1e2f3a4b5c6"
+
+#: The revision preceding add_sync_run_state_and_entity_absence: syncinstance
+#: still lacks the run-level ``status`` and ``snapshot_complete`` columns.
+_SEP_PRE_SYNC_RUN_STATE_REVISION = "74720aeda25b"
+#: The add_sync_run_state_and_entity_absence revision under test.
+_SEP_SYNC_RUN_STATE_REVISION = "867df844fe17"
+
 _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
 
+# Tokens only — these fixtures check rendering/grepability, not production prose.
 _SKIP_NOTICE = (
-    "Skipping 2 revision(s) recorded in alembic_version_sep with no migration "
-    "script: a1b2c3d4e5f6, 9f8e7d6c5b4a. Configured version_locations absent "
-    "from disk: app/sep/apps/alerts/migrations/versions, "
-    "app/sep/apps/dipper/migrations/versions."
+    "a1b2c3d4e5f6 9f8e7d6c5b4a "
+    "app/sep/apps/alerts/migrations/versions "
+    "app/sep/apps/dipper/migrations/versions"
 )
-_SKEW_NOTICE = (
-    "1 revision(s) recorded in alembic_version_sep do not resolve "
-    f"({UNKNOWN_REVISION}) while every configured version_locations entry is "
-    "present on disk. That is version skew or a squashed revision, not a "
-    "stripped app, so they are left in place for Alembic to reject."
-)
+_SKEW_NOTICE = f"{UNKNOWN_REVISION} present on disk"
 
 
 @contextmanager
@@ -212,6 +218,33 @@ def sep_alembic_config_stripped_alerts(sep_alembic_config, tmp_path):
         ),
     )
     return cfg, sync_url, str(absent)
+
+
+@pytest.fixture
+def sep_alembic_config_empty_alerts_versions(sep_alembic_config, tmp_path):
+    """Return a Config whose alerts location exists on disk but has no revisions.
+
+    The configured ``versions/`` directory is present but contributes no scripts
+    to the revision map — the shared evidence for both a package that lost its
+    ``__init__.py`` while leaving ``versions/``, and a package left intact with
+    an empty ``versions/``.
+
+    :param sep_alembic_config: The full-config fixture whose database is shared.
+    :param tmp_path: Pytest's per-test temporary directory.
+    :return: A tuple of (Config, sync sqlite URL, the empty alerts path).
+    """
+    _, sync_url = sep_alembic_config
+    empty = tmp_path / "empty" / "alerts" / "migrations" / "versions"
+    empty.mkdir(parents=True)
+    cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    locations = ScriptDirectory.from_config(cfg).version_locations
+    cfg.set_main_option(
+        "version_locations",
+        ":".join(
+            str(empty) if "alerts" in location else location for location in locations
+        ),
+    )
+    return cfg, sync_url, str(empty)
 
 
 def _stamp_extra_revision(sync_url: str, revision: str) -> None:
@@ -432,6 +465,52 @@ def test_a_stripped_app_and_version_skew_are_skipped_together(
     assert {ALERTS_HEAD, UNKNOWN_REVISION} <= stamped
 
 
+def test_upgrade_succeeds_when_versions_dir_exists_but_is_empty(
+    sep_alembic_config, sep_alembic_config_empty_alerts_versions
+):
+    """Upgrade when alerts' versions/ is present on disk but contributes nothing."""
+    full_cfg, _ = sep_alembic_config
+    empty_cfg, _, _ = sep_alembic_config_empty_alerts_versions
+    command.upgrade(full_cfg, "heads")
+
+    command.upgrade(empty_cfg, "heads")
+
+
+def test_upgrade_preserves_the_unresolvable_row_when_versions_dir_is_empty(
+    sep_alembic_config, sep_alembic_config_empty_alerts_versions
+):
+    """Keep the orphaned alerts row when the filter arms on an empty versions/."""
+    full_cfg, sync_url = sep_alembic_config
+    empty_cfg, _, _ = sep_alembic_config_empty_alerts_versions
+    command.upgrade(full_cfg, "heads")
+
+    command.upgrade(empty_cfg, "heads")
+
+    assert ALERTS_HEAD in _get_stamped_revisions(sync_url)
+
+
+def test_upgrade_logs_empty_location_that_armed_the_filter(
+    sep_alembic_config, sep_alembic_config_empty_alerts_versions, capsys
+):
+    """Name the empty versions/ location in the skip WARNING."""
+    full_cfg, _ = sep_alembic_config
+    empty_cfg, _, empty_path = sep_alembic_config_empty_alerts_versions
+    command.upgrade(full_cfg, "heads")
+    capsys.readouterr()
+
+    command.upgrade(empty_cfg, "heads")
+    err = capsys.readouterr().err
+    matching = [
+        line
+        for line in err.splitlines()
+        if _ORPHAN_HEADS_LOGGER in line and "Skipping" in line
+    ]
+    assert len(matching) == 1, err
+    assert ALERTS_HEAD in matching[0]
+    assert empty_path in matching[0]
+    assert "contributed no revisions" in matching[0]
+
+
 def test_alembic_upgrade_heads_fresh_db_creates_alert_backup(sep_alembic_config):
     """Run ``upgrade heads`` on a fresh DB to materialize both branches."""
     cfg, sync_url = sep_alembic_config
@@ -490,27 +569,27 @@ def test_alembic_downgrade_alerts_to_base_drops_table(sep_alembic_config):
     assert sep_main_heads & stamped
 
 
-def test_setting_class_enum_accepts_new_members_after_upgrade(sep_alembic_config):
-    """After ``upgrade heads``, SETTINGS and ALERT_SETTINGS rows are accepted."""
+def test_setting_class_accepts_unregistered_token_after_upgrade(sep_alembic_config):
+    """Accept a token never listed in the CHECK once ``upgrade heads`` has run."""
     cfg, sync_url = sep_alembic_config
     command.upgrade(cfg, "heads")
 
-    new_members = ("SETTINGS", "ALERT_SETTINGS")
+    unregistered = ("CUSTOM_PLUGIN_SETTINGS", "APP_OWNED_SETTINGS")
     engine = create_engine(sync_url)
     try:
         with engine.begin() as conn:
-            for member in new_members:
+            for member in unregistered:
                 _insert_override(conn, member)
             count = conn.exec_driver_sql(
                 "SELECT COUNT(*) FROM settingoverride"
             ).scalar()
-        assert count == len(new_members)
+        assert count == len(unregistered)
     finally:
         engine.dispose()
 
 
-def test_setting_class_enum_rejects_new_members_before_upgrade(sep_alembic_config):
-    """At the pre-enum revision, a SETTINGS row violates the CHECK constraint."""
+def test_setting_class_check_rejects_unlisted_token_before_drop(sep_alembic_config):
+    """Reject a SETTINGS row at the pre-enum revision, whose CHECK excludes it."""
     cfg, sync_url = sep_alembic_config
     command.upgrade(cfg, _SEP_PRE_ENUM_REVISION)
 
@@ -518,6 +597,66 @@ def test_setting_class_enum_rejects_new_members_before_upgrade(sep_alembic_confi
     try:
         with engine.begin() as conn, pytest.raises(IntegrityError):
             _insert_override(conn, "SETTINGS")
+    finally:
+        engine.dispose()
+
+
+def test_setting_class_check_is_dropped_after_upgrade(sep_alembic_config):
+    """Leave ``setting_class`` an unconstrained string after ``upgrade heads``."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, "heads")
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            unconstrained = ("UNREGISTERED_SETTINGS", "X" * 50)
+            assert (
+                check_constraint_name(conn, "settingoverride", "setting_class") is None
+            )
+            for token in unconstrained:
+                _insert_override(conn, token)
+            count = conn.exec_driver_sql(
+                "SELECT COUNT(*) FROM settingoverride"
+            ).scalar()
+        assert count == len(unconstrained)
+    finally:
+        engine.dispose()
+
+
+def test_setting_class_check_downgrade_deletes_unknown_rows(sep_alembic_config, capsys):
+    """Delete out-of-list rows on downgrade, log the count, and restore the CHECK."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, "heads")
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            _insert_override(conn, "UNREGISTERED_SETTINGS")
+            _insert_override(conn, "SEP_SETTINGS")
+    finally:
+        engine.dispose()
+
+    # alembic fileConfig routes ``app.*`` to its console handler with
+    # ``propagate = 0``, so the delete notice is on stderr, not in caplog.
+    capsys.readouterr()
+    # The revision under test is named outright: a head-relative target silently
+    # retargets this assertion at whatever migration lands on sep_main next.
+    command.downgrade(cfg, _SETTING_CLASS_CHECK_PARENT)
+    assert "Deleted 1 settingoverride row(s)" in capsys.readouterr().err
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            assert (
+                check_constraint_name(conn, "settingoverride", "setting_class")
+                == "settingclassenum"
+            )
+            remaining = conn.exec_driver_sql(
+                "SELECT setting_class FROM settingoverride"
+            ).fetchall()
+            assert remaining == [("SEP_SETTINGS",)]
+            with pytest.raises(IntegrityError):
+                _insert_override(conn, "UNREGISTERED_SETTINGS")
     finally:
         engine.dispose()
 
@@ -604,3 +743,125 @@ def test_app_lifecycle_downgrade_restores_enabled(sep_alembic_config):
     assert "lifecycle_state" not in columns
     assert "enabled" in columns
     assert rows == {"snippets": 1, "checksums": 0}
+
+
+def _insert_sync_instance(conn, instance_id: str) -> None:
+    """Insert a ``syncinstance`` row using the pre-run-state column set."""
+    conn.exec_driver_sql(
+        "INSERT INTO syncinstance (id, created_at, syncer) "
+        "VALUES (?, '2026-01-01 00:00:00', 'PMMSyncer')",
+        (instance_id,),
+    )
+
+
+def _insert_sync_item(conn, item_id: str, instance_id: str, status: str) -> None:
+    """Insert a ``syncitem`` row belonging to the given instance."""
+    conn.exec_driver_sql(
+        "INSERT INTO syncitem "
+        "(id, created_at, entity_type, status, sync_instance_id) "
+        "VALUES (?, '2026-01-01 00:00:00', 'INVENTORY', ?, ?)",
+        (item_id, status, instance_id),
+    )
+
+
+def test_sync_run_state_backfill_derives_a_verdict_per_historical_run(
+    sep_alembic_config,
+):
+    """Derive ``status`` for historical runs by the rule finalize_run applies."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _SEP_PRE_SYNC_RUN_STATE_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            _insert_sync_instance(conn, "all-success")
+            _insert_sync_item(conn, "s1", "all-success", "SUCCESS")
+            _insert_sync_item(conn, "s2", "all-success", "SUCCESS")
+            _insert_sync_instance(conn, "one-failed")
+            _insert_sync_item(conn, "f1", "one-failed", "SUCCESS")
+            _insert_sync_item(conn, "f2", "one-failed", "FAILED")
+            _insert_sync_instance(conn, "still-running")
+            _insert_sync_item(conn, "r1", "still-running", "RUNNING")
+            _insert_sync_instance(conn, "no-items")
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, _SEP_SYNC_RUN_STATE_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            rows = dict(
+                conn.exec_driver_sql("SELECT id, status FROM syncinstance").fetchall()
+            )
+            complete = dict(
+                conn.exec_driver_sql(
+                    "SELECT id, snapshot_complete FROM syncinstance"
+                ).fetchall()
+            )
+    finally:
+        engine.dispose()
+
+    assert rows == {
+        "all-success": "SUCCESS",
+        "one-failed": "FAILED",
+        "still-running": "PENDING",
+        "no-items": "PENDING",
+    }
+    assert set(complete.values()) == {None}
+
+
+def test_sync_run_state_status_check_rejects_unknown_value(sep_alembic_config):
+    """Reject a bogus ``syncinstance.status`` through the CHECK constraint."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _SEP_SYNC_RUN_STATE_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn, pytest.raises(IntegrityError):
+            conn.exec_driver_sql(
+                "INSERT INTO syncinstance (id, created_at, syncer, status) "
+                "VALUES ('bogus', '2026-01-01 00:00:00', 'PMMSyncer', 'NOPE')"
+            )
+    finally:
+        engine.dispose()
+
+
+def test_sync_run_state_status_server_default_survives_the_migration(
+    sep_alembic_config,
+):
+    """Accept an insert omitting ``status``, as a pre-rollout release issues."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _SEP_SYNC_RUN_STATE_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            _insert_sync_instance(conn, "old-code")
+            status = conn.exec_driver_sql(
+                "SELECT status FROM syncinstance WHERE id = 'old-code'"
+            ).scalar_one()
+    finally:
+        engine.dispose()
+
+    assert status == "PENDING"
+
+
+def test_sync_run_state_downgrade_drops_the_added_state(sep_alembic_config):
+    """Remove both run-state columns and the absence ledger on downgrade."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _SEP_SYNC_RUN_STATE_REVISION)
+    command.downgrade(cfg, _SEP_PRE_SYNC_RUN_STATE_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        inspector = inspect(engine)
+        columns = {col["name"] for col in inspector.get_columns("syncinstance")}
+        tables = set(inspector.get_table_names())
+    finally:
+        engine.dispose()
+
+    assert "status" not in columns
+    assert "snapshot_complete" not in columns
+    assert "syncentityabsence" not in tables
+    assert "syncitem" in tables

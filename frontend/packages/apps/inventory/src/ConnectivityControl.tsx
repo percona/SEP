@@ -15,9 +15,11 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Box, Button, CircularProgress, Tooltip } from '@mui/material';
+import { useState } from 'react';
+import { Alert, Box, Button, CircularProgress, Tooltip } from '@mui/material';
 import NetworkCheckIcon from '@mui/icons-material/NetworkCheck';
-import { ApiError } from '@sep/api';
+import { useAuth } from '@sep/api';
+import { ActionErrorAlert, useActionError } from '@sep/framework';
 import { useSnackbar } from 'notistack';
 import { useCheckServiceConnectivity } from './hooks';
 
@@ -42,32 +44,38 @@ export function ConnectivityControl({
   serviceId: string | number;
   serviceType?: unknown;
 }) {
+  const { canMutate } = useAuth();
   const checkConnectivity = useCheckServiceConnectivity(serviceId);
   const { enqueueSnackbar } = useSnackbar();
+  const checkError = useActionError();
+  const [probeFailure, setProbeFailure] = useState<string | null>(null);
 
   const isConnectable =
     typeof serviceType === 'string' && CONNECTABLE_SERVICE_TYPES.has(serviceType);
   const isPending = checkConnectivity.isPending;
 
   function handleCheck() {
+    setProbeFailure(null);
+    checkError.clearError();
     checkConnectivity.mutate(undefined, {
       onSuccess: (result) => {
         if (result.success) {
           enqueueSnackbar('Connectivity check passed', { variant: 'success' });
         } else {
-          enqueueSnackbar(`Connectivity check failed: ${result.error ?? 'Unknown error'}`, {
-            variant: 'error',
-          });
+          // A reachability failure is a successful request reporting a bad
+          // result, so it renders here rather than through the error alert.
+          setProbeFailure(result.error ?? 'Unknown error');
         }
       },
-      onError: (err) => {
-        const message =
-          err instanceof ApiError
-            ? err.message
-            : 'Connectivity check could not be started. Please try again.';
-        enqueueSnackbar(message, { variant: 'error' });
-      },
+      // The request itself failing (refused, 5xx, network) reports in-tree and
+      // nowhere else: one signal, and one that does not need a host snackbar.
+      onError: (err) => checkError.reportError(err),
     });
+  }
+
+  // The probe is a POST, so a read-only session is offered no button at all.
+  if (!canMutate) {
+    return null;
   }
 
   return (
@@ -90,6 +98,25 @@ export function ConnectivityControl({
           </Button>
         </Box>
       </Tooltip>
+
+      <ActionErrorAlert
+        error={checkError.error}
+        onClose={checkError.clearError}
+        fallback="Connectivity check could not be started. Please try again."
+        sx={{ mt: 2 }}
+        testId="connectivity-action-error"
+      />
+
+      {probeFailure !== null && (
+        <Alert
+          severity="error"
+          onClose={() => setProbeFailure(null)}
+          sx={{ mt: 2 }}
+          data-testid="connectivity-probe-failure"
+        >
+          Connectivity check failed: {probeFailure}
+        </Alert>
+      )}
     </Box>
   );
 }

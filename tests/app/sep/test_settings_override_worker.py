@@ -18,6 +18,7 @@
 import asyncio
 import logging
 import logging.config
+from collections.abc import Iterator
 from typing import ClassVar
 
 import pytest
@@ -31,20 +32,24 @@ from sqlalchemy.ext.asyncio import (
 from sqlmodel import SQLModel
 from sqlmodel.pool import StaticPool
 
-from app.core.alerts.config import alert_settings
-from app.core.config import BaseYamlSettings, LogLevel, settings
+from app.core.alerts.config import alert_settings, AlertSettings
+from app.core.config import BaseYamlSettings, LogLevel, Settings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override import lifecycle
 from app.core.settings_override.api.routes import AppOwnedClassEntry
 from app.core.settings_override.lifecycle import refresh_all
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import (
+    setting_class_token,
+    SettingClassEnum,
+    SettingOverride,
+)
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import hot_field
 from app.core.settings_override.worker import SEED_TIMEOUT_FRACTION
 from app.core.utils import json_serializer
 from app.sep import settings_override as sep_worker
-from app.sep.config import sep_settings
+from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import resolve_pmm_api
 from app.sep.settings_override import (
     build_sep_override_proxies,
@@ -59,6 +64,7 @@ from tests.app.core.settings_override.conftest import (
     recording_start_refresh_task,
     START_REFRESH_TASK,
 )
+from tests.app.db_schema import apply_schema
 
 SEP_CORE_CLASSES = frozenset(
     {
@@ -84,7 +90,7 @@ class _AppOwnedSettings(BaseYamlSettings):
     LABEL: str = hot_field("default")
 
 
-def _app_owned_entry(setting_class: SettingClassEnum) -> AppOwnedClassEntry:
+def _app_owned_entry(setting_class: str) -> AppOwnedClassEntry:
     """Build an app-owned registration for ``setting_class``."""
     return AppOwnedClassEntry(
         setting_class=setting_class,
@@ -97,24 +103,32 @@ def _app_owned_entry(setting_class: SettingClassEnum) -> AppOwnedClassEntry:
 async def _create_schema(engine: AsyncEngine) -> None:
     """Create every SQLModel table on ``engine``."""
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
 
 
 async def _upsert_override(
     maker: async_sessionmaker,
     *,
-    setting_class: SettingClassEnum,
+    settings_cls: type[BaseYamlSettings],
     key: str,
     value: object,
 ) -> None:
-    """Insert or replace a single active ``SettingOverride`` row through ``maker``."""
+    """Insert or replace a single active ``SettingOverride`` row through ``maker``.
+
+    :param maker: Async session maker bound to the override store.
+    :param settings_cls: Settings class whose :func:`~app.core.settings_override.models.setting_class_token`
+        is persisted as ``setting_class`` on the row.
+    :param key: Canonical override key (``SCREAMING_SNAKE`` or nested path).
+    :param value: JSON-serializable override payload.
+    """
+    token = setting_class_token(settings_cls)
     async with maker() as session:
         await SettingsOverrideManager.delete_where(
-            session, setting_class=setting_class, key=key
+            session, setting_class=token, key=key
         )
         await SettingsOverrideManager.create(
             session,
-            SettingOverride(setting_class=setting_class, key=key, value=value),
+            SettingOverride(setting_class=token, key=key, value=value),
         )
 
 
@@ -125,7 +139,7 @@ def no_app_owned_classes_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(name="override_session_maker")
-def override_session_maker_fixture() -> async_sessionmaker:
+def override_session_maker_fixture() -> Iterator[async_sessionmaker]:
     """Provide an in-memory SQLite session maker with the SEP schema created."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",
@@ -143,7 +157,7 @@ def override_session_maker_fixture() -> async_sessionmaker:
 @pytest.fixture(name="worker_loop_env")
 def worker_loop_env_fixture(
     monkeypatch: pytest.MonkeyPatch,
-) -> WorkerLoopEnv:
+) -> Iterator[WorkerLoopEnv]:
     """Wire a fresh event loop and in-memory SEP DB as a prefork worker child.
 
     Mirrors the ``worker_process_init`` runtime: a dedicated ``celery.loop``, the
@@ -183,15 +197,15 @@ class TestBuildSepOverrideProxies:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Carry an app-declared class alongside SEP's own entries."""
-        entry = _app_owned_entry(SettingClassEnum.ALERTS_SETTINGS)
+        entry = _app_owned_entry("AlertsSettings")
         monkeypatch.setattr(
             sep_worker, "collect_app_owned_settings_classes", lambda: [entry]
         )
 
         proxies = build_sep_override_proxies()
 
-        assert set(proxies) == SEP_CORE_CLASSES | {SettingClassEnum.ALERTS_SETTINGS}
-        assert proxies[SettingClassEnum.ALERTS_SETTINGS].proxy is entry.proxy
+        assert set(proxies) == SEP_CORE_CLASSES | {"AlertsSettings"}
+        assert proxies["AlertsSettings"].proxy is entry.proxy
 
     def test_sep_entries_win_over_an_app_owned_collision(
         self, monkeypatch: pytest.MonkeyPatch
@@ -294,7 +308,7 @@ class TestSepWorkerHandlers:
         loop.run_until_complete(
             _upsert_override(
                 maker,
-                setting_class=SettingClassEnum.ALERT_SETTINGS,
+                settings_cls=AlertSettings,
                 key="SOURCE_PREFIX",
                 value="worker-",
             )
@@ -352,7 +366,7 @@ class TestWorkerPmmClientInvalidation:
         proxies = build_sep_override_proxies()
         await _upsert_override(
             override_session_maker,
-            setting_class=SettingClassEnum.SETTINGS,
+            settings_cls=Settings,
             key="PMM",
             value={"endpoint": PMM_ENDPOINT, "api_key": "old-key"},
         )
@@ -361,7 +375,7 @@ class TestWorkerPmmClientInvalidation:
         try:
             await _upsert_override(
                 override_session_maker,
-                setting_class=SettingClassEnum.SETTINGS,
+                settings_cls=Settings,
                 key="PMM",
                 value={"endpoint": PMM_ENDPOINT, "api_key": "new-key"},
             )
@@ -390,7 +404,7 @@ class TestWorkerPmmClientInvalidation:
         proxies = build_sep_override_proxies()
         await _upsert_override(
             override_session_maker,
-            setting_class=SettingClassEnum.SETTINGS,
+            settings_cls=Settings,
             key="PMM",
             value={"endpoint": PMM_ENDPOINT, "api_key": "old-key"},
         )
@@ -399,7 +413,7 @@ class TestWorkerPmmClientInvalidation:
         try:
             await _upsert_override(
                 override_session_maker,
-                setting_class=SettingClassEnum.SETTINGS,
+                settings_cls=Settings,
                 key="PMM",
                 value={"endpoint": PMM_ENDPOINT, "api_key": "new-key"},
             )
@@ -426,14 +440,14 @@ class TestWorkerPmmClientInvalidation:
         proxies = build_sep_override_proxies()
         await _upsert_override(
             override_session_maker,
-            setting_class=SettingClassEnum.SETTINGS,
+            settings_cls=Settings,
             key="PMM",
             value={"endpoint": PMM_ENDPOINT, "api_key": "old-key"},
         )
         await refresh_all(lambda: override_session_maker, proxies)
         await _upsert_override(
             override_session_maker,
-            setting_class=SettingClassEnum.SETTINGS,
+            settings_cls=Settings,
             key="PMM",
             value={"endpoint": PMM_ENDPOINT, "api_key": "new-key"},
         )
@@ -448,7 +462,7 @@ class TestWorkerPmmClientInvalidation:
 
 
 @pytest.fixture(name="worker_logging_boot")
-def worker_logging_boot_fixture() -> None:
+def worker_logging_boot_fixture() -> Iterator[None]:
     """Install a WARNING-level NullHandler config and restore process logging.
 
     Mutates process-global logging and the ``settings`` snapshot; teardown
@@ -467,10 +481,12 @@ def worker_logging_boot_fixture() -> None:
     }
     try:
         logging.config.dictConfig(boot_config)
-        settings._set_snapshot({"LOGGING": LogLevel.WARNING})
+        settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"LOGGING": LogLevel.WARNING}
+        )
         yield
     finally:
-        settings._set_snapshot({})
+        settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
         logging.config.dictConfig(settings.LOGGING_CONFIG)
 
 
@@ -494,7 +510,7 @@ class TestWorkerLoggingRebind:
         proxies = build_sep_override_proxies()
         await _upsert_override(
             override_session_maker,
-            setting_class=SettingClassEnum.SETTINGS,
+            settings_cls=Settings,
             key="LOGGING",
             value="DEBUG",
         )
@@ -516,7 +532,7 @@ class TestWorkerLoggingRebind:
         proxies = build_sep_override_proxies()
         await _upsert_override(
             override_session_maker,
-            setting_class=SettingClassEnum.SETTINGS,
+            settings_cls=Settings,
             key="LOGGING",
             value="DEBUG",
         )
@@ -537,7 +553,7 @@ class TestRepublishSepSettingsSnapshot:
         """Reflect an override written after the snapshot in hand was built."""
         await _upsert_override(
             override_session_maker,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            settings_cls=SEPSettings,
             key=SEP_OVERRIDE_KEY,
             value=SEP_OVERRIDE_VALUE,
         )
@@ -546,7 +562,12 @@ class TestRepublishSepSettingsSnapshot:
             await republish_sep_settings_snapshot(session)
 
         assert sep_settings.SYNC_REFRESH_TIME == SEP_OVERRIDE_VALUE
-        assert sep_settings.get_snapshot()[SEP_OVERRIDE_KEY] == SEP_OVERRIDE_VALUE
+        assert (
+            sep_settings.get_snapshot()[  # ty: ignore[unresolved-attribute]
+                SEP_OVERRIDE_KEY
+            ]
+            == SEP_OVERRIDE_VALUE
+        )
 
     @pytest.mark.asyncio
     async def test_the_helper_fires_no_rebind_callback(
@@ -561,7 +582,7 @@ class TestRepublishSepSettingsSnapshot:
         fire = mocker.spy(lifecycle, "fire_change_callbacks")
         await _upsert_override(
             override_session_maker,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            settings_cls=SEPSettings,
             key=SEP_OVERRIDE_KEY,
             value=SEP_OVERRIDE_VALUE,
         )

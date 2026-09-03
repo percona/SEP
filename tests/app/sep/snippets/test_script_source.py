@@ -41,7 +41,9 @@ from app.core.exceptions import (
     HTTPUnprocessableEntityException,
 )
 from app.core.pagination import Pagination
+from app.core.security import crypto_timestamp_serializer
 from app.sep.apps.framework.script_source import ScriptExecuteWrite
+from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.deps import build_snippet_execution_meta
@@ -87,6 +89,34 @@ def _snippet_query(
         ),
         approval=approval,
     )
+
+
+def _normalize_snippet_source(url: str) -> tuple[str, dict[str, object]]:
+    """Return the URL prefix plus the decoded token payload.
+
+    Keeps scheme, host, and path so parity tests still catch base-URL drift,
+    while replacing the timed token with its payload so two mintings in
+    different seconds still compare equal.
+
+    :param url: The signed artifact-download URL to normalize.
+    :return: ``(prefix, payload)`` where ``prefix`` ends at the final slash
+        and ``payload`` is the decoded token body.
+    """
+    prefix, token = url.rsplit("/", 1)
+    payload = crypto_timestamp_serializer.loads(token, salt=ARTIFACT_DOWNLOAD_SALT)
+    return f"{prefix}/", payload
+
+
+def _meta_dump_decoded(meta: SnippetExecutionMeta) -> dict[str, object]:
+    """Return ``meta.model_dump()`` with ``snippet_source`` timestamp-normalized.
+
+    :param meta: The execution meta whose signed URL should be normalized.
+    :return: A dump identical to ``meta.model_dump()`` except ``snippet_source``
+        is ``(url_prefix, decoded_payload)``.
+    """
+    d = meta.model_dump()
+    d["snippet_source"] = _normalize_snippet_source(d["snippet_source"])
+    return d
 
 
 def _framework_processed_body(
@@ -212,7 +242,7 @@ class TestLoadAndListScripts:
         request_less_session: AsyncSession,
         create_snippet: Callable[..., Awaitable[Snippet]],
     ) -> None:
-        """Honour a query with no pagination, matching ``in_memory_list_scripts``.
+        """Honour a query with no pagination, matching the framework applier.
 
         The framework's own adapter filters and orders the whole set unsliced for this
         shape, so the SQL-backed hook must not fall back to the unfiltered set.
@@ -480,7 +510,7 @@ class TestBuildExecutionMeta:
         )
         legacy_meta = _legacy_execution_meta(script.snippet, body)
 
-        assert hook_meta.model_dump() == legacy_meta.model_dump()
+        assert _meta_dump_decoded(hook_meta) == _meta_dump_decoded(legacy_meta)
 
     async def test_extra_args_reach_command_via_new_schema_alias(
         self,
@@ -548,7 +578,7 @@ class TestBuildExecutionMeta:
         )
         legacy_meta = _legacy_execution_meta(script.snippet, legacy_body)
 
-        assert new_alias_meta.model_dump() == legacy_meta.model_dump()
+        assert _meta_dump_decoded(new_alias_meta) == _meta_dump_decoded(legacy_meta)
 
     @pytest.mark.parametrize("requested_sudo", [True, False])
     async def test_optional_sudo_toggle_is_honored(

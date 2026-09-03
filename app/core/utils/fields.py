@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum, IntEnum, StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Self, TypeVar
+from typing import Annotated, Any, Generic, Self, TypeVar
 from urllib.parse import urlparse, urlunparse
 
 from annotated_types import Interval
@@ -34,6 +34,7 @@ from pydantic import (
     Field,
     FilePath,
     GetCoreSchemaHandler,
+    GetJsonSchemaHandler,
     HttpUrl,
     PlainSerializer,
     StringConstraints,
@@ -94,7 +95,9 @@ def get_enum_from_value_or_name_factory(enum_class: type[E]) -> Callable[[Any], 
     """
     enum_class_name = enum_class.__name__
 
-    def get_enum_from_value_or_name(value_or_name: Any) -> enum_class:
+    def get_enum_from_value_or_name(
+        value_or_name: Any,
+    ) -> enum_class:  # ty: ignore[invalid-type-form]
         """Return the {enum_class} from its value or name.
 
         :param value_or_name: The value or name of the {enum_class} to return.
@@ -135,7 +138,7 @@ R = TypeVar("R")
 
 
 @dataclass(frozen=True)
-class AsTypeValidator:
+class AsTypeValidator(Generic[V, R]):
     """Validate an object with a specified class and optionally apply post-processing.
 
     This validator uses a designated type (`validate_class`) to validate an object. If a
@@ -247,7 +250,7 @@ class URL(StarletteURL):
     def __get_pydantic_json_schema__(
         cls,
         core_schema: core_schema.CoreSchema,
-        handler: GetCoreSchemaHandler,
+        handler: GetJsonSchemaHandler,
     ) -> JsonSchemaValue:
         """Provide the JSON schema for the custom URL type.
 
@@ -255,11 +258,8 @@ class URL(StarletteURL):
         that it should be treated as a string with a URI format.
 
         :param core_schema: The core schema for the URL.
-        :type core_schema: core_schema.CoreSchema
         :param handler: The handler for JSON schema retrieval.
-        :type handler: GetCoreSchemaHandler
         :return: The JSON schema for the `URL` type.
-        :rtype: JsonSchemaValue
         """
         json_schema = handler(core_schema)
         json_schema.update(
@@ -339,59 +339,41 @@ class LogLevel(EnumFieldMixin, IntEnum):
 
 
 class DatabaseDialect(EnumFieldMixin, StrEnum):
-    """Enum representing supported database dialect names."""
+    """Represent supported database dialect names."""
 
     SQLITE = "sqlite"
-    MYSQL = "mysql"
     POSTGRESQL = "postgresql"
 
 
 class DatabaseEngine(EnumFieldMixin, StrEnum):
-    """Enum representing supported database engines.
-
-    :cvar SQLITE: SQLite engine string.
-    :vartype SQLITE: str
-    :cvar MYSQL: MySQL engine string, using the `pymysql` driver.
-    :vartype MYSQL: str
-    :cvar POSTGRESQL: PostgreSQL engine string, using the `psycopg2` driver.
-    :vartype POSTGRESQL: str
-    """
+    """Represent supported database engines as SQLAlchemy engine strings."""
 
     SQLITE = "sqlite"
-    MYSQL = "mysql+pymysql"
     POSTGRESQL = "postgresql+psycopg2"
 
 
 class AsyncDatabaseEngine(EnumFieldMixin, StrEnum):
-    """Enum representing supported async database engines.
-
-    :cvar SQLITE: SQLite engine string, using the `aiosqlite` driver.
-    :vartype SQLITE: str
-    :cvar MYSQL: MySQL engine string, using the `aiomysql` driver.
-    :vartype MYSQL: str
-    :cvar POSTGRESQL: PostgreSQL engine string, using the `asyncpg` driver.
-    :vartype POSTGRESQL: str
-    """
+    """Represent supported async database engines as SQLAlchemy engine strings."""
 
     SQLITE = "sqlite+aiosqlite"
-    MYSQL = "mysql+aiomysql"
     POSTGRESQL = "postgresql+asyncpg"
 
 
 def database_url_normalized_scheme_field_factory(
     engine_enum_class: type[DatabaseEngine] | type[AsyncDatabaseEngine],
-) -> type[Url]:
+) -> Any:
     """Generate and return an Url field that normalizes the scheme of a database URL.
+
+    Annotated ``Any`` because the result is an ``Annotated[...]`` type expression
+    assembled here, not a class.
 
     This factory function generates an annotated Url field with a BeforeValidator that
     normalizes the scheme of a database URL according to the `engine_enum_class`
     specified.
 
     :param engine_enum_class: The database engine enum type to use. Either
-        `DatabaseEngineEnum` or `AsyncDatabaseEngineEnum`.
-    :type engine_enum_class: type[DatabaseEngineEnum] | type[AsyncDatabaseEngineEnum]
+        ``DatabaseEngine`` or ``AsyncDatabaseEngine``.
     :return: The annotated Url field with the attached validator.
-    :rtype: type[Url]
     """
     get_database_engine_enum = get_enum_from_value_or_name_factory(engine_enum_class)
 

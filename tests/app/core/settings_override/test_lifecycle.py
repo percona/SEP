@@ -16,6 +16,7 @@
 """Cover the override-snapshot lifecycle helpers and the background refresher."""
 
 import asyncio
+from collections.abc import AsyncGenerator
 from datetime import timedelta
 
 import pytest
@@ -47,12 +48,20 @@ from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.execution.nomad_lifecycle import NomadLifecycle
 from app.tasks.main import _reconcile_nomad, tasks_app
-from tests.app.core.settings_override.conftest import hanging_session_maker_factory
+from tests.app.core.settings_override.conftest import (
+    hanging_session_maker_factory,
+    SEP_SETTINGS_TOKEN,
+    TASKS_SETTINGS_TOKEN,
+)
+from tests.app.db_schema import apply_schema
 
 
 @pytest_asyncio.fixture(name="session_maker")
-async def session_maker_fixture() -> async_sessionmaker:
+async def session_maker_fixture() -> AsyncGenerator[async_sessionmaker, None]:
     """Provide an in-memory SQLite session maker bound to a fresh schema."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -60,7 +69,7 @@ async def session_maker_fixture() -> async_sessionmaker:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:
@@ -70,7 +79,7 @@ async def session_maker_fixture() -> async_sessionmaker:
 def _make_proxies() -> tuple[OverridableSettingsProxy, dict]:
     """Construct an SEP proxy and a registry mapping for refresh tests."""
     proxy: OverridableSettingsProxy = OverridableSettingsProxy(
-        SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+        SEPSettings, setting_class=SEPSettings.__name__
     )
     registry = {
         SettingClassEnum.SEP_SETTINGS: ProxyEntry(proxy, SEPSettings),
@@ -122,7 +131,7 @@ async def test_refresh_all_swaps_snapshot(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -130,6 +139,50 @@ async def test_refresh_all_swaps_snapshot(
 
     await refresh_all(lambda: session_maker, registry)
     assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_skips_unregistered_class_row(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Leave an override row for an unwired class in the table.
+
+    Startup still publishes the wired class's snapshot; the unregistered row
+    is neither applied nor deleted.
+    """
+    proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    async with session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SEP_SETTINGS_TOKEN,
+                key="CONNECTIVITY_CHECK_DEFAULT",
+                value=override_value,
+            ),
+        )
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class="UNREGISTERED_SETTINGS",
+                key="WHATEVER",
+                value=True,
+            ),
+        )
+
+    await refresh_all(lambda: session_maker, registry)
+    assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+    async with session_maker() as session:
+        leftover = await SettingsOverrideManager.list(
+            session, setting_class="UNREGISTERED_SETTINGS"
+        )
+        wired = await SettingsOverrideManager.list(
+            session, setting_class=SEP_SETTINGS_TOKEN
+        )
+    assert len(leftover) == 1
+    assert leftover[0].key == "WHATEVER"
+    assert len(wired) == 1
 
 
 @pytest.mark.asyncio
@@ -167,10 +220,10 @@ async def test_refresh_all_rolls_back_session_between_proxies(
     its row from the DB.
     """
     sep_proxy: OverridableSettingsProxy = OverridableSettingsProxy(
-        SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+        SEPSettings, setting_class=SEPSettings.__name__
     )
     tasks_proxy: OverridableSettingsProxy = OverridableSettingsProxy(
-        TasksSettings, setting_class=SettingClassEnum.TASKS_SETTINGS
+        TasksSettings, setting_class=TasksSettings.__name__
     )
     registry = {
         SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_proxy, SEPSettings),
@@ -181,7 +234,7 @@ async def test_refresh_all_rolls_back_session_between_proxies(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="STALENESS_THRESHOLD_SECONDS",
                 value=tasks_override,
             ),
@@ -232,7 +285,7 @@ async def test_start_refresh_task_runs_initial_load(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -292,7 +345,7 @@ async def test_start_refresh_task_without_seed_timeout_awaits_the_seed(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -329,7 +382,9 @@ _NOMAD_CALLBACK_KEY = (SettingClassEnum.TASKS_SETTINGS, "NOMAD")
 _NOMAD_LEAF_TIMEOUT = 30
 
 
-def _make_tasks_proxy_registry() -> tuple[OverridableSettingsProxy, dict]:
+def _make_tasks_proxy_registry() -> tuple[
+    TasksSettings, dict[SettingClassEnum, ProxyEntry]
+]:
     """Construct the global Tasks proxy and a single-entry registry."""
     registry = {
         SettingClassEnum.TASKS_SETTINGS: ProxyEntry(tasks_settings, TasksSettings),
@@ -345,7 +400,7 @@ async def _seed_nomad_timeout_override(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="NOMAD__TIMEOUT",
                 value=value,
             ),
@@ -360,7 +415,7 @@ async def _seed_connectivity_override(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=value,
             ),
@@ -629,7 +684,7 @@ async def test_refresh_picks_up_changes_on_next_cycle(
             await SettingsOverrideManager.create(
                 session,
                 SettingOverride(
-                    setting_class=SettingClassEnum.SEP_SETTINGS,
+                    setting_class=SEP_SETTINGS_TOKEN,
                     key="CONNECTIVITY_CHECK_DEFAULT",
                     value=override_value,
                 ),

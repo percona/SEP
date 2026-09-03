@@ -39,6 +39,25 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends netcat-openbsd && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Purge the packages whose findings nothing in this image can reach. This must
+# stay the final package-manager operation in the recipe: it breaks debconf,
+# which is a perl program, so apt and dpkg stop working from here on.
+# scripts/check_sidecar_purge.py enforces both halves of that invariant.
+#
+# Each package must come back the moment its condition below holds:
+#   perl-base     - anything running inside this container executes perl
+#   gzip          - anything running inside this container shells out to gzip/zcat
+#   libncursesw6  - a shipped program links wide-character ncurses
+#   ncurses-base  - a supported workflow needs terminfo inside the container
+#   ncurses-bin   - a supported workflow needs tput/clear/infocmp
+RUN dpkg --purge --force-remove-essential \
+        perl-base \
+        gzip \
+        libncursesw6 \
+        ncurses-base \
+        ncurses-bin
+
 COPY --from=builder /usr/src/sep/wheels /wheels
 COPY --from=builder /usr/src/sep/requirements.txt .
 RUN pip install --no-cache-dir /wheels/*
@@ -56,6 +75,9 @@ COPY --chown=0:1001 --chmod=440 ./alembic.ini .
 COPY --chown=0:1001 --chmod=440 ./sidecar/supervisord.conf ./supervisord.conf
 COPY --chown=0:1001 --chmod=550 ./sidecar/healthcheck.sh ./healthcheck.sh
 COPY --chown=0:1001 --chmod=550 ./sidecar/entrypoint.sh ./entrypoint.sh
+# Invoked directly by each API program's command rather than through an
+# interpreter, hence 550 where the python helpers below are 440
+COPY --chown=0:1001 --chmod=550 ./sidecar/wait_for_schema.sh ./wait_for_schema.sh
 # Sourced by entrypoint.sh, never executed, hence 440 rather than 550
 COPY --chown=0:1001 --chmod=440 ./sidecar/settings-env.sh ./settings-env.sh
 # Run through the interpreter and never executed directly -- grafana_service_account.py

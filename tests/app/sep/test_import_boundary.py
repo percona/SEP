@@ -25,9 +25,9 @@ edge into a package the image strips. This module walks the ``app/`` tree with
 configuration: no module holds an import-time edge into an activatable app
 package other than the one it lives in.
 
-Both halves bind. A module that lives in no app package -- everything outside
+Both halves bind. A module that lives in no app package — everything outside
 ``app/sep/apps/`` plus, inside it, ``framework``/``shared`` and the apps-level
-modules -- may reach none of them. A module inside app package ``X`` may reach
+modules — may reach none of them. A module inside app package ``X`` may reach
 ``X`` freely and nothing else.
 
 Two node shapes count, because both execute at import: a static ``import`` /
@@ -40,7 +40,7 @@ Two limitations are deliberate, so the guard is not mistaken for a total one:
 - A dynamic import whose target is *computed* cannot be resolved statically.
   Restricting the dynamic check to literal arguments is what keeps the
   registry's activation-list-driven ``import_module(plugin.module_name)`` from
-  tripping the guard -- that call is the blessed activation seam, not a
+  tripping the guard — that call is the blessed activation seam, not a
   violation.
 - A module-scope call to a function *imported from another module* whose body
   imports an app package is out of scope. Resolving it needs a whole-tree
@@ -48,14 +48,19 @@ Two limitations are deliberate, so the guard is not mistaken for a total one:
   the intra-module form does not.
 
 A second walker, :func:`_declared_imports`, counts every import including
-``TYPE_CHECKING`` blocks. It pins two form-backfill edges the import-time
-rule cannot see: nothing under ``app/sep/apps/`` may import the
-``form_backfill`` orchestrator, and ``form_backfill_inventory`` may not
-import ``form_backfill_registry``.
+``TYPE_CHECKING`` blocks and function bodies. It pins three edges the
+import-time rule cannot see: nothing under ``app/sep/apps/`` may import the
+``form_backfill`` orchestrator, ``form_backfill_inventory`` may not import
+``form_backfill_registry``, and no module may *defer* an edge into another
+app package into a function body. Deferring does not remove the edge. In the
+image that strips the package it relocates the failure into a lifespan or a
+request, which is how the side-car shipped unable to serve its main API.
 """
 
 import ast
-from collections.abc import Iterator
+import os
+import shutil
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import pytest
@@ -146,7 +151,7 @@ def _call_names_in_expr(node: ast.AST) -> set[str]:
 def _call_names_skipping_function_bodies(node: ast.AST) -> set[str]:
     """Collect bare-name call targets while skipping nested function bodies.
 
-    Descends module and class bodies -- both execute on import -- but never into
+    Descends module and class bodies — both execute on import — but never into
     a ``FunctionDef`` / ``AsyncFunctionDef`` body. Decorator expressions and
     signature defaults on skipped functions are still scanned, because both
     evaluate at import time.
@@ -263,7 +268,7 @@ def _descend_import_time_nodes(
 def _import_time_imports(node: ast.AST, package: str) -> Iterator[tuple[str, int]]:
     """Yield ``(module, lineno)`` for each import executed when the module loads.
 
-    Descends the module body and class bodies -- both execute on import -- but
+    Descends the module body and class bodies — both execute on import — but
     never into a function body, at any nesting depth. :func:`ast.walk` cannot
     express that: it queues a node's children before yielding the node, so
     skipping a ``FunctionDef`` mid-walk still lets its already-queued body
@@ -271,8 +276,8 @@ def _import_time_imports(node: ast.AST, package: str) -> Iterator[tuple[str, int
     only, since that is the branch a real interpreter runs.
 
     For a module, also traces intra-module call chains: a top-level function
-    whose body imports and is reached from an import-time call site -- including
-    transitively through other local functions -- contributes its body imports.
+    whose body imports and is reached from an import-time call site — including
+    transitively through other local functions — contributes its body imports.
 
     :param node: The module or nested node to descend.
     :param package: The dotted package the importing module belongs to.
@@ -328,12 +333,178 @@ def _is_type_checking_guard(node: ast.AST) -> bool:
     return isinstance(test, ast.Name) and test.id == "TYPE_CHECKING"
 
 
+def _skip_vanished_directory(error: OSError) -> None:
+    """Swallow a directory that vanished mid-walk, and re-raise anything else.
+
+    :param error: The failure :func:`os.walk` hit while scanning a directory.
+    :raises OSError: When the scan failed for any reason other than the directory
+        being gone.
+    """
+    if not isinstance(error, FileNotFoundError):
+        raise error
+
+
+def _module_paths_under(root: Path) -> Iterator[Path]:
+    """Yield every ``*.py`` module under ``root``, tolerating a vanished directory.
+
+    ``Path.rglob`` is not usable here. It re-scans each directory it descends into,
+    and on the oldest Python this project supports that scan is guarded against a
+    permission failure only, so a scaffold package another worker removes after it was
+    listed but before the descent reaches it aborts the whole walk. :func:`os.walk`
+    reports such a failure to a handler instead, which lets a missing directory be
+    skipped while every other scan failure still raises.
+
+    Symlinked directories are left unwalked, matching what the ``rglob`` walk did and
+    keeping a link loop from trapping the walk.
+
+    :param root: The tree root to walk.
+    :return: An iterator of module paths, in whatever order the walk reaches them.
+    """
+    for directory, _, filenames in os.walk(root, onerror=_skip_vanished_directory):
+        for filename in filenames:
+            if filename.endswith(".py"):
+                yield Path(directory) / filename
+
+
+def test_skip_vanished_directory_swallows_a_directory_that_is_gone(
+    tmp_path: Path,
+) -> None:
+    """Let the walk continue past a directory removed since it was listed.
+
+    :param tmp_path: The directory the missing path is addressed under.
+    """
+    error = FileNotFoundError(2, "No such file or directory")
+    error.filename = str(tmp_path / "gone")
+    assert _skip_vanished_directory(error) is None
+
+
+def test_skip_vanished_directory_reraises_any_other_scan_failure() -> None:
+    """Fail loudly when a directory is there but cannot be scanned.
+
+    A directory the walk may not read is not a directory that vanished, and
+    swallowing it would drop every module under it from the guard silently.
+    """
+    with pytest.raises(PermissionError):
+        _skip_vanished_directory(PermissionError(13, "Permission denied"))
+
+
+def test_module_paths_under_yields_every_nested_module(tmp_path: Path) -> None:
+    """Yield modules at every depth, and nothing that is not a module.
+
+    :param tmp_path: The tree root the modules are written under.
+    """
+    (tmp_path / "pkg" / "sub").mkdir(parents=True)
+    (tmp_path / "top.py").touch()
+    (tmp_path / "pkg" / "mid.py").touch()
+    (tmp_path / "pkg" / "sub" / "deep.py").touch()
+    (tmp_path / "pkg" / "notes.txt").touch()
+    assert sorted(_module_paths_under(tmp_path)) == [
+        tmp_path / "pkg" / "mid.py",
+        tmp_path / "pkg" / "sub" / "deep.py",
+        tmp_path / "top.py",
+    ]
+
+
+def test_module_paths_under_walks_past_a_directory_that_vanished(
+    tmp_path: Path,
+) -> None:
+    """Keep walking when a directory disappears after it was listed.
+
+    This is the failure the tolerant read alone cannot cover: the walk re-scans each
+    directory it descends into, and on the oldest Python this project supports that
+    scan is guarded against a permission failure but not against the directory having
+    been removed in the meantime. Removing it between the root's own modules and the
+    descent reproduces exactly that window.
+
+    :param tmp_path: The tree root the modules are written under.
+    """
+    (tmp_path / "kept").mkdir()
+    (tmp_path / "kept" / "a.py").touch()
+    doomed = tmp_path / "doomed"
+    doomed.mkdir()
+    (doomed / "b.py").touch()
+    (tmp_path / "top.py").touch()
+
+    walk = _module_paths_under(tmp_path)
+    assert next(walk) == tmp_path / "top.py"
+    shutil.rmtree(doomed)
+    assert sorted(walk) == [tmp_path / "kept" / "a.py"]
+
+
+def test_module_paths_under_does_not_follow_a_symlinked_directory(
+    tmp_path: Path,
+) -> None:
+    """Leave a symlinked directory unwalked, so a link loop cannot trap the walk.
+
+    :param tmp_path: The tree root the modules and the link are created under.
+    """
+    (tmp_path / "real").mkdir()
+    (tmp_path / "real" / "a.py").touch()
+    (tmp_path / "link").symlink_to(tmp_path / "real", target_is_directory=True)
+    assert sorted(_module_paths_under(tmp_path)) == [tmp_path / "real" / "a.py"]
+
+
 def _guarded_module_paths() -> Iterator[Path]:
     """Yield every ``app/**/*.py`` module the boundary rule binds.
 
+    The walk applies no name filter, unlike :func:`_app_package_names`. Skipping an
+    underscore-prefixed directory here would look like a cheap way to step around the
+    scaffold packages another worker creates mid-scan, but the names those tests use
+    are not uniformly underscore-prefixed, the same prefix would catch
+    ``app/sep/apps/__init__.py``, and any name-based skip leaves a real module
+    unchecked the day one is named to match. Churn is absorbed by the walk and the
+    read instead: :func:`_module_paths_under` skips a directory that vanished, and
+    :func:`_parse_module` treats a path that vanished as no module to check.
+
     :return: An iterator of source paths, the whole ``app/`` tree.
     """
-    yield from sorted((BASE_DIR / "app").rglob("*.py"))
+    yield from sorted(_module_paths_under(BASE_DIR / "app"))
+
+
+def _apps_tree_module_paths() -> Iterator[Path]:
+    """Yield every ``app/sep/apps/**/*.py`` module the apps-tree guards scan.
+
+    :return: An iterator of source paths under ``app/sep/apps/``.
+    """
+    yield from sorted(_module_paths_under(APPS_ROOT))
+
+
+def _parse_module(path: Path) -> ast.Module | None:
+    """Parse ``path``, or report that it vanished before it could be read.
+
+    The scaffolder writes into the live source tree by design, so a scaffold test
+    running on another ``pytest-xdist`` worker creates and removes real packages under
+    ``app/sep/apps/`` while this walk is listing and reading it. A path listed a moment
+    ago can therefore be gone by the time it is read, and a path that no longer exists
+    is not a module to check.
+
+    Only that case is tolerated. A parse or decode failure still raises, because those
+    are failures of a module that is really there — swallowing them would narrow the
+    guard to whatever happens to read cleanly.
+
+    :param path: The source path to read and parse.
+    :return: The parsed module, or ``None`` when the path no longer exists.
+    :raises SyntaxError: When the module is there but does not parse.
+    :raises UnicodeDecodeError: When the module's bytes are not UTF-8.
+    :raises OSError: When the read fails for any reason other than the path being
+        gone — a permission failure, say.
+    """
+    try:
+        source = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    return ast.parse(source)
+
+
+def _parsed_modules(paths: Iterable[Path]) -> Iterator[tuple[Path, ast.Module]]:
+    """Parse each of ``paths``, skipping any that vanished before it was read.
+
+    :param paths: The source paths to parse.
+    :return: An iterator of ``(path, tree)`` pairs over the paths that still exist.
+    """
+    for path in paths:
+        if (tree := _parse_module(path)) is not None:
+            yield path, tree
 
 
 def _owning_app_package(path: Path, app_packages: set[str]) -> str | None:
@@ -363,24 +534,34 @@ def _app_package_of(module: str, app_packages: set[str]) -> str | None:
     return parts[3] if parts[3] in app_packages else None
 
 
-def _violations() -> list[str]:
+def _violations(
+    modules: Iterable[tuple[Path, ast.Module]] | None = None,
+) -> list[str]:
     """Collect every import-time edge into an app package other than the owner's.
 
+    Deduplicated by ``(path, line, target)``, on the same reasoning as
+    :func:`_deferred_violations`: the line collapses a statement's base module
+    and its aliases, and the resolved package keeps a statement reaching two of
+    them from collapsing to whichever resolved first.
+
+    :param modules: The ``(path, tree)`` pairs to scan. Defaults to the whole
+        guarded tree parsed from disk (:func:`_parsed_guarded_modules`).
+        Passing pairs directly lets a case drive the collector over a
+        synthetic tree attributed to a real path.
     :return: One ``path:line -> module`` entry per violating import.
     """
     app_packages = _app_package_names(APPS_ROOT)
     found: list[str] = []
-    seen: set[tuple[Path, int]] = set()
-    for path in _guarded_module_paths():
+    seen: set[tuple[Path, int, str]] = set()
+    for path, tree in _parsed_guarded_modules() if modules is None else modules:
         owner = _owning_app_package(path, app_packages)
-        tree = ast.parse(path.read_text(encoding="utf-8"))
         for module, lineno in _import_time_imports(tree, package_of(path, BASE_DIR)):
             target = _app_package_of(module, app_packages)
             if target is None or target == owner:
                 continue
-            if (path, lineno) in seen:
+            if (path, lineno, target) in seen:
                 continue
-            seen.add((path, lineno))
+            seen.add((path, lineno, target))
             found.append(f"{path.relative_to(BASE_DIR)}:{lineno} -> {module}")
     return found
 
@@ -393,6 +574,322 @@ def test_no_module_imports_another_app_package() -> None:
         " lives in at import time (the PMM-embedded image strips them):\n"
         + "\n".join(violations)
     )
+
+
+@pytest.mark.parametrize(
+    ("importer", "source", "expected"),
+    [
+        pytest.param(
+            "app/sep/main.py",
+            "from app.sep.apps.alerts.config import AlertsSettings\n",
+            ["app/sep/main.py:1 -> app.sep.apps.alerts.config"],
+            id="import-time-edge-reported-once",
+        ),
+        pytest.param(
+            "app/sep/apps/inventory/deps.py",
+            "from app.sep.apps.inventory.sync import run_inventory_sync\n",
+            [],
+            id="own-package-edge-exempt",
+        ),
+        pytest.param(
+            "app/sep/main.py",
+            "from app.sep.apps import alerts, dipper\n",
+            [
+                "app/sep/main.py:1 -> app.sep.apps.alerts",
+                "app/sep/main.py:1 -> app.sep.apps.dipper",
+            ],
+            id="two-packages-on-one-line-both-reported",
+        ),
+        pytest.param(
+            "app/sep/main.py",
+            "def _lazy():\n    from app.sep.apps.alerts.config import AlertsSettings\n",
+            [],
+            id="deferred-edge-left-to-the-other-guard",
+        ),
+    ],
+)
+def test_violations_over_a_synthetic_tree(
+    importer: str, source: str, expected: list[str]
+) -> None:
+    """Reject an import-time edge driven over a synthetic tree attributed to a real path.
+
+    Mirrors :func:`test_deferred_violations_over_a_synthetic_tree` for the import-time
+    collector, so the rule the live-tree case asserts vacuously — a green tree yields
+    an empty list either way — is pinned against a tree that does violate it. The
+    first case also pins the dedup collapsing one statement, since
+    :func:`_direct_import_edges` yields the base module and the alias path for it.
+
+    :param importer: The real path the synthetic source is attributed to.
+    :param source: The module source to parse.
+    :param expected: The rendered violations the collector must report.
+    """
+    path = BASE_DIR / importer
+    assert _violations([(path, ast.parse(source))]) == expected
+
+
+def test_violations_tolerate_a_path_that_vanished(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Report nothing, rather than raising, when a listed path is already gone.
+
+    :param monkeypatch: The fixture used to point the walk at a vanished path.
+    """
+    monkeypatch.setattr(
+        f"{__name__}._guarded_module_paths",
+        lambda: iter([APPS_ROOT / "_vanished_app" / "app.py"]),
+    )
+    assert _violations() == []
+
+
+def _parsed_guarded_modules() -> Iterator[tuple[Path, ast.Module]]:
+    """Parse every module the boundary rule binds.
+
+    :return: An iterator of ``(path, tree)`` pairs over the guarded tree.
+    """
+    yield from _parsed_modules(_guarded_module_paths())
+
+
+def _deferred_violations(
+    modules: Iterable[tuple[Path, ast.Module]] | None = None,
+) -> list[str]:
+    """Collect every deferred edge into an app package other than the owner's.
+
+    A deferred edge is one :func:`_declared_imports` sees and
+    :func:`_import_time_imports` does not: a function-body import, or one
+    under ``TYPE_CHECKING``.
+
+    Deduplicated by ``(path, line, target)``: a ``from ... import`` yields the
+    base module *and* one path per alias, so a single statement would otherwise
+    be reported once per name it binds. Keying on the line alone would also
+    collapse a statement reaching *two* app packages (``from app.sep.apps
+    import alerts, dipper``) down to whichever resolved first, so the resolved
+    package is part of the key. Within one package the earliest spelling
+    renders, because :func:`_direct_import_edges` yields the base module before
+    the aliases. A base module resolving to no app package is skipped outright,
+    which is what lets the multi-package form report each package it names.
+
+    :param modules: The ``(path, tree)`` pairs to scan. Defaults to the whole
+        guarded tree parsed from disk (:func:`_parsed_guarded_modules`).
+        Passing pairs directly lets a case drive the collector over a
+        synthetic tree attributed to a real path.
+    :return: One ``path:line -> module`` entry per violating import.
+    """
+    app_packages = _app_package_names(APPS_ROOT)
+    found: list[str] = []
+    seen: set[tuple[Path, int, str]] = set()
+    for path, tree in _parsed_guarded_modules() if modules is None else modules:
+        owner = _owning_app_package(path, app_packages)
+        package = package_of(path, BASE_DIR)
+        at_import = set(_import_time_imports(tree, package))
+        for module, lineno in _declared_imports(tree, package):
+            if (module, lineno) in at_import:
+                continue
+            target = _app_package_of(module, app_packages)
+            if target is None or target == owner:
+                continue
+            if (path, lineno, target) in seen:
+                continue
+            seen.add((path, lineno, target))
+            found.append(f"{path.relative_to(BASE_DIR)}:{lineno} -> {module}")
+    return found
+
+
+def test_no_module_defers_an_import_into_another_app_package() -> None:
+    """Reject a deferred edge into an app package other than the owner's.
+
+    The PMM-embedded image strips the package from disk, so deferring the import
+    into a function body postpones the failure into a lifespan or a request
+    rather than removing it, which is how the side-car shipped unable to serve
+    its main API.
+    """
+    violations = _deferred_violations()
+    assert not violations, (
+        "no module may import an activatable app package other than the one it"
+        " lives in, even from a function body (the PMM-embedded image strips"
+        " them):\n" + "\n".join(violations)
+    )
+
+
+@pytest.mark.parametrize(
+    ("importer", "source", "expected"),
+    [
+        pytest.param(
+            "app/sep/main.py",
+            "def _lazy():\n    from app.sep.apps.alerts.config import AlertsSettings\n",
+            ["app/sep/main.py:2 -> app.sep.apps.alerts.config"],
+            id="function-body-edge-reported-once",
+        ),
+        pytest.param(
+            "app/sep/main.py",
+            "if TYPE_CHECKING:\n"
+            "    from app.sep.apps.alerts.config import AlertsSettings\n",
+            ["app/sep/main.py:2 -> app.sep.apps.alerts.config"],
+            id="type-checking-edge-reported",
+        ),
+        pytest.param(
+            "app/sep/main.py",
+            "from app.sep.apps.alerts.config import AlertsSettings\n",
+            [],
+            id="import-time-edge-not-deferred",
+        ),
+        pytest.param(
+            "app/sep/main.py",
+            "def _lazy():\n"
+            "    from app.sep.apps.alerts.config import AlertsSettings\n"
+            "_lazy()\n",
+            [],
+            id="function-body-reachable-at-import-not-deferred",
+        ),
+        pytest.param(
+            "app/sep/apps/inventory/deps.py",
+            "def _lazy():\n"
+            "    from app.sep.apps.inventory.sync import run_inventory_sync\n",
+            [],
+            id="own-package-edge-exempt",
+        ),
+        pytest.param(
+            "app/sep/main.py",
+            "def _lazy():\n    from app.sep.apps import alerts, dipper\n",
+            [
+                "app/sep/main.py:2 -> app.sep.apps.alerts",
+                "app/sep/main.py:2 -> app.sep.apps.dipper",
+            ],
+            id="two-packages-on-one-line-both-reported",
+        ),
+    ],
+)
+def test_deferred_violations_over_a_synthetic_tree(
+    importer: str, source: str, expected: list[str]
+) -> None:
+    """Reject a deferred edge driven over a synthetic tree attributed to a real path.
+
+    Each source is parsed as if it were the module at ``importer``, so both the
+    owner exemption and the rendered path come from that real path, mirroring
+    :func:`test_import_time_edges_ignore_a_modules_own_app_package`. The first two
+    cases pin the function-body and ``TYPE_CHECKING`` shapes this guard exists to
+    catch; the function-body case also pins the dedup collapsing one statement,
+    since :func:`_direct_import_edges` yields the base module and the alias path
+    for it. Three cases pin what the guard must NOT report: an import-time edge
+    (``_violations``' business, not this guard's), a function-body edge the
+    module reaches at import through a call, and an edge into the importer's own
+    app package. The last case pins the other half of the dedup: one statement
+    reaching two app packages reports both, which keying on ``(path, line)``
+    alone would collapse to whichever resolved first.
+    """
+    path = BASE_DIR / importer
+    assert _deferred_violations([(path, ast.parse(source))]) == expected
+
+
+def test_deferred_violations_tolerate_a_path_that_vanished(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Report nothing, rather than raising, when a listed path is already gone.
+
+    :param monkeypatch: The fixture used to point the walk at a vanished path.
+    """
+    monkeypatch.setattr(
+        f"{__name__}._guarded_module_paths",
+        lambda: iter([APPS_ROOT / "_vanished_app" / "app.py"]),
+    )
+    assert _deferred_violations() == []
+
+
+def test_parse_module_skips_a_path_that_vanished(tmp_path: Path) -> None:
+    """Treat a path removed before it was read as not a module to check.
+
+    :param tmp_path: The directory the missing path is addressed under.
+    """
+    assert _parse_module(tmp_path / "vanished.py") is None
+
+
+def test_parse_module_skips_a_dangling_symlink(tmp_path: Path) -> None:
+    """Treat a symlink with no target as not a module to check.
+
+    A walk yields a dangling symlink like any other file, since it is not a directory
+    to descend into, so the read behind it must not be the thing that fails.
+
+    :param tmp_path: The directory the symlink is created in.
+    """
+    link = tmp_path / "dangling.py"
+    link.symlink_to(tmp_path / "missing_target.py")
+    assert _parse_module(link) is None
+
+
+def test_parse_module_parses_a_module_that_exists(tmp_path: Path) -> None:
+    """Parse a real file, so tolerating a vanished path is not tolerating every path.
+
+    :param tmp_path: The directory the module is written to.
+    """
+    path = tmp_path / "present.py"
+    path.write_text(
+        "from app.sep.apps.alerts.config import alerts_settings\n", encoding="utf-8"
+    )
+    tree = _parse_module(path)
+    assert tree is not None
+    assert [target for target, _ in _declared_imports(tree, "app.sep")] == [
+        "app.sep.apps.alerts.config",
+        "app.sep.apps.alerts.config.alerts_settings",
+    ]
+
+
+def test_parse_module_rejects_a_module_it_cannot_parse(tmp_path: Path) -> None:
+    """Fail loudly on a module that exists but does not parse.
+
+    Only a vanished path is tolerated. Swallowing a parse failure would let a real,
+    stable module drop out of the walk unnoticed.
+
+    :param tmp_path: The directory the module is written to.
+    """
+    path = tmp_path / "broken.py"
+    path.write_text("def _lazy(:\n", encoding="utf-8")
+    with pytest.raises(SyntaxError):
+        _parse_module(path)
+
+
+def test_parse_module_rejects_bytes_it_cannot_decode(tmp_path: Path) -> None:
+    """Fail loudly on a module whose bytes are not UTF-8.
+
+    The tolerance is existence-based on purpose, and only ``FileNotFoundError`` names
+    that case. A module whose bytes cannot be decoded is really there, so letting it
+    pass would silently narrow the guard to whatever happens to read cleanly.
+
+    :param tmp_path: The directory the module is written to.
+    """
+    path = tmp_path / "garbled.py"
+    path.write_bytes(b"import os\n\xff\xfe\n")
+    with pytest.raises(UnicodeDecodeError):
+        _parse_module(path)
+
+
+def test_parsed_modules_walks_past_a_path_that_vanished() -> None:
+    """Keep parsing the paths that are still there after skipping one that is not.
+
+    The vanished path comes first, so a walk that aborted on it would never reach the
+    real module behind it — which is what the concurrent-scaffold failure looked like.
+    """
+    present = BASE_DIR / "app" / "sep" / "main.py"
+    parsed = list(_parsed_modules([APPS_ROOT / "_vanished_app" / "app.py", present]))
+    assert [path for path, _ in parsed] == [present]
+    assert isinstance(parsed[0][1], ast.Module)
+
+
+def _apps_tree_modules_not_guarded(guarded: set[Path] | None = None) -> set[Path]:
+    """Return the apps-tree modules the guarded walk leaves out.
+
+    The narrow apps-tree sample is taken *before* the wider guarded walk, and a path
+    that no longer exists is dropped, so neither half of a scaffold test's churn can
+    fail this comparison: a package created between the two walks lands in the later,
+    wider one, and a package removed between them fails the existence check. Only a
+    structural exclusion survives both.
+
+    :param guarded: The guarded walk's result to compare against. Defaults to a fresh
+        :func:`_guarded_module_paths` walk; passing a set lets a case prove the
+        comparison still reports a real gap.
+    :return: Paths under ``app/sep/apps/`` the guarded walk does not cover.
+    """
+    apps_tree = set(_apps_tree_module_paths())
+    covered = set(_guarded_module_paths()) if guarded is None else guarded
+    return {path for path in apps_tree - covered if path.exists()}
 
 
 @pytest.fixture(scope="module")
@@ -424,17 +921,32 @@ def test_guarded_module_paths_covers_every_app_module(
     assert BASE_DIR / relative in guarded_paths
 
 
-def test_guarded_module_paths_leaves_no_apps_tree_module_out(
-    guarded_paths: set[Path],
-) -> None:
+def test_guarded_module_paths_leaves_no_apps_tree_module_out() -> None:
     """Reject any walk that covers only part of the activatable-app tree.
 
     The cases above sample the regions an outside-only walk skipped wholesale.
-    A narrower exclusion -- one app package, one subtree -- would leave every
+    A narrower exclusion — one app package, one subtree — would leave every
     sample present, and the live-tree test green, since a walk that reaches
     fewer files finds fewer violations.
     """
-    assert set(APPS_ROOT.rglob("*.py")) <= guarded_paths
+    assert _apps_tree_modules_not_guarded() == set()
+
+
+def test_apps_tree_gap_survives_the_transient_path_tolerance() -> None:
+    """Report a gap when the guarded walk genuinely skips part of the apps tree.
+
+    Tolerating a path that appears or vanishes mid-scan must not turn the coverage
+    check into one that reports nothing: handed a walk missing a whole real subtree, it
+    still names every module left out. The assertion is a subset rather than an
+    equality because a scaffold package another worker creates would legitimately show
+    up alongside the excluded subtree; ``framework`` is a committed package, so its own
+    modules cannot come and go.
+    """
+    framework_modules = set(_module_paths_under(APPS_ROOT / "framework"))
+    partial = {
+        path for path in _guarded_module_paths() if path not in framework_modules
+    }
+    assert framework_modules <= _apps_tree_modules_not_guarded(partial)
 
 
 @pytest.mark.parametrize(
@@ -770,6 +1282,38 @@ def test_declared_imports_count_type_checking_guards() -> None:
     assert FORM_BACKFILL_ORCHESTRATOR not in import_time
 
 
+def _orchestrator_import_edges(
+    modules: Iterable[tuple[Path, ast.Module]] | None = None,
+) -> list[str]:
+    """Collect every declared import of the form-backfill orchestrator.
+
+    The orchestrator's own module is exempt, and an edge is reported once per
+    statement rather than once per name the statement binds.
+
+    :param modules: The ``(path, tree)`` pairs to scan. Defaults to the whole
+        ``app/sep/apps/`` tree parsed from disk, skipping any path that vanished
+        mid-scan. Passing pairs directly lets a case drive the collector over a
+        synthetic tree attributed to a real path.
+    :return: One ``path:line -> module`` entry per importing statement.
+    """
+    orchestrator_path = APPS_ROOT / "framework" / "form_backfill.py"
+    if modules is None:
+        modules = _parsed_modules(_apps_tree_module_paths())
+    found: list[str] = []
+    seen: set[tuple[Path, int]] = set()
+    for path, tree in modules:
+        if path == orchestrator_path:
+            continue
+        for module, lineno in _declared_imports(tree, package_of(path, BASE_DIR)):
+            if not _imports_target(module, FORM_BACKFILL_ORCHESTRATOR):
+                continue
+            if (path, lineno) in seen:
+                continue
+            seen.add((path, lineno))
+            found.append(f"{path.relative_to(BASE_DIR)}:{lineno} -> {module}")
+    return found
+
+
 def test_no_apps_module_imports_the_form_backfill_orchestrator() -> None:
     """Reject any import of the orchestrator from under ``app/sep/apps/``.
 
@@ -778,25 +1322,70 @@ def test_no_apps_module_imports_the_form_backfill_orchestrator() -> None:
     to :func:`_import_time_imports` yet still couples the contract to its
     consumer.
     """
-    orchestrator_path = APPS_ROOT / "framework" / "form_backfill.py"
-    found: list[str] = []
-    seen: set[tuple[Path, int]] = set()
-    for path in sorted(APPS_ROOT.rglob("*.py")):
-        if path == orchestrator_path:
-            continue
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for module, lineno in _declared_imports(tree, package_of(path, BASE_DIR)):
-            if not _imports_target(module, FORM_BACKFILL_ORCHESTRATOR):
-                continue
-            if (path, lineno) in seen:
-                continue
-            seen.add((path, lineno))
-            found.append(f"{path.relative_to(BASE_DIR)}:{lineno} -> {module}")
+    found = _orchestrator_import_edges()
     assert not found, (
         "no module under app/sep/apps/ may import"
         f" {FORM_BACKFILL_ORCHESTRATOR} (runtime or TYPE_CHECKING):\n"
         + "\n".join(found)
     )
+
+
+@pytest.mark.parametrize(
+    ("importer", "source", "expected"),
+    [
+        pytest.param(
+            "app/sep/apps/alerts/app.py",
+            "from app.sep.apps.framework.form_backfill import FormBackfillContext\n",
+            ["app/sep/apps/alerts/app.py:1 -> app.sep.apps.framework.form_backfill"],
+            id="runtime-edge-reported",
+        ),
+        pytest.param(
+            "app/sep/apps/alerts/app.py",
+            "if TYPE_CHECKING:\n"
+            "    from app.sep.apps.framework.form_backfill import FormBackfillContext\n",
+            ["app/sep/apps/alerts/app.py:2 -> app.sep.apps.framework.form_backfill"],
+            id="type-checking-edge-reported",
+        ),
+        pytest.param(
+            "app/sep/apps/framework/form_backfill.py",
+            "from app.sep.apps.framework.form_backfill import FormBackfillContext\n",
+            [],
+            id="orchestrator-itself-exempt",
+        ),
+        pytest.param(
+            "app/sep/apps/alerts/app.py",
+            "from app.sep.apps.framework.form_backfill_registry import"
+            " FormBackfillEntry\n",
+            [],
+            id="registry-is-not-the-orchestrator",
+        ),
+    ],
+)
+def test_orchestrator_import_edges_over_a_synthetic_tree(
+    importer: str, source: str, expected: list[str]
+) -> None:
+    """Report an orchestrator edge driven over a synthetic tree attributed to a real path.
+
+    :param importer: The real path the synthetic source is attributed to.
+    :param source: The module source to parse.
+    :param expected: The rendered edges the collector must report.
+    """
+    path = BASE_DIR / importer
+    assert _orchestrator_import_edges([(path, ast.parse(source))]) == expected
+
+
+def test_orchestrator_import_edges_tolerate_a_path_that_vanished(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Report nothing, rather than raising, when a listed path is already gone.
+
+    :param monkeypatch: The fixture used to point the walk at a vanished path.
+    """
+    monkeypatch.setattr(
+        f"{__name__}._apps_tree_module_paths",
+        lambda: iter([APPS_ROOT / "_vanished_app" / "app.py"]),
+    )
+    assert _orchestrator_import_edges() == []
 
 
 def test_form_backfill_inventory_does_not_import_the_registry() -> None:

@@ -19,14 +19,16 @@ import asyncio
 import json
 import logging
 from collections import defaultdict
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from functools import cached_property
 from types import TracebackType
-from typing import Any, ClassVar, NamedTuple, Self
+from typing import Annotated, Any, ClassVar, NamedTuple, Self, TypeVar
 from uuid import uuid4
 
 from aiohttp import ClientError
+from annotated_types import Gt
 from async_lru import _LRUCacheWrapper, alru_cache
 from fastapi import HTTPException
 from pydantic import ConfigDict, Field, model_validator, UUID4, validate_call
@@ -36,11 +38,12 @@ from app.core.alerts.config import alert_service
 from app.core.alerts.models import AlertSeverity
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.pagination import fetch_all_dict_items
-from app.core.requests import RemoteAPI
+from app.core.requests import as_json_object, RemoteAPI
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.db import get_async_session_maker
 from app.sep.inventory import (
     CreatedEntity,
+    CreatedEntityBase,
     CreatedNode,
     CreatedSchema,
     CreatedService,
@@ -57,15 +60,48 @@ from app.sep.models import (
     SyncInventoryEntityTypeEnum,
     SyncItem,
     SyncItemWrite,
+    SyncStatusEnum,
 )
+from app.sep.sync.constants import INVENTORY_PATH_SEGMENTS
 from app.sep.sync.exceptions import (
     ExecutorHostNotFoundError,
     SyncFailError,
     SyncItemAlreadyInProgressError,
 )
+from app.sep.sync.health import SyncHealthReporter
 from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
 logger = logging.getLogger(__name__)
+
+#: Ties an identity map to the index it points into, so a schema index cannot be
+#: handed a table.
+_Identifiable = TypeVar("_Identifiable", bound=CreatedEntity)
+
+
+def claim_identity(
+    identities: dict[str, int | None],
+    identity: str,
+    entity: _Identifiable,
+    by_id: dict[int | None, _Identifiable],
+) -> None:
+    """Point an identity at an entity, letting an active row win.
+
+    An identity — an upstream id, or a name unique within a parent — is unique
+    among *active* rows only, so a tombstone and the replacement that took its
+    identity both come back from a retired-inclusive read. Matching an incoming
+    report against the tombstone would attempt a revive the active row's unique
+    key refuses, so the active row claims the identity and the tombstone keeps its
+    own entry in ``by_id``, where absence handling still finds it. Without this,
+    result ordering would decide.
+
+    :param identities: The identity-to-primary-key map being built.
+    :param identity: The identity to claim.
+    :param entity: The local entity claiming it.
+    :param by_id: The primary-key-keyed index holding every candidate.
+    """
+    incumbent = by_id.get(identities.get(identity))
+    if incumbent is None or incumbent.retired_at is not None:
+        identities[identity] = entity.id
 
 
 def inventory_sync_alert_address(entity: CreatedEntity) -> str | None:
@@ -145,38 +181,64 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     APIs and abstract methods that can be overridden by subclasses.
 
     :cvar SYNC_TO_LIMIT: The upper limit for entity types that can be synchronized.
-    :vartype SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
+    :cvar mirrors_entity_levels: The entity levels whose own fields this syncer
+        mirrors, and therefore whose sync-health columns its attempts write. A
+        level belongs here only where the syncer compares the entity against its
+        source and updates it — a syncer that merely traverses a level to reach
+        its children, or that writes a separate observation resource, owns
+        nothing there and must not refresh a freshness the mirroring syncer is
+        responsible for. Empty by default.
+    :cvar reads_retired_entities: The entity levels whose inventory reads include
+        retired entities. A level belongs here only if this syncer has a match
+        site there — a point where an incoming report is matched against the local
+        inventory, so a tombstone can be recognised as reappearing. At any other
+        level the opt-in is actively harmful: the level's read feeds an
+        unconditional walk, which then drives fetches and writes against entities
+        whose upstream is gone and whose parents the inventory's own active-only
+        routes reject. The distinction is per level, not per syncer, because a
+        syncer can diff at one level and walk at another.
     :param inventory_api: The remote API interface for interacting with the inventory
         system.
-    :type inventory_api: RemoteAPI
     :param sync_instance: The synchronization instance used to track sync processes.
-    :type sync_instance: SyncInstance | None
     :param sync_items: A dictionary mapping tuples of entity type and ID to SyncItem
         objects.
-    :type sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem]
     :param sync_id: The unique identifier for this synchronization.
-    :type sync_id: UUID4
     :param break_on_error: Flag indicating whether to stop synchronization on error.
         Defaults to False.
-    :type break_on_error: bool
+    :param stale_run_after: The age beyond which an idle in-progress run of this
+        syncer is presumed abandoned and reclaimed, unblocking the syncer after a
+        worker was killed mid-run. Must exceed the longest expected runtime of a
+        sync, or a live run gets reclaimed out from under itself. Defaults to 1 hour.
     :param _session: The asynchronous database session.
-    :type _session: AsyncSession
+    :param _snapshot_complete: Whether this run observed a complete generation of the
+        remote inventory, or ``None`` when the syncer does not produce one.
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
+    mirrors_entity_levels: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
+        frozenset()
+    )
+    reads_retired_entities: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
+        frozenset()
+    )
     inventory_api: RemoteAPI
     sync_instance: SyncInstance | None = None
     sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem] = {}
     sync_id: UUID4 = Field(default_factory=uuid4)
     break_on_error: bool = False
+    # Positivity uses the ``Gt`` annotation constraint rather than a
+    # ``field_validator`` because ``SyncOptions`` carries ``extra="allow"`` and
+    # forwards every extra key verbatim, and runtime-override coercion re-checks
+    # annotated-type constraints but does not re-run field validators.
+    stale_run_after: Annotated[timedelta, Gt(timedelta(0))] = timedelta(hours=1)
     _session: AsyncSession
+    _snapshot_complete: bool | None = None
 
     def __hash__(self) -> int:
         """Compute the hash based on the synchronization ID.
 
         :return: The hash value of the syncer instance.
-        :rtype: int
         """
         return hash(self.sync_id)
 
@@ -195,31 +257,40 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         if self.sync_instance is None:
             self.sync_instance = await SyncInstanceManager.create(
                 self._session,
-                SyncInstanceWrite(syncer=self.get_name()),
+                SyncInstanceWrite(
+                    syncer=self.get_name(),
+                    status=SyncStatusEnum.RUNNING,
+                ),
+                stale_after=self.stale_run_after,
                 id=self.sync_id,
             )
         return self
 
     async def __aexit__(
         self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         """Exit the asynchronous context manager.
 
-        Marks any hanging SyncItems as failed and closes the database session.
+        Marks any hanging SyncItems as failed, records the run-level verdict, and
+        closes the database session. The hanging-item sweep runs first because the
+        run-level rollup reads the item statuses it writes.
 
         :param exc_type: The exception type, if any.
-        :type exc_type: type[BaseException]
         :param exc_val: The exception value, if any.
-        :type exc_val: BaseException
         :param exc_tb: The traceback, if any.
-        :type exc_tb: Any
         """
         await SyncInstanceManager.finish_hanging_items(
             self._session,
             self.sync_instance.id,
+        )
+        await SyncInstanceManager.finalize_run(
+            self._session,
+            self.sync_instance.id,
+            failed=exc_type is not None,
+            snapshot_complete=self._snapshot_complete,
         )
         await self._session.__aexit__(exc_type, exc_val, exc_tb)
 
@@ -230,21 +301,31 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         If a SyncInstance exists, its ID is assigned to the sync_id attribute.
 
         :return: The syncer instance with the updated sync_id.
-        :rtype: BaseSyncer
         """
         if self.sync_instance is not None:
             self.sync_id = self.sync_instance.id
         return self
 
     @cached_property
+    def sync_health(self) -> SyncHealthReporter:
+        """Build the reporter for this syncer's API client and mirrored levels.
+
+        :return: The reporter the ``sync_*`` boundaries record through.
+        """
+        return SyncHealthReporter(self.inventory_api, self.mirrors_entity_levels)
+
+    @cached_property
     def can_sync_mapping(
         self,
-    ) -> dict[SyncInventoryEntityTypeEnum, Callable[[CreatedEntity], bool]]:
+    ) -> dict[SyncInventoryEntityTypeEnum, Callable[[Any], bool]]:
         """Map entity types to their corresponding sync permission check methods.
+
+        Each check accepts only its own entity model, so the value type is the
+        widest one the heterogeneous table admits — the key is what makes a
+        lookup well-typed, and that correlation is not expressible here.
 
         :return: A dictionary mapping each SyncInventoryEntityTypeEnum to a method that
                  determines if that entity can be synchronized.
-        :rtype: dict[SyncInventoryEntityTypeEnum, Callable[[Any], bool]]
         """
         return {
             SyncInventoryEntityTypeEnum.NODE: self.can_sync_node,
@@ -313,19 +394,16 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         self,
         entity_type: SyncInventoryEntityTypeEnum,
         created_entity: CreatedEntity | None,
-    ) -> list[CreatedEntity]:
+    ) -> Sequence[CreatedEntityBase]:
         """Retrieve child entities for a given entity type and entity.
 
         Depending on the entity type, this method fetches related child entities that
         need to be synchronized.
 
         :param entity_type: The type of the current entity.
-        :type entity_type: SyncInventoryEntityTypeEnum
         :param created_entity: The current entity instance, or None for top-level
             synchronization.
-        :type created_entity: CreatedEntity | None
         :return: A list of child entities to be synchronized.
-        :rtype: list[CreatedEntity].
         """
         if entity_type == SyncInventoryEntityTypeEnum.INVENTORY:
             return await self.get_inventory_nodes()
@@ -492,6 +570,21 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 sync_item,
             )
 
+    def _retirement_params(
+        self, entity_type: SyncInventoryEntityTypeEnum
+    ) -> dict[str, str]:
+        """Return the query parameters opting one read into tombstones.
+
+        :param entity_type: The entity level the read addresses.
+        :return: ``{"include_retired": "true"}`` when this syncer has a match site
+            at that level, and an empty mapping otherwise.
+        """
+        return (
+            {"include_retired": "true"}
+            if entity_type in self.reads_retired_entities
+            else {}
+        )
+
     @alru_cache
     async def get_inventory_nodes(
         self,
@@ -522,6 +615,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
             "node_type": node_type,
         }
         params = {key: value for key, value in params.items() if value is not None}
+        params |= self._retirement_params(SyncInventoryEntityTypeEnum.NODE)
         nodes = await fetch_all_dict_items(
             lambda pagination: self.inventory_api.get(
                 "/nodes/", params={**params, **pagination.model_dump()}
@@ -542,7 +636,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :rtype: CreatedNode
         """
         return CreatedNode.model_validate(
-            await self.inventory_api.get(f"/nodes/{node_id}")
+            await self.inventory_api.get(
+                f"/nodes/{node_id}",
+                params=self._retirement_params(SyncInventoryEntityTypeEnum.NODE),
+            )
         )
 
     @alru_cache
@@ -558,7 +655,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :rtype: CreatedService
         """
         return CreatedService.model_validate(
-            await self.inventory_api.get(f"/services/{service_id}"),
+            await self.inventory_api.get(
+                f"/services/{service_id}",
+                params=self._retirement_params(SyncInventoryEntityTypeEnum.SERVICE),
+            ),
         )
 
     @alru_cache
@@ -574,7 +674,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :rtype: CreatedSchema
         """
         return CreatedSchema.model_validate(
-            await self.inventory_api.get(f"/schemas/{schema_id}"),
+            await self.inventory_api.get(
+                f"/schemas/{schema_id}",
+                params=self._retirement_params(SyncInventoryEntityTypeEnum.SCHEMA),
+            ),
         )
 
     @alru_cache
@@ -590,7 +693,10 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :rtype: CreatedTable
         """
         return CreatedTable.model_validate(
-            await self.inventory_api.get(f"/tables/{table_id}"),
+            await self.inventory_api.get(
+                f"/tables/{table_id}",
+                params=self._retirement_params(SyncInventoryEntityTypeEnum.TABLE),
+            ),
         )
 
     @alru_cache
@@ -609,83 +715,142 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         :return: A list of retrieved CreatedSchema instances.
         :rtype: list[CreatedSchema]
         """
+        params = {"include_tables": "true"} | self._retirement_params(
+            SyncInventoryEntityTypeEnum.SCHEMA
+        )
         schema_data = await fetch_all_dict_items(
             lambda pagination: self.inventory_api.get(
                 f"/services/{service_id}/schemas/",
-                params={"include_tables": "true", **pagination.model_dump()},
+                params={**params, **pagination.model_dump()},
             )
         )
         return [CreatedSchema.model_validate(schema) for schema in schema_data]
 
-    async def delete_node(self, created_node: CreatedNode) -> None:
-        """Delete a node from the inventory system.
+    async def hold_entity(
+        self,
+        entity_type: SyncInventoryEntityTypeEnum,
+        created_entity: CreatedEntity,
+    ) -> None:
+        """Close an entity's SyncItem without touching the inventory.
 
-        This method synchronizes the deletion of a node by marking the corresponding
-        SyncItem and performing the deletion via the inventory API.
+        A held entity is one this run declined to retire. Its ``SyncItem`` was created
+        up-front from the local inventory, so leaving it open would let the
+        hanging-item sweep fail it and drag the run-level status down on an
+        otherwise healthy run.
 
-        :param created_node: The node instance to be deleted.
-        :type created_node: CreatedNode
+        :param entity_type: The type of the entity being held.
+        :param created_entity: The entity instance being held.
+        :raises SyncFailError: If closing the SyncItem fails and ``break_on_error``
+            is set.
         """
-        logger.debug("Deleting node %s from inventory", created_node.id)
+        logger.info(
+            "Holding %s %s: absent, but this generation is not evidence of removal",
+            entity_type.name,
+            created_entity.id,
+        )
+        async with self.manage_sync_item(entity_type, created_entity):
+            pass
+
+    async def retire_node(self, created_node: CreatedNode) -> None:
+        """Retire a node in the inventory system, keeping its row and subtree.
+
+        This method synchronizes the retirement of a node by marking the
+        corresponding SyncItem and issuing the retire call to the inventory API.
+
+        :param created_node: The node instance to be retired.
+        """
+        logger.debug("Retiring node %s in inventory", created_node.id)
         async with self.manage_sync_item(
             SyncInventoryEntityTypeEnum.NODE,
             created_node,
         ):
             await self.inventory_api.delete(f"/nodes/{created_node.id}")
 
-    async def delete_service(self, created_service: CreatedService) -> None:
-        """Delete a service from the inventory system.
+    async def retire_service(self, created_service: CreatedService) -> None:
+        """Retire a service in the inventory system, keeping its row and subtree.
 
-        This method synchronizes the deletion of a service by marking the corresponding
-        SyncItem and performing the deletion via the inventory API.
+        This method synchronizes the retirement of a service by marking the
+        corresponding SyncItem and issuing the retire call to the inventory API.
 
-        :param created_service: The service instance to be deleted.
-        :type created_service: CreatedService
+        :param created_service: The service instance to be retired.
         """
-        logger.debug("Deleting service %s from inventory", created_service.id)
+        logger.debug("Retiring service %s in inventory", created_service.id)
         async with self.manage_sync_item(
             SyncInventoryEntityTypeEnum.SERVICE,
             created_service,
         ):
             await self.inventory_api.delete(f"/services/{created_service.id}")
 
-    async def delete_schema(self, created_schema: CreatedSchema) -> None:
-        """Delete a schema from the inventory system.
+    async def retire_schema(self, created_schema: CreatedSchema) -> None:
+        """Retire a schema in the inventory system, keeping its row and tables.
 
-        This method synchronizes the deletion of a schema by marking the corresponding
-        SyncItem and performing the deletion via the inventory API.
+        This method synchronizes the retirement of a schema by marking the
+        corresponding SyncItem and issuing the retire call to the inventory API.
 
-        Parameters
-        ----------
-        created_schema : CreatedSchema
-            The schema instance to be deleted.
-
+        :param created_schema: The schema instance to be retired.
         """
-        logger.debug("Deleting schema %s from inventory", created_schema.id)
+        logger.debug("Retiring schema %s in inventory", created_schema.id)
         async with self.manage_sync_item(
             SyncInventoryEntityTypeEnum.SCHEMA,
             created_schema,
         ):
             await self.inventory_api.delete(f"/schemas/{created_schema.id}")
 
-    async def delete_table(self, created_table: CreatedTable) -> None:
-        """Delete a table from the inventory system.
+    async def retire_table(self, created_table: CreatedTable) -> None:
+        """Retire a table in the inventory system, keeping its row.
 
-        This method synchronizes the deletion of a table by marking the corresponding
-        SyncItem and performing the deletion via the inventory API.
+        This method synchronizes the retirement of a table by marking the
+        corresponding SyncItem and issuing the retire call to the inventory API.
 
-        Parameters
-        ----------
-        created_table : CreatedTable
-            The table instance to be deleted.
-
+        :param created_table: The table instance to be retired.
         """
-        logger.debug("Deleting table %s from inventory", created_table.id)
+        logger.debug("Retiring table %s in inventory", created_table.id)
         async with self.manage_sync_item(
             SyncInventoryEntityTypeEnum.TABLE,
             created_table,
         ):
             await self.inventory_api.delete(f"/tables/{created_table.id}")
+
+    async def _revive_if_retired(
+        self,
+        entity_type: SyncInventoryEntityTypeEnum,
+        created_entity: CreatedEntity,
+    ) -> None:
+        """Revive a tombstoned entity because upstream reported it again.
+
+        Call this only where upstream presence has actually been established —
+        where a match against the local inventory succeeded. A hook further up,
+        in ``sync_node`` and friends, would fire for every entity a syncer merely
+        iterates over, and a syncer that walks the whole inventory would revive
+        every tombstone it visits.
+
+        Presence under the same upstream identity is unambiguous, so revival does
+        not wait for a complete generation the way retirement does: the
+        completeness gate exists to stop retiring on partial evidence, and says
+        nothing about an entity that is demonstrably back.
+
+        The in-memory entity is cleared alongside the remote row because the
+        ``get_inventory_*`` reads are cached per generation and would otherwise
+        keep reporting it retired.
+
+        :param entity_type: The type of the entity that reappeared.
+        :param created_entity: The local entity matched against the upstream report.
+        :raises HTTPConflictException: If an active entity already holds the unique
+            key the revived entity would reclaim. Callers outside a
+            ``manage_sync_item`` block propagate it and abort the whole run rather
+            than failing the one item.
+        """
+        if created_entity.retired_at is None:
+            return
+        logger.info(
+            "Reviving %s %s: reported again by its source",
+            entity_type.name,
+            created_entity.id,
+        )
+        await self.inventory_api.post(
+            f"/{INVENTORY_PATH_SEGMENTS[entity_type]}/{created_entity.id}/revive"
+        )
+        created_entity.retired_at = None
 
     async def sync_inventory(self) -> None:
         """Synchronize the entire inventory.
@@ -789,9 +954,14 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self.get_name(),
                 created_node.id,
             )
-            async with self.manage_sync_item(
-                SyncInventoryEntityTypeEnum.NODE,
-                created_node,
+            async with (
+                self.manage_sync_item(
+                    SyncInventoryEntityTypeEnum.NODE,
+                    created_node,
+                ),
+                self.sync_health.record(
+                    SyncInventoryEntityTypeEnum.NODE, created_node
+                ) as attempt,
             ):
                 updated_node = (
                     await self.fetch_node(created_node)
@@ -804,6 +974,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                         created_node.id,
                     )
                     return
+                attempt.mark_compared()
                 await self.perform_node_sync(created_node, updated_node)
             logger.info(
                 "Finished node synchronization (%s) for node %s",
@@ -907,9 +1078,14 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self.get_name(),
                 created_service.id,
             )
-            async with self.manage_sync_item(
-                SyncInventoryEntityTypeEnum.SERVICE,
-                created_service,
+            async with (
+                self.manage_sync_item(
+                    SyncInventoryEntityTypeEnum.SERVICE,
+                    created_service,
+                ),
+                self.sync_health.record(
+                    SyncInventoryEntityTypeEnum.SERVICE, created_service
+                ) as attempt,
             ):
                 updated_service = (
                     await self.fetch_service(created_service)
@@ -922,6 +1098,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                         created_service.id,
                     )
                     return
+                attempt.mark_compared()
                 await self.perform_service_sync(created_service, updated_service)
             logger.info(
                 "Finished service synchronization (%s) for service %s",
@@ -1024,15 +1201,21 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self.get_name(),
                 created_schema.id,
             )
-            async with self.manage_sync_item(
-                SyncInventoryEntityTypeEnum.SCHEMA,
-                created_schema,
+            async with (
+                self.manage_sync_item(
+                    SyncInventoryEntityTypeEnum.SCHEMA,
+                    created_schema,
+                ),
+                self.sync_health.record(
+                    SyncInventoryEntityTypeEnum.SCHEMA, created_schema
+                ) as attempt,
             ):
                 updated_schema = (
                     await self.fetch_schema(created_schema)
                     if updated_schema is None
                     else updated_schema
                 )
+                attempt.mark_compared()
                 await self.perform_schema_sync(created_schema, updated_schema)
             logger.info(
                 "Finished schema synchronization (%s) for schema %s",
@@ -1133,15 +1316,21 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self.get_name(),
                 created_table.id,
             )
-            async with self.manage_sync_item(
-                SyncInventoryEntityTypeEnum.TABLE,
-                created_table,
+            async with (
+                self.manage_sync_item(
+                    SyncInventoryEntityTypeEnum.TABLE,
+                    created_table,
+                ),
+                self.sync_health.record(
+                    SyncInventoryEntityTypeEnum.TABLE, created_table
+                ) as attempt,
             ):
                 updated_table = (
                     await self.fetch_table(created_table)
                     if updated_table is None
                     else updated_table
                 )
+                attempt.mark_compared()
                 await self.perform_table_sync(created_table, updated_table)
             logger.info(
                 "Finished table synchronization (%s) for table %s",
@@ -1321,7 +1510,7 @@ class BaseTaskSyncer(BaseSyncer):
         :return: The available hosts.
         :rtype: dict[str, str]
         """
-        return await self.tasks_api.get("/hosts/")
+        return as_json_object(await self.tasks_api.get("/hosts/"))
 
     @alru_cache
     async def get_task_target(self, host: str, name: str | None = None) -> str:
@@ -1334,11 +1523,8 @@ class BaseTaskSyncer(BaseSyncer):
         set, or the first available host.
 
         :param host: The target host.
-        :type host: str
         :param name: The target name. Defaults to ``None``.
-        :type name: str | None
         :return: The target host for the task.
-        :rtype: str
         :raises ExecutorHostNotFoundError: If ``strict_executor_matching`` is enabled and
             no executor host matches the node's name or address.
         """
@@ -1393,9 +1579,11 @@ class BaseTaskSyncer(BaseSyncer):
         :raises TimeoutError: If the task times out.
         :raises ValueError: If the task fails.
         """
-        task_history = await self.tasks_api.post(
-            f"/execute/{task_name}",
-            json={"meta": meta, "payload": payload, "anonymize_mask": 0},
+        task_history = as_json_object(
+            await self.tasks_api.post(
+                f"/execute/{task_name}",
+                json={"meta": meta, "payload": payload, "anonymize_mask": 0},
+            )
         )
         task_history_id = task_history["id"]
         status = task_history["status"]
@@ -1407,7 +1595,9 @@ class BaseTaskSyncer(BaseSyncer):
             await asyncio.sleep(self.tasks_execution_wait_interval)
             time_waiting += self.tasks_execution_wait_interval
             try:
-                task_history = await self.tasks_api.get(f"/history/{task_history_id}")
+                task_history = as_json_object(
+                    await self.tasks_api.get(f"/history/{task_history_id}")
+                )
                 status = task_history["status"]
             except (HTTPException, ClientError):
                 logger.exception("Error getting task history")

@@ -26,7 +26,7 @@ from typing import ClassVar
 
 import pytest
 from pydantic import BaseModel, ValidationError
-from pydantic_settings import PydanticBaseSettingsSource
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 from app.core.auth.base import BaseAuthProvider
 from app.core.auth.config import (
@@ -78,9 +78,11 @@ class IsolatedAuthSettings(AuthSettings):
     @classmethod
     def settings_customise_sources(
         cls,
-        settings_cls,  # noqa: ARG003
+        settings_cls: type[BaseSettings],  # noqa: ARG003
         init_settings: PydanticBaseSettingsSource,
-        **kwargs: PydanticBaseSettingsSource,  # noqa: ARG003
+        env_settings: PydanticBaseSettingsSource,  # noqa: ARG003
+        dotenv_settings: PydanticBaseSettingsSource,  # noqa: ARG003
+        file_secret_settings: PydanticBaseSettingsSource,  # noqa: ARG003
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Return only the init-kwargs source, ignoring env and YAML."""
         return (init_settings,)
@@ -311,6 +313,7 @@ def test_legacy_casdoor_settings_reads_secret_file(tmp_path):
 
     instance = _LegacyCasdoorSettings(_secrets_dir=tmp_path)
 
+    assert instance.CASDOOR is not None
     assert instance.CASDOOR["endpoint"] == "http://from-file:9999"
 
 

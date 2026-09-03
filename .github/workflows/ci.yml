@@ -38,9 +38,9 @@ jobs:
       - name: Require QA approval label
         if: >-
           !contains(github.event.pull_request.labels.*.name, 'qa passed') &&
-          !contains(github.event.pull_request.labels.*.name, 'skip-test')
+          !contains(github.event.pull_request.labels.*.name, 'qa not required')
         run: |
-          echo "::error::PR requires 'qa passed' or 'skip-test' label to merge."
+          echo "::error::PR requires 'qa passed' or 'qa not required' label to merge."
           exit 1
 
   # Detect changed file types to gate downstream jobs.
@@ -79,8 +79,13 @@ jobs:
               - 'sidecar/settings-env.sh'
               - 'sidecar/supervisord.conf'
               - 'sidecar/healthcheck.sh'
+              - 'sidecar/entrypoint.sh'
+              - 'sidecar/wait_for_schema.sh'
+              - 'sidecar/Containerfile.sidecar'
               - 'Makefile'
               - 'frontend/packages/api/specs/**'
+              - '.github/labeler.yml'
+              - '.github/workflows/ci.yml'
             precommit:
               - '.pre-commit-config.yaml'
               - '.github/workflows/ci.yml'
@@ -301,6 +306,7 @@ jobs:
             test -f /home/sep/app/supervisord.conf
             test -f /home/sep/app/healthcheck.sh
             test -x /home/sep/app/entrypoint.sh
+            test -x /home/sep/app/wait_for_schema.sh
             test -f /home/sep/app/settings-env.sh
             test -f /home/sep/app/settings.yaml
           '
@@ -329,6 +335,35 @@ jobs:
 
       - name: Smoke test - restricted image ships exactly the activated apps
         run: sidecar/verify_image_apps.sh "sep:HEAD" restricted
+
+      - name: Verify the purge layer is the last package-manager operation
+        run: python3 scripts/check_sidecar_purge.py --check-ordering
+
+      - name: Smoke test - purged packages are absent from the built image
+        run: |
+          pkgs="$(python3 scripts/check_sidecar_purge.py --print-packages | tr '\n' ' ')"
+          if [ -z "$pkgs" ]; then
+            echo "::error::the purge checker named no packages, so this check cannot run"
+            exit 1
+          fi
+          docker run --rm --entrypoint /bin/sh -e PURGED="$pkgs" "sep:HEAD" -c '
+            command -v dpkg-query > /dev/null 2>&1 || {
+              echo "::error::dpkg-query is absent, so package presence cannot be established"
+              exit 1
+            }
+            status=0
+            for p in $PURGED; do
+              if dpkg-query -s "$p" 2>/dev/null | grep -q "^Status: install ok installed"; then
+                echo "::error::$p is still installed in the built image"
+                status=1
+              fi
+            done
+            if command -v perl > /dev/null 2>&1; then
+              echo "::error::a perl binary resolves on PATH"
+              status=1
+            fi
+            exit $status
+          '
 
   pipeline-syntax:
     if: >-

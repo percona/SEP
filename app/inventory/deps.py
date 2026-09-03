@@ -15,10 +15,10 @@
 
 """Define dependencies for the Inventory API."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Query
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import ListQuery, make_list_query_dep
@@ -30,6 +30,11 @@ from app.inventory.constants import (
 from app.inventory.crud import (
     HostSystemObservationManager,
     NodeManager,
+    RetirableManagerMixin,
+    RetiredInclusiveNodeManager,
+    RetiredInclusiveSchemaManager,
+    RetiredInclusiveServiceManager,
+    RetiredInclusiveTableManager,
     SchemaManager,
     ServiceManager,
     ServiceSystemObservationManager,
@@ -135,6 +140,117 @@ NodeDep = Annotated[Node, Depends(get_node)]
 ServiceDep = Annotated[Service, Depends(get_service)]
 SchemaDep = Annotated[Schema, Depends(get_schema)]
 TableDep = Annotated[Table, Depends(get_table)]
+
+
+async def get_node_including_retired(session: SessionDep, node_id: int) -> Node:
+    """Retrieve a node by its identifier, retired or not.
+
+    Serves the routes whose subject is legitimately a tombstone: re-retiring an
+    already-retired node is a no-op rather than a 404, a tombstone stays
+    revivable, and an identity link's predecessor is routinely one.
+
+    :param session: The asynchronous database session.
+    :param node_id: The unique identifier of the node to retrieve.
+    :return: The node instance corresponding to the provided ``node_id``.
+    :raises HTTPNotFoundException: If no node with the specified ``node_id`` exists.
+    """
+    return await RetiredInclusiveNodeManager.get_or_404(session, id=node_id)
+
+
+async def get_service_including_retired(
+    session: SessionDep, service_id: int
+) -> Service:
+    """Retrieve a service by its identifier, retired or not.
+
+    Service-level counterpart of :func:`get_node_including_retired`.
+
+    :param session: The asynchronous database session.
+    :param service_id: The unique identifier of the service to retrieve.
+    :return: The service instance corresponding to the provided ``service_id``.
+    :raises HTTPNotFoundException: If no service with the specified ``service_id``
+        exists.
+    """
+    return await RetiredInclusiveServiceManager.get_or_404(session, id=service_id)
+
+
+async def get_schema_including_retired(session: SessionDep, schema_id: int) -> Schema:
+    """Retrieve a schema by its identifier, retired or not.
+
+    Schema-level counterpart of :func:`get_node_including_retired`.
+
+    :param session: The asynchronous database session.
+    :param schema_id: The unique identifier of the schema to retrieve.
+    :return: The schema instance corresponding to the provided ``schema_id``.
+    :raises HTTPNotFoundException: If no schema with the specified ``schema_id``
+        exists.
+    """
+    return await RetiredInclusiveSchemaManager.get_or_404(session, id=schema_id)
+
+
+async def get_table_including_retired(session: SessionDep, table_id: int) -> Table:
+    """Retrieve a table by its identifier, retired or not.
+
+    Table-level counterpart of :func:`get_node_including_retired`.
+
+    :param session: The asynchronous database session.
+    :param table_id: The unique identifier of the table to retrieve.
+    :return: The table instance corresponding to the provided ``table_id``.
+    :raises HTTPNotFoundException: If no table with the specified ``table_id`` exists.
+    """
+    return await RetiredInclusiveTableManager.get_or_404(session, id=table_id)
+
+
+RetirableNodeDep = Annotated[Node, Depends(get_node_including_retired)]
+RetirableServiceDep = Annotated[Service, Depends(get_service_including_retired)]
+RetirableSchemaDep = Annotated[Schema, Depends(get_schema_including_retired)]
+RetirableTableDep = Annotated[Table, Depends(get_table_including_retired)]
+
+
+def make_retirement_scope_dep(
+    active: type[RetirableManagerMixin],
+    retired_inclusive: type[RetirableManagerMixin],
+) -> Callable[..., type[RetirableManagerMixin]]:
+    """Build the dependency choosing which manager a read goes through.
+
+    The opt-in rides the manager class rather than a call argument, so every read
+    route needs the same pairing. Declaring it once here also declares the
+    ``include_retired`` query parameter once, instead of per handler.
+
+    :param active: The manager whose reads exclude retired rows.
+    :param retired_inclusive: Its sibling whose reads include them.
+    :return: The ``Depends()`` callable resolving one of the two.
+    """
+
+    def resolve(
+        *,
+        include_retired: Annotated[bool, Query()] = False,
+    ) -> type[RetirableManagerMixin]:
+        """Return the manager matching the request's retirement scope.
+
+        :param include_retired: Whether the read should see retired rows.
+        :return: The manager to read through.
+        """
+        return retired_inclusive if include_retired else active
+
+    return resolve
+
+
+NodeScopeDep = Annotated[
+    type[NodeManager],
+    Depends(make_retirement_scope_dep(NodeManager, RetiredInclusiveNodeManager)),
+]
+ServiceScopeDep = Annotated[
+    type[ServiceManager],
+    Depends(make_retirement_scope_dep(ServiceManager, RetiredInclusiveServiceManager)),
+]
+SchemaScopeDep = Annotated[
+    type[SchemaManager],
+    Depends(make_retirement_scope_dep(SchemaManager, RetiredInclusiveSchemaManager)),
+]
+TableScopeDep = Annotated[
+    type[TableManager],
+    Depends(make_retirement_scope_dep(TableManager, RetiredInclusiveTableManager)),
+]
 
 
 async def get_host_system_observation(

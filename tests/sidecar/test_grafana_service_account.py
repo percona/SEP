@@ -341,9 +341,10 @@ async def test_a_mint_creates_the_account_then_a_token_on_it(
 ):
     """Find nothing, create the account, then create a token on the new account."""
     async with provider:
-        token = await helper.mint(provider, helper.admin_credentials())
+        token, reused = await helper.mint(provider, helper.admin_credentials())
 
     assert token == MINTED_TOKEN
+    assert not reused
     assert [request.route for request in grafana_stub.requests] == [
         StubRoute.SEARCH,
         StubRoute.CREATE_ACCOUNT,
@@ -415,8 +416,10 @@ async def test_an_existing_account_is_reused_rather_than_duplicated(
     )
 
     async with provider:
-        await helper.mint(provider, helper.admin_credentials())
+        token, reused = await helper.mint(provider, helper.admin_credentials())
 
+    assert token == MINTED_TOKEN
+    assert reused
     assert not grafana_stub.calls(StubRoute.CREATE_ACCOUNT)
     assert grafana_stub.calls(StubRoute.CREATE_TOKEN)[0].path.endswith(
         f"/serviceaccounts/{ACCOUNT_ID}/tokens"
@@ -477,9 +480,10 @@ async def test_a_lost_account_creation_race_mints_on_the_winner(
     )
 
     async with provider:
-        token = await helper.mint(provider, helper.admin_credentials())
+        token, reused = await helper.mint(provider, helper.admin_credentials())
 
     assert token == MINTED_TOKEN
+    assert reused
     assert grafana_stub.calls(StubRoute.CREATE_TOKEN)[0].path.endswith(
         f"/serviceaccounts/{ACCOUNT_ID}/tokens"
     )
@@ -612,13 +616,14 @@ async def test_a_starting_grafana_is_retried_until_it_answers(
     )
 
     async with provider:
-        token = await helper.mint_with_retry(
+        token, reused = await helper.mint_with_retry(
             provider,
             helper.admin_credentials(),
             time.monotonic() + PATIENT_BOUND_SECONDS,
         )
 
     assert token == MINTED_TOKEN
+    assert not reused
     assert len(grafana_stub.calls(StubRoute.SEARCH)) == EXPECTED_SEARCH_ATTEMPTS
 
 
@@ -705,9 +710,10 @@ async def test_the_minted_token_reaches_no_log_record(
 
     with caplog.at_level(logging.DEBUG):
         async with provider:
-            token = await helper.mint(provider, helper.admin_credentials())
+            token, reused = await helper.mint(provider, helper.admin_credentials())
 
     assert token == MINTED_TOKEN
+    assert not reused
     assert not [
         record for record in caplog.records if MINTED_TOKEN in record.getMessage()
     ]
@@ -855,7 +861,11 @@ def test_the_mint_bound_falls_back_rather_than_raising(
 async def test_a_first_start_mints_and_persists_a_token(
     grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
 ):
-    """Resolve a token on a fresh install with nothing configured anywhere."""
+    """Resolve a token on a fresh install with nothing configured anywhere.
+
+    The create path already requests Admin, so the post-mint role probe is
+    skipped — only a reused account needs that round trip.
+    """
     run = await run_helper(
         profile_cwd(tmp_path),
         AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
@@ -865,6 +875,157 @@ async def test_a_first_start_mints_and_persists_a_token(
     assert run.returncode == 0, run.stderr
     assert run.token == MINTED_TOKEN
     assert helper.read_persisted_token(state_dir) == MINTED_TOKEN
+    assert grafana_stub.calls(StubRoute.CREATE_ACCOUNT)
+    assert not grafana_stub.calls(StubRoute.VALIDATE)
+
+
+@pytest.mark.asyncio
+async def test_a_reused_account_at_admin_probes_without_warning(
+    grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
+):
+    """Probe a reused account that already holds Admin, and stay quiet on ACCEPTED.
+
+    Guards the FORBIDDEN-only warn: a flipped guard would emit a false role-gap
+    diagnostic on every healthy reuse.
+    """
+    grafana_stub.queue(
+        StubRoute.SEARCH,
+        StubResponse(
+            {
+                "totalCount": 1,
+                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "sep"}],
+            }
+        ),
+    )
+
+    run = await run_helper(
+        profile_cwd(tmp_path),
+        AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
+        SEP_STATE_DIR=str(state_dir),
+    )
+
+    assert run.returncode == 0, run.stderr
+    assert run.token == MINTED_TOKEN
+    assert helper.read_persisted_token(state_dir) == MINTED_TOKEN
+    assert (
+        grafana_stub.calls(StubRoute.VALIDATE)[0].headers["Authorization"]
+        == f"Bearer {MINTED_TOKEN}"
+    )
+    assert "ranks below" not in run.stderr
+
+
+@pytest.mark.asyncio
+async def test_a_reused_account_below_admin_warns_after_mint(
+    grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
+):
+    """Warn on FORBIDDEN after minting onto an existing under-privileged account.
+
+    The token is still returned and persisted: a re-mint cannot raise the role.
+    """
+    grafana_stub.queue(
+        StubRoute.SEARCH,
+        StubResponse(
+            {
+                "totalCount": 1,
+                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "sep"}],
+            }
+        ),
+    )
+    grafana_stub.queue(StubRoute.VALIDATE, StubResponse(status=403))
+
+    run = await run_helper(
+        profile_cwd(tmp_path),
+        AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
+        SEP_STATE_DIR=str(state_dir),
+    )
+
+    assert run.returncode == 0, run.stderr
+    assert run.token == MINTED_TOKEN
+    assert helper.read_persisted_token(state_dir) == MINTED_TOKEN
+    assert (
+        grafana_stub.calls(StubRoute.VALIDATE)[0].headers["Authorization"]
+        == f"Bearer {MINTED_TOKEN}"
+    )
+    assert f"{helper.SERVICE_ACCOUNT_NAME!r}" in run.stderr
+    assert helper.SERVICE_ACCOUNT_ROLE in run.stderr
+    assert "ranks below" in run.stderr
+
+
+@pytest.mark.asyncio
+async def test_a_reused_account_with_unreachable_probe_warns_after_mint(
+    grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
+):
+    """Warn on UNREACHABLE after minting onto an existing account.
+
+    Grafana may go down between the mint and the probe; the token is still
+    returned and persisted, matching :func:`keep_persisted_token`.
+    """
+    grafana_stub.queue(
+        StubRoute.SEARCH,
+        StubResponse(
+            {
+                "totalCount": 1,
+                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "sep"}],
+            }
+        ),
+    )
+    grafana_stub.queue(StubRoute.VALIDATE, StubResponse(status=503))
+
+    run = await run_helper(
+        profile_cwd(tmp_path),
+        AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
+        SEP_STATE_DIR=str(state_dir),
+    )
+
+    assert run.returncode == 0, run.stderr
+    assert run.token == MINTED_TOKEN
+    assert helper.read_persisted_token(state_dir) == MINTED_TOKEN
+    assert (
+        grafana_stub.calls(StubRoute.VALIDATE)[0].headers["Authorization"]
+        == f"Bearer {MINTED_TOKEN}"
+    )
+    assert "Could not reach Grafana" in run.stderr
+    assert "probe the freshly minted token" in run.stderr
+    assert "using it unvalidated" in run.stderr
+
+
+@pytest.mark.asyncio
+async def test_a_race_recovery_reuse_probes_the_minted_token(
+    grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
+):
+    """Probe after minting onto the account a concurrent side-car created.
+
+    Losing the create race still reuses an account whose role SEP never set, so
+    the same FORBIDDEN diagnostic applies.
+    """
+    grafana_stub.queue(
+        StubRoute.SEARCH,
+        StubResponse({"totalCount": 0, "serviceAccounts": []}),
+        StubResponse(
+            {"totalCount": 1, "serviceAccounts": [{"id": ACCOUNT_ID, "name": "sep"}]}
+        ),
+    )
+    grafana_stub.queue(
+        StubRoute.CREATE_ACCOUNT,
+        StubResponse({"message": "service account already exists"}, status=400),
+    )
+    grafana_stub.queue(StubRoute.VALIDATE, StubResponse(status=403))
+
+    run = await run_helper(
+        profile_cwd(tmp_path),
+        AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
+        SEP_STATE_DIR=str(state_dir),
+    )
+
+    assert run.returncode == 0, run.stderr
+    assert run.token == MINTED_TOKEN
+    assert helper.read_persisted_token(state_dir) == MINTED_TOKEN
+    assert (
+        grafana_stub.calls(StubRoute.VALIDATE)[0].headers["Authorization"]
+        == f"Bearer {MINTED_TOKEN}"
+    )
+    assert "ranks below" in run.stderr
+    assert helper.SERVICE_ACCOUNT_ROLE in run.stderr
 
 
 @pytest.mark.asyncio

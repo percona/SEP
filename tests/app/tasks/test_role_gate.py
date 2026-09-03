@@ -15,6 +15,7 @@
 
 """Define tests for the unsafe-method role gate on the Tasks sub-app."""
 
+from collections.abc import Iterator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -24,6 +25,8 @@ from pydantic import SecretStr
 from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api import deps as api_deps
+from app.core.celery.deps import get_session as get_celery_beat_session
 from app.core.config import settings
 from app.core.settings_override.models import SettingClassEnum
 from app.tasks.crud import TaskHistoryManager, TaskManager
@@ -39,15 +42,26 @@ SERVICE_TOKEN = "supersecret"
 
 @pytest.fixture
 def bearer_client(
-    session: AsyncSession, mock_executor: AsyncMock, casdoor_mock
-) -> TestClient:
+    session: AsyncSession,
+    celery_beat_session: AsyncSession,
+    mock_executor: AsyncMock,
+    casdoor_mock,
+) -> Iterator[TestClient]:
     """Yield a Tasks TestClient that authenticates every request by Bearer token.
 
     No authentication dependency is overridden: the gate resolves the user
     imperatively, so an override could not reach it, and leaving the chain real
     is what makes the gate the thing under test.
+
+    The celery-beat session is overridden so a periodic route answers from the
+    in-memory beat tables. Without it that route raises on a missing table, and
+    an assertion that the gate let the request through cannot tell a route's own
+    answer from a failure on the way to it.
     """
     tasks_app.dependency_overrides[get_session] = lambda: session
+    tasks_app.dependency_overrides[get_celery_beat_session] = (
+        lambda: celery_beat_session
+    )
     tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
     yield TestClient(tasks_app, raise_server_exceptions=False)
     tasks_app.dependency_overrides = {}
@@ -55,13 +69,10 @@ def bearer_client(
 
 @pytest.fixture
 def admin_bearer_client(
-    bearer_client: TestClient, casdoor_user_data, mocker: MockerFixture
+    bearer_client: TestClient, casdoor_mock, casdoor_user_data
 ) -> TestClient:
     """Return the Bearer client whose credential resolves to an admin."""
-    mocker.patch(
-        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
-        new=mocker.AsyncMock(return_value={**casdoor_user_data, "is_admin": True}),
-    )
+    casdoor_mock.get_user.return_value = {**casdoor_user_data, "is_admin": True}
     return bearer_client
 
 
@@ -84,23 +95,28 @@ def test_mutations_are_refused_for_a_non_admin(
 
 
 @pytest.mark.parametrize(
-    ("method", "path"),
+    ("method", "path", "expected_status"),
     [
-        ("POST", "/"),
-        ("PUT", "/periodic/1"),
-        ("POST", "/connectivity-check/"),
+        ("POST", "/", status.HTTP_422_UNPROCESSABLE_CONTENT),
+        ("PUT", "/periodic/1", status.HTTP_404_NOT_FOUND),
+        ("POST", "/connectivity-check/", status.HTTP_422_UNPROCESSABLE_CONTENT),
     ],
     ids=["tasks", "periodic", "connectivity"],
 )
 def test_mutations_pass_the_gate_for_an_admin(
-    admin_bearer_client: TestClient, method: str, path: str
+    admin_bearer_client: TestClient, method: str, path: str, expected_status: int
 ) -> None:
-    """Admit an admin's mutation on each router, leaving the route to answer."""
+    """Admit an admin's mutation on each router, leaving the route to answer.
+
+    The answer each route gives the empty body is the assertion. "Not 403" also
+    passes when the request never reached the handler, which is how a route that
+    raises on the way in reads as an admitted mutation.
+    """
     response = admin_bearer_client.request(
         method, path, json={}, headers=BEARER_HEADERS
     )
 
-    assert response.status_code != status.HTTP_403_FORBIDDEN
+    assert response.status_code == expected_status
 
 
 def test_reads_are_unaffected_for_a_non_admin(bearer_client: TestClient) -> None:
@@ -222,3 +238,60 @@ def test_the_batch_read_stays_reachable_for_a_non_admin(
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"absent-task": None}
+
+
+def test_a_gated_mutation_resolves_the_credential_once(
+    admin_bearer_client: TestClient, casdoor_mock
+) -> None:
+    """Resolve one credential once across the gate and the route's own dependency.
+
+    The status pins that the request reached the handler, so both consumers ran.
+    """
+    casdoor_mock.introspect_token.reset_mock()
+    casdoor_mock.get_user.reset_mock()
+
+    response = admin_bearer_client.put("/no-such-task", json={}, headers=BEARER_HEADERS)
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert casdoor_mock.introspect_token.await_count == 1
+    assert casdoor_mock.get_user.await_count == 1
+
+
+def test_the_waived_batch_read_still_resolves_once(
+    bearer_client: TestClient, casdoor_mock, mocker: MockerFixture
+) -> None:
+    """Keep the waived batch read at the one resolution its own dependency makes.
+
+    Its ``UserRole.NONE`` minimum is answered before the gate looks at the
+    credential, so the route's ``IsAuthenticatedDep`` is the only thing resolving
+    it — and stays so for a non-admin.
+
+    A gate that did reach the credential would be served the route's resolution
+    from the cache, leaving the provider counts at one either way; the spy on the
+    name the gate looks up at call time is what sees the waiver, since the route
+    holds the original captured at import.
+    """
+    casdoor_mock.introspect_token.reset_mock()
+    casdoor_mock.get_user.reset_mock()
+    gate = mocker.spy(api_deps, "get_current_user")
+
+    response = bearer_client.post(
+        "/history/latest", json={"names": ["absent-task"]}, headers=BEARER_HEADERS
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert gate.await_count == 0
+    assert casdoor_mock.introspect_token.await_count == 1
+    assert casdoor_mock.get_user.await_count == 1
+
+
+def test_the_health_probe_resolves_no_credential(
+    bearer_client: TestClient, casdoor_mock
+) -> None:
+    """Keep the liveness probe unauthenticated, resolving nothing at all."""
+    casdoor_mock.introspect_token.reset_mock()
+
+    response = bearer_client.get("/health")
+
+    assert response.status_code == status.HTTP_200_OK
+    casdoor_mock.introspect_token.assert_not_awaited()

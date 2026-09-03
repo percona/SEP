@@ -66,10 +66,19 @@ async def list_service_backups(
     :return: The requested page of the service's recorded backup runs, newest
         run first.
     """
-    return await MysqlBackupRunManager.list_for_service(
+    page = await MysqlBackupRunManager.list_for_service(
         session,
         CatalogServiceKey(service_name=service.name, service_id=service.id),
         pagination=pagination,
+    )
+    return PaginatedResponse[BackupRunResponse](
+        items=[
+            BackupRunResponse.model_validate(run, from_attributes=True)
+            for run in page.items
+        ],
+        total=page.total,
+        offset=page.offset,
+        limit=page.limit,
     )
 
 

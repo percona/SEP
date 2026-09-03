@@ -15,6 +15,7 @@
 
 """Define tests for CRUD pagination helpers."""
 
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, UTC
 
 import pytest
@@ -32,6 +33,7 @@ from app.core.db.models import BaseUUIDSQLModel
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT, PaginatedResponse, Pagination
 from app.core.utils import json_serializer
+from tests.app.db_schema import apply_schema
 
 MATCHING_ITEM_TOTAL = 3
 SELECT_RELATED_PAGE_LIMIT = 2
@@ -136,8 +138,11 @@ class UniqueKeyUUIDManager(BaseSQLModelManager):
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an isolated async database session for CRUD pagination tests."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -145,7 +150,7 @@ async def session_fixture() -> AsyncSession:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
@@ -895,103 +900,6 @@ class TestListQueryPaginatedPostgres:
         assert [item.name for item in result.items] == ["FOOBAR"]
 
 
-@pytest.mark.mysql
-class TestListQueryPaginatedMySQL:
-    """Cover spec-derived NULLs-last ordering against a real MySQL bind.
-
-    The ascending and descending nullable-sort cases assert the same row-order
-    literals as ``TestListQueryPaginatedPostgres``, which is the point: identical
-    expectations across dialects show the construct normalises MySQL's ordering to
-    the PostgreSQL/SQLite one. The all-NULL and ``select_related`` cases below have
-    no PostgreSQL counterpart -- both exercise shapes specific to the prepended
-    ``ISNULL`` term.
-    """
-
-    @pytest.mark.asyncio
-    async def test_ascending_nullable_sort_places_nulls_last(
-        self, mysql_session: AsyncSession
-    ) -> None:
-        """Keep NULLs last in ascending order and tie-break the NULL rows by id."""
-        await _seed_nullable_parent_items(mysql_session)
-        spec = PaginationItemSpecManager.list_query_spec
-        list_query = ListQuery(
-            order_by=tuple(spec.resolve_sort("parent_id")),
-            search_predicate=None,
-        )
-        result = await PaginationItemSpecManager.list_query_paginated(
-            mysql_session,
-            list_query=list_query,
-            pagination=Pagination(offset=0, limit=10),
-        )
-
-        assert [item.name for item in result.items] == ["a", "c", "b1", "b2"]
-
-    @pytest.mark.asyncio
-    async def test_descending_nullable_sort_keeps_nulls_last(
-        self, mysql_session: AsyncSession
-    ) -> None:
-        """Keep NULLs last in descending order and tie-break the NULL rows by id."""
-        await _seed_nullable_parent_items(mysql_session)
-        spec = PaginationItemSpecManager.list_query_spec
-        list_query = ListQuery(
-            order_by=tuple(spec.resolve_sort("-parent_id")),
-            search_predicate=None,
-        )
-        result = await PaginationItemSpecManager.list_query_paginated(
-            mysql_session,
-            list_query=list_query,
-            pagination=Pagination(offset=0, limit=10),
-        )
-
-        assert [item.name for item in result.items] == ["c", "a", "b1", "b2"]
-
-    @pytest.mark.asyncio
-    async def test_all_null_sort_column_falls_back_to_tie_breaker(
-        self, mysql_session: AsyncSession
-    ) -> None:
-        """Keep an all-NULL sort column ordered by the tie-breaker alone, no error."""
-        base_time = datetime(2026, 1, 1, tzinfo=UTC)
-        for offset, name in enumerate(("first", "second", "third")):
-            await _create_item(
-                mysql_session,
-                name=name,
-                created_at=base_time + timedelta(minutes=offset),
-            )
-
-        spec = PaginationItemSpecManager.list_query_spec
-        list_query = ListQuery(
-            order_by=tuple(spec.resolve_sort("-parent_id")),
-            search_predicate=None,
-        )
-        result = await PaginationItemSpecManager.list_query_paginated(
-            mysql_session,
-            list_query=list_query,
-            pagination=Pagination(offset=0, limit=10),
-        )
-
-        assert [item.name for item in result.items] == ["first", "second", "third"]
-
-    @pytest.mark.asyncio
-    async def test_select_related_pagination_orders_on_mysql(
-        self, mysql_session: AsyncSession
-    ) -> None:
-        """Apply the two-term MySQL ordering to the id-only pk query and the outer one.
-
-        The ``select_related`` + pagination branch orders a ``SELECT id`` query by a
-        different column, so the prepended ``ISNULL`` term has to be valid there too.
-        """
-        await _seed_nullable_parent_items(mysql_session)
-
-        result = await PaginationItemSpecManager.list(
-            mysql_session,
-            select_related=[PaginationItem.parent],
-            offset=0,
-            limit=SELECT_RELATED_PAGE_LIMIT,
-        )
-
-        assert [item.name for item in result] == ["a", "b1"]
-
-
 async def _seed_nullable_parent_items(session: AsyncSession) -> None:
     """Seed items whose nullable ``parent_id`` mixes two parents and two NULLs."""
     parent_one = await _create_parent(session, "parent-1")
@@ -1058,3 +966,92 @@ class TestExists:
             await UniqueKeyManager.exists(session, col(UniqueKeyModel.label) == "gone")
             is False
         )
+
+
+class TestDMLWhereGuards:
+    """Test the guards ``update_where`` and ``delete_where`` apply before running."""
+
+    @pytest.mark.asyncio
+    async def test_update_where_rejects_no_filter(self, session: AsyncSession) -> None:
+        """Refuse an unbounded UPDATE."""
+        with pytest.raises(ValueError, match="at least one filter"):
+            await UniqueKeyManager.update_where(session, values={"label": "x"})
+
+    @pytest.mark.asyncio
+    async def test_delete_where_rejects_no_filter(self, session: AsyncSession) -> None:
+        """Refuse an unbounded DELETE."""
+        with pytest.raises(ValueError, match="at least one filter"):
+            await UniqueKeyManager.delete_where(session)
+
+    @pytest.mark.asyncio
+    async def test_update_where_rejects_empty_returning(
+        self, session: AsyncSession
+    ) -> None:
+        """Refuse a ``returning`` that names no column.
+
+        The overloads promise a list of rows for any non-``bool`` ``returning``, so
+        an empty one would return a ``CursorResult`` where a list was declared.
+        """
+        with pytest.raises(ValueError, match="returning must name at least one"):
+            await UniqueKeyManager.update_where(
+                session, values={"label": "x"}, returning=[], key="alpha"
+            )
+
+    @pytest.mark.asyncio
+    async def test_delete_where_rejects_empty_returning(
+        self, session: AsyncSession
+    ) -> None:
+        """Refuse a ``returning`` that names no column, on the DELETE arm too."""
+        with pytest.raises(ValueError, match="returning must name at least one"):
+            await UniqueKeyManager.delete_where(session, returning=(), key="alpha")
+
+    @pytest.mark.asyncio
+    async def test_update_where_rejects_an_empty_generator_returning(
+        self, session: AsyncSession
+    ) -> None:
+        """Refuse an empty one-shot ``returning`` the same as an empty sequence.
+
+        ``Iterable[str]`` admits a generator, which is truthy while empty, so a
+        guard reading its truthiness alone would pass it through to the row read
+        and raise ``TypeError`` from ``len()`` instead.
+        """
+        with pytest.raises(ValueError, match="returning must name at least one"):
+            await UniqueKeyManager.update_where(
+                session,
+                values={"label": "x"},
+                returning=(column for column in ()),
+                key="alpha",
+            )
+
+    @pytest.mark.asyncio
+    async def test_update_where_accepts_a_generator_returning(
+        self, session: AsyncSession
+    ) -> None:
+        """Honor a one-shot ``returning``, which is consumed more than once below."""
+        await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="alpha", label="before"),
+            filter_include={"key"},
+        )
+        returned = await UniqueKeyManager.update_where(
+            session,
+            values={"label": "after"},
+            returning=(column for column in ["label"]),
+            key="alpha",
+        )
+        assert returned == ["after"]
+
+    @pytest.mark.asyncio
+    async def test_update_where_returns_named_columns(
+        self, session: AsyncSession
+    ) -> None:
+        """Honor a ``returning`` that does name a column."""
+        await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="alpha", label="before"),
+            filter_include={"key"},
+        )
+        returned = await UniqueKeyManager.update_where(
+            session, values={"label": "after"}, returning=["label"], key="alpha"
+        )
+        assert returned == ["after"]

@@ -96,7 +96,7 @@ class TestApiRouterComposition:
         checksums_route_tags = [
             route.tags
             for route in apps_router.routes
-            if hasattr(route, "path") and "checksums" in route.path
+            if "checksums" in getattr(route, "path", "")
         ]
         assert checksums_route_tags
         assert all("checksums" in tags for tags in checksums_route_tags)
@@ -466,9 +466,7 @@ class TestApiRouterConfigDrivenLoop:
             api_router_path="app.sep.apps.alters.api_routes.router",
         )
         router = build_apps_router(build_app_registry([plugin]))
-        tagged = [
-            r.tags for r in router.routes if hasattr(r, "path") and "alters" in r.path
-        ]
+        tagged = [r.tags for r in router.routes if "alters" in getattr(r, "path", "")]
         assert tagged
         assert all("alters" in tags for tags in tagged)
 
@@ -858,6 +856,42 @@ class TestApiRoleGate:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
+
+    def test_a_gated_mutation_resolves_the_credential_once(
+        self, bearer_client: TestClient, casdoor_mock, casdoor_user_data
+    ) -> None:
+        """Resolve one credential once, though two dependencies each need it.
+
+        On this service the route's own authentication arrives through
+        ``IsApiAuthenticated``, a second alias onto the same resolution, so the
+        count of provider round-trips is what says both are served from one.
+        """
+        casdoor_mock.get_user.return_value = {**casdoor_user_data, "is_admin": True}
+        casdoor_mock.introspect_token.reset_mock()
+        casdoor_mock.get_user.reset_mock()
+
+        response = bearer_client.post(
+            "/api/apps/checksums/", json={}, headers=BEARER_HEADERS
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert casdoor_mock.introspect_token.await_count == 1
+        assert casdoor_mock.get_user.await_count == 1
+
+    def test_the_health_probe_resolves_no_credential(
+        self, bearer_client: TestClient, casdoor_mock
+    ) -> None:
+        """Keep the liveness probe unauthenticated, resolving nothing at all.
+
+        This is why the gate resolves the caller imperatively rather than through
+        a sub-dependency, and the cache must not have made it eager.
+        """
+        casdoor_mock.introspect_token.reset_mock()
+
+        response = bearer_client.get("/health")
+
+        assert response.status_code == status.HTTP_200_OK
+        casdoor_mock.introspect_token.assert_not_awaited()
 
     def test_the_role_gate_is_declared_after_the_bearer_gate(self) -> None:
         """Pin the declaration order the detail string above depends on."""

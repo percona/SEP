@@ -16,6 +16,7 @@
 """Define test fixtures for periodic task tests."""
 
 import json
+from collections.abc import AsyncGenerator, Iterator
 
 import pytest
 import pytest_asyncio
@@ -35,33 +36,15 @@ from app.core.utils import json_serializer
 from app.tasks.deps import get_session as get_tasks_session
 from app.tasks.main import tasks_app
 from tests.app.conftest import postgres_worker_schema
+from tests.app.db_schema import apply_schema
 
 CELERY_TASK_NAME = "app.tasks.celery.execute_task_by_name"
 
 
-@pytest_asyncio.fixture(name="celery_beat_session")
-async def celery_beat_session_fixture() -> AsyncSession:
-    """Create an async db session for celery beat tables."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        json_serializer=json_serializer,
-        poolclass=StaticPool,
-    )
-    engine = engine.execution_options(schema_translate_map={"celery_schema": None})
-    metadata = PeriodicTask.__table__.metadata
-    async with engine.begin() as conn:
-        await conn.run_sync(metadata.create_all)
-    async_session_maker = get_async_session_maker_from_engine(engine)
-    try:
-        async with async_session_maker() as session:
-            yield session
-    finally:
-        await engine.dispose()
-
-
 @pytest_asyncio.fixture
-async def postgres_celery_beat_session(postgres_engine: AsyncEngine) -> AsyncSession:
+async def postgres_celery_beat_session(
+    postgres_engine: AsyncEngine,
+) -> AsyncGenerator[AsyncSession, None]:
     """Create a real-PostgreSQL session for celery-beat tables.
 
     Real-PG sibling of ``celery_beat_session``. The celery-beat tables declare a
@@ -86,8 +69,11 @@ async def postgres_celery_beat_session(postgres_engine: AsyncEngine) -> AsyncSes
 
 
 @pytest_asyncio.fixture(name="tasks_session")
-async def tasks_session_fixture() -> AsyncSession:
+async def tasks_session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an async db session for tasks tables."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -95,7 +81,7 @@ async def tasks_session_fixture() -> AsyncSession:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
@@ -109,7 +95,7 @@ def periodic_test_client(
     regular_user: CasdoorUser,
     celery_beat_session: AsyncSession,
     tasks_session: AsyncSession,
-) -> TestClient:
+) -> Iterator[TestClient]:
     """Create an authenticated test client with both celery beat and tasks sessions."""
     tasks_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
         lambda: None

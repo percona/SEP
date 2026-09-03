@@ -69,10 +69,27 @@ default:
     # Superseded per container start by the credentialed URLs entrypoint.sh mints.
     BROKER_URL: redis://127.0.0.1:6379/0
     RESULT_BACKEND: redis://127.0.0.1:6379/1
-    # No BEAT_DBURI: the beat store defaults to the resolved SEP database, so the
-    # mounted SEP__DATABASE__PASSWORD reaches it without an env-visible URI.
+    # No BEAT_DBURI: the beat store defaults to the resolved SEP database, so a
+    # mounted DATABASE__PASSWORD or SEP__DATABASE__PASSWORD reaches it without an
+    # env-visible URI.
     RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
+    BEAT_ENGINE_OPTIONS:
+      POOL_PRE_PING: true  # Test beat/worker pooled connections on checkout; set false to opt out
+
+  # One database for all three services: PMM_ENABLE_SEP provisions exactly the
+  # `sep` role and `sep` database, so this is defined once and aliased below.
+  # The aliases are required: the YAML source narrows to `default.<PREFIX>`, so a
+  # root-level block is an anchor definition, not a global each service inherits.
+  # The alias is one object, so a second profile block must not override a single
+  # service's DATABASE keys: the profile merge is in-place and would move all three.
+  # test_profile_carries_a_single_default_block keeps this file to one block.
+  DATABASE: &shared_database
+    ENGINE: postgresql
+    HOST: pmm-server
+    NAME: sep
+    PORT: 5432
+    USER: sep
 
   SEP:
     AMBIENT_SESSION_SSO_ENABLED: true
@@ -80,12 +97,7 @@ default:
     # rather than a per-deployment input. The loopback healthcheck stays
     # unprefixed: routing tolerates a request that arrives without the prefix.
     ROOT_PATH: /sep
-    DATABASE:
-      ENGINE: postgresql
-      HOST: pmm-server
-      NAME: sep
-      PORT: 5432
-      USER: sep
+    DATABASE: *shared_database
     # Where diagnostics bundles go once an operator supplies the credentials.
     # The secret names are declared but empty: the plan's cross-reference
     # validator requires every cited name to be declared, and the values arrive
@@ -108,6 +120,28 @@ default:
           outputs:
             table_name: /result/table_name
             ticket_id: /result/ticket_id
+      case_search:
+        path: api/now/table/sn_customerservice_case
+        query:
+          # The connector key is refused ServiceNow's full-text index
+          # (403 "Field(s) present in the query do not have permission to be
+          # read"), so one term is compared against both readable fields
+          # instead.
+          sysparm_query:
+            source: term
+            prefix: numberLIKE
+            separator: ^ORshort_descriptionLIKE
+          sysparm_fields: {source: literal, value: "number,short_description"}
+          sysparm_limit: {source: literal, value: "10"}
+        headers:
+          x-sn-apikey: {source: secret, name: sn_api_key}
+        # ServiceNow encoded queries separate clauses with `^`, which has no
+        # escape, so the term is held to what a case number or a title fragment
+        # actually needs.
+        term_pattern: '[A-Za-z0-9 ._-]+'
+        results_pointer: /result
+        reference_pointer: /number
+        title_pointer: /short_description
       upload:
         path: api/now/attachment/upload
         headers:
@@ -132,6 +166,8 @@ default:
       - MODULE_NAME: mysql_backups
     SYNCERS:
       - SYNCER: PMMSyncer
+        STALE_RUN_AFTER: 3600  # Seconds an idle in-progress run may sit before it is reclaimed; must exceed the longest expected sync
+        MISSING_GRACE_GENERATIONS: 2  # Consecutive complete syncs that must report an entity absent before it is removed; minimum 2
       - SYNCER: MySQLSyncer
         IGNORE_SCHEMAS:
           - sys
@@ -139,26 +175,21 @@ default:
           - mysql
           - information_schema
       - SYNCER: SystemFactsSyncer
+    INVENTORY:
+      # PMM re-emits its whole inventory on every sync, so a tombstone here is a
+      # genuine removal rather than a gap in a partial feed. Collect daily; the
+      # 30-day default retention still applies before anything is deleted.
+      COLLECTION_INTERVAL: 1 days
 
   INVENTORY:
-    DATABASE:
-      ENGINE: postgresql
-      HOST: pmm-server
-      NAME: sep
-      PORT: 5432
-      USER: sep
+    DATABASE: *shared_database
     UVICORN_HOST: 0.0.0.0
     UVICORN_PORT: 9001
     SSL_CERTFILE: null
     SSL_KEYFILE: null
 
   TASKS:
-    DATABASE:
-      ENGINE: postgresql
-      HOST: pmm-server
-      NAME: sep
-      PORT: 5432
-      USER: sep
+    DATABASE: *shared_database
     UVICORN_HOST: 0.0.0.0
     UVICORN_PORT: 9002
     NOMAD:
@@ -170,5 +201,7 @@ default:
       SSL_CAFILE: null
       SSL_CERTFILE: null
       SSL_KEYFILE: null
+    INVENTORY_SYNC_INTERVAL: 15 minutes
+    INVENTORY_SYNC_SYNCER: app.sep.sync.syncers.pmm.PMMSyncer
     SSL_CERTFILE: null
     SSL_KEYFILE: null

@@ -59,6 +59,9 @@ const MOCK_USER = {
   email: 'smoke@percona.com',
   firstName: 'Smoke',
   lastName: 'Test',
+  // Deliberately non-admin: these specs only navigate and assert readable
+  // sentinels, so they double as cross-app smoke coverage of the read-only
+  // experience.
   isAdmin: false,
 };
 

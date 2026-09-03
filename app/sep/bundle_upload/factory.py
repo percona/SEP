@@ -24,16 +24,16 @@ the client wholesale -- those parts are rebased onto the plan's own steps here.
 
 __all__ = ["get_delivery_executor", "split_endpoint"]
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from urllib.parse import parse_qsl, urlparse
 
 from app.core.requests import RemoteAPI
 from app.sep.bundle_upload.plan import (
+    AnyStepValue,
     DeliveryPlan,
     DeliveryPlanExecutor,
     LiteralValue,
-    PlanValue,
     StepObserver,
 )
 
@@ -69,15 +69,19 @@ def _rebase_path(prefix: str, path: str) -> str:
 
 
 def _rebase_query(
-    query: dict[str, PlanValue], endpoint_query: dict[str, str]
-) -> dict[str, PlanValue]:
+    query: Mapping[str, AnyStepValue], endpoint_query: dict[str, str]
+) -> dict[str, AnyStepValue]:
     """Merge the endpoint's query pairs into a step's own, without displacing them.
+
+    Accepts any value map any step kind admits, so one helper rebases them all:
+    the probe's, drawn from a set narrower than the send steps', and the case
+    search's, carrying a source the send steps have no value for.
 
     :param query: The step's configured query map.
     :param endpoint_query: The query pairs carried by the configured endpoint.
     :return: The merged query map.
     """
-    merged = {
+    merged: dict[str, AnyStepValue] = {
         key: LiteralValue(source="literal", value=value)
         for key, value in endpoint_query.items()
     }
@@ -93,6 +97,10 @@ def _rebased_plan(
     Pydantic's ``model_copy`` is shallow, so each nested step is rebuilt rather
     than shared: the plan handed in is the process-global configured one, and
     mutating its steps would corrupt every later send.
+
+    Every step kind the plan carries is enumerated here by hand, so a step kind
+    added to :class:`~app.sep.bundle_upload.plan.DeliveryPlan` without a branch
+    below is silently carried through unrebased and issued at the wrong URL.
 
     :param plan: The configured plan to rebase.
     :param path: The endpoint's path.
@@ -114,7 +122,34 @@ def _rebased_plan(
             "query": _rebase_query(plan.upload.query, query),
         }
     )
-    return plan.model_copy(update={"resolution_steps": steps, "upload": upload})
+    probe = (
+        None
+        if plan.probe is None
+        else plan.probe.model_copy(
+            update={
+                "path": _rebase_path(path, plan.probe.path),
+                "query": _rebase_query(plan.probe.query, query),
+            }
+        )
+    )
+    case_search = (
+        None
+        if plan.case_search is None
+        else plan.case_search.model_copy(
+            update={
+                "path": _rebase_path(path, plan.case_search.path),
+                "query": _rebase_query(plan.case_search.query, query),
+            }
+        )
+    )
+    return plan.model_copy(
+        update={
+            "resolution_steps": steps,
+            "upload": upload,
+            "probe": probe,
+            "case_search": case_search,
+        }
+    )
 
 
 @asynccontextmanager
@@ -130,7 +165,8 @@ async def get_delivery_executor(
 
     :param plan: The configured delivery plan to run.
     :param step_observer: A synchronous callback notified as each resolution step
-        starts and completes, for a caller that records send progress.
+        starts and ends, and when the terminal upload fails, for a caller that
+        records send progress.
     :return: The executor bound to the plan and its transport.
     """
     origin, path, query = split_endpoint(str(plan.endpoint))

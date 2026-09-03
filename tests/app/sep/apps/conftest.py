@@ -21,11 +21,16 @@ live here, at the plugins-tests root, so any plugin test module that subclasses
 :class:`~tests.app.sep.apps.framework.contract_suite.DerivedRouterContractTests`
 inherits them by supplying only its definition — not only tests under
 ``framework/``. Each reads the definition under test from ``request.cls.app_def``
-and mounts onto a fresh ``FastAPI`` per test, so dependency overrides never leak.
+and mounts it through the per-process cache, installing its dependency overrides
+per test and clearing them on teardown so nothing leaks to the next test.
 """
+
+from collections.abc import Iterator
+from typing import get_args
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
 from app.core.auth.exceptions import HTTPUnauthorizedException
 from app.core.auth.providers.casdoor.models import CasdoorUser
@@ -36,14 +41,33 @@ from app.sep.main import sep_app
 from app.tasks.models import TaskBackendEnum, TaskWrite
 from tests.app.factories import GeneratedTaskFactory
 from tests.app.sep.apps.framework.contract_suite import (
-    build_contract_client,
-    mount_app,
+    borrow_shared_mount,
+    shared_contract_client,
 )
 from tests.app.sep.apps.framework.kit import (
     MockInventoryAPI,
     MockTaskAPI,
     SEEDED_TASK_NAME,
 )
+
+
+def literal_members(model: type[BaseModel], field: str) -> tuple[str, ...]:
+    """Return the string ``Literal`` members a model field accepts.
+
+    Reaches through the optional wrapper (``Literal[...] | EmptyStrToNone``) so a
+    test can parametrize over the vocabulary a form declares instead of restating
+    it and drifting from the model.
+
+    :param model: The model owning the field.
+    :param field: The field name whose annotation carries the ``Literal``.
+    :return: The declared members, in declaration order.
+    """
+    return tuple(
+        arg
+        for member in get_args(model.model_fields[field].annotation)
+        for arg in get_args(member)
+        if isinstance(arg, str)
+    )
 
 
 @pytest.fixture
@@ -63,7 +87,7 @@ def generated_task() -> TaskWrite:
 
 
 @pytest.fixture
-def _mock_check_for_conflicted_running_tasks() -> None:
+def _mock_check_for_conflicted_running_tasks() -> Iterator[None]:
     """Mock check_for_conflicted_running_tasks."""
     previous = sep_app.dependency_overrides.copy()
     sep_app.dependency_overrides[check_for_conflicted_running_tasks] = lambda: None
@@ -72,7 +96,7 @@ def _mock_check_for_conflicted_running_tasks() -> None:
 
 
 @pytest.fixture
-def _mock_check_for_conflicted_running_tasks_raises() -> None:
+def _mock_check_for_conflicted_running_tasks_raises() -> Iterator[None]:
     """Mock check_for_conflicted_running_tasks to raise HTTPConflictException."""
 
     def raise_conflict() -> None:
@@ -141,9 +165,15 @@ def contract_client(
     regular_user: CasdoorUser,
     mock_task_api: MockTaskAPI,
     mock_inventory_api: MockInventoryAPI,
-) -> TestClient:
-    """Return an authenticated contract client for the bound definition."""
-    return build_contract_client(
+) -> Iterator[TestClient]:
+    """Return an authenticated contract client for the bound definition.
+
+    The mounted app is shared across every test bound to the same definition, so
+    a test may not also request :func:`unauthenticated_contract_client` — the two
+    would collide on one ``dependency_overrides`` mapping. Requesting both raises
+    at setup rather than silently deciding what each client authenticates as.
+    """
+    yield from shared_contract_client(
         _bound_app_def(request),
         user=regular_user,
         tasks_api=mock_task_api,
@@ -154,12 +184,15 @@ def contract_client(
 @pytest.fixture
 def unauthenticated_contract_client(
     request: pytest.FixtureRequest,
-) -> TestClient:
-    """Return a contract client whose auth dep raises, to exercise the 401 path."""
+) -> Iterator[TestClient]:
+    """Return a contract client whose auth dep raises, to exercise the 401 path.
 
-    def _raise_unauthorized() -> None:
-        raise HTTPUnauthorizedException
-
-    app = mount_app(_bound_app_def(request))
+    Shares the mounted app with :func:`contract_client`, so the two are mutually
+    exclusive within one test; requesting both raises at setup.
+    """
+    app = borrow_shared_mount(_bound_app_def(request))
     app.dependency_overrides[get_current_user] = _raise_unauthorized
-    return TestClient(app, raise_server_exceptions=False)
+    try:
+        yield TestClient(app, raise_server_exceptions=False)
+    finally:
+        app.dependency_overrides.clear()

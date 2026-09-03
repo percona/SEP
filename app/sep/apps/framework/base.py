@@ -33,23 +33,36 @@ class AppPeriodicTask(NamedTuple):
 
     Holds only what an app knows about its own periodic work. The system
     periodic-task rebuild stamps ``owner_app_key`` from the registry entry's
-    ``key`` and prefixes ``task`` with the app's Celery module path.
-    ``schedule`` is a thunk so hot interval overrides (``BACKUP_INTERVAL``,
-    ``SYNC_INTERVAL``, …) are re-read on each seed rather than frozen at
-    ``BaseApp(...)`` construction.
+    ``key`` and, for an unqualified entry, prefixes ``task`` with the app's
+    Celery module path. ``schedule`` is a thunk so hot interval overrides
+    (``BACKUP_INTERVAL``, ``SYNC_INTERVAL``, …) are re-read on each seed rather
+    than frozen at ``BaseApp(...)`` construction.
+
+    Two shapes are expressible, because an app owns two kinds of periodic work.
+    The default is a Celery function the app itself registers, named by its bare
+    attribute. A ``qualified`` entry instead names an already-complete task path,
+    which is what a job dispatched through the tasks service's
+    ``execute_task_by_name`` indirection needs: the callable is a ``Task`` row,
+    not a function in the app's Celery module, so prefixing would point the entry
+    at nothing. A qualified entry therefore needs no ``celery.py`` in the app.
 
     :param name: Beat periodic-task name (e.g. ``sep__sync_snippets``).
-    :param task: Unqualified Celery task attribute on the app's celery module
-        (e.g. ``sync_snippets``).
-    :param schedule: Zero-arg callable returning the live interval or crontab.
+    :param task: Celery task attribute on the app's celery module (e.g.
+        ``sync_snippets``), or the fully-qualified task path when ``qualified``.
+    :param schedule: Zero-arg callable returning the live interval or crontab,
+        or ``None`` to contribute no schedule this rebuild — the shape a
+        nullable interval setting needs to mean "do not run".
     :param extra_kwargs: Optional kwargs forwarded to the beat ``PeriodicTask``
         row (e.g. serialized task kwargs).
+    :param qualified: Whether ``task`` is already a complete task path and must
+        not be prefixed with the app's Celery module.
     """
 
     name: str
     task: str
-    schedule: Callable[[], IntervalSchedule | CrontabSchedule]
+    schedule: Callable[[], IntervalSchedule | CrontabSchedule | None]
     extra_kwargs: dict[str, Any] | None = None
+    qualified: bool = False
 
 
 class BaseApp(BaseModel):

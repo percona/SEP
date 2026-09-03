@@ -30,7 +30,7 @@ import importlib
 import json
 import shutil
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -154,13 +154,15 @@ class _WizardStub:
     """Record wizard prompts and feed canned answers keyed by label prefix."""
 
     def __init__(
-        self, prompt_answers: dict[str, object] | None, confirm: object
+        self,
+        prompt_answers: dict[str, object] | None,
+        confirm: bool | Callable[[str], bool],
     ) -> None:
         self._answers = {
             key: list(value) if isinstance(value, list) else [value]
             for key, value in (prompt_answers or {}).items()
         }
-        self._confirm = confirm
+        self._confirm: bool | Callable[[str], bool] = confirm
         self.prompts: list[str] = []
         self.confirms: list[str] = []
 
@@ -186,9 +188,8 @@ class _WizardStub:
     def confirm(self, label: str, *, default: bool | None = None) -> bool:
         """Record ``label`` and return the canned confirm answer."""
         self.confirms.append(label)
-        if callable(self._confirm):
-            return self._confirm(label)
-        return self._confirm
+        confirm = self._confirm
+        return confirm(label) if callable(confirm) else confirm
 
 
 def _task_conformance(app: TaskExecutionApp) -> list[str]:

@@ -91,7 +91,7 @@ class TestTaskHistoryStatusEnum:
     """Test TaskHistoryStatusEnum values and is_finished method."""
 
     def test_all_values_exist(self) -> None:
-        """Assert all seven status values exist."""
+        """Assert all eight status values exist."""
         expected = {
             "FAILED",
             "PENDING",
@@ -100,6 +100,7 @@ class TestTaskHistoryStatusEnum:
             "STOPPED",
             "LOST",
             "STALE",
+            "UNLAUNCHABLE",
         }
         assert {s.name for s in TaskHistoryStatusEnum} == expected
 
@@ -110,6 +111,7 @@ class TestTaskHistoryStatusEnum:
             TaskHistoryStatusEnum.SUCCESS,
             TaskHistoryStatusEnum.STOPPED,
             TaskHistoryStatusEnum.STALE,
+            TaskHistoryStatusEnum.UNLAUNCHABLE,
         ],
     )
     def test_is_finished_true(self, status: TaskHistoryStatusEnum) -> None:
@@ -136,6 +138,7 @@ class TestTaskHistoryStatusEnum:
             TaskHistoryStatusEnum.STOPPED,
             TaskHistoryStatusEnum.LOST,
             TaskHistoryStatusEnum.STALE,
+            TaskHistoryStatusEnum.UNLAUNCHABLE,
         ],
     )
     def test_is_terminal_true(self, status: TaskHistoryStatusEnum) -> None:
@@ -512,6 +515,24 @@ class TestTaskExecuteRequest:
         )
         assert req.meta == {"existing": "val", "new": "val2"}
 
+    @pytest.mark.parametrize(
+        "meta_value",
+        ["oops", ["a"], None],
+        ids=["string", "list", "null"],
+    )
+    def test_populate_meta_rejects_non_mapping(self, meta_value: Any) -> None:
+        """Assert non-mapping meta alongside a meta_ key raises ValidationError."""
+        with pytest.raises(ValidationError):
+            TaskExecuteRequest.model_validate({"meta": meta_value, "meta_x": 1})
+
+    def test_populate_meta_rejects_non_mapping_without_meta_key(self) -> None:
+        """Assert bare non-mapping meta keeps Pydantic's field-scoped error."""
+        with pytest.raises(ValidationError) as exc_info:
+            TaskExecuteRequest.model_validate({"meta": "oops"})
+        errors = exc_info.value.errors()
+        assert errors[0]["loc"] == ("meta",)
+        assert errors[0]["type"] == "dict_type"
+
     def test_empty_str_to_none_for_eta(self) -> None:
         """Assert empty string for eta is converted to None."""
         req = TaskExecuteRequest.model_validate({"eta": ""})
@@ -723,7 +744,39 @@ class TestTaskHistory:
             assert resolved_keys == [
                 "task:test-task:node-1",
                 "task:test-task:node-1:stale",
+                "task:test-task:node-1:unlaunchable",
             ]
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_unlaunchable(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert UNLAUNCHABLE triggers its own WARNING alert under a suffixed key.
+
+        A suffixed key keeps the incident distinct from a plain task failure
+        while still scoping it to the same task/target pair — and the paired
+        ``SUCCESS`` resolve above is what lets it ever clear.
+        """
+        history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.UNLAUNCHABLE,
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            mock_trigger.assert_called_once()
+            alert_data = mock_trigger.call_args[0][0]
+            assert alert_data["severity"] == AlertSeverity.WARNING
+            assert alert_data["class"] == "task_unlaunchable"
+            assert alert_data["dedup_key"] == "task:test-task:node-1:unlaunchable"
+            assert (
+                "could not be launched (the executor node cannot run the "
+                "requested command)" in alert_data["summary"]
+            )
+            assert "node-1" in alert_data["summary"]
 
     @pytest.mark.asyncio
     async def test_alert_for_status_stale(

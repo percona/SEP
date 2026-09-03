@@ -33,12 +33,13 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, type AppSchema } from '@sep/api';
+import { apiClient, useAuth, type AppSchema } from '@sep/api';
 import {
   snippetAppExecutePath,
   snippetAppHistoryPath,
   snippetAppSchemaPath,
 } from '../../snippetAppPaths';
+import { ReadOnlyNotice } from '../ReadOnlyNotice';
 import { SchemaFormRenderer } from '../SchemaFormRenderer';
 import {
   TaskHistoryTable,
@@ -133,11 +134,19 @@ export function SnippetExecutionAccordion({
   defaultExpanded = false,
   showHistory = false,
 }: SnippetExecutionAccordionProps) {
+  const { canMutate } = useAuth();
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [currentTaskId, setCurrentTaskId] = useState<number | null>(null);
   const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
 
-  const schemaQuery = useSnippetAccordionSchema(snippetFilename, expanded);
+  // The form is the execute control, so a read-only session never renders it —
+  // and never needs its schema. Disabling the query is only the request
+  // optimization: react-query still serves a cached entry, and this schema is
+  // held with `staleTime: Infinity` under a key that carries no identity, so an
+  // admin's fetch would otherwise render the form for a non-admin reaching the
+  // same snippet later in the same tab. The render gates on `canMutate` too.
+  // History and logs stay readable.
+  const schemaQuery = useSnippetAccordionSchema(snippetFilename, expanded && canMutate);
   const executionMutation = useSnippetAccordionExecution(snippetFilename);
   const historyQuery = useSnippetAccordionHistory(snippetFilename, showHistory);
   const stop = useStopTaskHistory();
@@ -201,6 +210,14 @@ export function SnippetExecutionAccordion({
       </AccordionSummary>
 
       <AccordionDetails>
+        {!canMutate && (
+          <ReadOnlyNotice
+            variant="inline"
+            action="execute this snippet"
+            testId="snippet-execute-read-only"
+          />
+        )}
+
         {schemaQuery.isLoading && (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
             <CircularProgress size={24} />
@@ -213,7 +230,7 @@ export function SnippetExecutionAccordion({
           </Alert>
         )}
 
-        {schemaQuery.data && (
+        {canMutate && schemaQuery.data && (
           <SchemaFormRenderer
             sections={filteredSections}
             onSubmit={handleSubmit}
@@ -260,6 +277,8 @@ export function SnippetExecutionAccordion({
                   }
                 }}
                 isStopping={stop.isPending}
+                actionError={stop.error}
+                onDismissActionError={stop.reset}
               />
             )}
           </>

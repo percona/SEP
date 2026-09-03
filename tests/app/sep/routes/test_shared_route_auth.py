@@ -25,6 +25,7 @@ this is the contract its clients rely on. This module also pins the team-wide
 read contract for task-history routes.
 """
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from unittest.mock import AsyncMock
 
@@ -46,7 +47,7 @@ SHARED_ROUTES = [
 
 
 @pytest.fixture
-def anonymous_client() -> TestClient:
+def anonymous_client() -> Iterator[TestClient]:
     """Yield a client with every authentication override cleared."""
     previous = sep_app.dependency_overrides
     sep_app.dependency_overrides = {}

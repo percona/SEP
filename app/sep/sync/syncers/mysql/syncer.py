@@ -38,7 +38,7 @@ from app.sep.inventory import (
     Table,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.sync.models import BaseTaskSyncer, TaskRunResult
+from app.sep.sync.models import BaseTaskSyncer, claim_identity, TaskRunResult
 
 GZIP_WBITS = 16 + zlib.MAX_WBITS
 
@@ -98,12 +98,11 @@ class MySQLService(Service):
     _schemas_index: AsyncIterator[dict[str, Any]] | None = None
 
     @property
-    def schemas_index(self) -> AsyncIterator[dict[str, Any]] | None:
+    def schemas_index(self) -> AsyncIterator[dict[str, Any]]:
         """Return the asynchronous iterator for schema index data.
 
         :return: An asynchronous iterator yielding schema index data, or an empty
             iterator if no schema index is set.
-        :rtype: AsyncIterator[dict[str, Any]] | None
         """
         if self._schemas_index is None:
 
@@ -184,16 +183,31 @@ class MySQLSyncer(BaseTaskSyncer):
 
     :cvar SYNC_TO_LIMIT: The highest entity type that can be synchronized. Set to
         `SyncInventoryEntityTypeEnum.TABLE`.
-    :vartype SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
+    :cvar mirrors_entity_levels: The schema and table levels, the only two whose
+        own fields this syncer writes. Its node and service passes are traversal
+        to reach the schemas: ``perform_node_sync`` and ``perform_service_sync``
+        walk to their children and never call ``update_node`` or
+        ``update_service``, so neither level's freshness is theirs to refresh.
+    :cvar reads_retired_entities: The schema and table levels, the only two this
+        syncer matches by name against a live fetch. Its node and service passes
+        walk the inventory unconditionally, so they stay active-only — reading a
+        tombstoned node there would launch a fetch payload at a host whose
+        upstream is gone.
     :param ignore_schemas: A list of schema names to ignore during synchronization.
-    :type ignore_schemas: list[str]
     :param resolve_localhost: Resolve the --host IP to 127.0.0.1 if it's the same as
         the executor host. Defaults to True.
-    :type resolve_localhost: bool
     """
 
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.TABLE
+    )
+    mirrors_entity_levels: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = frozenset(
+        {SyncInventoryEntityTypeEnum.SCHEMA, SyncInventoryEntityTypeEnum.TABLE}
+    )
+    reads_retired_entities: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
+        frozenset(
+            {SyncInventoryEntityTypeEnum.SCHEMA, SyncInventoryEntityTypeEnum.TABLE}
+        )
     )
     ignore_schemas: list[str] = []
     resolve_localhost: bool = True
@@ -246,32 +260,46 @@ class MySQLSyncer(BaseTaskSyncer):
     ) -> Generator[str]:
         """Append data to buffer and yield complete lines.
 
-        Appends incoming byte data to the provided buffer and yields complete lines
-        decoded using the specified encoding.
+        Each call consumes the newlines ``data`` introduced and drops what
+        precedes them, so ``buffer`` holds no newline when the next call
+        arrives. Searching only the arriving bytes therefore finds exactly what
+        a search from the front finds, at a cost proportional to ``data`` rather
+        than to the remainder behind it.
 
-        :param buffer: A bytearray buffer to hold incomplete line data.
-        :type buffer: bytearray
+        The narrowing holds only while ``buffer`` is newline-free on entry, so
+        this call empties it of terminators before it yields anything: a
+        consumer that abandons the generator part-way cannot leave one behind
+        for the next call to search past. An abandoned generator therefore drops
+        the lines it had not yet yielded instead of corrupting the buffer.
+        Nothing but this function may mutate ``buffer`` between calls.
+
+        :param buffer: A bytearray buffer to hold incomplete line data. Must
+            hold no newline on entry.
         :param data: Incoming byte data to append to the buffer.
-        :type data: bytes
         :param encoding: The character encoding to use for decoding lines. Defaults to
             `"utf-8"`.
-        :type encoding: str
-        :yield: Each complete line decoded from the buffer.
-        :rtype: Generator[str]
+        :yield: Each complete line decoded from the buffer, terminator stripped;
+            empty lines are dropped.
         """
-        if data:
-            buffer.extend(data)
-            offset = 0
-            while True:
-                newline_pos = buffer.find(b"\n", offset)
-                if newline_pos == -1:
-                    if offset:
-                        del buffer[:offset]
-                    break
-                line_bytes = buffer[offset:newline_pos]
-                if line_bytes:
-                    yield line_bytes.decode(encoding)
-                offset = newline_pos + 1
+        if not data:
+            return
+        # Two cursors, not one: the terminator can only be in the arriving
+        # bytes, but the line it ends begins at the front of the buffer, where
+        # the remainder carried from earlier calls sits.
+        search_from = len(buffer)
+        buffer.extend(data)
+        line_start = 0
+        lines: list[bytearray] = []
+        while True:
+            newline_pos = buffer.find(b"\n", search_from)
+            if newline_pos == -1:
+                break
+            lines.append(buffer[line_start:newline_pos])
+            line_start = search_from = newline_pos + 1
+        del buffer[:line_start]
+        for line_bytes in lines:
+            if line_bytes:
+                yield line_bytes.decode(encoding)
 
     async def _iter_lines_gzip_stream(
         self, chunks: AsyncIterator[bytes], encoding: str = "utf-8"
@@ -562,7 +590,7 @@ class MySQLSyncer(BaseTaskSyncer):
     async def perform_service_sync(
         self,
         created_service: CreatedService,
-        updated_service: MySQLService,
+        updated_service: Service,
     ) -> None:
         """Synchronize data for a specific service.
 
@@ -570,20 +598,30 @@ class MySQLSyncer(BaseTaskSyncer):
         with the updated schemas and performing necessary synchronization actions.
 
         :param created_service: The service instance to synchronize.
-        :type created_service: CreatedService
         :param updated_service: The updated service data.
-        :type updated_service: MySQLService
+        :raises TypeError: If ``updated_service`` is not a ``MySQLService``.
         """
-        syncable_schemas = {}
+        if not isinstance(updated_service, MySQLService):
+            raise TypeError(
+                f"MySQLSyncer requires a MySQLService, got "
+                f"{type(updated_service).__name__}"
+            )
+        # Keyed by primary key, not name: a tombstone and the replacement that took
+        # its name both come back from a retired-inclusive read, and only the
+        # primary key tells them apart once the active row has claimed the name.
+        syncable_schemas: dict[int | None, CreatedSchema] = {}
+        schema_ids_by_name: dict[str, int | None] = {}
         for schema in await self.get_inventory_service_schemas(created_service.id):
-            syncable_schemas[schema.name] = schema
+            syncable_schemas[schema.id] = schema
+            claim_identity(schema_ids_by_name, schema.name, schema, syncable_schemas)
 
         task_history_id: int | None = self._inventory_index_cache[
             _MySQLSyncResultEntityTypeEnum.SERVICES
         ].pop(created_service.address, (None,))[0]
         async for schema_index in updated_service.schemas_index:
             schema = Schema.model_validate(schema_index)
-            if (created_schema := syncable_schemas.pop(schema.name, None)) is None:
+            matched_id = schema_ids_by_name.get(schema.name)
+            if (created_schema := syncable_schemas.pop(matched_id, None)) is None:
                 logger.info("Creating new schema: %s", schema)
                 created_schema = CreatedSchema.model_validate(
                     await self.inventory_api.post(
@@ -591,14 +629,24 @@ class MySQLSyncer(BaseTaskSyncer):
                         json=schema.model_dump(),
                     ),
                 )
+            else:
+                await self._revive_if_retired(
+                    SyncInventoryEntityTypeEnum.SCHEMA, created_schema
+                )
             created_schema.service = created_service.model_copy(update={"schemas": []})
             if task_history_id is not None:
                 self._inventory_index_cache[_MySQLSyncResultEntityTypeEnum.SCHEMAS][
                     self._build_entity_address(created_service.address, schema.name)
                 ] = _MySQLFetchResult(task_history_id, schema_index)
             await self.sync_schema(created_schema)
+        # An already-retired schema is absent from every fetch by construction, so
+        # retiring it again would repeat on every run for as long as the tombstone
+        # is kept. Nothing else is owed to it: this syncer's SERVICE-level read is
+        # active-only, so prepare_sync never opened a SyncItem for a tombstone and
+        # there is none to close.
         for schema in syncable_schemas.values():
-            await self.delete_schema(schema)
+            if schema.retired_at is None:
+                await self.retire_schema(schema)
 
     async def fetch_schema(self, created_schema: CreatedSchema) -> MySQLSchema:
         """Fetch updated data for a specific schema.
@@ -608,9 +656,7 @@ class MySQLSyncer(BaseTaskSyncer):
         data is already cached, it uses the cached data instead of executing a new task.
 
         :param created_schema: The schema instance to fetch updated data for.
-        :type created_schema: CreatedSchema
         :return: The updated schema data.
-        :rtype: MySQLSchema
         """
         if (
             not (created_service := created_schema.service)
@@ -655,7 +701,7 @@ class MySQLSyncer(BaseTaskSyncer):
     async def perform_schema_sync(
         self,
         created_schema: CreatedSchema,
-        updated_schema: MySQLSchema,
+        updated_schema: Schema,
     ) -> None:
         """Synchronize data for a specific schema.
 
@@ -663,17 +709,25 @@ class MySQLSyncer(BaseTaskSyncer):
         with the updated tables and performing necessary synchronization actions.
 
         :param created_schema: The schema instance to synchronize.
-        :type created_schema: CreatedSchema
         :param updated_schema: The updated schema data.
-        :type updated_schema: MySQLSchema
+        :raises TypeError: If ``updated_schema`` is not a ``MySQLSchema``.
         """
+        if not isinstance(updated_schema, MySQLSchema):
+            raise TypeError(
+                f"MySQLSyncer requires a MySQLSchema, got "
+                f"{type(updated_schema).__name__}"
+            )
         await self.update_schema(created_schema, updated_schema)
-        syncable_tables = {}
+        # Keyed by primary key for the reason the schema index above is.
+        syncable_tables: dict[int | None, CreatedTable] = {}
+        table_ids_by_name: dict[str, int | None] = {}
         for table in created_schema.tables:
-            syncable_tables[table.name] = table
+            syncable_tables[table.id] = table
+            claim_identity(table_ids_by_name, table.name, table, syncable_tables)
 
         async for table in updated_schema.iter_tables():
-            if (created_table := syncable_tables.pop(table.name, None)) is None:
+            matched_id = table_ids_by_name.get(table.name)
+            if (created_table := syncable_tables.pop(matched_id, None)) is None:
                 logger.info("Creating new table: %s", table)
                 created_table = CreatedTable.model_validate(
                     await self.inventory_api.post(
@@ -684,9 +738,14 @@ class MySQLSyncer(BaseTaskSyncer):
                 created_table.database = created_schema.model_copy(
                     update={"tables": []},
                 )
+            else:
+                await self._revive_if_retired(
+                    SyncInventoryEntityTypeEnum.TABLE, created_table
+                )
             await self.sync_table(created_table, table)
         for table in syncable_tables.values():
-            await self.delete_table(table)
+            if table.retired_at is None:
+                await self.retire_table(table)
 
     async def fetch_table(self, created_table: CreatedTable) -> Table:
         """Fetch updated data for a specific table.
@@ -695,9 +754,7 @@ class MySQLSyncer(BaseTaskSyncer):
         synchronization task.
 
         :param created_table: The table instance to fetch updated data for.
-        :type created_table: CreatedTable
         :return: The updated table data.
-        :rtype: Table
         """
         if (created_schema := created_table.database) and (
             created_service := created_schema.service

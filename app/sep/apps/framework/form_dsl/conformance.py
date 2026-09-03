@@ -32,7 +32,7 @@ from typing import Any, get_origin, Literal, TYPE_CHECKING
 from pydantic_core import PydanticUndefined
 
 from app.sep.apps.framework.form_dsl.derivation import resolve_base
-from app.sep.apps.framework.schema import AppSchema, BaseField
+from app.sep.apps.framework.schema import AnyField, AppSchema
 
 if TYPE_CHECKING:
     from app.sep.apps.framework.form_dsl.model import AppFormModel
@@ -72,7 +72,7 @@ def _natural_kind(annotation: Any) -> str | None:
 
 def _schema_form_fields(
     schema: AppSchema, entity_name: str | None
-) -> dict[str, BaseField]:
+) -> dict[str, AnyField]:
     """Return the schema's create-form fields keyed by name.
 
     :param schema: The hand-written plugin schema.

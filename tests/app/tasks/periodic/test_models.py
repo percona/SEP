@@ -90,6 +90,16 @@ class TestPeriodicTaskExecuteRequest:
         req = PeriodicTaskExecuteRequest(eta="", meta={})
         assert req.eta is None
 
+    @pytest.mark.parametrize(
+        "meta_value",
+        ["oops", ["a"], None],
+        ids=["string", "list", "null"],
+    )
+    def test_populate_meta_rejects_non_mapping(self, meta_value):
+        """Assert non-mapping meta alongside a meta_ key raises ValidationError."""
+        with pytest.raises(ValidationError):
+            PeriodicTaskExecuteRequest.model_validate({"meta": meta_value, "meta_x": 1})
+
 
 class TestBasePeriodicTask:
     """Test the BasePeriodicTask model."""
@@ -399,6 +409,7 @@ class TestPeriodicTaskResponseNextRunAt:
         before = datetime.now(UTC)
         response = PeriodicTaskResponse.model_validate(response_fields)
         expected = before + timedelta(days=2)
+        assert response.next_run_at is not None
         assert abs((response.next_run_at - expected).total_seconds()) < 1
 
     def test_disabled_task_returns_none(self, response_fields):
