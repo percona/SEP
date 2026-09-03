@@ -61,7 +61,7 @@
 | app/core/settings\_override/constants.py                                                                                     |        3 |        0 |        0 |        0 |    100% |           |
 | app/core/settings\_override/lifecycle.py                                                                                     |       94 |        2 |       24 |        1 |     97% |   63, 356 |
 | app/core/settings\_override/manager.py                                                                                       |        5 |        0 |        0 |        0 |    100% |           |
-| app/core/settings\_override/models.py                                                                                        |       47 |        1 |        8 |        1 |     96% |       117 |
+| app/core/settings\_override/models.py                                                                                        |       47 |        3 |        8 |        3 |     89% |117, 119, 183 |
 | app/core/settings\_override/policy.py                                                                                        |       29 |        0 |        6 |        0 |    100% |           |
 | app/core/settings\_override/proxy.py                                                                                         |       21 |        0 |        2 |        0 |    100% |           |
 | app/core/settings\_override/registry.py                                                                                      |      642 |       47 |      328 |       29 |     91% |833, 976, 1029, 1063, 1078, 1136, 1353, 1413, 1478-1479, 1483, 1484-\>1470, 1485-\>1484, 1515, 1520, 1557, 1586, 1605, 1704, 1709, 1735, 1763-\>1758, 1786-1792, 1823, 1826, 1853-1854, 1868-1878, 1905-1908, 1917, 1924-1927, 2053 |
@@ -459,7 +459,7 @@
 | app/tasks/routes.py                                                                                                          |      237 |       20 |       46 |        4 |     91% |153-157, 240-246, 279, 329-335, 342, 432, 475, 490, 650, 664, 672, 698, 706-\>708, 729-730 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **28322** | **1717** | **6942** |  **639** | **92%** |           |
+| **TOTAL**                                                                                                                    | **28322** | **1719** | **6942** |  **641** | **92%** |           |
 
 
 ## Setup coverage badge
