@@ -310,7 +310,7 @@ function SchemaListViewCore({
         // handler it would render as a header over empty cells. Drop it rather
         // than show a dead column, whatever left the handler out: a caller that
         // withholds it because the session may not mutate, or one like
-        // `TasksListPage` / `TargetHostsPage` that never wires row deletion at all.
+        // `TasksListPage` that never wires row deletion at all.
         .filter((col) => col.format !== 'actions' || Boolean(onDeleteRow))
         .map((col) => {
           if (col.format === 'schedule') {

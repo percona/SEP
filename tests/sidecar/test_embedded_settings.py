@@ -24,6 +24,7 @@ from sqlalchemy_celery_beat.models import Period
 from app import BASE_DIR
 from app.core.auth.config import AuthSettings
 from app.core.config import Settings
+from app.core.utils import import_var
 from app.inventory.config import InventorySettings
 from app.inventory.settings.routes import INVENTORY_ADMIN_SETTINGS_CLASSES
 from app.sep.api.routes.settings import SEP_ADMIN_SETTINGS_CLASSES
@@ -31,10 +32,11 @@ from app.sep.apps.framework.registry import (
     build_app_registry,
     collect_app_owned_settings_classes,
 )
-from app.sep.config import SEPSettings
+from app.sep.config import SEPSettings, SyncOptions
 from app.sep.routes.artifacts import collect_base_dirs
 from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
 from app.sep.sync.syncers.pmm import PMMSyncer
+from app.sep.sync.syncers.system_facts.syncer import SystemFactsSyncer
 from app.tasks.config import TasksSettings
 from app.tasks.settings.routes import TASKS_ADMIN_SETTINGS_CLASSES
 from tests.app.sep.conftest import REDUCED_ACTIVATION
@@ -345,6 +347,43 @@ def test_activation_list_builds_an_app_registry():
 
     assert {"inventory", "atw", "mysql_backups"} <= activated
     assert "snippets" not in activated
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_inventory_activates_without_a_sidebar_entry():
+    """Assert the profile's ``SIDEBAR: false`` reaches the bound inventory app.
+
+    PMM owns the embedded inventory UI, so inventory is activated for its
+    operator API while ``GET /api/apps/`` advertises no page for it.
+    """
+    registry = build_app_registry(SEPSettings().APPS)
+
+    assert registry.get("inventory").sidebar is False
+
+
+def test_profile_does_not_run_the_system_facts_syncer(embedded_profile_data: dict):
+    """Assert the embedded profile leaves system-facts collection unscheduled.
+
+    The observations it wrote were read only by the retired inventory browser
+    page, so the profile runs the two catalog syncers and omits the collector.
+    """
+    declared = [
+        entry["SYNCER"] for entry in embedded_profile_data["default"]["SEP"]["SYNCERS"]
+    ]
+
+    assert declared == ["PMMSyncer", "MySQLSyncer"]
+
+
+def test_the_system_facts_syncer_stays_re_enablable():
+    """Assert the mothball is configuration only, reversible without a deploy.
+
+    ``SyncOptions`` resolves a bare syncer name against ``app.sep.sync.syncers``
+    and ``get_syncers`` imports it from there, so restoring the profile entry
+    through a settings override is the whole re-enable path.
+    """
+    resolved = SyncOptions.model_validate({"syncer": "SystemFactsSyncer"})
+
+    assert import_var(resolved.syncer) is SystemFactsSyncer
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")

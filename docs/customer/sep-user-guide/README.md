@@ -65,11 +65,12 @@ target host (or notes when it uses an API instead).
 **Purpose:** Manage the catalog of nodes, services, schemas, and tables that every other
 app acts on.
 
-Inventory lets you browse nodes and services, synchronize the catalog from external
-sources (such as PMM), and schedule recurring syncs. The syncers author the catalog and
-you read it here: PMM supplies nodes and services, and the MySQL syncer discovers schemas
-and tables from the database itself. From a service's detail page you can run a quick
-connectivity check for MySQL, PostgreSQL, and MongoDB services.
+Inventory has no page of its own — it is an API-only app. The syncers author the
+catalog: PMM supplies nodes and services, and the MySQL syncer discovers schemas and
+tables from the database itself. A recurring scheduled sync keeps the catalog current,
+and the other apps read it when they list the hosts and services you can act on. An
+ad-hoc sync and a connectivity check for MySQL, PostgreSQL, and MongoDB services are
+available as API calls under `/api/apps/inventory/`.
 
 **What it runs:** an `inventory-sync` background job (runs syncer code on the SEP worker, not
 on a database host) and a connectivity check dispatched as a Nomad `run-python` task that

@@ -118,13 +118,20 @@ export default function DashboardPage() {
   const statsQuery = useDashboardStats();
   const historyQuery = useTaskHistory({ limit: 5, excludeInternal: true });
 
-  const stats = [
+  // Nodes and Targets carry no `to`: SEP ships no inventory browser page for
+  // them to open, so they render as plain counts.
+  const stats: {
+    title: string;
+    value: number;
+    icon: typeof DnsIcon;
+    color: string;
+    to?: string;
+  }[] = [
     {
       title: 'Nodes',
       value: statsQuery.data?.nodes ?? 0,
       icon: DnsIcon,
       color: 'primary.main',
-      to: '/inventory',
     },
     {
       title: 'Active Tasks',
@@ -145,7 +152,6 @@ export default function DashboardPage() {
       value: statsQuery.data?.targets ?? 0,
       icon: DeviceHubIcon,
       color: 'error.main',
-      to: '/inventory/target-hosts',
     },
   ];
 
@@ -177,9 +183,9 @@ export default function DashboardPage() {
       {/* Stats Cards — using percona-ui's OverviewCard */}
       <LoadableChildren loading={statsQuery.isLoading}>
         <Grid container spacing={3} sx={{ mb: 3, alignItems: 'stretch' }}>
-          {stats.map((stat) => (
+          {stats.map(({ title, value, color, to }) => (
             <Grid
-              key={stat.title}
+              key={title}
               size={{ xs: 12, sm: 6, lg: 3 }}
               sx={{
                 minWidth: 0,
@@ -187,23 +193,23 @@ export default function DashboardPage() {
               }}
             >
               <OverviewCard
-                dataTestId={`stat-${stat.title.toLowerCase().replace(/\s+/g, '-')}`}
+                dataTestId={`stat-${title.toLowerCase().replace(/\s+/g, '-')}`}
                 cardHeaderProps={{
-                  title: stat.title,
-                  avatar: <DatabaseIcon sx={{ color: stat.color }} />,
+                  title,
+                  avatar: <DatabaseIcon sx={{ color }} />,
                 }}
                 sx={{
-                  cursor: 'pointer',
+                  cursor: to ? 'pointer' : 'default',
                   width: '100%',
                   height: '100%',
                   flexGrow: 1,
                   minWidth: 0,
-                  '&:hover': { boxShadow: 4 },
+                  ...(to ? { '&:hover': { boxShadow: 4 } } : {}),
                 }}
-                onClick={() => navigate(stat.to)}
+                onClick={to ? () => navigate(to) : undefined}
               >
                 <Typography variant="h3" sx={{ fontWeight: 700 }}>
-                  {stat.value}
+                  {value}
                 </Typography>
               </OverviewCard>
             </Grid>
