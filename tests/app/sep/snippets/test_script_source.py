@@ -97,14 +97,23 @@ def _normalize_snippet_source(url: str) -> tuple[str, dict[str, object]]:
     Keeps scheme, host, and path so parity tests still catch base-URL drift,
     while replacing the timed token with its payload so two mintings in
     different seconds still compare equal.
+
+    :param url: The signed artifact-download URL to normalize.
+    :return: ``(prefix, payload)`` where ``prefix`` ends at the final slash
+        and ``payload`` is the decoded token body.
     """
-    prefix, token = url.rsplit("/artifacts/download/", 1)
+    prefix, token = url.rsplit("/", 1)
     payload = crypto_timestamp_serializer.loads(token, salt=ARTIFACT_DOWNLOAD_SALT)
-    return f"{prefix}/artifacts/download/", payload
+    return f"{prefix}/", payload
 
 
 def _meta_dump_decoded(meta: SnippetExecutionMeta) -> dict[str, object]:
-    """Return ``meta.model_dump()`` with ``snippet_source`` timestamp-normalized."""
+    """Return ``meta.model_dump()`` with ``snippet_source`` timestamp-normalized.
+
+    :param meta: The execution meta whose signed URL should be normalized.
+    :return: A dump identical to ``meta.model_dump()`` except ``snippet_source``
+        is ``(url_prefix, decoded_payload)``.
+    """
     d = meta.model_dump()
     d["snippet_source"] = _normalize_snippet_source(d["snippet_source"])
     return d
