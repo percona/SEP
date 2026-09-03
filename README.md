@@ -166,18 +166,18 @@
 | app/sep/apps/archives/models.py                                                                                              |       76 |        0 |        4 |        0 |    100% |           |
 | app/sep/apps/archives/spec.py                                                                                                |       55 |       10 |       24 |        7 |     76% |106, 133, 156-\>164, 166, 173, 177-180, 182-183 |
 | app/sep/apps/archives/views.py                                                                                               |        4 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/atw/api\_routes.py                                                                                              |      213 |       48 |       38 |        3 |     75% |185-\>195, 244, 262, 277, 302, 376-377, 381-387, 450-463, 465-481, 490, 492-508, 528-530, 657-\>664, 658, 714-720, 722-725, 743, 761, 800 |
+| app/sep/apps/atw/api\_routes.py                                                                                              |      232 |       48 |       40 |        3 |     77% |208-\>218, 267, 285, 300, 325, 399-400, 404-410, 473-486, 488-504, 513, 515-531, 551-553, 736-\>743, 737, 793-799, 801-804, 822, 840, 879 |
 | app/sep/apps/atw/app.py                                                                                                      |       12 |        1 |        2 |        1 |     86% |        47 |
 | app/sep/apps/atw/batch.py                                                                                                    |       74 |        0 |        8 |        0 |    100% |           |
 | app/sep/apps/atw/categories.py                                                                                               |       34 |        0 |        2 |        0 |    100% |           |
 | app/sep/apps/atw/celery.py                                                                                                   |       18 |        5 |        2 |        0 |     65% | 42, 54-57 |
 | app/sep/apps/atw/config.py                                                                                                   |       15 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/atw/crud.py                                                                                                     |       12 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/atw/deps.py                                                                                                     |       34 |        0 |        8 |        0 |    100% |           |
+| app/sep/apps/atw/deps.py                                                                                                     |       37 |        0 |        8 |        0 |    100% |           |
 | app/sep/apps/atw/migrations/versions/2026\_07\_20\_1238-b82887dfe93d\_create\_atw\_incident\_tables.py                       |       24 |        7 |        8 |        2 |     59% |40-\>55, 55-\>exit, 85-94 |
 | app/sep/apps/atw/migrations/versions/2026\_07\_24\_1100-c93998e0fa14\_create\_atw\_send\_log\_table.py                       |       20 |        5 |        4 |        1 |     67% |40-\>exit, 81-87 |
 | app/sep/apps/atw/migrations/versions/2026\_07\_30\_1200-447ee0172734\_add\_atw\_incident\_closed\_at.py                      |       25 |        2 |        8 |        4 |     82% |41, 43-\>exit, 55, 57-\>exit |
-| app/sep/apps/atw/models.py                                                                                                   |       59 |        0 |        0 |        0 |    100% |           |
+| app/sep/apps/atw/models.py                                                                                                   |       62 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/atw/schema.py                                                                                                   |       13 |        0 |        2 |        0 |    100% |           |
 | app/sep/apps/atw/send.py                                                                                                     |      278 |        6 |       52 |        0 |     98% |112, 168, 180, 497, 869-870 |
 | app/sep/apps/backup\_mongo/api\_routes.py                                                                                    |       30 |        0 |        2 |        0 |    100% |           |
@@ -303,8 +303,8 @@
 | app/sep/apps/topology/models.py                                                                                              |      112 |        0 |        2 |        0 |    100% |           |
 | app/sep/apps/topology/topology.py                                                                                            |      173 |        7 |       58 |        8 |     94% |118-119, 122-\>114, 153, 156-157, 226-\>228, 229-\>231, 407, 491-\>501, 505 |
 | app/sep/artifact\_constants.py                                                                                               |        8 |        0 |        0 |        0 |    100% |           |
-| app/sep/bundle\_upload/factory.py                                                                                            |       29 |        1 |        4 |        1 |     94% |        67 |
-| app/sep/bundle\_upload/plan.py                                                                                               |      206 |        1 |       66 |        1 |     99% |       751 |
+| app/sep/bundle\_upload/factory.py                                                                                            |       30 |        1 |        4 |        1 |     94% |        67 |
+| app/sep/bundle\_upload/plan.py                                                                                               |      271 |        2 |       82 |        2 |     99% | 895, 1039 |
 | app/sep/bundle\_upload/resolver.py                                                                                           |       56 |        0 |       14 |        0 |    100% |           |
 | app/sep/bundle\_upload/seam.py                                                                                               |       12 |        0 |        0 |        0 |    100% |           |
 | app/sep/clients/pmm.py                                                                                                       |      292 |        2 |       74 |        3 |     99% |565, 567, 976-\>978 |
@@ -459,7 +459,7 @@
 | app/tasks/routes.py                                                                                                          |      237 |       20 |       46 |        4 |     91% |153-157, 240-246, 279, 329-335, 342, 432, 475, 490, 650, 664, 672, 698, 706-\>708, 729-730 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **28231** | **1716** | **6924** |  **638** | **92%** |           |
+| **TOTAL**                                                                                                                    | **28322** | **1717** | **6942** |  **639** | **92%** |           |
 
 
 ## Setup coverage badge
