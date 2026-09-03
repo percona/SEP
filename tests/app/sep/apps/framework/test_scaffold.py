@@ -28,7 +28,6 @@ worker.
 
 import importlib
 import json
-import os
 import shutil
 import sys
 from collections.abc import Iterator
@@ -101,41 +100,6 @@ def _venv_root() -> Path:
     ``VIRTUAL_ENV/bin/python``.
     """
     return Path(sys.prefix)
-
-
-def _private_settings(tmp_path: Path) -> Path:
-    """Return a per-test ``settings.yaml`` copy for subprocess scaffold runs."""
-    copy = tmp_path / "settings.yaml"
-    copy.write_text(scaffold.SETTINGS_FILE.read_text())
-    return copy
-
-
-def _run_make_startapp(
-    *make_vars: str, settings_file: Path
-) -> scaffold.subprocess.CompletedProcess[str]:
-    """Run ``make startapp`` with registration aimed at ``settings_file``.
-
-    Points the scaffolder at a private settings copy via
-    ``SEP_SCAFFOLD_SETTINGS_FILE`` so the worktree ``settings.yaml`` stays
-    untouched and parallel ``SEPSettings()`` constructions cannot observe a
-    throwaway module name mid-cleanup.
-    """
-    return scaffold.subprocess.run(
-        [
-            "make",
-            "startapp",
-            *make_vars,
-            f"VIRTUAL_ENV={_venv_root()}",
-        ],
-        cwd=scaffold._REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-        env={
-            **os.environ,
-            "SEP_SCAFFOLD_SETTINGS_FILE": str(settings_file),
-        },
-    )
 
 
 @contextmanager
@@ -1159,23 +1123,32 @@ def test_wizard_keyboard_interrupt_aborts_without_writing(
     assert tmp_settings.read_text() == before
 
 
-def test_makefile_forwards_quoted_values(tmp_path: Path) -> None:
+def test_makefile_forwards_quoted_values() -> None:
     """Forward a description with spaces and a quote intact through ``make startapp``.
 
     Exercises the real Makefile ``$$VAR`` shell-environment forwarding (not the
-    in-process ``tmp_settings`` copy). Registration writes to a private settings
-    copy so the worktree ``settings.yaml`` is never mutated.
+    in-process ``tmp_settings`` copy), so it backs up and restores the worktree's
+    ``settings.yaml`` in a ``finally`` like ``startapp_check.py``.
     """
     name = "_scaffold_ci_makeforward"
     description = 'describe the "cool" widget here'
-    settings_file = _private_settings(tmp_path)
+    settings_backup = scaffold.SETTINGS_FILE.read_text()
+    venv_root = _venv_root()
     try:
-        result = _run_make_startapp(
-            f"NAME={name}",
-            "TYPE=task",
-            "NO_INPUT=1",
-            f"DESCRIPTION={description}",
-            settings_file=settings_file,
+        result = scaffold.subprocess.run(
+            [
+                "make",
+                "startapp",
+                f"NAME={name}",
+                "TYPE=task",
+                "NO_INPUT=1",
+                f"DESCRIPTION={description}",
+                f"VIRTUAL_ENV={venv_root}",
+            ],
+            cwd=scaffold._REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
         rendered = (scaffold.PLUGINS_DIR / name / "app.py").read_text()
@@ -1188,6 +1161,7 @@ def test_makefile_forwards_quoted_values(tmp_path: Path) -> None:
             or f"description={description!r}" in rendered
         )
     finally:
+        scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
         _cleanup(name)
 
 
@@ -1197,19 +1171,29 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
     The ``SCRIPT`` make variable forwards to the scaffolder's ``--script`` flag the
     way ``PAYLOAD`` forwards ``--payload``, so the script flavor is reachable through
     the ``make startapp`` entry point. Exercises the real Makefile ``$$VAR``
-    forwarding against a private settings copy.
+    forwarding, backing up and restoring ``settings.yaml`` like
+    :func:`test_makefile_forwards_quoted_values`.
     """
     name = "_scaffold_ci_scriptforward"
     script_src = tmp_path / "seed.sh"
     script_src.write_text("#!/usr/bin/env bash\necho hi\n")
-    settings_file = _private_settings(tmp_path)
+    settings_backup = scaffold.SETTINGS_FILE.read_text()
+    venv_root = _venv_root()
     try:
-        result = _run_make_startapp(
-            f"NAME={name}",
-            "TYPE=script",
-            "NO_INPUT=1",
-            f"SCRIPT={script_src}",
-            settings_file=settings_file,
+        result = scaffold.subprocess.run(
+            [
+                "make",
+                "startapp",
+                f"NAME={name}",
+                "TYPE=script",
+                "NO_INPUT=1",
+                f"SCRIPT={script_src}",
+                f"VIRTUAL_ENV={venv_root}",
+            ],
+            cwd=scaffold._REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
         snippets_dir = scaffold.PLUGINS_DIR / name / "snippets"
@@ -1218,4 +1202,5 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
         ).read_text() == "#!/usr/bin/env bash\necho hi\n"
         assert not (snippets_dir / "sample.sh").exists()
     finally:
+        scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
         _cleanup(name)
