@@ -80,6 +80,26 @@ def _probe_plan(endpoint: str) -> DeliveryPlan:
     )
 
 
+def _case_search_plan(endpoint: str) -> DeliveryPlan:
+    """Build a plan whose case search carries a path and a query pair of its own.
+
+    :param endpoint: The configured receiver endpoint.
+    :return: The validated plan.
+    """
+    return DeliveryPlan(
+        endpoint=endpoint,
+        case_search={
+            "path": "api/now/table/x",
+            "query": {"sysparm_limit": {"source": "literal", "value": "10"}},
+            "term_pattern": r"[A-Za-z0-9 ._-]+",
+            "results_pointer": "/result",
+            "reference_pointer": "/number",
+            "title_pointer": "/short_description",
+        },
+        upload={"path": "attachment/upload"},
+    )
+
+
 def _bundle(size: int | None = None) -> BundleSource:
     """Build a small in-memory bundle, optionally overstating its size.
 
@@ -217,6 +237,46 @@ class TestGetDeliveryExecutor:
 
         async with get_delivery_executor(plan) as executor:
             assert executor._plan.probe is None
+
+    @pytest.mark.asyncio
+    async def test_origin_only_endpoint_leaves_the_case_search_path_untouched(
+        self,
+    ) -> None:
+        """Leave the case-search path alone when the endpoint carries no prefix."""
+        async with get_delivery_executor(_case_search_plan(_ORIGIN)) as executor:
+            assert executor._plan.case_search.path == "api/now/table/x"
+
+    @pytest.mark.asyncio
+    async def test_path_prefix_is_rebased_into_the_case_search(self) -> None:
+        """Prefix the case search with the endpoint's path, as every other step is.
+
+        A root endpoint hides a missing rebase entirely, because the unrebased
+        path is already correct there. Only a prefixed endpoint can tell the
+        two apart.
+        """
+        plan = _case_search_plan(f"{_ORIGIN}/api/now")
+
+        async with get_delivery_executor(plan) as executor:
+            assert executor._plan.case_search.path == "/api/now/api/now/table/x"
+
+    @pytest.mark.asyncio
+    async def test_endpoint_query_is_merged_into_the_case_search(self) -> None:
+        """Carry the endpoint's query pairs onto the search without dropping its own."""
+        plan = _case_search_plan(f"{_ORIGIN}/api?sysparm_view=full")
+
+        async with get_delivery_executor(plan) as executor:
+            assert set(executor._plan.case_search.query) == {
+                "sysparm_limit",
+                "sysparm_view",
+            }
+
+    @pytest.mark.asyncio
+    async def test_a_plan_without_a_case_search_rebases_without_one(self) -> None:
+        """Leave the case search unset when rebasing a plan that declares none."""
+        plan = _plan(f"{_ORIGIN}/api/now")
+
+        async with get_delivery_executor(plan) as executor:
+            assert executor._plan.case_search is None
 
     @pytest.mark.asyncio
     async def test_the_configured_plan_is_left_unmodified(self) -> None:

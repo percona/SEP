@@ -40,6 +40,10 @@ from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.main import _reseed_system_periodic_tasks
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
+from tests.app.core.settings_override.conftest import (
+    SEP_SETTINGS_TOKEN,
+    SNIPPETS_SETTINGS_TOKEN,
+)
 from tests.app.db_schema import apply_schema
 
 SNIPPETS_TASK = "sep__sync_snippets"
@@ -92,7 +96,7 @@ async def test_active_override_flips_value_after_refresh(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -118,7 +122,7 @@ async def test_restricted_deployment_filters_withheld_rows(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="INVENTORY_ENDPOINT",
                 value="https://stale.example.com",
             ),
@@ -126,7 +130,7 @@ async def test_restricted_deployment_filters_withheld_rows(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=connectivity_override,
             ),
@@ -147,7 +151,7 @@ async def test_inactive_override_falls_back_to_yaml_default(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -159,7 +163,7 @@ async def test_inactive_override_falls_back_to_yaml_default(
         await SettingsOverrideManager.update_where(
             session,
             {"is_active": False},
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SEP_SETTINGS_TOKEN,
             key="CONNECTIVITY_CHECK_DEFAULT",
         )
     await refresh_all(lambda: override_session_maker, _sep_proxies())
@@ -181,7 +185,7 @@ async def test_artifact_download_ttl_override_seen_at_validation_time(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="ARTIFACT_DOWNLOAD_TTL",
                 value=override_ttl_seconds,
             ),
@@ -201,7 +205,7 @@ async def test_snippets_enable_manual_sync_override(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                setting_class=SNIPPETS_SETTINGS_TOKEN,
                 key="ENABLE_MANUAL_SYNC",
                 value=override_value,
             ),
@@ -225,7 +229,7 @@ async def test_per_class_isolation_prevents_key_leak(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="ENABLE_MANUAL_SYNC",
                 value=not yaml_default,
             ),
@@ -256,7 +260,7 @@ async def test_main_lifespan_starts_sep_overrides_refresher(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -359,7 +363,7 @@ async def test_sync_interval_override_reseeds_beat_schedule_live(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                setting_class=SNIPPETS_SETTINGS_TOKEN,
                 key="SYNC_INTERVAL",
                 value={"every": OVERRIDE_EVERY_MINUTES, "period": "minutes"},
             ),
@@ -480,7 +484,7 @@ async def test_invalid_sync_interval_override_keeps_default_and_skips_reseed(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                setting_class=SNIPPETS_SETTINGS_TOKEN,
                 key="SYNC_INTERVAL",
                 value={"every": 0, "period": "minutes"},
             ),
@@ -515,7 +519,7 @@ async def test_reseed_callback_failure_does_not_break_refresh_cycle(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                setting_class=SNIPPETS_SETTINGS_TOKEN,
                 key="SYNC_INTERVAL",
                 value={"every": 30, "period": "minutes"},
             ),
@@ -523,7 +527,7 @@ async def test_reseed_callback_failure_does_not_break_refresh_cycle(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=sep_override,
             ),
@@ -593,7 +597,7 @@ async def test_reseed_bumps_periodic_task_changed_last_update(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                setting_class=SNIPPETS_SETTINGS_TOKEN,
                 key="SYNC_INTERVAL",
                 value={"every": OVERRIDE_EVERY_MINUTES, "period": "minutes"},
             ),
@@ -646,7 +650,7 @@ async def test_reseed_does_not_churn_unrelated_task(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                setting_class=SNIPPETS_SETTINGS_TOKEN,
                 key="SYNC_INTERVAL",
                 value={"every": OVERRIDE_EVERY_MINUTES, "period": "minutes"},
             ),
@@ -720,7 +724,7 @@ async def test_removing_sync_interval_override_reverts_beat_to_yaml_default(
             await SettingsOverrideManager.create(
                 session,
                 SettingOverride(
-                    setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                    setting_class=SNIPPETS_SETTINGS_TOKEN,
                     key="SYNC_INTERVAL",
                     value={"every": OVERRIDE_EVERY_MINUTES, "period": "minutes"},
                 ),
@@ -735,7 +739,7 @@ async def test_removing_sync_interval_override_reverts_beat_to_yaml_default(
             await SettingsOverrideManager.update_where(
                 session,
                 {"is_active": False},
-                setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                setting_class=SNIPPETS_SETTINGS_TOKEN,
                 key="SYNC_INTERVAL",
             )
         await refresh_all(lambda: override_session_maker, _sep_proxies(), callbacks)

@@ -290,7 +290,7 @@ async def search_account(provider: GrafanaSDK) -> int | None:
     return None
 
 
-async def find_or_create_account(provider: GrafanaSDK) -> int:
+async def find_or_create_account(provider: GrafanaSDK) -> tuple[int, bool]:
     """Return the id of SEP's service account, creating it when absent.
 
     A refused creation is re-checked against a second lookup rather than
@@ -299,8 +299,10 @@ async def find_or_create_account(provider: GrafanaSDK) -> int:
     The lookup decides that, not the refusal's status, because Grafana's
     duplicate-name status varies by release.
 
+    The second element is ``True`` when this call created the account.
+
     :param provider: The open Grafana client, authenticated as the admin.
-    :return: The service account's id.
+    :return: The service account's id, and whether this call created it.
     :raises MintError: When Grafana creates an account but answers no id.
     :raises HTTPException: When Grafana refuses the creation and no account of
         that name exists afterwards.
@@ -308,7 +310,7 @@ async def find_or_create_account(provider: GrafanaSDK) -> int:
     """
     existing = await search_account(provider)
     if existing is not None:
-        return existing
+        return existing, False
     try:
         created = await provider.post(
             SERVICE_ACCOUNTS_PATH,
@@ -322,7 +324,7 @@ async def find_or_create_account(provider: GrafanaSDK) -> int:
         winner = await search_account(provider)
         if winner is None:
             raise
-        return winner
+        return winner, False
     account_id = created.get("id") if isinstance(created, Mapping) else None
     if account_id is None:
         raise MintError(
@@ -330,10 +332,10 @@ async def find_or_create_account(provider: GrafanaSDK) -> int:
             f"{SERVICE_ACCOUNT_NAME!r}; the response was a "
             f"{type(created).__name__}."
         )
-    return account_id
+    return account_id, True
 
 
-async def mint(provider: GrafanaSDK, credentials: str) -> str:
+async def mint(provider: GrafanaSDK, credentials: str) -> tuple[str, bool]:
     """Obtain a fresh service-account token from Grafana in one attempt.
 
     ``secondsToLive`` is left out of the request: Grafana reads its absence as
@@ -342,7 +344,7 @@ async def mint(provider: GrafanaSDK, credentials: str) -> str:
 
     :param provider: The open Grafana client.
     :param credentials: The Base64 admin pair to authenticate with.
-    :return: The minted token.
+    :return: The minted token, and whether it was minted onto a reused account.
     :raises MintError: When Grafana answers a token response carrying no key, or
         creates an account but answers no id.
     :raises HTTPException: When Grafana answers an error status.
@@ -352,7 +354,7 @@ async def mint(provider: GrafanaSDK, credentials: str) -> str:
         provider.auth(credentials, auth_scheme="Basic"),
         quiet_client_logging(provider, logging.INFO),
     ):
-        account_id = await find_or_create_account(provider)
+        account_id, account_created = await find_or_create_account(provider)
         created = await provider.post(
             f"{SERVICE_ACCOUNTS_PATH}/{account_id}/tokens", json={"name": token_name()}
         )
@@ -363,12 +365,12 @@ async def mint(provider: GrafanaSDK, credentials: str) -> str:
             f"service account {account_id}; the response was a "
             f"{type(created).__name__}."
         )
-    return token.strip()
+    return token.strip(), not account_created
 
 
 async def mint_with_retry(
     provider: GrafanaSDK, credentials: str, deadline: float
-) -> str:
+) -> tuple[str, bool]:
     """Mint a token, retrying only what a still-starting Grafana explains.
 
     Each attempt carries its own timeout off ``deadline``: the client's session
@@ -379,7 +381,7 @@ async def mint_with_retry(
     :param provider: The open Grafana client.
     :param credentials: The Base64 admin pair to authenticate with.
     :param deadline: The :func:`time.monotonic` reading to give up at.
-    :return: The minted token.
+    :return: The minted token, and whether it was minted onto a reused account.
     :raises MintError: When Grafana answers a fault no retry can clear, or when
         the deadline passes first.
     """
@@ -480,6 +482,19 @@ def resolve_provider() -> GrafanaSDK | None:
     return provider
 
 
+def warn_role_gap(subject: str) -> None:
+    """Warn that SEP's service account ranks below Admin in its org.
+
+    :param subject: What Grafana accepted, e.g. ``"persisted token"``.
+    """
+    warn(
+        f"Grafana accepts the {subject} but the "
+        f"{SERVICE_ACCOUNT_NAME!r} service account ranks below "
+        f"{SERVICE_ACCOUNT_ROLE} in its org; a re-mint would carry the same "
+        "role, so the token is kept."
+    )
+
+
 async def keep_persisted_token(provider: GrafanaSDK, token: str) -> bool:
     """Return whether Grafana's answer leaves the persisted token usable.
 
@@ -489,12 +504,7 @@ async def keep_persisted_token(provider: GrafanaSDK, token: str) -> bool:
     """
     state = await validate_token(provider, token)
     if state is TokenStateEnum.FORBIDDEN:
-        warn(
-            f"Grafana accepts the persisted token but the "
-            f"{SERVICE_ACCOUNT_NAME!r} service account ranks below "
-            f"{SERVICE_ACCOUNT_ROLE} in its org; a re-mint would carry the same "
-            "role, so the token is kept."
-        )
+        warn_role_gap("persisted token")
     elif state is TokenStateEnum.UNREACHABLE:
         warn(
             f"Could not reach Grafana at {provider.endpoint} to revalidate "
@@ -505,6 +515,13 @@ async def keep_persisted_token(provider: GrafanaSDK, token: str) -> bool:
 
 async def resolve_token() -> str | None:
     """Resolve the token for the three ranks below the mounted secrets channel.
+
+    When a token is minted onto a reused service account, the token is probed
+    with :func:`validate_token`. A ``FORBIDDEN`` answer means the account's
+    org role ranks below ``Admin``; a diagnostic is written and the token is
+    still returned, because a re-mint cannot raise the role. An
+    ``UNREACHABLE`` answer gets the same keep-the-token treatment with a
+    reachability diagnostic, matching :func:`keep_persisted_token`.
 
     :return: The resolved token, or ``None`` when there is nothing to resolve.
     :raises MintError: When a token is needed and cannot be minted.
@@ -522,7 +539,18 @@ async def resolve_token() -> str | None:
                 provider, persisted
             ):
                 return persisted
-            token = await mint_with_retry(provider, admin_credentials(), deadline)
+            token, reused = await mint_with_retry(
+                provider, admin_credentials(), deadline
+            )
+            if reused:
+                probe = await validate_token(provider, token)
+                if probe is TokenStateEnum.FORBIDDEN:
+                    warn_role_gap("freshly minted token")
+                elif probe is TokenStateEnum.UNREACHABLE:
+                    warn(
+                        f"Could not reach Grafana at {provider.endpoint} to "
+                        "probe the freshly minted token; using it unvalidated."
+                    )
     write_persisted_token(directory, token)
     return token
 

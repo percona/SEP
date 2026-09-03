@@ -144,12 +144,34 @@ describe('ConnectivityControl', () => {
     await screen.findByText(/missing node or port information/i);
   });
 
-  it('shows a generic snackbar when the request never reaches the server', async () => {
+  it('reports in-tree when the request never reaches the server', async () => {
     const user = userEvent.setup();
     vi.spyOn(apiClient, 'post').mockRejectedValue(new Error('network down'));
     renderControl('mysql');
     await user.click(await screen.findByRole('button', { name: CHECK_BUTTON }));
-    await screen.findByText(/could not be started/i);
+    expect(await screen.findByTestId('connectivity-action-error')).toHaveTextContent(
+      /network down/i,
+    );
+  });
+
+  it("reports a refusal in-tree with the server's own reason", async () => {
+    const user = userEvent.setup();
+    await stubPostError(403, "You don't have permission to perform this action");
+    renderControl('mysql');
+    await user.click(await screen.findByRole('button', { name: CHECK_BUTTON }));
+    expect(await screen.findByTestId('connectivity-action-error')).toHaveTextContent(
+      "You don't have permission to perform this action",
+    );
+  });
+
+  it('reports nothing when the probe connects', async () => {
+    const user = userEvent.setup();
+    stubPostResult({ success: true });
+    renderControl('mysql');
+    await user.click(await screen.findByRole('button', { name: CHECK_BUTTON }));
+    await screen.findByText(/connectivity check passed/i);
+    expect(screen.queryByTestId('connectivity-action-error')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('connectivity-probe-failure')).not.toBeInTheDocument();
   });
 
   it('re-enables the button after a failed check so it can be retried', async () => {
