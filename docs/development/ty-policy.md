@@ -14,17 +14,27 @@ is decided — CI, in two layers, recorded under *Enforcement* — but is **not 
 wired**: the target is not part of `lint`, pre-commit, or CI today, so running
 it by hand is still the only way it runs. SEP-1680 ships the gate.
 
-All measurements below were taken with **ty 0.0.49**, the version pinned in the
-`typecheck` Poetry group, on branch commit `3eede0dd3` — `dafd2df1` plus the
-configuration this policy commits. The counts depend on `[tool.ty.rules]`, so
-they do not reproduce at `dafd2df1` alone.
+Every measurement below was taken with **ty 0.0.49**, the version pinned in the
+`typecheck` Poetry group, but the numbers fall into two classes that are read
+differently.
 
-Every number below — the recorded baseline, the two rule tables, and the
-sampling record — is a snapshot of that one tree at that one version, and is
-**not maintained** against later commits. No decision in this document turns on
-any of those values: severity was chosen from what a rule's diagnostics *say*,
-so a count that has since moved dates the evidence without reopening the call.
-Read the counts as how each call was reached, not as a figure anything checks.
+**Historical snapshots**, taken on branch commit `3eede0dd3` — `dafd2df1` plus
+the configuration this policy commits, so the counts depend on
+`[tool.ty.rules]` and do not reproduce at `dafd2df1` alone. The 3926 figure, the
+argument-list comparison, the two rule tables, and the sampling record are all
+of this kind: a snapshot of that one tree at that one version, **not
+maintained** against later commits. No decision turns on them — severity was
+chosen from what a rule's diagnostics *say*, so a count that has since moved
+dates the evidence without reopening the call. Read them as how each call was
+reached, not as a figure anything checks.
+
+**The maintained baseline and the enforcement evidence**, taken at
+`a157c146115c`: the current **3,287 — 0 error, 3,287 warning** split and the
+exit-status pair it comes from. These are current, and they are load-bearing —
+the two-layer enforcement decision under *Enforcement* rests on the error count
+being zero and on warnings not moving the exit status. *Changing this policy*
+requires re-measuring the baseline whenever ty is upgraded or diagnostics are
+cleared in bulk; it is the one figure kept current.
 
 ## The checked surface
 
