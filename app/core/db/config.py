@@ -15,12 +15,14 @@
 
 """Define database settings."""
 
+from typing import Self
 from urllib.parse import quote
 
 from pydantic import (
     AnyUrl,
     BaseModel,
     computed_field,
+    model_validator,
     NonNegativeInt,
     PositiveFloat,
     PositiveInt,
@@ -66,6 +68,15 @@ class DatabaseOptions(BaseModel):
         discarded and replaced transparently. Unlike the sizing fields, this
         is a plain ``bool`` rather than ``bool | None`` because the point is
         to override SQLAlchemy's ``False`` default, not to fall back to it.
+    :param SCHEMA_TRANSLATE_MAP: Symbolic schema tokens this bind should
+        translate, keyed by the token a caller's tables declare (SQLAlchemy's
+        ``schema_translate_map``; see ``settings.CELERY.beat_schema`` for the
+        single-token precedent this generalises). Deployment-declared rather
+        than assembled from any one caller's settings, so this class stays
+        usable by every caller without importing them -- a caller that shares
+        this bind merges its own token in under its own key instead of
+        replacing the map. Cleared to the bind's default schema off
+        PostgreSQL; see :meth:`clear_schema_translate_map_off_postgresql`.
     """
 
     ENGINE: AsyncDatabaseEngine = AsyncDatabaseEngine.SQLITE
@@ -79,6 +90,25 @@ class DatabaseOptions(BaseModel):
     POOL_TIMEOUT: PositiveFloat | None = None
     CONNECT_TIMEOUT: PositiveFloat | None = None
     POOL_PRE_PING: bool = True
+    SCHEMA_TRANSLATE_MAP: dict[str, str | None] = {}
+
+    @model_validator(mode="after")
+    def clear_schema_translate_map_off_postgresql(self) -> Self:
+        """Force every schema-translate value to the bind's default schema off PostgreSQL.
+
+        A SQLAlchemy schema backed by a real, separate namespace is a PostgreSQL
+        concept here: SQLite has none, and MySQL's "schema" is a database, so
+        honouring a token there would scatter tables into a second database
+        nothing provisions. Values are cleared to ``None`` rather than the map
+        being dropped, so a caller's tables -- which name their token
+        unconditionally -- keep resolving to the default schema instead of
+        reaching the database as a literal, undefined identifier.
+
+        :return: The validated options.
+        """
+        if self.ENGINE != AsyncDatabaseEngine.POSTGRESQL and self.SCHEMA_TRANSLATE_MAP:
+            self.SCHEMA_TRANSLATE_MAP = dict.fromkeys(self.SCHEMA_TRANSLATE_MAP)
+        return self
 
     @computed_field(repr=False)
     @property

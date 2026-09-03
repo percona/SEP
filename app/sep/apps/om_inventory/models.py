@@ -39,8 +39,8 @@ promoting a field to a column later is easy and the reverse is not.
 This module is loaded by Alembic through ``spec_from_file_location`` without running
 the package ``__init__``, so it must not import sibling app modules. That is also why
 the schema below is a bare string rather than
-``app.sep.om.config.OM_SCHEMA_SYMBOL``: the token has to be spelled here, and
-``sqlalchemy_celery_beat`` makes the same trade with ``celery_schema``.
+``app.sep.apps.shared.om.config.OM_SCHEMA_SYMBOL``: the token has to be spelled here,
+and ``sqlalchemy_celery_beat`` makes the same trade with ``celery_schema``.
 """
 
 from datetime import datetime
@@ -337,7 +337,7 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
 
     __tablename__ = "inventory_run"
     # A *symbolic* schema, translated per bind by the engine
-    # (``app/sep/om/config.py``). Never a literal: SQLite has no schemas, so a real
+    # (``app/sep/apps/shared/om/config.py``). Never a literal: SQLite has no schemas, so a real
     # name here would make the table uncreatable in the unit suite, and the
     # real-PostgreSQL lane routes every table into a per-xdist-worker schema that a
     # hard-coded ``om`` would escape and then collide across workers.

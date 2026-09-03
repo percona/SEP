@@ -90,6 +90,11 @@ default:
     NAME: sep
     PORT: 5432
     USER: sep
+    # `om_schema` is OM's shared symbolic schema token (app/sep/apps/shared/om/
+    # __init__.py); see the equivalent block in the repo-root settings.yaml for the
+    # full explanation of SCHEMA_TRANSLATE_MAP.
+    SCHEMA_TRANSLATE_MAP:
+      om_schema: om
 
   SEP:
     AMBIENT_SESSION_SSO_ENABLED: true

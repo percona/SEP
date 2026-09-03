@@ -260,14 +260,17 @@ default:
       HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
       PORT: null
       NAME: sep.db
-    OM:
-      # Shared by every OM app, so it sits here rather than under one of them.
+      # Symbolic schema tokens declared by apps that share this database, resolved
+      # to a real schema on a bind that has one. Automatically ignored off
+      # PostgreSQL: SQLite has no schemas, and MySQL's "schema" is a database, so on
+      # either of those every value here is forced to the default schema instead
+      # (app/core/db/config.py).
       #
-      # The schema OM's tables live in, inside the SEP database above. `null` puts
-      # them in the default schema alongside everything else. Honoured on PostgreSQL
-      # only: SQLite has no schemas, and MySQL's "schema" is a database, so on either
-      # of those the setting is ignored and the tables use the default schema.
-      SCHEMA: om
+      # `om_schema` is shared by every OM app (app/sep/apps/shared/om/__init__.py),
+      # so it lives here rather than under one of them. `null` would put OM's tables
+      # in the default schema alongside everything else.
+      SCHEMA_TRANSLATE_MAP:
+        om_schema: om
     SYNCERS:
       - SYNCER: PMMSyncer
         STALE_RUN_AFTER: 3600  # Seconds an idle in-progress run may sit before it is reclaimed; must exceed the longest expected sync

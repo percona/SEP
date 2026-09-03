@@ -27,7 +27,6 @@ from app.core.db.utils import compare_type
 from app.sep.config import sep_settings
 from app.sep.migrations._discovery import discover_plugin_migrations_and_models
 from app.sep.migrations._orphan_heads import skip_unresolvable_heads
-from app.sep.om.config import om_schema_translate_map
 from app.core.settings_override.models import *
 from app.sep.models import *
 from app.sep.snippets.models import *
@@ -111,12 +110,14 @@ async def run_async_migrations() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    # OM's migrations name ``om_schema`` symbolically, exactly as its models do, so
-    # the connection that runs them has to translate it the way the application engine
-    # does. Without this a OM migration creates a literal ``om_schema`` schema on a
-    # PostgreSQL bind and fails outright on SQLite.
+    # An app's migrations may name a symbolic schema token, exactly as its models
+    # do (OM's ``om_schema``, translated per ``sep_settings.DATABASE.
+    # SCHEMA_TRANSLATE_MAP``), so the connection that runs them has to translate
+    # it the way the application engine does. Without this such a migration
+    # creates a literal token-named schema on a PostgreSQL bind and fails
+    # outright on SQLite.
     connectable = connectable.execution_options(
-        schema_translate_map=om_schema_translate_map(sep_settings.DATABASE)
+        schema_translate_map=sep_settings.DATABASE.SCHEMA_TRANSLATE_MAP
     )
 
     async with connectable.connect() as connection:
