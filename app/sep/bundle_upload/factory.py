@@ -30,10 +30,10 @@ from urllib.parse import parse_qsl, urlparse
 
 from app.core.requests import RemoteAPI
 from app.sep.bundle_upload.plan import (
+    AnyStepValue,
     DeliveryPlan,
     DeliveryPlanExecutor,
     LiteralValue,
-    PlanValue,
     StepObserver,
 )
 
@@ -69,13 +69,13 @@ def _rebase_path(prefix: str, path: str) -> str:
 
 
 def _rebase_query(
-    query: Mapping[str, PlanValue], endpoint_query: dict[str, str]
-) -> dict[str, PlanValue]:
+    query: Mapping[str, AnyStepValue], endpoint_query: dict[str, str]
+) -> dict[str, AnyStepValue]:
     """Merge the endpoint's query pairs into a step's own, without displacing them.
 
-    Accepts any value map the plan admits, so a step whose values are drawn
-    from a narrower set than :data:`~app.sep.bundle_upload.plan.PlanValue`,
-    as the probe's are, rebases through the same helper.
+    Accepts any value map any step kind admits, so one helper rebases them all:
+    the probe's, drawn from a set narrower than the send steps', and the case
+    search's, carrying a source the send steps have no value for.
 
     :param query: The step's configured query map.
     :param endpoint_query: The query pairs carried by the configured endpoint.
@@ -132,8 +132,23 @@ def _rebased_plan(
             }
         )
     )
+    case_search = (
+        None
+        if plan.case_search is None
+        else plan.case_search.model_copy(
+            update={
+                "path": _rebase_path(path, plan.case_search.path),
+                "query": _rebase_query(plan.case_search.query, query),
+            }
+        )
+    )
     return plan.model_copy(
-        update={"resolution_steps": steps, "upload": upload, "probe": probe}
+        update={
+            "resolution_steps": steps,
+            "upload": upload,
+            "probe": probe,
+            "case_search": case_search,
+        }
     )
 
 
