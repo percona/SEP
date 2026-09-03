@@ -120,6 +120,28 @@ default:
           outputs:
             table_name: /result/table_name
             ticket_id: /result/ticket_id
+      case_search:
+        path: api/now/table/sn_customerservice_case
+        query:
+          # The connector key is refused ServiceNow's full-text index
+          # (403 "Field(s) present in the query do not have permission to be
+          # read"), so one term is compared against both readable fields
+          # instead.
+          sysparm_query:
+            source: term
+            prefix: numberLIKE
+            separator: ^ORshort_descriptionLIKE
+          sysparm_fields: {source: literal, value: "number,short_description"}
+          sysparm_limit: {source: literal, value: "10"}
+        headers:
+          x-sn-apikey: {source: secret, name: sn_api_key}
+        # ServiceNow encoded queries separate clauses with `^`, which has no
+        # escape, so the term is held to what a case number or a title fragment
+        # actually needs.
+        term_pattern: '[A-Za-z0-9 ._-]+'
+        results_pointer: /result
+        reference_pointer: /number
+        title_pointer: /short_description
       upload:
         path: api/now/attachment/upload
         headers:

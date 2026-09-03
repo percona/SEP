@@ -16,11 +16,13 @@
 """Describe and execute a config-driven bundle-delivery plan.
 
 A delivery plan is an ordered list of HTTP resolution steps followed by exactly
-one terminal multipart upload step that carries the bundle file. The schema is
-linear by construction: paths are literal strings, every value comes from one of
-five typed sources (a literal, a send input, a named secret, an earlier step's
-extracted output, or one key of the send's manifest), and no conditional, loop,
-or templating construct exists.
+one terminal multipart upload step that carries the bundle file, plus optional
+sections that run outside a send: a connectivity probe and a support-case
+search. The schema is linear by construction: paths are literal strings, every
+value comes from one of six typed sources (a literal, a send input, a named
+secret, an earlier step's extracted output, one key of the send's manifest, or
+the caller's typed search term), each step kind admitting only the subset it can
+resolve, and no conditional, loop, or templating construct exists.
 :class:`DeliveryPlanExecutor` runs a plan over a
 :class:`~app.core.requests.remote_api.RemoteAPI` transport and satisfies the
 :class:`~app.sep.bundle_upload.seam.BundleUploader` protocol.
@@ -33,6 +35,10 @@ becomes a real consumer.
 """
 
 __all__ = [
+    "AnyStepValue",
+    "CaseMatch",
+    "CaseSearchStep",
+    "CaseSearchValue",
     "DeliveryPlan",
     "DeliveryPlanError",
     "DeliveryPlanExecutor",
@@ -47,10 +53,12 @@ __all__ = [
     "StepObserver",
     "StepOutputValue",
     "StepRecord",
+    "TermValue",
     "UploadStep",
 ]
 
 import logging
+import re
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Self
@@ -156,6 +164,34 @@ class ManifestValue(BaseModel):
     key: NonEmptyStr
 
 
+class TermValue(BaseModel):
+    """Provide the caller's typed search term, wrapped in literal affixes.
+
+    The affixes exist because a receiver's search parameter is rarely the bare
+    term: a table-query API typically expects an encoded query whose operator
+    precedes it. ``separator`` covers the case where one term must be compared
+    against two of the receiver's fields, which a receiver refusing a caller the
+    text index leaves as the only form that caller may run.
+
+    These are literals, not a templating construct: the term is emitted once, or
+    twice around ``separator``, and only ever inside a header or query value, so
+    it can never reach the request path. What the term itself may contain is
+    constrained by :attr:`CaseSearchStep.term_pattern`, since the affixes place
+    it inside a value whose own syntax it must not be able to alter.
+
+    :param source: The discriminator tag, always ``"term"``.
+    :param prefix: A literal placed before the term.
+    :param separator: A literal placed between two occurrences of the term;
+        empty to emit it once.
+    :param suffix: A literal placed after the term.
+    """
+
+    source: Literal["term"]
+    prefix: str = ""
+    separator: str = ""
+    suffix: str = ""
+
+
 #: One configured value, tagged by the ``source`` it is drawn from.
 PlanValue = Annotated[
     LiteralValue | InputValue | SecretValue | StepOutputValue | ManifestValue,
@@ -166,6 +202,48 @@ PlanValue = Annotated[
 #: outside any send, so the three send-scoped sources have nothing to read and
 #: are refused when the plan is parsed rather than when the probe is issued.
 ProbeValue = Annotated[LiteralValue | SecretValue, Field(discriminator="source")]
+
+#: One case-search value. Narrower than :data:`PlanValue` by construction: a
+#: search runs outside any send, so the three send-scoped sources have nothing
+#: to read and are refused when the plan is parsed rather than when the search
+#: is issued. Wider in one direction only: the typed term, which exists in no
+#: other step kind.
+CaseSearchValue = Annotated[
+    LiteralValue | SecretValue | TermValue, Field(discriminator="source")
+]
+
+#: Any value any step kind admits. The parse-time unions above are what restrict
+#: each kind; this is only what the shared helpers accept.
+AnyStepValue = (
+    LiteralValue
+    | InputValue
+    | SecretValue
+    | StepOutputValue
+    | ManifestValue
+    | TermValue
+)
+
+
+def _reject_off_origin_path(value: str, *, what: str) -> str:
+    """Keep a step on the receiver's own origin.
+
+    A path carrying a scheme or an authority is not resolved *under* the
+    endpoint but *instead of* it, so the request, and the credentials it
+    carries, would reach a host the plan never named.
+
+    :param value: The configured step path.
+    :param what: A label naming the step kind, used in the error message.
+    :return: The validated path.
+    :raises ValueError: When the path carries a scheme or an authority.
+    """
+    parsed = urlparse(value)
+    if parsed.scheme or parsed.netloc or value.startswith("//"):
+        raise ValueError(
+            f"{what} path must be relative to the plan's endpoint: a path "
+            f"carrying a scheme or host would send the credentials it carries "
+            f"to another origin."
+        )
+    return value
 
 
 class ResolutionStep(BaseModel):
@@ -231,29 +309,76 @@ class ProbeStep(BaseModel):
 
     @field_validator("path")
     @classmethod
-    def _reject_off_origin_path(cls, value: str) -> str:
-        """Keep the probe on the receiver's own origin.
-
-        A path carrying a scheme or an authority is not resolved *under* the
-        endpoint but *instead of* it, so the probe, and the credentials it
-        carries, would reach a host the plan never named.
+    def _validate_path(cls, value: str) -> str:
+        """Keep the probe under the plan's own endpoint.
 
         :param value: The configured probe path.
         :return: The validated path.
         :raises ValueError: When the path carries a scheme or an authority.
         """
-        parsed = urlparse(value)
-        if parsed.scheme or parsed.netloc or value.startswith("//"):
+        return _reject_off_origin_path(value, what="Probe step")
+
+
+class CaseSearchStep(BaseModel):
+    """Describe the request that searches the receiver for support cases.
+
+    Carries no ``name``, as the probe does not, so nothing here joins the
+    resolution-step namespace. The method is ``GET`` by construction, which is
+    what lets the search run against a receiver whose resolution steps mutate
+    state.
+
+    :param path: The request path, resolved against the plan endpoint.
+    :param headers: Request headers keyed by header name.
+    :param query: Query-string parameters keyed by parameter name.
+    :param term_pattern: A regular expression the whole typed term must match
+        before it is composed into any value.
+    :param results_pointer: A JSON Pointer addressing the list of rows in the
+        response.
+    :param reference_pointer: A JSON Pointer applied to each row, addressing the
+        case reference to offer.
+    :param title_pointer: A JSON Pointer applied to each row, addressing the
+        case title to show beside the reference.
+    """
+
+    path: NonEmptyStr
+    headers: dict[str, CaseSearchValue] = {}
+    query: dict[str, CaseSearchValue] = {}
+    term_pattern: NonEmptyStr
+    results_pointer: JsonPointerStr
+    reference_pointer: JsonPointerStr
+    title_pointer: JsonPointerStr
+
+    @field_validator("path")
+    @classmethod
+    def _validate_path(cls, value: str) -> str:
+        """Keep the search under the plan's own endpoint.
+
+        :param value: The configured case-search path.
+        :return: The validated path.
+        :raises ValueError: When the path carries a scheme or an authority.
+        """
+        return _reject_off_origin_path(value, what="Case-search step")
+
+    @field_validator("term_pattern")
+    @classmethod
+    def _validate_term_pattern(cls, value: str) -> str:
+        """Reject a constraint that cannot be applied, when the plan is parsed.
+
+        :param value: The configured term pattern.
+        :return: The validated pattern.
+        :raises ValueError: When the pattern is not a valid regular expression.
+        """
+        try:
+            re.compile(value)
+        except re.error as err:
             raise ValueError(
-                "Probe step path must be relative to the plan's endpoint: a "
-                "path carrying a scheme or host would send the probe's "
-                "credentials to another origin."
-            )
+                f"Case-search term pattern is not a valid regular expression: {err}"
+            ) from None
         return value
 
 
 def _check_value(
-    value: PlanValue,
+    value: AnyStepValue,
     *,
     where: str,
     secrets: Collection[str],
@@ -295,7 +420,7 @@ def _check_value(
 
 
 def _check_value_maps(
-    maps: Mapping[str, Mapping[str, PlanValue]],
+    maps: Mapping[str, Mapping[str, AnyStepValue]],
     *,
     where_prefix: str,
     secrets: Collection[str],
@@ -334,6 +459,8 @@ class DeliveryPlan(BaseModel):
         upload; empty for a plan that uploads directly.
     :param probe: The request that tests the receiver without sending a bundle,
         or ``None`` for a plan that declares no probe.
+    :param case_search: The request that searches the receiver for support
+        cases, or ``None`` for a plan that declares no case search.
     :param upload: The terminal step that carries the bundle file.
     """
 
@@ -342,6 +469,7 @@ class DeliveryPlan(BaseModel):
     secrets: dict[str, SecretStr] = {}
     resolution_steps: list[ResolutionStep] = []
     probe: ProbeStep | None = None
+    case_search: CaseSearchStep | None = None
     upload: UploadStep
 
     @model_validator(mode="after")
@@ -382,6 +510,16 @@ class DeliveryPlan(BaseModel):
                 secrets=self.secrets,
                 available_outputs={},
             )
+        if self.case_search is not None:
+            _check_value_maps(
+                {
+                    "headers": self.case_search.headers,
+                    _QUERY_MAP: self.case_search.query,
+                },
+                where_prefix="Case-search step",
+                secrets=self.secrets,
+                available_outputs={},
+            )
         return self
 
 
@@ -418,13 +556,29 @@ class StepRecord:
     cited_inputs: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class CaseMatch:
+    """Report one case the receiver matched, as the plan's pointers addressed it.
+
+    Carries only what the plan asked for, so no part of the receiver's response
+    the plan did not name reaches a caller.
+
+    :param reference: The case reference the plan's pointer addressed. It is the
+        match's identity: the executor answers at most once per reference.
+    :param title: The case title the plan's pointer addressed.
+    """
+
+    reference: str
+    title: str
+
+
 #: A synchronous callback invoked once per step transition. It must not raise:
 #: a failure record is observed from inside an exception handler, so an observer
 #: that raises there replaces the exception the executor was propagating.
 StepObserver = Callable[[StepRecord], None]
 
 
-def _secret_valued_keys(values: Mapping[str, PlanValue]) -> list[str]:
+def _secret_valued_keys(values: Mapping[str, AnyStepValue]) -> list[str]:
     """Return the keys of a value map whose values come from a named secret.
 
     :param values: A configured value map keyed by header or field name.
@@ -433,7 +587,7 @@ def _secret_valued_keys(values: Mapping[str, PlanValue]) -> list[str]:
     return [key for key, value in values.items() if isinstance(value, SecretValue)]
 
 
-def _cited_send_inputs(*value_maps: Mapping[str, PlanValue]) -> tuple[str, ...]:
+def _cited_send_inputs(*value_maps: Mapping[str, AnyStepValue]) -> tuple[str, ...]:
     """Return the send inputs a step's configured values read, in order.
 
     A manifest value is named for the key it reads rather than for the whole
@@ -469,6 +623,24 @@ def _as_scalar(value: Any) -> str | None:
     if isinstance(value, str | int | float):
         return str(value)
     return None
+
+
+def _row_scalar(row: Any, pointer: str) -> str | None:
+    """Return the scalar a per-row pointer addresses, or ``None`` when it misses.
+
+    A pointer that does not resolve and one that lands on a container are the
+    same outcome to the caller: this row cannot be offered, and the rest still
+    can.
+
+    :param row: One row of a search response.
+    :param pointer: The per-row pointer the plan declares.
+    :return: The addressed scalar as a string, or ``None``.
+    """
+    try:
+        addressed = resolve_json_pointer(row, pointer)
+    except JsonPointerResolutionError:
+        return None
+    return _as_scalar(addressed)
 
 
 class DeliveryPlanExecutor:
@@ -577,6 +749,107 @@ class DeliveryPlanExecutor:
                 if not is_non_json_success(err):
                     raise
 
+    async def search_cases(self, term: str) -> list[CaseMatch]:
+        """Issue the plan's declared case search for ``term``, sending nothing.
+
+        Runs none of the plan's resolution steps and records no step trail: a
+        search is not a send. Only the reference and title the plan's pointers
+        address are returned; the rest of the response is discarded, so no part
+        of it the plan did not ask for reaches the caller.
+
+        The term is held against the pattern the plan declares before it is
+        composed into any value. A receiver's query language gives its clause
+        separators no escape, so a term carrying them would widen the query the
+        plan declared and answer with rows the plan never selected; refusing the
+        term is the only way to keep the declared query the whole query.
+
+        :param term: The caller's typed search term.
+        :return: The matched cases, in the order the receiver returned them.
+        :raises DeliveryPlanError: When the plan declares no case-search step,
+            the term does not match the pattern the plan declares, or the
+            response does not match the pointers the plan declares.
+        :raises HTTPException: Propagates the project exception ``RemoteAPI``
+            raises for an upstream error status, including a redirect the
+            receiver answered with.
+        """
+        step = self._plan.case_search
+        if step is None:
+            raise DeliveryPlanError("The delivery plan declares no case-search step.")
+        if re.fullmatch(step.term_pattern, term) is None:
+            raise DeliveryPlanError(
+                "The search term does not match the pattern the plan declares."
+            )
+        request_kwargs = remove_falsy_values_from_dict(
+            {
+                "headers": self._resolve_map(step.headers, {}, {}, {}, term=term),
+                "params": self._resolve_map(step.query, {}, {}, {}, term=term),
+            }
+        )
+        logger.debug("Delivery plan: searching the receiver for cases.")
+        with self._api.redact_headers(_secret_valued_keys(step.headers)):
+            response = await self._api.request(
+                "GET", step.path, allow_redirects=False, **request_kwargs
+            )
+        return self._extract_matches(step, response)
+
+    def _extract_matches(
+        self,
+        step: CaseSearchStep,
+        response: dict[str, Any] | list[dict[str, Any]] | None,
+    ) -> list[CaseMatch]:
+        """Read the matched cases out of a search response, then let it go.
+
+        A row whose per-row pointers miss, or land on a container, is skipped
+        rather than failing the search: one malformed row must not blank a
+        dropdown the rest of the response can still fill. A row whose reference
+        is empty is skipped on the same grounds, since the reference is the
+        match's identity and an empty one identifies nothing; an empty title
+        costs the row only its subtitle, so it is kept. A results pointer that
+        addresses no list is fatal instead, because that is a misconfigured plan
+        rather than bad data. A response whose rows all skip is logged, since a
+        pointer that no longer matches the receiver's contract is otherwise
+        indistinguishable from a term that matched nothing.
+
+        Matches are deduplicated on the reference, keeping the first occurrence
+        and so the receiver's own ordering. That is what lets the reference
+        identify a match on its own, with no synthetic id invented for it.
+
+        :param step: The case-search step whose pointers are applied.
+        :param response: The parsed response body, or ``None`` on HTTP 204.
+        :return: The matched cases, in the order the receiver returned them.
+        :raises DeliveryPlanError: When the response carries no body, or the
+            results pointer does not resolve or addresses something other than a
+            list. No message echoes the response.
+        """
+        if response is None:
+            raise DeliveryPlanError("The case-search response carried no body.")
+        try:
+            rows = resolve_json_pointer(response, step.results_pointer)
+        except JsonPointerResolutionError as err:
+            raise DeliveryPlanError(
+                f"Case-search results pointer {step.results_pointer!r} did not "
+                f"resolve: {err}"
+            ) from None
+        if not isinstance(rows, list):
+            raise DeliveryPlanError(
+                f"Case-search results pointer {step.results_pointer!r} did not "
+                f"address a list of rows."
+            )
+        matched = (
+            CaseMatch(reference=reference, title=title)
+            for row in rows
+            if (reference := _row_scalar(row, step.reference_pointer))
+            and (title := _row_scalar(row, step.title_pointer)) is not None
+        )
+        matches = list(unique_everseen(matched, lambda match: match.reference))
+        if rows and not matches:
+            logger.warning(
+                "Delivery plan: the case search returned %d rows, none of which "
+                "carried both of the pointers the plan declares.",
+                len(rows),
+            )
+        return matches
+
     def _check_bundle_size(self, size: int) -> None:
         """Reject an over-cap bundle before the transport is touched.
 
@@ -591,10 +864,12 @@ class DeliveryPlanExecutor:
 
     def _resolve_value(
         self,
-        value: PlanValue,
+        value: AnyStepValue,
         inputs: Mapping[str, str | None],
         outputs: Mapping[str, Mapping[str, str]],
         manifest: Mapping[str, Any],
+        *,
+        term: str | None = None,
     ) -> str:
         """Resolve one configured value to the string sent over the wire.
 
@@ -602,10 +877,12 @@ class DeliveryPlanExecutor:
         :param inputs: The send inputs keyed by their plan-facing names.
         :param outputs: Extracted outputs keyed by step then output name.
         :param manifest: The send's manifest, read key-wise by manifest values.
+        :param term: The caller's typed search term, supplied only by a case
+            search; ``None`` everywhere else, where no term exists.
         :return: The resolved string.
         :raises DeliveryPlanError: When the value cites a send input the caller
-            did not supply, or a manifest key the send did not carry as a
-            scalar.
+            did not supply, a manifest key the send did not carry as a scalar,
+            or the search term outside a search.
         """
         if isinstance(value, LiteralValue):
             return value.value
@@ -613,6 +890,13 @@ class DeliveryPlanExecutor:
             return self._plan.secrets[value.name].get_secret_value()
         if isinstance(value, StepOutputValue):
             return outputs[value.step][value.output]
+        if isinstance(value, TermValue):
+            if term is None:
+                raise DeliveryPlanError(
+                    "The plan uses the search term, which this call did not supply."
+                )
+            body = f"{term}{value.separator}{term}" if value.separator else term
+            return f"{value.prefix}{body}{value.suffix}"
         if isinstance(value, ManifestValue):
             if value.key not in manifest:
                 raise DeliveryPlanError(
@@ -636,10 +920,12 @@ class DeliveryPlanExecutor:
 
     def _resolve_map(
         self,
-        values: Mapping[str, PlanValue],
+        values: Mapping[str, AnyStepValue],
         inputs: Mapping[str, str | None],
         outputs: Mapping[str, Mapping[str, str]],
         manifest: Mapping[str, Any],
+        *,
+        term: str | None = None,
     ) -> dict[str, str]:
         """Resolve a whole configured value map.
 
@@ -647,13 +933,15 @@ class DeliveryPlanExecutor:
         :param inputs: The send inputs keyed by their plan-facing names.
         :param outputs: Extracted outputs keyed by step then output name.
         :param manifest: The send's manifest, read key-wise by manifest values.
+        :param term: The caller's typed search term, supplied only by a case
+            search; ``None`` everywhere else, where no term exists.
         :return: The resolved strings keyed by the map's own keys.
         :raises DeliveryPlanError: When a value cites a send input the caller
-            did not supply, or a manifest key the send did not carry as a
-            scalar.
+            did not supply, a manifest key the send did not carry as a scalar,
+            or the search term outside a search.
         """
         return {
-            key: self._resolve_value(value, inputs, outputs, manifest)
+            key: self._resolve_value(value, inputs, outputs, manifest, term=term)
             for key, value in values.items()
         }
 
