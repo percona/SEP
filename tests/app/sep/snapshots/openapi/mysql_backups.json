@@ -4487,7 +4487,7 @@
         "type": "string"
       },
       "mysql_backups__EncryptionFormat": {
-        "description": "Enumeration for backup-time encryption formats.",
+        "description": "Represent the backup-time encryption formats an operator can select.",
         "enum": [
           "none",
           "gpg",

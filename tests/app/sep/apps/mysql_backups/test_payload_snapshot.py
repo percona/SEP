@@ -249,6 +249,10 @@ def _all_servers_config(
                 "encryption_format": "gpg",
                 "encrypt": True,
                 "encryption_recipient": "ops@example.com",
+                # In-place GPG runs inside the upload provider loop, so the form
+                # only accepts it alongside a target.
+                "upload": ["RSYNC"],
+                "rsync_path": "/remote/backups",
             },
             id="encrypt_true",
         ),

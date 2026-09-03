@@ -26,7 +26,13 @@ from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 from app.sep.apps.mysql_backups.deps import parse_backup_task_data
-from app.sep.apps.mysql_backups.forms import BackupCreate, OWNER, UploadProvider
+from app.sep.apps.mysql_backups.forms import (
+    BackupCreate,
+    encryption_format_for_passes,
+    OWNER,
+    UploadProvider,
+)
+from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.form_backfill import (
     FORM_BACKFILL_ENTRY as RESTORE_FORM_BACKFILL_ENTRY,
 )
@@ -35,7 +41,11 @@ if TYPE_CHECKING:
     from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
     from app.tasks.models import Task
 
-__all__ = ["FORM_BACKFILL_ENTRIES", "reconstruct_mysql_backups_form"]
+__all__ = [
+    "FORM_BACKFILL_ENTRIES",
+    "reconstruct_mysql_backups_form",
+    "repair_mysql_backups_stamp",
+]
 
 _MYSQL_BACKUPS_FORM_FIELDS = frozenset(BackupCreate.model_fields)
 _UPLOAD_PROVIDER_BY_ALIAS = {provider.name: provider for provider in UploadProvider}
@@ -160,12 +170,44 @@ def reconstruct_mysql_backups_form(
     }
 
 
+def repair_mysql_backups_stamp(
+    stored_form: dict[str, Any],
+    _task: Task,
+    _ctx: FormBackfillContext,
+) -> dict[str, Any] | None:
+    """Add ``encryption_format`` to a stamp written before the selector existed.
+
+    A stamp created through the schema form predating the selector names the GPG
+    timings and the AES-256 key file but not the format they add up to, and the
+    edit form fills that gap from the schema default — ``none`` — so an encrypted
+    task reloads looking unencrypted. The format is derived from the stamp's own
+    fields rather than from the task config, because the stamp is the record of
+    what the operator submitted.
+
+    :param stored_form: A copy of the task's existing ``data['_form']``.
+    :param _task: The stamped task row, unused: the stamp carries every field the
+        derivation reads.
+    :param _ctx: Shared backfill context, unused for the same reason.
+    :return: The repaired form, or ``None`` when the stamp already names a format.
+    """
+    if stored_form.get("encryption_format") is not None:
+        return None
+
+    stored_form["encryption_format"] = encryption_format_for_passes(
+        aes256=stored_form.get("backup_type") == BackupType.XTRABACKUP
+        and bool(stored_form.get("xtrabackup_aes256_keyfile")),
+        gpg=bool(stored_form.get("encrypt") or stored_form.get("post_run_encrypt")),
+    )
+    return stored_form
+
+
 FORM_BACKFILL_ENTRIES = [
     FormBackfillEntry(
         app_key="mysql_backups",
         owner=OWNER,
         create_model=BackupCreate,
         reconstructor=reconstruct_mysql_backups_form,
+        stamp_repairer=repair_mysql_backups_stamp,
     ),
     RESTORE_FORM_BACKFILL_ENTRY,
 ]

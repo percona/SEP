@@ -19,8 +19,16 @@ The orchestrator enumerates the entries activated apps declare through
 :func:`~app.sep.apps.framework.form_backfill_registry.collect_form_backfill_entries`,
 finds tasks owned by each that lack the reserved form key, reconstructs a
 create-model-shaped body, validates it, and stamps ``data['_form']`` on success. Each
-per-task step is isolated so one failure never aborts the batch; re-runs skip tasks that
-already carry the stamp.
+per-task step is isolated so one failure never aborts the batch.
+
+A task that already carries the stamp is left alone unless its app declares a
+:data:`~app.sep.apps.framework.form_backfill_registry.StampRepairer`. A stamp is a
+snapshot of the create body as the form looked when the task was saved, so a field
+the form gained afterwards is missing from every older stamp and the edit form fills
+it from the schema default — which for a field that decides what the task *does* is
+not what the task actually runs. A repairer supplies the value the stored config
+implies; re-runs are idempotent because a repairer returns ``None`` once there is
+nothing left to add.
 """
 
 from __future__ import annotations
@@ -66,7 +74,10 @@ class AppBackfillStats:
     :param app_key: The declaring app's registry key.
     :param owner: The task owner filter used when listing tasks.
     :param stamped: Tasks that received a new ``data['_form']`` stamp.
-    :param skipped_existing: Tasks that already had ``data['_form']``.
+    :param repaired: Tasks whose existing ``data['_form']`` was brought up to the
+        current ``create_model`` by the app's stamp repairer.
+    :param skipped_existing: Tasks that already had a ``data['_form']`` needing no
+        repair.
     :param skipped_unreconstructable: Tasks whose reconstructor returned ``None``.
     :param skipped_invalid: Tasks whose reconstructed body failed ``create_model`` validation.
     :param skipped_error: Tasks whose reconstructor, stamp step, or persistence raised.
@@ -75,6 +86,7 @@ class AppBackfillStats:
     app_key: str
     owner: str
     stamped: int = 0
+    repaired: int = 0
     skipped_existing: int = 0
     skipped_unreconstructable: int = 0
     skipped_invalid: int = 0
@@ -85,6 +97,7 @@ class AppBackfillStats:
         """Return the total number of tasks considered for this app."""
         return (
             self.stamped
+            + self.repaired
             + self.skipped_existing
             + self.skipped_unreconstructable
             + self.skipped_invalid
@@ -107,6 +120,11 @@ class BackfillSummary:
     def stamped(self) -> int:
         """Return the total number of tasks stamped across all apps."""
         return sum(app.stamped for app in self.apps)
+
+    @property
+    def repaired(self) -> int:
+        """Return the total number of existing stamps repaired across all apps."""
+        return sum(app.repaired for app in self.apps)
 
     @property
     def skipped_existing(self) -> int:
@@ -215,13 +233,7 @@ def _backfill_single_task(
     :return: The outcome label and optional stamped ``data`` dict to persist.
     """
     if RESERVED_FORM_KEY in task.data:
-        ctx.log.debug(
-            "[%s] %s: already has %r; skipping",
-            entry.app_key,
-            task.name,
-            RESERVED_FORM_KEY,
-        )
-        return _TaskBackfillOutcome("skipped_existing")
+        return _repair_existing_stamp(task, entry, ctx)
 
     if ctx.service_lookup is None:
         ctx.log.info(
@@ -232,6 +244,90 @@ def _backfill_single_task(
         return _TaskBackfillOutcome("skipped_unreconstructable")
 
     return _reconstruct_validate_stamp(task, entry, ctx)
+
+
+def _repair_existing_stamp(
+    task: Task,
+    entry: FormBackfillEntry,
+    ctx: FormBackfillContext,
+) -> _TaskBackfillOutcome:
+    """Bring an already-stamped task's ``data['_form']`` up to its create model.
+
+    Runs only the app's declared repairer, never the reconstructor: the stored
+    stamp is the authoritative record of what the operator submitted, so a repair
+    fills the gaps the form has since grown rather than re-deriving the whole body
+    from the task's config.
+
+    :param task: The stamped task row.
+    :param entry: The declaring app's backfill entry.
+    :param ctx: Shared backfill context.
+    :return: The outcome label and optional repaired ``data`` dict to persist.
+    """
+    stored_form = task.data[RESERVED_FORM_KEY]
+    if entry.stamp_repairer is None or not isinstance(stored_form, dict):
+        ctx.log.debug(
+            "[%s] %s: already has %r; skipping",
+            entry.app_key,
+            task.name,
+            RESERVED_FORM_KEY,
+        )
+        return _TaskBackfillOutcome("skipped_existing")
+
+    try:
+        repaired_form = entry.stamp_repairer(deepcopy(stored_form), task, ctx)
+    except Exception:
+        ctx.log.exception(
+            "[%s] %s: stamp repairer raised; skipping",
+            entry.app_key,
+            task.name,
+        )
+        return _TaskBackfillOutcome("skipped_error")
+
+    if repaired_form is None:
+        ctx.log.debug(
+            "[%s] %s: %r needs no repair; skipping",
+            entry.app_key,
+            task.name,
+            RESERVED_FORM_KEY,
+        )
+        return _TaskBackfillOutcome("skipped_existing")
+
+    try:
+        validated_form = entry.create_model.model_validate(repaired_form)
+    except ValidationError as exc:
+        ctx.log.info(
+            "[%s] %s: repaired form failed validation; leaving %r as it is: %s",
+            entry.app_key,
+            task.name,
+            RESERVED_FORM_KEY,
+            exc.errors(),
+        )
+        return _TaskBackfillOutcome("skipped_invalid")
+
+    repaired_data = deepcopy(task.data)
+    # ``stamp_form_input`` refuses to overwrite an existing stamp, which is what
+    # guards the create path against a spec builder populating it.
+    repaired_data.pop(RESERVED_FORM_KEY)
+    write = _task_write_from_task(task, repaired_data)
+
+    try:
+        stamp_form_input(write, validated_form)
+    except Exception:
+        ctx.log.exception(
+            "[%s] %s: stamp_form_input raised while repairing; skipping",
+            entry.app_key,
+            task.name,
+        )
+        return _TaskBackfillOutcome("skipped_error")
+
+    ctx.log.info(
+        "[%s] %s: %s %r",
+        entry.app_key,
+        task.name,
+        "dry-run would repair" if ctx.dry_run else "repaired",
+        RESERVED_FORM_KEY,
+    )
+    return _TaskBackfillOutcome("repaired", write.data)
 
 
 def _reconstruct_validate_stamp(
@@ -382,7 +478,7 @@ async def _backfill_app(
                     )
                 stats.skipped_error += 1
             else:
-                stats.stamped += 1
+                setattr(stats, outcome.label, getattr(stats, outcome.label) + 1)
         else:
             setattr(stats, outcome.label, getattr(stats, outcome.label) + 1)
 
@@ -433,10 +529,12 @@ async def run_backfill(
                 summary.apps.append(stats)
 
     active_log.info(
-        "Backfill complete (dry_run=%s): stamped=%s skipped_existing=%s "
-        "skipped_unreconstructable=%s skipped_invalid=%s skipped_error=%s",
+        "Backfill complete (dry_run=%s): stamped=%s repaired=%s "
+        "skipped_existing=%s skipped_unreconstructable=%s skipped_invalid=%s "
+        "skipped_error=%s",
         dry_run,
         summary.stamped,
+        summary.repaired,
         summary.skipped_existing,
         summary.skipped_unreconstructable,
         summary.skipped_invalid,

@@ -27,7 +27,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.mysql_backups.forms import (
     BackupTaskResponse,
-    ENCRYPTION_FORMAT_BY_PASSES,
+    encryption_format_for_passes,
     EncryptionFormat,
 )
 from app.sep.apps.mysql_backups.models import (
@@ -65,11 +65,42 @@ def _infer_encryption_format(
     :param all_servers: The stored ``ALL_SERVERS`` config block.
     :return: The inferred format.
     """
-    gpg = bool(all_servers.get("ENCRYPT") or all_servers.get("POST_RUN_ENCRYPT"))
-    aes256 = backup_type == BackupType.XTRABACKUP and bool(
-        all_servers.get("XTRABACKUP_AES256_KEYFILE")
+    return encryption_format_for_passes(
+        aes256=backup_type == BackupType.XTRABACKUP
+        and bool(all_servers.get("XTRABACKUP_AES256_KEYFILE")),
+        gpg=bool(all_servers.get("ENCRYPT") or all_servers.get("POST_RUN_ENCRYPT")),
     )
-    return ENCRYPTION_FORMAT_BY_PASSES[aes256 * 2 + gpg]
+
+
+# The create path writes the recipient block through ``BackupConfigServer``, whose
+# case-insensitive aliases uppercase the outer key, and through ``DirEncryptConfig``,
+# which renames the recipient to the space-separated spelling the directory
+# encryptor reads. The models' own attribute names are accepted as fallbacks so a
+# config written against them rather than against the serialized shape still
+# reloads.
+_DIR_ENCRYPT_CONFIG_KEYS = ("DIR_ENCRYPT_CONFIG", "dir_encrypt_config")
+_ENCRYPTION_RECIPIENT_KEYS = ("encryption recipient", "encryption_recipient")
+
+
+def _extract_encryption_recipient(server_config: dict[str, Any]) -> str | None:
+    """Return the GPG recipient a stored ``SERVER_LIST`` entry names, if any.
+
+    Losing the recipient is not a cosmetic gap: a GPG ``encryption_format``
+    requires one, so a reconstruction that drops it cannot validate and the task
+    keeps whatever it already had instead of being re-stamped.
+
+    :param server_config: The first ``SERVER_LIST`` entry.
+    :return: The recipient, or ``None`` when the entry names none.
+    """
+    for config_key in _DIR_ENCRYPT_CONFIG_KEYS:
+        block = server_config.get(config_key)
+        if not isinstance(block, dict):
+            continue
+        for recipient_key in _ENCRYPTION_RECIPIENT_KEYS:
+            recipient = block.get(recipient_key)
+            if recipient:
+                return recipient
+    return None
 
 
 def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
@@ -94,10 +125,9 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
         "port": server_config.get("PORT"),
         "alias": server_config.get("ALIAS"),
     }
-    if "dir_encrypt_config" in server_config:
-        extra_fields["encryption_recipient"] = server_config["dir_encrypt_config"].get(
-            "encryption_recipient"
-        )
+    recipient = _extract_encryption_recipient(server_config)
+    if recipient is not None:
+        extra_fields["encryption_recipient"] = recipient
     if "ENCRYPTION_FORMAT" not in all_servers_config:
         extra_fields["encryption_format"] = _infer_encryption_format(
             server_config.get("BACKUP_TYPE"), all_servers_config

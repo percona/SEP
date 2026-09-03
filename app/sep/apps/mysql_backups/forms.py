@@ -93,7 +93,7 @@ ALLOWED_COMPRESSIONS = {
 
 
 class EncryptionFormat(EnumFieldMixin, StrEnum):
-    """Enumeration for backup-time encryption formats."""
+    """Represent the backup-time encryption formats an operator can select."""
 
     NONE = "none"
     GPG = "gpg"
@@ -110,6 +110,20 @@ ENCRYPTION_FORMAT_BY_PASSES = (
     EncryptionFormat.AES256,
     EncryptionFormat.DUAL,
 )
+
+
+def encryption_format_for_passes(*, aes256: bool, gpg: bool) -> EncryptionFormat:
+    """Return the format that runs exactly the given passes.
+
+    Owns the index arithmetic so each caller only has to decide which passes a
+    stored task ran — the stored config and a stored form spell those fields
+    differently, but they agree on the format the pair implies.
+
+    :param aes256: Whether the task runs XtraBackup's built-in AES-256 pass.
+    :param gpg: Whether the task runs a GPG pass.
+    :return: The matching format.
+    """
+    return ENCRYPTION_FORMAT_BY_PASSES[aes256 * 2 + gpg]
 
 
 # AES-256 is XtraBackup's own ``--encrypt`` / xbcrypt path, so only that engine
@@ -156,6 +170,12 @@ _FMT_HAS_GPG = any_(_FMT == EncryptionFormat.GPG, _FMT == EncryptionFormat.DUAL)
 # ``Forbidden``: ``_field_is_present`` treats ``False`` as absent, so a field gate
 # would never fire on their default.
 _GPG_TIMING_FIELDS = ("encrypt", "post_run_encrypt")
+
+# Each timing also needs a runtime that reaches it. In-place GPG runs inside the
+# upload provider loop for every engine, and a Binlog backup encrypts nowhere else,
+# so those combinations require an upload target — accepting them would let a task
+# report a GPG format and still finish in plaintext. Post-run GPG on Mydumper and
+# XtraBackup encrypts the finished directory on the host, so it needs no target.
 
 _S3_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_S3)))
 _GSUTIL_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_GSUTIL)))
@@ -329,6 +349,25 @@ class BackupCreate(TaskFormModel):
                 message=(
                     "A GPG 'encryption_format' requires 'encrypt' or "
                     "'post_run_encrypt' to select when the backup is encrypted."
+                ),
+            ),
+            FailRule(
+                fail_when=truthy("encrypt") & falsy("upload"),
+                error_fields=["encrypt", "upload"],
+                message=(
+                    "'encrypt' encrypts the backup in place as part of an upload, "
+                    "so it requires at least one upload provider. Use "
+                    "'post_run_encrypt' to encrypt on the host instead."
+                ),
+            ),
+            FailRule(
+                fail_when=truthy("post_run_encrypt")
+                & (F("backup_type") == "B")
+                & falsy("upload"),
+                error_fields=["post_run_encrypt", "upload"],
+                message=(
+                    "A Binlog backup encrypts only as part of an upload, so "
+                    "'post_run_encrypt' requires at least one upload provider."
                 ),
             ),
         )
@@ -638,7 +677,9 @@ class BackupCreate(TaskFormModel):
             description=(
                 "GPG-encrypt the finished backup once it completes. Independent of "
                 "'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. "
-                "Needs a GPG 'Encryption format' and a recipient."
+                "Needs a GPG 'Encryption format' and a recipient. Mydumper and "
+                "XtraBackup encrypt on the host; a Binlog backup encrypts only "
+                "during an upload, so it also needs an upload target."
             ),
         ),
     ] = False
@@ -803,8 +844,9 @@ class BackupCreate(TaskFormModel):
         allowed_formats = ALLOWED_ENCRYPTION_FORMATS.get(self.backup_type, [])
         if self.encryption_format not in allowed_formats:
             raise ValueError(
-                f"Invalid encryption_format {self.encryption_format!r} for "
-                f"{self.backup_type.name} backup. Options are {allowed_formats}"
+                f"Invalid encryption_format {self.encryption_format.value!r} for "
+                f"{self.backup_type.name} backup. Options are "
+                f"{[fmt.value for fmt in allowed_formats]}"
             )
 
         return self
@@ -823,8 +865,10 @@ class BackupCreate(TaskFormModel):
             and self.compression_algorithm not in allowed_algorithms
         ):
             raise ValueError(
-                f"Invalid compression algorithm {self.compression_algorithm!r} for "
-                f"{self.backup_type.name} backup. Options are {allowed_algorithms}"
+                f"Invalid compression algorithm "
+                f"{self.compression_algorithm.value!r} for "
+                f"{self.backup_type.name} backup. Options are "
+                f"{[algorithm.value for algorithm in allowed_algorithms]}"
             )
 
         return self

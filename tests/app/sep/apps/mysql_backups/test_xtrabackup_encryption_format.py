@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests that ``ENCRYPTION_FORMAT`` -- not field presence -- drives encryption.
+"""Assert ``ENCRYPTION_FORMAT`` — not field presence — drives encryption.
 
 The explicit selector has to reproduce, for every configuration the form can
 produce, what the payload used to infer from whichever of
@@ -29,6 +29,10 @@ import types
 
 import pytest
 
+from app.sep.apps.mysql_backups.forms import (
+    ENCRYPTION_FORMAT_BY_PASSES,
+    EncryptionFormat,
+)
 from tests.app.sep.apps.mysql_backups.payload_harness import (
     load_constant,
     load_function,
@@ -465,3 +469,36 @@ class TestUploadInitResolvesEncryption:
         neither has a claim on the copy.
         """
         assert _upload_init(tmp_path, **settings).encrypt_using_tmpdir is expected
+
+
+class TestFormatVocabularyMatchesTheForm:
+    """Pin the payload's format vocabulary to the form's, ordering included.
+
+    Both sides encode a format's passes in its index — bit 1 is AES-256, bit 0 is
+    GPG — and each infers a pre-selector task's format from that index alone. They
+    are separate literals because the payload is standalone, so nothing but this
+    test stops a reorder on one side from making the edit form and the backup
+    script disagree about what an existing task already runs.
+    """
+
+    def test_the_ordered_tuples_are_identical(self) -> None:
+        """Assert the payload tuple equals the form's, value for value."""
+        assert tuple(fmt.value for fmt in ENCRYPTION_FORMAT_BY_PASSES) == _FORMATS
+
+    def test_the_enum_publishes_exactly_the_payload_vocabulary(self) -> None:
+        """Assert neither side carries a format the other cannot name."""
+        assert {fmt.value for fmt in EncryptionFormat} == set(_FORMATS)
+
+    @pytest.mark.parametrize("passes", range(len(ENCRYPTION_FORMAT_BY_PASSES)))
+    def test_each_index_resolves_to_the_form_format_for_those_passes(
+        self, passes: int
+    ) -> None:
+        """Assert the resolver's inference agrees with the form's index ordering.
+
+        Drives the real resolver rather than re-reading its tuple, so the
+        agreement covers the arithmetic each side performs on the index too.
+        """
+        resolved, _, _ = _resolve_encryption(
+            None, _KEYFILE if passes & 2 else None, gpg=bool(passes & 1)
+        )
+        assert resolved == ENCRYPTION_FORMAT_BY_PASSES[passes].value

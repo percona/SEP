@@ -331,6 +331,49 @@
         ]
       },
       "message": "A GPG 'encryption_format' requires 'encrypt' or 'post_run_encrypt' to select when the backup is encrypted."
+    },
+    {
+      "error_fields": [
+        "encrypt",
+        "upload"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "encrypt"
+          },
+          {
+            "falsy": "upload"
+          }
+        ]
+      },
+      "message": "'encrypt' encrypts the backup in place as part of an upload, so it requires at least one upload provider. Use 'post_run_encrypt' to encrypt on the host instead."
+    },
+    {
+      "error_fields": [
+        "post_run_encrypt",
+        "upload"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "all": [
+              {
+                "truthy": "post_run_encrypt"
+              },
+              {
+                "equals": {
+                  "backup_type": "B"
+                }
+              }
+            ]
+          },
+          {
+            "falsy": "upload"
+          }
+        ]
+      },
+      "message": "A Binlog backup encrypts only as part of an upload, so 'post_run_encrypt' requires at least one upload provider."
     }
   ],
   "forms": [
@@ -1131,7 +1174,7 @@
         },
         {
           "default": false,
-          "description": "GPG-encrypt the finished backup once it completes. Independent of 'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. Needs a GPG 'Encryption format' and a recipient.",
+          "description": "GPG-encrypt the finished backup once it completes. Independent of 'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. Needs a GPG 'Encryption format' and a recipient. Mydumper and XtraBackup encrypt on the host; a Binlog backup encrypts only during an upload, so it also needs an upload target.",
           "label": "Encrypt after backup completes",
           "name": "post_run_encrypt",
           "required": false,

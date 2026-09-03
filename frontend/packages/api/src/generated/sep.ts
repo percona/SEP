@@ -9196,7 +9196,7 @@ export interface components {
     mysql_backups__CompressionAlgorithm: 'zstd' | 'lz4' | 'gzip' | 'quicklz';
     /**
      * EncryptionFormat
-     * @description Enumeration for backup-time encryption formats.
+     * @description Represent the backup-time encryption formats an operator can select.
      * @enum {string}
      */
     mysql_backups__EncryptionFormat: 'none' | 'gpg' | 'aes256' | 'dual';
