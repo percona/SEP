@@ -42,8 +42,8 @@ from app.core.exceptions import (
 )
 from app.core.pagination import Pagination
 from app.core.security import crypto_timestamp_serializer
-from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
 from app.sep.apps.framework.script_source import ScriptExecuteWrite
+from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.deps import build_snippet_execution_meta
@@ -91,7 +91,7 @@ def _snippet_query(
     )
 
 
-def _normalize_snippet_source(url: str) -> tuple[str, dict]:
+def _normalize_snippet_source(url: str) -> tuple[str, dict[str, object]]:
     """Return the URL prefix plus the decoded token payload.
 
     Keeps scheme, host, and path so parity tests still catch base-URL drift,
@@ -99,13 +99,11 @@ def _normalize_snippet_source(url: str) -> tuple[str, dict]:
     different seconds still compare equal.
     """
     prefix, token = url.rsplit("/artifacts/download/", 1)
-    payload = crypto_timestamp_serializer.loads(
-        token, salt=ARTIFACT_DOWNLOAD_SALT
-    )
+    payload = crypto_timestamp_serializer.loads(token, salt=ARTIFACT_DOWNLOAD_SALT)
     return f"{prefix}/artifacts/download/", payload
 
 
-def _meta_dump_decoded(meta: SnippetExecutionMeta) -> dict:
+def _meta_dump_decoded(meta: SnippetExecutionMeta) -> dict[str, object]:
     """Return ``meta.model_dump()`` with ``snippet_source`` timestamp-normalized."""
     d = meta.model_dump()
     d["snippet_source"] = _normalize_snippet_source(d["snippet_source"])
