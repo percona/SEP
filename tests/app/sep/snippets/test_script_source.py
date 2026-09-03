@@ -91,20 +91,24 @@ def _snippet_query(
     )
 
 
-def _decode_snippet_source(url: str) -> dict:
-    """Decode the itsdangerous-signed token from a snippet download URL.
+def _normalize_snippet_source(url: str) -> tuple[str, dict]:
+    """Return the URL prefix plus the decoded token payload.
 
-    Strips the per-second timestamp so two URLs minted from identical payloads
-    compare equal regardless of which second each was signed in.
+    Keeps scheme, host, and path so parity tests still catch base-URL drift,
+    while replacing the timed token with its payload so two mintings in
+    different seconds still compare equal.
     """
-    token = url.rsplit("/artifacts/download/", 1)[1]
-    return crypto_timestamp_serializer.loads(token, salt=ARTIFACT_DOWNLOAD_SALT)
+    prefix, token = url.rsplit("/artifacts/download/", 1)
+    payload = crypto_timestamp_serializer.loads(
+        token, salt=ARTIFACT_DOWNLOAD_SALT
+    )
+    return f"{prefix}/artifacts/download/", payload
 
 
 def _meta_dump_decoded(meta: SnippetExecutionMeta) -> dict:
-    """Return ``meta.model_dump()`` with ``snippet_source`` replaced by its payload."""
+    """Return ``meta.model_dump()`` with ``snippet_source`` timestamp-normalized."""
     d = meta.model_dump()
-    d["snippet_source"] = _decode_snippet_source(d["snippet_source"])
+    d["snippet_source"] = _normalize_snippet_source(d["snippet_source"])
     return d
 
 
