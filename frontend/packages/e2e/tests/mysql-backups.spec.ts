@@ -729,3 +729,71 @@ test.describe('MySQL Backups — multi_choice POST body (SEP-1293 regression)', 
     expect(posts[0].upload).toContain('RSYNC');
   });
 });
+// ── Encryption-format POST body ───────────────────────────────────────────────
+//
+// The encryption format is the only signal for which encryption a backup runs,
+// so a break anywhere on schema → render → interaction → POST body downgrades an
+// encrypted backup to plaintext without an error. Four choices puts the control
+// over ``RADIO_THRESHOLD``, so it renders as a select rather than radios.
+const MOCK_SCHEMA_WITH_ENCRYPTION = {
+  ...MOCK_SCHEMA,
+  forms: [
+    ...MOCK_SCHEMA.forms,
+    {
+      title: 'Encryption',
+      fields: [
+        {
+          type: 'choice',
+          name: 'encryption_format',
+          label: 'Encryption format',
+          required: true,
+          choices: [
+            { label: 'None', value: 'none' },
+            { label: 'GPG', value: 'gpg' },
+            { label: 'AES-256 (XtraBackup only)', value: 'aes256' },
+            { label: 'AES-256 + GPG (XtraBackup only)', value: 'dual' },
+          ],
+        },
+        {
+          type: 'string',
+          name: 'encryption_recipient',
+          label: 'GPG recipient',
+        },
+      ],
+    },
+  ],
+};
+
+test.describe('MySQL Backups — encryption_format POST body', () => {
+  const posts: Array<Record<string, unknown>> = [];
+
+  test.beforeEach(async ({ page }) => {
+    tasks.length = 0;
+    posts.length = 0;
+    await mockMysqlBackupsRoutes(page, { capturePosts: posts });
+    await page.route('**/api/apps/mysql_backups/schema', (route) =>
+      route.fulfill({ json: MOCK_SCHEMA_WITH_ENCRYPTION }),
+    );
+  });
+
+  test('the selected encryption format reaches the POST body', async ({ page }) => {
+    await openCreateFormAndFillRequired(page, 'enc-gpg');
+    await page.getByLabel('S3 bucket').fill('my-bucket');
+    await page.locator('#mui-component-select-encryption_format').click();
+    await page.getByRole('option', { name: 'GPG', exact: true }).click();
+    await page.keyboard.press('Escape');
+    await page.getByLabel('GPG recipient').fill('ops@example.com');
+
+    await page
+      .getByRole('button', { name: /submit|create|save/i })
+      .last()
+      .click();
+
+    await expect(page.getByRole('row', { name: /enc-gpg/ })).toBeVisible({
+      timeout: 15_000,
+    });
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toHaveProperty('encryption_format', 'gpg');
+    expect(posts[0]).toHaveProperty('encryption_recipient', 'ops@example.com');
+  });
+});
