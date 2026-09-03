@@ -15,6 +15,9 @@
 
 """Define shared fixtures for the ATW incident model, CRUD, and route tests."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
@@ -112,6 +115,52 @@ def cookie_only_client(test_client: TestClient) -> TestClient:
     return test_client
 
 
+@asynccontextmanager
+async def _authenticated_api_client(
+    user: CasdoorUser, session: AsyncSession
+) -> AsyncIterator[AsyncClient]:
+    """Yield an authenticated async client acting as ``user``.
+
+    Both method gates are overridden alongside the user, so a fixture built on
+    this cannot answer a mutation with the 401 a half-overridden client raises.
+    Keeping the overrides here is what stops the two client fixtures drifting
+    apart the next time the gate set changes.
+
+    :param user: The user every request authenticates as.
+    :param session: The in-memory session the request and any following DB read
+        share, so both run on one event loop.
+    :return: The configured client, torn down with the overrides on exit.
+    """
+    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[get_current_user] = lambda: user
+    sep_app.dependency_overrides[get_session] = lambda: session
+    client = AsyncClient(
+        transport=ASGITransport(app=sep_app),
+        base_url="http://test",
+        headers={"Authorization": "Bearer test"},
+    )
+    try:
+        yield client
+    finally:
+        await client.aclose()
+        sep_app.dependency_overrides = {}
+
+
+@pytest_asyncio.fixture
+async def admin_api_client(
+    admin_user: CasdoorUser, session: AsyncSession
+) -> AsyncClient:
+    """Yield the authenticated async client as an administrator.
+
+    Mirrors :func:`async_api_client`, whose user is a viewer. Routes declaring
+    their own admin dependency answer that client with 403, so a test covering
+    one needs this fixture and a test covering the refusal needs the other.
+    """
+    async with _authenticated_api_client(admin_user, session) as client:
+        yield client
+
+
 @pytest_asyncio.fixture
 async def async_api_client(
     regular_user: CasdoorUser, session: AsyncSession
@@ -122,18 +171,5 @@ async def async_api_client(
     asserting cascade deletes): the request and the DB check then run on the same
     event loop and session, which a sync ``TestClient`` cannot offer.
     """
-    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_session] = lambda: session
-    transport = ASGITransport(app=sep_app)
-    client = AsyncClient(
-        transport=transport,
-        base_url="http://test",
-        headers={"Authorization": "Bearer test"},
-    )
-    try:
+    async with _authenticated_api_client(regular_user, session) as client:
         yield client
-    finally:
-        await client.aclose()
-        sep_app.dependency_overrides = {}

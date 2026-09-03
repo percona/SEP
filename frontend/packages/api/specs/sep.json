@@ -3850,9 +3850,55 @@
         "title": "ATWSnippetSummary",
         "type": "object"
       },
-      "atw__AtwConfigResponse": {
-        "description": "Report whether the incident send action is available.\n\n:param send_disabled_reasons: Why sending is unavailable; empty when the\n    receiver is configured and the action is offered.",
+      "atw__AtwCaseMatch": {
+        "description": "Represent one support case the delivery provider matched.\n\n:param reference: The case reference to send diagnostics against.\n:param title: The case title, shown beside the reference to tell two\n    similar references apart.",
         "properties": {
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "title"
+        ],
+        "title": "AtwCaseMatch",
+        "type": "object"
+      },
+      "atw__AtwCaseSearchResponse": {
+        "description": "Report the cases matching a typed term, or that the search could not run.\n\n:param available: Whether the search ran at all. This is what keeps an\n    unavailable search distinct from an available one that matched nothing:\n    a caller must not render the first as the second.\n:param matches: The matched cases, empty when there are none and when the\n    search could not run.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/atw__AtwCaseMatch"
+            },
+            "title": "Matches",
+            "type": "array"
+          }
+        },
+        "required": [
+          "available",
+          "matches"
+        ],
+        "title": "AtwCaseSearchResponse",
+        "type": "object"
+      },
+      "atw__AtwConfigResponse": {
+        "description": "Report whether the incident send action is available.\n\n:param send_disabled_reasons: Why sending is unavailable; empty when the\n    receiver is configured and the action is offered.\n:param case_search_available: Whether the case-reference field may query the\n    receiver for matches. Defaults to ``False`` so a client built against\n    the response before this field existed keeps validating.",
+        "properties": {
+          "case_search_available": {
+            "default": false,
+            "title": "Case Search Available",
+            "type": "boolean"
+          },
           "send_disabled_reasons": {
             "items": {
               "type": "string"
@@ -15305,9 +15351,56 @@
         ]
       }
     },
+    "/api/apps/atw/case-search/": {
+      "get": {
+        "description": "Search the configured delivery provider for support cases matching ``term``.\n\nNo way the search itself can fail reaches the caller as an error: a\ndeployment that declares no case-search section, stored inputs that no\nlonger fit the plan, a refused credential, an unreachable receiver and a\nsearch that outran its bound all report the same unavailability, which the\ncaller renders as the plain text field rather than as a search that found\nnothing.\n\nRestricted to administrators, unlike the app's other reads. The router\nresolves a minimum role for unsafe methods only, so a safe method carries\nwhatever guard it declares itself; this one issues the deployment's own\nreceiver credential, and the dialog that calls it is already offered to\nadministrators alone.\n\n:param term: The caller's typed search term, the only input it accepts.\n    Surrounding whitespace is stripped, so a whitespace-only term is\n    refused rather than reaching the receiver as a match-everything\n    fragment.\n:return: The matched cases, or that the search could not run. At most\n    ``MAX_CASE_SEARCH_MATCHES`` are offered, so a plan that declares no\n    provider-side limit still cannot hand the dialog an unbounded list.",
+        "operationId": "atw_atw_case_search_api_apps_atw_case_search__get",
+        "parameters": [
+          {
+            "description": "The support case reference or title fragment to match.",
+            "in": "query",
+            "name": "term",
+            "required": true,
+            "schema": {
+              "description": "The support case reference or title fragment to match.",
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Term",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwCaseSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Case Search",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
     "/api/apps/atw/config/": {
       "get": {
-        "description": "Report whether the incident send action is available.\n\nNot gated by the send guard -- this endpoint is what reports that guard, so\nit must answer whether or not a receiver is configured.\n\n:return: The reasons the send action is withheld; empty when it is offered.",
+        "description": "Report whether the incident send action is available.\n\nNot gated by the send guard: this endpoint is what reports that guard, so\nit must answer whether or not a receiver is configured.\n\n:return: The reasons the send action is withheld, and whether the\n    case-reference field may search the receiver.",
         "operationId": "atw_atw_config_api_apps_atw_config__get",
         "responses": {
           "200": {

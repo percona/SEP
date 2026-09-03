@@ -15,15 +15,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { TaskHistoryTable } from './TaskHistoryTable';
-export { StatusBadge as TaskHistoryStatusBadge, isTaskHistoryStatus } from './StatusBadge';
-export { ChainDisplay } from './ChainDisplay';
-export { TaskFilesDialog } from './TaskFilesDialog';
-export type { TaskFilesDialogProps } from './TaskFilesDialog';
-export type {
-  TaskHistoryTableProps,
-  TaskHistoryStopContract,
-  TaskHistoryEntry,
-  TaskHistoryStatus,
-  PaginatedTaskHistory,
-} from './TaskHistoryTable.types';
+export { ActionErrorAlert } from './ActionErrorAlert';
+export type { ActionErrorAlertProps } from './ActionErrorAlert';
+export { useActionError } from './useActionError';
+export type { ActionErrorState } from './useActionError';
+export { actionErrorMessage, DEFAULT_ACTION_ERROR_FALLBACK } from './actionErrorMessage';
