@@ -42,7 +42,7 @@ from app.core.exceptions import (
 )
 from app.core.pagination import Pagination
 from app.core.security import crypto_timestamp_serializer
-from app.sep.apps.framework.script_helpers import ARTIFACT_DOWNLOAD_SALT
+from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
 from app.sep.apps.framework.script_source import ScriptExecuteWrite
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
