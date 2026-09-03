@@ -227,6 +227,50 @@ default:
     #       headers:
     #         x-sn-apikey: {source: secret, name: api_key}
     #
+    # Optional case search. Declares the one request the send dialog's support
+    # case reference field issues as the user types; without it that field stays
+    # the plain text input it has always been and no search is ever issued. Like
+    # the probe it is declared rather than derived, under the same constraints:
+    #   - the method is always GET, and there is no body;
+    #   - values may only be {source: literal}, {source: secret} or
+    #     {source: term} - `input`, `output` and `manifest_key` are refused when
+    #     the plan is parsed.
+    # `{source: term}` carries the typed term, optionally wrapped in literal
+    # `prefix` / `suffix` affixes, because a receiver's search parameter is
+    # rarely the bare term: ServiceNow's Table API wants an encoded query whose
+    # operator precedes it. `separator` emits the term a second time after that
+    # literal, which is how one term is compared against two fields when the
+    # receiver refuses this credential its full-text index. The term is emitted
+    # once, or twice around `separator`, and only ever inside a header or query
+    # value, so it can never reach `path`. As for the probe,
+    # `path` must be relative to `endpoint` and secrets are rejected in `query`.
+    # `term_pattern` is required and is a regular expression the WHOLE typed
+    # term must match before it is composed into any value. It is what keeps the
+    # declared query the whole query: a receiver's query language gives its
+    # clause separators no escape, so a term carrying them would widen the
+    # search and return rows the plan never selected. Keep it to the characters
+    # a real reference or title fragment needs; `.*` reopens the hole.
+    # The three pointers map the response: `results_pointer` addresses the list
+    # of rows, and the other two are applied to each row. A row whose pointers
+    # miss is skipped; a `results_pointer` addressing no list fails the search.
+    # Repeated references are deduplicated, first occurrence kept.
+    #   DIAGNOSTICS_DELIVERY:
+    #     case_search:
+    #       path: api/now/table/sn_customerservice_case
+    #       query:
+    #         sysparm_query:
+    #           source: term
+    #           prefix: numberLIKE
+    #           separator: ^ORshort_descriptionLIKE
+    #         sysparm_fields: {source: literal, value: "number,short_description"}
+    #         sysparm_limit: {source: literal, value: "10"}
+    #       headers:
+    #         x-sn-apikey: {source: secret, name: api_key}
+    #       term_pattern: '[A-Za-z0-9 ._-]+'
+    #       results_pointer: /result
+    #       reference_pointer: /number
+    #       title_pointer: /short_description
+    #
     # Per-deployment inputs for the plan above - unset by default. Supplies the
     # values the skeleton leaves open, so an image can bake a plan whose secret
     # names are declared but empty and an operator fill them in later. Unlike the
