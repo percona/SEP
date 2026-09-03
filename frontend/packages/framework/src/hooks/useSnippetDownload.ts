@@ -16,7 +16,7 @@
  */
 
 import { useMutation } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
+import { apiClient, normalizeBlobError } from '@sep/api';
 import { downloadBlob } from '../utils/downloadBlob';
 
 export interface SnippetDownloadParams {
@@ -27,10 +27,18 @@ export interface SnippetDownloadParams {
 export function useSnippetDownload() {
   return useMutation<void, Error, SnippetDownloadParams>({
     mutationFn: async ({ filename }) => {
-      const { data } = await apiClient.get<Blob>('/apps/snippets/snippet/download', {
-        params: { snippet_filename: filename },
-        responseType: 'blob',
-      });
+      let data: Blob;
+      try {
+        ({ data } = await apiClient.get<Blob>('/apps/snippets/snippet/download', {
+          params: { snippet_filename: filename },
+          responseType: 'blob',
+        }));
+      } catch (error) {
+        // The response type applies to the error body too, so a refusal's JSON
+        // reason arrives as a blob. Parse it, or the caller can only report the
+        // bare status code.
+        throw await normalizeBlobError(error);
+      }
       const name = filename.split('/').filter(Boolean).pop() ?? filename;
       downloadBlob(data, name);
     },

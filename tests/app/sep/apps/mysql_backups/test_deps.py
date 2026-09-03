@@ -29,6 +29,7 @@ from app.sep.apps.mysql_backups.deps import (
     parse_backup_task_data,
     resolve_optional_catalog_service_key,
 )
+from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import (
     BackupType,
     CatalogServiceKey,
@@ -728,3 +729,199 @@ class TestResolveOptionalCatalogServiceKey:
         assert key == CatalogServiceKey(
             service_name="svc-a", service_id=_RESOLVED_SERVICE_ID
         )
+
+
+class TestParseBackupTaskDataEncryptionFormat:
+    """Reconstruct ``ENCRYPTION_FORMAT`` in ``parse_backup_task_data``.
+
+    Tasks stored before the selector existed carry only the format-specific
+    fields, so the edit form has to infer the format they were already running —
+    an inference that must land on the same four states the backup script derives,
+    or re-saving a task would change which encryption runs.
+    """
+
+    def _make_task_dict(
+        self,
+        all_servers: dict[str, Any],
+        backup_type: BackupType = BackupType.XTRABACKUP,
+    ) -> dict[str, Any]:
+        return {
+            "name": "test_task",
+            "data": {
+                "meta": {
+                    "target": "host.example.com",
+                    "config": yaml.dump(
+                        {
+                            "SERVER_LIST": [
+                                {
+                                    "ALIAS": "db1-mysql",
+                                    "HOST": "10.0.0.5",
+                                    "PORT": 3306,
+                                    "BACKUP_TYPE": backup_type.value,
+                                }
+                            ],
+                            "ALL_SERVERS": all_servers,
+                        }
+                    ),
+                }
+            },
+        }
+
+    @pytest.mark.parametrize(
+        ("all_servers", "expected"),
+        [
+            ({"ENCRYPT": False}, EncryptionFormat.NONE),
+            ({"ENCRYPT": True}, EncryptionFormat.GPG),
+            ({"ENCRYPT": False, "POST_RUN_ENCRYPT": True}, EncryptionFormat.GPG),
+            (
+                {"ENCRYPT": False, "XTRABACKUP_AES256_KEYFILE": "/etc/keyfile"},
+                EncryptionFormat.AES256,
+            ),
+            (
+                {"ENCRYPT": True, "XTRABACKUP_AES256_KEYFILE": "/etc/keyfile"},
+                EncryptionFormat.DUAL,
+            ),
+            (
+                {
+                    "ENCRYPT": False,
+                    "POST_RUN_ENCRYPT": True,
+                    "XTRABACKUP_AES256_KEYFILE": "/etc/keyfile",
+                },
+                EncryptionFormat.DUAL,
+            ),
+        ],
+    )
+    def test_infers_every_legacy_state(
+        self, all_servers: dict[str, Any], expected: EncryptionFormat
+    ):
+        """Infer each of the four formats from the fields a legacy task carries."""
+        result = parse_backup_task_data(self._make_task_dict(all_servers))
+        assert result["encryption_format"] == expected
+
+    def test_absent_encrypt_infers_none(self):
+        """Read an absent ``ENCRYPT`` as disabled for a SEP-stored task.
+
+        The payload reads the same absence as *enabled*, but that fail-safe guards
+        a standalone run against hand-authored config. Every config SEP writes names
+        ``ENCRYPT`` explicitly — see
+        ``test_build_backup_spec_always_emits_encrypt_key`` — so an absent key here
+        is not an encrypted task whose flag went missing.
+        """
+        result = parse_backup_task_data(self._make_task_dict({}))
+        assert result["encryption_format"] == EncryptionFormat.NONE
+
+    @pytest.mark.parametrize("backup_type", [BackupType.MYDUMPER, BackupType.BINLOG])
+    def test_leftover_key_file_never_infers_aes_off_xtrabackup(
+        self, backup_type: BackupType
+    ):
+        """Ignore a leftover key file for engines with no AES-256 path.
+
+        ``xtrabackup_aes256_keyfile`` is XtraBackup-only, so inferring ``aes256``
+        for a Mydumper or Binlog task would produce a format its own backup type
+        rejects, and the reconstructed form could never validate.
+        """
+        result = parse_backup_task_data(
+            self._make_task_dict(
+                {"ENCRYPT": False, "XTRABACKUP_AES256_KEYFILE": "/etc/keyfile"},
+                backup_type=backup_type,
+            )
+        )
+        assert result["encryption_format"] == EncryptionFormat.NONE
+
+    def test_stored_format_passes_through_unchanged(self):
+        """Keep an explicit stored format rather than re-inferring it.
+
+        A task saved with ``gpg`` but still carrying a stale key file must reload
+        as ``gpg``; re-inferring would read the stale field and report ``dual``.
+        """
+        result = parse_backup_task_data(
+            self._make_task_dict(
+                {
+                    "ENCRYPTION_FORMAT": EncryptionFormat.GPG.value,
+                    "ENCRYPT": True,
+                    "XTRABACKUP_AES256_KEYFILE": "/etc/keyfile",
+                }
+            )
+        )
+        assert result["encryption_format"] == EncryptionFormat.GPG
+
+
+class TestParseBackupTaskDataEncryptionRecipient:
+    """Read the GPG recipient back out of a stored ``SERVER_LIST`` entry.
+
+    The create path serializes the block through ``BackupConfigServer`` and
+    ``DirEncryptConfig``, so what lands in the config is an uppercase
+    ``DIR_ENCRYPT_CONFIG`` holding a space-separated ``encryption recipient``.
+    Reading only the models' attribute spellings recovers nothing, and a GPG
+    ``encryption_format`` requires a recipient — so the reconstructed form cannot
+    validate and the task is left as it was.
+    """
+
+    def _make_task_dict(self, server_extra: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "name": "test_task",
+            "data": {
+                "meta": {
+                    "target": "host.example.com",
+                    "config": yaml.dump(
+                        {
+                            "SERVER_LIST": [
+                                {
+                                    "ALIAS": "db1-mysql",
+                                    "HOST": "10.0.0.5",
+                                    "PORT": 3306,
+                                    "BACKUP_TYPE": BackupType.XTRABACKUP.value,
+                                    **server_extra,
+                                }
+                            ],
+                            "ALL_SERVERS": {"ENCRYPT": True},
+                        }
+                    ),
+                }
+            },
+        }
+
+    @pytest.mark.parametrize(
+        "server_extra",
+        [
+            pytest.param(
+                {"DIR_ENCRYPT_CONFIG": {"encryption recipient": "ops@example.com"}},
+                id="serialized-shape",
+            ),
+            pytest.param(
+                {"dir_encrypt_config": {"encryption_recipient": "ops@example.com"}},
+                id="attribute-name-shape",
+            ),
+            pytest.param(
+                {"DIR_ENCRYPT_CONFIG": {"encryption_recipient": "ops@example.com"}},
+                id="mixed-shape",
+            ),
+        ],
+    )
+    def test_recovers_the_recipient_from_every_stored_spelling(
+        self, server_extra: dict[str, Any]
+    ):
+        """Recover the recipient whichever of the two spellings a config carries."""
+        result = parse_backup_task_data(self._make_task_dict(server_extra))
+        assert result["encryption_recipient"] == "ops@example.com"
+
+    @pytest.mark.parametrize(
+        "server_extra",
+        [
+            pytest.param({}, id="no-block"),
+            pytest.param({"DIR_ENCRYPT_CONFIG": {}}, id="empty-block"),
+            pytest.param(
+                {"DIR_ENCRYPT_CONFIG": {"encryption recipient": None}},
+                id="null-recipient",
+            ),
+            pytest.param({"DIR_ENCRYPT_CONFIG": None}, id="null-block"),
+        ],
+    )
+    def test_names_no_recipient_when_none_is_stored(self, server_extra: dict[str, Any]):
+        """Leave ``encryption_recipient`` out rather than reporting a blank one.
+
+        A blank recipient would satisfy the key's presence while failing the form's
+        non-empty constraint, so the absence has to stay an absence.
+        """
+        result = parse_backup_task_data(self._make_task_dict(server_extra))
+        assert "encryption_recipient" not in result

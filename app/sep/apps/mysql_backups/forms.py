@@ -49,6 +49,7 @@ from app.sep.apps.framework.form_dsl import (
 )
 from app.sep.apps.framework.rules import (
     AllFalsy,
+    any_,
     AnyTruthy,
     Contains,
     F,
@@ -91,6 +92,50 @@ ALLOWED_COMPRESSIONS = {
 }
 
 
+class EncryptionFormat(EnumFieldMixin, StrEnum):
+    """Represent the backup-time encryption formats an operator can select."""
+
+    NONE = "none"
+    GPG = "gpg"
+    AES256 = "aes256"
+    DUAL = "dual"
+
+
+# Ordered so a format's index encodes its passes — bit 1 is AES-256, bit 0 is GPG.
+# The backup payload carries the same ordering, which is what lets both sides infer
+# a pre-selector task's format without keeping a second copy of the mode table.
+ENCRYPTION_FORMAT_BY_PASSES = (
+    EncryptionFormat.NONE,
+    EncryptionFormat.GPG,
+    EncryptionFormat.AES256,
+    EncryptionFormat.DUAL,
+)
+
+
+def encryption_format_for_passes(*, aes256: bool, gpg: bool) -> EncryptionFormat:
+    """Return the format that runs exactly the given passes.
+
+    Owns the index arithmetic so each caller only has to decide which passes a
+    stored task ran — the stored config and a stored form spell those fields
+    differently, but they agree on the format the pair implies.
+
+    :param aes256: Whether the task runs XtraBackup's built-in AES-256 pass.
+    :param gpg: Whether the task runs a GPG pass.
+    :return: The matching format.
+    """
+    return ENCRYPTION_FORMAT_BY_PASSES[aes256 * 2 + gpg]
+
+
+# AES-256 is XtraBackup's own ``--encrypt`` / xbcrypt path, so only that engine
+# can reach the AES-bearing formats; GPG is applied to the finished directory and
+# works for every engine.
+ALLOWED_ENCRYPTION_FORMATS = {
+    BackupType.MYDUMPER: [EncryptionFormat.NONE, EncryptionFormat.GPG],
+    BackupType.XTRABACKUP: list(EncryptionFormat),
+    BackupType.BINLOG: [EncryptionFormat.NONE, EncryptionFormat.GPG],
+}
+
+
 class UploadProvider(EnumFieldMixin, StrEnum):
     """Upload providers."""
 
@@ -112,6 +157,18 @@ _UPLOAD_GSUTIL = "GSUTIL"
 _MYDUMPER_ONLY = Forbidden(when=F("backup_type") != "M")
 _XTRABACKUP_ONLY = Forbidden(when=F("backup_type") != "X")
 _BINLOG_ONLY = Forbidden(when=F("backup_type") != "B")
+
+# ``encryption_format`` is the signal for *which* encryption runs; the key file
+# and the GPG timing bools below are its format-specific parameters, unreachable
+# outside their format. Reused across those fields the way the ``_ONLY`` gates
+# are, so the vocabulary lives in one place.
+_FMT = F("encryption_format")
+_FMT_HAS_AES = any_(_FMT == EncryptionFormat.AES256, _FMT == EncryptionFormat.DUAL)
+_FMT_HAS_GPG = any_(_FMT == EncryptionFormat.GPG, _FMT == EncryptionFormat.DUAL)
+
+# The GPG timing bools. Being bools they are gated by the ``FailRule``s below
+# rather than by a ``Forbidden`` like the mode gates above.
+_GPG_TIMING_FIELDS = ("encrypt", "post_run_encrypt")
 
 _S3_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_S3)))
 _GSUTIL_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_GSUTIL)))
@@ -159,6 +216,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     hardlink: bool = False
     compress: bool = False
     check_disk_space: bool = False
+    encryption_format: EncryptionFormat = EncryptionFormat.NONE
     encrypt: bool = False
     encrypt_using_tmpdir: bool = False
     post_run_encrypt: bool = False
@@ -233,12 +291,14 @@ class BackupCreate(TaskFormModel):
     declaration order, so the derived section and field order matches the
     hand-written schema. The conditional gating that the legacy ``schema.py`` declared
     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
-    encryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are
-    independent encryption modes that both produce an encrypted backup;
-    ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside
-    ``post_run_encrypt`` so post-run takes precedence (matching the backend at
-    ``mydumper_payload``), and ``encryption_recipient`` is required iff either mode
-    is on — and the per-mode bool
+    encryption gates — ``encryption_format`` selects which encryption runs and the
+    rest of the section parameterises it: the key file is required by the
+    AES-bearing formats and forbidden outside them, a GPG-bearing format needs one
+    of the two independent timings (``encrypt`` in place, ``post_run_encrypt``
+    after), ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden
+    alongside ``post_run_encrypt`` so post-run takes precedence (matching the
+    backend at ``mydumper_payload``), and ``encryption_recipient`` is required iff
+    either timing is on — and the per-mode and encryption-format bool
     ``FailRule``s in
     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
     into the conditional-rule plan at class definition, so no
@@ -246,21 +306,44 @@ class BackupCreate(TaskFormModel):
     (:class:`BackupConfigAll` and friends) stay the serialization target the
     payload builder populates, not this model's base class.
 
-    :cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool
-        outside its mode fails validation with a per-field message.
+    :cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside
+        its mode, or a GPG timing outside a GPG ``encryption_format``, fails
+        validation with a per-field message, as does a GPG format with no timing.
     """
 
     __form_rules__: ClassVar[FormRules] = FormRules(
-        fail_when=tuple(
+        fail_when=(
+            *(
+                FailRule(
+                    fail_when=truthy(name) & (F("backup_type") != owner_mode),
+                    error_fields=[name],
+                    message=(
+                        f"{name!r} must not be set when backup_type is not "
+                        f"{owner_mode!r}."
+                    ),
+                )
+                for owner_mode, names in _MODE_BOOL_FIELDS.items()
+                for name in names
+            ),
+            *(
+                FailRule(
+                    fail_when=truthy(name) & not_(_FMT_HAS_GPG),
+                    error_fields=[name],
+                    message=(
+                        f"{name!r} must not be set when 'encryption_format' does "
+                        "not include GPG."
+                    ),
+                )
+                for name in _GPG_TIMING_FIELDS
+            ),
             FailRule(
-                fail_when=truthy(name) & (F("backup_type") != owner_mode),
-                error_fields=[name],
+                fail_when=_FMT_HAS_GPG & AllFalsy(_GPG_TIMING_FIELDS),
+                error_fields=list(_GPG_TIMING_FIELDS),
                 message=(
-                    f"{name!r} must not be set when backup_type is not {owner_mode!r}."
+                    "A GPG 'encryption_format' requires 'encrypt' or "
+                    "'post_run_encrypt' to select when the backup is encrypted."
                 ),
-            )
-            for owner_mode, names in _MODE_BOOL_FIELDS.items()
-            for name in names
+            ),
         )
     )
 
@@ -424,11 +507,6 @@ class BackupCreate(TaskFormModel):
         _XTRABACKUP_ONLY,
         Ui(label="Local SSH destination", section="XtraBackup"),
     ] = None
-    xtrabackup_aes256_keyfile: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        _XTRABACKUP_ONLY,
-        Ui(label="AES-256 key file path", section="XtraBackup"),
-    ] = None
     xtrabackup_stop_replica: Annotated[
         bool,
         Ui(
@@ -487,15 +565,59 @@ class BackupCreate(TaskFormModel):
         Ui(label="Alternative binlog host", section="Binlog"),
     ] = None
 
+    encryption_format: Annotated[
+        EncryptionFormat,
+        Choices(
+            (
+                (EncryptionFormat.NONE, "No encryption"),
+                (EncryptionFormat.GPG, "GPG"),
+                (EncryptionFormat.AES256, "AES-256 (XtraBackup only)"),
+                (EncryptionFormat.DUAL, "AES-256 + GPG (XtraBackup only)"),
+            )
+        ),
+        Ui(
+            label="Encryption format",
+            section="Encryption",
+            description=(
+                "Which encryption this task applies. 'GPG' needs a recipient and "
+                "a timing below: 'Encrypt backup' encrypts in place as part of an "
+                "upload, so it needs an upload target, while 'Encrypt after backup "
+                "completes' encrypts on the host. 'AES-256' and 'AES-256 + GPG' "
+                "need a key file and are XtraBackup-only. 'AES-256 + GPG' selects "
+                "XtraBackup's built-in AES-256 and skips the GPG pass, which the "
+                "backend cannot apply on top of it."
+            ),
+        ),
+    ] = EncryptionFormat.NONE
+    xtrabackup_aes256_keyfile: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _XTRABACKUP_ONLY,
+        Requires(
+            when=_FMT_HAS_AES,
+            message=(
+                "'xtrabackup_aes256_keyfile' is required when 'encryption_format' "
+                "includes AES-256."
+            ),
+        ),
+        Forbidden(
+            when=not_(_FMT_HAS_AES),
+            message=(
+                "'xtrabackup_aes256_keyfile' must not be set when "
+                "'encryption_format' does not include AES-256."
+            ),
+        ),
+        Ui(label="AES-256 key file path", section="Encryption"),
+    ] = None
     encrypt: Annotated[
         bool,
         Ui(
             label="Encrypt backup",
             section="Encryption",
             description=(
-                "GPG-encrypt the backup in place. Combine with 'Encrypt using "
-                "tmpdir', or use 'Encrypt after backup completes' for post-run "
-                "encryption instead. Either encryption option needs a recipient."
+                "GPG-encrypt the backup in place as part of an upload, so it "
+                "needs an upload target. Combine with 'Encrypt using tmpdir', or "
+                "use 'Encrypt after backup completes' to encrypt on the host "
+                "instead. Needs a GPG 'Encryption format' and a recipient."
             ),
         ),
     ] = False
@@ -529,21 +651,23 @@ class BackupCreate(TaskFormModel):
             description=(
                 "GPG-encrypt the finished backup once it completes. Independent of "
                 "'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. "
-                "Needs an encryption recipient."
+                "Needs a GPG 'Encryption format' and a recipient. Mydumper and "
+                "XtraBackup encrypt on the host; a Binlog backup encrypts only "
+                "during an upload, so it also needs an upload target."
             ),
         ),
     ] = False
     encryption_recipient: Annotated[
         NonEmptyStr | EmptyStrToNone,
         Requires(
-            when=AnyTruthy(["encrypt", "post_run_encrypt"]),
+            when=AnyTruthy(_GPG_TIMING_FIELDS),
             message=(
                 "'encryption_recipient' is required when 'encrypt' or "
                 "'post_run_encrypt' is enabled."
             ),
         ),
         Forbidden(
-            when=AllFalsy(["encrypt", "post_run_encrypt"]),
+            when=AllFalsy(_GPG_TIMING_FIELDS),
             message=(
                 "'encryption_recipient' must not be set when no encryption mode is "
                 "enabled."
@@ -554,7 +678,7 @@ class BackupCreate(TaskFormModel):
             section="Encryption",
             description=(
                 "GPG recipient/key the backup is encrypted for. Required when "
-                "either encryption mode is enabled."
+                "either GPG timing is enabled."
             ),
         ),
     ] = None
@@ -599,6 +723,22 @@ class BackupCreate(TaskFormModel):
         _RSYNC_ONLY,
         Ui(label="Rsync destination path", section="Upload"),
     ] = None
+
+    @field_validator("encryption_format", mode="before")
+    @classmethod
+    def _normalize_encryption_format(cls, value: Any) -> Any:
+        """Normalise an omitted ``encryption_format`` to "no encryption".
+
+        A client that leaves the field empty sends ``""``, which means it picked
+        nothing — the same state as the default. Left uncoerced it fails the enum
+        instead, rejecting a request that selected no encryption.
+
+        :param value: The raw ``encryption_format`` input before validation.
+        :return: The normalised value passed on to enum validation.
+        """
+        if value is None or value == "":
+            return EncryptionFormat.NONE
+        return value
 
     @field_validator("upload", mode="before")
     @classmethod
@@ -665,6 +805,27 @@ class BackupCreate(TaskFormModel):
         return self
 
     @model_validator(mode="after")
+    def validate_encryption_format(self) -> Self:
+        """Validate the encryption format against the selected backup type.
+
+        Expressed as a validator rather than a conditional ``Choices`` set because
+        the DSL's option list is static: the AES-bearing formats stay published and
+        are rejected here for the engines that have no AES-256 path.
+
+        :return: The validated instance.
+        :raises ValueError: If the format is not valid for the backup type.
+        """
+        allowed_formats = ALLOWED_ENCRYPTION_FORMATS.get(self.backup_type, [])
+        if self.encryption_format not in allowed_formats:
+            raise ValueError(
+                f"Invalid encryption_format {self.encryption_format.value!r} for "
+                f"{self.backup_type.name} backup. Options are "
+                f"{[fmt.value for fmt in allowed_formats]}"
+            )
+
+        return self
+
+    @model_validator(mode="after")
     def validate_compression_algorithm(self) -> Self:
         """Validate that the compression_algorithm is compatible with the selected backup_type.
 
@@ -678,8 +839,10 @@ class BackupCreate(TaskFormModel):
             and self.compression_algorithm not in allowed_algorithms
         ):
             raise ValueError(
-                f"Invalid compression algorithm {self.compression_algorithm!r} for "
-                f"{self.backup_type.name} backup. Options are {allowed_algorithms}"
+                f"Invalid compression algorithm "
+                f"{self.compression_algorithm.value!r} for "
+                f"{self.backup_type.name} backup. Options are "
+                f"{[algorithm.value for algorithm in allowed_algorithms]}"
             )
 
         return self

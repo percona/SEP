@@ -33,6 +33,10 @@ from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.execution.nomad_lifecycle import normalize_nomad_config_value
 from app.tasks.main import tasks_app
+from tests.app.core.settings_override.conftest import (
+    ANONYMIZER_SETTINGS_TOKEN,
+    TASKS_SETTINGS_TOKEN,
+)
 
 
 def _nomad_endpoint_value() -> str:
@@ -142,7 +146,7 @@ class TestTasksSettingsApi:
         )
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.ANONYMIZER_SETTINGS
+            session, setting_class=ANONYMIZER_SETTINGS_TOKEN
         )
         assert [r.key for r in rows] == ["DEFAULT_ENTITIES"]
 
@@ -159,7 +163,7 @@ class TestTasksSettingsApi:
         )
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            session, setting_class=TASKS_SETTINGS_TOKEN
         )
         assert len(rows) == 1
         assert rows[0].value == new_value
@@ -178,7 +182,7 @@ class TestTasksSettingsApi:
         types = {entry["type"] for entry in response.json()["detail"]}
         assert "not_overridable" in types
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            session, setting_class=TASKS_SETTINGS_TOKEN
         )
         assert rows == []
 
@@ -197,7 +201,7 @@ class TestTasksSettingsApi:
         )
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            session, setting_class=TASKS_SETTINGS_TOKEN
         )
         expected_rows = 2
         assert len(rows) == expected_rows
@@ -249,7 +253,7 @@ class TestTasksSettingsApi:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            session, setting_class=TASKS_SETTINGS_TOKEN
         )
         assert rows == []
 
@@ -294,7 +298,7 @@ class TestTasksSettingsApi:
         locs = [tuple(entry["loc"]) for entry in response.json()["detail"]]
         assert any(loc[:2] == ("body", "LOG_RETENTION_DAYS") for loc in locs)
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            session, setting_class=TASKS_SETTINGS_TOKEN
         )
         assert rows == []
 
@@ -313,7 +317,7 @@ class TestTasksSettingsApi:
             assert response.status_code == status.HTTP_200_OK
             assert new_value == tasks_settings.LOG_RETENTION_DAYS
             rows = await SettingsOverrideManager.list(
-                session, setting_class=SettingClassEnum.TASKS_SETTINGS
+                session, setting_class=TASKS_SETTINGS_TOKEN
             )
             assert len(rows) == 1
             assert rows[0].value == new_value
@@ -367,7 +371,7 @@ class TestTasksSettingsNestedOverrides:
         assert body[0]["value"] == override_timeout
         rows = await SettingsOverrideManager.list(
             session,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="NOMAD__timeout",
         )
         assert len(rows) == 1
@@ -429,7 +433,7 @@ class TestTasksSettingsNestedOverrides:
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            session, setting_class=TASKS_SETTINGS_TOKEN
         )
         assert rows == []
 
@@ -576,7 +580,7 @@ class TestTasksSettingsNestedOverrides:
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            session, setting_class=TASKS_SETTINGS_TOKEN
         )
         assert rows == []
 

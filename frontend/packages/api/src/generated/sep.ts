@@ -656,6 +656,47 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/atw/case-search/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Case Search
+     * @description Search the configured delivery provider for support cases matching ``term``.
+     *
+     *     No way the search itself can fail reaches the caller as an error: a
+     *     deployment that declares no case-search section, stored inputs that no
+     *     longer fit the plan, a refused credential, an unreachable receiver and a
+     *     search that outran its bound all report the same unavailability, which the
+     *     caller renders as the plain text field rather than as a search that found
+     *     nothing.
+     *
+     *     Restricted to administrators, unlike the app's other reads. The router
+     *     resolves a minimum role for unsafe methods only, so a safe method carries
+     *     whatever guard it declares itself; this one issues the deployment's own
+     *     receiver credential, and the dialog that calls it is already offered to
+     *     administrators alone.
+     *
+     *     :param term: The caller's typed search term, the only input it accepts.
+     *         Surrounding whitespace is stripped, so a whitespace-only term is
+     *         refused rather than reaching the receiver as a match-everything
+     *         fragment.
+     *     :return: The matched cases, or that the search could not run. At most
+     *         ``MAX_CASE_SEARCH_MATCHES`` are offered, so a plan that declares no
+     *         provider-side limit still cannot hand the dialog an unbounded list.
+     */
+    get: operations['atw_atw_case_search_api_apps_atw_case_search__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/atw/config/': {
     parameters: {
       query?: never;
@@ -667,10 +708,11 @@ export interface paths {
      * Atw Config
      * @description Report whether the incident send action is available.
      *
-     *     Not gated by the send guard -- this endpoint is what reports that guard, so
+     *     Not gated by the send guard: this endpoint is what reports that guard, so
      *     it must answer whether or not a receiver is configured.
      *
-     *     :return: The reasons the send action is withheld; empty when it is offered.
+     *     :return: The reasons the send action is withheld, and whether the
+     *         case-reference field may search the receiver.
      */
     get: operations['atw_atw_config_api_apps_atw_config__get'];
     put?: never;
@@ -5738,13 +5780,51 @@ export interface components {
       title: string;
     };
     /**
+     * AtwCaseMatch
+     * @description Represent one support case the delivery provider matched.
+     *
+     *     :param reference: The case reference to send diagnostics against.
+     *     :param title: The case title, shown beside the reference to tell two
+     *         similar references apart.
+     */
+    atw__AtwCaseMatch: {
+      /** Reference */
+      reference: string;
+      /** Title */
+      title: string;
+    };
+    /**
+     * AtwCaseSearchResponse
+     * @description Report the cases matching a typed term, or that the search could not run.
+     *
+     *     :param available: Whether the search ran at all. This is what keeps an
+     *         unavailable search distinct from an available one that matched nothing:
+     *         a caller must not render the first as the second.
+     *     :param matches: The matched cases, empty when there are none and when the
+     *         search could not run.
+     */
+    atw__AtwCaseSearchResponse: {
+      /** Available */
+      available: boolean;
+      /** Matches */
+      matches: components['schemas']['atw__AtwCaseMatch'][];
+    };
+    /**
      * AtwConfigResponse
      * @description Report whether the incident send action is available.
      *
      *     :param send_disabled_reasons: Why sending is unavailable; empty when the
      *         receiver is configured and the action is offered.
+     *     :param case_search_available: Whether the case-reference field may query the
+     *         receiver for matches. Defaults to ``False`` so a client built against
+     *         the response before this field existed keeps validating.
      */
     atw__AtwConfigResponse: {
+      /**
+       * Case Search Available
+       * @default false
+       */
+      case_search_available: boolean;
       /** Send Disabled Reasons */
       send_disabled_reasons: string[];
     };
@@ -8873,12 +8953,14 @@ export interface components {
      *     declaration order, so the derived section and field order matches the
      *     hand-written schema. The conditional gating that the legacy ``schema.py`` declared
      *     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
-     *     encryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are
-     *     independent encryption modes that both produce an encrypted backup;
-     *     ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside
-     *     ``post_run_encrypt`` so post-run takes precedence (matching the backend at
-     *     ``mydumper_payload``), and ``encryption_recipient`` is required iff either mode
-     *     is on — and the per-mode bool
+     *     encryption gates — ``encryption_format`` selects which encryption runs and the
+     *     rest of the section parameterises it: the key file is required by the
+     *     AES-bearing formats and forbidden outside them, a GPG-bearing format needs one
+     *     of the two independent timings (``encrypt`` in place, ``post_run_encrypt``
+     *     after), ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden
+     *     alongside ``post_run_encrypt`` so post-run takes precedence (matching the
+     *     backend at ``mydumper_payload``), and ``encryption_recipient`` is required iff
+     *     either timing is on — and the per-mode and encryption-format bool
      *     ``FailRule``s in
      *     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
      *     into the conditional-rule plan at class definition, so no
@@ -8886,8 +8968,9 @@ export interface components {
      *     (:class:`BackupConfigAll` and friends) stay the serialization target the
      *     payload builder populates, not this model's base class.
      *
-     *     :cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool
-     *         outside its mode fails validation with a per-field message.
+     *     :cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside
+     *         its mode, or a GPG timing outside a GPG ``encryption_format``, fails
+     *         validation with a per-field message, as does a GPG format with no timing.
      */
     mysql_backups__BackupCreate: {
       /**
@@ -8943,6 +9026,8 @@ export interface components {
        * @default false
        */
       encrypt_using_tmpdir: boolean;
+      /** @default none */
+      encryption_format: components['schemas']['mysql_backups__EncryptionFormat'];
       /** Encryption Recipient */
       encryption_recipient?: string | null;
       /** Gs Bucket */
@@ -9189,6 +9274,12 @@ export interface components {
      * @enum {string}
      */
     mysql_backups__CompressionAlgorithm: 'zstd' | 'lz4' | 'gzip' | 'quicklz';
+    /**
+     * EncryptionFormat
+     * @description Represent the backup-time encryption formats an operator can select.
+     * @enum {string}
+     */
+    mysql_backups__EncryptionFormat: 'none' | 'gpg' | 'aes256' | 'dual';
     /** PaginatedResponse[BackupRunResponse] */
     mysql_backups__PaginatedResponse_BackupRunResponse_: {
       /** Items */
@@ -11376,6 +11467,38 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['atw__ATWCategoryListing'][];
+        };
+      };
+    };
+  };
+  atw_atw_case_search_api_apps_atw_case_search__get: {
+    parameters: {
+      query: {
+        /** @description The support case reference or title fragment to match. */
+        term: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwCaseSearchResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

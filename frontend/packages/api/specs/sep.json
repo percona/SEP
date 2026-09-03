@@ -3850,9 +3850,55 @@
         "title": "ATWSnippetSummary",
         "type": "object"
       },
-      "atw__AtwConfigResponse": {
-        "description": "Report whether the incident send action is available.\n\n:param send_disabled_reasons: Why sending is unavailable; empty when the\n    receiver is configured and the action is offered.",
+      "atw__AtwCaseMatch": {
+        "description": "Represent one support case the delivery provider matched.\n\n:param reference: The case reference to send diagnostics against.\n:param title: The case title, shown beside the reference to tell two\n    similar references apart.",
         "properties": {
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "title"
+        ],
+        "title": "AtwCaseMatch",
+        "type": "object"
+      },
+      "atw__AtwCaseSearchResponse": {
+        "description": "Report the cases matching a typed term, or that the search could not run.\n\n:param available: Whether the search ran at all. This is what keeps an\n    unavailable search distinct from an available one that matched nothing:\n    a caller must not render the first as the second.\n:param matches: The matched cases, empty when there are none and when the\n    search could not run.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/atw__AtwCaseMatch"
+            },
+            "title": "Matches",
+            "type": "array"
+          }
+        },
+        "required": [
+          "available",
+          "matches"
+        ],
+        "title": "AtwCaseSearchResponse",
+        "type": "object"
+      },
+      "atw__AtwConfigResponse": {
+        "description": "Report whether the incident send action is available.\n\n:param send_disabled_reasons: Why sending is unavailable; empty when the\n    receiver is configured and the action is offered.\n:param case_search_available: Whether the case-reference field may query the\n    receiver for matches. Defaults to ``False`` so a client built against\n    the response before this field existed keeps validating.",
+        "properties": {
+          "case_search_available": {
+            "default": false,
+            "title": "Case Search Available",
+            "type": "boolean"
+          },
           "send_disabled_reasons": {
             "items": {
               "type": "string"
@@ -10519,7 +10565,7 @@
         "type": "object"
       },
       "mysql_backups__BackupCreate": {
-        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the derived section and field order matches the\nhand-written schema. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are\nindependent encryption modes that both produce an encrypted backup;\n``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside\n``post_run_encrypt`` so post-run takes precedence (matching the backend at\n``mydumper_payload``), and ``encryption_recipient`` is required iff either mode\nis on — and the per-mode bool\n``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool\n    outside its mode fails validation with a per-field message.",
+        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the derived section and field order matches the\nhand-written schema. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption gates — ``encryption_format`` selects which encryption runs and the\nrest of the section parameterises it: the key file is required by the\nAES-bearing formats and forbidden outside them, a GPG-bearing format needs one\nof the two independent timings (``encrypt`` in place, ``post_run_encrypt``\nafter), ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden\nalongside ``post_run_encrypt`` so post-run takes precedence (matching the\nbackend at ``mydumper_payload``), and ``encryption_recipient`` is required iff\neither timing is on — and the per-mode and encryption-format bool\n``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside\n    its mode, or a GPG timing outside a GPG ``encryption_format``, fails\n    validation with a per-field message, as does a GPG format with no timing.",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -10683,6 +10729,10 @@
             "default": false,
             "title": "Encrypt Using Tmpdir",
             "type": "boolean"
+          },
+          "encryption_format": {
+            "$ref": "#/components/schemas/mysql_backups__EncryptionFormat",
+            "default": "none"
           },
           "encryption_recipient": {
             "anyOf": [
@@ -11383,6 +11433,17 @@
           "quicklz"
         ],
         "title": "CompressionAlgorithm",
+        "type": "string"
+      },
+      "mysql_backups__EncryptionFormat": {
+        "description": "Represent the backup-time encryption formats an operator can select.",
+        "enum": [
+          "none",
+          "gpg",
+          "aes256",
+          "dual"
+        ],
+        "title": "EncryptionFormat",
         "type": "string"
       },
       "mysql_backups__PaginatedResponse_BackupRunResponse_": {
@@ -15290,9 +15351,56 @@
         ]
       }
     },
+    "/api/apps/atw/case-search/": {
+      "get": {
+        "description": "Search the configured delivery provider for support cases matching ``term``.\n\nNo way the search itself can fail reaches the caller as an error: a\ndeployment that declares no case-search section, stored inputs that no\nlonger fit the plan, a refused credential, an unreachable receiver and a\nsearch that outran its bound all report the same unavailability, which the\ncaller renders as the plain text field rather than as a search that found\nnothing.\n\nRestricted to administrators, unlike the app's other reads. The router\nresolves a minimum role for unsafe methods only, so a safe method carries\nwhatever guard it declares itself; this one issues the deployment's own\nreceiver credential, and the dialog that calls it is already offered to\nadministrators alone.\n\n:param term: The caller's typed search term, the only input it accepts.\n    Surrounding whitespace is stripped, so a whitespace-only term is\n    refused rather than reaching the receiver as a match-everything\n    fragment.\n:return: The matched cases, or that the search could not run. At most\n    ``MAX_CASE_SEARCH_MATCHES`` are offered, so a plan that declares no\n    provider-side limit still cannot hand the dialog an unbounded list.",
+        "operationId": "atw_atw_case_search_api_apps_atw_case_search__get",
+        "parameters": [
+          {
+            "description": "The support case reference or title fragment to match.",
+            "in": "query",
+            "name": "term",
+            "required": true,
+            "schema": {
+              "description": "The support case reference or title fragment to match.",
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Term",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/atw__AtwCaseSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atw Case Search",
+        "tags": [
+          "atw"
+        ]
+      }
+    },
     "/api/apps/atw/config/": {
       "get": {
-        "description": "Report whether the incident send action is available.\n\nNot gated by the send guard -- this endpoint is what reports that guard, so\nit must answer whether or not a receiver is configured.\n\n:return: The reasons the send action is withheld; empty when it is offered.",
+        "description": "Report whether the incident send action is available.\n\nNot gated by the send guard: this endpoint is what reports that guard, so\nit must answer whether or not a receiver is configured.\n\n:return: The reasons the send action is withheld, and whether the\n    case-reference field may search the receiver.",
         "operationId": "atw_atw_config_api_apps_atw_config__get",
         "responses": {
           "200": {
