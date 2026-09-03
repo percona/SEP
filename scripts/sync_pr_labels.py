@@ -14,13 +14,24 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Compute and sync ``large-diff`` / ``app-isolated`` labels on a pull request.
+"""Compute and sync the pull-request labels ``actions/labeler`` cannot express.
 
-``actions/labeler`` matches path globs only; it cannot count changed lines or
-express "every file sits in exactly one app slice". This script fills that gap
-for the Labels workflow: it reads ``app:<name>`` globs from the base-branch
-``.github/labeler.yml``, fetches the PR file list via the GitHub REST API, and
-adds or removes the blast-radius labels.
+The action matches path globs only, so three labels need code: ``large-diff``
+(a changed-line count), ``app-isolated`` (every file inside one app slice), and
+``qa not required`` (a Dependabot or doc-only PR). This script reads ``app:<name>``
+globs from the base-branch ``.github/labeler.yml``, fetches the PR file list via
+the GitHub REST API, and adds or removes those labels.
+
+``qa not required`` is computed here rather than declared in ``.github/labeler.yml``
+because the action's ``sync-labels`` loop removes any label it holds a rule for,
+which strips an instance a maintainer applied by hand and leaves the merge
+gate's only QA bypass unusable. Provenance comes from the issue-events API, and
+the signal it offers is *identity class*, never intent: the predicate
+implemented below is "the newest ``qa not required`` event applied the label and its
+actor was not a bot". That is exact for the two actors that matter — the labeler
+and this script are both ``github-actions[bot]``, a maintainer is a ``User`` —
+and deliberately inexact in one direction, since automation authenticating with
+a user-owned token would earn a permanent label.
 
 Invoked from ``.github/workflows/labels.yaml`` after a sparse checkout of the
 base branch ``.github/`` and ``scripts/`` trees only — never PR-head code.
@@ -38,6 +49,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol, TYPE_CHECKING
 
@@ -57,6 +69,11 @@ GENERATED_PREFIXES = (
     "frontend/packages/api/specs/",
 )
 GENERATED_EXACT = frozenset({"poetry.lock", "frontend/pnpm-lock.yaml"})
+
+QA_NOT_REQUIRED_LABEL = "qa not required"
+QA_NOT_REQUIRED_GLOBS = (".github/CODEOWNERS", "README.md", ".gitignore", "dist/**")
+QA_NOT_REQUIRED_HEAD_BRANCH = re.compile(r"^dependabot/")
+BOT_ACTOR_TYPE = "Bot"
 
 _LABEL_KEY = re.compile(r"^([A-Za-z0-9:_-]+):\s*$")
 _GLOB_LINE = re.compile(r"^\s*-\s*'([^']+)'\s*$")
@@ -82,6 +99,38 @@ class BlastRadiusResult:
     touched_apps: tuple[str, ...]
 
 
+class LabelEventKind(StrEnum):
+    """Name the issue-event kinds that carry a label change."""
+
+    LABELED = "labeled"
+    UNLABELED = "unlabeled"
+
+
+LABEL_EVENT_TYPES = frozenset(LabelEventKind)
+
+
+@dataclass(frozen=True, slots=True)
+class LabelEvent:
+    """Represent one ``labeled`` / ``unlabeled`` entry from the issue-events API."""
+
+    event: LabelEventKind
+    label: str
+    actor_type: str
+    created_at: str
+    event_id: int
+
+    @property
+    def order_key(self) -> tuple[str, int]:
+        """Return the sort key that identifies the newest event.
+
+        ``created_at`` is ISO-8601 UTC with second granularity, so it sorts
+        lexicographically but ties; the monotonic event id breaks those ties.
+
+        :return: The ``(created_at, event_id)`` pair to sort on.
+        """
+        return (self.created_at, self.event_id)
+
+
 class GitHubClient(Protocol):
     """Describe the subset of the GitHub REST API used by this script."""
 
@@ -101,6 +150,17 @@ class GitHubClient(Protocol):
         :param repo: Repository name without owner.
         :param issue_number: Issue or pull request number.
         :return: Label names currently attached.
+        """
+
+    def list_issue_events(
+        self, owner: str, repo: str, issue_number: int
+    ) -> list[LabelEvent]:
+        """Return every label event recorded against an issue or pull request.
+
+        :param owner: Repository owner.
+        :param repo: Repository name without owner.
+        :param issue_number: Issue or pull request number.
+        :return: Label events, across all result pages, in API order.
         """
 
     def add_issue_labels(
@@ -255,6 +315,74 @@ def sync_blast_radius_labels(
             log(f"Removed {name}")
 
 
+def qa_not_required_eligible(files: list[PrFile], head_ref: str) -> bool:
+    """Return whether a pull request qualifies for an automatic ``qa not required``.
+
+    :param files: Changed files from the pulls list-files API.
+    :param head_ref: Bare head branch name of the pull request.
+    :return: ``True`` for a Dependabot branch or an all-documentation diff.
+    """
+    if QA_NOT_REQUIRED_HEAD_BRANCH.match(head_ref):
+        return True
+    return bool(files) and all(
+        any(match_glob(glob, file.filename) for glob in QA_NOT_REQUIRED_GLOBS)
+        for file in files
+    )
+
+
+def qa_not_required_manually_applied(events: list[LabelEvent]) -> bool:
+    """Return whether the newest ``qa not required`` event was a non-bot application.
+
+    An empty history yields ``True``: a label this script cannot account for is
+    never stripped.
+
+    :param events: Label events recorded against the pull request.
+    :return: ``True`` when the label must survive an automatic removal.
+    """
+    relevant = [event for event in events if event.label == QA_NOT_REQUIRED_LABEL]
+    if not relevant:
+        return True
+    newest = max(relevant, key=lambda event: event.order_key)
+    return (
+        newest.event == LabelEventKind.LABELED and newest.actor_type != BOT_ACTOR_TYPE
+    )
+
+
+def sync_qa_not_required_label(
+    client: GitHubClient,
+    owner: str,
+    repo: str,
+    pr_number: int,
+    *,
+    eligible: bool,
+    log: Callable[[str], None] = print,
+) -> None:
+    """Add or remove ``qa not required``, leaving a human-applied label in place.
+
+    The events endpoint is consulted only on the removal branch, so the common
+    path costs no extra request.
+
+    :param client: GitHub REST client.
+    :param owner: Repository owner.
+    :param repo: Repository name without owner.
+    :param pr_number: Pull request number.
+    :param eligible: Whether the pull request qualifies for the label.
+    :param log: Callable for informational messages.
+    """
+    present = QA_NOT_REQUIRED_LABEL in client.list_issue_labels(owner, repo, pr_number)
+
+    if eligible and not present:
+        client.add_issue_labels(owner, repo, pr_number, [QA_NOT_REQUIRED_LABEL])
+        log(f"Added {QA_NOT_REQUIRED_LABEL}")
+    elif not eligible and present:
+        events = client.list_issue_events(owner, repo, pr_number)
+        if qa_not_required_manually_applied(events):
+            log(f"Kept {QA_NOT_REQUIRED_LABEL} (applied by hand)")
+        else:
+            client.remove_issue_label(owner, repo, pr_number, QA_NOT_REQUIRED_LABEL)
+            log(f"Removed {QA_NOT_REQUIRED_LABEL}")
+
+
 class UrllibGitHubClient:
     """Wrap the GitHub REST API using stdlib ``urllib``."""
 
@@ -345,6 +473,43 @@ class UrllibGitHubClient:
             page += 1
         return labels
 
+    def list_issue_events(
+        self, owner: str, repo: str, issue_number: int
+    ) -> list[LabelEvent]:
+        """Return every label event recorded against an issue or pull request.
+
+        An absent ``actor`` yields an empty actor type, which classifies the
+        event as non-bot and so preserves the label.
+
+        :param owner: Repository owner.
+        :param repo: Repository name without owner.
+        :param issue_number: Issue or pull request number.
+        :return: Label events, across all result pages, in API order.
+        """
+        events: list[LabelEvent] = []
+        page = 1
+        while True:
+            query = urllib.parse.urlencode({"per_page": GITHUB_PAGE_SIZE, "page": page})
+            path = f"/repos/{owner}/{repo}/issues/{issue_number}/events?{query}"
+            batch = self._request("GET", path)
+            if not batch:
+                break
+            events.extend(
+                LabelEvent(
+                    event=LabelEventKind(item["event"]),
+                    label=item["label"]["name"],
+                    actor_type=(item.get("actor") or {}).get("type", ""),
+                    created_at=item["created_at"],
+                    event_id=item["id"],
+                )
+                for item in batch
+                if item.get("event") in LABEL_EVENT_TYPES and item.get("label")
+            )
+            if len(batch) < GITHUB_PAGE_SIZE:
+                break
+            page += 1
+        return events
+
     def add_issue_labels(
         self, owner: str, repo: str, issue_number: int, labels: list[str]
     ) -> None:
@@ -381,21 +546,22 @@ def apply_blast_radius_labels(
     owner: str,
     repo: str,
     pr_number: int,
+    files: list[PrFile],
     labeler_path: Path,
     *,
     log: Callable[[str], None] = print,
 ) -> BlastRadiusResult:
-    """Fetch PR files, compute blast-radius signals, and sync labels.
+    """Compute blast-radius signals from a PR file list and sync the labels.
 
     :param client: GitHub REST client.
     :param owner: Repository owner.
     :param repo: Repository name without owner.
     :param pr_number: Pull request number.
+    :param files: Changed files from the pulls list-files API.
     :param labeler_path: Path to the base-branch ``.github/labeler.yml``.
     :param log: Callable for informational messages.
     :return: Computed blast-radius signals.
     """
-    files = client.list_pr_files(owner, repo, pr_number)
     labeler_text = labeler_path.read_text(encoding="utf-8")
     app_globs = parse_app_globs(labeler_text)
     result = compute_blast_radius(files, app_globs)
@@ -408,7 +574,7 @@ def apply_blast_radius_labels(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Compute and sync blast-radius labels for one pull request.
+    """Compute and sync every code-computed label for one pull request.
 
     :param argv: CLI arguments (defaults to ``sys.argv[1:]``).
     :return: ``0`` on success; ``1`` on error.
@@ -426,6 +592,11 @@ def main(argv: list[str] | None = None) -> int:
         help="path to .github/labeler.yml (default: repo-root .github/labeler.yml)",
     )
     parser.add_argument(
+        "--head-ref",
+        default="",
+        help="bare head branch name of the pull request (GITHUB_HEAD_REF)",
+    )
+    parser.add_argument(
         "--token-env",
         default="GITHUB_TOKEN",
         help="environment variable holding the GitHub API token (default: GITHUB_TOKEN)",
@@ -439,16 +610,27 @@ def main(argv: list[str] | None = None) -> int:
     if not args.labeler.is_file():
         print(f"{args.labeler}: file not found", file=sys.stderr)
         return 1
+    if not args.head_ref:
+        print("--head-ref is required and must not be empty", file=sys.stderr)
+        return 1
 
     client = UrllibGitHubClient(token)
+
+    def log(message: str) -> None:
+        print(message, flush=True)
+
     try:
+        files = client.list_pr_files(args.owner, args.repo, args.pr_number)
         apply_blast_radius_labels(
+            client, args.owner, args.repo, args.pr_number, files, args.labeler, log=log
+        )
+        sync_qa_not_required_label(
             client,
             args.owner,
             args.repo,
             args.pr_number,
-            args.labeler,
-            log=lambda message: print(message, flush=True),
+            eligible=qa_not_required_eligible(files, args.head_ref),
+            log=log,
         )
     except urllib.error.URLError as exc:
         print(f"GitHub API request failed: {exc}", file=sys.stderr)

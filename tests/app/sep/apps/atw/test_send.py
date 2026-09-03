@@ -67,6 +67,7 @@ _EXPECTED_ENTRY_COUNT = 9
 _EXPECTED_LOG_GROUP_COUNT = 3
 _STALE_ROW_COUNT = 2
 _MAIN_STEP = "run-script"
+_LAUNCH_CHECK_STEP = "check-launchable"
 _STORED_SECRET = "stored-api-key"
 _DEFAULT_FILES: dict[str, Any] = {
     "stdout.log": {"is_dir": False, "size": 5},
@@ -589,6 +590,54 @@ class TestRunSendExecutionLogs:
         api.stream.assert_called_once_with(
             "/history/11/logs/", params={"step": _MAIN_STEP}
         )
+
+    @pytest.mark.usefixtures("uploader")
+    async def test_a_failed_execution_still_requests_only_the_main_step(
+        self, send_session: AsyncSession, mocker: MockerFixture
+    ) -> None:
+        """Keep the prestart-is-noise rule intact for every other status."""
+        api = _fake_tasks_api(mocker, status=TaskHistoryStatusEnum.FAILED.value)
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        api.stream.assert_called_once_with(
+            "/history/11/logs/", params={"step": _MAIN_STEP}
+        )
+
+    async def test_an_unlaunchable_execution_bundles_the_launch_check_log(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Send the one step that says what could not be launched, and where.
+
+        An unlaunchable allocation never starts ``run-script`` and produces no
+        output files, so streaming only the main step would leave the bundle
+        empty and fail the send outright — with the diagnostic the support case
+        exists for sitting in a step the default rule filters out.
+        """
+        api = _fake_tasks_api(
+            mocker,
+            files={},
+            logs=[
+                _log_record(
+                    "SEP_UNLAUNCHABLE: command=sudo node=node-1\n",
+                    step=_LAUNCH_CHECK_STEP,
+                )
+            ],
+            status=TaskHistoryStatusEnum.UNLAUNCHABLE.value,
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        api.stream.assert_called_once_with(
+            "/history/11/logs/", params={"step": _LAUNCH_CHECK_STEP}
+        )
+        assert uploader.bundle_bytes is not None
+        with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
+            logged = zf.read(f"11-cpu.sh/logs/{_LAUNCH_CHECK_STEP}.stdout.log")
+
+        assert logged == b"SEP_UNLAUNCHABLE: command=sudo node=node-1\n"
 
     async def test_a_step_that_logged_nothing_leaves_no_member(
         self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture

@@ -418,6 +418,7 @@ class TestStopTask:
             (TaskHistoryStatusEnum.SUCCESS, "COMPLETED"),
             (TaskHistoryStatusEnum.LOST, "LOST"),
             (TaskHistoryStatusEnum.STALE, "STALE"),
+            (TaskHistoryStatusEnum.UNLAUNCHABLE, "UNLAUNCHABLE"),
         ],
     )
     async def test_keeps_terminal_status_derived_by_sync(
@@ -621,6 +622,11 @@ class TestSyncTaskHistory:
             (TaskHistoryStatusEnum.RUNNING, TaskHistoryStatusEnum.STOPPED, "STOPPED"),
             (TaskHistoryStatusEnum.RUNNING, TaskHistoryStatusEnum.LOST, "LOST"),
             (TaskHistoryStatusEnum.RUNNING, TaskHistoryStatusEnum.STALE, "STALE"),
+            (
+                TaskHistoryStatusEnum.RUNNING,
+                TaskHistoryStatusEnum.UNLAUNCHABLE,
+                "UNLAUNCHABLE",
+            ),
         ],
     )
     async def test_annotates_terminal_transition(
