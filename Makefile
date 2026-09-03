@@ -222,6 +222,12 @@ check-nomad-payload-size: venv
 check-sidecar-purge: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/check_sidecar_purge.py $(ARGS)
 
+# A Fernet key is 32 random bytes in url-safe base64, so this needs neither the
+# venv nor cryptography: an operator runs it on a fresh checkout to copy the one
+# line it prints, and the venv bootstrap would both fail there and bury the key.
+encryption-key:
+	@$(PYTHON) -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
+
 changelog-add:
 ifndef TICKET
 	$(error TICKET is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")
@@ -371,4 +377,4 @@ lint-pipelines:
 	done; \
 	if [ "$${failures}" -ne 0 ]; then exit 1; fi
 
-.PHONY: venv build pack builder image format ruff typecheck lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations mergemigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size check-sidecar-purge release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image format ruff typecheck lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations mergemigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size check-sidecar-purge release-prep release-rc release-stable trigger-jenkins lint-pipelines encryption-key changelog-add changelog-check changelog-list startapp startapp-check
