@@ -26,23 +26,22 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from app.core.db.in_memory_list_query import (
-    resolve_in_memory_list_query,
-    validate_in_memory_spec,
-)
 from app.core.db.list_query import make_query_param_dep
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from app.core.db.in_memory_list_query import InMemoryListQuery
+    from app.core.db.in_memory_list_query import (
+        InMemoryListQuery,
+        InMemoryListQueryApplier,
+    )
     from app.core.db.list_query import ListQuerySpec
 
 __all__ = ["make_in_memory_list_query_dep"]
 
 
 def make_in_memory_list_query_dep(
-    spec: ListQuerySpec,
+    applier: InMemoryListQueryApplier,
 ) -> Callable[..., InMemoryListQuery]:
     """Create a FastAPI dependency yielding a validated ``InMemoryListQuery``.
 
@@ -52,10 +51,21 @@ def make_in_memory_list_query_dep(
     and reject an out-of-allowlist sort key with the same HTTP 422. Only the resolved
     value object differs.
 
-    :param spec: The spec whose allowlist and searchable set bound the request.
+    Takes an applier rather than a spec because the caller already holds one: the
+    misdeclaration check and the attribute resolution both happened when it was built,
+    so neither is repeated here. Call this at wiring time and hand the result to
+    ``Depends``; a fresh dependency is built per call rather than cached, because
+    FastAPI binds each reflected parameter's ``Query`` declaration to the route it was
+    found on.
+
+    :param applier: The spec-bound applier whose allowlist bounds the request.
     :return: A dependency callable resolving the request into an ``InMemoryListQuery``.
-    :raises ValueError: When a spec column expression exposes no name to read off a
-        row, so a misdeclared spec fails at wiring time rather than per request.
     """
-    validate_in_memory_spec(spec)
-    return make_query_param_dep(spec, resolve_in_memory_list_query)
+
+    # Core re-passes the spec it was given; the applier already binds it.
+    def resolve(
+        _spec: ListQuerySpec, sort: str, search: str | None
+    ) -> InMemoryListQuery:
+        return applier.resolve_query(sort, search)
+
+    return make_query_param_dep(applier.spec, resolve)

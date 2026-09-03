@@ -26,11 +26,17 @@ type. The applier keys on **object attributes**, not SQL columns, resolving each
 attribute name from the spec's column expressions: an in-memory spec must therefore
 use named column clauses (``sqlalchemy.column("filename")``) whose name matches the
 attribute exposed on the materialized row.
+
+The resolution from column expressions to attribute names is pure given the spec, so
+:class:`InMemoryListQueryApplier` binds a spec at construction and does it once. A
+caller holds an applier — built at import, at FastAPI wiring, or at source setup — and
+passes only the per-request query to it.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, TypeVar
 
 from app.core.db.list_query import UnknownSortKeyError
@@ -46,11 +52,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "InMemoryListQuery",
-    "apply_in_memory",
-    "build_in_memory_list_query",
-    "default_in_memory_query",
-    "resolve_in_memory_list_query",
-    "validate_in_memory_spec",
+    "InMemoryListQueryApplier",
 ]
 
 S = TypeVar("S")
@@ -112,7 +114,8 @@ def _attr_name(column: ColumnExpressionArgument, *, role: str) -> str:
 class _SpecAttrs:
     """Carry the row attribute names a spec's column expressions resolve to.
 
-    :param sort_attrs: The attribute behind each public sort key.
+    :param sort_attrs: The attribute behind each public sort key, kept immutable so a
+        shared applier's resolved mapping cannot be rewritten in place.
     :param tie_attr: The attribute behind the tie-breaker.
     :param search_attrs: The attributes behind the searchable set.
     """
@@ -130,10 +133,12 @@ def _spec_attrs(spec: ListQuerySpec) -> _SpecAttrs:
     :raises ValueError: When any expression exposes no name or key.
     """
     return _SpecAttrs(
-        sort_attrs={
-            key: _attr_name(column, role=f"sortable[{key!r}]")
-            for key, column in spec.sortable.items()
-        },
+        sort_attrs=MappingProxyType(
+            {
+                key: _attr_name(column, role=f"sortable[{key!r}]")
+                for key, column in spec.sortable.items()
+            }
+        ),
         tie_attr=_attr_name(spec.tie_breaker, role="tie_breaker"),
         search_attrs=tuple(
             _attr_name(column, role="searchable") for column in spec.searchable
@@ -161,117 +166,119 @@ def _require_row_attrs(row: object, attrs: Iterable[tuple[str, str]]) -> None:
             )
 
 
-def validate_in_memory_spec(spec: ListQuerySpec) -> None:
-    """Reject a spec whose column expressions cannot be read off a row.
+@dataclass(frozen=True, slots=True)
+class InMemoryListQueryApplier:
+    """Replay one spec's list-query contract against materialized rows.
 
-    Lets a caller wiring a spec up ahead of any request — a dependency factory — fail
-    on a misdeclaration once, at wiring time, instead of on every request inside the
-    applier.
+    Resolving the spec's column expressions to row attribute names is pure given the
+    spec, so it happens once here, at construction, and every operation reads the
+    stored mapping. A misdeclared spec therefore fails where the applier is built —
+    module load, FastAPI wiring, script-source setup — rather than once per request.
 
-    :param spec: The spec to check.
-    :raises ValueError: When any expression exposes no name or key.
+    Frozen because instances are built once and shared across requests: an applier
+    reached from module scope must not be mutable in place.
+
+    :param spec: The spec bounding the sortable allowlist, the searchable set, and
+        the default ordering.
     """
-    _spec_attrs(spec)
 
+    spec: ListQuerySpec
+    _attrs: _SpecAttrs = field(init=False, repr=False)
 
-def resolve_in_memory_list_query(
-    spec: ListQuerySpec,
-    sort: str,
-    search: str | None,
-) -> InMemoryListQuery:
-    """Resolve a request's sort and search, leaving the rejection untranslated.
+    def __post_init__(self) -> None:
+        """Resolve and store the row attribute names the spec's expressions name.
 
-    The raw form, for a caller that owns the HTTP mapping itself — a dependency
-    factory maps :class:`UnknownSortKeyError` to a 422 for every spec it wires, so
-    translating here would put the mapping in two places.
+        :raises ValueError: When a spec column expression exposes no name or key to
+            read off a row.
+        """
+        object.__setattr__(self, "_attrs", _spec_attrs(self.spec))
 
-    :param spec: The spec whose allowlist bounds the request.
-    :param sort: The requested public sort key (possibly ``-`` prefixed).
-    :param search: The raw search term, or ``None`` when search is disabled or unset.
-    :return: The resolved in-memory list query.
-    :raises UnknownSortKeyError: When ``sort`` is not in the allowlist.
-    """
-    spec.resolve_sort(sort)
-    return InMemoryListQuery.from_sort(sort, search)
+    def resolve_query(self, sort: str, search: str | None) -> InMemoryListQuery:
+        """Resolve a request's sort and search, leaving the rejection untranslated.
 
+        Validation delegates to :meth:`ListQuerySpec.resolve_sort`, and the rejection
+        surfaces as the domain error rather than an HTTP one: the applier states no
+        HTTP boundary at all. Each request boundary maps it — Core's generated
+        dependency, or a hand-written route dispatching across several appliers.
 
-def build_in_memory_list_query(
-    spec: ListQuerySpec,
-    sort: str,
-    search: str | None,
-) -> InMemoryListQuery:
-    """Resolve a request's sort and search into an :class:`InMemoryListQuery`.
+        :param sort: The requested public sort key (possibly ``-`` prefixed).
+        :param search: The raw search term, or ``None`` when search is disabled or
+            unset.
+        :return: The resolved in-memory list query.
+        :raises UnknownSortKeyError: When ``sort`` is not in the allowlist.
+        """
+        self.spec.resolve_sort(sort)
+        return InMemoryListQuery.from_sort(sort, search)
 
-    Validation delegates to :meth:`ListQuerySpec.resolve_sort` so the allowlist and
-    the 422 boundary are identical to the SQL dependency. Public so a hand-written
-    route that dispatches across several specs — one signature cannot carry a
-    per-entity allowlist — can reuse the same mapping without going through
-    :func:`~app.core.db.deps.make_in_memory_list_query_dep`.
+    def build_query(self, sort: str, search: str | None) -> InMemoryListQuery:
+        """Resolve a request's sort and search, mapping a rejection to HTTP 422.
 
-    :param spec: The spec whose allowlist bounds the request.
-    :param sort: The requested public sort key (possibly ``-`` prefixed).
-    :param search: The raw search term, or ``None`` when search is disabled or unset.
-    :return: The resolved in-memory list query.
-    :raises HTTPUnprocessableEntityException: When ``sort`` is not in the allowlist.
-    """
-    try:
-        return resolve_in_memory_list_query(spec, sort, search)
-    except UnknownSortKeyError as exc:
-        raise HTTPUnprocessableEntityException(
-            detail=f"Invalid sort key: {exc.key!r}"
-        ) from exc
+        The translating form, so the 422 body has one home. A hand-written route that
+        dispatches across several appliers — one signature cannot carry a per-entity
+        allowlist — reuses the same mapping without going through
+        :func:`~app.core.db.deps.make_in_memory_list_query_dep`.
 
+        :param sort: The requested public sort key (possibly ``-`` prefixed).
+        :param search: The raw search term, or ``None`` when search is disabled or
+            unset.
+        :return: The resolved in-memory list query.
+        :raises HTTPUnprocessableEntityException: When ``sort`` is not in the
+            allowlist.
+        """
+        try:
+            return self.resolve_query(sort, search)
+        except UnknownSortKeyError as exc:
+            raise HTTPUnprocessableEntityException(
+                detail=f"Invalid sort key: {exc.key!r}"
+            ) from exc
 
-def default_in_memory_query(spec: ListQuerySpec) -> InMemoryListQuery:
-    """Return the query a request that selected nothing resolves to.
+    def default_query(self) -> InMemoryListQuery:
+        """Return the query a request that selected nothing resolves to.
 
-    Lets a caller with no request-derived query — the whole-collection call shape — run
-    the same applier as a queried one, so a source needs no second, order-less path.
+        Lets a caller with no request-derived query — the whole-collection call shape —
+        run the same applier as a queried one, so a source needs no second, order-less
+        path.
 
-    :param spec: The spec whose default sort to adopt.
-    :return: The spec's default sort with no search term.
-    """
-    return InMemoryListQuery.from_sort(spec.default_sort, None)
+        :return: The spec's default sort with no search term.
+        """
+        return InMemoryListQuery.from_sort(self.spec.default_sort, None)
 
+    def apply(
+        self,
+        items: Sequence[S],
+        query: InMemoryListQuery,
+        pagination: Pagination | None,
+    ) -> tuple[list[S], int]:
+        """Filter, order, and page ``items`` per the bound spec and resolved query.
 
-def apply_in_memory(
-    items: Sequence[S],
-    spec: ListQuerySpec,
-    query: InMemoryListQuery,
-    pagination: Pagination | None,
-) -> tuple[list[S], int]:
-    """Filter, order, and page ``items`` per the spec and resolved query.
+        Replays the SQL path against in-process objects: case-insensitive substring
+        search over the searchable attributes, then a NULLS-LAST, tie-broken ordering,
+        then the pagination slice. The returned total is the filtered count taken
+        before slicing, so it matches the SQL path's filtered total.
 
-    Replays the SQL path against in-process objects: case-insensitive substring
-    search over the searchable attributes, then a NULLS-LAST, tie-broken ordering,
-    then the pagination slice. The returned total is the filtered count taken before
-    slicing, so it matches the SQL path's filtered total.
-
-    :param items: The materialized rows to query.
-    :param spec: The spec describing the searchable/sortable surface.
-    :param query: The resolved, allowlist-vetted list-query selections.
-    :param pagination: The offset/limit window for the page, or ``None`` to return
-        every matching row unsliced (the whole-collection call shape).
-    :return: The page slice and the filtered total across all pages.
-    :raises ValueError: When a spec column expression exposes no name, or the rows do
-        not expose an attribute the spec names.
-    :raises UnknownSortKeyError: When ``query.sort_key`` is outside the allowlist.
-    """
-    attrs = _spec_attrs(spec)
-    if query.sort_key not in attrs.sort_attrs:
-        raise UnknownSortKeyError(query.sort_key)
-    if items:
-        _require_row_attrs(
-            items[0],
-            [
-                (f"sortable[{query.sort_key!r}]", attrs.sort_attrs[query.sort_key]),
-                ("tie_breaker", attrs.tie_attr),
-                *(("searchable", attr) for attr in attrs.search_attrs),
-            ],
-        )
-    filtered = _search(items, attrs, query.search)
-    ordered = _sort(filtered, attrs, query)
-    return (ordered if pagination is None else pagination.slice(ordered)), len(ordered)
+        :param items: The materialized rows to query.
+        :param query: The resolved, allowlist-vetted list-query selections.
+        :param pagination: The offset/limit window for the page, or ``None`` to return
+            every matching row unsliced (the whole-collection call shape).
+        :return: The page slice and the filtered total across all pages.
+        :raises ValueError: When the rows do not expose an attribute the spec names.
+        :raises UnknownSortKeyError: When ``query.sort_key`` is outside the allowlist.
+        """
+        attrs = self._attrs
+        if query.sort_key not in attrs.sort_attrs:
+            raise UnknownSortKeyError(query.sort_key)
+        if items:
+            _require_row_attrs(
+                items[0],
+                [
+                    (f"sortable[{query.sort_key!r}]", attrs.sort_attrs[query.sort_key]),
+                    ("tie_breaker", attrs.tie_attr),
+                    *(("searchable", attr) for attr in attrs.search_attrs),
+                ],
+            )
+        ordered = _sort(_search(items, attrs, query.search), attrs, query)
+        page = ordered if pagination is None else pagination.slice(ordered)
+        return page, len(ordered)
 
 
 def _search(

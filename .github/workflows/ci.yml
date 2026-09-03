@@ -38,9 +38,9 @@ jobs:
       - name: Require QA approval label
         if: >-
           !contains(github.event.pull_request.labels.*.name, 'qa passed') &&
-          !contains(github.event.pull_request.labels.*.name, 'skip-test')
+          !contains(github.event.pull_request.labels.*.name, 'qa not required')
         run: |
-          echo "::error::PR requires 'qa passed' or 'skip-test' label to merge."
+          echo "::error::PR requires 'qa passed' or 'qa not required' label to merge."
           exit 1
 
   # Detect changed file types to gate downstream jobs.
@@ -84,6 +84,8 @@ jobs:
               - 'sidecar/Containerfile.sidecar'
               - 'Makefile'
               - 'frontend/packages/api/specs/**'
+              - '.github/labeler.yml'
+              - '.github/workflows/ci.yml'
             precommit:
               - '.pre-commit-config.yaml'
               - '.github/workflows/ci.yml'

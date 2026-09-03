@@ -42,8 +42,8 @@ from fastapi import Depends, Query
 from sqlalchemy import column
 
 from app.core.db.in_memory_list_query import (
-    build_in_memory_list_query,
     InMemoryListQuery,
+    InMemoryListQueryApplier,
 )
 from app.core.db.list_query import (
     ListQuerySpec,
@@ -51,6 +51,13 @@ from app.core.db.list_query import (
     SORT_PARAM_DESCRIPTION,
 )
 from app.sep.apps.inventory.deps import require_inventory_plugin_entity
+
+__all__ = [
+    "ENTITY_LIST_QUERY_SPECS",
+    "InventoryListQueryDep",
+    "inventory_list_query",
+    "list_query_upstream_params",
+]
 
 _NODES_SPEC = ListQuerySpec(
     sortable={
@@ -106,7 +113,7 @@ ENTITY_LIST_QUERY_SPECS: MappingProxyType[str, ListQuerySpec] = MappingProxyType
 )
 
 # ``inventory_list_query`` always advertises ``?search=`` (one shared signature
-# cannot gate per entity the way ``make_in_memory_list_query_dep`` does). Fail
+# cannot gate per entity the way a per-app dependency does). Fail
 # at import if a future entity ships with an empty searchable set so OpenAPI
 # and the client cannot advertise a param upstream would ignore.
 _non_searchable = [
@@ -119,6 +126,19 @@ if _non_searchable:
         "inventory list-query specs must all be searchable because the shared "
         f"route always declares ?search=; got empty searchable for {_non_searchable!r}"
     )
+
+# Per-entity appliers bound to the specs above. Built here, at import, so a request
+# only selects one: the spec-to-attribute resolution each applier holds is per-spec
+# work, not per-request work. Derived from ``ENTITY_LIST_QUERY_SPECS`` so a new entity
+# cannot reach the route without its applier.
+_ENTITY_LIST_QUERY_APPLIERS: MappingProxyType[str, InMemoryListQueryApplier] = (
+    MappingProxyType(
+        {
+            entity: InMemoryListQueryApplier(spec)
+            for entity, spec in ENTITY_LIST_QUERY_SPECS.items()
+        }
+    )
+)
 
 # Union of every entity's public sort keys (both directions). Documents the
 # shared route's OpenAPI enum; runtime validation still uses the per-entity
@@ -147,6 +167,10 @@ def inventory_list_query(
     OpenAPI declaration cannot carry four different entity defaults; an omitted
     ``sort`` resolves to the matching spec's ``default_sort``.
 
+    This dependency is hand-written rather than generated, so it maps the rejection
+    through the applier's translating form — the same 422 body Core's generated
+    dependency would produce.
+
     :param entity: Inventory entity URL segment (``nodes``, ``services``,
         ``schemas``, or ``tables``).
     :param sort: Requested public sort key, optionally ``-`` prefixed, or
@@ -158,8 +182,8 @@ def inventory_list_query(
         entity's allowlist.
     """
     entity = require_inventory_plugin_entity(entity)
-    spec = ENTITY_LIST_QUERY_SPECS[entity]
-    return build_in_memory_list_query(spec, sort or spec.default_sort, search)
+    applier = _ENTITY_LIST_QUERY_APPLIERS[entity]
+    return applier.build_query(sort or applier.spec.default_sort, search)
 
 
 InventoryListQueryDep = Annotated[InMemoryListQuery, Depends(inventory_list_query)]
@@ -180,11 +204,3 @@ def list_query_upstream_params(query: InMemoryListQuery) -> dict[str, str]:
     if query.search is not None and query.search.strip():
         params["search"] = query.search
     return params
-
-
-__all__ = [
-    "ENTITY_LIST_QUERY_SPECS",
-    "InventoryListQueryDep",
-    "inventory_list_query",
-    "list_query_upstream_params",
-]

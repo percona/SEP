@@ -13,17 +13,6 @@ frontend:
       - 'frontend/**'
       - 'package.json'
 
-skip-test:
-- all:
-  - changed-files:
-    - any-glob-to-all-files:
-      - 'CODEOWNERS'
-      - 'README.md'
-      - '.gitignore'
-      - 'dist/**'
-- head-branch:
-  - '^dependabot/'
-
 # svc:* labels track the mounted services, which share a name with SEP apps but
 # are different code. The prefix keeps app/tasks/ (the service) distinct from
 # app/sep/apps/tasks/ (the SEP app); same for inventory.
