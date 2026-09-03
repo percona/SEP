@@ -46,6 +46,8 @@ _CONST_NAMES = frozenset(
         "XTRABACKUP_INFO",
         "XTRABACKUP_CHECKPOINTS",
         "PLAINTEXT_METADATA_FILES",
+        "ENCRYPTION_FORMATS",
+        "BACKUP_TYPES",
         "XBCRYPT_BIN",
         "GPG_BIN",
         "XTRABACKUP_BIN",
@@ -121,6 +123,55 @@ def load_function(name: str) -> object:
         namespace,
     )
     return namespace[name]
+
+
+def payload_method(
+    class_name: str,
+    method_name: str,
+    *,
+    extra_namespace: dict[str, object] | None = None,
+) -> Callable[..., object]:
+    """Return one payload method lifted out of its class as a plain function.
+
+    ``payload_instance`` cannot run an ``__init__``: it builds a bases-less class,
+    so ``super().__init__(...)`` has nothing to reach. Lifting the method to module
+    level drops the ``__class__`` cell the compiler adds inside a class body, which
+    leaves zero-arg ``super()`` an ordinary global lookup — so a caller can stub it
+    and drive the rest of the method for real, passing its own object as ``self``.
+
+    :param class_name: The payload class owning the method.
+    :param method_name: The method to lift.
+    :param extra_namespace: Globals the method body reads that are not whitelisted
+        constants — module-level payload functions, or stand-ins for them.
+    :return: The lifted method, called as ``fn(self, ...)``.
+    """
+    tree = xtrabackup_payload_tree()
+    class_nodes = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef) and node.name == class_name
+    ]
+    if not class_nodes:
+        raise RuntimeError(
+            f"{class_name} not found in {XTRABACKUP_PAYLOAD_PATH}. Renamed or removed?"
+        )
+    method_nodes = [
+        node
+        for node in class_nodes[0].body
+        if isinstance(node, ast.FunctionDef) and node.name == method_name
+    ]
+    if not method_nodes:
+        raise RuntimeError(
+            f"{class_name}.{method_name} not found in {XTRABACKUP_PAYLOAD_PATH}. "
+            "Renamed or removed?"
+        )
+    namespace = base_namespace()
+    module = ast.fix_missing_locations(
+        ast.Module(body=const_nodes(tree) + method_nodes, type_ignores=[])
+    )
+    exec(compile(module, str(XTRABACKUP_PAYLOAD_PATH), "exec"), namespace)  # noqa: S102
+    namespace.update(extra_namespace or {})
+    return namespace[method_name]
 
 
 def gpg_probe(*, returncode: int = 0) -> tuple[Callable[..., bool], list[list[str]]]:
@@ -246,7 +297,9 @@ def payload_instance(
         error=lambda *_a, **_k: None,
     )
     inst._clean_after_error = lambda: None  # noqa: SLF001
-    inst.xtrabackup_aes256_keyfile = "/keys/aes.key"
+    inst.aes_keyfile = "/keys/aes.key"
+    inst.enc_aes = True
+    inst.enc_gpg = False
     inst.compress = False
     inst.get_compression_ext = lambda: ""
     return inst, namespace["BackupError"], calls

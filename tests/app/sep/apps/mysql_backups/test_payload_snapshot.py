@@ -48,8 +48,9 @@ _PAYLOAD_ANCHOR = "app/sep/apps/mysql_backups/"
 # Each case names a slug and the backups field values; the cases cover the three
 # backup types, their per-type server host (M → service address, X → localhost,
 # B → alternative host or service address), the requirements / payload-file
-# selection, and the encryption modes (tmpdir, post-run with in-place on, and
-# post-run standalone with in-place off).
+# selection, and every encryption format: GPG in its three timings (tmpdir,
+# post-run with in-place on, post-run standalone with in-place off), AES-256, and
+# the combined AES-256-plus-GPG selection.
 _CASES = [
     {
         "slug": "mydumper_rsync",
@@ -70,6 +71,7 @@ _CASES = [
             "upload": ["S3"],
             "s3_bucket": "my-s3-bucket",
             "s3_storage_class": "STANDARD",
+            "encryption_format": "gpg",
             "encrypt": True,
             "encryption_recipient": "ops@example.com",
             "compression_algorithm": "zstd",
@@ -83,6 +85,7 @@ _CASES = [
             "backup_type": "M",
             "upload": ["S3"],
             "s3_bucket": "my-s3-bucket",
+            "encryption_format": "gpg",
             "encrypt": True,
             "encrypt_using_tmpdir": True,
             "encryption_recipient": "ops@example.com",
@@ -95,6 +98,7 @@ _CASES = [
             "backup_type": "M",
             "upload": ["S3"],
             "s3_bucket": "my-s3-bucket",
+            "encryption_format": "gpg",
             "encrypt": True,
             "post_run_encrypt": True,
             "encryption_recipient": "ops@example.com",
@@ -107,6 +111,31 @@ _CASES = [
             "backup_type": "M",
             "upload": ["S3"],
             "s3_bucket": "my-s3-bucket",
+            "encryption_format": "gpg",
+            "post_run_encrypt": True,
+            "encryption_recipient": "ops@example.com",
+        },
+        "alert_on_fail": False,
+    },
+    {
+        "slug": "xtrabackup_s3_aes256",
+        "form": {
+            "backup_type": "X",
+            "upload": ["S3"],
+            "s3_bucket": "my-s3-bucket",
+            "encryption_format": "aes256",
+            "xtrabackup_aes256_keyfile": "/etc/percona/aes.key",
+        },
+        "alert_on_fail": False,
+    },
+    {
+        "slug": "xtrabackup_s3_dual",
+        "form": {
+            "backup_type": "X",
+            "upload": ["S3"],
+            "s3_bucket": "my-s3-bucket",
+            "encryption_format": "dual",
+            "xtrabackup_aes256_keyfile": "/etc/percona/aes.key",
             "post_run_encrypt": True,
             "encryption_recipient": "ops@example.com",
         },
@@ -216,7 +245,11 @@ def _all_servers_config(
     "encryption",
     [
         pytest.param(
-            {"encrypt": True, "encryption_recipient": "ops@example.com"},
+            {
+                "encryption_format": "gpg",
+                "encrypt": True,
+                "encryption_recipient": "ops@example.com",
+            },
             id="encrypt_true",
         ),
         pytest.param({"encrypt": False}, id="encrypt_false"),
@@ -238,3 +271,6 @@ def test_build_backup_spec_always_emits_encrypt_key(backup_type: str, encryption
     all_servers = _all_servers_config(backup_type, encryption)
     assert "ENCRYPT" in all_servers
     assert all_servers["ENCRYPT"] is encryption.get("encrypt", False)
+    assert all_servers["ENCRYPTION_FORMAT"] == encryption.get(
+        "encryption_format", "none"
+    )
