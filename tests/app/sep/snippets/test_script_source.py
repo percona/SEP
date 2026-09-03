@@ -34,6 +34,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.datastructures import URL
 
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.security import crypto_timestamp_serializer
+from app.sep.apps.framework.script_helpers import ARTIFACT_DOWNLOAD_SALT
 from app.core.db.list_query import build_search_predicate, ListQuery
 from app.core.exceptions import (
     HTTPBadRequestException,
@@ -87,6 +89,23 @@ def _snippet_query(
         ),
         approval=approval,
     )
+
+
+def _decode_snippet_source(url: str) -> dict:
+    """Decode the itsdangerous-signed token from a snippet download URL.
+
+    Strips the per-second timestamp so two URLs minted from identical payloads
+    compare equal regardless of which second each was signed in.
+    """
+    token = url.rsplit("/artifacts/download/", 1)[1]
+    return crypto_timestamp_serializer.loads(token, salt=ARTIFACT_DOWNLOAD_SALT)
+
+
+def _meta_dump_decoded(meta: SnippetExecutionMeta) -> dict:
+    """Return ``meta.model_dump()`` with ``snippet_source`` replaced by its payload."""
+    d = meta.model_dump()
+    d["snippet_source"] = _decode_snippet_source(d["snippet_source"])
+    return d
 
 
 def _framework_processed_body(
@@ -480,7 +499,7 @@ class TestBuildExecutionMeta:
         )
         legacy_meta = _legacy_execution_meta(script.snippet, body)
 
-        assert hook_meta.model_dump() == legacy_meta.model_dump()
+        assert _meta_dump_decoded(hook_meta) == _meta_dump_decoded(legacy_meta)
 
     async def test_extra_args_reach_command_via_new_schema_alias(
         self,
@@ -548,7 +567,7 @@ class TestBuildExecutionMeta:
         )
         legacy_meta = _legacy_execution_meta(script.snippet, legacy_body)
 
-        assert new_alias_meta.model_dump() == legacy_meta.model_dump()
+        assert _meta_dump_decoded(new_alias_meta) == _meta_dump_decoded(legacy_meta)
 
     @pytest.mark.parametrize("requested_sudo", [True, False])
     async def test_optional_sudo_toggle_is_honored(
