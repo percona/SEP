@@ -30,7 +30,13 @@ import {
 } from '@sep/api';
 
 /** Probe every external / inter-service endpoint on each click. */
-const ALL_TARGETS: ConnectivityCheckRequest['targets'] = ['pmm', 'inventory', 'tasks', 'nomad'];
+const ALL_TARGETS: ConnectivityCheckRequest['targets'] = [
+  'pmm',
+  'inventory',
+  'tasks',
+  'nomad',
+  'delivery',
+];
 
 type ChipColor = 'success' | 'error' | 'warning' | 'default';
 
@@ -46,6 +52,9 @@ const STATUS_CHIP: Record<ConnectivityStatus, { label: string; color: ChipColor 
   timeout: { label: 'Timeout', color: 'warning' },
   unreachable: { label: 'Unreachable', color: 'warning' },
   error: { label: 'Error', color: 'error' },
+  not_configured: { label: 'Not configured', color: 'default' },
+  inputs_drifted: { label: 'Inputs drifted', color: 'warning' },
+  probe_undeclared: { label: 'No probe declared', color: 'default' },
 };
 
 function chipFor(result: ConnectivityResult): { label: string; color: ChipColor } {

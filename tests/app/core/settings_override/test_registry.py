@@ -954,8 +954,8 @@ async def test_override_rows_for_key_matches_top_level_case_insensitively(
 ) -> None:
     """Assert a top-level key also matches a mixed-case stored spelling.
 
-    Keeps DELETE/PATCH aligned with MySQL's historical case-insensitive
-    ``key`` lookups after the match moved from SQL into Python.
+    Keeps mixed-case stored keys reachable by DELETE/PATCH now that the ``key``
+    match moved from SQL into Python.
     """
     await insert_override_row(
         session,

@@ -230,8 +230,9 @@ async def _list_scripts(
     absent ``pagination`` means the whole set rather than a default-sized first page. A
     query with no pagination is answered unsliced but still filtered, searched, and
     ordered — the shape
-    :func:`~app.sep.apps.framework.list_query.in_memory_list_scripts` honours for a
-    disk-backed source, so the two implementations of the one contract agree.
+    :meth:`~app.sep.apps.framework.list_query.InMemoryListQueryApplier.list_scripts`
+    honours for a disk-backed source, so the two implementations of the one contract
+    agree.
 
     :param list_query: The resolved sort/search/filter selections, or ``None`` for the
         manager's default ordering with no filters.

@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 from starlette.datastructures import URL
 
+from app.core.db.in_memory_list_query import InMemoryListQuery
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPNotFoundException,
@@ -40,7 +41,6 @@ from app.sep.apps.field_names import (
     RESERVED_EXECUTION_FIELD_NAMES,
     SUDO_FIELD_NAME,
 )
-from app.sep.apps.framework.list_query import InMemoryListQuery
 from app.sep.apps.framework.schema import (
     BoolField,
     ChoiceField,
