@@ -20,7 +20,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { SnackbarProvider } from 'notistack';
-import type { AppSchema } from '@sep/api';
+import { ApiError, type AppSchema } from '@sep/api';
 import { SchemaDrivenApp } from './SchemaDrivenApp';
 import type { RenderFormSlot } from './types';
 
@@ -113,11 +113,28 @@ vi.mock('@sep/api', () => ({
   useCreateAppTask: () => ({ mutate: vi.fn(), isPending: false }),
   useAppTask: () => ({ data: taskRecord, isLoading: false }),
   useUpdateAppTask: () => ({ mutate: vi.fn(), isPending: false, isError: false, error: null }),
+  ApiError: class ApiError extends Error {
+    status?: number;
+    data?: unknown;
+    constructor(details: { status?: number; message: string; data?: unknown }) {
+      super(details.message);
+      this.status = details.status;
+      this.data = details.data;
+    }
+  },
+  parseFieldErrors: (error: { data?: { detail?: unknown } }) =>
+    Array.isArray(error?.data?.detail)
+      ? (error.data.detail as { loc?: string[]; msg?: string }[]).map((entry) => ({
+          path: (entry.loc ?? []).filter((seg) => seg !== 'body').join('.'),
+          message: entry.msg ?? 'Invalid value',
+        }))
+      : [],
 }));
 
 afterEach(() => {
   activeSchema = schema;
   mockCanMutate = true;
+  mockUpdateMutate.mockReset();
 });
 
 function renderEdit(renderEditForm?: RenderFormSlot) {
@@ -157,6 +174,44 @@ describe('SchemaDrivenApp — renderEditForm slot', () => {
       { id: '5', values: expect.objectContaining({ label: 'edited' }) },
       expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
     );
+  });
+});
+
+/** Alerts rendered by the page itself, excluding notistack's toast region. */
+function inTreeAlerts(): HTMLElement[] {
+  return screen.queryAllByRole('alert').filter((el) => !el.className.includes('notistack'));
+}
+
+describe('SchemaDrivenApp — entity edit failure reporting', () => {
+  it("banners a refusal with the server's own reason, with no toast alongside it", async () => {
+    const user = userEvent.setup();
+    mockUpdateMutate.mockImplementation((_vars, opts) =>
+      opts.onError?.(
+        new ApiError({
+          kind: 'http',
+          status: 403,
+          message: "You don't have permission to perform this action",
+        }),
+      ),
+    );
+    renderEdit();
+
+    await user.click(screen.getByRole('button', { name: /^Save Nodes$/ }));
+
+    await waitFor(() => expect(inTreeAlerts()).toHaveLength(1));
+    expect(inTreeAlerts()[0]).toHaveTextContent("You don't have permission to perform this action");
+    expect(screen.queryAllByRole('alert')).toHaveLength(1);
+  });
+
+  it('shows no banner on a successful save', async () => {
+    const user = userEvent.setup();
+    mockUpdateMutate.mockImplementation((_vars, opts) => opts.onSuccess?.());
+    renderEdit();
+
+    await user.click(screen.getByRole('button', { name: /^Save Nodes$/ }));
+
+    await waitFor(() => expect(mockUpdateMutate).toHaveBeenCalledTimes(1));
+    expect(inTreeAlerts()).toEqual([]);
   });
 });
 
