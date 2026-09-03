@@ -440,6 +440,7 @@ class TestDriftedInputs:
 
         reason = resolve_delivery_plan().unavailable_reason
 
+        assert reason is not None
         assert "sn_api_key" not in reason
         assert "renamed_token" not in reason
 

@@ -191,21 +191,25 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         self,
         queue_item: TaskHistory,
         start_offsets: dict[str, dict[str, int]] | None = None,
-    ) -> AsyncGenerator[TaskLog, None]:
+    ) -> AsyncGenerator[TaskLog | None, None]:
         """Stream logs from a task history record.
 
         Retrieves the allocation details and concurrently streams stdout and stderr logs
         for each task step. Yields ``TaskLog`` instances as log lines are received.
 
+        A ``None`` marks a stream that carries no lines, which the route renders as
+        an empty frame to keep the response open.
+
         :param queue_item: The task history record for tracking the logs.
-        :type queue_item: TaskHistory
         :param start_offsets: A dictionary containing the starting offsets for each
             step and log type. If None, defaults to starting from the beginning.
-        :type start_offsets: dict[str, dict[str, int]] | None
         :return: An async generator yielding ``TaskLog`` instances containing
             log messages.
-        :rtype: AsyncGenerator[TaskLog, None]
         """
+        raise NotImplementedError
+        # An `async def` with no `yield` in its body is a coroutine function, not
+        # an async generator, so overrides would not match this signature.
+        yield  # pragma: no cover
 
     def preflight_stream_logs(self, queue_item: TaskHistory) -> None:
         """Validate executor state before :meth:`stream_logs` sends response headers.
@@ -217,7 +221,6 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         can be handled as HTTP error responses.
 
         :param queue_item: The task history record that will be streamed.
-        :type queue_item: TaskHistory
         """
 
     def get_events(
@@ -258,6 +261,10 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
             out to get the bytes back verbatim.
         :return: An async generator yielding chunks of the file as bytes.
         """
+        raise NotImplementedError
+        # An `async def` with no `yield` in its body is a coroutine function, not
+        # an async generator, so overrides would not match this signature.
+        yield  # pragma: no cover
 
     @abstractmethod
     async def list_files(

@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi import status as http_status
 from starlette.responses import StreamingResponse
 
+from app.core.requests import as_json_object
 from app.sep.deps import (
     ApiCurrentUser,
     get_task_history,
@@ -49,7 +50,13 @@ async def list_task_history_files(
 ) -> dict[str, FileMetadata]:
     """Return files available for the given task history."""
     try:
-        return await tasks_api.get(f"/history/{task_history.id}/files/") or {}
+        listing = await tasks_api.get(f"/history/{task_history.id}/files/")
+        return {
+            name: FileMetadata.model_validate(metadata)
+            for name, metadata in (
+                as_json_object(listing) if listing is not None else {}
+            ).items()
+        }
     except HTTPException as exc:
         if exc.status_code in (
             http_status.HTTP_400_BAD_REQUEST,
@@ -74,7 +81,9 @@ async def download_task_history_file(
             filename = Path(path.rstrip("/")).name or path
             is_dir = False
             try:
-                files = await tasks_api.get(f"/history/{task_history.id}/files/")
+                files = as_json_object(
+                    await tasks_api.get(f"/history/{task_history.id}/files/")
+                )
                 meta = files.get(path) or files.get(path.rstrip("/"))
                 if isinstance(meta, dict):
                     is_dir = bool(meta.get("is_dir") or meta.get("isDir"))

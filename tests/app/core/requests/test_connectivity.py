@@ -16,6 +16,7 @@
 """Define tests for the RemoteAPI connectivity-probe capability."""
 
 import ssl
+from collections.abc import Iterator
 
 import pytest
 from aioresponses import aioresponses
@@ -44,7 +45,7 @@ def remote_api(base_url: str) -> RemoteAPI:
 
 
 @pytest.fixture(autouse=True)
-def clear_ssl_context_cache() -> None:
+def clear_ssl_context_cache() -> Iterator[None]:
     """Reset the SSL-context lru_cache between tests."""
     BaseRemoteAPI.create_ssl_context.cache_clear()
     yield

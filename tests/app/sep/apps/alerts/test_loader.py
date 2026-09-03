@@ -15,6 +15,7 @@
 
 """Define tests for the app.sep.apps.alerts.loader module."""
 
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -37,7 +38,7 @@ def _write_yaml(path: Path, data: dict) -> None:
 
 
 @pytest.fixture(autouse=True)
-def clear_loader_cache() -> None:
+def clear_loader_cache() -> Iterator[None]:
     """Clear the load_alert_templates LRU cache before and after each test."""
     load_alert_templates.cache_clear()
     yield

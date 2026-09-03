@@ -17,6 +17,7 @@
 
 import asyncio
 import ssl
+from collections.abc import Iterator
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -69,7 +70,7 @@ def _reachable(service: str, version: str | None = None) -> ConnectivityResult:
 
 
 @pytest.fixture
-def admin_client(admin_user: CasdoorUser) -> TestClient:
+def admin_client(admin_user: CasdoorUser) -> Iterator[TestClient]:
     """Yield an admin TestClient with the Bearer gate satisfied."""
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_api_authenticated_admin] = lambda: admin_user
@@ -80,7 +81,7 @@ def admin_client(admin_user: CasdoorUser) -> TestClient:
 
 
 @pytest.fixture
-def mock_pmm_api() -> AsyncMock:
+def mock_pmm_api() -> Iterator[AsyncMock]:
     """Override get_pmm_api with a configured PMM client mock."""
     mock = AsyncMock(spec=PMMRemoteAPI)
     sep_app.dependency_overrides[get_pmm_api] = lambda: mock
@@ -89,7 +90,7 @@ def mock_pmm_api() -> AsyncMock:
 
 
 @pytest.fixture
-def pmm_not_configured() -> None:
+def pmm_not_configured() -> Iterator[None]:
     """Override get_pmm_api to report PMM as unconfigured."""
     sep_app.dependency_overrides[get_pmm_api] = lambda: None
     yield

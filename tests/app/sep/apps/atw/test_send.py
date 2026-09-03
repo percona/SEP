@@ -19,7 +19,7 @@ import io
 import json
 import os
 import zipfile
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
@@ -233,7 +233,7 @@ def _fake_tasks_api(
 @pytest_asyncio.fixture(name="send_session")
 async def send_session_fixture(
     mocker: MockerFixture, tmp_path: Path, delivery_plan: DeliveryPlan
-) -> AsyncSession:
+) -> AsyncGenerator[AsyncSession, None]:
     """Yield a session whose maker and bundle directory the orchestrator uses.
 
     ``run_send`` opens its own session, so the maker it reaches for is pointed at

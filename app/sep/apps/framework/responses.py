@@ -23,6 +23,7 @@ from typing import Any, cast, overload, Protocol, TypeVar
 from pydantic import BaseModel, computed_field, create_model, Field, FutureDatetime
 
 from app.core.pagination import build_proxied_page, PaginatedResponse, Pagination
+from app.core.requests import as_json_object
 from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.connectivity import (
@@ -417,8 +418,10 @@ async def build_task_list_responses(
         bound into every per-row build as a ``context`` keyword argument.
     :return: The built responses, paginated when ``pagination`` is supplied.
     """
-    response = await tasks_api.get(
-        "/", params=_owner_list_params(owner, pagination, extra_params)
+    response = as_json_object(
+        await tasks_api.get(
+            "/", params=_owner_list_params(owner, pagination, extra_params)
+        )
     )
     tasks = [Task.model_validate(item) for item in response["items"]]
     if task_filter is not None:

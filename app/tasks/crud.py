@@ -19,8 +19,9 @@ import logging
 from collections import defaultdict
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import CursorResult, delete, func, or_, update
+from sqlalchemy import ChunkedIteratorResult, CursorResult, delete, func, or_, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import and_, col, select
@@ -99,10 +100,12 @@ class TaskManager(BaseSQLModelManager):
         """Append JSON ``Task.data`` predicates used by active-task list queries."""
         if target is not None:
             where.append(Task.data["meta"]["target"].as_string() == target)
-        if parent_is_null is not None or self_parent:
-            parent_value = func_json_extract(
-                session.get_bind().name, col(Task.data), "parent"
-            )
+        # Bound unconditionally: it only builds a SQL expression, and the guard
+        # it used to sit behind was the disjunction of the two guards below, so
+        # no path ever reached an unbound read.
+        parent_value = func_json_extract(
+            session.get_bind().name, col(Task.data), "parent"
+        )
         if parent_is_null is not None:
             if parent_is_null:
                 where.append(parent_value.is_(None))
@@ -262,7 +265,7 @@ class TaskManager(BaseSQLModelManager):
     @classmethod
     async def delete_unattached_system_tasks(
         cls, session: AsyncSession, exclude_task_names: Sequence[str]
-    ) -> CursorResult:
+    ) -> CursorResult[Any] | ChunkedIteratorResult[Any]:
         """Delete unattached system tasks that are not in the provided sequence.
 
         This method identifies system tasks that are not attached to any task history

@@ -25,7 +25,7 @@ from aiohttp import ClientResponse, ClientResponseError
 from async_lru import _LRUCacheWrapper, alru_cache
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
-from app.core.requests import RemoteAPI
+from app.core.requests import as_json_array, as_json_object, RemoteAPI
 from app.core.requests.connectivity import (
     build_connectivity_result,
     classify_connectivity_error,
@@ -305,7 +305,7 @@ class PMMRemoteAPI(RemoteAPI):
         :return: The version of the PMM instance.
         :rtype: str
         """
-        version_data = await self.get("/v1/version")
+        version_data = as_json_object(await self.get("/v1/version"))
         return version_data["version"]
 
     async def check_connectivity(
@@ -333,7 +333,7 @@ class PMMRemoteAPI(RemoteAPI):
         probe_path = path if path is not None else self.CONNECTIVITY_CHECK_PATH
         try:
             async with asyncio.timeout(PROBE_TIMEOUT_SECONDS):
-                version_data = await self.get(probe_path)
+                version_data = as_json_object(await self.get(probe_path))
             version = version_data["version"]
         except (KeyError, TypeError):
             return build_connectivity_result(
@@ -730,7 +730,9 @@ class PMMRemoteAPI(RemoteAPI):
         :return: A list of Grafana folder objects.
         :rtype: list[Folder]
         """
-        data = await self.get("/graph/api/folders/", headers=self.alerting_headers)
+        data = as_json_array(
+            await self.get("/graph/api/folders/", headers=self.alerting_headers)
+        )
         return [Folder.model_validate(f) for f in data]
 
     async def create_folder(self, title: str) -> Folder:
@@ -754,9 +756,11 @@ class PMMRemoteAPI(RemoteAPI):
         :return: A list of contact point objects.
         :rtype: list[ContactPoint]
         """
-        data = await self.get(
-            "/graph/api/v1/provisioning/contact-points/",
-            headers=self.alerting_headers,
+        data = as_json_array(
+            await self.get(
+                "/graph/api/v1/provisioning/contact-points/",
+                headers=self.alerting_headers,
+            )
         )
         return [ContactPoint.model_validate(cp) for cp in data]
 
@@ -1066,8 +1070,12 @@ class PMMRemoteAPI(RemoteAPI):
         """
         payload = {"names": names} if names else {}
         if await self.is_older_than_v3():
-            return await self.post("/v1/management/SecurityChecks/Start", json=payload)
-        return await self.post("/v1/advisors/checks:start", json=payload)
+            return as_json_object(
+                await self.post("/v1/management/SecurityChecks/Start", json=payload)
+            )
+        return as_json_object(
+            await self.post("/v1/advisors/checks:start", json=payload)
+        )
 
     async def get_grafana_annotations(
         self,
@@ -1174,7 +1182,7 @@ class PMMRemoteAPI(RemoteAPI):
         :return: A list of datasource dictionaries.
         :rtype: list[dict[str, Any]]
         """
-        return await self.get("/graph/api/datasources")
+        return as_json_array(await self.get("/graph/api/datasources"))
 
     async def get_inventory_services_with_agents(self) -> list[dict[str, Any]]:
         """List services including agent status, for the management endpoint.

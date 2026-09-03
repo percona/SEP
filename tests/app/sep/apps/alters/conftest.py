@@ -15,7 +15,7 @@
 
 """Define test fixtures for alters plugin route tests."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 import pytest
 from pytest_mock import MockerFixture
@@ -30,7 +30,7 @@ from tests.app.sep.conftest import (  # noqa: F401
 
 
 @pytest.fixture
-def _mock_check_for_conflicted_running_tasks(mocker: MockerFixture) -> None:
+def _mock_check_for_conflicted_running_tasks(mocker: MockerFixture) -> Iterator[None]:
     """Mock running-task guard for alters deps (JSON update/delete DI)."""
 
     async def _noop(*_args: object, **_kwargs: object) -> None:
@@ -49,7 +49,7 @@ def _mock_check_for_conflicted_running_tasks(mocker: MockerFixture) -> None:
 @pytest.fixture
 def _mock_check_for_conflicted_running_tasks_raises(
     mocker: MockerFixture,
-) -> Callable[[], None]:
+) -> Iterator[Callable[[], None]]:
     """Mock running-task guard to raise HTTPConflictException."""
 
     def raise_conflict() -> None:

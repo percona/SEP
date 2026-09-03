@@ -17,7 +17,7 @@
 
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any, NamedTuple, ParamSpec, TypeVar
+from typing import Any, Generic, Literal, NamedTuple, overload, TypeVar
 
 from pydantic import BaseModel
 from sqlalchemy import (
@@ -35,9 +35,11 @@ from sqlalchemy.exc import DatabaseError, NoResultFound
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql import ColumnExpressionArgument
-from sqlalchemy.sql.dml import DMLWhereBase, Update
+from sqlalchemy.sql.dml import Delete, Update
 from sqlmodel import col, select, SQLModel, update
 from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlmodel.sql.expression import Select as SQLModelSelect
+from sqlmodel.sql.expression import SelectOfScalar
 
 from app.core.db import BaseSQLModel
 from app.core.db.list_query import ListQuery, ListQuerySpec
@@ -54,8 +56,8 @@ from app.core.pagination import (
 
 logger = logging.getLogger(__name__)
 
-Whereable = Select | DMLWhereBase
-Executable = Select | Insert | DMLWhereBase
+Whereable = Select | Update | Delete
+Executable = Select | Insert | Update | Delete
 ColumnExpressionOrStrLabelArgument = str | ColumnExpressionArgument[Any]
 W = TypeVar("W", bound=Whereable)
 E = TypeVar("E", bound=Executable)
@@ -64,32 +66,37 @@ S = TypeVar("S", bound=SQLModel)
 BS = TypeVar("BS", bound=BaseSQLModel)
 B = TypeVar("B", bound=BaseModel)
 M = TypeVar("M", bound="BaseSQLModelManager")
-P = ParamSpec("P")
 
 
-class _QueryBuilder(NamedTuple):
-    """A named tuple to hold a query builder function and its arguments.
+class _QueryBuilder(NamedTuple, Generic[W]):
+    """Hold a query builder function and the arguments to build it with.
 
     :param function: The function to build the query.
-    :type function: Callable[P, W]
     :param args: The arguments to pass to the function. Defaults to an empty tuple.
-    :type args: P.args
     """
 
-    function: Callable[P, W]
-    args: P.args = ()
+    function: Callable[..., W]
+    args: tuple[Any, ...] = ()
 
 
-def _select_builder(*args: P.args) -> _QueryBuilder:
-    """Create a query builder for SELECT statements."""
+def _select_builder(*args: Any) -> _QueryBuilder[Select[Any]]:
+    """Create a query builder for SELECT statements.
+
+    :param args: The table the statement selects from, or empty for the
+        manager's own.
+    :return: A builder that produces the SELECT statement.
+    """
+    # call-shape-dup-ok: the three builders are already the thin wrappers this
+    # rule asks for -- one per statement kind, each naming its own intent.
     return _QueryBuilder(select, args)
 
 
-def _update_builder(*args: P.args, values: Mapping[str, Any]) -> _QueryBuilder:
+def _update_builder(*args: Any, values: Mapping[str, Any]) -> _QueryBuilder[Update]:
     """Create a query builder for UPDATE statements.
 
-    This function returns a query builder that can be used to create an UPDATE
-    statement with the specified values.
+    :param args: The table the statement updates, or empty for the manager's own.
+    :param values: The column values the statement sets.
+    :return: A builder that produces the UPDATE statement.
     """
 
     def _update(table: T) -> Update:
@@ -98,8 +105,13 @@ def _update_builder(*args: P.args, values: Mapping[str, Any]) -> _QueryBuilder:
     return _QueryBuilder(_update, args)
 
 
-def _delete_builder(*args: P.args) -> _QueryBuilder:
-    """Create a query builder for DELETE statements."""
+def _delete_builder(*args: Any) -> _QueryBuilder[Delete]:
+    """Create a query builder for DELETE statements.
+
+    :param args: The table the statement deletes from, or empty for the
+        manager's own.
+    :return: A builder that produces the DELETE statement.
+    """
     return _QueryBuilder(delete, args)
 
 
@@ -115,7 +127,10 @@ class BaseManager:
         ``created_at``-descending fallback for ``BaseSQLModel`` managers.
     """
 
-    Model: type[T]
+    # Subclasses map both SQLModel tables and the sqlalchemy-celery-beat
+    # declarative models, which share no declared base, so no type narrower than
+    # ``type[Any]`` covers them until the manager hierarchy is made generic.
+    Model: type[Any]
     list_query_spec: ListQuerySpec | None = None
 
     @classmethod
@@ -175,16 +190,55 @@ class BaseManager:
             query = query.options(*query_options)
         return query
 
+    @overload
     @classmethod
     def _build_query(
         cls,
         *whereclause: ColumnExpressionArgument[bool],
-        builder: _QueryBuilder = _DEFAULT_SELECT_QUERY_BUILDER,
         select_related: Sequence = (),
         query_options: Sequence = (),
         returning: Iterable[str] | bool = False,
         **equal_filters: Any,
-    ) -> W:
+    ) -> Select[Any]: ...
+
+    @overload
+    @classmethod
+    def _build_query(
+        cls,
+        *whereclause: ColumnExpressionArgument[bool],
+        builder: _QueryBuilder[W],
+        select_related: Sequence = (),
+        query_options: Sequence = (),
+        returning: Iterable[str] | bool = False,
+        **equal_filters: Any,
+    ) -> W: ...
+
+    @classmethod
+    def _build_query(
+        cls,
+        *whereclause: ColumnExpressionArgument[bool],
+        builder: _QueryBuilder[Any] = _DEFAULT_SELECT_QUERY_BUILDER,
+        select_related: Sequence = (),
+        query_options: Sequence = (),
+        returning: Iterable[str] | bool = False,
+        **equal_filters: Any,
+    ) -> Any:
+        """Build the statement ``builder`` produces, filtered and RETURNING-decorated.
+
+        The overloads keep the omitted-``builder`` case concrete: the default
+        produces a SELECT, and a bare ``W`` would have no argument to solve from.
+
+        :param whereclause: SQL expressions for the ``where`` clause.
+        :param builder: The query builder producing the statement. Defaults to the
+            manager's own SELECT.
+        :param select_related: Relationship attributes to eagerly load.
+        :param query_options: Additional loader options to apply.
+        :param returning: If True, return the affected rows as objects of
+            ``cls.Model``. If a list of column names is provided, return only those
+            columns. Defaults to False.
+        :param equal_filters: Column names and their respective filter values.
+        :return: The built statement.
+        """
         query = cls._filter_query(
             builder.function(*(builder.args or (cls.Model,))),
             *whereclause,
@@ -216,12 +270,52 @@ class BaseManager:
             return [cls._get_column("created_at").desc(), cls._get_column("id").desc()]
         return None
 
+    @overload
+    @classmethod
+    async def _exec(
+        cls,
+        session: AsyncSession,
+        query: SelectOfScalar[T],
+    ) -> ScalarResult[T]: ...
+
+    @overload
+    @classmethod
+    async def _exec(
+        cls,
+        session: AsyncSession,
+        query: SQLModelSelect[T],
+    ) -> TupleResult[T]: ...
+
+    @overload
+    @classmethod
+    async def _exec(
+        cls,
+        session: AsyncSession,
+        query: Update | Delete | Insert,
+    ) -> CursorResult[Any] | ChunkedIteratorResult[Any]: ...
+
     @classmethod
     async def _exec(
         cls,
         session: AsyncSession,
         query: E,
-    ) -> TupleResult | ScalarResult | CursorResult:
+    ) -> (
+        ScalarResult[Any]
+        | TupleResult[Any]
+        | CursorResult[Any]
+        | ChunkedIteratorResult[Any]
+    ):
+        """Run ``query`` and return its result, keyed on the statement's shape.
+
+        The overloads mirror what ``AsyncSession.exec`` declares for the two
+        select forms, so a caller's element type survives into ``.all()`` instead
+        of collapsing to a union. ``sqlmodel`` declares no DML overload, so the
+        third arm states what the DML path returns at runtime.
+
+        :param session: The asynchronous database session to execute on.
+        :param query: The statement to execute.
+        :return: The result, keyed on the statement's shape.
+        """
         logger.debug("Executing query: %s", query)
         return await session.exec(query)
 
@@ -282,7 +376,7 @@ class BaseManager:
     async def _mutate_where(
         cls,
         session: AsyncSession,
-        builder: _QueryBuilder,
+        builder: _QueryBuilder[Any],
         *whereclause: ColumnExpressionArgument[bool],
         returning: Iterable[str] | bool = False,
         **equal_filters: Any,
@@ -299,7 +393,7 @@ class BaseManager:
     async def _dml_where(
         cls,
         session: AsyncSession,
-        builder: _QueryBuilder,
+        builder: _QueryBuilder[Any],
         *whereclause: ColumnExpressionArgument[bool],
         returning: Iterable[str] | bool = False,
         **equal_filters: Any,
@@ -314,16 +408,27 @@ class BaseManager:
         :param builder: The builder producing the UPDATE or DELETE statement.
         :param whereclause: The filter expressions applied to the statement.
         :param returning: The column names to return, ``True`` for whole rows, or
-            ``False`` for none.
+            ``False`` for none. A non-``bool`` argument is materialized before it is
+            inspected, so a one-shot iterable survives the emptiness check and the row
+            read below.
         :param equal_filters: Additional equality filters applied to the statement.
         :return: The raw cursor result when nothing is returned, a list of rows when
             more than one column is requested, or a list of scalars for a single one.
-        :raises ValueError: If neither ``whereclause`` nor ``equal_filters`` is given.
+        :raises ValueError: If neither ``whereclause`` nor ``equal_filters`` is given,
+            or if ``returning`` is an empty iterable — the overloads promise a list of
+            rows for any non-``bool`` ``returning``, and an empty one names no column
+            to return.
         """
         if not whereclause and not equal_filters:
             raise ValueError(
                 "You must specify at least one filter in *whereclause or **equal_filters"
             )
+        if not isinstance(returning, bool):
+            returning = tuple(returning)
+            if not returning:
+                raise ValueError(
+                    "returning must name at least one column, or be True or False"
+                )
 
         result = await cls._mutate_where(
             session,
@@ -339,6 +444,28 @@ class BaseManager:
             return list(result.scalars().all())
         return result
 
+    @overload
+    @classmethod
+    async def update_where(
+        cls,
+        session: AsyncSession,
+        values: Mapping[str, Any],
+        *whereclause: ColumnExpressionArgument[bool],
+        returning: Literal[False] = False,
+        **equal_filters: Any,
+    ) -> CursorResult[Any] | ChunkedIteratorResult[Any]: ...
+
+    @overload
+    @classmethod
+    async def update_where(
+        cls,
+        session: AsyncSession,
+        values: Mapping[str, Any],
+        *whereclause: ColumnExpressionArgument[bool],
+        returning: Iterable[str] | Literal[True],
+        **equal_filters: Any,
+    ) -> list[Any]: ...
+
     @classmethod
     async def update_where(
         cls,
@@ -347,28 +474,25 @@ class BaseManager:
         *whereclause: ColumnExpressionArgument[bool],
         returning: Iterable[str] | bool = False,
         **equal_filters: Any,
-    ) -> CursorResult | ChunkedIteratorResult | list:
+    ) -> CursorResult[Any] | ChunkedIteratorResult[Any] | list[Any]:
         """Execute an UPDATE statement.
+
+        A truthy ``returning`` always yields a list, so the overloads let a caller
+        state which of the two shapes it asked for.
 
         This method executes an UPDATE statement to update specific values for rows
         matching the specified filters.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param values: A mapping with column names as keys and values as values.
-        :type values: Mapping[str, Any]
         :param whereclause: SQL expressions for the `where` clause of the query.
-        :type whereclause: ColumnExpressionArgument[bool]
         :param returning: If True, return the updated rows as objects of `cls.Model`. If
             a list of column names is provided, return only those columns. Defaults to
             False, meaning no rows are returned from the statement.
-        :type returning: Iterable[str] | bool
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
-        :type equal_filters: Any
         :return: The result of the UPDATE statement execution.
-        :rtype: CursorResult | ChunkedIteratorResult | list
         """
         return await cls._dml_where(
             session,
@@ -378,6 +502,26 @@ class BaseManager:
             **equal_filters,
         )
 
+    @overload
+    @classmethod
+    async def delete_where(
+        cls,
+        session: AsyncSession,
+        *whereclause: ColumnExpressionArgument[bool],
+        returning: Literal[False] = False,
+        **equal_filters: Any,
+    ) -> CursorResult[Any] | ChunkedIteratorResult[Any]: ...
+
+    @overload
+    @classmethod
+    async def delete_where(
+        cls,
+        session: AsyncSession,
+        *whereclause: ColumnExpressionArgument[bool],
+        returning: Iterable[str] | Literal[True],
+        **equal_filters: Any,
+    ) -> list[Any]: ...
+
     @classmethod
     async def delete_where(
         cls,
@@ -385,7 +529,7 @@ class BaseManager:
         *whereclause: ColumnExpressionArgument[bool],
         returning: Iterable[str] | bool = False,
         **equal_filters: Any,
-    ) -> CursorResult | ChunkedIteratorResult | list:
+    ) -> CursorResult[Any] | ChunkedIteratorResult[Any] | list[Any]:
         """Execute a DELETE statement.
 
         This method executes a DELETE statement to delete specific rows matching the
@@ -393,25 +537,19 @@ class BaseManager:
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param whereclause: SQL expressions for the `where` clause of the query.
-        :type whereclause: ColumnExpressionArgument[bool]
         :param returning: If True, return the updated rows as objects of `cls.Model`. If
             a list of column names is provided, return only those columns. Defaults to
             False, meaning no rows are returned from the statement.
-        :type returning: Iterable[str] | bool
         :param equal_filters: Keyword arguments representing column names and their
             respective filter values.
-        :type equal_filters: Any
         :return: The result of the DELETE statement execution.
-        :rtype: CursorResult | ChunkedIteratorResult | list
         """
         return await cls._dml_where(
             session,
             _delete_builder(),
             *whereclause,
             returning=returning,
-            values=None,
             **equal_filters,
         )
 
@@ -996,13 +1134,14 @@ class BaseSQLModelManager(BaseManager):
     """Manage database operations for a BaseSQLModel-based model.
 
     :param Model: The BaseSQLModel class for which this manager handles operations.
-    :type Model: type[BS]
     """
 
-    Model: type[BS]
+    Model: type[BaseSQLModel]
 
     @classmethod
-    def _construct_instance(cls, instance_create: S, **extra_fields: Any) -> BS:
+    def _construct_instance(
+        cls, instance_create: S, **extra_fields: Any
+    ) -> BaseSQLModel:
         pk_column = inspect(cls.Model).primary_key[0]
         if pk_column.autoincrement and isinstance(
             None,
@@ -1102,13 +1241,11 @@ class BaseSQLModelChildManager(BaseSQLModelManager):
     """Manage database operations for child models with a parent association.
 
     :param ParentManager: The manager class responsible for handling the parent model.
-    :type ParentManager: type[M]
     :param connected_by: The field name that connects the child model to the parent
         model.
-    :type connected_by: str
     """
 
-    ParentManager: type[M]
+    ParentManager: type[BaseSQLModelManager]
     connected_by: str
 
     @classmethod

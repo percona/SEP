@@ -26,6 +26,7 @@ the two pass flags, ``run``'s post-backup passes, and the upload phase's
 
 import logging
 import types
+from typing import cast
 
 import pytest
 
@@ -40,7 +41,8 @@ from tests.app.sep.apps.mysql_backups.payload_harness import (
     payload_method,
 )
 
-_FORMATS = load_constant("ENCRYPTION_FORMATS")
+_FORMATS = cast(tuple[str, ...], load_constant("ENCRYPTION_FORMATS"))
+assert isinstance(_FORMATS, tuple)
 _resolve_encryption = load_function("_resolve_encryption")
 
 _KEYFILE = "/keys/aes.key"

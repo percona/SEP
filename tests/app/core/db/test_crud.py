@@ -15,6 +15,7 @@
 
 """Define tests for CRUD pagination helpers."""
 
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, UTC
 
 import pytest
@@ -137,8 +138,11 @@ class UniqueKeyUUIDManager(BaseSQLModelManager):
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an isolated async database session for CRUD pagination tests."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -962,3 +966,92 @@ class TestExists:
             await UniqueKeyManager.exists(session, col(UniqueKeyModel.label) == "gone")
             is False
         )
+
+
+class TestDMLWhereGuards:
+    """Test the guards ``update_where`` and ``delete_where`` apply before running."""
+
+    @pytest.mark.asyncio
+    async def test_update_where_rejects_no_filter(self, session: AsyncSession) -> None:
+        """Refuse an unbounded UPDATE."""
+        with pytest.raises(ValueError, match="at least one filter"):
+            await UniqueKeyManager.update_where(session, values={"label": "x"})
+
+    @pytest.mark.asyncio
+    async def test_delete_where_rejects_no_filter(self, session: AsyncSession) -> None:
+        """Refuse an unbounded DELETE."""
+        with pytest.raises(ValueError, match="at least one filter"):
+            await UniqueKeyManager.delete_where(session)
+
+    @pytest.mark.asyncio
+    async def test_update_where_rejects_empty_returning(
+        self, session: AsyncSession
+    ) -> None:
+        """Refuse a ``returning`` that names no column.
+
+        The overloads promise a list of rows for any non-``bool`` ``returning``, so
+        an empty one would return a ``CursorResult`` where a list was declared.
+        """
+        with pytest.raises(ValueError, match="returning must name at least one"):
+            await UniqueKeyManager.update_where(
+                session, values={"label": "x"}, returning=[], key="alpha"
+            )
+
+    @pytest.mark.asyncio
+    async def test_delete_where_rejects_empty_returning(
+        self, session: AsyncSession
+    ) -> None:
+        """Refuse a ``returning`` that names no column, on the DELETE arm too."""
+        with pytest.raises(ValueError, match="returning must name at least one"):
+            await UniqueKeyManager.delete_where(session, returning=(), key="alpha")
+
+    @pytest.mark.asyncio
+    async def test_update_where_rejects_an_empty_generator_returning(
+        self, session: AsyncSession
+    ) -> None:
+        """Refuse an empty one-shot ``returning`` the same as an empty sequence.
+
+        ``Iterable[str]`` admits a generator, which is truthy while empty, so a
+        guard reading its truthiness alone would pass it through to the row read
+        and raise ``TypeError`` from ``len()`` instead.
+        """
+        with pytest.raises(ValueError, match="returning must name at least one"):
+            await UniqueKeyManager.update_where(
+                session,
+                values={"label": "x"},
+                returning=(column for column in ()),
+                key="alpha",
+            )
+
+    @pytest.mark.asyncio
+    async def test_update_where_accepts_a_generator_returning(
+        self, session: AsyncSession
+    ) -> None:
+        """Honor a one-shot ``returning``, which is consumed more than once below."""
+        await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="alpha", label="before"),
+            filter_include={"key"},
+        )
+        returned = await UniqueKeyManager.update_where(
+            session,
+            values={"label": "after"},
+            returning=(column for column in ["label"]),
+            key="alpha",
+        )
+        assert returned == ["after"]
+
+    @pytest.mark.asyncio
+    async def test_update_where_returns_named_columns(
+        self, session: AsyncSession
+    ) -> None:
+        """Honor a ``returning`` that does name a column."""
+        await UniqueKeyManager.get_or_create(
+            session,
+            UniqueKeyModel(key="alpha", label="before"),
+            filter_include={"key"},
+        )
+        returned = await UniqueKeyManager.update_where(
+            session, values={"label": "after"}, returning=["label"], key="alpha"
+        )
+        assert returned == ["after"]

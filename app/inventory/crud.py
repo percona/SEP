@@ -553,7 +553,7 @@ class RetirableManagerMixin(BaseSQLModelManager):
         result = await cls._exec(
             session, query.order_by(col(cls.Model.id)).limit(limit)
         )
-        return list(result.all())
+        return [entity_id for entity_id in result.all() if entity_id is not None]
 
     @classmethod
     async def collect(cls, session: AsyncSession, entity_ids: Collection[int]) -> int:
@@ -955,7 +955,9 @@ class AliasableManagerMixin(RetirableManagerMixin):
         ]
 
     @classmethod
-    async def _identity_source(cls, session: AsyncSession, entity: Any) -> SourceEnum:
+    async def _identity_source(
+        cls, session: AsyncSession, entity: Any, /
+    ) -> SourceEnum:
         """Return the upstream system this entity's identifiers belong to.
 
         :param session: The asynchronous database session to use.
@@ -1015,7 +1017,11 @@ class AliasableManagerMixin(RetirableManagerMixin):
         for relationship in cls.identity_select_related:
             query = query.options(joinedload(relationship))
         result = await cls._exec(session, query)
-        return {entity.id: entity for entity in result.unique().all()}
+        return {
+            entity.id: entity
+            for entity in result.unique().all()
+            if entity.id is not None
+        }
 
     @classmethod
     async def _read_including_retired(
@@ -1651,6 +1657,7 @@ class NodeManager(AliasableManagerMixin, SyncHealthManagerMixin, BaseSQLModelMan
         cls,
         _session: AsyncSession,
         entity: Any,
+        /,
     ) -> SourceEnum:
         """Return the node's own source, which needs no lookup.
 
@@ -1767,7 +1774,9 @@ class ServiceManager(
         )
 
     @classmethod
-    async def _identity_source(cls, session: AsyncSession, entity: Any) -> SourceEnum:
+    async def _identity_source(
+        cls, session: AsyncSession, entity: Any, /
+    ) -> SourceEnum:
         """Return the source the service inherits through its node.
 
         ``Service`` carries no ``source`` column of its own — provenance is the

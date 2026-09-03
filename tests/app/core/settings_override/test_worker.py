@@ -16,6 +16,7 @@
 """Tests for the reusable prefork-child settings-override refresher handle."""
 
 import asyncio
+from collections.abc import Iterator
 from contextlib import suppress
 from datetime import timedelta
 
@@ -91,7 +92,7 @@ def _unreachable_session_maker() -> async_sessionmaker:
 
 
 @pytest.fixture(name="loop")
-def loop_fixture() -> asyncio.AbstractEventLoop:
+def loop_fixture() -> Iterator[asyncio.AbstractEventLoop]:
     """Provide a dedicated event loop standing in for a prefork child's."""
     loop = asyncio.new_event_loop()
     yield loop
@@ -101,7 +102,7 @@ def loop_fixture() -> asyncio.AbstractEventLoop:
 @pytest.fixture(name="session_maker")
 def session_maker_fixture(
     loop: asyncio.AbstractEventLoop,
-) -> async_sessionmaker:
+) -> Iterator[async_sessionmaker]:
     """Provide an in-memory SQLite session maker driven through ``loop``."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",

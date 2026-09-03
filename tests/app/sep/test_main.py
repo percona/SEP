@@ -17,6 +17,7 @@
 
 import importlib
 import logging
+from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -483,7 +484,7 @@ def test_sep_app_keeps_default_docs_urls():
 
 
 @pytest.fixture
-def guarded_client(test_client: TestClient, session) -> TestClient:
+def guarded_client(test_client: TestClient, session) -> Iterator[TestClient]:
     """Build an authenticated client whose routes read the in-memory ``session``."""
     sep_app.dependency_overrides[get_session] = lambda: session
     yield test_client

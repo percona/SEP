@@ -15,7 +15,7 @@
 
 """Define shared fixtures for the ATW incident model, CRUD, and route tests."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 
 import pytest
@@ -74,8 +74,11 @@ def delivery_plan() -> DeliveryPlan:
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an in-memory async DB session with every SQLModel table created."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         json_serializer=json_serializer,
@@ -150,7 +153,7 @@ async def _authenticated_api_client(
 @pytest_asyncio.fixture
 async def admin_api_client(
     admin_user: CasdoorUser, session: AsyncSession
-) -> AsyncClient:
+) -> AsyncGenerator[AsyncClient, None]:
     """Yield the authenticated async client as an administrator.
 
     Mirrors :func:`async_api_client`, whose user is a viewer. Routes declaring
@@ -164,7 +167,7 @@ async def admin_api_client(
 @pytest_asyncio.fixture
 async def async_api_client(
     regular_user: CasdoorUser, session: AsyncSession
-) -> AsyncClient:
+) -> AsyncGenerator[AsyncClient, None]:
     """Yield an authenticated async client sharing the in-memory test session.
 
     Used by route tests that must ``await`` a DB read after the request (e.g.

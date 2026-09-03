@@ -96,7 +96,7 @@ class TestApiRouterComposition:
         checksums_route_tags = [
             route.tags
             for route in apps_router.routes
-            if hasattr(route, "path") and "checksums" in route.path
+            if "checksums" in getattr(route, "path", "")
         ]
         assert checksums_route_tags
         assert all("checksums" in tags for tags in checksums_route_tags)
@@ -466,9 +466,7 @@ class TestApiRouterConfigDrivenLoop:
             api_router_path="app.sep.apps.alters.api_routes.router",
         )
         router = build_apps_router(build_app_registry([plugin]))
-        tagged = [
-            r.tags for r in router.routes if hasattr(r, "path") and "alters" in r.path
-        ]
+        tagged = [r.tags for r in router.routes if "alters" in getattr(r, "path", "")]
         assert tagged
         assert all("alters" in tags for tags in tagged)
 

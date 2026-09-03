@@ -191,7 +191,9 @@ class TestSnippetListQuerySpec:
         Every non-HTTP ``SnippetManager.list()`` caller relies on this to reach the
         spec's ordering without naming it explicitly.
         """
-        assert [str(clause) for clause in SnippetManager._get_ordering()] == [
+        ordering = SnippetManager._get_ordering()
+        assert ordering is not None
+        assert [str(clause) for clause in ordering] == [
             "snippet.approved_at DESC NULLS LAST",
             "snippet.id ASC",
         ]

@@ -199,6 +199,7 @@ class TestPrepareTaskHistory:
         result = await prepare_task_history(
             nomad_task, "user-1", AsyncMock(), execution_data
         )
+        assert result.execution_request.meta is not None
         assert "env" not in result.execution_request.meta
         assert result.execution_request.payload is None
 
@@ -209,6 +210,7 @@ class TestPrepareTaskHistory:
         result = await prepare_task_history(
             proxy_task, "user-1", AsyncMock(), execution_data
         )
+        assert result.execution_request.meta is not None
         assert result.execution_request.meta["env"] == "prod"
         assert result.execution_request.payload == "p1"
 
@@ -362,6 +364,7 @@ class TestPrepareTaskHistory:
         result = await prepare_task_history(
             nomad_task, "user-1", AsyncMock(), execution_data
         )
+        assert result.execution_request.meta is not None
         assert "scheduled_at" not in result.execution_request.meta
 
     @pytest.mark.asyncio
@@ -373,6 +376,7 @@ class TestPrepareTaskHistory:
         result = await prepare_task_history(
             nomad_task, "user-1", AsyncMock(), execution_data
         )
+        assert result.execution_request.meta is not None
         assert result.execution_request.meta["custom_key"] == "custom_value"
 
     @pytest.mark.asyncio
@@ -561,6 +565,7 @@ class TestPrepareTaskHistory:
         history = await prepare_task_history(
             task, "test-user", AsyncMock(), execution_data
         )
+        assert history.execution_request.meta is not None
         assert "_chain_task_names" not in history.execution_request.meta
 
     @pytest.mark.asyncio
