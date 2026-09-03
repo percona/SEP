@@ -48,6 +48,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.pool import NullPool
 from sqlalchemy.sql import coercions, ColumnExpressionArgument, roles
 from sqlalchemy.sql.compiler import SQLCompiler
 from sqlalchemy.sql.dml import Insert as GenericInsert
@@ -348,9 +349,17 @@ async def try_pg_advisory_xact_lock(
     the caller's connection would be released by the first of them and fence only
     its own final statement. The lock is transaction-scoped on that connection, so
     it is released by exiting the block, by an exception inside it, and by the
-    death of the worker holding it, without an unlock call to leak. It does need a
-    connection spare in the pool for as long as the block runs, so a deployment
-    pinned to a single connection trades the fence for a checkout timeout.
+    death of the worker holding it, without an unlock call to leak.
+
+    That connection is opened outside the caller's pool, on a throwaway
+    ``NullPool`` engine, rather than borrowed from it: the guarded block issues its
+    own statements on the caller's session, so a lock holding a slot of that same
+    pool would need a second one for as long as the block runs, and a deployment
+    configured with ``POOL_SIZE=1``/``MAX_OVERFLOW=0`` would then time out on every
+    guarded sequence — the lock owning the only slot while the work it fences waits
+    for one. The price is a connect per acquisition, against a sequence that runs
+    periodically, and one connection above the configured ceiling while the block
+    runs.
 
     Acquisition never waits: contention yields ``False`` for the caller to refuse
     on, because a caller blocking here would hold its connection while a peer
@@ -369,6 +378,10 @@ async def try_pg_advisory_xact_lock(
         single-``bigint`` locks, so a namespace cannot collide with one of those.
     :param key: The key identifying the locked object within ``namespace``.
     :return: ``True`` while the lock is held for the duration of the block.
+    :raises SQLAlchemyError: If the lock connection cannot be opened or the lock
+        statement fails — pool-independent, but not failure-free: the server can
+        refuse the connection or drop it. Raised before the block is entered, so
+        the guarded sequence does not run under a lock it does not hold.
     """
     bind = session.bind
     engine = bind.engine if isinstance(bind, AsyncConnection) else bind
@@ -385,13 +398,17 @@ async def try_pg_advisory_xact_lock(
     if engine.dialect.name != DatabaseDialect.POSTGRESQL:
         yield True
         return
-    async with engine.connect() as connection:
-        await connection.begin()
-        acquired = await connection.scalar(
-            text("SELECT pg_try_advisory_xact_lock(:namespace, :key)"),
-            {"namespace": namespace, "key": key},
-        )
-        yield bool(acquired)
+    lock_engine = create_async_engine(engine.url, poolclass=NullPool)
+    try:
+        async with lock_engine.connect() as connection:
+            await connection.begin()
+            acquired = await connection.scalar(
+                text("SELECT pg_try_advisory_xact_lock(:namespace, :key)"),
+                {"namespace": namespace, "key": key},
+            )
+            yield bool(acquired)
+    finally:
+        await lock_engine.dispose()
 
 
 def table_exists(bind: Connection, table_name: str) -> bool:

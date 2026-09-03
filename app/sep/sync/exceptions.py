@@ -105,8 +105,10 @@ class SyncInstanceAlreadyInProgressError(SyncError):
     :param sync_items: The synchronization items that are already in progress.
     :param detail: A message describing a conflict that no item evidences, such as
         a run that has not written its first item yet. Carries sync bookkeeping
-        only — the message is stored on ``last_sync_error`` and served from the
-        inventory read routes, so remote context must never reach it.
+        only: this type is allowlisted for verbatim storage on
+        ``last_sync_error``, which the inventory read routes serve, so a message
+        it carries must hold nothing a reader may not see — the allowlist is keyed
+        on the type, not on which raising path recorded it.
     """
 
     def __init__(self, *sync_items: SyncItem, detail: str | None = None) -> None:

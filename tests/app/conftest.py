@@ -570,14 +570,14 @@ async def postgres_session_maker(
 @pytest_asyncio.fixture
 async def postgres_session(
     postgres_session_maker: async_sessionmaker[AsyncSession],
-) -> AsyncSession:
+) -> AsyncIterator[AsyncSession]:
     """Provide a real-PostgreSQL ``AsyncSession`` with the tasks-service tables.
 
     The seam for any test whose subject dispatches on the session bind. Take
     ``postgres_session_maker`` instead where the test needs two sessions at once.
 
     :param postgres_session_maker: The table-bootstrapped session maker.
-    :return: One session on that maker.
+    :return: One session on that maker, closed on teardown.
     """
     async with postgres_session_maker() as session:
         yield session

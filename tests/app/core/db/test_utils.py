@@ -799,9 +799,9 @@ class TestTryPgAdvisoryXactLockNoOp:
 async def contending_sessions(postgres_engine: AsyncEngine):
     """Yield two sessions on independent connections of the same engine.
 
-    One session cannot contend with itself: the helper draws its lock connection
-    from the engine, and a second lock attempt on the same session would be a
-    second connection under the same caller rather than a competing one. Built on
+    One session cannot contend with itself: the helper takes its lock on a
+    connection of its own, so a second lock attempt on the same session would be
+    that same caller locking twice rather than a competing one. Built on
     the bare engine rather than on ``postgres_session_maker`` because an advisory
     lock needs no table, so creating the whole schema here would be paid per test
     for nothing.
@@ -917,7 +917,8 @@ class TestTryPgAdvisoryXactLockOnRealPostgres:
         """Fence a session bound to a connection rather than to an engine.
 
         A session bound that way still has to fence against the workers bound to
-        the engine, so the lock connection is drawn from the bind's own engine.
+        the engine, so the lock is taken against the database the bind's own engine
+        addresses rather than skipped for want of an engine to read a dialect off.
         """
         key = self._unique_key()
         session_maker = get_async_session_maker_from_engine(postgres_engine)
@@ -933,6 +934,38 @@ class TestTryPgAdvisoryXactLockOnRealPostgres:
                 try_pg_advisory_xact_lock(peer, 1, key) as held_peer,
             ):
                 assert held_peer is False
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_locks_without_borrowing_from_the_callers_pool(
+        self, postgres_engine: AsyncEngine
+    ):
+        """Fence a caller whose pool has no second connection to give.
+
+        ``POOL_SIZE=1``/``MAX_OVERFLOW=0`` is a supported configuration, and the
+        guarded block issues its own statements on the caller's session — so a lock
+        connection borrowed from that pool would own the only slot while the work
+        it fences waited for one, turning every guarded sequence into a checkout
+        timeout.
+        """
+        key = self._unique_key()
+        single_slot = create_async_engine(
+            postgres_engine.url,
+            pool_size=1,
+            max_overflow=0,
+            pool_timeout=5,
+        )
+        try:
+            async with AsyncSession(single_slot) as session:
+                # Checked out before the lock so the session holds the only slot for
+                # the whole block, as a caller mid-sequence would.
+                assert await session.scalar(text("SELECT 1")) == 1
+
+                async with try_pg_advisory_xact_lock(session, 1, key) as held:
+                    assert held is True
+                    assert await session.scalar(text("SELECT 1")) == 1
+        finally:
+            await single_slot.dispose()
 
     @pytest.mark.postgres
     @pytest.mark.asyncio

@@ -97,9 +97,9 @@ class TestSyncInstanceAlreadyInProgressError:
     def test_detail_replaces_the_item_message(self):
         """Describe a conflict no item evidences without inventing an empty item list.
 
-        The whole message is persisted to ``last_sync_error`` and served from the
-        inventory read routes, so it has to read as the conflict it is rather than
-        as a run conflicting with nothing.
+        A run-level conflict has no sync item to name, so the detail becomes the
+        whole message and has to read as the conflict it is rather than as a run
+        conflicting with an empty list.
         """
         exc = SyncInstanceAlreadyInProgressError(
             detail="A run of syncer 'pmm' is being created already.",

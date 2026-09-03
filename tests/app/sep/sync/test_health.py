@@ -336,11 +336,12 @@ class TestDescribeSyncError:
         assert "sync items" in described
 
     def test_an_allowlisted_exception_keeps_its_supplied_detail(self) -> None:
-        """Store a run-level conflict message, which no sync item evidences.
+        """Keep a detail-built message whole, as an item-built one is kept.
 
-        The allowlist opts the whole message in, so a conflict described by a
-        supplied detail rather than by an item list is persisted verbatim too, and
-        must therefore stay bookkeeping-only in the same way.
+        The allowlist opts a message in by its exception's exact type, not by how
+        the message was built, so a conflict described by a supplied detail passes
+        through verbatim too — which is what obliges every such detail to stay
+        bookkeeping-only.
         """
         described = _describe_sync_error(
             SyncInstanceAlreadyInProgressError(
