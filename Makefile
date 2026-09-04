@@ -91,9 +91,9 @@ ruff: venv
 	@"${VENV_BIN}"/ruff check .
 	@"${VENV_BIN}"/ruff format --check .
 
-# Opt-in, local-only static type checking (Astral ty). Deliberately NOT part of `lint`,
-# pre-commit, or CI: a non-zero exit from the existing type-error backlog is expected and
-# must not gate any automated check.
+# Static type checking (Astral ty). Not yet part of `lint`, pre-commit, or CI: where
+# enforcement will run and what it will read is decided and recorded in
+# docs/development/ty-policy.md under `Enforcement`. Until then, this runs by hand only.
 typecheck: venv
 	@"${VENV_BIN}"/ty check
 
