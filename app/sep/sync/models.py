@@ -250,7 +250,6 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         before raising, having entered nothing.
 
         :return: The syncer instance with an active session and SyncInstance.
-        :rtype: BaseSyncer
         :raises SyncInstanceAlreadyInProgressError: If another run of this syncer
             already owns it.
         """
