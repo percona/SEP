@@ -273,9 +273,9 @@ async def refresh_all(
 async def bounded_seed(
     session_maker_factory: SessionMakerFactory,
     proxies: ProxyRegistry,
-    timeout: float,
+    seed_timeout: float,
 ) -> bool:
-    """Run an initial override refresh bounded by ``timeout`` seconds.
+    """Run an initial override refresh bounded by ``seed_timeout`` seconds.
 
     Prefer :func:`asyncio.wait` over :func:`asyncio.wait_for`: ``wait_for``
     awaits the cancelled coroutine's unwind, so a hung
@@ -296,7 +296,7 @@ async def bounded_seed(
     :param session_maker_factory: A zero-argument callable returning a
         service-scoped ``async_sessionmaker``.
     :param proxies: The wired proxy registry keyed by class identifier.
-    :param timeout: Wall-clock budget in seconds for the inline seed.
+    :param seed_timeout: Wall-clock budget in seconds for the inline seed.
     :return: ``True`` when the seed completed; ``False`` when the budget
         expired.
     :raises Exception: Re-raises any failure from a completed
@@ -305,7 +305,7 @@ async def bounded_seed(
         propagate.
     """
     seed_task = asyncio.create_task(refresh_all(session_maker_factory, proxies))
-    done, _ = await asyncio.wait({seed_task}, timeout=timeout)
+    done, _ = await asyncio.wait({seed_task}, timeout=seed_timeout)
     if done:
         await seed_task
         return True
@@ -314,7 +314,7 @@ async def bounded_seed(
     logger.error(
         "Initial settings-override refresh exceeded its %.2fs seed "
         "budget; continuing with unseeded overrides",
-        timeout,
+        seed_timeout,
     )
     return False
 

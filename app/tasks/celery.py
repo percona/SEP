@@ -29,7 +29,12 @@ from typing import Any
 
 from celery import Task as CeleryTask
 from celery.app.task import Context
-from celery.signals import task_prerun, task_revoked, worker_process_init, worker_process_shutdown
+from celery.signals import (
+    task_prerun,
+    task_revoked,
+    worker_process_init,
+    worker_process_shutdown,
+)
 from cryptography import x509
 from fastapi.encoders import jsonable_encoder
 from nomad.api.exceptions import BaseNomadException
