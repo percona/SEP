@@ -1163,6 +1163,12 @@ class BaseSQLModelManager(BaseManager):
         This method overrides `BaseManager.save()` to check for duplicate errors for
         each unique index of the Model.
 
+        The duplicate lookup runs with autoflush suppressed: it matches against rows
+        already written to the database and never flushes ``instance``'s own pending
+        change first. A sibling whose colliding change is still pending is therefore
+        not seen as a duplicate, and surfaces at commit as a
+        ``HTTPBadRequestException`` instead.
+
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
         :type session: AsyncSession

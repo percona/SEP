@@ -146,13 +146,23 @@ class UniqueKeyUUIDManager(BaseSQLModelManager):
 
 
 class UniqueKeyUpdate(SQLModel):
-    """Update payload carrying only the unique field of ``UniqueKeyModel``."""
+    """Carry only ``UniqueKeyModel``'s unique field as an update payload.
+
+    :param key: The unique key value the update assigns.
+    """
 
     key: str
 
 
 class CompositeUniqueModel(BaseSQLModel, table=True):
-    """Test model whose unique index spans several columns, as inventory's do."""
+    """Model a unique index spanning several columns, as inventory's do.
+
+    :param external_id: The identifier the origin system assigns.
+    :param source: The origin system the row came from.
+    :param discriminator: The extra column that narrows the index, standing in for
+        inventory's retirement key.
+    :param label: A value outside every unique index.
+    """
 
     __tablename__ = "test_composite_unique"
     __table_args__ = (
@@ -172,7 +182,7 @@ class CompositeUniqueModel(BaseSQLModel, table=True):
 
 
 class CompositeUniqueManager(BaseSQLModelManager):
-    """Manager for the composite-unique test model."""
+    """Manage the composite-unique test model."""
 
     Model = CompositeUniqueModel
 
@@ -201,7 +211,11 @@ async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
 
 @pytest.fixture(name="emitted_sql")
 def emitted_sql_fixture(session: AsyncSession) -> Iterator[list[str]]:
-    """Record every SQL statement the session's engine sends to the database."""
+    """Record every SQL statement the session's engine sends to the database.
+
+    :param session: The session whose engine is instrumented for the test's duration.
+    :return: The statements recorded so far, appended to as the test runs.
+    """
     statements: list[str] = []
     engine = session.bind.sync_engine
 
@@ -244,7 +258,11 @@ async def _create_item(
 
 
 async def _two_keyed_rows(session: AsyncSession) -> UniqueKeyModel:
-    """Persist two uniquely-keyed rows and return the second one."""
+    """Persist two uniquely-keyed rows and return the second one.
+
+    :param session: The session the rows are persisted through.
+    :return: The row keyed ``beta``, leaving ``alpha`` claimed by its sibling.
+    """
     await UniqueKeyManager.save(session, UniqueKeyModel(key="alpha"))
     return await UniqueKeyManager.save(session, UniqueKeyModel(key="beta"))
 
@@ -1266,14 +1284,37 @@ class TestSaveDuplicatePrecheck:
         assert stored.key == "beta"
 
     @pytest.mark.asyncio
+    async def test_sibling_vacating_its_value_in_session_still_conflicts(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert a vacancy that was never written still reads as occupied.
+
+        The sibling's move off ``alpha`` is pending, and the precheck does not flush
+        it, so the lookup still finds the sibling's stored row and rejects the
+        retarget. Freeing the value takes persisting the sibling's move first.
+        """
+        sibling = await UniqueKeyManager.save(session, UniqueKeyModel(key="alpha"))
+        row = await UniqueKeyManager.save(session, UniqueKeyModel(key="beta"))
+
+        sibling.key = "gamma"
+        row.key = "alpha"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="UniqueKeyModel with the same key already exists",
+        ):
+            await UniqueKeyManager.save(session, row)
+
+    @pytest.mark.asyncio
     async def test_collision_with_unflushed_sibling_raises_bad_request(
         self,
         session: AsyncSession,
     ) -> None:
         """Assert a collision the precheck cannot see still fails as a bad request.
 
-        The precheck reads committed state, so a sibling that was added to the
-        session but never flushed is invisible to it. The collision then surfaces
+        The precheck's lookup never flushes, so a sibling that was added to the
+        session but not yet written is invisible to it. The collision then surfaces
         at commit, where ``DatabaseError`` handling turns it into a bad request
         rather than letting a bare ``IntegrityError`` escape.
         """
