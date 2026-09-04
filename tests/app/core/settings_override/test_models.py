@@ -42,10 +42,7 @@ from app.sep.config import App, SEPSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
-
-#: A username far longer than any bounded column would have allowed, used to
-#: prove ``updated_by`` carries no width.
-_LONG_USERNAME_LENGTH = 512
+from tests.app.core.settings_override.conftest import LONG_USERNAME_LENGTH
 
 #: Historical ``SettingClassEnum`` member names the database already stores.
 #: Includes the two app-owned classes this ticket removes from the enum, so a
@@ -147,7 +144,7 @@ async def test_long_updated_by_round_trips(session: AsyncSession) -> None:
     ``BaseUser.username``, which carries a minimum length and no maximum. A
     width chosen here would pass on SQLite and fail at commit on PostgreSQL.
     """
-    actor = "a" * _LONG_USERNAME_LENGTH
+    actor = "a" * LONG_USERNAME_LENGTH
     await SettingsOverrideManager.create(
         session,
         SettingOverride(

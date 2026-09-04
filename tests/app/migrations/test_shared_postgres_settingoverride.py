@@ -59,11 +59,9 @@ from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
 from app.tasks.config import tasks_settings
 from tests.app.alembic_paths import ALEMBIC_INI
+from tests.app.core.settings_override.conftest import LONG_USERNAME_LENGTH
 
 _SETTING_CLASS_VARCHAR_LENGTH = 255
-#: A username far longer than any bounded column would have allowed, used to
-#: prove ``updated_by`` carries no width on the deployment dialect.
-_LONG_USERNAME_LENGTH = 512
 #: The ``SYNC_REFRESH_TIME`` value seeded before a downgrade, read back through
 #: the JSONB column to prove the drop left the row's data intact.
 _SEEDED_OVERRIDE_VALUE = 5
@@ -615,7 +613,7 @@ def test_shared_db_long_actor_round_trips(shared_postgres_db):
     """
     sync_url = shared_postgres_db
     command.upgrade(Config(str(ALEMBIC_INI), ini_section="sep"), "heads")
-    actor = "a" * _LONG_USERNAME_LENGTH
+    actor = "a" * LONG_USERNAME_LENGTH
 
     engine = create_engine(sync_url)
     try:
