@@ -489,7 +489,7 @@ def _override_row(
     """Build an unpersisted ``SettingOverride`` for the provenance aggregation.
 
     ``SettingOverride`` is a ``table=True`` SQLModel, so ``__init__`` skips
-    validation and every timestamp is stored exactly as passed -- which is what
+    validation and every timestamp is stored exactly as passed, which is what
     lets a naive ``updated_at`` be constructed here at all.
 
     :param key: The stored override key.

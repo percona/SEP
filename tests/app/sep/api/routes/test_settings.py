@@ -2442,9 +2442,9 @@ class TestSepSettingsProvenance:
     ) -> None:
         """Ignore an inactive row: no override is reported and no stamp travels.
 
-        An inactive row does not affect the served value -- it falls back to the
-        declared default -- so reporting provenance for one would tell the UI a
-        field is overridden while showing it the default.
+        An inactive row does not affect the served value, which falls back to the
+        declared default, so reporting provenance for one would tell the UI a
+        field is overridden while showing it that default.
         """
         await SettingsOverrideManager.create(
             override_session,

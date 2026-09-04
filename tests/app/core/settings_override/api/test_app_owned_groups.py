@@ -188,7 +188,7 @@ class TestBuildSettingsRouterAppOwned:
         """Reject a router built without ``actor_dep`` rather than record no actor.
 
         The parameter is deliberately source-breaking: a sub-app that forgets the
-        wiring fails where the router is built -- at import -- instead of serving
+        wiring fails where the router is built, at import, instead of serving
         PATCHes that silently store no provenance.
         """
         with pytest.raises(TypeError, match="actor_dep"):

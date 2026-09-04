@@ -24,8 +24,6 @@ race. The real-PostgreSQL cases exercise that cross-track scenario; the SQLite
 cases pin the cross-dialect helpers the guards rely on.
 """
 
-from pathlib import Path
-
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -52,16 +50,17 @@ from app.core.db.utils import (
     check_constraint_name,
     column_exists,
 )
-from app.core.settings_override.constants import SETTINGOVERRIDE_MIGRATION_LOCK_KEY
+from app.core.settings_override.constants import (
+    SETTINGOVERRIDE_MIGRATION_LOCK_KEY,
+    SETTINGOVERRIDE_UPDATED_BY_COLUMN,
+)
 from app.core.utils.fields import AsyncDatabaseEngine
 from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
 from app.tasks.config import tasks_settings
+from tests.app.alembic_paths import ALEMBIC_INI
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 _SETTING_CLASS_VARCHAR_LENGTH = 255
-_UPDATED_BY_COLUMN = "updated_by"
 #: A username far longer than any bounded column would have allowed, used to
 #: prove ``updated_by`` carries no width on the deployment dialect.
 _LONG_USERNAME_LENGTH = 512
@@ -490,7 +489,10 @@ class TestColumnExists:
         try:
             with engine.connect() as conn:
                 assert (
-                    column_exists(conn, "settingoverride", _UPDATED_BY_COLUMN) is False
+                    column_exists(
+                        conn, "settingoverride", SETTINGOVERRIDE_UPDATED_BY_COLUMN
+                    )
+                    is False
                 )
         finally:
             engine.dispose()
@@ -501,7 +503,10 @@ class TestColumnExists:
         try:
             with engine.connect() as conn:
                 assert (
-                    column_exists(conn, "settingoverride", _UPDATED_BY_COLUMN) is False
+                    column_exists(
+                        conn, "settingoverride", SETTINGOVERRIDE_UPDATED_BY_COLUMN
+                    )
+                    is False
                 )
         finally:
             engine.dispose()
@@ -528,7 +533,9 @@ def test_column_exists_on_real_postgres(postgres_sync_url):
                 )
                 assert (
                     column_exists(
-                        conn, "settingoverride_column_probe", _UPDATED_BY_COLUMN
+                        conn,
+                        "settingoverride_column_probe",
+                        SETTINGOVERRIDE_UPDATED_BY_COLUMN,
                     )
                     is False
                 )
@@ -549,7 +556,11 @@ def _updated_by_columns(sync_url) -> list[dict]:
         columns = inspect(engine).get_columns("settingoverride")
     finally:
         engine.dispose()
-    return [column for column in columns if column["name"] == _UPDATED_BY_COLUMN]
+    return [
+        column
+        for column in columns
+        if column["name"] == SETTINGOVERRIDE_UPDATED_BY_COLUMN
+    ]
 
 
 @pytest.mark.xdist_group("shared_postgres_db")

@@ -20,6 +20,11 @@
 # bigint unused elsewhere works; no other advisory lock exists in the repo.
 SETTINGOVERRIDE_MIGRATION_LOCK_KEY = 0x5E770438
 
+#: Name of the ``settingoverride`` column recording which admin last saved an
+#: override, shared by the migration helpers that add and drop it and by the
+#: tests that assert on it, so the three cannot drift apart.
+SETTINGOVERRIDE_UPDATED_BY_COLUMN = "updated_by"
+
 #: Width of the ``settingoverride.setting_class`` column, shared by the ORM
 #: type, the Pydantic constraint, and the migration that widens the column, so
 #: the three cannot drift apart.

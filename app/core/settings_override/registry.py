@@ -1133,10 +1133,10 @@ def _provenance_keys_for_row(
 
     The row's own stored ``key`` always counts, which keeps the report correct
     when a row was stored under a non-canonical casing. A ``__``-delimited row
-    additionally contributes every canonical prefix of its resolved chain -- the
+    additionally contributes every canonical prefix of its resolved chain: the
     top-level parent, each intermediate sub-model path, and the canonical leaf
-    key -- so a promoted parent reports an override when only deeper nested rows
-    exist.
+    key. A promoted parent therefore reports an override when only deeper nested
+    rows exist.
 
     :param settings_cls: The Pydantic settings class the row belongs to.
     :param row: One active override row.
@@ -1164,11 +1164,11 @@ def override_provenance_for_rows(
     drift from the stamps beside it. :func:`_provenance_keys_for_row` decides
     which keys each row contributes.
 
-    When several rows contribute to one key -- the ordinary case for a nested
-    parent -- the row with the latest stamp wins, breaking ties on the higher
-    ``id``. Ties are the common case rather than a corner: ``utc_now`` zeroes
-    microseconds and one PATCH batch stamps every key it writes with a single
-    shared timestamp.
+    When several rows contribute to one key, which is the ordinary case for a
+    nested parent, the row with the latest stamp wins, breaking ties on the
+    higher ``id``. Ties are the common case rather than a corner: ``utc_now``
+    zeroes microseconds and one PATCH batch stamps every key it writes with a
+    single shared timestamp.
 
     :param settings_cls: The Pydantic settings class the rows belong to.
     :param rows: The active override rows for the class.
@@ -2138,11 +2138,8 @@ def iter_nested_leaf_keys(
     top-level entry.
 
     :param settings_cls: The settings class declaring ``parent_field_name``.
-    :type settings_cls: type[BaseModel]
     :param parent_field_name: The top-level field whose leaves to enumerate.
-    :type parent_field_name: str
-    :yield: A ``(canonical_key, segment_chain)`` pair for one nested leaf.
-    :rtype: Iterator[tuple[str, tuple[str, ...]]]
+    :return: A ``(canonical_key, segment_chain)`` pair for one nested leaf.
     """
     parent_info = settings_cls.model_fields.get(parent_field_name)
     if parent_info is None:

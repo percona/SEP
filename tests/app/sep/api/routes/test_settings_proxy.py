@@ -654,7 +654,7 @@ class TestProxyResponseValidation:
 
 
 class TestRemoteProvenance:
-    """A remote class's provenance is stamped upstream and travels back unchanged."""
+    """Cover a remote class, whose provenance is stamped upstream and forwarded back."""
 
     def test_patch_returns_the_upstream_stamp(
         self, admin_client: TestClient, mock_tasks: AsyncMock

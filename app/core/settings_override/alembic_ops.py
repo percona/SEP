@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from alembic import op
@@ -32,17 +33,34 @@ from app.core.settings_override.constants import (
     SETTING_CLASS_CHECK_MEMBERS_LEGACY,
     SETTING_CLASS_MAX_LENGTH,
     SETTINGOVERRIDE_MIGRATION_LOCK_KEY,
+    SETTINGOVERRIDE_UPDATED_BY_COLUMN,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
 
 logger = logging.getLogger(__name__)
 
 _TABLE = "settingoverride"
 _COLUMN = "setting_class"
-_UPDATED_BY_COLUMN = "updated_by"
 _ENUM_NAME = "settingclassenum"
 _STRING_LENGTH = SETTING_CLASS_MAX_LENGTH
 _LEGACY_MEMBERS = SETTING_CLASS_CHECK_MEMBERS_LEGACY
 _LEGACY_VARCHAR_LENGTH = max(len(member) for member in _LEGACY_MEMBERS)
+
+
+def _serialize_settingoverride_ddl(bind: Connection) -> None:
+    """Serialize this track's ``settingoverride`` DDL against the other tracks.
+
+    Every helper in this module edits one table that the ``sep``, ``tasks`` and
+    ``inventory`` tracks share, so each takes the same advisory lock before its
+    idempotency preflight. Without it two tracks can both pass the preflight and
+    execute the same DDL. No-op off PostgreSQL, where each service owns its own
+    database.
+
+    :param bind: The migration's bound connection (``op.get_bind()``).
+    """
+    acquire_pg_advisory_xact_lock(bind, SETTINGOVERRIDE_MIGRATION_LOCK_KEY)
 
 
 def upgrade_drop_setting_class_check() -> None:
@@ -53,7 +71,7 @@ def upgrade_drop_setting_class_check() -> None:
     no-op, matching the other ``settingoverride`` guards.
     """
     bind = op.get_bind()
-    acquire_pg_advisory_xact_lock(bind, SETTINGOVERRIDE_MIGRATION_LOCK_KEY)
+    _serialize_settingoverride_ddl(bind)
     if not table_exists(bind, _TABLE):
         return
     name = check_constraint_name(bind, _TABLE, _COLUMN)
@@ -81,7 +99,7 @@ def downgrade_restore_setting_class_check() -> None:
     those overrides.
     """
     bind = op.get_bind()
-    acquire_pg_advisory_xact_lock(bind, SETTINGOVERRIDE_MIGRATION_LOCK_KEY)
+    _serialize_settingoverride_ddl(bind)
     if not table_exists(bind, _TABLE):
         return
     if check_constraint_name(bind, _TABLE, _COLUMN) is not None:
@@ -120,13 +138,13 @@ def upgrade_add_updated_by() -> None:
     ``settingoverride`` guards.
     """
     bind = op.get_bind()
-    acquire_pg_advisory_xact_lock(bind, SETTINGOVERRIDE_MIGRATION_LOCK_KEY)
+    _serialize_settingoverride_ddl(bind)
     if not table_exists(bind, _TABLE):
         return
-    if column_exists(bind, _TABLE, _UPDATED_BY_COLUMN):
+    if column_exists(bind, _TABLE, SETTINGOVERRIDE_UPDATED_BY_COLUMN):
         return
     with op.batch_alter_table(_TABLE, schema=None) as batch_op:
-        batch_op.add_column(sa.Column(_UPDATED_BY_COLUMN, sa.String()))
+        batch_op.add_column(sa.Column(SETTINGOVERRIDE_UPDATED_BY_COLUMN, sa.String()))
 
 
 def downgrade_drop_updated_by() -> None:
@@ -137,10 +155,10 @@ def downgrade_drop_updated_by() -> None:
     one-way for that data. The rows and their values survive untouched.
     """
     bind = op.get_bind()
-    acquire_pg_advisory_xact_lock(bind, SETTINGOVERRIDE_MIGRATION_LOCK_KEY)
+    _serialize_settingoverride_ddl(bind)
     if not table_exists(bind, _TABLE):
         return
-    if not column_exists(bind, _TABLE, _UPDATED_BY_COLUMN):
+    if not column_exists(bind, _TABLE, SETTINGOVERRIDE_UPDATED_BY_COLUMN):
         return
     with op.batch_alter_table(_TABLE, schema=None) as batch_op:
-        batch_op.drop_column(_UPDATED_BY_COLUMN)
+        batch_op.drop_column(SETTINGOVERRIDE_UPDATED_BY_COLUMN)
