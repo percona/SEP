@@ -146,8 +146,7 @@ error**, exit **0**, measured by the `typecheck` job itself — over a surface
 that is not the same one. It carries two further merges, and this branch adds
 `scripts/check_ty_diff.py` and `tests/scripts/test_check_ty_diff.py`, both
 inside `[tool.ty.src].include`. Checked on their own at the pinned `ty 0.0.49`
-those two report none, so the count moved with the merges rather than with
-them.
+those two report none, so the count moved with the merges rather than with them.
 
 **That job's figure is the one to quote.** A local run of the same commit
 reported 3,288: same ty, same tree, four diagnostics apart, because the two
@@ -193,7 +192,7 @@ Enforcement runs in **CI**, in two layers. Not pre-commit, and not local-only.
 | Layer | Scope | Reads | Job |
 |---|---|---|---|
 | 1 | the whole tree | the exit status of `make typecheck` | hold error severity at zero |
-| 2 | the lines a change adds | the diagnostics themselves | detect what the `warn` rules report |
+| 2 | the changed non-test Python files | the diagnostics themselves | detect what the `warn` rules report |
 
 **Both layers run the pinned binary, never whatever `ty` is first on `PATH`.**
 Layer 1 gets that by invoking `make typecheck`, which runs `${VENV_BIN}/ty` — a

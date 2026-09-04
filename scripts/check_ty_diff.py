@@ -26,11 +26,11 @@ it — including one an edit merely moved down the file.
 Attribution is a baseline delta rather than a test of whether a diagnostic sits
 on an added line, because the consequences of an annotation change land at call
 sites the edit itself need not touch; the reconstruction that settled it is in
-``docs/development/ty-policy.md``. Both passes receive an
-identical batch composition, minus the paths that do not exist at the merge-base,
-so a diagnostic that batching suppresses is absent from both counters and cancels
-out of the difference; ``--per-file`` trades runtime for the finest granularity
-if that cancellation is ever observed to fail.
+``docs/development/ty-policy.md``. Both passes receive an identical batch
+composition, minus the paths the merge-base does not carry under a checked
+non-test name, so a diagnostic that batching suppresses is absent from both
+counters and cancels out of the difference; ``--per-file`` trades runtime for
+the finest granularity if that cancellation is ever observed to fail.
 
 The exit status is the whole signal: non-zero when the branch adds a diagnostic.
 Whether that blocks a merge is decided by the workflow, not here.
@@ -72,8 +72,10 @@ class ChangedFiles:
 
     :param head: Repo-relative paths as they exist on the branch.
     :param base: The same files named as the merge-base knows them, which drops
-        the paths the branch added and renames the ones it moved.
-    :param renames: Old path to new path, for the files the branch moved.
+        the paths the branch added, drops the ones it moved out of ``tests/``,
+        and renames the rest of the ones it moved.
+    :param renames: Old path to new path, for the files the branch moved within
+        the checked non-test surface.
     """
 
     head: tuple[str, ...]
