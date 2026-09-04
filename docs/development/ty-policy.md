@@ -5,14 +5,14 @@ the static type checker `make typecheck` runs: **which trees are checked**,
 **what severity each diagnostic rule carries**, and **where enforcement runs and
 what it reads**. The first two are expressed in `pyproject.toml` —
 `[tool.ty.src]` and `[tool.ty.rules]` — and this file is the rationale behind
-them. The third has nothing to express in configuration yet, so this file is
-where it lives: see *Enforcement* below.
+them. The third is expressed in `.github/workflows/`, and the reasoning behind
+it lives here: see *Enforcement* below.
 
 `make typecheck` exits **0** on the current tree. Every rule at `error` reports
 nothing, and the diagnostics that remain are all warning-severity. Enforcement
-is decided — CI, in two layers, recorded under *Enforcement* — but is **not yet
-wired**: the target is not part of `lint`, pre-commit, or CI today, so running
-it by hand is still the only way it runs. SEP-1680 ships the gate.
+runs in CI, in the two layers recorded under *Enforcement*: a blocking
+`typecheck` job over the whole tree, and an advisory `typecheck_diff` job over
+what a branch adds. Neither target is part of `lint` or pre-commit.
 
 Every measurement below was taken with **ty 0.0.49**, the version pinned in the
 `typecheck` Poetry group, but the numbers fall into two classes that are read
@@ -56,8 +56,11 @@ it is added here**, deliberately.
 
 ## `[tool.ty.src]` is authoritative, and `make typecheck` passes no paths
 
-`make typecheck` runs a bare `ty check` with no path arguments, so the surface
-comes from `[tool.ty.src]` alone.
+`make typecheck` passes no *path* arguments, so the surface comes from
+`[tool.ty.src]` alone. Its only argument is `--python`, which names the
+environment imports resolve against and reads no files of its own; see
+*Installing the pinned group in CI* below for why leaving it off is not an
+option.
 
 The reason is that this leaves exactly **one** definition of the surface. A path
 argument in the Makefile and an `include` list in `pyproject.toml` are two places
@@ -121,7 +124,11 @@ make typecheck  ->  Found 3926 diagnostics   (358 error, 3568 warning), exit 2
 ty check        ->  Found 3926 diagnostics, exit 1
 ```
 
-The two agree because they now carry identical argument lists — none.
+The two agreed because they carried identical argument lists — none. They still
+agree on the surface, though `make typecheck` now also passes `--python`, which
+changes where imports resolve rather than which files are read; a bare
+`ty check` reproduces these counts only from a shell whose active environment is
+the project venv.
 
 That figure predates both the artifact suppressions and SEP-1908's first-party
 fixes. Under the tree as it now stands, measured at `a157c146115c` with the
@@ -129,6 +136,29 @@ pinned `ty 0.0.49`, the same command reports **3,287 — 0 error, 3,287 warning*
 and `make typecheck` exits **0**. The before/after split for the suppressions
 alone, and what moved between them, are in *Neutralized dependency-typing
 artifacts* below.
+
+Re-measured at `b97ee985f`, the branch point the enforcement jobs were written
+against: unchanged at **3,287**, exit **0** — the checked surface is
+byte-identical across that span, since everything merged between the two touches
+only `docs/`, `CONTRIBUTING.md` and a Makefile comment, none of it inside
+`[tool.ty.src].include`. The tree the jobs actually ship on reads **3,284 — 0
+error**, exit **0**, measured by the `typecheck` job itself — over a surface
+that is not the same one. It carries two further merges, and this branch adds
+`scripts/check_ty_diff.py` and `tests/scripts/test_check_ty_diff.py`, both
+inside `[tool.ty.src].include`. Checked on their own at the pinned `ty 0.0.49`
+those two report none, so the count moved with the merges rather than with them.
+
+**That job's figure is the one to quote.** A local run of the same commit
+reported 3,288: same ty, same tree, four diagnostics apart, because the two
+environments do not hold identical packages. The job installs from the lock and
+names its interpreter, so it is the reproducible measurement; a developer's
+working environment is not, and the gap is small only by luck — the same axis
+produced a 3,730 reading when the environment was wrong outright (see
+*Installing the pinned group in CI* below). Read a count as a property of
+(tree, ty version, environment), never of the tree alone.
+
+From here the `typecheck` job re-measures the exit status on every PR, so the
+figure that needs maintaining by hand is the count, not the status.
 
 The error count reaching zero is what SEP-1908 was for; the warning fleet is
 unchanged by design, because the nine rules at `warn` mix first-party defects
@@ -162,7 +192,7 @@ Enforcement runs in **CI**, in two layers. Not pre-commit, and not local-only.
 | Layer | Scope | Reads | Job |
 |---|---|---|---|
 | 1 | the whole tree | the exit status of `make typecheck` | hold error severity at zero |
-| 2 | the lines a change adds | the diagnostics themselves | detect what the `warn` rules report |
+| 2 | the changed non-test Python files | the diagnostics themselves | detect what the `warn` rules report |
 
 **Both layers run the pinned binary, never whatever `ty` is first on `PATH`.**
 Layer 1 gets that by invoking `make typecheck`, which runs `${VENV_BIN}/ty` — a
@@ -173,9 +203,11 @@ constraint 5 below.
 
 The two layers do different jobs and neither substitutes for the other. Layer 1
 cannot reach a rule at `warn`; layer 2 cannot see a regression in a file the
-branch did not touch. SEP-1680 ships both. No gate is wired at the commit that
-adds this section — this document records the decision, and that ticket
-implements it.
+branch did not touch. Both are wired: layer 1 as the `typecheck` job in
+`.github/workflows/python.yaml`, layer 2 as the `typecheck_diff` job in
+`.github/workflows/ci.yml`, which runs `scripts/check_ty_diff.py` through the
+`typecheck-diff` Make target. *How the shipped gate is scoped* below records the
+three questions this decision deliberately left open.
 
 ### Why scoping decides what enforcement catches
 
@@ -286,14 +318,16 @@ is in exactly that position since SEP-1907 neutralized its artifacts. Such a
 rule would then stay unenforced the moment it starts reporting again, which is
 the failure `all = "error"` was set up to avoid, reintroduced one layer up.
 
-### What SEP-1680 inherits
+### The constraints the gate obeys
 
-The constraints this decision fixes, so that the gate does not rediscover them:
+Fixed by this decision before the gate existed, so that it would not rediscover
+them. `scripts/check_ty_diff.py` obeys all six:
 
-1. A working diff-scoped reference implementation exists **outside this
-   repository** and can be ported repo-side. It is personal tooling rather than
+1. A working diff-scoped reference implementation existed **outside this
+   repository** and was ported repo-side. It is personal tooling rather than
    a tracked artifact here, so it is described by behaviour rather than named by
-   path.
+   path. Four of the constraints below exist because that reference gets them
+   wrong, so the port is not a transcription.
 2. **Reuse the in-repo parser** rather than writing a fresh regex.
    `scripts/classify_ty_diagnostics.py` already ships `Diagnostic`,
    `DIAGNOSTIC_RE` and `parse_diagnostics()`, and the last of these reconciles
@@ -321,11 +355,49 @@ The constraints this decision fixes, so that the gate does not rediscover them:
    and in the direction that loses findings. The reference implementation
    batches.
 
-Diff base, the batching policy itself, and the precise added-line attribution
-rule are deliberately **not** fixed here. They are design for an artifact this
-decision does not ship, and settling them now would commit the project to
-choices before anyone has built the thing they constrain. Constraint 6 bounds
-the batching choice without making it.
+Diff base, the batching policy itself, and the attribution rule were left open
+here, as design for an artifact this decision did not ship. They are settled in
+the next subsection.
+
+### How the shipped gate is scoped
+
+**Attribution is a baseline delta, not the lines a change adds.** The runner
+checks the changed files twice — once at `HEAD`, once in a detached worktree at
+the merge-base — and reports the multiset difference over `Diagnostic.fingerprint`.
+Added-line attribution was measured and cannot work: reverting the
+`record_sync_health` annotation at `app/inventory/crud.py:301` reports two
+`unresolved-attribute` diagnostics at **:327 and :333**, so a rule keyed on the
+added line attributes neither and stays green. That is the shape of the defect
+class, not of the reconstruction — an annotation edit lands its consequences at
+call sites. The delta also leaves `app/api/deps.py` alone: its pre-existing
+`invalid-argument-type` at :296 is in both counters, so its surplus is zero.
+
+**The diff base is `github.event.pull_request.base.sha`, reduced to a
+merge-base.** A reusable workflow inherits the caller's event payload, and
+`ci.yml` is reached only from `pull_request`. Taking the merge-base rather than
+the branch tip keeps a base branch that has advanced since the branch point from
+leaking other PRs' lines into the file list. Layer 2's checkout therefore needs
+`fetch-depth: 0`; layer 1 does not.
+
+**Batching stays, because under a baseline delta the loss cancels.** Constraint 6
+is real and reproduces at whole-root granularity (`app tests` reports 3280 where
+the two roots separately sum to 3282). It never reproduced at file granularity.
+Both passes receive one file list and an identical batch composition, so a
+diagnostic that batching drops is absent from both counters. The cancellation is
+supported by measurement rather than proved, so the runner keeps a `--per-file`
+flag: the documented response if a batch-suppression miss is ever observed.
+
+**Layer 2 skips `tests/`, and is advisory.** Retro-run over all 37
+Python-touching merges since `a10ce9dbd`, the gate as first specified — 9 warn
+rules, whole surface — would have blocked 22 of them (59%). Excluding `tests/`
+takes that to 24%; 279 of the 363 surplus diagnostics were in test files.
+Narrowing the rule set on top moves the rate not at all, so all 9 rules stay
+promoted and constraint 4 is preserved. The 24% is measured against authors who
+were not trying to keep the gate green, so it is an upper bound of unknown
+tightness — the wrong number to make a required check turn on. `typecheck_diff`
+is therefore omitted from `ci-success`'s `needs`, which is the only required
+check on `main`: it shows a red X on the PR and leaves the merge button enabled.
+Promoting it is one line, and waits on a release cycle of observed surplus.
 
 ### The bound the overrides place on any gate's reach
 
@@ -347,17 +419,42 @@ than leaving it to be discovered after a gate ships.
 ### Installing the pinned group in CI, and the upgrade cadence
 
 `ty` lives in an optional Poetry group pinned exactly at `0.0.49`, because a
-`0.0.x` beta carries breaking changes between any two versions. A CI job that
-runs `make typecheck` needs no `--with typecheck`: the target depends on `venv`,
-and `venv` runs `poetry install --all-extras --all-groups`. That is how the
-existing `bandit` job already works — a bare `run: make bandit` with no install
-step of its own.
+`0.0.x` beta carries breaking changes between any two versions.
 
-A job that instead runs `poetry sync --no-root --with typecheck` installs
-*fewer* groups than `make venv` does. ty resolves imports against what is
-actually installed, so a thinner environment can change what it reports: the
-figure recorded above was measured under `make typecheck`, and only that form is
-known to reproduce it.
+**The target names its Python environment explicitly, and must.** ty resolves
+imports against an environment it discovers, and its fallback is whichever
+interpreter is first on `PATH`. The Makefile's `VIRTUAL_ENV` is a *make*
+variable, never exported, so in any shell without the venv activated a bare
+`ty check` resolves against the wrong `site-packages`. That is the CI case:
+measured on the first run of this job, ty searched
+`/opt/hostedtoolcache/Python/3.11.9/x64/.../site-packages` — the runner's
+tool-cache Python — rather than the Poetry venv holding the project's
+dependencies. `typecheck` therefore passes `--python "${VENV}"`, which pins the
+environment without touching the surface: `[tool.ty.src]` still decides which
+files are read.
+
+The failure this prevents is quiet in the worst way. Nothing errors; the run
+reports *more* diagnostics than a correct one — 3,730 against 3,288, reproduced
+locally by taking the venv off `PATH` — and the surplus looks like findings.
+Worse, every `ty: ignore` directive covering a third-party shape stops
+suppressing anything and is reported as `unused-ignore-comment`, an
+error-severity rule, so the job fails while appearing to demand the deletion of
+189 suppressions that were doing their job. A reader who trusts the output
+deletes them and makes the tree worse.
+
+Two things generalise from it. First, **any tool that resolves imports must be
+told which environment to resolve against** — the same reasoning that makes
+layer 2 resolve the pinned binary rather than take one off `PATH`, applied to
+the environment instead of the executable. Second, **a diagnostic count that
+moves without the tree moving is an environment difference, not a finding**;
+compare the `unresolved-import` count before believing a surplus.
+
+For the same reason the job installs dependencies as its own step
+(`poetry sync --no-root --all-extras --all-groups`) rather than leaning on the
+`venv` prerequisite, matching what `test` and `test_postgres` already do. Prefer
+that full form over `--with typecheck`, which installs *fewer* groups than
+`make venv` intends: ty resolves imports against what is actually installed, so a
+thinner environment changes what it reports.
 
 The exact pin means ty's own behaviour cannot drift under the gate; what can
 drift is the tree beneath it. The SEP team owns the upgrade cadence a blocking
@@ -372,7 +469,7 @@ with the measurement that rules it out.
 | Rejected | Why |
 |---|---|
 | Pre-commit, whole tree | Tens of seconds on every commit: 25 s measured twice on an unloaded machine, 62–70 s on a loaded one. Like the diagnostic counts, wall clock here is environment-dependent — the order of magnitude is the argument, not the figure. |
-| Pre-commit, path-scoped, promoted severity | Blocks on **pre-existing** diagnostics in a touched file, and the two highest-volume `warn` rules account for most of the 3,287 — so editing one line of an affected file would fail the commit. Only attribution to added lines fixes that, and pre-commit's staged-file model does not supply it. |
+| Pre-commit, path-scoped, promoted severity | Blocks on **pre-existing** diagnostics in a touched file, and the two highest-volume `warn` rules account for most of the 3,287 — so editing one line of an affected file would fail the commit. Only a comparison against a baseline fixes that — *How the shipped gate is scoped* above measures why attribution to added lines does not — and pre-commit's staged-file model supplies neither the base revision nor the second tree such a comparison reads. |
 | Pre-commit, path-scoped, default severity | Strictly weaker than layer 1: the same rules over fewer files. |
 | Whole tree, `--error-on-warning` | Fails on all 3,287 diagnostics today, as measured above. Reachable only after a cleanup that has not been chartered. |
 | Local-only | The gap this work exists to close, restated as a decision. |
