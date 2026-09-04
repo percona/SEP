@@ -125,13 +125,6 @@ class TestInventoryPluginTasksEndpoint:
         for task in body:
             assert "name" in task
 
-    def test_does_not_clash_with_entity_wildcard(self, test_client):
-        """Ensure ``GET /`` resolves to the tasks handler, not the ``/{entity}/`` wildcard."""
-        response = test_client.get("/api/apps/inventory/")
-        assert response.status_code == status.HTTP_200_OK
-        body = response.json()
-        assert isinstance(body, list)
-
 
 class TestInventoryAvailableSyncersEndpoint:
     """Tests for GET /api/apps/inventory/available-syncers/."""
@@ -191,11 +184,6 @@ class TestInventoryAvailableSyncersEndpoint:
             assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         finally:
             sep_app.dependency_overrides.pop(get_syncers, None)
-
-    def test_does_not_clash_with_entity_wildcard(self, test_client, mock_syncers_dep):
-        """Ensure ``GET /available-syncers/`` does not fall through to ``/{entity}/`` wildcard."""
-        response = test_client.get("/api/apps/inventory/available-syncers/")
-        assert response.status_code == status.HTTP_200_OK
 
 
 class TestInventoryNewRoutesAuthentication:

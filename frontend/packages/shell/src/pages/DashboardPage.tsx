@@ -23,10 +23,6 @@ import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import { OverviewCard, Table, LoadableChildren, DatabaseIcon } from '@percona/percona-ui';
 import type { MRT_ColumnDef } from 'material-react-table';
-import DnsIcon from '@mui/icons-material/Dns';
-import AssignmentIcon from '@mui/icons-material/Assignment';
-import CodeIcon from '@mui/icons-material/Code';
-import DeviceHubIcon from '@mui/icons-material/DeviceHub';
 import { useNavigate } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
 import { useDashboardStats } from '@sep/api';
@@ -123,34 +119,29 @@ export default function DashboardPage() {
   const stats: {
     title: string;
     value: number;
-    icon: typeof DnsIcon;
     color: string;
     to?: string;
   }[] = [
     {
       title: 'Nodes',
       value: statsQuery.data?.nodes ?? 0,
-      icon: DnsIcon,
       color: 'primary.main',
     },
     {
       title: 'Active Tasks',
       value: statsQuery.data?.tasks ?? 0,
-      icon: AssignmentIcon,
       color: 'warning.main',
       to: '/tasks',
     },
     {
       title: 'Snippets',
       value: statsQuery.data?.snippets ?? 0,
-      icon: CodeIcon,
       color: 'info.main',
       to: '/snippets',
     },
     {
       title: 'Targets',
       value: statsQuery.data?.targets ?? 0,
-      icon: DeviceHubIcon,
       color: 'error.main',
     },
   ];
