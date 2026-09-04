@@ -49,6 +49,8 @@ CONFLICT_PATH_FIRST_CALLS = 2
 # Mirrors inventory's ACTIVE_RETIREMENT_KEY: a truthy sentinel, so the save
 # precheck's all() guard does not skip the index it takes part in.
 ACTIVE_DISCRIMINATOR = -1
+# The precheck may only read; any of these reaching the driver means a write escaped.
+WRITE_STATEMENT_PREFIXES = ("UPDATE", "INSERT", "DELETE")
 
 
 class PaginationParent(BaseSQLModel, table=True):
@@ -239,6 +241,12 @@ async def _create_item(
             created_at=created_at,
         ),
     )
+
+
+async def _two_keyed_rows(session: AsyncSession) -> UniqueKeyModel:
+    """Persist two uniquely-keyed rows and return the second one."""
+    await UniqueKeyManager.save(session, UniqueKeyModel(key="alpha"))
+    return await UniqueKeyManager.save(session, UniqueKeyModel(key="beta"))
 
 
 class TestBaseSQLModelManagerPagination:
@@ -1112,13 +1120,7 @@ class TestDMLWhereGuards:
 
 
 class TestSaveDuplicatePrecheck:
-    """Test `BaseSQLModelManager.save`'s unique-index duplicate precheck."""
-
-    @staticmethod
-    async def _two_keyed_rows(session: AsyncSession) -> UniqueKeyModel:
-        """Persist two uniquely-keyed rows and return the second one."""
-        await UniqueKeyManager.save(session, UniqueKeyModel(key="alpha"))
-        return await UniqueKeyManager.save(session, UniqueKeyModel(key="beta"))
+    """Test ``BaseSQLModelManager.save``'s unique-index duplicate precheck."""
 
     @pytest.mark.asyncio
     async def test_update_colliding_with_committed_row_raises_conflict(
@@ -1126,10 +1128,13 @@ class TestSaveDuplicatePrecheck:
         session: AsyncSession,
     ) -> None:
         """Assert retargeting a row onto a committed row's key raises a conflict."""
-        row = await self._two_keyed_rows(session)
+        row = await _two_keyed_rows(session)
         row.key = "alpha"
 
-        with pytest.raises(HTTPConflictException):
+        with pytest.raises(
+            HTTPConflictException,
+            match="UniqueKeyModel with the same key already exists",
+        ):
             await UniqueKeyManager.save(session, row)
 
     @pytest.mark.asyncio
@@ -1139,17 +1144,20 @@ class TestSaveDuplicatePrecheck:
         emitted_sql: list[str],
     ) -> None:
         """Assert the precheck rejects the update before any write is sent."""
-        row = await self._two_keyed_rows(session)
+        row = await _two_keyed_rows(session)
         emitted_sql.clear()
         row.key = "alpha"
 
-        with pytest.raises(HTTPConflictException):
+        with pytest.raises(
+            HTTPConflictException,
+            match="UniqueKeyModel with the same key already exists",
+        ):
             await UniqueKeyManager.save(session, row)
 
         assert not [
             statement
             for statement in emitted_sql
-            if statement.lstrip().upper().startswith("UPDATE")
+            if statement.lstrip().upper().startswith(WRITE_STATEMENT_PREFIXES)
         ]
 
     @pytest.mark.asyncio
@@ -1158,9 +1166,12 @@ class TestSaveDuplicatePrecheck:
         session: AsyncSession,
     ) -> None:
         """Assert the conflict surfaces through the route-facing ``update``."""
-        row = await self._two_keyed_rows(session)
+        row = await _two_keyed_rows(session)
 
-        with pytest.raises(HTTPConflictException):
+        with pytest.raises(
+            HTTPConflictException,
+            match="UniqueKeyModel with the same key already exists",
+        ):
             await UniqueKeyManager.update(session, row, UniqueKeyUpdate(key="alpha"))
 
     @pytest.mark.asyncio
@@ -1177,7 +1188,12 @@ class TestSaveDuplicatePrecheck:
         )
         row.external_id = "ext-a"
 
-        with pytest.raises(HTTPConflictException):
+        # Leading columns only: what this pins is which index gets reported, not the
+        # exact tail of the wording.
+        with pytest.raises(
+            HTTPConflictException,
+            match="CompositeUniqueModel with the same external_id, source",
+        ):
             await CompositeUniqueManager.save(session, row)
 
     @pytest.mark.asyncio
@@ -1186,7 +1202,7 @@ class TestSaveDuplicatePrecheck:
         session: AsyncSession,
     ) -> None:
         """Assert an update to an unclaimed unique value is persisted."""
-        row = await self._two_keyed_rows(session)
+        row = await _two_keyed_rows(session)
         row.key = "gamma"
 
         saved = await UniqueKeyManager.save(session, row)
@@ -1200,7 +1216,7 @@ class TestSaveDuplicatePrecheck:
         session: AsyncSession,
     ) -> None:
         """Assert changing a field outside every unique index raises no conflict."""
-        row = await self._two_keyed_rows(session)
+        row = await _two_keyed_rows(session)
         row.label = "relabelled"
 
         saved = await UniqueKeyManager.save(session, row)
@@ -1216,7 +1232,10 @@ class TestSaveDuplicatePrecheck:
         """Assert the create path keeps rejecting a duplicate with a conflict."""
         await UniqueKeyManager.save(session, UniqueKeyModel(key="alpha"))
 
-        with pytest.raises(HTTPConflictException):
+        with pytest.raises(
+            HTTPConflictException,
+            match="UniqueKeyModel with the same key already exists",
+        ):
             await UniqueKeyManager.create(session, UniqueKeyModel(key="alpha"))
 
     @pytest.mark.asyncio
@@ -1224,15 +1243,27 @@ class TestSaveDuplicatePrecheck:
         self,
         session: AsyncSession,
     ) -> None:
-        """Assert a rejected update leaves the stored row untouched."""
-        row = await self._two_keyed_rows(session)
+        """Assert a rejected update leaves the stored row untouched.
+
+        ``save`` does not roll back on conflict, so the rejected change stays pending
+        on the instance and it is the caller's session teardown that discards it.
+        """
+        row = await _two_keyed_rows(session)
+        # Read before the rollback expires the instance: touching it afterwards would
+        # need a lazy load, which an async session cannot service.
+        row_id = row.id
         row.key = "alpha"
-        with pytest.raises(HTTPConflictException):
+        with pytest.raises(
+            HTTPConflictException,
+            match="UniqueKeyModel with the same key already exists",
+        ):
             await UniqueKeyManager.save(session, row)
 
+        assert row in session.dirty
         await session.rollback()
 
-        assert await UniqueKeyManager.first(session, key="beta") is not None
+        stored = await UniqueKeyManager.get(session, id=row_id)
+        assert stored.key == "beta"
 
     @pytest.mark.asyncio
     async def test_collision_with_unflushed_sibling_raises_bad_request(
@@ -1250,5 +1281,7 @@ class TestSaveDuplicatePrecheck:
         session.add(UniqueKeyModel(key="alpha"))
         row.key = "alpha"
 
+        # Unmatched, unlike the conflict raises above: this exception carries no
+        # detail, so its only message is the status phrase.
         with pytest.raises(HTTPBadRequestException):
             await UniqueKeyManager.save(session, row)

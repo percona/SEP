@@ -462,6 +462,26 @@ class TestUpdateNode:
         assert stored.status_code == status.HTTP_200_OK
         assert stored.json()["source"] == node.source
 
+    def test_update_node_duplicate_external_id_source(
+        self, test_client: TestClient
+    ) -> None:
+        """Return 409 when an update retargets a node onto another node's origin."""
+        first = NodeWriteFactory.build(source=SourceEnum.PMM, external_id="ext-first")
+        response = test_client.post("/nodes/", json=first.model_dump(mode="json"))
+        assert response.status_code == status.HTTP_201_CREATED
+
+        second = NodeWriteFactory.build(source=SourceEnum.PMM, external_id="ext-second")
+        created = test_client.post("/nodes/", json=second.model_dump(mode="json"))
+        assert created.status_code == status.HTTP_201_CREATED
+
+        retarget = NodeWriteFactory.build(
+            source=SourceEnum.PMM, external_id="ext-first"
+        )
+        response = test_client.put(
+            f"/nodes/{created.json()['id']}", json=retarget.model_dump(mode="json")
+        )
+        assert response.status_code == status.HTTP_409_CONFLICT
+
 
 class TestDeleteNode:
     """Test the DELETE /nodes/{node_id} endpoint."""
