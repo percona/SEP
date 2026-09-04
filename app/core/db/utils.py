@@ -74,24 +74,31 @@ def get_async_session_maker_from_engine(engine: AsyncEngine) -> async_sessionmak
 
 
 def create_app_async_engine(database: DatabaseOptions) -> AsyncEngine:
-    """Build a service API async engine with pool and connect options.
+    """Build a service API async engine with pool, connect and schema options.
 
     ``pool_pre_ping`` is always forwarded; unset pool sizing fields are omitted
     so the engine keeps SQLAlchemy's own defaults for those. An unset or
     SQLite-inapplicable ``CONNECT_TIMEOUT`` likewise omits ``connect_args``
-    entirely.
+    entirely. A non-empty ``database.SCHEMA_TRANSLATE_MAP`` is applied via
+    ``execution_options`` here, once, so every caller that shares a
+    ``DatabaseOptions`` gets the same translation without composing its own.
 
     :param database: The service database options carrying the URL and any
         configured pool sizing.
     :return: A configured asynchronous engine.
     """
-    return create_async_engine(
+    engine = create_async_engine(
         database.URL,
         echo=False,
         json_serializer=json_serializer,
         **database.connect_engine_kwargs,
         **database.pool_engine_kwargs,
     )
+    if database.SCHEMA_TRANSLATE_MAP:
+        engine = engine.execution_options(
+            schema_translate_map=database.SCHEMA_TRANSLATE_MAP
+        )
+    return engine
 
 
 def json_join_path_elems(*path_elems: str) -> str:
