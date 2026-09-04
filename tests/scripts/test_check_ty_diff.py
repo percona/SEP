@@ -84,7 +84,7 @@ class _TySpy:
 
 
 def _fake_git(root, name_status):
-    """Return a ``_git`` stand-in answering the runner's four queries.
+    """Return a ``_git`` stand-in answering each git query the runner issues.
 
     :param root: Repository root the runner should resolve.
     :param name_status: Raw ``git diff --name-status`` output to serve.
@@ -242,13 +242,19 @@ def test_promoted_rules_are_derived_from_pyproject(tmp_path):
     )
 
 
-def test_argv_forces_exclusions_and_promotes_each_rule():
-    """Re-establish ``[tool.ty.src]`` and promote each rule on the command line."""
+def test_argv_forces_exclusions_pins_the_interpreter_and_promotes_each_rule():
+    """Re-establish ``[tool.ty.src]``, pin the interpreter, and promote each rule.
+
+    ``--python`` is what decides which environment ty resolves imports against;
+    without it ty reads whichever interpreter is first on ``PATH`` and reports
+    every third-party import as unresolved.
+    """
     argv = check_ty_diff.ty_argv(
         check_ty_diff.resolve_ty(), ("unresolved-attribute",), ("app/x.py",)
     )
 
     assert "--force-exclude" in argv
+    assert argv[argv.index("--python") + 1] == sys.prefix
     assert argv[argv.index("--error") + 1] == "unresolved-attribute"
     assert argv[-1] == "app/x.py"
 
