@@ -29,7 +29,7 @@ from typing import Any
 
 from celery import Task as CeleryTask
 from celery.app.task import Context
-from celery.signals import task_revoked, worker_process_init, worker_process_shutdown
+from celery.signals import task_prerun, task_revoked, worker_process_init, worker_process_shutdown
 from cryptography import x509
 from fastapi.encoders import jsonable_encoder
 from nomad.api.exceptions import BaseNomadException
@@ -130,20 +130,20 @@ _refresher = WorkerRefresher(
 
 @worker_process_init.connect
 def start_settings_override_refresher(**kwargs: Any) -> None:
-    """Start the Tasks worker's DB-backed settings-override refresher.
+    """Seed and arm the Tasks worker's DB-backed settings-override refresher.
 
     Wired to ``worker_process_init`` so each prefork child runs its own refresher
     bound to that child's event loop. ``app.celery`` registers
     ``init_child_event_loop`` first (it is imported before this module), so Celery
     dispatches it first and the child loop is recreated before ``WorkerRefresher``
     resolves it. The enabled gate, the idempotent early-return, the initial inline
-    refresh and the shutdown drain all live in :class:`WorkerRefresher`; periodic
-    progress thereafter is best-effort, advancing only while a task drives
-    ``celery.loop.run_until_complete``. The inline seed is bounded by a fraction
-    of ``celery.conf.worker_proc_alive_timeout`` so a hanging database cannot
-    push the child past the prefork pool's liveness deadline; on expiry the
-    periodic refresher still starts and the child runs with env-only overrides
-    until a later cycle lands.
+    seed and the shutdown disarm all live in :class:`WorkerRefresher`; after the
+    seed, refreshes are pulled from ``task_prerun`` via
+    :func:`refresh_tasks_overrides_if_due`. The inline seed is bounded by a
+    fraction of ``celery.conf.worker_proc_alive_timeout`` so a hanging database
+    cannot push the child past the prefork pool's liveness deadline; on expiry
+    the child is still armed and runs with env-only overrides until the next
+    due task boundary.
 
     ``anonymizer_settings._resolve()`` runs unconditionally for validation even
     when the refresher is disabled. Celery catches and logs whatever a signal
@@ -157,18 +157,30 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
     :raises Exception: Propagates a session-maker failure from the initial
         inline refresh, absorbed the same way. Per-proxy refresh failures and
         a bounded-seed expiry are caught and logged inside the refresher; the
-        latter still starts the periodic task.
+        latter still arms the child for boundary refresh.
     """
     anonymizer_settings._resolve()  # noqa: SLF001  # ty: ignore[unresolved-attribute]
     _refresher.start(proc_alive_timeout=celery.conf.worker_proc_alive_timeout)
 
 
+@task_prerun.connect
+def refresh_tasks_overrides_if_due(**_: Any) -> None:
+    """Refresh Tasks-side overrides at this task boundary when the interval is due.
+
+    Passes through to :meth:`WorkerRefresher.maybe_refresh`, which no-ops when
+    disarmed or inside the interval. Each refresher (SEP-side and Tasks-side)
+    keeps its own due-check state, so a boundary that is due for both pays two
+    refreshes.
+    """
+    _refresher.maybe_refresh()
+
+
 @worker_process_shutdown.connect
 def stop_settings_override_refresher(**kwargs: Any) -> None:
-    """Stop and drain the worker's settings-override refresher on shutdown.
+    """Disarm the worker's settings-override refresher on shutdown.
 
     A no-op when the refresher never started (disabled, or shutdown fired before
-    init).
+    init). After disarm, :func:`refresh_tasks_overrides_if_due` no-ops.
 
     :param kwargs: The ``worker_process_shutdown`` signal keyword arguments
         (unused).
