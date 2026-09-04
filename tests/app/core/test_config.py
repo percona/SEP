@@ -514,7 +514,7 @@ class TestDeriveInternalToken:
 
 
 class TestEncryptionKey:
-    """Cover ENCRYPTION_KEY validation and its development-profile guard."""
+    """Cover ENCRYPTION_KEY validation and the absence of any committed key."""
 
     def test_unset_key_fails(self):
         """Reject an absent key with the actionable remediation message."""
