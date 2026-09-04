@@ -1176,20 +1176,26 @@ class BaseSQLModelManager(BaseManager):
             entry database error.
         :raises HTTPBadRequestException: If a DatabaseError occurs during commit.
         """
-        for index in inspect(cls.Model).local_table.indexes:
-            if index.unique:
-                equal_filters = {
-                    column.name: getattr(instance, column.name, None)
-                    for column in index.columns
-                }
-                if all(equal_filters.values()):
-                    duplicate = await cls.first(
-                        session, col(cls.Model.id) != instance.id, **equal_filters
-                    )
-                    if duplicate is not None:
-                        raise HTTPConflictException(
-                            f"{cls.Model.__name__} with the same {', '.join(equal_filters)} already exists."
+        # autoflush would flush this instance's own pending change before the
+        # lookup below runs. On the update path that flush is the colliding
+        # write itself, so IntegrityError escapes from inside first() -- ahead
+        # of both the duplicate check and save()'s DatabaseError handling, as a
+        # 500 rather than the 409 below.
+        with session.no_autoflush:
+            for index in inspect(cls.Model).local_table.indexes:
+                if index.unique:
+                    equal_filters = {
+                        column.name: getattr(instance, column.name, None)
+                        for column in index.columns
+                    }
+                    if all(equal_filters.values()):
+                        duplicate = await cls.first(
+                            session, col(cls.Model.id) != instance.id, **equal_filters
                         )
+                        if duplicate is not None:
+                            raise HTTPConflictException(
+                                f"{cls.Model.__name__} with the same {', '.join(equal_filters)} already exists."
+                            )
         return await super().save(
             session, instance, flag_modified_fields=flag_modified_fields
         )
