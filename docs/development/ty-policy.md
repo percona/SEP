@@ -130,10 +130,13 @@ and `make typecheck` exits **0**. The before/after split for the suppressions
 alone, and what moved between them, are in *Neutralized dependency-typing
 artifacts* below.
 
-Re-measured at `b97ee985f`, the commit the enforcement jobs ship on: unchanged at
-**3,287**, exit **0**. The checked surface is byte-identical across that span —
-everything merged between the two touches only `docs/`, `CONTRIBUTING.md` and a
-Makefile comment, none of it inside `[tool.ty.src].include`. From here the
+Re-measured at `b97ee985f`, the branch point the enforcement jobs were written
+against: unchanged at **3,287**, exit **0** — the checked surface is
+byte-identical across that span, since everything merged between the two touches
+only `docs/`, `CONTRIBUTING.md` and a Makefile comment, none of it inside
+`[tool.ty.src].include`. The tree the jobs actually ship on carries two further
+merges and reads **3,288**, still exit **0**; the one added diagnostic is
+warning-severity, which is why the status did not move. From here the
 `typecheck` job re-measures the exit status on every PR, so the figure that needs
 maintaining by hand is the count, not the status.
 
