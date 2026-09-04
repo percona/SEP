@@ -300,7 +300,7 @@ async def bounded_refresh(
     :return: ``True`` when the refresh completed; ``False`` when the budget
         expired.
     :raises Exception: Re-raises any failure from a completed
-        :func:`refresh_all` -- in practice limited to
+        :func:`refresh_all` — in practice limited to
         ``session_maker_factory()`` failures. A budget expiry does not
         propagate.
     """
@@ -327,8 +327,11 @@ async def bounded_seed(
     unbounded and returns ``True`` on completion. When set, the seed is
     bounded by :func:`bounded_refresh`; on expiry the timeout is logged at
     ERROR naming the budget, and ``False`` is returned so the caller can
-    still arm its refresher (periodic loop or task-boundary pull) with
-    unseeded env-only overrides.
+    still arm its refresher (periodic loop or task-boundary pull). Because
+    :func:`refresh_all` publishes each proxy immediately, a timed-out seed
+    may already have applied DB overrides to earlier proxies while later
+    ones remain on their prior (typically env-only) snapshots — a possibly
+    incomplete seed, not a guaranteed clean env-only start.
 
     Shared by :func:`start_refresh_task` (web lifespans) and
     :class:`~app.core.settings_override.worker.WorkerRefresher` (prefork
@@ -342,7 +345,7 @@ async def bounded_seed(
     :return: ``True`` when the seed completed; ``False`` when the budget
         expired.
     :raises Exception: Re-raises any failure from a completed
-        :func:`refresh_all` -- in practice limited to
+        :func:`refresh_all` — in practice limited to
         ``session_maker_factory()`` failures. A budget expiry does not
         propagate.
     """
@@ -353,7 +356,7 @@ async def bounded_seed(
     if not seeded:
         logger.error(
             "Initial settings-override refresh exceeded its %.2fs seed "
-            "budget; continuing with unseeded overrides",
+            "budget; continuing with a possibly incomplete seed",
             seed_timeout,
         )
     return seeded
@@ -374,15 +377,16 @@ async def start_refresh_task(
     :func:`asyncio.create_task` that sleeps for ``interval`` between cycles.
 
     ``callbacks`` are passed only to the periodic loop's :func:`refresh_all`,
-    never to the inline initial refresh -- the startup snapshot seeds the
+    never to the inline initial refresh — the startup snapshot seeds the
     proxies without firing rebind callbacks (long-lived objects are constructed
     against the effective snapshot directly during lifespan startup).
 
     The inline seed always goes through :func:`bounded_seed`. On a
     ``seed_timeout`` expiry the periodic refresher is still created, so the
-    child starts with unseeded (env-only) overrides rather than without a
-    refresher. When ``seed_timeout`` is ``None`` the seed awaits unbounded,
-    matching the historical behaviour used by the web lifespans.
+    child starts with a possibly incomplete seed (proxies published before the
+    hang keep their DB overrides) rather than without a refresher. When
+    ``seed_timeout`` is ``None`` the seed awaits unbounded, matching the
+    historical behaviour used by the web lifespans.
 
     :param session_maker_factory: A zero-argument callable returning a
         service-scoped ``async_sessionmaker``.
@@ -402,7 +406,7 @@ async def start_refresh_task(
         task during shutdown to drain pending iterations cleanly.
     :rtype: asyncio.Task
     :raises Exception: Re-raises any failure from the inline initial
-        :func:`refresh_all` call -- in practice limited to
+        :func:`refresh_all` call — in practice limited to
         ``session_maker_factory()`` failures (see :func:`refresh_all` for the
         narrowed contract). Connection-time DB failures from the initial
         snapshot build are caught per-proxy and do NOT propagate. A

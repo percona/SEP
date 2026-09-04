@@ -448,8 +448,8 @@ class SettingsOverrideOptions(BaseCaseInsensitiveModel):
         positive. In a web process this is the wall-clock delay between
         periodic refresh cycles (``start_refresh_task`` hands
         ``interval.total_seconds()`` to ``asyncio.sleep``). In a prefork
-        worker child it is checked at task boundaries -- at most one refresh
-        per interval per child per refresher -- rather than a free-running
+        worker child it is checked at task boundaries — at most one refresh
+        per interval per child per refresher — rather than a free-running
         timer. A non-positive value is rejected so neither path can hammer
         the database every iteration.
     :param REFRESHER_ENABLED: Master kill-switch for the DB-override

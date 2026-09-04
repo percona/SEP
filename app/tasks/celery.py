@@ -147,8 +147,8 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
     :func:`refresh_tasks_overrides_if_due`. The inline seed is bounded by a
     fraction of ``celery.conf.worker_proc_alive_timeout`` so a hanging database
     cannot push the child past the prefork pool's liveness deadline; on expiry
-    the child is still armed and runs with env-only overrides until the next
-    due task boundary.
+    the child is still armed and may retain a possibly incomplete seed until
+    the next due task boundary.
 
     ``anonymizer_settings._resolve()`` runs unconditionally for validation even
     when the refresher is disabled. Celery catches and logs whatever a signal
@@ -176,6 +176,8 @@ def refresh_tasks_overrides_if_due(**_: Any) -> None:
     disarmed or inside the interval. Each refresher (SEP-side and Tasks-side)
     keeps its own due-check state, so a boundary that is due for both pays two
     refreshes.
+
+    :param _: The ``task_prerun`` signal keyword arguments (unused).
     """
     _refresher.maybe_refresh()
 

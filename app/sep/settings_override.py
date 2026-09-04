@@ -202,12 +202,12 @@ def start_sep_settings_override_refresher(**_: Any) -> None:
     :func:`refresh_sep_overrides_if_due`. The seed is bounded by a fraction of
     ``celery.conf.worker_proc_alive_timeout`` so a hanging database cannot
     push the child past the prefork pool's liveness deadline. On seed expiry
-    the child is still armed and runs with env-only overrides until the next
-    due task boundary.
+    the child is still armed and may retain a possibly incomplete seed until
+    the next due task boundary.
 
     :raises Exception: Propagates whatever composing the proxy registry or the
-        initial inline refresh raises -- a malformed app-owned declaration
-        (``TypeError`` / ``ValueError``) or a session-maker failure -- and is
+        initial inline refresh raises — a malformed app-owned declaration
+        (``TypeError`` / ``ValueError``) or a session-maker failure — and is
         absorbed the same way. Per-proxy refresh failures and a bounded-seed
         expiry are caught and logged inside the refresher; the latter still
         arms the child for boundary refresh.
@@ -227,6 +227,8 @@ def refresh_sep_overrides_if_due(**_: Any) -> None:
     eviction, LOGGING dictConfig) were registered at :meth:`start`, so a
     changed endpoint or credential still invalidates cached clients before the
     task body runs.
+
+    :param _: The ``task_prerun`` signal keyword arguments (unused).
     """
     _refresher.maybe_refresh()
 

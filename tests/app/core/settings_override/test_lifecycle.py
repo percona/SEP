@@ -327,7 +327,7 @@ async def test_start_refresh_task_seed_timeout_returns_within_budget(
         assert any(
             record.levelname == "ERROR"
             and f"{seed_timeout:.2f}s" in record.message
-            and "unseeded" in record.message
+            and "incomplete" in record.message
             for record in caplog.records
         )
     finally:
@@ -479,7 +479,7 @@ async def test_bounded_seed_expiry_returns_false_and_logs_error(
     assert any(
         record.levelname == "ERROR"
         and f"{seed_timeout:.2f}s" in record.message
-        and "unseeded" in record.message
+        and "incomplete" in record.message
         for record in caplog.records
     )
 

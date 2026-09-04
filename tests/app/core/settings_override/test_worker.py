@@ -328,7 +328,7 @@ class TestWorkerRefresherStart:
             assert refresher._armed
             assert refresher._last_refresh == 0.0
             assert any(
-                record.levelname == "ERROR" and "unseeded" in record.message
+                record.levelname == "ERROR" and "incomplete" in record.message
                 for record in caplog.records
             )
         finally:
@@ -416,7 +416,7 @@ class TestWorkerRefresherMaybeRefresh:
         session_maker: async_sessionmaker,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Bound a hanging boundary refresh; keep the previous snapshot and the task."""
+        """Bound a hanging boundary refresh; leave state as-is and keep the task."""
         maker_holder: list[object] = [session_maker]
         refresher = WorkerRefresher(
             lambda: loop, lambda: maker_holder[0], _make_registry
@@ -432,9 +432,7 @@ class TestWorkerRefresherMaybeRefresh:
         try:
             assert refresher._last_refresh > stamp_before
             assert any(
-                record.levelname == "WARNING"
-                and "budget" in record.message
-                and record.levelname != "ERROR"
+                record.levelname == "WARNING" and "budget" in record.message
                 for record in caplog.records
             )
             assert not any(record.levelname == "ERROR" for record in caplog.records)

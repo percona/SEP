@@ -51,9 +51,9 @@ SEED_TIMEOUT_FRACTION = 0.5
 class WorkerRefresher:
     """Own one prefork child's settings-override boundary refresher.
 
-    Hold the lifecycle boilerplate every worker-side refresher needs -- the
+    Hold the lifecycle boilerplate every worker-side refresher needs — the
     enabled gate, the idempotent already-armed early-return, the initial
-    inline seed, and disarm on shutdown -- so each service module only
+    inline seed, and disarm on shutdown — so each service module only
     supplies its own event loop, session maker and proxy set. After
     :meth:`start`, refreshes are pulled from ``task_prerun`` via
     :meth:`maybe_refresh` rather than driven by a background
@@ -68,7 +68,7 @@ class WorkerRefresher:
 
     ``interval``, ``enabled`` and ``proc_alive_timeout`` are :meth:`start`
     parameters rather than reads of ``app.core.config.settings`` because the
-    override substrate must not import that module at runtime -- ``Settings``
+    override substrate must not import that module at runtime — ``Settings``
     is itself built from :mod:`app.core.settings_override.proxy`.
 
     :param loop_getter: Returns the event loop that drives the seed and
@@ -112,9 +112,10 @@ class WorkerRefresher:
         :data:`SEED_TIMEOUT_FRACTION` of that deadline via
         :func:`~app.core.settings_override.lifecycle.bounded_seed` so a hanging
         database cannot push the child past the prefork pool's liveness window.
-        On seed-budget expiry the child is still armed -- the next due
-        ``task_prerun`` will refresh -- and starts with unseeded (env-only)
-        overrides until then.
+        On seed-budget expiry the child is still armed — the next due
+        ``task_prerun`` will refresh — and may retain a possibly incomplete
+        seed (proxies published before the hang keep DB overrides; others stay
+        on their prior snapshots) until then.
 
         :param interval: Minimum delay between boundary refreshes. ``None``,
             the default, reads
@@ -129,8 +130,8 @@ class WorkerRefresher:
         :param proc_alive_timeout: The prefork pool's child-liveness deadline
             in seconds. ``None`` (the default) leaves the inline seed
             unbounded.
-        :raises Exception: Re-raises whatever ``proxies_factory()`` raises --
-            it is evaluated before the refresh starts -- and whatever an
+        :raises Exception: Re-raises whatever ``proxies_factory()`` raises —
+            it is evaluated before the refresh starts — and whatever an
             unbounded seed propagates, in practice limited to
             ``session_maker_factory()`` failures. Per-proxy refresh failures
             are caught and logged inside ``refresh_all``. A bounded-seed
@@ -167,14 +168,16 @@ class WorkerRefresher:
         When due, ``refresh_all`` runs to completion inside a single
         ``run_until_complete`` window, bounded by the refresh interval itself
         via :func:`~app.core.settings_override.lifecycle.bounded_refresh`
-        (``asyncio.wait``, cancel without awaiting unwind -- not
+        (``asyncio.wait``, cancel without awaiting unwind — not
         ``wait_for``, which would still hang on a stuck
         ``AsyncSession.__aexit__``). Budget expiry logs once at WARNING; any
         other failure is logged and swallowed. Neither case fails or aborts
-        the task that triggered the refresh -- the previous snapshot stays in
-        effect. The interval stamp advances on every attempted due refresh so
-        a failing cycle cannot hammer the database on every subsequent
-        dispatch.
+        the task that triggered the refresh. Because proxies publish
+        sequentially, a timed-out or failed cycle may leave a split registry
+        (earlier proxies refreshed, later ones on their prior snapshots)
+        rather than rolling everything back. The interval stamp advances on
+        every attempted due refresh so a failing cycle cannot hammer the
+        database on every subsequent dispatch.
         """
         if not self._armed or self._proxies is None:
             return
@@ -193,12 +196,13 @@ class WorkerRefresher:
             if not completed:
                 logger.warning(
                     "Settings-override boundary refresh exceeded its %.2fs budget; "
-                    "keeping previous snapshot",
+                    "leaving a possibly incomplete refresh in place",
                     self._interval_seconds,
                 )
         except Exception:
             logger.exception(
-                "Settings-override boundary refresh failed; keeping previous snapshot"
+                "Settings-override boundary refresh failed; "
+                "leaving a possibly incomplete refresh in place"
             )
         finally:
             self._last_refresh = time.monotonic()
