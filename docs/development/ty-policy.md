@@ -142,10 +142,20 @@ against: unchanged at **3,287**, exit **0** — the checked surface is
 byte-identical across that span, since everything merged between the two touches
 only `docs/`, `CONTRIBUTING.md` and a Makefile comment, none of it inside
 `[tool.ty.src].include`. The tree the jobs actually ship on carries two further
-merges and reads **3,288**, still exit **0**; the one added diagnostic is
-warning-severity, which is why the status did not move. From here the
-`typecheck` job re-measures the exit status on every PR, so the figure that needs
-maintaining by hand is the count, not the status.
+merges and reads **3,284 — 0 error**, exit **0**, measured by the `typecheck`
+job itself.
+
+**That job's figure is the one to quote.** A local run of the same commit
+reported 3,288: same ty, same tree, four diagnostics apart, because the two
+environments do not hold identical packages. The job installs from the lock and
+names its interpreter, so it is the reproducible measurement; a developer's
+working environment is not, and the gap is small only by luck — the same axis
+produced a 3,730 reading when the environment was wrong outright (see
+*Installing the pinned group in CI* below). Read a count as a property of
+(tree, ty version, environment), never of the tree alone.
+
+From here the `typecheck` job re-measures the exit status on every PR, so the
+figure that needs maintaining by hand is the count, not the status.
 
 The error count reaching zero is what SEP-1908 was for; the warning fleet is
 unchanged by design, because the nine rules at `warn` mix first-party defects
