@@ -1298,6 +1298,60 @@ class TestSyncInstanceManagerRunExclusivity:
         assert created.id != abandoned.id
 
     @pytest.mark.asyncio
+    async def test_refuses_a_run_whose_row_was_touched_since_the_bound(
+        self, session
+    ) -> None:
+        """Measure a run's age from its last touch, not from when it started.
+
+        A run older than ``stale_after`` that is still being written to is alive,
+        so reading ``created_at`` alone would stop fencing exactly the long sync
+        the bound was meant to protect.
+        """
+        alive = await SyncInstanceManager.save(
+            session,
+            SyncInstance(
+                syncer="test-syncer",
+                status=SyncStatusEnum.RUNNING,
+                created_at=utc_now() - timedelta(hours=3),
+                updated_at=utc_now(),
+            ),
+        )
+
+        with pytest.raises(SyncInstanceAlreadyInProgressError) as refused:
+            await SyncInstanceManager.create(
+                session,
+                SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+                stale_after=timedelta(hours=1),
+            )
+
+        assert str(alive.id) in str(refused.value)
+
+    @pytest.mark.asyncio
+    async def test_names_the_conflicting_run_in_the_refusal(self, session) -> None:
+        """Say which run holds the syncer, and nothing a reader may not see.
+
+        This message is stored verbatim on ``last_sync_error`` and served by the
+        inventory read routes, so it has to identify the conflict for an operator
+        while carrying sync bookkeeping only.
+        """
+        holder = await SyncInstanceManager.create(
+            session,
+            SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+            stale_after=timedelta(hours=1),
+        )
+
+        with pytest.raises(SyncInstanceAlreadyInProgressError) as refused:
+            await SyncInstanceManager.create(
+                session,
+                SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+                stale_after=timedelta(hours=1),
+            )
+
+        message = str(refused.value)
+        assert "test-syncer" in message
+        assert str(holder.id) in message
+
+    @pytest.mark.asyncio
     async def test_refuses_a_run_whose_instance_is_still_pending(self, session) -> None:
         """Refuse a second run while the first has not started working yet."""
         await SyncInstanceManager.save(
