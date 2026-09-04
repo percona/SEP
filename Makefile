@@ -91,11 +91,18 @@ ruff: venv
 	@"${VENV_BIN}"/ruff check .
 	@"${VENV_BIN}"/ruff format --check .
 
-# Static type checking (Astral ty). Not yet part of `lint`, pre-commit, or CI: where
-# enforcement will run and what it will read is decided and recorded in
-# docs/development/ty-policy.md under `Enforcement`. Until then, this runs by hand only.
+# Static type checking (Astral ty). Not part of `lint` or pre-commit; CI runs it
+# as the blocking `typecheck` job. The checked surface is `[tool.ty.src]` rather
+# than a path argument, so this target and that list cannot drift apart. See
+# docs/development/ty-policy.md under `Enforcement`.
 typecheck: venv
 	@"${VENV_BIN}"/ty check
+
+# Report the ty diagnostics a branch adds against BASE_SHA, promoting every rule
+# held at `warn` for the comparison. Advisory in CI: the job shows red without
+# blocking the merge. See docs/development/ty-policy.md under `Enforcement`.
+typecheck-diff: venv
+	@"${VENV_BIN}"/python -m scripts.check_ty_diff $(ARGS)
 
 lint: ruff
 
@@ -371,4 +378,4 @@ lint-pipelines:
 	done; \
 	if [ "$${failures}" -ne 0 ]; then exit 1; fi
 
-.PHONY: venv build pack builder image format ruff typecheck lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations mergemigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size check-sidecar-purge release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image format ruff typecheck typecheck-diff lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations mergemigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size check-sidecar-purge release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check

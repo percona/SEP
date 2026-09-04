@@ -30,6 +30,22 @@ jobs:
       - name: Run bandit
         run: make bandit
 
+  typecheck:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.11.9"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Hold error-severity diagnostics at zero
+        run: make typecheck
+
   lock_check:
     strategy:
       matrix:
