@@ -26,11 +26,9 @@ happened to answer -- they belong to the host, they are collected once, and now 
 are reported once.
 """
 
-import inspect
 import json
 import re
 from pathlib import Path
-from textwrap import dedent
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -245,23 +243,34 @@ class TestThePayloadRunsOnOldPython:
     def test_find_unregistered_survives_minification(self) -> None:
         """``find_unregistered`` returns the same answer minified as it does here.
 
-        Minifies the function alone (``rename_globals`` would otherwise rename the
-        one top-level name away, the same reason the function is looked up by being
-        the only thing minification left in the namespace rather than by name)
-        with the exact option set ``minify_file_content`` dispatches with, then
-        calls it through a few shapes covering the case that motivated this test: a
-        lone process with no port, both matched and unmatched, alongside a
-        registered and an unrelated one. A silent wrong-answer or
-        ``UnboundLocalError`` here would otherwise reach dispatch with nothing
-        catching it -- exactly what happened to the f-string case above before it
-        was asserted.
+        Minifies the *whole file*, not the function alone: ``hoist_literals``
+        shares one hoisted variable for every function's "pid" and "port" string,
+        so a collision between ``find_unregistered``'s own comprehension and
+        another function's use of those literals only exists when they are
+        minified together. A same-file, function-only minification (what this
+        test did originally, and what the review comment that questioned the
+        loop-vs-comprehension rationale here also did) misses exactly this case --
+        it is what let a real ``UnboundLocalError`` reach dispatch once already.
+
+        The renamed top-level name is found by signature (``rename_globals``
+        renames it away, unpredictably across minifier versions) rather than by
+        executing the module, since ``main()`` runs for real under
+        ``if __name__ == "__main__"`` and this only wants one function from it.
         """
-        source = dedent(inspect.getsource(probe.find_unregistered))
+        source = Path(probe.__file__).read_text(encoding="utf-8")
         minified = minify_file_content(source, "py")
 
-        namespace: dict[str, object] = {}
-        exec(compile(minified, "<minified find_unregistered>", "exec"), namespace)
-        find_unregistered = next(v for v in namespace.values() if callable(v))
+        match = re.search(
+            r"def (\w+)\(processes,targets,matched_pids=frozenset\(\)\)", minified
+        )
+        assert match is not None, (
+            f"find_unregistered's signature is not recognisable post-minification: "
+            f"{minified}"
+        )
+
+        namespace: dict[str, object] = {"__name__": "<minified probe.py>"}
+        exec(compile(minified, "<minified probe.py>", "exec"), namespace)
+        find_unregistered = namespace[match.group(1)]
 
         matched = {"pid": 1, "port": None}
         unmatched = {"pid": 2, "port": None}
