@@ -361,7 +361,9 @@ def test_inventory_activates_without_a_sidebar_entry():
     assert registry.get("inventory").sidebar is False
 
 
-def test_profile_does_not_run_the_system_facts_syncer(embedded_profile_data: dict):
+def test_profile_does_not_run_the_system_facts_syncer(
+    embedded_profile_data: dict[str, Any],
+):
     """Assert the embedded profile leaves system-facts collection unscheduled.
 
     The observations it wrote were read only by the retired inventory browser
