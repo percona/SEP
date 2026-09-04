@@ -15,9 +15,9 @@
 
 """Define the constrained syncer fields and the values their config accepts.
 
-A syncer threshold is configurable three ways -- a ``SYNCERS[]`` entry in
+A syncer threshold is configurable three ways — a ``SYNCERS[]`` entry in
 ``settings.yaml``, JSON in ``SEP__SYNCERS``, or a ``SEP__SYNCER_EXTRA_KWARGS__<KEY>``
-env leaf -- and ``SyncOptions`` forwards every one of them verbatim, untyped. The
+env leaf — and ``SyncOptions`` forwards every one of them verbatim, untyped. The
 syncer field and the load-time configuration check therefore have to agree on the
 accepted values, so the annotated type, the field name and the spelling quoted back to
 an operator all live here, one edit apart. This module deliberately imports nothing
@@ -74,7 +74,7 @@ CONSTRAINED_SYNCER_FIELDS: Final[dict[str, SyncerFieldConstraint]] = {
 
 ``SyncOptions`` and ``SyncerExtraKwargs`` both allow untyped extras, so a value
 configured for one of these fields is only checked against the field's real type once
-a syncer is constructed -- which, for the request-scoped ``get_syncers`` dependency,
+a syncer is constructed — which, for the request-scoped ``get_syncers`` dependency,
 means once per request. Checking it against this mapping at settings load turns a
 misconfiguration into a single startup failure instead. Keys are the field names as
 :class:`~app.core.models.BaseLowercaseModel` stores them, lowercased.

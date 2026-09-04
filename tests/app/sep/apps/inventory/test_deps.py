@@ -244,7 +244,7 @@ class TestSyncerConstructionFailure:
     """Report an unusable syncer setting as a configuration error, never a 500.
 
     Settings load rejects a bad threshold, so construction only sees one when the
-    settings object was assembled some other way -- but the sync trigger must not
+    settings object was assembled some other way — but the sync trigger must not
     answer such a state with a bare 500 either.
     """
 

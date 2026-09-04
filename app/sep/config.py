@@ -374,8 +374,9 @@ def _validate_constrained_syncer_extras(
     """Reject a configured syncer threshold its field would refuse at construction.
 
     :param merged: One syncer's settings, with ``SYNCER_EXTRA_KWARGS`` merged in.
-    :param extra_kwargs: The global extras merged in, so the env-leaf form is only
-        blamed for a string when the value actually arrived through it.
+    :param extra_kwargs: The global extras merged in. ``SEP.SYNCER_EXTRA_KWARGS`` is
+        a YAML surface as well as an env one, so a string reaching a syncer through it
+        gets the env leaf's quoting offered as a possibility, never as the diagnosis.
     :raises ValueError: When a constrained field carries an unusable value.
     """
     for key, constrained in CONSTRAINED_SYNCER_FIELDS.items():
@@ -385,18 +386,18 @@ def _validate_constrained_syncer_extras(
         try:
             constrained.adapter.validate_python(raw)
         except ValidationError as exc:
-            env_note = (
-                f" A SEP__SYNCER_EXTRA_KWARGS__{key.upper()} env override reaches "
-                f"settings as a string; spell the value under SEP.SYNCERS in the "
-                f"YAML profile, or as JSON in SEP__SYNCERS, to have it read as a "
-                f"number."
+            quoting_note = (
+                f" If this came from a SEP__SYNCER_EXTRA_KWARGS__{key.upper()} env "
+                f"override, note that such a leaf always reaches settings as a "
+                f"string; spell the value under SEP.SYNCERS in the YAML profile, or "
+                f"as JSON in SEP__SYNCERS, to have it read as a number."
                 if isinstance(raw, str) and key in extra_kwargs
                 else ""
             )
             raise ValueError(
                 f"{key.upper()} is set to {raw!r} for syncer "
                 f"{merged.get('syncer')!r}, which is not a usable value: give "
-                f"{constrained.accepted}.{env_note}"
+                f"{constrained.accepted}.{quoting_note}"
             ) from exc
 
 

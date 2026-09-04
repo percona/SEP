@@ -665,7 +665,7 @@ class TestCredentialUrlMaskRejection:
 
 
 class TestSyncerRetirementThresholdsOverConfig:
-    """``SEP.SYNCERS[]`` forwards extra keys verbatim, so the floors must hold there.
+    """Hold the retirement floors that ``SEP.SYNCERS[]`` forwards unvalidated.
 
     Load-time rejection of these values lives in
     :class:`TestSyncerExtrasValidatedAtLoad`; what this class owns is the floor a
@@ -704,7 +704,7 @@ class TestSyncerExtrasValidatedAtLoad:
 
     The ``SEP__SYNCER_EXTRA_KWARGS__<KEY>`` form hands its leaf to
     ``SyncerExtraKwargs`` as a raw string, and both that model and ``SyncOptions``
-    allow untyped extras -- so without a load-time check the string only meets a
+    allow untyped extras — so without a load-time check the string only meets a
     typed field once a syncer is constructed, which for the request-scoped
     ``get_syncers`` dependency means a fresh error on every sync trigger.
     """
@@ -766,8 +766,12 @@ class TestSyncerExtrasValidatedAtLoad:
                 {"SYNCERS": [{"SYNCER": self._PMM, field: value}]}
             )
 
-    def test_env_hint_is_given_for_a_string_from_the_extras(self) -> None:
-        """Explain the quoting to the operator who hit it through the env leaf form."""
+    def test_env_hint_is_offered_but_not_asserted_for_an_extras_string(self) -> None:
+        """Explain the env leaf's quoting without claiming it is what happened.
+
+        ``SEP.SYNCER_EXTRA_KWARGS`` is a YAML surface too, so a string arriving here
+        may have been quoted deliberately in the profile.
+        """
         with pytest.raises(ValidationError) as excinfo:
             SEPSettings.model_validate(
                 {
@@ -776,7 +780,9 @@ class TestSyncerExtrasValidatedAtLoad:
                 }
             )
 
-        assert "SEP__SYNCER_EXTRA_KWARGS__STALE_RUN_AFTER" in str(excinfo.value)
+        message = str(excinfo.value)
+        assert "SEP__SYNCER_EXTRA_KWARGS__STALE_RUN_AFTER" in message
+        assert "If this came from" in message
 
     def test_env_hint_is_withheld_for_a_numeric_value(self) -> None:
         """Blame the env form's quoting only when a string is what arrived."""

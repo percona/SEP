@@ -78,21 +78,27 @@ class TestConstrainedSyncerFields:
         assert set(CONSTRAINED_SYNCER_FIELDS) <= declared
 
     def test_registry_entries_mirror_the_fields_they_stand_for(self):
-        """Validate against the very types the syncer fields declare."""
-        owners = {
-            name: cls
+        """Validate against the very types the syncer fields declare.
+
+        Every declaring class is checked, not one per field name: a subclass that
+        tightens an inherited threshold in place would otherwise be the owner the
+        comparison happens to skip, and the guard would pass while the registry
+        under-validated exactly that syncer.
+        """
+        declarations = [
+            (name, cls)
             for cls in _syncer_classes()
             for name in cls.model_fields
             if name in CONSTRAINED_SYNCER_FIELDS
-        }
+        ]
 
-        assert set(owners) == set(CONSTRAINED_SYNCER_FIELDS)
-        for name, cls in owners.items():
+        assert {name for name, _ in declarations} == set(CONSTRAINED_SYNCER_FIELDS)
+        for name, cls in declarations:
             declared = TypeAdapter(cls.model_fields[name].rebuild_annotation())
             assert (
                 CONSTRAINED_SYNCER_FIELDS[name].adapter.core_schema
                 == declared.core_schema
-            ), name
+            ), f"{cls.__name__}.{name}"
 
     def test_every_entry_names_the_forms_it_accepts(self):
         """Give the operator something to act on, not just a refusal."""
