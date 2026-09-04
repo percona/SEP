@@ -22,7 +22,7 @@ import type { Route } from '@playwright/test';
  * `useEnabledApps` hook on every page to filter the sidebar). Every spec that
  * installs a ``**\/api/**`` catch-all and renders the shell must answer this
  * request: a 404 surfaces as a console.error (failing console-clean assertions)
- * and an empty array collapses the sidebar to Dashboard + Inventory.
+ * and an empty array collapses the sidebar to Dashboard alone.
  */
 
 /** Shape of one entry in the ``GET /api/apps/`` response (mirrors `@sep/api`'s `EnabledApp`). */
