@@ -168,6 +168,22 @@ IsApiAdmin = Depends(get_api_authenticated_admin)
 ApiAdminUser = Annotated[BaseUser, IsApiAdmin]
 
 
+async def get_api_admin_username(admin: ApiAdminUser) -> str:
+    """Get the authenticated API admin's username.
+
+    The settings router records it as the actor on each override row it writes.
+    It takes the username rather than the id because the id is a UUID a consumer
+    would have to resolve back through the auth provider to render.
+
+    :param admin: The current authenticated API admin.
+    :return: The admin's username.
+    """
+    return admin.username
+
+
+ApiAdminUsername = Annotated[str, Depends(get_api_admin_username)]
+
+
 def _ambient_session_provider() -> BaseAuthProvider | None:
     """Return the active auth provider when ambient-session auth is available.
 

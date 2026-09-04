@@ -15,13 +15,13 @@
 
 """Test the shared-database guards on the ``settingoverride`` migrations.
 
-The ``settingoverride`` table is created by both the SEP and Tasks Alembic
-tracks, and both tracks also drop the ``setting_class`` CHECK. On a shared
-PostgreSQL database both tracks run ``upgrade heads`` against one physical
-schema, so the guarded migrations must apply the DDL exactly once regardless
-of which track wins the race. The real-PostgreSQL cases exercise that
-cross-track scenario; the SQLite cases pin the two cross-dialect helpers the
-guards rely on.
+The ``settingoverride`` table is created by the SEP, Tasks and Inventory
+Alembic tracks alike, and every track also drops the ``setting_class`` CHECK
+and adds the ``updated_by`` actor column. On a shared PostgreSQL database the
+tracks run ``upgrade heads`` against one physical schema, so the guarded
+migrations must apply the DDL exactly once regardless of which track wins the
+race. The real-PostgreSQL cases exercise that cross-track scenario; the SQLite
+cases pin the cross-dialect helpers the guards rely on.
 """
 
 from pathlib import Path
@@ -39,6 +39,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    text,
 )
 from sqlalchemy import (
     Enum as EnumField,
@@ -49,21 +50,34 @@ from app.core.db.utils import (
     acquire_pg_advisory_xact_lock,
     check_constraint_lists_members,
     check_constraint_name,
+    column_exists,
 )
 from app.core.settings_override.constants import SETTINGOVERRIDE_MIGRATION_LOCK_KEY
 from app.core.utils.fields import AsyncDatabaseEngine
+from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
 from app.tasks.config import tasks_settings
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 _SETTING_CLASS_VARCHAR_LENGTH = 255
+_UPDATED_BY_COLUMN = "updated_by"
+#: A username far longer than any bounded column would have allowed, used to
+#: prove ``updated_by`` carries no width on the deployment dialect.
+_LONG_USERNAME_LENGTH = 512
+#: The ``SYNC_REFRESH_TIME`` value seeded before a downgrade, read back through
+#: the JSONB column to prove the drop left the row's data intact.
+_SEEDED_OVERRIDE_VALUE = 5
 
 # The SEP and Tasks revisions immediately below ``add_setting_override_table``
 # on each track — downgrading to them drops the shared table and runs the other
 # track's enum-narrowing downgrades against the now-missing table.
 _SEP_PRE_SETTINGOVERRIDE_REVISION = "810c31754b54"
 _TASKS_PRE_SETTINGOVERRIDE_REVISION = "e42ce8324da7"
+
+# The SEP revision immediately below ``add_settingoverride_updated_by``, so a
+# downgrade to it runs exactly the column drop.
+_SEP_PRE_UPDATED_BY_REVISION = "867df844fe17"
 
 
 def _sqlite_engine_with_setting_class_check(members):
@@ -296,16 +310,16 @@ def test_advisory_lock_is_noop_off_postgres():
 
 @pytest.fixture
 def shared_postgres_db(postgres_sync_url, monkeypatch):
-    """Configure both the SEP and Tasks tracks to share one real-PostgreSQL database.
+    """Configure the SEP, Tasks and Inventory tracks to share one real-PostgreSQL database.
 
     ``command.upgrade`` builds its own engine from ``<svc>_settings.DATABASE.URL``
     via each track's ``env.py`` and writes to the ``public`` schema — it does not
-    inherit the ``postgres_engine`` fixture's per-worker schema — so both service
+    inherit the ``postgres_engine`` fixture's per-worker schema — so every service
     settings must point at the same host and database for the cross-track race to
     occur. Yield the sync URL for verification and drop every table the upgrade
     created on teardown so the shared schema is left clean for sibling tests.
     """
-    for settings in (sep_settings, tasks_settings):
+    for settings in (sep_settings, tasks_settings, inventory_settings):
         monkeypatch.setattr(settings.DATABASE, "ENGINE", AsyncDatabaseEngine.POSTGRESQL)
         monkeypatch.setattr(settings.DATABASE, "USER", postgres_sync_url.username)
         monkeypatch.setattr(
@@ -454,5 +468,198 @@ def test_advisory_lock_serializes(postgres_sync_url):
             trans_b_retry = conn_b.begin()
             acquire_pg_advisory_xact_lock(conn_b, SETTINGOVERRIDE_MIGRATION_LOCK_KEY)
             trans_b_retry.commit()
+    finally:
+        engine.dispose()
+
+
+class TestColumnExists:
+    """Cover the cross-dialect :func:`column_exists` helper on SQLite."""
+
+    def test_returns_true_for_a_declared_column(self):
+        """Report a column the table declares as present."""
+        engine = _sqlite_engine_with_setting_class_check(("SEP_SETTINGS",))
+        try:
+            with engine.connect() as conn:
+                assert column_exists(conn, "settingoverride", "setting_class") is True
+        finally:
+            engine.dispose()
+
+    def test_returns_false_for_an_absent_column(self):
+        """Report a column the table does not declare as absent."""
+        engine = _sqlite_engine_with_setting_class_check(("SEP_SETTINGS",))
+        try:
+            with engine.connect() as conn:
+                assert (
+                    column_exists(conn, "settingoverride", _UPDATED_BY_COLUMN) is False
+                )
+        finally:
+            engine.dispose()
+
+    def test_returns_false_for_missing_table(self):
+        """Report ``False`` for a missing table instead of raising ``NoSuchTableError``."""
+        engine = create_engine("sqlite://")
+        try:
+            with engine.connect() as conn:
+                assert (
+                    column_exists(conn, "settingoverride", _UPDATED_BY_COLUMN) is False
+                )
+        finally:
+            engine.dispose()
+
+
+@pytest.mark.postgres
+def test_column_exists_on_real_postgres(postgres_sync_url):
+    """Distinguish a declared from an undeclared column on the deployment dialect."""
+    engine = create_engine(postgres_sync_url)
+    metadata = MetaData()
+    Table(
+        "settingoverride_column_probe",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("setting_class", String(64), nullable=False),
+    )
+    try:
+        metadata.create_all(engine)
+        try:
+            with engine.connect() as conn:
+                assert (
+                    column_exists(conn, "settingoverride_column_probe", "setting_class")
+                    is True
+                )
+                assert (
+                    column_exists(
+                        conn, "settingoverride_column_probe", _UPDATED_BY_COLUMN
+                    )
+                    is False
+                )
+        finally:
+            metadata.drop_all(engine)
+    finally:
+        engine.dispose()
+
+
+def _updated_by_columns(sync_url) -> list[dict]:
+    """Return every reflected ``settingoverride`` column named ``updated_by``.
+
+    :param sync_url: The sync URL of the shared database to inspect.
+    :return: The matching inspector column dicts.
+    """
+    engine = create_engine(sync_url)
+    try:
+        columns = inspect(engine).get_columns("settingoverride")
+    finally:
+        engine.dispose()
+    return [column for column in columns if column["name"] == _UPDATED_BY_COLUMN]
+
+
+@pytest.mark.xdist_group("shared_postgres_db")
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "order",
+    [("sep", "tasks", "inventory"), ("tasks", "sep", "inventory")],
+    ids=["sep-first", "tasks-first"],
+)
+def test_shared_db_three_track_upgrade_adds_updated_by_once(shared_postgres_db, order):
+    """Add ``updated_by`` exactly once however the three tracks interleave."""
+    sync_url = shared_postgres_db
+    for section in order:
+        command.upgrade(Config(str(ALEMBIC_INI), ini_section=section), "heads")
+
+    engine = create_engine(sync_url)
+    try:
+        inspector = inspect(engine)
+        assert inspector.has_table("alembic_version_sep")
+        assert inspector.has_table("alembic_version_tasks")
+        assert inspector.has_table("alembic_version_inventory")
+    finally:
+        engine.dispose()
+
+    matching = _updated_by_columns(sync_url)
+    assert len(matching) == 1
+    assert matching[0]["nullable"] is True
+
+
+@pytest.mark.xdist_group("shared_postgres_db")
+@pytest.mark.postgres
+def test_shared_db_rerunning_a_track_upgrade_is_a_noop(shared_postgres_db):
+    """Re-run one track's ``upgrade heads`` without a duplicate-column error."""
+    sync_url = shared_postgres_db
+    sep_cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    command.upgrade(sep_cfg, "heads")
+    command.upgrade(Config(str(ALEMBIC_INI), ini_section="tasks"), "heads")
+
+    command.upgrade(sep_cfg, "heads")
+
+    assert len(_updated_by_columns(sync_url)) == 1
+
+
+@pytest.mark.xdist_group("shared_postgres_db")
+@pytest.mark.postgres
+def test_shared_db_long_actor_round_trips(shared_postgres_db):
+    """Store an unusually long username intact on the deployment dialect.
+
+    The column is unbounded, so there is no width for a long username to exceed;
+    a bounded one would raise ``StringDataRightTruncation`` here while passing on
+    SQLite, which ignores ``VARCHAR`` lengths.
+    """
+    sync_url = shared_postgres_db
+    command.upgrade(Config(str(ALEMBIC_INI), ini_section="sep"), "heads")
+    actor = "a" * _LONG_USERNAME_LENGTH
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO settingoverride "
+                    "(setting_class, key, value, is_active, created_at, updated_by) "
+                    "VALUES ('SEP_SETTINGS', 'SYNC_REFRESH_TIME', '5', true, now(), "
+                    ":actor)"
+                ),
+                {"actor": actor},
+            )
+        with engine.connect() as conn:
+            stored = conn.execute(text("SELECT updated_by FROM settingoverride"))
+            assert stored.scalar_one() == actor
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.xdist_group("shared_postgres_db")
+@pytest.mark.postgres
+def test_shared_db_downgrade_drops_updated_by_and_keeps_the_rows(shared_postgres_db):
+    """Drop ``updated_by`` on downgrade while the override rows and values survive."""
+    sync_url = shared_postgres_db
+    sep_cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    command.upgrade(sep_cfg, "heads")
+    command.upgrade(Config(str(ALEMBIC_INI), ini_section="tasks"), "heads")
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO settingoverride "
+                    "(setting_class, key, value, is_active, created_at, updated_by) "
+                    "VALUES ('SEP_SETTINGS', 'SYNC_REFRESH_TIME', '5', true, now(), "
+                    "'alice')"
+                )
+            )
+    finally:
+        engine.dispose()
+
+    command.downgrade(sep_cfg, _SEP_PRE_UPDATED_BY_REVISION)
+
+    assert _updated_by_columns(sync_url) == []
+    engine = create_engine(sync_url)
+    try:
+        with engine.connect() as conn:
+            surviving = conn.execute(
+                text("SELECT value FROM settingoverride WHERE key = :key"),
+                {"key": "SYNC_REFRESH_TIME"},
+            )
+            # ``value`` is JSONB, so the driver decodes the stored ``'5'`` back
+            # to a Python int rather than the literal that was inserted.
+            assert surviving.scalar_one() == _SEEDED_OVERRIDE_VALUE
     finally:
         engine.dispose()

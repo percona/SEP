@@ -16,6 +16,7 @@
 """Tests for the SEP settings REST API at ``/api/sep/admin/settings``."""
 
 from collections.abc import AsyncIterator, Iterator
+from datetime import datetime, timedelta
 from string import Template
 from typing import Annotated, Any
 from unittest.mock import AsyncMock, patch
@@ -39,9 +40,10 @@ from app.core.settings_override.api import build_settings_router
 from app.core.settings_override.api import routes as settings_routes
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.registry import ReloadClassification, SECRET_STR_MASK
 from app.core.utils import json_serializer
+from app.core.utils.date_time import make_datetime_utc, utc_now
 from app.sep.api.routes.settings import SEP_ADMIN_SETTINGS_CLASSES
 from app.sep.apps.alerts.config import alerts_settings
 from app.sep.apps.framework.registry import (
@@ -259,6 +261,7 @@ def reduced_activation_client_fixture(
         classes=SEP_ADMIN_SETTINGS_CLASSES,
         session_dep=Annotated[AsyncSession, Depends(get_reduced_session)],
         admin_dep=Depends(lambda: None),
+        actor_dep=Annotated[str, Depends(lambda: "test-admin")],
         remote_classes=[(SettingClassEnum.TASKS_SETTINGS, "/admin/settings")],
         remote_api_dep=TaskAPI,
         app_owned_classes=collect_app_owned_settings_classes(REDUCED_ACTIVATION),
@@ -1318,18 +1321,24 @@ class TestSepSettingsPatch:
         self,
         api_admin_client: TestClient,
         override_session: AsyncSession,
+        admin_user: CasdoorUser,
     ) -> None:
-        """Retry once on a concurrent-PATCH IntegrityError (one rollback + replay); the row lands."""
+        """Retry once on a concurrent-PATCH IntegrityError (one rollback + replay); the row lands.
+
+        The reported provenance must come from the replay: the first attempt's
+        writes were rolled back, so returning its stamp would report a write that
+        never happened.
+        """
         new_value = 17
         original = settings_routes._stage_and_commit_overrides
         raised = False
 
-        async def flaky(**kwargs: Any) -> None:
+        async def flaky(**kwargs: Any) -> dict[str, Any]:
             nonlocal raised
             if not raised:
                 raised = True
                 raise IntegrityError("statement", "params", Exception("dup"))
-            await original(**kwargs)
+            return await original(**kwargs)
 
         with patch.object(
             settings_routes, "_stage_and_commit_overrides", side_effect=flaky
@@ -1349,6 +1358,12 @@ class TestSepSettingsPatch:
         assert len(rows) == 1
         assert rows[0].value == new_value
         assert rows[0].is_active is True
+        assert rows[0].updated_by == admin_user.username
+        entry = response.json()[0]
+        assert entry["updated_by"] == admin_user.username
+        assert datetime.fromisoformat(entry["updated_at"]) == make_datetime_utc(
+            rows[0].updated_at
+        )
 
 
 @pytest.mark.asyncio
@@ -2252,3 +2267,242 @@ class TestGlobalSettingsClass:
             response.json(), SettingClassEnum.SETTINGS.value, "PMM__api_key"
         )
         assert entry["value"] in (None, "**********")
+
+
+@pytest.mark.asyncio
+class TestSepSettingsProvenance:
+    """Cover ``updated_at`` / ``updated_by`` across LIST, DETAIL and PATCH."""
+
+    async def test_patch_stamps_the_calling_admin(
+        self, api_admin_client: TestClient, admin_user: CasdoorUser
+    ) -> None:
+        """Record the calling admin and a write time on a freshly created override."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        entry = response.json()[0]
+        assert entry["updated_by"] == admin_user.username
+        assert entry["updated_at"] is not None
+
+    async def test_patch_stamp_is_timezone_aware_utc(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Serialise ``updated_at`` with an explicit UTC offset."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+
+        stamp = datetime.fromisoformat(response.json()[0]["updated_at"])
+        assert stamp.tzinfo is not None
+        assert stamp.utcoffset() == timedelta(0)
+
+    async def test_repeated_patch_of_the_same_value_restamps(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+        admin_user: CasdoorUser,
+    ) -> None:
+        """Re-stamp a row whose submitted value equals the stored one.
+
+        Submitting the stored value leaves ``value`` and ``is_active`` untouched,
+        so the row is not dirty and the column's ``onupdate`` never fires. Only
+        an explicit assignment forces the UPDATE.
+        """
+        stale = utc_now() - timedelta(days=1)
+        await SettingsOverrideManager.create(
+            override_session,
+            SettingOverride(
+                setting_class=SEP_SETTINGS_TOKEN,
+                key="SYNC_REFRESH_TIME",
+                value=10,
+                updated_at=stale,
+                updated_by="someone-else",
+            ),
+        )
+
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        entry = response.json()[0]
+        assert entry["updated_by"] == admin_user.username
+        assert datetime.fromisoformat(entry["updated_at"]) > stale
+
+    async def test_detail_reports_the_stamp_the_patch_returned(
+        self, api_admin_client: TestClient, admin_user: CasdoorUser
+    ) -> None:
+        """Serve the same stamp from DETAIL that the PATCH response carried."""
+        patched = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["has_override"] is True
+        assert body["updated_by"] == admin_user.username
+        assert body["updated_at"] == patched.json()[0]["updated_at"]
+
+    async def test_list_reports_the_stamp_the_patch_returned(
+        self, api_admin_client: TestClient, admin_user: CasdoorUser
+    ) -> None:
+        """Serve the same stamp from LIST that the PATCH response carried."""
+        patched = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+
+        response = api_admin_client.get("/api/sep/admin/settings/")
+
+        entry = _find_setting(
+            response.json(), SettingClassEnum.SEP_SETTINGS.value, "SYNC_REFRESH_TIME"
+        )
+        assert entry["updated_by"] == admin_user.username
+        assert entry["updated_at"] == patched.json()[0]["updated_at"]
+
+    async def test_batch_patch_shares_one_stamp(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Stamp every key of one atomic batch with a single timestamp."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10, "ARTIFACT_DOWNLOAD_TTL": 900},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        stamps = {entry["updated_at"] for entry in response.json()}
+        assert len(stamps) == 1
+
+    async def test_key_without_an_override_reports_no_provenance(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Report both fields as ``null`` for a key carrying no override row."""
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+        )
+
+        body = response.json()
+        assert body["has_override"] is False
+        assert body["updated_at"] is None
+        assert body["updated_by"] is None
+
+    async def test_list_carries_null_provenance_without_an_override(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Carry both fields as ``null`` on a LIST entry with no override row.
+
+        The fields are present rather than absent, so a consumer reads the same
+        shape from LIST as from DETAIL.
+        """
+        response = api_admin_client.get("/api/sep/admin/settings/")
+
+        entry = _find_setting(
+            response.json(), SettingClassEnum.SEP_SETTINGS.value, "SYNC_REFRESH_TIME"
+        )
+        assert entry["has_override"] is False
+        assert entry["updated_at"] is None
+        assert entry["updated_by"] is None
+
+    async def test_legacy_row_falls_back_to_created_at(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Report ``created_at`` for a row written before explicit stamping."""
+        row = await SettingsOverrideManager.create(
+            override_session,
+            SettingOverride(
+                setting_class=SEP_SETTINGS_TOKEN,
+                key="SYNC_REFRESH_TIME",
+                value=10,
+            ),
+        )
+        assert row.updated_at is None
+
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+        )
+
+        body = response.json()
+        assert body["updated_by"] is None
+        assert datetime.fromisoformat(body["updated_at"]) == make_datetime_utc(
+            row.created_at
+        )
+
+    async def test_inactive_row_reports_no_provenance(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Ignore an inactive row: no override is reported and no stamp travels.
+
+        An inactive row does not affect the served value -- it falls back to the
+        declared default -- so reporting provenance for one would tell the UI a
+        field is overridden while showing it the default.
+        """
+        await SettingsOverrideManager.create(
+            override_session,
+            SettingOverride(
+                setting_class=SEP_SETTINGS_TOKEN,
+                key="SYNC_REFRESH_TIME",
+                value=10,
+                is_active=False,
+                updated_at=utc_now(),
+                updated_by="someone-else",
+            ),
+        )
+
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+        )
+
+        body = response.json()
+        assert body["has_override"] is False
+        assert body["updated_at"] is None
+        assert body["updated_by"] is None
+
+    async def test_nested_parent_reports_the_leaf_stamp(
+        self, api_admin_client: TestClient, admin_user: CasdoorUser
+    ) -> None:
+        """Promote a nested leaf's provenance to every canonical prefix of its chain."""
+        patched = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"APP_DRAIN__stale_task_ttl": 7200},
+        )
+        assert patched.status_code == status.HTTP_200_OK
+
+        response = api_admin_client.get("/api/sep/admin/settings/SEPSettings/APP_DRAIN")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["has_override"] is True
+        assert body["updated_by"] == admin_user.username
+        assert body["updated_at"] == patched.json()[0]["updated_at"]
+
+    async def test_delete_clears_the_provenance(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Clear both fields once the override row is hard-deleted."""
+        api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+        deleted = api_admin_client.delete(
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+        )
+        assert deleted.status_code == status.HTTP_204_NO_CONTENT
+
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+        )
+
+        body = response.json()
+        assert body["has_override"] is False
+        assert body["updated_at"] is None
+        assert body["updated_by"] is None

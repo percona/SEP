@@ -17,6 +17,7 @@
 
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 import pytest
 from fastapi import FastAPI, status
@@ -30,6 +31,7 @@ from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.utils.date_time import utc_now
 from app.inventory.config import inventory_settings, InventorySettings
 from app.inventory.deps import get_session
 from app.inventory.main import inventory_app
@@ -174,9 +176,73 @@ class TestInventorySettingsRouter:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     async def test_patch_non_hot_field_rejected(self, admin_client: TestClient) -> None:
-        """Assert any PATCH is rejected as NOT_OVERRIDABLE (no HOT field exists yet)."""
+        """Assert any PATCH is rejected as NOT_OVERRIDABLE (no HOT field exists yet).
+
+        422 rather than a dependency-resolution failure is also what proves the
+        router's ``actor_dep`` wiring resolves: FastAPI resolves every handler
+        parameter before the body runs, so the request reaches the validation
+        that rejects it. Promoting a field to HOT turns this into a stamping
+        test with no rewiring.
+        """
         response = admin_client.patch(
             "/admin/settings/InventorySettings",
             json={"UVICORN_PORT": 9999},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    async def test_detail_reports_a_seeded_rows_provenance(
+        self, admin_client: TestClient, session: AsyncSession
+    ) -> None:
+        """Report a seeded row's actor and write time on DETAIL."""
+        written_at = utc_now()
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=INVENTORY_SETTINGS_TOKEN,
+                key="UVICORN_PORT",
+                value=9999,
+                updated_at=written_at,
+                updated_by="alice",
+            ),
+        )
+
+        response = admin_client.get("/admin/settings/InventorySettings/UVICORN_PORT")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["has_override"] is True
+        assert body["updated_by"] == "alice"
+        assert datetime.fromisoformat(body["updated_at"]) == written_at
+
+    async def test_list_reports_a_seeded_rows_provenance(
+        self, admin_client: TestClient, session: AsyncSession
+    ) -> None:
+        """Report a seeded row's actor and write time on LIST."""
+        written_at = utc_now()
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=INVENTORY_SETTINGS_TOKEN,
+                key="UVICORN_PORT",
+                value=9999,
+                updated_at=written_at,
+                updated_by="alice",
+            ),
+        )
+
+        groups = admin_client.get("/admin/settings/").json()["groups"]
+
+        entry = next(s for s in groups[0]["settings"] if s["key"] == "UVICORN_PORT")
+        assert entry["updated_by"] == "alice"
+        assert datetime.fromisoformat(entry["updated_at"]) == written_at
+
+    async def test_key_without_an_override_reports_no_provenance(
+        self, admin_client: TestClient
+    ) -> None:
+        """Carry both fields as ``null`` for a key with no override row."""
+        response = admin_client.get("/admin/settings/InventorySettings/UVICORN_PORT")
+
+        body = response.json()
+        assert body["has_override"] is False
+        assert body["updated_at"] is None
+        assert body["updated_by"] is None

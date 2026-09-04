@@ -29,6 +29,7 @@ __all__ = [
     "MaterializerContext",
     "MaterializerPurpose",
     "ReloadClassification",
+    "SettingProvenance",
     "canonical_override_key",
     "chain_has_advanced",
     "chain_has_explicit_not_overridable",
@@ -52,7 +53,7 @@ __all__ = [
     "nested_overridable_field",
     "nested_overridable_field_names",
     "not_overridable_field",
-    "override_keys_for_rows",
+    "override_provenance_for_rows",
     "override_rows_for_key",
     "preserve_patch_credential_url_value",
     "rendered_leaf_keys",
@@ -83,6 +84,7 @@ from app.core.settings_override.policy import (
     is_restriction_active,
 )
 from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.utils.date_time import make_datetime_utc
 from app.core.utils.fields import (
     _credential_url_serializer,
     preserve_credential_url_password,
@@ -94,6 +96,8 @@ from app.core.utils.pydantic import (
 )
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from pydantic.fields import FieldInfo
     from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -1108,38 +1112,82 @@ def canonical_override_key(settings_cls: type[BaseModel], key: str) -> str:
     return "__".join(chain)
 
 
-def override_keys_for_rows(
+class SettingProvenance(NamedTuple):
+    """Carry the last-written stamp reported for one overridden key.
+
+    :param updated_at: When the contributing row was last written, falling back
+        to its creation time for a row that predates explicit stamping.
+    :param updated_by: The username that last wrote the contributing row, or
+        ``None`` for a row written before the actor column existed.
+    """
+
+    updated_at: datetime
+    updated_by: str | None
+
+
+def _provenance_keys_for_row(
+    settings_cls: type[BaseModel],
+    row: SettingOverride,
+) -> Iterator[str]:
+    """Yield every key one override row reports an override for.
+
+    The row's own stored ``key`` always counts, which keeps the report correct
+    when a row was stored under a non-canonical casing. A ``__``-delimited row
+    additionally contributes every canonical prefix of its resolved chain -- the
+    top-level parent, each intermediate sub-model path, and the canonical leaf
+    key -- so a promoted parent reports an override when only deeper nested rows
+    exist.
+
+    :param settings_cls: The Pydantic settings class the row belongs to.
+    :param row: One active override row.
+    :return: The stored key followed by each canonical prefix of its chain.
+    """
+    yield row.key
+    if "__" not in row.key:
+        return
+    resolved = resolve_nested_field(settings_cls, row.key)
+    if resolved is None:
+        return
+    chain, _ = resolved
+    for i in range(1, len(chain) + 1):
+        yield "__".join(chain[:i])
+
+
+def override_provenance_for_rows(
     settings_cls: type[BaseModel],
     rows: list[SettingOverride],
-) -> set[str]:
-    """Return the set of keys (and canonical prefixes) with active overrides.
+) -> dict[str, SettingProvenance]:
+    """Return the last-written stamp for every key with an active override.
 
-    Each row's own ``key`` is included; additionally, every ``__``-delimited row
-    contributes every canonical prefix of its resolved chain -- the top-level
-    parent, each intermediate sub-model path, and the canonical leaf key. This
-    lets a ``field_meta.key in override_keys`` lookup report ``has_override=True``
-    for a promoted parent or an intermediate sub-model when only deeper nested
-    rows exist, and keeps the flag correct when a row was stored under a
-    non-canonical casing.
+    The mapping's key set is exactly the set of keys carrying an override, so a
+    caller derives ``has_override`` as ``key in mapping`` and the flag cannot
+    drift from the stamps beside it. :func:`_provenance_keys_for_row` decides
+    which keys each row contributes.
+
+    When several rows contribute to one key -- the ordinary case for a nested
+    parent -- the row with the latest stamp wins, breaking ties on the higher
+    ``id``. Ties are the common case rather than a corner: ``utc_now`` zeroes
+    microseconds and one PATCH batch stamps every key it writes with a single
+    shared timestamp.
 
     :param settings_cls: The Pydantic settings class the rows belong to.
-    :type settings_cls: type[BaseModel]
     :param rows: The active override rows for the class.
-    :type rows: list[SettingOverride]
-    :return: The set of keys and canonical prefixes carrying an override.
-    :rtype: set[str]
+    :return: One :class:`SettingProvenance` per key carrying an override.
     """
-    keys = {row.key for row in rows}
+    ranked: dict[str, tuple[tuple[datetime, int], SettingOverride]] = {}
     for row in rows:
-        if "__" not in row.key:
-            continue
-        resolved = resolve_nested_field(settings_cls, row.key)
-        if resolved is None:
-            continue
-        chain, _ = resolved
-        for i in range(1, len(chain) + 1):
-            keys.add("__".join(chain[:i]))
-    return keys
+        # SQLModel skips validation on a ``table=True`` model, so a stamp loaded
+        # from the database bypasses the ``UTCDatetime`` normalizer and can
+        # arrive naive, which would not compare against an aware sibling.
+        rank = (make_datetime_utc(row.updated_at or row.created_at), row.id or 0)
+        for key in _provenance_keys_for_row(settings_cls, row):
+            current = ranked.get(key)
+            if current is None or rank > current[0]:
+                ranked[key] = (rank, row)
+    return {
+        key: SettingProvenance(updated_at=rank[0], updated_by=row.updated_by)
+        for key, (rank, row) in ranked.items()
+    }
 
 
 def _stored_key_matches_override_key(
@@ -2082,8 +2130,8 @@ def iter_nested_leaf_keys(
     ``list[...]`` or ``set[...]`` -- is a leaf, so collection-typed fields stay a
     single leaf (their items are not expanded). Segments are the canonical
     attribute names from ``model_fields``, so each yielded key matches the form
-    :func:`resolve_nested_field` and :func:`override_keys_for_rows` produce, and
-    ``"__".join(chain) == key`` holds by construction.
+    :func:`resolve_nested_field` and :func:`override_provenance_for_rows`
+    produce, and ``"__".join(chain) == key`` holds by construction.
 
     Yield nothing when ``parent_field_name`` is unknown or is not a Pydantic
     submodel (e.g. a scalar HOT field), letting the caller fall back to a single

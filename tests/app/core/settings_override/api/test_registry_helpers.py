@@ -13,9 +13,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Unit tests for the field-introspection helpers in ``registry.py`` and the response builder ``_settings_response_from_field`` in ``api.routes``."""
+"""Unit tests for the field-introspection and override-provenance helpers in ``registry.py`` and the response builder ``_settings_response_from_field`` in ``api.routes``."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Annotated, ClassVar
 
 import pytest
@@ -36,7 +36,7 @@ from app.core.settings_override.api.routes import (
     _remote_wiring,
     _settings_response_from_field,
 )
-from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
     chain_has_advanced,
@@ -48,9 +48,12 @@ from app.core.settings_override.registry import (
     iter_class_fields,
     iter_nested_leaf_keys,
     nested_overridable_field,
+    override_provenance_for_rows,
     ReloadClassification,
     resolve_nested_field_metadata,
+    SettingProvenance,
 )
+from app.core.utils.date_time import utc_now
 from app.core.utils.fields import CredentialHttpUrl
 from app.sep.config import SEPSettings
 
@@ -301,7 +304,7 @@ def test_settings_response_redacts_secret_leaf_with_key_path() -> None:
         settings_cls=_SecretLeafParent,
         proxy=proxy,
         field_meta=leaf_meta,
-        has_override=False,
+        provenance=None,
     )
     assert response.value == "**********"
     assert response.is_secret is True
@@ -319,7 +322,7 @@ def test_settings_response_applicable_defaults_true() -> None:
         settings_cls=_FixtureSettings,
         proxy=proxy,
         field_meta=meta,
-        has_override=False,
+        provenance=None,
     )
     assert response.is_applicable is True
 
@@ -335,7 +338,7 @@ def test_settings_response_honors_applicability_predicate() -> None:
         settings_cls=_FixtureSettings,
         proxy=proxy,
         field_meta=meta,
-        has_override=False,
+        provenance=None,
         applicability=lambda _cls, field: field.key != "HOT_BOOL",
     )
     assert response.is_applicable is False
@@ -473,3 +476,181 @@ def test_overlay_promoted_field_bare_call_ignores_overlay() -> None:
     """Assert the bare ``FieldInfo`` fast path ignores the overlay (backward-compatible)."""
     field = _OverlayFixtureSettings.model_fields["PROMOTED"]
     assert is_advanced_field(field) is False
+
+
+def _override_row(
+    key: str,
+    *,
+    row_id: int,
+    created_at: datetime,
+    updated_at: datetime | None = None,
+    updated_by: str | None = None,
+) -> SettingOverride:
+    """Build an unpersisted ``SettingOverride`` for the provenance aggregation.
+
+    ``SettingOverride`` is a ``table=True`` SQLModel, so ``__init__`` skips
+    validation and every timestamp is stored exactly as passed -- which is what
+    lets a naive ``updated_at`` be constructed here at all.
+
+    :param key: The stored override key.
+    :param row_id: The primary key, which the aggregation uses to break ties.
+    :param created_at: The row's creation stamp.
+    :param updated_at: The row's last-write stamp, or ``None`` for a legacy row.
+    :param updated_by: The recorded actor, or ``None`` for a legacy row.
+    :return: The constructed row.
+    """
+    return SettingOverride(
+        id=row_id,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key=key,
+        value=1,
+        is_active=True,
+        created_at=created_at,
+        updated_at=updated_at,
+        updated_by=updated_by,
+    )
+
+
+def test_override_provenance_reports_the_rows_own_stamp() -> None:
+    """Report a top-level row's ``updated_at`` and ``updated_by`` under its own key."""
+    written_at = utc_now()
+    rows = [
+        _override_row(
+            "SYNC_REFRESH_TIME",
+            row_id=1,
+            created_at=written_at - timedelta(days=1),
+            updated_at=written_at,
+            updated_by="alice",
+        )
+    ]
+
+    provenance = override_provenance_for_rows(SEPSettings, rows)
+
+    assert provenance["SYNC_REFRESH_TIME"] == SettingProvenance(
+        updated_at=written_at, updated_by="alice"
+    )
+
+
+def test_override_provenance_falls_back_to_created_at_for_a_legacy_row() -> None:
+    """Fall back to ``created_at`` for a row written before explicit stamping."""
+    created_at = utc_now()
+    rows = [_override_row("SYNC_REFRESH_TIME", row_id=1, created_at=created_at)]
+
+    provenance = override_provenance_for_rows(SEPSettings, rows)
+
+    assert provenance["SYNC_REFRESH_TIME"] == SettingProvenance(
+        updated_at=created_at, updated_by=None
+    )
+
+
+def test_override_provenance_promotes_a_nested_leaf_to_its_parent() -> None:
+    """Report a nested leaf's provenance under every canonical prefix of its chain."""
+    written_at = utc_now()
+    rows = [
+        _override_row(
+            "APP_DRAIN__stale_task_ttl",
+            row_id=1,
+            created_at=written_at,
+            updated_at=written_at,
+            updated_by="alice",
+        )
+    ]
+
+    provenance = override_provenance_for_rows(SEPSettings, rows)
+
+    expected = SettingProvenance(updated_at=written_at, updated_by="alice")
+    assert provenance["APP_DRAIN"] == expected
+    assert provenance["APP_DRAIN__stale_task_ttl"] == expected
+
+
+def test_override_provenance_breaks_an_equal_stamp_tie_on_the_higher_id() -> None:
+    """Prefer the higher ``id`` when two contributing rows share one timestamp.
+
+    One PATCH batch stamps every key it writes with a single ``utc_now()``, and
+    that helper zeroes microseconds, so equal stamps are the common case rather
+    than a corner.
+    """
+    written_at = utc_now()
+    rows = [
+        _override_row(
+            "APP_DRAIN__stale_task_ttl",
+            row_id=1,
+            created_at=written_at,
+            updated_at=written_at,
+            updated_by="alice",
+        ),
+        _override_row(
+            "APP_DRAIN__reconcile_interval",
+            row_id=2,
+            created_at=written_at,
+            updated_at=written_at,
+            updated_by="bob",
+        ),
+    ]
+
+    provenance = override_provenance_for_rows(SEPSettings, rows)
+
+    assert provenance["APP_DRAIN"].updated_by == "bob"
+
+
+def test_override_provenance_prefers_the_later_stamp_over_the_higher_id() -> None:
+    """Prefer the later timestamp even when the lower ``id`` carries it."""
+    written_at = utc_now()
+    rows = [
+        _override_row(
+            "APP_DRAIN__stale_task_ttl",
+            row_id=1,
+            created_at=written_at,
+            updated_at=written_at,
+            updated_by="alice",
+        ),
+        _override_row(
+            "APP_DRAIN__reconcile_interval",
+            row_id=2,
+            created_at=written_at,
+            updated_at=written_at - timedelta(hours=1),
+            updated_by="bob",
+        ),
+    ]
+
+    provenance = override_provenance_for_rows(SEPSettings, rows)
+
+    assert provenance["APP_DRAIN"].updated_by == "alice"
+
+
+def test_override_provenance_normalizes_a_naive_stamp() -> None:
+    """Compare a naive ``updated_at`` against an aware ``created_at`` without raising.
+
+    SQLModel skips validation on a ``table=True`` model, so a value loaded from
+    the database bypasses the ``UTCDatetime`` normalizer and can reach the
+    aggregation naive.
+    """
+    aware = utc_now()
+    naive = aware.replace(tzinfo=None) - timedelta(hours=1)
+    rows = [
+        _override_row(
+            "APP_DRAIN__stale_task_ttl",
+            row_id=1,
+            created_at=aware,
+            updated_at=naive,
+            updated_by="alice",
+        ),
+        _override_row(
+            "APP_DRAIN__reconcile_interval",
+            row_id=2,
+            created_at=aware,
+            updated_at=aware,
+            updated_by="bob",
+        ),
+    ]
+
+    provenance = override_provenance_for_rows(SEPSettings, rows)
+
+    assert provenance["APP_DRAIN"] == SettingProvenance(
+        updated_at=aware, updated_by="bob"
+    )
+
+
+def test_override_provenance_is_empty_without_rows() -> None:
+    """Return an empty mapping when the class has no active override rows."""
+    assert override_provenance_for_rows(SEPSettings, []) == {}

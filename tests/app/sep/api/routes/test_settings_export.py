@@ -34,8 +34,10 @@ from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPBadGatewayException
 from app.core.requests import RemoteAPI
-from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.manager import SettingsOverrideManager
+from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.utils import json_serializer
+from app.core.utils.date_time import utc_now
 from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import DeliveryPlanInputs, sep_settings, SEPSettings
 from app.sep.deps import (
@@ -45,6 +47,7 @@ from app.sep.deps import (
     require_bearer_for_unsafe_methods,
 )
 from app.sep.main import sep_app
+from tests.app.core.settings_override.conftest import SEP_SETTINGS_TOKEN
 from tests.app.db_schema import apply_schema
 
 EXPORT_URL = "/api/sep/admin/settings/export"
@@ -235,6 +238,30 @@ class TestSepConfigExportYaml:
         payload = yaml.safe_load(response.text)
         assert set(payload) == FULL_EXPORT_CLASSES
         mock_tasks_api.get.assert_awaited_once_with("/admin/settings/")
+
+    async def test_export_is_unchanged_by_an_overrides_provenance(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Emit byte-identical YAML whether or not a row carries an actor and a stamp.
+
+        The export renders values only, so recording who last saved an override
+        must not alter a single byte of what an operator downloads. The seeded
+        row stores ``SYNC_REFRESH_TIME``'s declared default, so any difference
+        between the two exports would be the provenance rather than the value.
+        """
+        before = api_admin_client.get(EXPORT_URL).text
+        await SettingsOverrideManager.create(
+            override_session,
+            SettingOverride(
+                setting_class=SEP_SETTINGS_TOKEN,
+                key="SYNC_REFRESH_TIME",
+                value=5,
+                updated_at=utc_now(),
+                updated_by="alice",
+            ),
+        )
+
+        assert api_admin_client.get(EXPORT_URL).text == before
 
     async def test_export_keys_match_list_for_sep_classes(
         self, api_admin_client: TestClient
