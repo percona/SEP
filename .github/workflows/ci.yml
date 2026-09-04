@@ -240,18 +240,13 @@ jobs:
       - label-gate
       - changes
 
-  # Deliberately absent from `ci-success`'s `needs` below, which is the only
-  # required check on main: a surplus diagnostic therefore shows a red X on the
-  # PR without blocking the merge. Adding this job there makes it merge-blocking,
-  # a promotion that waits on a release cycle of observed surplus and has its own
-  # ticket. It lives here rather than in python.yaml because a failing job inside
-  # a called workflow fails the caller, and there is no way to exempt one job of
-  # a reusable workflow while the rest stays required.
+  # Advisory by design: intentionally omitted from `ci-success`'s `needs`. It
+  # sits here rather than in python.yaml because a reusable workflow cannot make
+  # one of its jobs advisory. See docs/development/ty-policy.md under `Enforcement`.
   typecheck_diff:
-    # The event test is load-bearing, not redundant with the draft test beside
-    # it: expression operands are coerced to numbers, so the absent
-    # `pull_request` object on a dispatch makes `draft == false` compare 0 to 0
-    # and pass. Without it the job runs with an empty BASE_SHA and exits 2.
+    # Not redundant with the draft test: on a non-pull_request event the absent
+    # `pull_request` object makes `draft == false` compare 0 to 0 and pass,
+    # through GitHub's numeric coercion of expression operands.
     if: >-
       ${{
         github.event_name == 'pull_request' &&
@@ -277,11 +272,9 @@ jobs:
         with:
           python-version: "3.11.9"
 
-      # `venv`'s own `poetry install` reports nothing to do against the runner's
-      # pre-seeded environment, the same way it does in the `typecheck` job, and
-      # ty then resolves no third-party import. Here that surfaces as false
-      # surplus rather than a false pass: a file the branch adds has no
-      # base-side counterpart for its diagnostics to cancel against.
+      # Sync explicitly: the `venv` prerequisite no-ops against the runner's
+      # pre-seeded environment, and ty then resolves no third-party import —
+      # here as false surplus, since an added file has no base-side counterpart.
       - name: Install dependencies
         run: poetry sync --no-root --all-extras --all-groups
 

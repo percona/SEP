@@ -16,24 +16,18 @@
 
 """Fail on the ty diagnostics a branch introduces, relative to its merge-base.
 
-Every rule ``[tool.ty.rules]`` holds at ``warn`` is promoted to ``error`` and the
+Every rule ``[tool.ty.rules]`` holds at ``warn`` is promoted to ``error``, and the
 changed non-test Python files are checked twice: once at ``HEAD`` and once in a
 detached worktree at the merge-base. The report is the multiset difference over
-:attr:`~scripts.classify_ty_diagnostics.Diagnostic.fingerprint`, so a diagnostic
-already present at the merge-base never fails a branch that did not introduce
-it — including one an edit merely moved down the file.
+:attr:`~scripts.classify_ty_diagnostics.Diagnostic.fingerprint`.
 
-Attribution is a baseline delta rather than a test of whether a diagnostic sits
-on an added line, because the consequences of an annotation change land at call
-sites the edit itself need not touch; the reconstruction that settled it is in
-``docs/development/ty-policy.md``. Both passes receive an identical batch
-composition, minus the paths the merge-base does not carry under a checked
-non-test name, so a diagnostic that batching suppresses is absent from both
-counters and cancels out of the difference; ``--per-file`` trades runtime for
-the finest granularity if that cancellation is ever observed to fail.
+Attribution is a baseline delta rather than a test of whether a diagnostic sits on
+an added line, because an annotation change lands its consequences at call sites
+the edit itself need not touch. That, the batching policy ``--per-file`` exists to
+escape, and the advisory status of the CI job are recorded in
+``docs/development/ty-policy.md``.
 
 The exit status is the whole signal: non-zero when the branch adds a diagnostic.
-Whether that blocks a merge is decided by the workflow, not here.
 """
 
 from __future__ import annotations
@@ -102,17 +96,15 @@ def _git(*args: str, cwd: Path | None = None) -> str:
 def _ty_stdout(argv: Sequence[str], cwd: Path) -> str:
     """Run one ty invocation and return its stdout.
 
-    Exit code 1 means ty reported diagnostics, which is the expected outcome of a
-    promoted run. Any other status is a failure of the run itself — the
-    ``error[io]`` exit 2 a nonexistent path produces, or the negative code a
-    signal leaves behind.
+    Exit code 1 means ty reported diagnostics, the expected outcome of a promoted
+    run; any other non-zero status is a failure of the run itself.
 
     :param argv: The full command line, executable included.
     :param cwd: Tree to check in.
     :return: The command's stdout.
     :raises TyInvocationError: When ty exits anything but 0 or 1.
     :raises OSError: Propagates ``FileNotFoundError`` when the pinned binary is
-        absent, which means the environment was installed without its group.
+        absent.
     """
     result = subprocess.run(argv, cwd=cwd, check=False, text=True, capture_output=True)
     if result.returncode not in (0, 1):
@@ -125,9 +117,8 @@ def _ty_stdout(argv: Sequence[str], cwd: Path) -> str:
 def resolve_ty() -> Path:
     """Return the ty binary installed beside the running interpreter.
 
-    Resolving through ``PATH`` would silently accept whichever ty the runner
-    happens to find, while the version this project's diagnostics are measured
-    against is the one pinned in the environment Make invokes it from.
+    Resolving through ``PATH`` would accept whichever ty the runner happens to
+    find, rather than the pinned version the baseline is measured against.
 
     :return: Path to the pinned executable.
     """
@@ -155,8 +146,8 @@ def ty_argv(executable: Path, rules: Sequence[str], paths: Sequence[str]) -> lis
     """Build one ty command line over ``paths``.
 
     ``--force-exclude`` re-establishes both halves of ``[tool.ty.src]`` for paths
-    named on the command line, without which a changed migration is checked
-    against a surface that deliberately drops it.
+    named on the command line; without it a changed migration is checked against a
+    surface that deliberately drops it.
 
     :param executable: The pinned ty binary.
     :param rules: Rule names to promote to ``error``.
@@ -182,9 +173,8 @@ def parse_ty_output(text: str) -> list[Diagnostic]:
     """Parse one ty run's stdout, treating its clean-run sentinel as empty.
 
     ty prints ``All checks passed!`` and no ``Found N diagnostics`` trailer when
-    the count is zero, which is the common outcome for a small diff. Everything
-    else is reconciled as usual, so a truncated run — which prints neither the
-    sentinel nor a trailer — still raises rather than reading as clean.
+    the count is zero. Everything else goes through the reconciling parser, so a
+    truncated run — neither sentinel nor trailer — raises instead of reading clean.
 
     :param text: Raw ``ty check --output-format concise`` stdout.
     :return: Every parsed diagnostic, in output order.
@@ -198,10 +188,9 @@ def parse_ty_output(text: str) -> list[Diagnostic]:
 def parse_name_status(text: str) -> ChangedFiles:
     """Split ``git diff --name-status`` output into the two passes' file lists.
 
-    A path moved out of ``tests/`` is absent from the base list rather than
-    rebased onto its new name: ``tests/`` is inside ``[tool.ty.src]``, so its
-    diagnostics would otherwise cancel against the production surface they have
-    just entered, where a file the branch merely added has every one counted.
+    A path moved out of ``tests/`` is absent from the base list rather than rebased
+    onto its new name: ``tests/`` is inside ``[tool.ty.src]``, so its diagnostics
+    would otherwise cancel against the surface they have just entered.
 
     :param text: Raw ``--name-status`` output, rename detection enabled.
     :return: The head and base file lists.
@@ -303,10 +292,8 @@ def rebase_paths(
 ) -> list[Diagnostic]:
     """Rewrite base-side diagnostic paths to the names the branch gives them.
 
-    ``Diagnostic.fingerprint`` carries the path, so without this a file the
-    branch merely moved has every one of its pre-existing diagnostics counted as
-    surplus: the head pass reports them at the new path and the base pass at the
-    old one, and no fingerprint matches.
+    ``Diagnostic.fingerprint`` carries the path, so without this a file the branch
+    merely moved has every pre-existing diagnostic counted as surplus.
 
     :param diagnostics: Diagnostics from the base pass.
     :param renames: Old path to new path, for the files the branch moved.
@@ -324,8 +311,8 @@ def surplus_diagnostics(
     """Return the head diagnostics the merge-base did not already carry.
 
     The difference is taken over fingerprints as a multiset, so duplicating a
-    defect that already exists still reports, and each surplus fingerprint is
-    mapped back to a head diagnostic to recover the line the fingerprint drops.
+    defect that already exists still reports. Each surplus fingerprint is mapped
+    back to a head diagnostic to recover the line the fingerprint drops.
 
     :param head: Diagnostics reported on the branch.
     :param base: Diagnostics reported at the merge-base.
@@ -346,8 +333,8 @@ def emit_annotations(diagnostics: Sequence[Diagnostic]) -> None:
     """Print one workflow annotation per surplus diagnostic, up to the cap.
 
     GitHub renders these inline only for lines inside the diff, and the
-    characteristic finding here sits on an unchanged line, so most surface in the
-    run's annotation box instead. The step summary always carries the full list.
+    characteristic finding here sits on an unchanged line. The step summary always
+    carries the full list.
 
     :param diagnostics: The surplus, in head output order.
     """
@@ -365,8 +352,7 @@ def _table_cell(text: str) -> str:
     """Return a value escaped so it cannot split its Markdown table row.
 
     ty spells union types with ``|`` inside the messages the promoted rules
-    report, so an unescaped message would break the table this job's only
-    readable artifact is made of.
+    report, so an unescaped message would split its row into extra columns.
 
     :param text: Raw cell content.
     :return: The content with column separators escaped.

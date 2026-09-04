@@ -91,23 +91,17 @@ ruff: venv
 	@"${VENV_BIN}"/ruff check .
 	@"${VENV_BIN}"/ruff format --check .
 
-# Static type checking (Astral ty). Not part of `lint` or pre-commit; CI runs it
-# as the blocking `typecheck` job. The checked surface is `[tool.ty.src]` rather
-# than a path argument, so this target and that list cannot drift apart.
-# `--python` names the environment because ty otherwise resolves imports against
-# whichever interpreter is first on PATH: VIRTUAL_ENV is a make variable here and
-# is never exported, so a shell without the venv activated silently checks the
-# tree against the wrong site-packages. See docs/development/ty-policy.md under
-# `Enforcement`.
+# Static type checking (Astral ty); CI runs it as the blocking `typecheck` job.
+# Passes no paths, so `[tool.ty.src]` stays the single definition of the surface.
+# `--python` is load-bearing: VIRTUAL_ENV is never exported, so ty would resolve
+# imports against whichever interpreter is first on PATH.
+# See docs/development/ty-policy.md under `Enforcement`.
 typecheck: venv
 	@"${VENV_BIN}"/ty check --python "${VENV}"
 
-# Report the ty diagnostics a branch adds against BASE_SHA, promoting every rule
-# held at `warn` for the comparison. Advisory in CI: the job shows red without
-# blocking the merge. See docs/development/ty-policy.md under `Enforcement`.
-# BASE_SHA reaches the script through the recipe shell environment, the same
-# channel CI supplies it on — command-line variables are auto-exported, so no
-# caller text is pasted into the recipe. PER_FILE=1 selects per-invocation mode.
+# Report the ty diagnostics a branch adds against BASE_SHA, which reaches the
+# script through the recipe environment rather than being pasted into it.
+# Advisory in CI. See docs/development/ty-policy.md under `Enforcement`.
 typecheck-diff: venv
 	@"${VENV_BIN}"/python -m scripts.check_ty_diff $(if $(PER_FILE),--per-file,)
 
