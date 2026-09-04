@@ -15,6 +15,8 @@
 
 """Define tests for the app.sep.config module."""
 
+import json
+import re
 from datetime import timedelta
 from string import Template
 from typing import Any
@@ -24,6 +26,7 @@ import pytest
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
+from app.core.exceptions import HTTPServiceUnavailableException
 from app.core.requests import RemoteAPI
 from app.core.settings_override.registry import (
     chain_is_locked,
@@ -662,7 +665,13 @@ class TestCredentialUrlMaskRejection:
 
 
 class TestSyncerRetirementThresholdsOverConfig:
-    """``SEP.SYNCERS[]`` forwards extra keys verbatim, so the floors must hold there."""
+    """``SEP.SYNCERS[]`` forwards extra keys verbatim, so the floors must hold there.
+
+    Load-time rejection of these values lives in
+    :class:`TestSyncerExtrasValidatedAtLoad`; what this class owns is the floor a
+    syncer enforces for itself, which is what still stands when a settings object
+    reaches construction without having passed the load-time check.
+    """
 
     @pytest.mark.parametrize(
         ("field", "value"),
@@ -672,15 +681,10 @@ class TestSyncerRetirementThresholdsOverConfig:
             ("stale_run_after", 0),
         ],
     )
-    def test_unsafe_threshold_from_config_is_rejected(
+    def test_unsafe_threshold_is_rejected_at_construction(
         self, field, value, mocker: MockerFixture
     ) -> None:
-        """Reject a threshold that would restore single-absence deletion.
-
-        ``SyncOptions`` carries ``extra="allow"`` and does not validate these keys
-        itself, so syncer construction is the only thing standing between a
-        deployment's settings and a syncer that deletes on first absence.
-        """
+        """Keep the floors enforced when a settings object skipped the load check."""
         option = SyncOptions(
             syncer="app.sep.sync.syncers.pmm.PMMSyncer", **{field: value}
         )
@@ -688,8 +692,294 @@ class TestSyncerRetirementThresholdsOverConfig:
         mocker.patch.object(sep_settings, "SYNCERS", [option])
 
         # ``BaseCaseInsensitiveModel`` reports the field uppercased.
-        with pytest.raises(ValidationError, match=f"(?i){field}"):
+        with pytest.raises(HTTPServiceUnavailableException, match=f"(?i){field}"):
             get_syncers(
                 inventory_api=MagicMock(spec=RemoteAPI),
                 tasks_api=MagicMock(spec=RemoteAPI),
             )
+
+
+class TestSyncerExtrasValidatedAtLoad:
+    """Reject an unusable syncer threshold at settings load, not per request.
+
+    The ``SEP__SYNCER_EXTRA_KWARGS__<KEY>`` form hands its leaf to
+    ``SyncerExtraKwargs`` as a raw string, and both that model and ``SyncOptions``
+    allow untyped extras -- so without a load-time check the string only meets a
+    typed field once a syncer is constructed, which for the request-scoped
+    ``get_syncers`` dependency means a fresh error on every sync trigger.
+    """
+
+    _PMM = "app.sep.sync.syncers.pmm.PMMSyncer"
+
+    @staticmethod
+    def _syncers_env(*syncers: str) -> str:
+        """Return a JSON ``SEP__SYNCERS`` value naming each syncer.
+
+        :param syncers: Dotted syncer paths to configure.
+        :return: The JSON list pydantic-settings parses for ``SYNCERS``.
+        """
+        return json.dumps([{"SYNCER": syncer} for syncer in syncers])
+
+    def test_dunder_leaf_numeric_string_is_rejected_at_load(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reject a bare-integer-seconds ``STALE_RUN_AFTER`` from the env leaf form."""
+        monkeypatch.setenv("SEP__SYNCERS", self._syncers_env(self._PMM))
+        monkeypatch.setenv("SEP__SYNCER_EXTRA_KWARGS__STALE_RUN_AFTER", "60")
+
+        with pytest.raises(ValidationError, match="STALE_RUN_AFTER") as excinfo:
+            SEPSettings(_env_file=None)  # ty: ignore[unknown-argument]
+
+        message = str(excinfo.value)
+        assert "ISO-8601" in message
+        assert "HH:MM:SS" in message
+
+    def test_dunder_leaf_grace_below_floor_is_rejected_at_load(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reject a grace counter that collapses to single-absence retirement."""
+        monkeypatch.setenv("SEP__SYNCERS", self._syncers_env(self._PMM))
+        monkeypatch.setenv("SEP__SYNCER_EXTRA_KWARGS__MISSING_GRACE_GENERATIONS", "0")
+
+        with pytest.raises(ValidationError, match="MISSING_GRACE_GENERATIONS"):
+            SEPSettings(_env_file=None)  # ty: ignore[unknown-argument]
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("MISSING_GRACE_GENERATIONS", 0),
+            ("MISSING_GRACE_GENERATIONS", 1),
+            ("STALE_RUN_AFTER", 0),
+        ],
+    )
+    def test_per_entry_threshold_below_the_floor_is_rejected(
+        self, field: str, value: int
+    ) -> None:
+        """Refuse to load a single-absence deletion threshold from a syncer entry.
+
+        ``SyncOptions`` carries ``extra="allow"`` and does not validate these keys
+        itself, so the merge validator is what stands between a deployment's settings
+        and a syncer that deletes on first absence.
+        """
+        with pytest.raises(ValidationError, match=field):
+            SEPSettings.model_validate(
+                {"SYNCERS": [{"SYNCER": self._PMM, field: value}]}
+            )
+
+    def test_env_hint_is_given_for_a_string_from_the_extras(self) -> None:
+        """Explain the quoting to the operator who hit it through the env leaf form."""
+        with pytest.raises(ValidationError) as excinfo:
+            SEPSettings.model_validate(
+                {
+                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": "60"},
+                }
+            )
+
+        assert "SEP__SYNCER_EXTRA_KWARGS__STALE_RUN_AFTER" in str(excinfo.value)
+
+    def test_env_hint_is_withheld_for_a_numeric_value(self) -> None:
+        """Blame the env form's quoting only when a string is what arrived."""
+        with pytest.raises(ValidationError) as excinfo:
+            SEPSettings.model_validate(
+                {
+                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": 0},
+                }
+            )
+
+        assert "env override" not in str(excinfo.value)
+
+    def test_env_hint_is_withheld_for_a_string_on_a_syncer_entry(self) -> None:
+        """Do not send an operator back to the surface they already configured.
+
+        A string reaching a ``SYNCERS[]`` entry was spelled there deliberately, so
+        the advice that fits the env leaf form would only mislead here.
+        """
+        with pytest.raises(ValidationError) as excinfo:
+            SEPSettings.model_validate(
+                {"SYNCERS": [{"SYNCER": self._PMM, "STALE_RUN_AFTER": "abc"}]}
+            )
+
+        assert "env override" not in str(excinfo.value)
+
+    @pytest.mark.parametrize(
+        "value", ["60", "60.5", "-60", "abc", "", 0, -1, [60], {"seconds": 60}]
+    )
+    def test_unusable_stale_run_after_is_rejected_at_load(self, value: Any) -> None:
+        """Reject every shape ``stale_run_after`` cannot be built from."""
+        with pytest.raises(ValidationError, match="(?i)stale_run_after"):
+            SEPSettings.model_validate(
+                {
+                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": value},
+                }
+            )
+
+    @pytest.mark.parametrize("value", ["0", "1", 0, 1, "abc", 2.5, ""])
+    def test_unusable_grace_generations_is_rejected_at_load(self, value: Any) -> None:
+        """Reject every shape ``missing_grace_generations`` cannot be built from."""
+        with pytest.raises(ValidationError, match="(?i)missing_grace_generations"):
+            SEPSettings.model_validate(
+                {
+                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCER_EXTRA_KWARGS": {"MISSING_GRACE_GENERATIONS": value},
+                }
+            )
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (3600, timedelta(hours=1)),
+            (60.5, timedelta(seconds=60, milliseconds=500)),
+            ("PT1H", timedelta(hours=1)),
+            ("01:00:00", timedelta(hours=1)),
+            (timedelta(minutes=90), timedelta(minutes=90)),
+        ],
+    )
+    def test_documented_forms_reach_the_syncer(
+        self, value: Any, expected: timedelta, mocker: MockerFixture
+    ) -> None:
+        """Keep every form pydantic reads as a duration working end to end."""
+        settings = SEPSettings.model_validate(
+            {"SYNCERS": [{"SYNCER": self._PMM, "STALE_RUN_AFTER": value}]}
+        )
+        mocker.patch.object(sep_settings, "SYNCERS", settings.SYNCERS)
+
+        syncers = get_syncers(
+            inventory_api=MagicMock(spec=RemoteAPI),
+            tasks_api=MagicMock(spec=RemoteAPI),
+        )
+
+        assert syncers[0].stale_run_after == expected
+
+    def test_json_env_form_reaches_the_syncer(
+        self, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+    ) -> None:
+        """Keep the JSON ``SEP__SYNCERS`` override working, numbers read as numbers."""
+        grace = 3
+        monkeypatch.setenv(
+            "SEP__SYNCERS",
+            json.dumps(
+                [
+                    {
+                        "SYNCER": self._PMM,
+                        "STALE_RUN_AFTER": 60,
+                        "MISSING_GRACE_GENERATIONS": grace,
+                    }
+                ]
+            ),
+        )
+        settings = SEPSettings(_env_file=None)  # ty: ignore[unknown-argument]
+        mocker.patch.object(sep_settings, "SYNCERS", settings.SYNCERS)
+
+        syncer = get_syncers(
+            inventory_api=MagicMock(spec=RemoteAPI),
+            tasks_api=MagicMock(spec=RemoteAPI),
+        )[0]
+
+        assert syncer.stale_run_after == timedelta(seconds=60)
+        assert syncer.missing_grace_generations == grace
+
+    def test_null_threshold_falls_back_to_the_field_default(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Read an explicit ``null`` as "unset" rather than refusing to load."""
+        settings = SEPSettings.model_validate(
+            {"SYNCERS": [{"SYNCER": self._PMM, "STALE_RUN_AFTER": None}]}
+        )
+        mocker.patch.object(sep_settings, "SYNCERS", settings.SYNCERS)
+
+        syncers = get_syncers(
+            inventory_api=MagicMock(spec=RemoteAPI),
+            tasks_api=MagicMock(spec=RemoteAPI),
+        )
+
+        assert syncers[0].stale_run_after == timedelta(hours=1)
+
+    def test_extra_kwargs_win_the_merge_and_are_still_checked(self) -> None:
+        """Check the merged value, not the per-syncer one the extras displace."""
+        with pytest.raises(ValidationError, match="(?i)stale_run_after"):
+            SEPSettings.model_validate(
+                {
+                    "SYNCERS": [{"SYNCER": self._PMM, "STALE_RUN_AFTER": 3600}],
+                    "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": "60"},
+                }
+            )
+
+    def test_error_names_the_offending_syncer(self) -> None:
+        """Point the operator at the entry to fix when several are configured."""
+        mysql = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
+        with pytest.raises(ValidationError, match=re.escape(mysql)):
+            SEPSettings.model_validate(
+                {
+                    "SYNCERS": [
+                        {"SYNCER": self._PMM, "STALE_RUN_AFTER": 3600},
+                        {"SYNCER": mysql, "STALE_RUN_AFTER": "60"},
+                    ]
+                }
+            )
+
+    def test_unconstrained_extras_are_forwarded_untouched(self) -> None:
+        """Keep the check a floor on known thresholds, not an allowlist of keys.
+
+        Built through the constructor rather than ``model_validate``, which runs the
+        merge twice and so concatenates a list-valued extra with itself.
+        """
+        settings = SEPSettings(
+            SYNCERS=[{"SYNCER": "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"}],
+            SYNCER_EXTRA_KWARGS={
+                "IGNORE_SCHEMAS": ["sys"],
+                "DEFAULT_EXECUTOR_HOST": "node-1",
+            },
+            _env_file=None,  # ty: ignore[unknown-argument]
+        )
+
+        dumped = settings.SYNCERS[0].model_dump()
+        assert dumped["ignore_schemas"] == ["sys"]
+        assert dumped["default_executor_host"] == "node-1"
+
+    @pytest.mark.parametrize("key", ["STALE_RUN_AFTER", "stale_run_after"])
+    def test_key_is_matched_whatever_case_it_arrives_in(self, key: str) -> None:
+        """Refuse the value however the operator spelled the key."""
+        with pytest.raises(ValidationError, match="(?i)stale_run_after"):
+            SEPSettings.model_validate(
+                {
+                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCER_EXTRA_KWARGS": {key: "60"},
+                }
+            )
+
+    def test_threshold_is_checked_even_when_the_syncer_lacks_the_field(self) -> None:
+        """Refuse a global extra no configured syncer would ever apply.
+
+        ``MISSING_GRACE_GENERATIONS`` is a ``PMMSyncer`` field, so a MySQL-only
+        deployment setting it would otherwise carry a value that reads as a retirement
+        policy and enforces nothing.
+        """
+        mysql = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
+        with pytest.raises(ValidationError, match="(?i)missing_grace_generations"):
+            SEPSettings.model_validate(
+                {
+                    "SYNCERS": [{"SYNCER": mysql}],
+                    "SYNCER_EXTRA_KWARGS": {"MISSING_GRACE_GENERATIONS": 0},
+                }
+            )
+
+    def test_unusable_extra_loads_when_no_syncer_is_configured(self) -> None:
+        """Leave a deployment that runs no syncer alone.
+
+        The check walks configured syncers, so with none there is nothing an extra
+        can reach and nothing to refuse.
+        """
+        settings = SEPSettings.model_validate(
+            {"SYNCERS": [], "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": "60"}}
+        )
+
+        assert settings.SYNCERS == []
+
+    @pytest.mark.parametrize("field", ["SYNCERS", "SYNCER_EXTRA_KWARGS"])
+    def test_syncer_settings_are_not_database_overridable(self, field: str) -> None:
+        """Keep the load-time check unbypassable by a DB-backed override."""
+        assert not is_hot_reloadable(SEPSettings, field)
+        assert not is_nested_overridable_parent(SEPSettings, field)
