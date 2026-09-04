@@ -2744,6 +2744,10 @@ export interface paths {
      *     :raises HTTPNotFoundException: If the class isn't exposed.
      *     :raises HTTPUnprocessableEntityException: If any key fails validation;
      *         no rows are written.
+     *     :raises HTTPBadGatewayException: For a remote class, when the owning
+     *         sub-app returns a server error (status >= 500) or is unreachable.
+     *     :raises IntegrityError: When the replay of a batch that lost the
+     *         unique-index race conflicts again, which leaves nothing written.
      */
     patch: operations['sep_patch_settings_api_sep_admin_settings__setting_class__patch'];
     trace?: never;
@@ -4099,9 +4103,15 @@ export interface components {
      *     :param updated_at: When the override applying to this key was last saved,
      *         falling back to the row's creation time for a row written before the
      *         stamp was recorded. ``None`` when ``has_override`` is ``False``.
+     *         Timestamps carry second granularity.
      *     :param updated_by: The username that last saved that override, or ``None``
      *         both when no override applies and when the row predates the actor
-     *         column.
+     *         column. A key can draw on several rows (a nested parent reporting on its
+     *         leaves), in which case the pair comes from the row carrying the latest
+     *         timestamp. Two writes landing within the same second are
+     *         indistinguishable by timestamp, and the pair reported is then whichever
+     *         contributing row was created later, which need not be the one written
+     *         later.
      */
     SettingResponse: {
       /** Default Value */

@@ -1116,7 +1116,8 @@ class SettingProvenance(NamedTuple):
     """Carry the last-written stamp reported for one overridden key.
 
     :param updated_at: When the contributing row was last written, falling back
-        to its creation time for a row that predates explicit stamping.
+        to its creation time for a row that predates explicit stamping. Stamps
+        carry second granularity.
     :param updated_by: The username that last wrote the contributing row, or
         ``None`` for a row written before the actor column existed.
     """
@@ -1169,6 +1170,13 @@ def override_provenance_for_rows(
     higher ``id``. Ties are the common case rather than a corner: ``utc_now``
     zeroes microseconds and one PATCH batch stamps every key it writes with a
     single shared timestamp.
+
+    ``id`` is creation order, not write order, so the tie-break orders rows the
+    same batch wrote but cannot order two separate writes that land in the same
+    second: there the reported pair comes from whichever contributing row was
+    created later, which need not be the one written later. Second-granularity
+    stamps make that distinction unrecoverable rather than merely unqueried, so
+    the tie-break buys determinism, not accuracy.
 
     :param settings_cls: The Pydantic settings class the rows belong to.
     :param rows: The active override rows for the class.

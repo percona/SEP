@@ -593,6 +593,39 @@ def test_override_provenance_breaks_an_equal_stamp_tie_on_the_higher_id() -> Non
     assert provenance["APP_DRAIN"].updated_by == "bob"
 
 
+def test_override_provenance_tie_break_follows_creation_not_write_order() -> None:
+    """Pin the documented limit of the ``id`` tie-break at second granularity.
+
+    ``id`` orders rows by creation, so when two separate writes land in the same
+    second the winner is whichever contributing row was created later, even when
+    the other row was the one written later. Second-granularity stamps make the
+    real order unrecoverable, so this asserts the deterministic behaviour rather
+    than an accurate one.
+    """
+    written_at = utc_now()
+    later_written_but_created_first = _override_row(
+        "APP_DRAIN__stale_task_ttl",
+        row_id=1,
+        created_at=written_at - timedelta(days=1),
+        updated_at=written_at,
+        updated_by="wrote-last",
+    )
+    earlier_written_but_created_last = _override_row(
+        "APP_DRAIN__reconcile_interval",
+        row_id=2,
+        created_at=written_at,
+        updated_at=written_at,
+        updated_by="created-last",
+    )
+
+    provenance = override_provenance_for_rows(
+        SEPSettings,
+        [later_written_but_created_first, earlier_written_but_created_last],
+    )
+
+    assert provenance["APP_DRAIN"].updated_by == "created-last"
+
+
 def test_override_provenance_prefers_the_later_stamp_over_the_higher_id() -> None:
     """Prefer the later timestamp even when the lower ``id`` carries it."""
     written_at = utc_now()
