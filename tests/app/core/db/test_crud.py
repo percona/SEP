@@ -15,11 +15,13 @@
 
 """Define tests for CRUD pagination helpers."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 from datetime import datetime, timedelta, UTC
+from typing import Any
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import event, Index
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import col, Relationship, SQLModel
 from sqlmodel import Field as SQLField
@@ -31,6 +33,7 @@ from app.core.db.crud import BaseSQLModelManager
 from app.core.db.list_query import build_search_predicate, ListQuery, ListQuerySpec
 from app.core.db.models import BaseUUIDSQLModel
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT, PaginatedResponse, Pagination
 from app.core.utils import json_serializer
 from tests.app.db_schema import apply_schema
@@ -43,6 +46,11 @@ INVALID_PAGINATION_VALUE = -1
 UNPAGINATED_ITEM_TOTAL = 55
 # first() is invoked twice on the conflict path: existence check, then refetch.
 CONFLICT_PATH_FIRST_CALLS = 2
+# Mirrors inventory's ACTIVE_RETIREMENT_KEY: a truthy sentinel, so the save
+# precheck's all() guard does not skip the index it takes part in.
+ACTIVE_DISCRIMINATOR = -1
+# The precheck may only read; any of these reaching the driver means a write escaped.
+WRITE_STATEMENT_PREFIXES = ("UPDATE", "INSERT", "DELETE")
 
 
 class PaginationParent(BaseSQLModel, table=True):
@@ -137,6 +145,48 @@ class UniqueKeyUUIDManager(BaseSQLModelManager):
     Model = UniqueKeyUUIDModel
 
 
+class UniqueKeyUpdate(SQLModel):
+    """Carry only ``UniqueKeyModel``'s unique field as an update payload.
+
+    :param key: The unique key value the update assigns.
+    """
+
+    key: str
+
+
+class CompositeUniqueModel(BaseSQLModel, table=True):
+    """Model a unique index spanning several columns, as inventory's do.
+
+    :param external_id: The identifier the origin system assigns.
+    :param source: The origin system the row came from.
+    :param discriminator: The extra column that narrows the index, standing in for
+        inventory's retirement key.
+    :param label: A value outside every unique index.
+    """
+
+    __tablename__ = "test_composite_unique"
+    __table_args__ = (
+        Index(
+            "ix_test_composite_unique",
+            "external_id",
+            "source",
+            "discriminator",
+            unique=True,
+        ),
+    )
+
+    external_id: str
+    source: str
+    discriminator: int = ACTIVE_DISCRIMINATOR
+    label: str = "default"
+
+
+class CompositeUniqueManager(BaseSQLModelManager):
+    """Manage the composite-unique test model."""
+
+    Model = CompositeUniqueModel
+
+
 @pytest_asyncio.fixture(name="session")
 async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an isolated async database session for CRUD pagination tests."""
@@ -157,6 +207,26 @@ async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
             yield session
     finally:
         await engine.dispose()
+
+
+@pytest.fixture(name="emitted_sql")
+def emitted_sql_fixture(session: AsyncSession) -> Iterator[list[str]]:
+    """Record every SQL statement the session's engine sends to the database.
+
+    :param session: The session whose engine is instrumented for the test's duration.
+    :return: The statements recorded so far, appended to as the test runs.
+    """
+    statements: list[str] = []
+    engine = session.bind.sync_engine
+
+    def record(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        yield statements
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
 
 
 async def _create_parent(session: AsyncSession, name: str) -> PaginationParent:
@@ -185,6 +255,16 @@ async def _create_item(
             created_at=created_at,
         ),
     )
+
+
+async def _two_keyed_rows(session: AsyncSession) -> UniqueKeyModel:
+    """Persist two uniquely-keyed rows and return the second one.
+
+    :param session: The session the rows are persisted through.
+    :return: The row keyed ``beta``, leaving ``alpha`` claimed by its sibling.
+    """
+    await UniqueKeyManager.save(session, UniqueKeyModel(key="alpha"))
+    return await UniqueKeyManager.save(session, UniqueKeyModel(key="beta"))
 
 
 class TestBaseSQLModelManagerPagination:
@@ -1055,3 +1135,194 @@ class TestDMLWhereGuards:
             session, values={"label": "after"}, returning=["label"], key="alpha"
         )
         assert returned == ["after"]
+
+
+class TestSaveDuplicatePrecheck:
+    """Test ``BaseSQLModelManager.save``'s unique-index duplicate precheck."""
+
+    @pytest.mark.asyncio
+    async def test_update_colliding_with_committed_row_raises_conflict(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert retargeting a row onto a committed row's key raises a conflict."""
+        row = await _two_keyed_rows(session)
+        row.key = "alpha"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="UniqueKeyModel with the same key already exists",
+        ):
+            await UniqueKeyManager.save(session, row)
+
+    @pytest.mark.asyncio
+    async def test_update_conflict_emits_no_write(
+        self,
+        session: AsyncSession,
+        emitted_sql: list[str],
+    ) -> None:
+        """Assert the precheck rejects the update before any write is sent."""
+        row = await _two_keyed_rows(session)
+        emitted_sql.clear()
+        row.key = "alpha"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="UniqueKeyModel with the same key already exists",
+        ):
+            await UniqueKeyManager.save(session, row)
+
+        assert not [
+            statement
+            for statement in emitted_sql
+            if statement.lstrip().upper().startswith(WRITE_STATEMENT_PREFIXES)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_update_through_manager_update_raises_conflict(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert the conflict surfaces through the route-facing ``update``."""
+        row = await _two_keyed_rows(session)
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="UniqueKeyModel with the same key already exists",
+        ):
+            await UniqueKeyManager.update(session, row, UniqueKeyUpdate(key="alpha"))
+
+    @pytest.mark.asyncio
+    async def test_composite_index_update_collision_raises_conflict(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert a collision on a multi-column unique index raises a conflict."""
+        await CompositeUniqueManager.save(
+            session, CompositeUniqueModel(external_id="ext-a", source="pmm")
+        )
+        row = await CompositeUniqueManager.save(
+            session, CompositeUniqueModel(external_id="ext-b", source="pmm")
+        )
+        row.external_id = "ext-a"
+
+        # Leading columns only: what this pins is which index gets reported, not the
+        # exact tail of the wording.
+        with pytest.raises(
+            HTTPConflictException,
+            match="CompositeUniqueModel with the same external_id, source",
+        ):
+            await CompositeUniqueManager.save(session, row)
+
+    @pytest.mark.asyncio
+    async def test_update_to_free_unique_value_succeeds(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert an update to an unclaimed unique value is persisted."""
+        row = await _two_keyed_rows(session)
+        row.key = "gamma"
+
+        saved = await UniqueKeyManager.save(session, row)
+
+        assert saved.key == "gamma"
+        assert await UniqueKeyManager.first(session, key="gamma") is not None
+
+    @pytest.mark.asyncio
+    async def test_update_of_non_unique_field_succeeds(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert changing a field outside every unique index raises no conflict."""
+        row = await _two_keyed_rows(session)
+        row.label = "relabelled"
+
+        saved = await UniqueKeyManager.save(session, row)
+
+        assert saved.label == "relabelled"
+        assert saved.key == "beta"
+
+    @pytest.mark.asyncio
+    async def test_create_duplicate_still_raises_conflict(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert the create path keeps rejecting a duplicate with a conflict."""
+        await UniqueKeyManager.save(session, UniqueKeyModel(key="alpha"))
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="UniqueKeyModel with the same key already exists",
+        ):
+            await UniqueKeyManager.create(session, UniqueKeyModel(key="alpha"))
+
+    @pytest.mark.asyncio
+    async def test_conflict_leaves_pending_change_unpersisted(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert a rejected update leaves the stored row untouched.
+
+        ``save`` does not roll back on conflict, so the rejected change stays pending
+        on the instance and it is the caller's session teardown that discards it.
+        """
+        row = await _two_keyed_rows(session)
+        # Read before the rollback expires the instance: touching it afterwards would
+        # need a lazy load, which an async session cannot service.
+        row_id = row.id
+        row.key = "alpha"
+        with pytest.raises(
+            HTTPConflictException,
+            match="UniqueKeyModel with the same key already exists",
+        ):
+            await UniqueKeyManager.save(session, row)
+
+        assert row in session.dirty
+        await session.rollback()
+
+        stored = await UniqueKeyManager.get(session, id=row_id)
+        assert stored.key == "beta"
+
+    @pytest.mark.asyncio
+    async def test_sibling_vacating_its_value_in_session_still_conflicts(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert a vacancy that was never written still reads as occupied.
+
+        The sibling's move off ``alpha`` is pending, and the precheck does not flush
+        it, so the lookup still finds the sibling's stored row and rejects the
+        retarget. Freeing the value takes persisting the sibling's move first.
+        """
+        sibling = await UniqueKeyManager.save(session, UniqueKeyModel(key="alpha"))
+        row = await UniqueKeyManager.save(session, UniqueKeyModel(key="beta"))
+
+        sibling.key = "gamma"
+        row.key = "alpha"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="UniqueKeyModel with the same key already exists",
+        ):
+            await UniqueKeyManager.save(session, row)
+
+    @pytest.mark.asyncio
+    async def test_collision_with_unflushed_sibling_raises_bad_request(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert a collision the precheck cannot see still fails as a bad request.
+
+        The precheck's lookup never flushes, so a sibling that was added to the
+        session but not yet written is invisible to it. The collision then surfaces
+        at commit, where ``DatabaseError`` handling turns it into a bad request
+        rather than letting a bare ``IntegrityError`` escape.
+        """
+        row = await UniqueKeyManager.save(session, UniqueKeyModel(key="beta"))
+        session.add(UniqueKeyModel(key="alpha"))
+        row.key = "alpha"
+
+        # Unmatched, unlike the conflict raises above: this exception carries no
+        # detail, so its only message is the status phrase.
+        with pytest.raises(HTTPBadRequestException):
+            await UniqueKeyManager.save(session, row)
