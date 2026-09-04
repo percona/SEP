@@ -105,8 +105,11 @@ typecheck: venv
 # Report the ty diagnostics a branch adds against BASE_SHA, promoting every rule
 # held at `warn` for the comparison. Advisory in CI: the job shows red without
 # blocking the merge. See docs/development/ty-policy.md under `Enforcement`.
+# BASE_SHA reaches the script through the recipe shell environment, the same
+# channel CI supplies it on — command-line variables are auto-exported, so no
+# caller text is pasted into the recipe. PER_FILE=1 selects per-invocation mode.
 typecheck-diff: venv
-	@"${VENV_BIN}"/python -m scripts.check_ty_diff $(ARGS)
+	@"${VENV_BIN}"/python -m scripts.check_ty_diff $(if $(PER_FILE),--per-file,)
 
 lint: ruff
 

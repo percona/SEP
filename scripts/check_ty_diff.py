@@ -24,9 +24,9 @@ already present at the merge-base never fails a branch that did not introduce
 it — including one an edit merely moved down the file.
 
 Attribution is a baseline delta rather than a test of whether a diagnostic sits
-on an added line, because the consequences of an annotation change land at its
-call sites: reverting one annotation in ``app/inventory/crud.py`` reports at two
-call sites 26 lines below the only line the diff touched. Both passes receive an
+on an added line, because the consequences of an annotation change land at call
+sites the edit itself need not touch; the reconstruction that settled it is in
+``docs/development/ty-policy.md``. Both passes receive an
 identical batch composition, minus the paths that do not exist at the merge-base,
 so a diagnostic that batching suppresses is absent from both counters and cancels
 out of the difference; ``--per-file`` trades runtime for the finest granularity
@@ -196,6 +196,11 @@ def parse_ty_output(text: str) -> list[Diagnostic]:
 def parse_name_status(text: str) -> ChangedFiles:
     """Split ``git diff --name-status`` output into the two passes' file lists.
 
+    A path moved out of ``tests/`` is absent from the base list rather than
+    rebased onto its new name: ``tests/`` is inside ``[tool.ty.src]``, so its
+    diagnostics would otherwise cancel against the production surface they have
+    just entered, where a file the branch merely added has every one counted.
+
     :param text: Raw ``--name-status`` output, rename detection enabled.
     :return: The head and base file lists.
     """
@@ -212,7 +217,7 @@ def parse_name_status(text: str) -> ChangedFiles:
         if not new.endswith(".py") or new.startswith(TEST_ROOT):
             continue
         head.append(new)
-        if old:
+        if old and not old.startswith(TEST_ROOT):
             base.append(old)
             if old != new:
                 renames[old] = new
@@ -357,9 +362,9 @@ def emit_annotations(diagnostics: Sequence[Diagnostic]) -> None:
 def _table_cell(text: str) -> str:
     """Return a value escaped so it cannot split its Markdown table row.
 
-    ty spells union types with ``|``, and `invalid-argument-type` — the
-    highest-volume promoted rule — reports them constantly, so an unescaped
-    message would break the table this job's only readable artifact is made of.
+    ty spells union types with ``|`` inside the messages the promoted rules
+    report, so an unescaped message would break the table this job's only
+    readable artifact is made of.
 
     :param text: Raw cell content.
     :return: The content with column separators escaped.

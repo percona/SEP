@@ -277,6 +277,14 @@ jobs:
         with:
           python-version: "3.11.9"
 
+      # `venv`'s own `poetry install` reports nothing to do against the runner's
+      # pre-seeded environment, the same way it does in the `typecheck` job, and
+      # ty then resolves no third-party import. Here that surfaces as false
+      # surplus rather than a false pass: a file the branch adds has no
+      # base-side counterpart for its diagnostics to cancel against.
+      - name: Install dependencies
+        run: poetry sync --no-root --all-extras --all-groups
+
       - name: Report ty diagnostics the branch adds
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

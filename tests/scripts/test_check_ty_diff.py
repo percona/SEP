@@ -296,6 +296,31 @@ def test_renames_map_the_base_pass_back_to_the_old_path():
     assert changed.base == ("app/sep/apps/snippets/models.py",)
 
 
+def test_a_move_out_of_tests_leaves_the_base_pass_empty():
+    """Give a file promoted out of ``tests/`` no baseline to cancel against."""
+    changed = check_ty_diff.parse_name_status(
+        "R091\ttests/app/core/helper.py\tapp/core/helper.py\n"
+    )
+
+    assert changed.head == ("app/core/helper.py",)
+    assert changed.base == ()
+    assert changed.renames == {}
+
+
+def test_a_move_out_of_tests_reports_the_diagnostics_it_carries(monkeypatch, tmp_path):
+    """Count a file's diagnostics as new when the move puts them in production."""
+    moved_row = CRUD_ROW.replace("app/inventory/crud.py", "app/inventory/moved.py")
+    code, spy = _run_main(
+        monkeypatch,
+        tmp_path,
+        "R091\ttests/app/inventory/helper.py\tapp/inventory/moved.py\n",
+        _output(moved_row),
+    )
+
+    assert code == 1
+    assert spy.paths == [["app/inventory/moved.py"]]
+
+
 def test_a_rename_does_not_make_its_existing_diagnostics_surplus(monkeypatch, tmp_path):
     """Compare a moved file's diagnostics under the name the branch gives it."""
     moved_row = CRUD_ROW.replace("app/inventory/crud.py", "app/inventory/moved.py")

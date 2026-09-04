@@ -141,9 +141,13 @@ Re-measured at `b97ee985f`, the branch point the enforcement jobs were written
 against: unchanged at **3,287**, exit **0** — the checked surface is
 byte-identical across that span, since everything merged between the two touches
 only `docs/`, `CONTRIBUTING.md` and a Makefile comment, none of it inside
-`[tool.ty.src].include`. The tree the jobs actually ship on carries two further
-merges and reads **3,284 — 0 error**, exit **0**, measured by the `typecheck`
-job itself.
+`[tool.ty.src].include`. The tree the jobs actually ship on reads **3,284 — 0
+error**, exit **0**, measured by the `typecheck` job itself — over a surface
+that is not the same one. It carries two further merges, and this branch adds
+`scripts/check_ty_diff.py` and `tests/scripts/test_check_ty_diff.py`, both
+inside `[tool.ty.src].include`. Checked on their own at the pinned `ty 0.0.49`
+those two report none, so the count moved with the merges rather than with
+them.
 
 **That job's figure is the one to quote.** A local run of the same commit
 reported 3,288: same ty, same tree, four diagnostics apart, because the two
