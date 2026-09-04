@@ -26,9 +26,11 @@ happened to answer -- they belong to the host, they are collected once, and now 
 are reported once.
 """
 
+import inspect
 import json
 import re
 from pathlib import Path
+from textwrap import dedent
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -39,6 +41,7 @@ from app.sep.apps.om_inventory.inventory import InventoryService
 from app.sep.apps.om_inventory.mapping import MappedService
 from app.sep.apps.om_inventory.models import NodeResolution
 from app.sep.apps.om_inventory.payload import probe
+from app.tasks.execution.utils import minify_file_content
 
 HOST_LINE = (
     '{"service": null, "collected_at": 1, "status": "ok", '
@@ -238,3 +241,38 @@ class TestThePayloadRunsOnOldPython:
             "these would be SyntaxErrors on Python < 3.12: bind the value to a name "
             f"before the f-string instead. {offenders}"
         )
+
+    def test_find_unregistered_survives_minification(self) -> None:
+        """``find_unregistered`` returns the same answer minified as it does here.
+
+        Minifies the function alone (``rename_globals`` would otherwise rename the
+        one top-level name away, the same reason the function is looked up by being
+        the only thing minification left in the namespace rather than by name)
+        with the exact option set ``minify_file_content`` dispatches with, then
+        calls it through a few shapes covering the case that motivated this test: a
+        lone process with no port, both matched and unmatched, alongside a
+        registered and an unrelated one. A silent wrong-answer or
+        ``UnboundLocalError`` here would otherwise reach dispatch with nothing
+        catching it -- exactly what happened to the f-string case above before it
+        was asserted.
+        """
+        source = dedent(inspect.getsource(probe.find_unregistered))
+        minified = minify_file_content(source, "py")
+
+        namespace: dict[str, object] = {}
+        exec(compile(minified, "<minified find_unregistered>", "exec"), namespace)
+        find_unregistered = next(v for v in namespace.values() if callable(v))
+
+        matched = {"pid": 1, "port": None}
+        unmatched = {"pid": 2, "port": None}
+        registered = {"pid": 3, "port": 27017}
+        stranger = {"pid": 4, "port": 27018}
+        targets = [{"port": 27017}]
+
+        assert find_unregistered([matched], targets, frozenset({1})) == []
+        assert find_unregistered([unmatched], targets, frozenset()) == [unmatched]
+        assert find_unregistered([registered], targets, frozenset()) == []
+        assert find_unregistered([stranger], targets, frozenset()) == [stranger]
+        assert find_unregistered(
+            [matched, unmatched, registered, stranger], targets, frozenset({1})
+        ) == [unmatched, stranger]
