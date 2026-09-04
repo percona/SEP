@@ -173,10 +173,12 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     Wired for ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``),
     ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``),
     ``InventoryAppSettings.COLLECTION_INTERVAL`` (``sep__inventory_collection``)
-    and ``OmInventorySettings.SCHEDULE`` (``sep__run_om_probe``) -- each of
-    which the rebuild seeds or drops as the interval is set or cleared, since
-    the app's schedule thunk contributes nothing while it is unset. Rebuilds
-    the system periodic-task set via
+    and ``OmInventorySettings.ENABLED``/``SCHEDULE`` (``sep__run_om_probe``) -- each
+    of which the rebuild seeds or drops as the interval is set or cleared (or, for
+    ``OmInventorySettings``, as PMM's OpenManager switch turns the sweep on or off
+    without touching the configured cadence), since the app's schedule thunk
+    contributes nothing while disabled or unset. Rebuilds the system periodic-task
+    set via
     :func:`app.sep.db.seed.get_system_periodic_tasks` -- which re-reads the now-live
     interval from the refreshed proxy snapshot -- and re-invokes
     :func:`app.core.celery.utils.init_periodic_tasks_db` under the ``sep__`` prefix.
@@ -189,8 +191,9 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
 
     Gating is then re-applied, because preserving it is only true of the **update**
     path. A schedule an app may set to ``None`` -- which is how an app-owned sweep is
-    turned off, and how ``OmInventorySettings.SCHEDULE`` turns off the estate probe
-    -- contributes no task at all while it is null, and the orphan cleanup in
+    turned off, and one of two ways ``OmInventorySettings`` turns off the estate
+    probe, the other being ``ENABLED`` -- contributes no task at all while it is null,
+    and the orphan cleanup in
     ``init_periodic_tasks_db`` deletes its row. Setting it again takes the *create*
     path, which builds a fresh row at the model's default ``enabled``, so a disabled
     app would start running on the next beat tick. This is the same pair
@@ -273,6 +276,10 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         (
             SettingClassEnum.SEP_SETTINGS,
             "APP_DRAIN",
+        ): _reseed_system_periodic_tasks,
+        (
+            OmInventorySettings.__name__,
+            "ENABLED",
         ): _reseed_system_periodic_tasks,
         (
             OmInventorySettings.__name__,

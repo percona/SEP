@@ -38,23 +38,23 @@ from app.sep.apps.om_inventory.schema import om_inventory_schema
 
 
 def _om_inventory_periodic_tasks() -> list[AppPeriodicTask]:
-    """Contribute the periodic sweep while it is configured.
+    """Contribute the periodic sweep while it is enabled and configured.
 
-    A callable rather than a list literal because ``SCHEDULE`` may be ``None`` to
-    unregister the sweep, so the contribution is variable-length and a literal would
-    commit to a fixed set at ``BaseApp(...)`` construction.
+    A callable rather than a list literal because ``ENABLED``/``SCHEDULE`` may make
+    the sweep unregistered, so the contribution is variable-length and a literal
+    would commit to a fixed set at ``BaseApp(...)`` construction.
 
-    That the ``None`` check lives *inside* the thunk is what makes ``SCHEDULE``
-    genuinely hot in both directions: turning the sweep back on over ``PATCH /config``
-    re-registers the task on the next registry rebuild, where a literal guarded by an
-    import-time ``if`` would have decided once and stayed decided.
+    That the checks live *inside* the thunk is what makes both settings genuinely hot
+    in both directions: turning the sweep back on over ``PATCH /config`` re-registers
+    the task on the next registry rebuild, where a literal guarded by an import-time
+    ``if`` would have decided once and stayed decided.
 
     The sweep is what keeps the estate current at all: no endpoint probes, so with no
     schedule a row only changes when someone posts to ``/runs``.
 
-    :return: The sweep contribution, or an empty list when it is disabled.
+    :return: The sweep contribution, or an empty list when disabled or unconfigured.
     """
-    if om_inventory_settings.SCHEDULE is None:
+    if not om_inventory_settings.ENABLED or om_inventory_settings.SCHEDULE is None:
         return []
     return [
         AppPeriodicTask(
