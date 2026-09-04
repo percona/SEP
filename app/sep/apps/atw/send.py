@@ -635,7 +635,8 @@ async def _resolve_plan_after_refresh(
 
     Every send resolves against a snapshot no older than itself, so a rotated
     secret, a repointed endpoint, or a first-time enabling write takes effect
-    even when this worker child's refresher has not yet advanced.
+    even when this worker child's task-boundary refresher has not yet run
+    (boundary refresh does not advance mid-task or while a child is idle).
 
     A failed republish must not escape and must not invent a fixed reason: this
     runs ahead of the broad terminal guard, so an escaping error would leave the

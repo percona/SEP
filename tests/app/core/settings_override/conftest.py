@@ -42,6 +42,13 @@ from tests.app.db_schema import apply_schema
 #: Importable path patched when tests replace ``start_refresh_task``.
 START_REFRESH_TASK = "app.core.settings_override.worker.start_refresh_task"
 
+#: Importable path patched when tests replace ``bounded_seed``.
+BOUNDED_SEED = "app.core.settings_override.worker.bounded_seed"
+
+#: Importable path patched when tests replace ``refresh_all`` under the worker
+#: boundary path (``bounded_refresh`` calls into lifecycle).
+WORKER_REFRESH_ALL = "app.core.settings_override.lifecycle.refresh_all"
+
 #: Storage tokens for ``SettingOverride.setting_class`` (SCREAMING_SNAKE).
 ALERT_SETTINGS_TOKEN = setting_class_token(AlertSettings)
 ANONYMIZER_SETTINGS_TOKEN = setting_class_token(AnonymizerSettings)
@@ -103,6 +110,27 @@ def recording_start_refresh_task(
         return asyncio.create_task(asyncio.sleep(3600))
 
     return _fake_start
+
+
+def recording_bounded_seed(
+    recorded: dict[str, object],
+) -> Callable[..., Awaitable[bool]]:
+    """Build a stand-in ``bounded_seed`` that records the seed budget.
+
+    :param recorded: Mutable mapping filled with ``seed_timeout`` from each
+        invocation.
+    :return: An async callable matching ``bounded_seed``'s signature.
+    """
+
+    async def _fake_seed(
+        session_maker_factory: object,
+        proxies: object,
+        seed_timeout: float | None,
+    ) -> bool:
+        recorded["seed_timeout"] = seed_timeout
+        return True
+
+    return _fake_seed
 
 
 @pytest.fixture(autouse=True)

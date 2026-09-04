@@ -445,9 +445,13 @@ class SettingsOverrideOptions(BaseCaseInsensitiveModel):
 
     :param REFRESH_INTERVAL: How often each service refreshes its DB-backed
         setting overrides. Defaults to 30 seconds, and must be strictly
-        positive: ``start_refresh_task()`` hands ``interval.total_seconds()``
-        straight to ``asyncio.sleep()``, so a non-positive value would turn the
-        refresher into a tight loop that hammers the database every iteration.
+        positive. In a web process this is the wall-clock delay between
+        periodic refresh cycles (``start_refresh_task`` hands
+        ``interval.total_seconds()`` to ``asyncio.sleep``). In a prefork
+        worker child it is checked at task boundaries -- at most one refresh
+        per interval per child per refresher -- rather than a free-running
+        timer. A non-positive value is rejected so neither path can hammer
+        the database every iteration.
     :param REFRESHER_ENABLED: Master kill-switch for the DB-override
         background refresher. Tests set this to ``False`` to keep
         ``TestClient`` lifespans hermetic; production leaves it ``True``.

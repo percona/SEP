@@ -23,6 +23,8 @@ __all__ = [
     "ProxyRegistry",
     "RefreshCallback",
     "SnapshotChange",
+    "bounded_refresh",
+    "bounded_seed",
     "fire_change_callbacks",
     "previous_or_base",
     "publish_snapshot",
@@ -54,10 +56,10 @@ logger = logging.getLogger(__name__)
 SessionMakerFactory = Callable[[], async_sessionmaker]
 
 
-def _drain_cancelled_seed_task(task: asyncio.Task) -> None:
-    """Retrieve a finished seed task's exception so it is not logged as unretrieved.
+def _drain_cancelled_refresh_task(task: asyncio.Task) -> None:
+    """Retrieve a finished refresh task's exception so it is not logged as unretrieved.
 
-    :param task: The finished seed task (cancelled tasks are ignored).
+    :param task: The finished refresh task (cancelled tasks are ignored).
     """
     if not task.cancelled():
         task.exception()
@@ -269,6 +271,94 @@ async def refresh_all(
                 )
 
 
+async def bounded_refresh(
+    session_maker_factory: SessionMakerFactory,
+    proxies: ProxyRegistry,
+    budget: float,
+    callbacks: CallbackRegistry | None = None,
+) -> bool:
+    """Run :func:`refresh_all` bounded by ``budget`` seconds.
+
+    Prefer :func:`asyncio.wait` over :func:`asyncio.wait_for`: ``wait_for``
+    awaits the cancelled coroutine's unwind, so a hung
+    ``AsyncSession.__aexit__`` (returning a stuck connection to the pool)
+    would still blow the budget. Cancel without awaiting so the wall-clock
+    bound holds.
+
+    Shared by :func:`bounded_seed` (child/web startup) and
+    :meth:`~app.core.settings_override.worker.WorkerRefresher.maybe_refresh`
+    (task-boundary pull) so neither path can reintroduce ``wait_for``.
+    Callers own their log line on expiry; this helper only returns
+    ``False``.
+
+    :param session_maker_factory: A zero-argument callable returning a
+        service-scoped ``async_sessionmaker``.
+    :param proxies: The wired proxy registry keyed by class identifier.
+    :param budget: Wall-clock budget in seconds for the refresh.
+    :param callbacks: Optional rebind callbacks forwarded to
+        :func:`refresh_all`.
+    :return: ``True`` when the refresh completed; ``False`` when the budget
+        expired.
+    :raises Exception: Re-raises any failure from a completed
+        :func:`refresh_all` -- in practice limited to
+        ``session_maker_factory()`` failures. A budget expiry does not
+        propagate.
+    """
+    refresh_task = asyncio.create_task(
+        refresh_all(session_maker_factory, proxies, callbacks)
+    )
+    done, _ = await asyncio.wait({refresh_task}, timeout=budget)
+    if done:
+        await refresh_task
+        return True
+    refresh_task.cancel()
+    refresh_task.add_done_callback(_drain_cancelled_refresh_task)
+    return False
+
+
+async def bounded_seed(
+    session_maker_factory: SessionMakerFactory,
+    proxies: ProxyRegistry,
+    seed_timeout: float | None,
+) -> bool:
+    """Run an initial override refresh, optionally bounded by ``seed_timeout``.
+
+    When ``seed_timeout`` is ``None`` the seed awaits :func:`refresh_all`
+    unbounded and returns ``True`` on completion. When set, the seed is
+    bounded by :func:`bounded_refresh`; on expiry the timeout is logged at
+    ERROR naming the budget, and ``False`` is returned so the caller can
+    still arm its refresher (periodic loop or task-boundary pull) with
+    unseeded env-only overrides.
+
+    Shared by :func:`start_refresh_task` (web lifespans) and
+    :class:`~app.core.settings_override.worker.WorkerRefresher` (prefork
+    children) so the budget, cancel, and ERROR log cannot drift.
+
+    :param session_maker_factory: A zero-argument callable returning a
+        service-scoped ``async_sessionmaker``.
+    :param proxies: The wired proxy registry keyed by class identifier.
+    :param seed_timeout: Wall-clock budget in seconds for the inline seed, or
+        ``None`` to leave the seed unbounded.
+    :return: ``True`` when the seed completed; ``False`` when the budget
+        expired.
+    :raises Exception: Re-raises any failure from a completed
+        :func:`refresh_all` -- in practice limited to
+        ``session_maker_factory()`` failures. A budget expiry does not
+        propagate.
+    """
+    if seed_timeout is None:
+        await refresh_all(session_maker_factory, proxies)
+        return True
+    seeded = await bounded_refresh(session_maker_factory, proxies, seed_timeout)
+    if not seeded:
+        logger.error(
+            "Initial settings-override refresh exceeded its %.2fs seed "
+            "budget; continuing with unseeded overrides",
+            seed_timeout,
+        )
+    return seeded
+
+
 async def start_refresh_task(
     session_maker_factory: SessionMakerFactory,
     proxies: ProxyRegistry,
@@ -288,14 +378,11 @@ async def start_refresh_task(
     proxies without firing rebind callbacks (long-lived objects are constructed
     against the effective snapshot directly during lifespan startup).
 
-    When ``seed_timeout`` is set, the inline seed is bounded by
-    :func:`asyncio.wait`. On expiry the seed task is cancelled without
-    awaiting its unwind -- so a hung ``AsyncSession.__aexit__`` cannot push
-    the child past the budget -- the timeout is logged at ERROR, and the
-    periodic refresher is still created, so the child starts with unseeded
-    (env-only) overrides rather than without a refresher. When
-    ``seed_timeout`` is ``None`` the seed awaits unbounded, matching the
-    historical behaviour used by the web lifespans.
+    The inline seed always goes through :func:`bounded_seed`. On a
+    ``seed_timeout`` expiry the periodic refresher is still created, so the
+    child starts with unseeded (env-only) overrides rather than without a
+    refresher. When ``seed_timeout`` is ``None`` the seed awaits unbounded,
+    matching the historical behaviour used by the web lifespans.
 
     :param session_maker_factory: A zero-argument callable returning a
         service-scoped ``async_sessionmaker``.
@@ -325,26 +412,7 @@ async def start_refresh_task(
         only ``session_maker_factory()`` failures at startup can break the
         lifespan.
     """
-    if seed_timeout is None:
-        await refresh_all(session_maker_factory, proxies)
-    else:
-        # Prefer ``asyncio.wait`` over ``wait_for``: ``wait_for`` awaits the
-        # cancelled coroutine's unwind, so a hung ``AsyncSession.__aexit__``
-        # (returning a stuck connection to the pool) would still blow the
-        # budget. Cancel without awaiting so the wall-clock bound holds.
-        seed_task = asyncio.create_task(refresh_all(session_maker_factory, proxies))
-        done, _ = await asyncio.wait({seed_task}, timeout=seed_timeout)
-        if done:
-            await seed_task
-        else:
-            seed_task.cancel()
-            seed_task.add_done_callback(_drain_cancelled_seed_task)
-            logger.error(
-                "Initial settings-override refresh exceeded its %.2fs seed "
-                "budget; starting the periodic refresher with unseeded "
-                "overrides",
-                seed_timeout,
-            )
+    await bounded_seed(session_maker_factory, proxies, seed_timeout)
     interval_seconds = interval.total_seconds()
 
     async def _loop() -> None:

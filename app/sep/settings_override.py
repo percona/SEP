@@ -30,7 +30,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any, cast
 
-from celery.signals import worker_process_init, worker_process_shutdown
+from celery.signals import task_prerun, worker_process_init, worker_process_shutdown
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.celery import celery
@@ -193,25 +193,24 @@ _refresher = WorkerRefresher(
 
 @worker_process_init.connect
 def start_sep_settings_override_refresher(**_: Any) -> None:
-    """Start the worker's SEP-side DB-backed settings-override refresher.
+    """Seed and arm the worker's SEP-side DB-backed settings-override refresher.
 
     A second refresher alongside the Tasks-side one in :mod:`app.tasks.celery`:
     the two proxy sets resolve against different databases and ``refresh_all``
     opens one session per call, so one refresher serves exactly one database.
-    Periodic progress is best-effort, advancing only while a task drives
-    ``celery.loop.run_until_complete``; the initial inline refresh still seeds
-    the snapshot before this handler returns, bounded by a fraction of
+    After the inline seed, refreshes are pulled from ``task_prerun`` via
+    :func:`refresh_sep_overrides_if_due`. The seed is bounded by a fraction of
     ``celery.conf.worker_proc_alive_timeout`` so a hanging database cannot
     push the child past the prefork pool's liveness deadline. On seed expiry
-    the periodic refresher still starts and the child runs with env-only
-    overrides until a later cycle lands.
+    the child is still armed and runs with env-only overrides until the next
+    due task boundary.
 
     :raises Exception: Propagates whatever composing the proxy registry or the
         initial inline refresh raises -- a malformed app-owned declaration
         (``TypeError`` / ``ValueError``) or a session-maker failure -- and is
         absorbed the same way. Per-proxy refresh failures and a bounded-seed
         expiry are caught and logged inside the refresher; the latter still
-        starts the periodic task.
+        arms the child for boundary refresh.
     """
     _refresher.start(
         callbacks=WORKER_OVERRIDE_CALLBACKS,
@@ -219,11 +218,24 @@ def start_sep_settings_override_refresher(**_: Any) -> None:
     )
 
 
+@task_prerun.connect
+def refresh_sep_overrides_if_due(**_: Any) -> None:
+    """Refresh SEP-side overrides at this task boundary when the interval is due.
+
+    Passes through to :meth:`WorkerRefresher.maybe_refresh`, which no-ops when
+    disarmed or inside the interval. ``WORKER_OVERRIDE_CALLBACKS`` (PMM client
+    eviction, LOGGING dictConfig) were registered at :meth:`start`, so a
+    changed endpoint or credential still invalidates cached clients before the
+    task body runs.
+    """
+    _refresher.maybe_refresh()
+
+
 @worker_process_shutdown.connect
 def stop_sep_settings_override_refresher(**_: Any) -> None:
-    """Stop and drain the worker's SEP-side refresher on shutdown.
+    """Disarm the worker's SEP-side refresher on shutdown.
 
     A no-op when the refresher never started (disabled, or shutdown fired before
-    init).
+    init). After disarm, :func:`refresh_sep_overrides_if_due` no-ops.
     """
     _refresher.stop()
