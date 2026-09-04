@@ -56,8 +56,11 @@ it is added here**, deliberately.
 
 ## `[tool.ty.src]` is authoritative, and `make typecheck` passes no paths
 
-`make typecheck` runs a bare `ty check` with no path arguments, so the surface
-comes from `[tool.ty.src]` alone.
+`make typecheck` passes no *path* arguments, so the surface comes from
+`[tool.ty.src]` alone. Its only argument is `--python`, which names the
+environment imports resolve against and reads no files of its own; see
+*Installing the pinned group in CI* below for why leaving it off is not an
+option.
 
 The reason is that this leaves exactly **one** definition of the surface. A path
 argument in the Makefile and an `include` list in `pyproject.toml` are two places
@@ -121,7 +124,11 @@ make typecheck  ->  Found 3926 diagnostics   (358 error, 3568 warning), exit 2
 ty check        ->  Found 3926 diagnostics, exit 1
 ```
 
-The two agree because they now carry identical argument lists — none.
+The two agreed because they carried identical argument lists — none. They still
+agree on the surface, though `make typecheck` now also passes `--python`, which
+changes where imports resolve rather than which files are read; a bare
+`ty check` reproduces these counts only from a shell whose active environment is
+the project venv.
 
 That figure predates both the artifact suppressions and SEP-1908's first-party
 fixes. Under the tree as it now stands, measured at `a157c146115c` with the
@@ -401,30 +408,40 @@ than leaving it to be discovered after a gate ships.
 `ty` lives in an optional Poetry group pinned exactly at `0.0.49`, because a
 `0.0.x` beta carries breaking changes between any two versions.
 
-**The layer 1 job installs the dependencies explicitly, and must.** The target's
-`venv` prerequisite looked sufficient — it runs `poetry install --all-extras
---all-groups`, which is how the `bandit` job gets by with no install step of its
-own — but that reasoning does not transfer, and shipping it cost a full CI round
-trip to find out. Measured on the first run of this job: against the runner's
-pre-seeded environment `poetry install` reported *"No dependencies to install or
-update"* while the environment held only `pip` and `wheel`, so ty ran with no
-third-party package resolvable and emitted `unresolved-import` for `fastapi` and
-everything like it.
+**The target names its Python environment explicitly, and must.** ty resolves
+imports against an environment it discovers, and its fallback is whichever
+interpreter is first on `PATH`. The Makefile's `VIRTUAL_ENV` is a *make*
+variable, never exported, so in any shell without the venv activated a bare
+`ty check` resolves against the wrong `site-packages`. That is the CI case:
+measured on the first run of this job, ty searched
+`/opt/hostedtoolcache/Python/3.11.9/x64/.../site-packages` — the runner's
+tool-cache Python — rather than the Poetry venv holding the project's
+dependencies. `typecheck` therefore passes `--python "${VENV}"`, which pins the
+environment without touching the surface: `[tool.ty.src]` still decides which
+files are read.
 
-That failure mode is quiet in the worst way. The run does not error; it reports
-*more* diagnostics than a correct one, and the extra ones look like findings.
+The failure this prevents is quiet in the worst way. Nothing errors; the run
+reports *more* diagnostics than a correct one — 3,730 against 3,288, reproduced
+locally by taking the venv off `PATH` — and the surplus looks like findings.
 Worse, every `ty: ignore` directive covering a third-party shape stops
-suppressing anything and is reported as `unused-ignore-comment` — an
-error-severity rule — so a job in this state fails while telling you to delete
-the suppressions that were doing their job. `bandit` is unaffected because it
-scans source without resolving imports; anything that resolves types is not.
+suppressing anything and is reported as `unused-ignore-comment`, an
+error-severity rule, so the job fails while appearing to demand the deletion of
+189 suppressions that were doing their job. A reader who trusts the output
+deletes them and makes the tree worse.
 
-The rule that generalises: **a job whose tool resolves imports installs the
-dependencies as its own step.** The `test` and `test_postgres` jobs already do,
-and the same reasoning puts `poetry sync --no-root --all-extras --all-groups` in
-the `typecheck` job. Prefer that full form over `--with typecheck`, which
-installs *fewer* groups than `make venv` intends: ty resolves imports against
-what is actually installed, so a thinner environment changes what it reports.
+Two things generalise from it. First, **any tool that resolves imports must be
+told which environment to resolve against** — the same reasoning that makes
+layer 2 resolve the pinned binary rather than take one off `PATH`, applied to
+the environment instead of the executable. Second, **a diagnostic count that
+moves without the tree moving is an environment difference, not a finding**;
+compare the `unresolved-import` count before believing a surplus.
+
+For the same reason the job installs dependencies as its own step
+(`poetry sync --no-root --all-extras --all-groups`) rather than leaning on the
+`venv` prerequisite, matching what `test` and `test_postgres` already do. Prefer
+that full form over `--with typecheck`, which installs *fewer* groups than
+`make venv` intends: ty resolves imports against what is actually installed, so a
+thinner environment changes what it reports.
 
 The exact pin means ty's own behaviour cannot drift under the gate; what can
 drift is the tree beneath it. The SEP team owns the upgrade cadence a blocking

@@ -93,10 +93,14 @@ ruff: venv
 
 # Static type checking (Astral ty). Not part of `lint` or pre-commit; CI runs it
 # as the blocking `typecheck` job. The checked surface is `[tool.ty.src]` rather
-# than a path argument, so this target and that list cannot drift apart. See
-# docs/development/ty-policy.md under `Enforcement`.
+# than a path argument, so this target and that list cannot drift apart.
+# `--python` names the environment because ty otherwise resolves imports against
+# whichever interpreter is first on PATH: VIRTUAL_ENV is a make variable here and
+# is never exported, so a shell without the venv activated silently checks the
+# tree against the wrong site-packages. See docs/development/ty-policy.md under
+# `Enforcement`.
 typecheck: venv
-	@"${VENV_BIN}"/ty check
+	@"${VENV_BIN}"/ty check --python "${VENV}"
 
 # Report the ty diagnostics a branch adds against BASE_SHA, promoting every rule
 # held at `warn` for the comparison. Advisory in CI: the job shows red without
