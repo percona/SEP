@@ -1557,9 +1557,7 @@ export interface paths {
      * @description Return the list of periodic task names for the Inventory plugin.
      *
      *     Hard-coded because the Inventory plugin's periodic tasks are a fixed pair
-     *     (``inventory-sync`` and ``inventory-collection``). The shape matches what the
-     *     React ``usePluginTasks('inventory')`` hook expects: a list of objects with at
-     *     minimum a ``name`` key.
+     *     (``inventory-sync`` and ``inventory-collection``).
      *
      *     :return: The plugin's periodic tasks, each with its name and display name.
      */
@@ -1597,59 +1595,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/apps/inventory/nodes/{node_id}/system-observation': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Inventory Node System Observation
-     * @description Proxy the host-level system observation for a node (read-only).
-     *
-     *     Forwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``
-     *     endpoint via ``InventoryAPI``. This three-segment literal path cannot
-     *     collide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An
-     *     upstream HTTP 404 propagates unchanged, along with the ``detail`` that tells
-     *     a node whose observation has not been collected yet — which the React panel
-     *     renders as an empty state — apart from a node that does not exist.
-     *
-     *     :param node_id: Primary key of the node.
-     *     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
-     *     :return: The host-level system observation payload.
-     */
-    get: operations['inventory_inventory_node_system_observation_api_apps_inventory_nodes__node_id__system_observation_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/apps/inventory/schema': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Schema
-     * @description Return the plugin schema captured at registration time.
-     *
-     *     :return: The plugin schema instance.
-     */
-    get: operations['inventory_get_schema_api_apps_inventory_schema_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/api/apps/inventory/services/{service_id}/check-connectivity/': {
     parameters: {
       query?: never;
@@ -1663,12 +1608,9 @@ export interface paths {
      * Inventory Service Check Connectivity
      * @description Run a database connectivity probe for a service from its executor host.
      *
-     *     Backs the React connectivity control on the service detail page. A probe
-     *     that ran but could not connect is reported as HTTP 200 with
+     *     A probe that ran but could not connect is reported as HTTP 200 with
      *     ``success=false`` and the upstream message in ``error``; only a probe that
-     *     could not be attempted at all is an error status. This three-segment
-     *     literal path cannot collide with the two-segment
-     *     ``/{entity}/{item_id:int}`` detail matcher.
+     *     could not be attempted at all is an error status.
      *
      *     :param service: The service to probe, resolved from the path id.
      *     :param tasks_api: Authenticated Tasks ``RemoteAPI`` client.
@@ -1680,37 +1622,6 @@ export interface paths {
      *         returns an unparseable body.
      */
     post: operations['inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/apps/inventory/services/{service_id}/system-observation': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Inventory Service System Observation
-     * @description Proxy the service-level system observation for a service (read-only).
-     *
-     *     Forwards to the inventory sub-app's
-     *     ``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.
-     *     An upstream HTTP 404 propagates unchanged, along with the ``detail`` that
-     *     tells a service whose observation has not been collected yet — which the
-     *     React panel renders as an empty state — apart from a service that does not
-     *     exist.
-     *
-     *     :param service_id: Primary key of the service.
-     *     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
-     *     :return: The service-level system observation payload.
-     */
-    get: operations['inventory_inventory_service_system_observation_api_apps_inventory_services__service_id__system_observation_get'];
-    put?: never;
-    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1770,61 +1681,13 @@ export interface paths {
      * Inventory Sync Status
      * @description Return whether an inventory-wide sync is running, plus recent run outcomes.
      *
-     *     Replaces the server-rendered ``sync_is_running`` template variable
-     *     used by the Jinja2 inventory page so the React control can poll the
-     *     same state without scraping HTML.
+     *     Lets an operator poll a sync they triggered through ``POST /sync/``
+     *     without scraping any rendered page.
      *
      *     :param session: SQLModel async session.
      *     :return: The running flag and the most recent runs, newest first.
      */
     get: operations['inventory_inventory_sync_status_api_apps_inventory_sync_status__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/apps/inventory/{entity}/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Inventory List Entity
-     * @description List inventory nodes, services, schemas, or tables.
-     *
-     *     :param request: Inbound request; its query string carries entity filters.
-     *     :param entity: Inventory entity type (nodes, services, schemas, tables).
-     *     :param inventory_api: Async client for the Inventory sub-app.
-     *     :param pagination: Validated offset/limit forwarded to the upstream call.
-     *     :param list_query: Allowlist-vetted sort/search for this entity.
-     *     :return: A paginated envelope echoing the requested window.
-     */
-    get: operations['inventory_inventory_list_entity_api_apps_inventory__entity___get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/apps/inventory/{entity}/{item_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Inventory Get Entity
-     * @description Retrieve a single inventory node, service, schema, or table.
-     */
-    get: operations['inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3899,17 +3762,6 @@ export interface components {
       type: string;
       /** Updated At */
       updated_at?: string | null;
-    };
-    /** PaginatedResponse[Any] */
-    PaginatedResponse_Any_: {
-      /** Items */
-      items: unknown[];
-      /** Limit */
-      limit: number;
-      /** Offset */
-      offset: number;
-      /** Total */
-      total: number;
     };
     /** PaginatedResponse[ArbitraryMapping] */
     PaginatedResponse_ArbitraryMapping_: {
@@ -13075,57 +12927,6 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_node_system_observation_api_apps_inventory_nodes__node_id__system_observation_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        node_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_get_schema_api_apps_inventory_schema_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['framework__AppSchema'];
-        };
-      };
-    };
-  };
   inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post: {
     parameters: {
       query?: never;
@@ -13144,37 +12945,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ConnectivityCheckResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_service_system_observation_api_apps_inventory_services__service_id__system_observation_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
         };
       };
       /** @description Validation Error */
@@ -13235,84 +13005,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['inventory__InventorySyncStatusResponse'];
-        };
-      };
-    };
-  };
-  inventory_inventory_list_entity_api_apps_inventory__entity___get: {
-    parameters: {
-      query?: {
-        offset?: number;
-        limit?: number;
-        /** @description Sort key; prefix with '-' for descending order. */
-        sort?:
-          | 'created_at'
-          | '-created_at'
-          | 'name'
-          | '-name'
-          | 'schema_id'
-          | '-schema_id'
-          | 'service_id'
-          | '-service_id';
-        /** @description Case-insensitive search across the searchable columns. */
-        search?: string | null;
-      };
-      header?: never;
-      path: {
-        entity: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PaginatedResponse_Any_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-        item_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

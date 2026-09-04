@@ -162,6 +162,8 @@ default:
     SSL_KEYFILE: null
     APPS:
       - MODULE_NAME: inventory
+        # PMM owns the embedded inventory UI; this app is API-only here.
+        SIDEBAR: false
       - MODULE_NAME: atw
       - MODULE_NAME: mysql_backups
     SYNCERS:
@@ -174,7 +176,6 @@ default:
           - performance_schema
           - mysql
           - information_schema
-      - SYNCER: SystemFactsSyncer
     INVENTORY:
       # PMM re-emits its whole inventory on every sync, so a tombstone here is a
       # genuine removal rather than a gap in a partial feed. Collect daily; the
