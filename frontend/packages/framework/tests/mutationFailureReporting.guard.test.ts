@@ -81,7 +81,6 @@ const REPORTS_ITS_OWN_WAY: Record<string, string> = {
   'apps/atw/src/SendDialog.tsx': 'in-dialog alert reading the mutation error',
   'apps/atw/src/IncidentListPage.tsx': 'inline alert reading the incident-action error',
   'apps/alerts/src/AlertsWizard.tsx': 'wizard-level alert reading the mutation error',
-  'apps/inventory/src/InventorySchedulePage.tsx': 'page-level actionError alert',
   'apps/report/src/ReportResultPage.tsx': 'inline alert reading the mutation error',
 };
 

@@ -15,9 +15,10 @@
 
 """Define tests for the inventory plugin JSON API routes under ``/api/apps/inventory/``.
 
-Path mapping, entity validation, list unwrapping, and query forwarding are
-implemented in ``app.sep.apps.inventory.deps``; see
-``tests/app/sep/apps/inventory/test_deps.py`` for direct unit coverage.
+The plugin is an operator API with no browsable entities, so these cover the
+ad-hoc sync trigger and its status, plugin-task and syncer discovery, the
+per-service connectivity probe, and that the retired entity and schema paths
+stay unregistered.
 """
 
 from collections.abc import Iterator
@@ -29,17 +30,9 @@ from fastapi import HTTPException, status
 from pydantic import SecretStr
 
 from app.core.config import settings
-from app.core.pagination import DEFAULT_PAGINATION_OFFSET, MAX_PAGINATION_LIMIT
 from app.core.requests import RemoteAPI
-from app.inventory.constants import (
-    UNCOLLECTED_HOST_OBSERVATION_DETAIL,
-    UNCOLLECTED_SERVICE_OBSERVATION_DETAIL,
-)
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.inventory.deps import (
-    get_syncers,
-    INVENTORY_PLUGIN_ENTITY_NAMES,
-)
+from app.sep.apps.inventory.deps import get_syncers
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
@@ -57,21 +50,8 @@ from app.sep.models import (
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
 from tests.app.sep.apps.inventory.conftest import no_syncers, PMM_STUB_NAME
 
-_EXPECTED_SCHEMA_ENTITY_COUNT = len(INVENTORY_PLUGIN_ENTITY_NAMES)
 _MYSQL_PORT = 3306
 _TASK_HISTORY_ID = 42
-_ENVELOPE_TOTAL = 7
-_FILTERED_TOTAL = 3
-_PAGE_ITEM_COUNT = 2
-_REQUEST_OFFSET = 2
-_REQUEST_LIMIT = 5
-_UPSTREAM_OFFSET = 99
-_UPSTREAM_LIMIT = 1
-
-# The inventory sub-app's uncollected-observation details, pinned verbatim: the proxy
-# must relay them rather than collapse them onto the parent-missing ``Not Found``.
-_UNCOLLECTED_NODE_DETAIL = "System observation not collected yet for this node"
-_UNCOLLECTED_SERVICE_DETAIL = "System observation not collected yet for this service"
 
 
 class TestInventoryResponseModelsInOpenAPI:
@@ -116,220 +96,6 @@ class TestInventoryResponseModelsInOpenAPI:
         assert "AvailableSyncer" in ref
 
 
-class TestInventorySchemaEndpoint:
-    """Tests for GET /api/apps/inventory/schema."""
-
-    def test_schema_returns_200(self, test_client):
-        """Ensure the schema endpoint returns HTTP 200 with the expected plugin body."""
-        response = test_client.get("/api/apps/inventory/schema")
-        assert response.status_code == status.HTTP_200_OK
-        body = response.json()
-        assert body["name"] == "inventory"
-        assert len(body["entities"]) == _EXPECTED_SCHEMA_ENTITY_COUNT
-
-
-class TestInventoryGateway:
-    """Tests for inventory CRUD proxy routes under ``/api/apps/inventory/``."""
-
-    def test_list_nodes_echoes_request_window_and_preserves_total(
-        self, test_client, mock_inventory_api_dep
-    ):
-        """Ensure the envelope echoes the request window and keeps the upstream total.
-
-        The response ``offset``/``limit`` reflect what the client asked for, not
-        whatever the upstream happened to return; only ``total`` is proxied.
-        """
-        mock_inventory_api_dep.get.return_value = {
-            "items": [{"id": 1, "name": "n"}],
-            "total": _ENVELOPE_TOTAL,
-            "offset": _UPSTREAM_OFFSET,
-            "limit": _UPSTREAM_LIMIT,
-        }
-        response = test_client.get(
-            "/api/apps/inventory/nodes/",
-            params={"offset": _REQUEST_OFFSET, "limit": _REQUEST_LIMIT},
-        )
-        assert response.status_code == status.HTTP_200_OK
-        body = response.json()
-        assert body["items"] == [{"id": 1, "name": "n"}]
-        assert body["total"] == _ENVELOPE_TOTAL
-        assert body["offset"] == _REQUEST_OFFSET
-        assert body["limit"] == _REQUEST_LIMIT
-        mock_inventory_api_dep.get.assert_awaited_once_with(
-            "/nodes/",
-            params={
-                "offset": _REQUEST_OFFSET,
-                "limit": _REQUEST_LIMIT,
-                "sort": "-created_at",
-            },
-        )
-
-    def test_list_forwards_validated_pagination_and_preserves_filters(
-        self, test_client, mock_inventory_api_dep
-    ):
-        """Ensure entity filters survive while validated offset/limit are forwarded."""
-        mock_inventory_api_dep.get.return_value = {"items": [], "total": 0}
-        response = test_client.get(
-            "/api/apps/inventory/nodes/",
-            params={"name": "db1", "limit": _REQUEST_LIMIT},
-        )
-        assert response.status_code == status.HTTP_200_OK
-        mock_inventory_api_dep.get.assert_awaited_once_with(
-            "/nodes/",
-            params={
-                "name": "db1",
-                "offset": DEFAULT_PAGINATION_OFFSET,
-                "limit": _REQUEST_LIMIT,
-                "sort": "-created_at",
-            },
-        )
-
-    def test_list_forwards_validated_sort_and_search(
-        self, test_client, mock_inventory_api_dep
-    ):
-        """Ensure allowlisted sort/search reach upstream as validated query params."""
-        mock_inventory_api_dep.get.return_value = {
-            "items": [{"id": 1}],
-            "total": _FILTERED_TOTAL,
-        }
-        response = test_client.get(
-            "/api/apps/inventory/nodes/",
-            params={"sort": "name", "search": "db1", "limit": _REQUEST_LIMIT},
-        )
-        assert response.status_code == status.HTTP_200_OK
-        body = response.json()
-        assert body["total"] == _FILTERED_TOTAL
-        assert len(body["items"]) == 1
-        mock_inventory_api_dep.get.assert_awaited_once_with(
-            "/nodes/",
-            params={
-                "offset": DEFAULT_PAGINATION_OFFSET,
-                "limit": _REQUEST_LIMIT,
-                "sort": "name",
-                "search": "db1",
-            },
-        )
-
-    def test_list_drops_whitespace_only_search_from_upstream(
-        self, test_client, mock_inventory_api_dep
-    ):
-        """Ensure a blank search is stripped so the raw query value cannot leak upstream."""
-        mock_inventory_api_dep.get.return_value = {"items": [], "total": 0}
-        response = test_client.get(
-            "/api/apps/inventory/nodes/",
-            params={"search": "  ", "sort": "-name", "limit": _REQUEST_LIMIT},
-        )
-        assert response.status_code == status.HTTP_200_OK
-        mock_inventory_api_dep.get.assert_awaited_once_with(
-            "/nodes/",
-            params={
-                "offset": DEFAULT_PAGINATION_OFFSET,
-                "limit": _REQUEST_LIMIT,
-                "sort": "-name",
-            },
-        )
-
-    def test_list_rejects_out_of_allowlist_sort_with_422(
-        self, test_client, mock_inventory_api_dep
-    ):
-        """Ensure an unknown sort key is rejected before any upstream call."""
-        response = test_client.get(
-            "/api/apps/inventory/nodes/",
-            params={"sort": "bogus"},
-        )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        mock_inventory_api_dep.get.assert_not_called()
-
-    def test_list_preserves_upstream_total_not_page_length(
-        self, test_client, mock_inventory_api_dep
-    ):
-        """Ensure the proxied total is the upstream filtered total, never ``len(items)``."""
-        mock_inventory_api_dep.get.return_value = {
-            "items": [{"id": i} for i in range(1, _PAGE_ITEM_COUNT + 1)],
-            "total": _FILTERED_TOTAL,
-            "offset": 0,
-            "limit": _REQUEST_LIMIT,
-        }
-        response = test_client.get(
-            "/api/apps/inventory/schemas/",
-            params={"sort": "service_id", "search": "db", "limit": _REQUEST_LIMIT},
-        )
-        assert response.status_code == status.HTTP_200_OK
-        body = response.json()
-        assert len(body["items"]) == _PAGE_ITEM_COUNT
-        assert body["total"] == _FILTERED_TOTAL
-        assert body["total"] != len(body["items"])
-        mock_inventory_api_dep.get.assert_awaited_once_with(
-            "/schemas/",
-            params={
-                "offset": DEFAULT_PAGINATION_OFFSET,
-                "limit": _REQUEST_LIMIT,
-                "sort": "service_id",
-                "search": "db",
-            },
-        )
-
-    def test_list_rejects_out_of_bounds_limit_with_422(
-        self, test_client, mock_inventory_api_dep
-    ):
-        """Ensure a limit above ``MAX_PAGINATION_LIMIT`` is rejected before any upstream call."""
-        response = test_client.get(
-            "/api/apps/inventory/nodes/",
-            params={"limit": MAX_PAGINATION_LIMIT + 1},
-        )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        mock_inventory_api_dep.get.assert_not_called()
-
-    def test_unknown_entity_404(self, test_client, mock_inventory_api_dep):
-        """Ensure GET on an unknown entity segment returns HTTP 404."""
-        response = test_client.get("/api/apps/inventory/unknown/")
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-
-    @pytest.mark.parametrize(
-        ("entity", "item_id", "inventory_path"),
-        [
-            ("nodes", 3, "/nodes/3"),
-            ("services", 9, "/services/9"),
-            ("schemas", 11, "/schemas/11"),
-            ("tables", 42, "/tables/42"),
-        ],
-    )
-    def test_get_entity_detail_forwards_inventory_path(
-        self,
-        test_client,
-        mock_inventory_api_dep,
-        entity: str,
-        item_id: int,
-        inventory_path: str,
-    ):
-        """Ensure GET ``…/{entity}/{id}`` proxies to the inventory service detail path."""
-        payload = {"id": item_id, "name": "x"}
-        mock_inventory_api_dep.get.return_value = payload
-        response = test_client.get(f"/api/apps/inventory/{entity}/{item_id}")
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == payload
-        mock_inventory_api_dep.get.assert_awaited_once_with(inventory_path)
-
-    def test_get_unknown_entity_detail_returns_404(
-        self, test_client, mock_inventory_api_dep
-    ):
-        """Ensure GET on an unknown entity segment returns HTTP 404 before inventory."""
-        response = test_client.get("/api/apps/inventory/unknown/1")
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-        mock_inventory_api_dep.get.assert_not_called()
-
-
-class TestInventorySchemaCapabilities:
-    """Tests for capabilities flags on the inventory plugin schema."""
-
-    def test_schema_has_scheduling_capability(self, test_client):
-        """Ensure the inventory schema advertises ``scheduling=True``."""
-        response = test_client.get("/api/apps/inventory/schema")
-        assert response.status_code == status.HTTP_200_OK
-        body = response.json()
-        assert body["capabilities"]["scheduling"] is True
-
-
 class TestInventoryPluginTasksEndpoint:
     """Tests for GET /api/apps/inventory/ (plugin task discovery)."""
 
@@ -358,13 +124,6 @@ class TestInventoryPluginTasksEndpoint:
         body = response.json()
         for task in body:
             assert "name" in task
-
-    def test_does_not_clash_with_entity_wildcard(self, test_client):
-        """Ensure ``GET /`` resolves to the tasks handler, not the ``/{entity}/`` wildcard."""
-        response = test_client.get("/api/apps/inventory/")
-        assert response.status_code == status.HTTP_200_OK
-        body = response.json()
-        assert isinstance(body, list)
 
 
 class TestInventoryAvailableSyncersEndpoint:
@@ -426,11 +185,6 @@ class TestInventoryAvailableSyncersEndpoint:
         finally:
             sep_app.dependency_overrides.pop(get_syncers, None)
 
-    def test_does_not_clash_with_entity_wildcard(self, test_client, mock_syncers_dep):
-        """Ensure ``GET /available-syncers/`` does not fall through to ``/{entity}/`` wildcard."""
-        response = test_client.get("/api/apps/inventory/available-syncers/")
-        assert response.status_code == status.HTTP_200_OK
-
 
 class TestInventoryNewRoutesAuthentication:
     """Ensure new plugin discovery routes enforce API authentication."""
@@ -459,19 +213,24 @@ class TestInventoryBearerGate:
         mock_run_sync_funcs["inventory"].assert_not_called()
 
 
-class TestInventoryWriteSurfaceRemoved:
-    """Cover the removal of the inventory plugin create/update/delete routes."""
+class TestInventoryEntitySurfaceRemoved:
+    """Cover the removal of the inventory plugin's entity and schema routes."""
 
     @pytest.mark.parametrize(
         ("method", "path", "json_body"),
         [
+            ("GET", "/api/apps/inventory/nodes/", None),
             ("POST", "/api/apps/inventory/services/", {"name": "db"}),
+            ("GET", "/api/apps/inventory/nodes/3", None),
             ("PUT", "/api/apps/inventory/nodes/3", {"name": "x"}),
             ("DELETE", "/api/apps/inventory/nodes/3", None),
             ("POST", "/api/apps/inventory/unknown/", {"name": "db"}),
+            ("GET", "/api/apps/inventory/nodes/3/system-observation", None),
+            ("GET", "/api/apps/inventory/services/9/system-observation", None),
+            ("GET", "/api/apps/inventory/schema", None),
         ],
     )
-    def test_inventory_write_routes_are_gone(
+    def test_inventory_entity_routes_are_gone(
         self,
         test_client,
         mock_inventory_api_dep,
@@ -479,22 +238,24 @@ class TestInventoryWriteSurfaceRemoved:
         path: str,
         json_body: dict[str, Any] | None,
     ) -> None:
-        """Assert every removed write verb 405s and never reaches the API.
+        """Assert every retired path 404s and never reaches the inventory API.
 
-        405 rather than 404 because the paths survive for GET: ``/{entity}/``
-        and ``/{entity}/{item_id:int}`` are still registered, so Starlette
-        resolves the path and rejects the method before any handler runs. The
-        unknown-entity case lands the same way: the wildcard ``{entity}``
-        matches any segment, so the verb is rejected before
-        ``require_inventory_plugin_entity`` can raise its 404.
+        404 rather than 405: nothing is registered under these paths any more,
+        so Starlette fails to resolve them before it ever compares methods. The
+        whole entity surface is covered here — list, detail, both
+        system-observation sub-resources and the app schema — which is what
+        leaves ``/api/apps/inventory/`` an operator API with no browsable
+        entities.
 
-        The client is authenticated on purpose — that the route is gone for an
+        The client is authenticated on purpose: that the route is gone for an
         authorized caller is strictly stronger than rejecting an unauthorized
-        one.
+        one. The bearer gate is a router-level dependency, so an unregistered
+        path never reaches it and cannot answer 401 instead.
         """
         kwargs = {"json": json_body} if json_body is not None else {}
         response = test_client.request(method, path, **kwargs)
-        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        mock_inventory_api_dep.get.assert_not_called()
         mock_inventory_api_dep.post.assert_not_called()
         mock_inventory_api_dep.put.assert_not_called()
         mock_inventory_api_dep.delete.assert_not_called()
@@ -742,145 +503,15 @@ class TestInventorySyncStatus:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-class TestInventorySystemObservation:
-    """Tests for the read-only system-observation proxy routes.
-
-    Cover both the host (node) and service endpoints across the
-    facts-present (200) and not-collected (404) paths. The 404 originates in
-    the inventory sub-app and must propagate unchanged so the React panel can
-    render its empty state instead of an error toast.
-    """
-
-    @pytest.mark.parametrize(
-        ("url", "inventory_path", "payload"),
-        [
-            (
-                "/api/apps/inventory/nodes/3/system-observation",
-                "/nodes/3/system-observation",
-                {
-                    # Host observation shape: os_version, installed_packages,
-                    # config; no db_engine_version.
-                    "os_version": "Ubuntu 22.04",
-                    "installed_packages": {"openssl": "3.0.2"},
-                    "config": {"max_connections": 100},
-                    "observed_at": "2026-06-01T12:00:00Z",
-                },
-            ),
-            (
-                "/api/apps/inventory/services/9/system-observation",
-                "/services/9/system-observation",
-                {
-                    # Service observation shape: db_engine_version only.
-                    "db_engine_version": "8.0.36",
-                    "observed_at": "2026-06-01T12:00:00Z",
-                },
-            ),
-        ],
-    )
-    def test_system_observation_present_returns_200(
-        self,
-        test_client,
-        mock_inventory_api_dep,
-        url: str,
-        inventory_path: str,
-        payload: dict[str, Any],
-    ):
-        """Ensure a present observation proxies through with HTTP 200 and forwards the sub-resource path."""
-        mock_inventory_api_dep.get.return_value = payload
-        response = test_client.get(url)
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == payload
-        mock_inventory_api_dep.get.assert_awaited_once_with(inventory_path)
-
-    @pytest.mark.parametrize(
-        ("url", "detail"),
-        [
-            (
-                "/api/apps/inventory/nodes/3/system-observation",
-                _UNCOLLECTED_NODE_DETAIL,
-            ),
-            (
-                "/api/apps/inventory/services/9/system-observation",
-                _UNCOLLECTED_SERVICE_DETAIL,
-            ),
-        ],
-    )
-    def test_system_observation_not_collected_passes_through_404(
-        self,
-        test_client,
-        mock_inventory_api_dep,
-        url: str,
-        detail: str,
-    ):
-        """Ensure the upstream not-collected detail reaches the gateway response body.
-
-        The inventory sub-app answers the existing-but-uncollected case with its own
-        ``detail`` while a missing node/service keeps the default ``Not Found``.
-        ``RemoteAPI`` re-raises the upstream detail verbatim, so the discrimination
-        must survive the proxy with no gateway-side handling.
-        """
-        mock_inventory_api_dep.get.side_effect = HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=detail,
-        )
-        response = test_client.get(url)
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.json()["detail"] == detail
-
-    @pytest.mark.parametrize(
-        "url",
-        [
-            "/api/apps/inventory/nodes/3/system-observation",
-            "/api/apps/inventory/services/9/system-observation",
-        ],
-    )
-    def test_system_observation_parent_missing_passes_through_default_404(
-        self,
-        test_client,
-        mock_inventory_api_dep,
-        url: str,
-    ):
-        """Ensure a missing node/service keeps the default ``Not Found`` detail."""
-        mock_inventory_api_dep.get.side_effect = HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Not Found",
-        )
-        response = test_client.get(url)
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.json()["detail"] == "Not Found"
-
-    def test_pinned_details_match_inventory_constants(self):
-        """Hold the pinned proxy details equal to the sub-app's own constants.
-
-        The literals this class asserts against are a separate copy of the strings
-        the inventory routes raise. Without this guard, rewording the constants
-        leaves these proxy tests green against wording the sub-app no longer sends.
-        """
-        assert _UNCOLLECTED_NODE_DETAIL == UNCOLLECTED_HOST_OBSERVATION_DETAIL
-        assert _UNCOLLECTED_SERVICE_DETAIL == UNCOLLECTED_SERVICE_OBSERVATION_DETAIL
-
-    @pytest.mark.parametrize(
-        "url",
-        [
-            "/api/apps/inventory/nodes/3/system-observation",
-            "/api/apps/inventory/services/9/system-observation",
-        ],
-    )
-    def test_system_observation_requires_authentication(
-        self,
-        unauthenticated_client,
-        url: str,
-    ):
-        """Without API auth the system-observation endpoints return 401."""
-        response = unauthenticated_client.get(url)
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+class TestInventorySyncStatusOpenAPI:
+    """Cover the response-model shape of GET /api/apps/inventory/sync/status/."""
 
     def test_openapi_schema_is_named_model_not_inline_dict(self):
         """The 200 response schema must reference a named model, not an inline dict.
 
         ``dict[str, bool]`` generates a free-form ``additionalProperties``
         schema; ``InventorySyncStatusResponse`` generates a ``$ref`` to a named
-        component. The React client's generated hooks depend on a stable schema
+        component. The generated ``@sep/api`` types depend on a stable schema
         name, so this assertion guards against regression to the untyped form.
         """
         prior_schema = sep_app.openapi_schema

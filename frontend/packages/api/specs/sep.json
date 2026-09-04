@@ -617,35 +617,6 @@
         "title": "Node",
         "type": "object"
       },
-      "PaginatedResponse_Any_": {
-        "properties": {
-          "items": {
-            "items": {},
-            "title": "Items",
-            "type": "array"
-          },
-          "limit": {
-            "title": "Limit",
-            "type": "integer"
-          },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "offset",
-          "limit"
-        ],
-        "title": "PaginatedResponse[Any]",
-        "type": "object"
-      },
       "PaginatedResponse_ArbitraryMapping_": {
         "properties": {
           "items": {
@@ -17735,7 +17706,7 @@
     },
     "/api/apps/inventory/": {
       "get": {
-        "description": "Return the list of periodic task names for the Inventory plugin.\n\nHard-coded because the Inventory plugin's periodic tasks are a fixed pair\n(``inventory-sync`` and ``inventory-collection``). The shape matches what the\nReact ``usePluginTasks('inventory')`` hook expects: a list of objects with at\nminimum a ``name`` key.\n\n:return: The plugin's periodic tasks, each with its name and display name.",
+        "description": "Return the list of periodic task names for the Inventory plugin.\n\nHard-coded because the Inventory plugin's periodic tasks are a fixed pair\n(``inventory-sync`` and ``inventory-collection``).\n\n:return: The plugin's periodic tasks, each with its name and display name.",
         "operationId": "inventory_inventory_plugin_tasks_api_apps_inventory__get",
         "responses": {
           "200": {
@@ -17785,74 +17756,9 @@
         ]
       }
     },
-    "/api/apps/inventory/nodes/{node_id}/system-observation": {
-      "get": {
-        "description": "Proxy the host-level system observation for a node (read-only).\n\nForwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``\nendpoint via ``InventoryAPI``. This three-segment literal path cannot\ncollide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An\nupstream HTTP 404 propagates unchanged, along with the ``detail`` that tells\na node whose observation has not been collected yet — which the React panel\nrenders as an empty state — apart from a node that does not exist.\n\n:param node_id: Primary key of the node.\n:param inventory_api: Authenticated inventory ``RemoteAPI`` client.\n:return: The host-level system observation payload.",
-        "operationId": "inventory_inventory_node_system_observation_api_apps_inventory_nodes__node_id__system_observation_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "node_id",
-            "required": true,
-            "schema": {
-              "title": "Node Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Inventory Inventory Node System Observation Api Apps Inventory Nodes  Node Id  System Observation Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Inventory Node System Observation",
-        "tags": [
-          "inventory"
-        ]
-      }
-    },
-    "/api/apps/inventory/schema": {
-      "get": {
-        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "inventory_get_schema_api_apps_inventory_schema_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/framework__AppSchema"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Schema",
-        "tags": [
-          "inventory"
-        ]
-      }
-    },
     "/api/apps/inventory/services/{service_id}/check-connectivity/": {
       "post": {
-        "description": "Run a database connectivity probe for a service from its executor host.\n\nBacks the React connectivity control on the service detail page. A probe\nthat ran but could not connect is reported as HTTP 200 with\n``success=false`` and the upstream message in ``error``; only a probe that\ncould not be attempted at all is an error status. This three-segment\nliteral path cannot collide with the two-segment\n``/{entity}/{item_id:int}`` detail matcher.\n\n:param service: The service to probe, resolved from the path id.\n:param tasks_api: Authenticated Tasks ``RemoteAPI`` client.\n:return: The upstream probe result.\n:raises HTTPBadRequestException: When the service cannot be probed —\n    unsupported type, missing node or port, or no executor registered for\n    the node address.\n:raises HTTPBadGatewayException: When the Tasks API is unreachable or\n    returns an unparseable body.",
+        "description": "Run a database connectivity probe for a service from its executor host.\n\nA probe that ran but could not connect is reported as HTTP 200 with\n``success=false`` and the upstream message in ``error``; only a probe that\ncould not be attempted at all is an error status.\n\n:param service: The service to probe, resolved from the path id.\n:param tasks_api: Authenticated Tasks ``RemoteAPI`` client.\n:return: The upstream probe result.\n:raises HTTPBadRequestException: When the service cannot be probed —\n    unsupported type, missing node or port, or no executor registered for\n    the node address.\n:raises HTTPBadGatewayException: When the Tasks API is unreachable or\n    returns an unparseable body.",
         "operationId": "inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post",
         "parameters": [
           {
@@ -17888,49 +17794,6 @@
           }
         },
         "summary": "Inventory Service Check Connectivity",
-        "tags": [
-          "inventory"
-        ]
-      }
-    },
-    "/api/apps/inventory/services/{service_id}/system-observation": {
-      "get": {
-        "description": "Proxy the service-level system observation for a service (read-only).\n\nForwards to the inventory sub-app's\n``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.\nAn upstream HTTP 404 propagates unchanged, along with the ``detail`` that\ntells a service whose observation has not been collected yet — which the\nReact panel renders as an empty state — apart from a service that does not\nexist.\n\n:param service_id: Primary key of the service.\n:param inventory_api: Authenticated inventory ``RemoteAPI`` client.\n:return: The service-level system observation payload.",
-        "operationId": "inventory_inventory_service_system_observation_api_apps_inventory_services__service_id__system_observation_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "service_id",
-            "required": true,
-            "schema": {
-              "title": "Service Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Inventory Inventory Service System Observation Api Apps Inventory Services  Service Id  System Observation Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Inventory Service System Observation",
         "tags": [
           "inventory"
         ]
@@ -17980,7 +17843,7 @@
     },
     "/api/apps/inventory/sync/status/": {
       "get": {
-        "description": "Return whether an inventory-wide sync is running, plus recent run outcomes.\n\nReplaces the server-rendered ``sync_is_running`` template variable\nused by the Jinja2 inventory page so the React control can poll the\nsame state without scraping HTML.\n\n:param session: SQLModel async session.\n:return: The running flag and the most recent runs, newest first.",
+        "description": "Return whether an inventory-wide sync is running, plus recent run outcomes.\n\nLets an operator poll a sync they triggered through ``POST /sync/``\nwithout scraping any rendered page.\n\n:param session: SQLModel async session.\n:return: The running flag and the most recent runs, newest first.",
         "operationId": "inventory_inventory_sync_status_api_apps_inventory_sync_status__get",
         "responses": {
           "200": {
@@ -17995,170 +17858,6 @@
           }
         },
         "summary": "Inventory Sync Status",
-        "tags": [
-          "inventory"
-        ]
-      }
-    },
-    "/api/apps/inventory/{entity}/": {
-      "get": {
-        "description": "List inventory nodes, services, schemas, or tables.\n\n:param request: Inbound request; its query string carries entity filters.\n:param entity: Inventory entity type (nodes, services, schemas, tables).\n:param inventory_api: Async client for the Inventory sub-app.\n:param pagination: Validated offset/limit forwarded to the upstream call.\n:param list_query: Allowlist-vetted sort/search for this entity.\n:return: A paginated envelope echoing the requested window.",
-        "operationId": "inventory_inventory_list_entity_api_apps_inventory__entity___get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "entity",
-            "required": true,
-            "schema": {
-              "title": "Entity",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "maximum": 200,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "description": "Sort key; prefix with '-' for descending order.",
-            "in": "query",
-            "name": "sort",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Sort key; prefix with '-' for descending order.",
-              "enum": [
-                "created_at",
-                "-created_at",
-                "name",
-                "-name",
-                "schema_id",
-                "-schema_id",
-                "service_id",
-                "-service_id"
-              ],
-              "title": "Sort"
-            }
-          },
-          {
-            "description": "Case-insensitive search across the searchable columns.",
-            "in": "query",
-            "name": "search",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Case-insensitive search across the searchable columns.",
-              "title": "Search"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse_Any_"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Inventory List Entity",
-        "tags": [
-          "inventory"
-        ]
-      }
-    },
-    "/api/apps/inventory/{entity}/{item_id}": {
-      "get": {
-        "description": "Retrieve a single inventory node, service, schema, or table.",
-        "operationId": "inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "entity",
-            "required": true,
-            "schema": {
-              "title": "Entity",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "item_id",
-            "required": true,
-            "schema": {
-              "title": "Item Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Inventory Inventory Get Entity Api Apps Inventory  Entity   Item Id  Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Inventory Get Entity",
         "tags": [
           "inventory"
         ]

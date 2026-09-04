@@ -109,6 +109,11 @@ def embedded_profile_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Pat
     instantiation, so a copy in the process CWD is what a freshly constructed
     class reads.
 
+    ``ENCRYPTION_KEY`` is deliberately absent from :data:`SUITE_ENV_OVERRIDES`,
+    so the suite-wide key survives the strip loop: the baked profile carries no
+    key of its own, and an environment variable is how a real deployment
+    supplies one.
+
     :param tmp_path: The per-test temporary directory.
     :param monkeypatch: The environment and CWD patcher.
     :return: The directory holding the profile copy.
