@@ -31,11 +31,13 @@ from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.lifecycle import (
+    bounded_seed,
     fire_change_callbacks,
     previous_or_base,
     ProxyEntry,
     refresh_all,
     resolve_refresher_options,
+    settings_override_refresher,
     SnapshotChange,
     start_refresh_task,
 )
@@ -375,6 +377,111 @@ async def test_start_refresh_task_cancellable(
     with pytest.raises(asyncio.CancelledError):
         await task
     assert task.cancelled()
+
+
+@pytest.mark.asyncio
+async def test_start_refresh_task_creates_a_named_periodic_task(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Keep the web-path periodic ``_loop`` task after the worker pull rewrite."""
+    _proxy, registry = _make_proxies()
+    task = await start_refresh_task(
+        lambda: session_maker, registry, interval=timedelta(seconds=3600)
+    )
+    try:
+        assert task.get_name() == "settings-override-refresher"
+        assert not task.done()
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_settings_override_refresher_keeps_the_periodic_task(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Assert the web lifespan still drives a timer-based background refresher."""
+    _proxy, registry = _make_proxies()
+    async with settings_override_refresher(
+        lambda: session_maker,
+        registry,
+        interval=timedelta(seconds=3600),
+        enabled=True,
+    ):
+        named = [
+            task
+            for task in asyncio.all_tasks()
+            if task.get_name() == "settings-override-refresher"
+        ]
+        assert len(named) == 1
+        assert not named[0].done()
+
+
+@pytest.mark.asyncio
+async def test_settings_override_refresher_disabled_creates_no_periodic_task(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Leave the web lifespan a no-op when the refresher is disabled."""
+    _proxy, registry = _make_proxies()
+    async with settings_override_refresher(
+        lambda: session_maker,
+        registry,
+        interval=timedelta(seconds=3600),
+        enabled=False,
+    ):
+        named = [
+            task
+            for task in asyncio.all_tasks()
+            if task.get_name() == "settings-override-refresher"
+        ]
+        assert named == []
+
+
+@pytest.mark.asyncio
+async def test_bounded_seed_completes_and_returns_true(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Seed overrides through the shared helper and report success."""
+    proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    async with session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SEP_SETTINGS_TOKEN,
+                key="CONNECTIVITY_CHECK_DEFAULT",
+                value=override_value,
+            ),
+        )
+
+    seeded = await bounded_seed(lambda: session_maker, registry, seed_timeout=5.0)
+
+    assert seeded is True
+    assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+
+@pytest.mark.asyncio
+async def test_bounded_seed_expiry_returns_false_and_logs_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Cancel a hanging seed without awaiting unwind; log ERROR naming the budget."""
+    _proxy, registry = _make_proxies()
+    seed_timeout = 0.05
+
+    with caplog.at_level("ERROR", logger="app.core.settings_override.lifecycle"):
+        seeded = await asyncio.wait_for(
+            bounded_seed(hanging_session_maker_factory, registry, seed_timeout),
+            timeout=1.0,
+        )
+
+    assert seeded is False
+    assert any(
+        record.levelname == "ERROR"
+        and f"{seed_timeout:.2f}s" in record.message
+        and "unseeded" in record.message
+        for record in caplog.records
+    )
 
 
 _CALLBACK_KEY = (SettingClassEnum.SEP_SETTINGS, "CONNECTIVITY_CHECK_DEFAULT")
