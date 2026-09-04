@@ -67,10 +67,12 @@ app acts on.
 
 Inventory has no page of its own — it is an API-only app. The syncers author the
 catalog: PMM supplies nodes and services, and the MySQL syncer discovers schemas and
-tables from the database itself. A recurring scheduled sync keeps the catalog current,
-and the other apps read it when they list the hosts and services you can act on. An
-ad-hoc sync and a connectivity check for MySQL, PostgreSQL, and MongoDB services are
-available as API calls under `/api/apps/inventory/`.
+tables from the database itself. Where a sync interval is configured, a recurring
+scheduled sync keeps the catalog current, and the other apps read it when they list the
+hosts and services you can act on. An ad-hoc sync and a connectivity check for MySQL,
+PostgreSQL, and MongoDB services are available as API calls under
+`/api/apps/inventory/`, and the recurring schedule is created and adjusted through the
+periodic-task API under `/api/tasks/periodic/`.
 
 **What it runs:** an `inventory-sync` background job (runs syncer code on the SEP worker, not
 on a database host) and a connectivity check dispatched as a Nomad `run-python` task that
