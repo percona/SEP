@@ -46,6 +46,7 @@ __all__ = [
     "is_nested_overridable_parent",
     "iter_class_fields",
     "iter_nested_leaf_keys",
+    "iter_type_arguments",
     "materialize_override_value",
     "materialize_template",
     "materialize_via_owning_model",
@@ -1265,7 +1266,7 @@ class FieldMetadata:
     is_advanced: bool = False
 
 
-def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
+def iter_type_arguments(annotation: Any) -> Iterator[Any]:
     """Yield every type argument referenced by ``annotation`` recursively.
 
     Walks unions, generic containers (``list[X]``, ``dict[K, V]``, etc.) and
@@ -1307,7 +1308,7 @@ SECRET_STR_MASK = "**********"  # noqa: S105 # nosec B105
 def _field_contains_secret(field_info: FieldInfo) -> bool:
     """Return whether ``field_info`` exposes a Pydantic secret anywhere in its annotation.
 
-    Walks the annotation recursively via :func:`_iter_type_arguments`
+    Walks the annotation recursively via :func:`iter_type_arguments`
     (nested models and imported concrete subclasses of polymorphic bases),
     looking for :class:`pydantic.SecretStr` or :class:`pydantic.SecretBytes`.
 
@@ -1315,7 +1316,7 @@ def _field_contains_secret(field_info: FieldInfo) -> bool:
     :return: ``True`` when a secret type is reachable from the annotation.
     """
     secret_types = (SecretStr, SecretBytes)
-    for arg in _iter_type_arguments(field_info.annotation):
+    for arg in iter_type_arguments(field_info.annotation):
         if isinstance(arg, type) and issubclass(arg, secret_types):
             return True
     return False
@@ -1378,7 +1379,7 @@ def is_credential_url_field(field_info: FieldInfo) -> bool:
     """Return whether ``field_info`` serializes as a credential-bearing URL."""
     if _metadata_has_credential_url_serializer(field_info.metadata):
         return True
-    for arg in _iter_type_arguments(field_info.annotation):
+    for arg in iter_type_arguments(field_info.annotation):
         if _metadata_has_credential_url_serializer(getattr(arg, "__metadata__", ())):
             return True
     return False
@@ -1985,7 +1986,7 @@ def _field_is_complex(annotation: Any) -> bool:
         annotation (top-level or inside a union / generic container).
     :rtype: bool
     """
-    for arg in _iter_type_arguments(annotation):
+    for arg in iter_type_arguments(annotation):
         if isinstance(arg, type) and issubclass(arg, BaseModel):
             return True
     return False

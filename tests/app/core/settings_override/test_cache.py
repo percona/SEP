@@ -22,12 +22,15 @@ from string import Template
 from types import SimpleNamespace
 
 import pytest
+from cryptography.fernet import Fernet
 from pydantic import BaseModel, computed_field
 from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.config import AlertSettings
 from app.core.alerts.models import BaseAlertProvider
+from app.core.config import Settings
+from app.core.encryption import encrypt
 from app.core.settings_override import cache
 from app.core.settings_override.cache import (
     _build_nested_update,
@@ -36,17 +39,31 @@ from app.core.settings_override.cache import (
 )
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.registry import MaterializerPurpose
+from app.core.utils.fields import LogLevel
 from app.sep.config import CookieOptions, SEPSettings
 from app.tasks.config import PreExecutionCheckMode, TasksSettings
 from app.tasks.execution.executors.nomad import NomadExecutor
 from tests.app.core.settings_override.conftest import (
     ALERT_SETTINGS_TOKEN,
     insert_override_row,
+    PMM_ENDPOINT,
     SEP_SETTINGS_TOKEN,
+    SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
 
 _NOMAD_OVERRIDE_TIMEOUT = 30
+_PMM_API_KEY = "pmm-api-key"
+_ROUTING_KEY = "pd-routing-key"
+
+
+def _foreign_token(value: str = "written under another key") -> str:
+    """Return ciphertext minted with a key the configured one cannot decrypt.
+
+    :param value: The plaintext to encrypt with the foreign key.
+    :return: The foreign Fernet token.
+    """
+    return Fernet(Fernet.generate_key()).encrypt(value.encode()).decode("ascii")
 
 
 @pytest.mark.asyncio
@@ -802,3 +819,115 @@ def test_parent_base_value_falls_back_to_field_default() -> None:
     field_info = SEPSettings.model_fields["SESSION_REFRESH"]
     result = _parent_base_value({}, field_info, "SESSION_REFRESH", base_settings=None)
     assert isinstance(result, CookieOptions)
+
+
+@pytest.mark.asyncio
+async def test_secret_leaf_decrypted_before_materialization(
+    session: AsyncSession,
+) -> None:
+    """An encrypted secret leaf is decrypted before the row is coerced."""
+    await insert_override_row(
+        session,
+        setting_class=SETTINGS_TOKEN,
+        key="PMM",
+        value={"endpoint": PMM_ENDPOINT, "api_key": encrypt(_PMM_API_KEY)},
+    )
+    snapshot = await build_snapshot(session, Settings)
+    assert snapshot["PMM"].api_key.get_secret_value() == _PMM_API_KEY
+    assert snapshot["PMM"].endpoint == PMM_ENDPOINT
+
+
+@pytest.mark.asyncio
+async def test_legacy_plaintext_secret_row_still_resolves(
+    session: AsyncSession,
+) -> None:
+    """A row written before the re-encryption migration keeps resolving."""
+    await insert_override_row(
+        session,
+        setting_class=SETTINGS_TOKEN,
+        key="PMM",
+        value={"endpoint": PMM_ENDPOINT, "api_key": _PMM_API_KEY},
+    )
+    snapshot = await build_snapshot(session, Settings)
+    assert snapshot["PMM"].api_key.get_secret_value() == _PMM_API_KEY
+
+
+@pytest.mark.asyncio
+async def test_undecryptable_secret_row_logged_and_skipped(
+    session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A row encrypted under another key is dropped with a decryption warning.
+
+    The key is absent from the snapshot rather than retained, so the proxy
+    falls back to the YAML/env value instead of serving a stale credential.
+    """
+    caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
+    await insert_override_row(
+        session,
+        setting_class=SETTINGS_TOKEN,
+        key="PMM",
+        value={"endpoint": PMM_ENDPOINT, "api_key": _foreign_token()},
+    )
+    await insert_override_row(
+        session,
+        setting_class=SETTINGS_TOKEN,
+        key="LOGGING",
+        value="DEBUG",
+    )
+    snapshot = await build_snapshot(session, Settings)
+    assert "PMM" not in snapshot
+    assert snapshot["LOGGING"] is LogLevel.DEBUG
+    assert any("decrypt" in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_nested_secret_row_decrypted(session: AsyncSession) -> None:
+    """A ``__``-delimited row whose whole value is the secret is decrypted."""
+    await insert_override_row(
+        session,
+        setting_class=SETTINGS_TOKEN,
+        key="PMM__API_KEY",
+        value=encrypt(_PMM_API_KEY),
+    )
+    snapshot = await build_snapshot(session, Settings)
+    assert snapshot["PMM"].api_key.get_secret_value() == _PMM_API_KEY
+
+
+@pytest.mark.asyncio
+async def test_undecryptable_nested_secret_row_logged_and_skipped(
+    session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An undecryptable nested leaf is skipped without failing its siblings."""
+    caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
+    await insert_override_row(
+        session,
+        setting_class=SETTINGS_TOKEN,
+        key="PMM__API_KEY",
+        value=_foreign_token(),
+    )
+    await insert_override_row(
+        session,
+        setting_class=SETTINGS_TOKEN,
+        key="PMM__ENDPOINT",
+        value=PMM_ENDPOINT,
+    )
+    snapshot = await build_snapshot(session, Settings)
+    assert snapshot["PMM"].endpoint == PMM_ENDPOINT
+    assert snapshot["PMM"].api_key is None
+    assert any("decrypt" in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_materializer_backed_provider_secret_decrypted(
+    session: AsyncSession,
+) -> None:
+    """A materializer-backed ``PROVIDERS`` row resolves its routing key in plaintext."""
+    await insert_override_row(
+        session,
+        setting_class=ALERT_SETTINGS_TOKEN,
+        key="PROVIDERS",
+        value=[{"PROVIDER": "pagerduty", "routing_key": encrypt(_ROUTING_KEY)}],
+    )
+    snapshot = await build_snapshot(session, AlertSettings)
+    provider = next(iter(snapshot["PROVIDERS"]))
+    assert provider.routing_key.get_secret_value() == _ROUTING_KEY

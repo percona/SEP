@@ -82,6 +82,7 @@ from app.core.settings_override.registry import (
     resolve_nested_value,
     unwrap_secrets_for_storage,
 )
+from app.core.settings_override.secret_storage import encrypt_secret_leaves
 
 ClassEntry = tuple[str, type[BaseYamlSettings], OverridableSettingsProxy]
 
@@ -1357,7 +1358,9 @@ async def _stage_and_commit_overrides(
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
     """
     for key, value in to_apply:
-        stored_value = unwrap_secrets_for_storage(value)
+        stored_value = encrypt_secret_leaves(
+            settings_cls, key, unwrap_secrets_for_storage(value)
+        )
         existing_rows = await override_rows_for_key(
             session,
             settings_cls=settings_cls,
