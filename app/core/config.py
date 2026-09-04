@@ -672,7 +672,7 @@ class Settings(BaseYamlSettings):
     ALLOW_CONCURRENT_SESSIONS: bool = False
     SECRET_KEY: SecretStr = SecretStr(secrets.token_urlsafe(32))
     SEP_INTERNAL_TOKEN: SecretStr | None = None
-    ENCRYPTION_KEY: SecretStr | None = None
+    ENCRYPTION_KEY: SecretStr
     LOGGING: LogLevel = hot_field(LogLevel.WARNING)  # ty: ignore[invalid-assignment]
     LOGGING_CONFIG: dict[str, Any] = {}
     SSL_CAFILE: RelativeFilePathField | None = None
@@ -755,28 +755,35 @@ class Settings(BaseYamlSettings):
         self.SEP_INTERNAL_TOKEN = SecretStr(derived)
         return self
 
-    @model_validator(mode="after")
-    def validate_encryption_key(self) -> Self:
+    @model_validator(mode="before")
+    @classmethod
+    def validate_encryption_key(cls, data: Any) -> Any:
         """Reject an unset, empty, or malformed ``ENCRYPTION_KEY``.
 
-        The field is declared ``SecretStr | None`` rather than required so this
-        validator runs at all: pydantic resolves required-field presence before
-        any ``after`` model validator, so an absent required key would fail with
-        a generic ``Field required`` instead of the remediation below. ``None``
-        is a sentinel for "absent", never a usable key: every reachable
-        ``encrypt`` / ``decrypt`` call has passed this check.
+        The check runs ``before`` field validation so that an absent key reports
+        the remediation below rather than a generic ``Field required``: pydantic
+        resolves required-field presence ahead of any ``after`` model validator,
+        so an ``after`` check never sees the absent case at all. Running here
+        instead lets the field stay non-optional, which is what it is — nothing
+        downstream ever reads a ``None`` key.
 
-        :return: Validated settings carrying a usable ``ENCRYPTION_KEY``.
+        :param data: The assembled settings sources, before field validation.
+        :return: ``data`` unchanged, once the key is known usable.
         :raises ValueError: If the key is unset, empty, or not a valid Fernet key.
         """
-        key = self.ENCRYPTION_KEY.get_secret_value() if self.ENCRYPTION_KEY else ""
+        if not isinstance(data, dict):
+            return data
+        supplied = data.get("ENCRYPTION_KEY")
+        key = (
+            supplied.get_secret_value() if isinstance(supplied, SecretStr) else supplied
+        )
         if not key:
             raise ValueError(_ENCRYPTION_KEY_ERROR)
         try:
-            Fernet(key.encode())
-        except ValueError as exc:
+            Fernet(key.encode() if isinstance(key, str) else key)
+        except (TypeError, ValueError) as exc:
             raise ValueError(_ENCRYPTION_KEY_ERROR) from exc
-        return self
+        return data
 
     @classmethod
     def settings_customise_sources(

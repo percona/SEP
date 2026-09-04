@@ -171,6 +171,17 @@ def test_is_encrypted_false_for_plaintext(value: str):
     assert is_encrypted(value) is False
 
 
+def test_is_encrypted_true_for_shortest_real_token():
+    """Assert the shortest token this key can mint is not reported as plaintext.
+
+    CBC pads even an empty plaintext to a full block, so ``encrypt("")`` sits
+    exactly on the 73-byte floor. This pins that floor from above, where the
+    undersized-shape test below pins it from below: raising it by one would make
+    a migration re-encrypt a value that was already encrypted.
+    """
+    assert is_encrypted(encrypt("")) is True
+
+
 def test_is_encrypted_false_for_undersized_token_shape():
     """Assert a value too short to be a Fernet token is reported as plaintext.
 
@@ -194,17 +205,6 @@ def test_is_encrypted_never_raises(value: str):
     :param value: The malformed value under test.
     """
     assert is_encrypted(value) is False
-
-
-def test_unset_key_raises(monkeypatch: pytest.MonkeyPatch):
-    """Refuse to build a cipher when the key was patched away after construction.
-
-    :param monkeypatch: The settings patcher.
-    """
-    monkeypatch.setattr(settings, "ENCRYPTION_KEY", None)
-
-    with pytest.raises(RuntimeError, match="ENCRYPTION_KEY"):
-        encrypt("hunter2")
 
 
 def test_fernet_is_cached(monkeypatch: pytest.MonkeyPatch):

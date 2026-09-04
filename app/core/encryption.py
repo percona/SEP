@@ -54,21 +54,13 @@ class DecryptionError(ValueError):
 def _get_fernet() -> Fernet:
     """Return the process-wide cipher built from ``settings.ENCRYPTION_KEY``.
 
-    Cached so the key is resolved once per process; ``cache_clear()`` resets it
-    between tests. Deferred behind an accessor rather than built at module
-    scope so importing this module resolves no settings.
+    Cached so the key is resolved once per process; ``cache_clear()`` resets it.
+    Deferred behind an accessor rather than built at module scope so importing
+    this module resolves no settings.
 
     :return: The cached cipher.
-    :raises RuntimeError: If ``ENCRYPTION_KEY`` is unset.
-    :raises ValueError: Propagates from ``Fernet`` if ``ENCRYPTION_KEY`` is set
-        but malformed.
-        :meth:`~app.core.config.Settings.validate_encryption_key` refuses to
-        construct settings in either case, so both mean a patched environment.
     """
-    key = settings.ENCRYPTION_KEY
-    if key is None:
-        raise RuntimeError("ENCRYPTION_KEY must be configured.")
-    return Fernet(key.get_secret_value().encode())
+    return Fernet(settings.ENCRYPTION_KEY.get_secret_value().encode())
 
 
 def encrypt(value: str) -> str:
@@ -76,8 +68,6 @@ def encrypt(value: str) -> str:
 
     :param value: The plaintext to encrypt.
     :return: The ciphertext, storable in any text or JSON column.
-    :raises RuntimeError: Propagates from :func:`_get_fernet` when
-        ``ENCRYPTION_KEY`` is unset.
     """
     return _get_fernet().encrypt(value.encode()).decode("ascii")
 
@@ -85,22 +75,18 @@ def encrypt(value: str) -> str:
 def decrypt(value: str) -> str:
     """Return the plaintext behind ``value``.
 
-    ``value`` is encoded here rather than handed over as text: Fernet narrows a
-    ``str`` token with ``ascii``, and :mod:`base64` turns that failure into a
-    plain ``ValueError`` its ``binascii.Error`` handler does not catch, so a
-    non-ASCII stored value would escape uncaught rather than as the failure this
-    function documents.
-
     :param value: The ciphertext to decrypt.
     :return: The decrypted plaintext.
     :raises DecryptionError: If ``value`` is not ciphertext this key produced,
         which covers a legacy plaintext value, a corrupt one, and one encrypted
         under a different key alike. Use :func:`is_encrypted` to tell those
         apart; this exception does not.
-    :raises RuntimeError: Propagates from :func:`_get_fernet` when
-        ``ENCRYPTION_KEY`` is unset.
     """
     try:
+        # Encode before handing the token over: Fernet narrows a str with
+        # ascii, and base64 turns that failure into a plain ValueError its
+        # binascii.Error handler does not catch, so a non-ASCII stored value
+        # would escape uncaught instead of as DecryptionError.
         return _get_fernet().decrypt(value.encode()).decode()
     except InvalidToken as exc:
         raise DecryptionError(

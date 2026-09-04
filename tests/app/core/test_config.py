@@ -516,10 +516,18 @@ class TestDeriveInternalToken:
 class TestEncryptionKey:
     """Cover ENCRYPTION_KEY validation and the absence of any committed key."""
 
-    def test_unset_key_fails(self):
-        """Reject an absent key with the actionable remediation message."""
+    def test_unset_key_fails(self, monkeypatch):
+        """Reject an absent key with the actionable remediation message.
+
+        The suite-wide key is cleared so no channel supplies one, which is the
+        state a fresh checkout starts in and the case the message exists for.
+
+        :param monkeypatch: The environment patcher.
+        """
+        monkeypatch.delenv("ENCRYPTION_KEY", raising=False)
+
         with pytest.raises(ValidationError, match="ENCRYPTION_KEY must be set"):
-            Settings(ENCRYPTION_KEY=None)
+            Settings()
 
     def test_empty_key_fails(self):
         """Reject an empty key, which reads as configured but cannot encrypt."""
