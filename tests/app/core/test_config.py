@@ -15,12 +15,16 @@
 
 """Define tests for the app.core.config module."""
 
+import base64
 import hashlib
 import hmac
+import secrets
 import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import yaml
+from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from pydantic import AliasChoices, Field, SecretStr, ValidationError
 from pydantic_settings import (
@@ -36,6 +40,7 @@ from pydantic_settings.sources import (
     InitSettingsSource,
 )
 
+from app import BASE_DIR
 from app.core.alerts.config import AlertSettings
 from app.core.auth.config import AuthSettings
 from app.core.config import (
@@ -50,6 +55,10 @@ from app.core.config import (
     Settings,
     settings,
     YamlPrefixConfigSettingsSource,
+)
+from app.core.settings_override.registry import (
+    field_reload_classification,
+    ReloadClassification,
 )
 from app.inventory.config import InventorySettings
 from app.sep.apps.alerts.config import AlertsSettings
@@ -502,6 +511,118 @@ class TestDeriveInternalToken:
         """An empty secret key with no explicit token fails fast at construction."""
         with pytest.raises(ValidationError, match="SECRET_KEY must be set"):
             Settings(SECRET_KEY=SecretStr(""), SEP_INTERNAL_TOKEN=None)
+
+
+class TestEncryptionKey:
+    """Cover ENCRYPTION_KEY validation and the absence of any committed key."""
+
+    def test_unset_key_fails(self, monkeypatch):
+        """Reject an absent key with the actionable remediation message.
+
+        The suite-wide key is cleared so no channel supplies one, which is the
+        state a fresh checkout starts in and the case the message exists for.
+
+        :param monkeypatch: The environment patcher.
+        """
+        monkeypatch.delenv("ENCRYPTION_KEY", raising=False)
+
+        with pytest.raises(ValidationError, match="ENCRYPTION_KEY must be set"):
+            Settings()
+
+    def test_empty_key_fails(self):
+        """Reject an empty key, which reads as configured but cannot encrypt."""
+        with pytest.raises(ValidationError, match="ENCRYPTION_KEY must be set"):
+            Settings(ENCRYPTION_KEY=SecretStr(""))
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "not-a-fernet-key",
+            secrets.token_hex(32),
+            base64.urlsafe_b64encode(b"x" * 16).decode("ascii"),
+        ],
+        ids=["garbage", "openssl-rand-hex-32", "sixteen-byte-key"],
+    )
+    def test_malformed_key_fails(self, value):
+        """Reject a value Fernet cannot build a cipher from.
+
+        ``openssl rand -hex 32`` is covered explicitly: it is the remediation
+        ``SECRET_KEY`` documents and it yields 64 characters Fernet refuses, so
+        this case pins the remediation text against regressing to ``-hex``.
+        """
+        with pytest.raises(ValidationError, match="ENCRYPTION_KEY must be set"):
+            Settings(ENCRYPTION_KEY=SecretStr(value))
+
+    def test_valid_key_accepted(self):
+        """Accept a freshly generated Fernet key and keep it wrapped."""
+        key = Fernet.generate_key().decode("ascii")
+
+        instance = Settings(ENCRYPTION_KEY=SecretStr(key))
+
+        assert isinstance(instance.ENCRYPTION_KEY, SecretStr)
+        assert instance.ENCRYPTION_KEY.get_secret_value() == key
+
+    def test_no_key_is_committed(self):
+        """Reject a key resolved from the committed profile, whatever the environment.
+
+        The values this key protects are real credentials, and the repository is
+        public, so a committed key would be readable by anyone. Every
+        environment supplies its own; nothing ships one.
+        """
+        profile = yaml.safe_load(
+            (BASE_DIR / "settings.yaml").read_text(encoding="utf-8")
+        )
+
+        assert not [
+            name for name, block in profile.items() if "ENCRYPTION_KEY" in block
+        ]
+
+    def test_key_is_masked(self):
+        """Mask the key everywhere a settings dump could carry it."""
+        key = Fernet.generate_key().decode("ascii")
+
+        instance = Settings(ENCRYPTION_KEY=SecretStr(key))
+        dumps = [
+            repr(instance.ENCRYPTION_KEY),
+            repr(instance),
+            str(instance.model_dump()),
+            instance.model_dump_json(),
+        ]
+
+        assert all(dumps)
+        assert not [dump for dump in dumps if key in dump]
+
+    def test_key_resolves_from_secret_file(self, tmp_path, monkeypatch):
+        """Resolve the key from a mounted file named after the canonical variable.
+
+        The suite-wide key is cleared first because an environment variable
+        outranks a secret file, so leaving it set would test the environment
+        channel a second time rather than the file one.
+
+        :param tmp_path: The directory mounted as ``SECRETS_DIR``.
+        :param monkeypatch: The environment patcher.
+        """
+        monkeypatch.delenv("ENCRYPTION_KEY", raising=False)
+        key = Fernet.generate_key().decode("ascii")
+        (tmp_path / "ENCRYPTION_KEY").write_text(f"{key}\n", encoding="utf-8")
+
+        instance = Settings(_secrets_dir=tmp_path)
+
+        assert instance.ENCRYPTION_KEY.get_secret_value() == key
+
+    def test_key_is_not_overridable(self):
+        """Classify the key as not overridable, so the DB layer cannot rewrite it.
+
+        The settings-override layer is itself a consumer of this key, so a key
+        the override API could rewrite would orphan every row it had written.
+        """
+        classification = field_reload_classification(
+            Settings.model_fields["ENCRYPTION_KEY"],
+            owner_cls=Settings,
+            field_name="ENCRYPTION_KEY",
+        )
+
+        assert classification is ReloadClassification.NOT_OVERRIDABLE
 
 
 SECRET_FILE_MATRIX = [

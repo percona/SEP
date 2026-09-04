@@ -30,6 +30,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 from aiohttp import web
+from cryptography.fernet import Fernet
 
 from app import BASE_DIR
 from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
@@ -307,6 +308,11 @@ async def run_helper(cwd: Path, **environment: str) -> HelperRun:
     The subprocess runs on this test's event loop, so the stub keeps serving
     while the helper talks to it.
 
+    The base environment carries the secrets a settings build needs but the
+    baked profile does not supply, since the helper degrades to a skipped
+    pre-flight when settings fail to resolve, which would make every token
+    assertion below pass vacuously.
+
     :param cwd: The directory holding the profile the helper should read.
     :param environment: The environment to run with, over a minimal base.
     :return: The completed run.
@@ -316,6 +322,7 @@ async def run_helper(cwd: Path, **environment: str) -> HelperRun:
         "PYTHONPATH": str(BASE_DIR),
         "FASTAPI_ENV": "production_docker",
         "SECRET_KEY": "0" * 32,
+        "ENCRYPTION_KEY": Fernet.generate_key().decode("ascii"),
     }
     started = time.monotonic()
     process = await asyncio.create_subprocess_exec(

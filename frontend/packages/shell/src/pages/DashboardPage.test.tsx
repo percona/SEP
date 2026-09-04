@@ -85,17 +85,21 @@ beforeEach(() => {
 });
 
 describe('DashboardPage', () => {
-  it('links the Targets stat card to the inventory target-hosts view', async () => {
+  it.each([
+    ['stat-nodes', 'Nodes', '1'],
+    ['stat-targets', 'Targets', '4'],
+  ])('renders the %s count without linking anywhere', async (testId, label, value) => {
     const router = renderDashboard();
+    const startingPath = router.state.location.pathname;
 
-    const targetsCard = await screen.findByTestId('stat-targets');
-    expect(targetsCard).toHaveTextContent('Targets');
-    expect(targetsCard).toHaveTextContent('4');
+    const card = await screen.findByTestId(testId);
+    expect(card).toHaveTextContent(label);
+    expect(card).toHaveTextContent(value);
 
-    fireEvent.click(targetsCard);
+    fireEvent.click(card);
 
     await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/inventory/target-hosts');
+      expect(router.state.location.pathname).toBe(startingPath);
     });
   });
 

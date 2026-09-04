@@ -71,9 +71,7 @@ def test_connectable_types_match_the_upstream_probe_enum():
     against. A type present here but not upstream would reach the probe and come
     back as HTTP 422, which the helper reports as a gateway error rather than the
     local misconfiguration it is; a type present upstream but not here is silently
-    unreachable. The literal mirror in
-    ``frontend/packages/apps/inventory/src/ConnectivityControl.tsx`` follows the
-    same set and only decides whether the button is offered.
+    unreachable.
     """
     assert {service_type.value for service_type in CONNECTABLE_SERVICE_TYPES} == {
         probe_type.value for probe_type in ConnectivityServiceType

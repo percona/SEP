@@ -75,8 +75,11 @@ jobs:
         uses: ./.github/actions/setup-python-job
         with:
           python-version: ${{ matrix.python }}
+      # ENCRYPTION_KEY is required to construct settings and is minted per run
+      # rather than stored: migrations encrypt nothing, so the value only has to
+      # be a valid key, and nothing here needs it to outlive the job.
       - name: Check migrations
-        run: AUTH__PROVIDER__CASDOOR__CLIENT_SECRET=notatoken AUTH__PROVIDER__CASDOOR__CLIENT_ID=notatoken make checkmigrations
+        run: AUTH__PROVIDER__CASDOOR__CLIENT_SECRET=notatoken AUTH__PROVIDER__CASDOOR__CLIENT_ID=notatoken ENCRYPTION_KEY="$(make -s encryption-key)" make checkmigrations
 
   test:
     name: test (${{ matrix.python }})

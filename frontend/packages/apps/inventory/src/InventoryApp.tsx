@@ -15,53 +15,15 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useAppSchema, type AppSchema } from '@sep/api';
-import Box from '@mui/material/Box';
-import CircularProgress from '@mui/material/CircularProgress';
-import Typography from '@mui/material/Typography';
-import { InventoryBreadcrumbs } from './InventoryAppNavigation';
-import { InventoryRoutes } from './InventoryRoutes';
-
-export interface InventoryAppProps {
-  /** Optional mock schema for Storybook / offline tests. */
-  mockSchema?: AppSchema;
-  mockEntityItems?: Record<string, Record<string, unknown>[]>;
-}
-
 /**
- * Inventory app — browse nodes, services, schemas, and tables with the same drill-down
- * as the legacy UI (node → services → schemas → tables). Entities are browse-only —
- * no create, no edit, no row or header delete — since the syncers author them (PMM
- * supplies nodes and services; the MySQL syncer discovers schemas and tables); syncing
- * and schedule management stay available.
+ * Inventory app — no browser surface.
+ *
+ * PMM owns the embedded inventory UI and the SEP shell no longer links here.
+ * The retained endpoints under ``/api/apps/inventory/`` are operator API
+ * surfaces: scheduled sync is the normal refresh path, and ad-hoc sync and
+ * connectivity probes are direct API calls. The package survives as a husk so
+ * the shell's lazy import keeps resolving.
  */
-export function InventoryApp({ mockSchema, mockEntityItems }: InventoryAppProps) {
-  const { data: schema, isLoading, error } = useAppSchema('inventory', mockSchema);
-
-  if (isLoading && !schema) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  if (error && !schema) {
-    return (
-      <Box sx={{ py: 4 }}>
-        <Typography color="error">Failed to load app schema: {error.message}</Typography>
-      </Box>
-    );
-  }
-
-  if (!schema) {
-    return null;
-  }
-
-  return (
-    <>
-      <InventoryBreadcrumbs schema={schema} />
-      <InventoryRoutes schema={schema} mockEntityItems={mockEntityItems} />
-    </>
-  );
+export function InventoryApp() {
+  return null;
 }
