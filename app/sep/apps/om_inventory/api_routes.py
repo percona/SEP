@@ -541,10 +541,16 @@ async def patch_config(
     to a driver as a URI, so making it settable here would widen "configure this
     app" into "read a chosen file across the estate".
 
-    A ``SCHEDULE`` change lands without a restart - ``periodic_task_schedules`` is
-    a thunk re-read on registry rebuild - but beat runs as a forked side-car
-    process, which reaches the new value through its own settings refresher rather
-    than through this request.
+    An ``ENABLED`` or ``SCHEDULE`` change lands without a restart -
+    ``periodic_task_schedules`` is a thunk re-read on registry rebuild - but beat
+    runs as a forked side-car process, which reaches the new value through its own
+    settings refresher rather than through this request.
+
+    ``ENABLED`` is what PMM's OpenManager switch calls, via this same route with
+    its ``--sep-token`` credential (see ``require_minimum_role``'s service-principal
+    bypass): it flips independently of ``SCHEDULE``, so the configured cadence
+    survives OpenManager being turned off and back on rather than being
+    overwritten each time.
 
     :param request: The incoming request; its ``app.state`` carries the rebind
         callbacks fired for the keys this changed.
