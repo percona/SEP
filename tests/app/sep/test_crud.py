@@ -15,15 +15,17 @@
 
 """Define tests for the app.sep.crud module."""
 
+import asyncio
 from collections.abc import Awaitable, Callable, Iterator
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import Update
 
+from app.core.db.utils import advisory_lock_key
 from app.core.exceptions import HTTPConflictException
 from app.core.utils.date_time import utc_now
 from app.sep.crud import (
@@ -42,6 +44,7 @@ from app.sep.models import (
     SyncItemWrite,
     SyncStatusEnum,
 )
+from app.sep.sync.constants import SYNC_RUN_LOCK_NAMESPACE
 from app.sep.sync.exceptions import (
     SyncInstanceAlreadyInProgressError,
     SyncItemAlreadyInProgressError,
@@ -308,44 +311,30 @@ class TestSyncInstanceManagerCreate:
     """Test SyncInstanceManager.create."""
 
     @pytest.mark.asyncio
-    async def test_duplicate_raises(self) -> None:
-        """Assert SyncInstanceAlreadyInProgressError for in-progress syncs."""
-        session = AsyncMock()
-        instance_write = MagicMock()
-        instance_write.syncer = "test-syncer"
+    async def test_duplicate_raises(self, session) -> None:
+        """Refuse a new run while an item of an earlier one is still in progress.
 
-        active_items = [_build_sync_item(status=SyncStatusEnum.RUNNING)]
-        mock_result = MagicMock()
-        mock_result.all.return_value = active_items
+        Driven without ``stale_after`` so the item-level conflict is the only thing
+        that can produce the refusal.
+        """
+        await _seed_run(session, item_status=SyncStatusEnum.RUNNING)
 
-        with (
-            patch.object(SyncInstanceManager, "_exec", return_value=mock_result),
-            pytest.raises(SyncInstanceAlreadyInProgressError),
-        ):
-            await SyncInstanceManager.create(session, instance_write)
+        with pytest.raises(SyncInstanceAlreadyInProgressError):
+            await SyncInstanceManager.create(
+                session,
+                SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+            )
 
     @pytest.mark.asyncio
-    async def test_success(self) -> None:
-        """Assert a new SyncInstance is created when no duplicates exist."""
-        session = AsyncMock()
-        instance_write = MagicMock()
-        instance_write.syncer = "test-syncer"
-        expected_instance = MagicMock(spec=SyncInstance)
+    async def test_success(self, session) -> None:
+        """Persist a new run for a syncer holding no in-progress work."""
+        created = await SyncInstanceManager.create(
+            session,
+            SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+        )
 
-        mock_result = MagicMock()
-        mock_result.all.return_value = []
-
-        with (
-            patch.object(SyncInstanceManager, "_exec", return_value=mock_result),
-            patch(
-                "app.sep.crud.BaseSQLModelManager.create",
-                return_value=expected_instance,
-            ) as mock_super_create,
-        ):
-            result = await SyncInstanceManager.create(session, instance_write)
-
-            assert result == expected_instance
-            mock_super_create.assert_awaited_once()
+        persisted = await SyncInstanceManager.first(session, id=created.id)
+        assert persisted.status == SyncStatusEnum.RUNNING
 
 
 # ---------------------------------------------------------------------------
@@ -1246,3 +1235,332 @@ class TestSyncEntityAbsenceManager:
             for row in await SyncEntityAbsenceManager.list(session)
         }
         assert survivors == {("pmm", SyncInventoryEntityTypeEnum.SERVICE)}
+
+
+# ---------------------------------------------------------------------------
+# SyncInstanceManager.create — run exclusivity
+# ---------------------------------------------------------------------------
+
+
+class TestSyncInstanceManagerRunExclusivity:
+    """Test that a syncer can only ever hold one run at a time."""
+
+    @pytest.mark.asyncio
+    async def test_refuses_a_run_that_has_not_written_an_item_yet(
+        self, session
+    ) -> None:
+        """Refuse a second run while the first is still before its first item.
+
+        A run writes no item until it has fetched its snapshot, so the item-level
+        conflict check alone is blind for exactly as long as that fetch takes —
+        long enough for a second worker to start and for both runs to believe they
+        own the syncer.
+        """
+        await SyncInstanceManager.create(
+            session,
+            SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+            stale_after=timedelta(hours=1),
+        )
+
+        with pytest.raises(SyncInstanceAlreadyInProgressError):
+            await SyncInstanceManager.create(
+                session,
+                SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+                stale_after=timedelta(hours=1),
+            )
+
+    @pytest.mark.asyncio
+    async def test_ignores_an_itemless_instance_older_than_stale_after(
+        self, session
+    ) -> None:
+        """Proceed past a run abandoned before it wrote any item.
+
+        Such a run carries no item activity for the reclaim to measure, so it is
+        left ``RUNNING`` forever; the age bound on the instance-level check is what
+        keeps it from fencing the syncer for good.
+        """
+        abandoned = await SyncInstanceManager.save(
+            session,
+            SyncInstance(
+                syncer="test-syncer",
+                status=SyncStatusEnum.RUNNING,
+                created_at=utc_now() - timedelta(hours=3),
+                updated_at=utc_now() - timedelta(hours=3),
+            ),
+        )
+
+        created = await SyncInstanceManager.create(
+            session,
+            SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+            stale_after=timedelta(hours=1),
+        )
+
+        assert created.id != abandoned.id
+
+    @pytest.mark.asyncio
+    async def test_refuses_a_run_whose_row_was_touched_since_the_bound(
+        self, session
+    ) -> None:
+        """Measure a run's age from its last touch, not from when it started.
+
+        A run older than ``stale_after`` that is still being written to is alive,
+        so reading ``created_at`` alone would stop fencing exactly the long sync
+        the bound was meant to protect.
+        """
+        alive = await SyncInstanceManager.save(
+            session,
+            SyncInstance(
+                syncer="test-syncer",
+                status=SyncStatusEnum.RUNNING,
+                created_at=utc_now() - timedelta(hours=3),
+                updated_at=utc_now(),
+            ),
+        )
+
+        with pytest.raises(SyncInstanceAlreadyInProgressError) as refused:
+            await SyncInstanceManager.create(
+                session,
+                SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+                stale_after=timedelta(hours=1),
+            )
+
+        assert str(alive.id) in str(refused.value)
+
+    @pytest.mark.asyncio
+    async def test_names_the_conflicting_run_in_the_refusal(self, session) -> None:
+        """Say which run holds the syncer, and nothing a reader may not see.
+
+        This message is stored verbatim on ``last_sync_error`` and served by the
+        inventory read routes, so it has to identify the conflict for an operator
+        while carrying sync bookkeeping only.
+        """
+        holder = await SyncInstanceManager.create(
+            session,
+            SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+            stale_after=timedelta(hours=1),
+        )
+
+        with pytest.raises(SyncInstanceAlreadyInProgressError) as refused:
+            await SyncInstanceManager.create(
+                session,
+                SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+                stale_after=timedelta(hours=1),
+            )
+
+        message = str(refused.value)
+        assert "test-syncer" in message
+        assert str(holder.id) in message
+
+    @pytest.mark.asyncio
+    async def test_refuses_a_run_whose_instance_is_still_pending(self, session) -> None:
+        """Refuse a second run while the first has not started working yet."""
+        await SyncInstanceManager.save(
+            session,
+            SyncInstance(syncer="test-syncer", status=SyncStatusEnum.PENDING),
+        )
+
+        with pytest.raises(SyncInstanceAlreadyInProgressError):
+            await SyncInstanceManager.create(
+                session,
+                SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+                stale_after=timedelta(hours=1),
+            )
+
+    @pytest.mark.asyncio
+    async def test_refuses_only_the_contended_syncer(self, session) -> None:
+        """Fence one syncer at a time so an unrelated syncer still starts."""
+        await SyncInstanceManager.create(
+            session,
+            SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+            stale_after=timedelta(hours=1),
+        )
+
+        created = await SyncInstanceManager.create(
+            session,
+            SyncInstanceWrite(syncer="other-syncer", status=SyncStatusEnum.RUNNING),
+            stale_after=timedelta(hours=1),
+        )
+
+        assert created.syncer == "other-syncer"
+
+    @pytest.mark.asyncio
+    async def test_allows_a_new_run_once_the_previous_one_finalized(
+        self, session
+    ) -> None:
+        """Keep the sequential path intact for a syncer that ran to completion."""
+        finished = await SyncInstanceManager.create(
+            session,
+            SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+            stale_after=timedelta(hours=1),
+        )
+        await SyncInstanceManager.finalize_run(
+            session, finished.id, failed=False, snapshot_complete=True
+        )
+
+        created = await SyncInstanceManager.create(
+            session,
+            SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+            stale_after=timedelta(hours=1),
+        )
+
+        assert created.id != finished.id
+
+    @pytest.mark.asyncio
+    async def test_itemless_instance_does_not_refuse_without_stale_after(
+        self, session
+    ) -> None:
+        """Keep the item-only refusal where no reclaim policy is configured.
+
+        Without ``stale_after`` nothing would ever clear an instance-level
+        conflict, so the fence would have no bound and could refuse a syncer
+        forever.
+        """
+        await SyncInstanceManager.save(
+            session,
+            SyncInstance(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+        )
+
+        created = await SyncInstanceManager.create(
+            session, SyncInstanceWrite(syncer="test-syncer")
+        )
+
+        assert created.status == SyncStatusEnum.PENDING
+
+    @pytest.mark.asyncio
+    async def test_refuses_without_writing_when_the_lock_is_contended(
+        self, session
+    ) -> None:
+        """Refuse outright while a peer holds the creation lock.
+
+        Waiting for the peer instead would pin a connection to learn what the
+        refusal already says, and the peer is about to own the syncer either way.
+        """
+
+        @asynccontextmanager
+        async def _contended(*_args, **_kwargs):
+            yield False
+
+        with (
+            patch("app.sep.crud.try_pg_advisory_xact_lock", _contended),
+            pytest.raises(SyncInstanceAlreadyInProgressError),
+        ):
+            await SyncInstanceManager.create(
+                session,
+                SyncInstanceWrite(syncer="test-syncer", status=SyncStatusEnum.RUNNING),
+                stale_after=timedelta(hours=1),
+            )
+
+        assert await SyncInstanceManager.list(session, syncer="test-syncer") == []
+
+    @pytest.mark.asyncio
+    async def test_locks_on_a_key_derived_from_the_syncer(self, session) -> None:
+        """Key the lock on the syncer so one syncer does not fence another.
+
+        Two names colliding on the 32-bit digest would cost the loser one scheduled
+        run, which the next tick recovers.
+        """
+        recorded: list[tuple[int, int]] = []
+
+        @asynccontextmanager
+        async def _recording(_session, namespace, key):
+            recorded.append((namespace, key))
+            yield True
+
+        with patch("app.sep.crud.try_pg_advisory_xact_lock", _recording):
+            await SyncInstanceManager.create(
+                session, SyncInstanceWrite(syncer="test-syncer")
+            )
+
+        assert recorded == [(SYNC_RUN_LOCK_NAMESPACE, advisory_lock_key("test-syncer"))]
+
+
+class TestSyncInstanceManagerRunExclusivityOnRealPostgres:
+    """Race ``SyncInstanceManager.create`` against itself on real PostgreSQL.
+
+    SQLite cannot substitute: its single-writer file locking serializes the two
+    callers regardless of whether the fence works, so the race would pass
+    vacuously there.
+    """
+
+    @staticmethod
+    def _unique_syncer() -> str:
+        """Return a syncer name no concurrent xdist worker shares.
+
+        Advisory locks are database-wide while the fixtures isolate workers by
+        schema, so a shared name would let one worker's lock refuse another's
+        caller and the assertions below would pass for the wrong reason.
+        """
+        return f"race-syncer-{uuid4().hex}"
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_only_one_of_two_racing_callers_creates_a_run(
+        self, postgres_session_maker
+    ) -> None:
+        """Let exactly one of two overlapping callers own the syncer."""
+        syncer = self._unique_syncer()
+        first_holds_lock = asyncio.Event()
+        second_finished = asyncio.Event()
+        original = SyncInstanceManager._items_in_progress
+
+        async def _pause_the_first_caller(session, name):
+            if not first_holds_lock.is_set():
+                first_holds_lock.set()
+                await asyncio.wait_for(second_finished.wait(), timeout=30)
+            return await original(session, name)
+
+        async def _create() -> SyncInstance:
+            async with postgres_session_maker() as session:
+                return await SyncInstanceManager.create(
+                    session,
+                    SyncInstanceWrite(syncer=syncer, status=SyncStatusEnum.RUNNING),
+                    stale_after=timedelta(hours=1),
+                )
+
+        async def _create_after_the_first_holds_the_lock() -> SyncInstance:
+            await asyncio.wait_for(first_holds_lock.wait(), timeout=30)
+            try:
+                return await _create()
+            finally:
+                second_finished.set()
+
+        with patch.object(
+            SyncInstanceManager, "_items_in_progress", _pause_the_first_caller
+        ):
+            outcomes = await asyncio.gather(
+                _create(),
+                _create_after_the_first_holds_the_lock(),
+                return_exceptions=True,
+            )
+
+        created = [outcome for outcome in outcomes if isinstance(outcome, SyncInstance)]
+        refused = [
+            outcome
+            for outcome in outcomes
+            if isinstance(outcome, SyncInstanceAlreadyInProgressError)
+        ]
+        assert len(created) == 1, outcomes
+        assert len(refused) == 1, outcomes
+        async with postgres_session_maker() as session:
+            assert len(await SyncInstanceManager.list(session, syncer=syncer)) == 1
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_two_syncers_start_concurrently(self, postgres_session_maker) -> None:
+        """Let different syncers overlap, since neither can own the other's run."""
+        first_syncer, second_syncer = self._unique_syncer(), self._unique_syncer()
+
+        async def _create(syncer: str) -> SyncInstance:
+            async with postgres_session_maker() as session:
+                return await SyncInstanceManager.create(
+                    session,
+                    SyncInstanceWrite(syncer=syncer, status=SyncStatusEnum.RUNNING),
+                    stale_after=timedelta(hours=1),
+                )
+
+        created = await asyncio.gather(_create(first_syncer), _create(second_syncer))
+
+        assert {instance.syncer for instance in created} == {
+            first_syncer,
+            second_syncer,
+        }

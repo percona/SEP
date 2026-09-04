@@ -246,24 +246,33 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         """Enter the asynchronous context manager.
 
         Initializes the database session and creates a new SyncInstance if one does not
-        exist.
+        exist. A syncer refused the run it asked for releases the session again
+        before raising, having entered nothing.
 
         :return: The syncer instance with an active session and SyncInstance.
-        :rtype: BaseSyncer
+        :raises SyncInstanceAlreadyInProgressError: If another run of this syncer
+            already owns it.
         """
         session_maker = get_async_session_maker()
         self._session = session_maker()
         self._session = await self._session.__aenter__()
         if self.sync_instance is None:
-            self.sync_instance = await SyncInstanceManager.create(
-                self._session,
-                SyncInstanceWrite(
-                    syncer=self.get_name(),
-                    status=SyncStatusEnum.RUNNING,
-                ),
-                stale_after=self.stale_run_after,
-                id=self.sync_id,
-            )
+            try:
+                self.sync_instance = await SyncInstanceManager.create(
+                    self._session,
+                    SyncInstanceWrite(
+                        syncer=self.get_name(),
+                        status=SyncStatusEnum.RUNNING,
+                    ),
+                    stale_after=self.stale_run_after,
+                    id=self.sync_id,
+                )
+            except BaseException:
+                # Closed here because a failing __aenter__ is never paired with an
+                # __aexit__, so nothing else would return the connection until the
+                # session is collected.
+                await self._session.close()
+                raise
         return self
 
     async def __aexit__(

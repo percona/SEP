@@ -24,6 +24,11 @@ from typing import Final
 
 from app.sep.models import SyncInventoryEntityTypeEnum
 
+#: Advisory-lock space for per-syncer run ownership. Pair locks live in a space
+#: PostgreSQL keeps separate from single-``bigint`` locks, so this cannot collide
+#: with ``SETTINGOVERRIDE_MIGRATION_LOCK_KEY``.
+SYNC_RUN_LOCK_NAMESPACE: Final = 0x5E795243
+
 #: Inventory API path segment per entity type, for the routes that address one
 #: entity generically rather than through a per-level method.
 INVENTORY_PATH_SEGMENTS: Final = {

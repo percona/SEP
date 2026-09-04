@@ -50,7 +50,7 @@ from app.sep.models import (
     SyncItemWrite,
     SyncStatusEnum,
 )
-from app.sep.sync.exceptions import SyncFailError
+from app.sep.sync.exceptions import SyncFailError, SyncInstanceAlreadyInProgressError
 from app.sep.sync.models import BaseSyncer, BaseTaskSyncer, TaskRunResult
 from app.tasks.models import TaskHistoryStatusEnum
 from tests.app.factories import (
@@ -1163,6 +1163,28 @@ async def test_aexit_persists_the_generation_completeness_verdict(
     assert lifecycle_mocks["finalize_run"].await_args.kwargs["snapshot_complete"] is (
         False
     )
+
+
+@pytest.mark.asyncio
+async def test_aenter_closes_the_session_when_the_run_is_refused(
+    mock_remote_api, lifecycle_syncer_cls, lifecycle_mocks
+):
+    """Close the session opened for a run the syncer turns out not to own.
+
+    A refusal leaves ``__aexit__`` unreached, so nothing else ever closes it, and
+    refusing is the routine outcome of two triggers overlapping rather than a rare
+    one.
+    """
+    lifecycle_mocks["create"].side_effect = SyncInstanceAlreadyInProgressError(
+        detail="A run of syncer 'lifecycle' is being created already.",
+    )
+    syncer = lifecycle_syncer_cls(inventory_api=mock_remote_api)
+
+    with pytest.raises(SyncInstanceAlreadyInProgressError):
+        async with syncer:
+            pytest.fail("a refused run must not enter the body")
+
+    lifecycle_mocks["session"].close.assert_awaited_once()
 
 
 @pytest.mark.parametrize("stale_run_after", [timedelta(0), timedelta(seconds=-1)])

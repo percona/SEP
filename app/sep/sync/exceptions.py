@@ -103,12 +103,17 @@ class SyncInstanceAlreadyInProgressError(SyncError):
     that is already being handled by another synchronizer.
 
     :param sync_items: The synchronization items that are already in progress.
-    :type sync_items: Sequence[SyncItem]
+    :param detail: A message describing a conflict that no item evidences, such as
+        a run that has not written its first item yet. Carries sync bookkeeping
+        only: this type is allowlisted for verbatim storage on
+        ``last_sync_error``, which the inventory read routes serve, so a message
+        it carries must hold nothing a reader may not see — the allowlist is keyed
+        on the type, not on which raising path recorded it.
     """
 
-    def __init__(self, *sync_items: SyncItem) -> None:
+    def __init__(self, *sync_items: SyncItem, detail: str | None = None) -> None:
         self.sync_items = sync_items
-        message = (
+        message = detail or (
             f"A sync instance with this syncer is already in progress for the "
             f"following sync items: {sync_items}."
         )

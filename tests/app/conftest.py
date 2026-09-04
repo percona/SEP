@@ -546,25 +546,41 @@ async def postgres_engine() -> AsyncGenerator[AsyncEngine, None]:
 
 
 @pytest_asyncio.fixture
-async def postgres_session(
+async def postgres_session_maker(
     postgres_engine: AsyncEngine,
-) -> AsyncGenerator[AsyncSession, None]:
-    """Provide a real-PostgreSQL ``AsyncSession`` with the tasks-service tables.
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """Create every ``SQLModel`` table on real PostgreSQL and yield a session maker.
 
-    Create every ``SQLModel`` table (including ``TaskHistory`` with its ``jsonb``
-    ``execution_request``) in the worker schema, yield a session, then drop the
-    tables on teardown. This is the seam reused by the ``func_json_extract``
-    AutoJSON cell and by any test whose subject dispatches on the session bind.
+    The tables (including ``TaskHistory`` with its ``jsonb`` ``execution_request``)
+    go into the worker schema and are dropped on teardown. A maker rather than a
+    session, so a test racing two callers can put each on its own connection.
+
+    :param postgres_engine: The real-PostgreSQL engine to create the tables on.
+    :return: A session maker bound to that engine.
     """
     async with postgres_engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    async_session_maker = get_async_session_maker_from_engine(postgres_engine)
     try:
-        async with async_session_maker() as session:
-            yield session
+        yield get_async_session_maker_from_engine(postgres_engine)
     finally:
         async with postgres_engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.drop_all)
+
+
+@pytest_asyncio.fixture
+async def postgres_session(
+    postgres_session_maker: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[AsyncSession]:
+    """Provide a real-PostgreSQL ``AsyncSession`` with the tasks-service tables.
+
+    The seam for any test whose subject dispatches on the session bind. Take
+    ``postgres_session_maker`` instead where the test needs two sessions at once.
+
+    :param postgres_session_maker: The table-bootstrapped session maker.
+    :return: One session on that maker, closed on teardown.
+    """
+    async with postgres_session_maker() as session:
+        yield session
 
 
 # The client/session fixtures below live here — the always-loaded ancestor conftest —
