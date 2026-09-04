@@ -15,17 +15,13 @@
 
 """Tests for the Tasks-track taskhistory_log_state nomad-cursor migration."""
 
-from pathlib import Path
-
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine
 
 from app.tasks.config import tasks_settings
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
+from tests.app.alembic_paths import ALEMBIC_INI
 
 # The merged head immediately before nomad_offset / allocation_epoch are added
 # (later renamed to producer_fetch_offset / producer_epoch).

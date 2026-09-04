@@ -406,8 +406,8 @@ def _settings_response_from_field(
         is_secret=field_meta.is_secret,
         is_complex=field_meta.is_complex,
         has_override=provenance is not None,
-        updated_at=provenance.updated_at if provenance else None,
-        updated_by=provenance.updated_by if provenance else None,
+        updated_at=provenance.updated_at if provenance is not None else None,
+        updated_by=provenance.updated_by if provenance is not None else None,
         is_advanced=field_meta.is_advanced,
         is_applicable=(
             applicability(setting_class, field_meta)
@@ -1045,6 +1045,10 @@ def build_settings_router(
         :raises HTTPNotFoundException: If the class isn't exposed.
         :raises HTTPUnprocessableEntityException: If any key fails validation;
             no rows are written.
+        :raises HTTPBadGatewayException: For a remote class, when the owning
+            sub-app returns a server error (status >= 500) or is unreachable.
+        :raises IntegrityError: When the replay of a batch that lost the
+            unique-index race conflicts again, which leaves nothing written.
         """
         if setting_class in remote_lookup:
             return await _remote_patch(
@@ -1343,6 +1347,8 @@ async def _persist_overrides(
     :param actor: The username recorded on every row this call writes.
     :return: The stamp written for each applied key. On the replay path this is
         the second attempt's, since the first attempt's writes were rolled back.
+    :raises IntegrityError: When the replay conflicts as well; the batch is
+        rolled back once and retried exactly once, never further.
     """
     token = setting_class_token(settings_cls)
     try:

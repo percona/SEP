@@ -184,20 +184,6 @@ class TestBuildSettingsRouterAppOwned:
         assert group["app_display_name"] is None
         assert group["app_enabled"] is None
 
-    def test_missing_actor_dep_raises(self) -> None:
-        """Reject a router built without ``actor_dep`` rather than record no actor.
-
-        The parameter is deliberately source-breaking: a sub-app that forgets the
-        wiring fails where the router is built, at import, instead of serving
-        PATCHes that silently store no provenance.
-        """
-        with pytest.raises(TypeError, match="actor_dep"):
-            build_settings_router(
-                classes=[],
-                session_dep=Annotated[AsyncSession, Depends(lambda: None)],
-                admin_dep=Depends(lambda: None),
-            )
-
     def test_app_owned_without_resolver_raises(self) -> None:
         """Reject app-owned wiring that omits ``resolve_app_metadata``."""
         with pytest.raises(
@@ -242,4 +228,22 @@ class TestBuildSettingsRouterAppOwned:
                     ),
                 ],
                 resolve_app_metadata=_mock_resolve_app_metadata,
+            )
+
+
+class TestBuildSettingsRouterWiring:
+    """Cover the factory's required-parameter contract, independent of app ownership."""
+
+    def test_missing_actor_dep_raises(self) -> None:
+        """Reject a router built without ``actor_dep`` rather than record no actor.
+
+        The parameter is deliberately source-breaking: a sub-app that forgets the
+        wiring fails where the router is built, at import, instead of serving
+        PATCHes that silently store no provenance.
+        """
+        with pytest.raises(TypeError, match="actor_dep"):
+            build_settings_router(
+                classes=[],
+                session_dep=Annotated[AsyncSession, Depends(lambda: None)],
+                admin_dep=Depends(lambda: None),
             )

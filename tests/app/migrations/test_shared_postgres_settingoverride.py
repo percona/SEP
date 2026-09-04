@@ -21,7 +21,9 @@ and adds the ``updated_by`` actor column. On a shared PostgreSQL database the
 tracks run ``upgrade heads`` against one physical schema, so the guarded
 migrations must apply the DDL exactly once regardless of which track wins the
 race. The real-PostgreSQL cases exercise that cross-track scenario; the SQLite
-cases pin the cross-dialect helpers the guards rely on.
+cases pin the cross-dialect helpers the guards rely on, plus the ``updated_by``
+add-and-drop round trip on the default engine, where ``batch_alter_table``
+recreates the table instead of altering it in place.
 """
 
 import pytest
@@ -565,11 +567,15 @@ def _updated_by_columns(sync_url) -> list[dict]:
 @pytest.mark.postgres
 @pytest.mark.parametrize(
     "order",
-    [("sep", "tasks", "inventory"), ("tasks", "sep", "inventory")],
-    ids=["sep-first", "tasks-first"],
+    [
+        ("sep", "tasks", "inventory"),
+        ("tasks", "sep", "inventory"),
+        ("inventory", "sep", "tasks"),
+    ],
+    ids=["sep-first", "tasks-first", "inventory-first"],
 )
 def test_shared_db_three_track_upgrade_adds_updated_by_once(shared_postgres_db, order):
-    """Add ``updated_by`` exactly once however the three tracks interleave."""
+    """Add ``updated_by`` exactly once whichever track reaches the column first."""
     sync_url = shared_postgres_db
     for section in order:
         command.upgrade(Config(str(ALEMBIC_INI), ini_section=section), "heads")
@@ -670,5 +676,85 @@ def test_shared_db_downgrade_drops_updated_by_and_keeps_the_rows(shared_postgres
             # ``value`` is JSONB, so the driver decodes the stored ``'5'`` back
             # to a Python int rather than the literal that was inserted.
             assert surviving.scalar_one() == _SEEDED_OVERRIDE_VALUE
+    finally:
+        engine.dispose()
+
+
+def _column_exists_in(engine, column_name) -> bool:
+    """Report whether ``settingoverride`` declares ``column_name`` on ``engine``.
+
+    :param engine: A connected engine for the database to inspect.
+    :param column_name: The column to test for.
+    :return: ``True`` when the table declares the column.
+    """
+    return any(
+        column["name"] == column_name
+        for column in inspect(engine).get_columns("settingoverride")
+    )
+
+
+@pytest.fixture
+def sep_sqlite_alembic_config(tmp_path, monkeypatch):
+    """Return an Alembic ``Config`` and sync URL for the sep track on temp SQLite.
+
+    SQLite is the default engine, and ``batch_alter_table`` recreates the table
+    rather than altering it in place, so the add and the drop take a different
+    code path there than the PostgreSQL cases above exercise.
+
+    :param tmp_path: pytest's per-test temporary directory.
+    :param monkeypatch: pytest's attribute patcher, pointing the sep settings at
+        the temp database file.
+    :return: The sep-track ``Config`` and the sync URL of the database it targets.
+    """
+    db_path = tmp_path / "test_sep.sqlite"
+    monkeypatch.setattr(sep_settings.DATABASE, "ENGINE", AsyncDatabaseEngine.SQLITE)
+    monkeypatch.setattr(sep_settings.DATABASE, "HOST", "")
+    monkeypatch.setattr(sep_settings.DATABASE, "NAME", str(db_path))
+    return Config(str(ALEMBIC_INI), ini_section="sep"), f"sqlite:///{db_path}"
+
+
+def test_sqlite_updated_by_round_trips_through_batch_alter(sep_sqlite_alembic_config):
+    """Add, re-add and drop ``updated_by`` on SQLite, leaving the seeded row intact.
+
+    The drop goes through a batch table rebuild, so this pins that the rebuild
+    carries the surviving rows and their values across.
+    """
+    cfg, sync_url = sep_sqlite_alembic_config
+    command.upgrade(cfg, "heads")
+
+    engine = create_engine(sync_url)
+    try:
+        assert _column_exists_in(engine, SETTINGOVERRIDE_UPDATED_BY_COLUMN)
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO settingoverride "
+                    "(setting_class, key, value, is_active, created_at, updated_by) "
+                    "VALUES ('SEP_SETTINGS', 'SYNC_REFRESH_TIME', '5', 1, "
+                    "'2026-01-01 00:00:00', 'alice')"
+                )
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "heads")
+    command.downgrade(cfg, _SEP_PRE_UPDATED_BY_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        assert not _column_exists_in(engine, SETTINGOVERRIDE_UPDATED_BY_COLUMN)
+        with engine.connect() as conn:
+            surviving = conn.execute(
+                text("SELECT value FROM settingoverride WHERE key = :key"),
+                {"key": "SYNC_REFRESH_TIME"},
+            )
+            assert surviving.scalar_one() == _SEEDED_OVERRIDE_VALUE
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "heads")
+    engine = create_engine(sync_url)
+    try:
+        assert _column_exists_in(engine, SETTINGOVERRIDE_UPDATED_BY_COLUMN)
     finally:
         engine.dispose()

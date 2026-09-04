@@ -24,8 +24,8 @@ last saved each override. Deployed rows have no actor and cannot be backfilled,
 so the column is nullable with no server default.
 
 The table is shared with the Tasks and Inventory tracks, which add the same
-column, so the helper guards on the column already being present and the
-whichever track runs first wins.
+column, so the helper guards on the column already being present and whichever
+track runs first wins.
 
 Downgrade drops the column, discarding every recorded actor; the rows and their
 values survive.
