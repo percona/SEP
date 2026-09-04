@@ -399,17 +399,32 @@ than leaving it to be discovered after a gate ships.
 ### Installing the pinned group in CI, and the upgrade cadence
 
 `ty` lives in an optional Poetry group pinned exactly at `0.0.49`, because a
-`0.0.x` beta carries breaking changes between any two versions. A CI job that
-runs `make typecheck` needs no `--with typecheck`: the target depends on `venv`,
-and `venv` runs `poetry install --all-extras --all-groups`. That is how the
-existing `bandit` job already works — a bare `run: make bandit` with no install
-step of its own.
+`0.0.x` beta carries breaking changes between any two versions.
 
-A job that instead runs `poetry sync --no-root --with typecheck` installs
-*fewer* groups than `make venv` does. ty resolves imports against what is
-actually installed, so a thinner environment can change what it reports: the
-figure recorded above was measured under `make typecheck`, and only that form is
-known to reproduce it.
+**The layer 1 job installs the dependencies explicitly, and must.** The target's
+`venv` prerequisite looked sufficient — it runs `poetry install --all-extras
+--all-groups`, which is how the `bandit` job gets by with no install step of its
+own — but that reasoning does not transfer, and shipping it cost a full CI round
+trip to find out. Measured on the first run of this job: against the runner's
+pre-seeded environment `poetry install` reported *"No dependencies to install or
+update"* while the environment held only `pip` and `wheel`, so ty ran with no
+third-party package resolvable and emitted `unresolved-import` for `fastapi` and
+everything like it.
+
+That failure mode is quiet in the worst way. The run does not error; it reports
+*more* diagnostics than a correct one, and the extra ones look like findings.
+Worse, every `ty: ignore` directive covering a third-party shape stops
+suppressing anything and is reported as `unused-ignore-comment` — an
+error-severity rule — so a job in this state fails while telling you to delete
+the suppressions that were doing their job. `bandit` is unaffected because it
+scans source without resolving imports; anything that resolves types is not.
+
+The rule that generalises: **a job whose tool resolves imports installs the
+dependencies as its own step.** The `test` and `test_postgres` jobs already do,
+and the same reasoning puts `poetry sync --no-root --all-extras --all-groups` in
+the `typecheck` job. Prefer that full form over `--with typecheck`, which
+installs *fewer* groups than `make venv` intends: ty resolves imports against
+what is actually installed, so a thinner environment changes what it reports.
 
 The exact pin means ty's own behaviour cannot drift under the gate; what can
 drift is the tree beneath it. The SEP team owns the upgrade cadence a blocking

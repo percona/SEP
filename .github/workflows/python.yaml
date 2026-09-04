@@ -43,6 +43,15 @@ jobs:
         uses: ./.github/actions/setup-python-job
         with:
           python-version: ${{ matrix.python }}
+          cache: poetry
+      # ty resolves imports against what is actually installed, so an
+      # environment missing the project's dependencies reports every third-party
+      # import as unresolved and silently reduces the check to first-party
+      # syntax. `venv`'s own `poetry install` is not enough here: it reports
+      # nothing to do against the runner's pre-seeded environment. The `test`
+      # jobs install explicitly for the same reason.
+      - name: Install dependencies
+        run: poetry sync --no-root --all-extras --all-groups
       - name: Hold error-severity diagnostics at zero
         run: make typecheck
 
