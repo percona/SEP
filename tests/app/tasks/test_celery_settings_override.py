@@ -292,7 +292,7 @@ class TestWorkerRefresherHandlers:
         celery_module._refresher.stop()
         mock_anonymizer = MagicMock(spec=OverridableSettingsProxy)
         monkeypatch.setattr(celery_module, "anonymizer_settings", mock_anonymizer)
-        refresh = mocker.patch("app.core.settings_override.worker.refresh_all")
+        refresh = mocker.patch("app.core.settings_override.lifecycle.refresh_all")
 
         start_settings_override_refresher()
 

@@ -262,7 +262,7 @@ class TestSepWorkerHandlers:
         """Arm nothing when the refresher is disabled."""
         monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", False)
         sep_worker._refresher.stop()
-        refresh = mocker.patch("app.core.settings_override.worker.refresh_all")
+        refresh = mocker.patch("app.core.settings_override.lifecycle.refresh_all")
 
         start_sep_settings_override_refresher()
 

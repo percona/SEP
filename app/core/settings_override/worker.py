@@ -19,18 +19,18 @@ from __future__ import annotations
 
 __all__ = ["SEED_TIMEOUT_FRACTION", "WorkerRefresher"]
 
-import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING
 
 from app.core.settings_override.lifecycle import (
+    bounded_refresh,
     bounded_seed,
-    refresh_all,
     resolve_refresher_options,
 )
 
 if TYPE_CHECKING:
+    import asyncio
     from collections.abc import Callable
     from datetime import timedelta
 
@@ -148,17 +148,12 @@ class WorkerRefresher:
             if proc_alive_timeout is None
             else proc_alive_timeout * SEED_TIMEOUT_FRACTION
         )
-        loop = self._loop_getter()
-        if seed_timeout is None:
-            loop.run_until_complete(refresh_all(self._session_maker_factory, proxies))
-            self._last_refresh = time.monotonic()
-        else:
-            seeded = loop.run_until_complete(
-                bounded_seed(self._session_maker_factory, proxies, seed_timeout)
-            )
-            # A completed seed starts the interval clock; an expired seed leaves
-            # the stamp at 0.0 so the next task boundary is immediately due.
-            self._last_refresh = time.monotonic() if seeded else 0.0
+        seeded = self._loop_getter().run_until_complete(
+            bounded_seed(self._session_maker_factory, proxies, seed_timeout)
+        )
+        # A completed seed starts the interval clock; an expired seed leaves
+        # the stamp at 0.0 so the next task boundary is immediately due.
+        self._last_refresh = time.monotonic() if seeded else 0.0
         self._interval_seconds = interval.total_seconds()
         self._proxies = proxies
         self._callbacks = callbacks
@@ -170,12 +165,16 @@ class WorkerRefresher:
         Intended for ``task_prerun`` receivers. The due-check is a monotonic
         comparison with no I/O: tasks arriving inside the interval no-op.
         When due, ``refresh_all`` runs to completion inside a single
-        ``run_until_complete`` window, bounded by the refresh interval itself.
-        Budget expiry logs once at WARNING; any other failure is logged and
-        swallowed. Neither case fails or aborts the task that triggered the
-        refresh -- the previous snapshot stays in effect. The interval stamp
-        advances on every attempted due refresh so a failing cycle cannot
-        hammer the database on every subsequent dispatch.
+        ``run_until_complete`` window, bounded by the refresh interval itself
+        via :func:`~app.core.settings_override.lifecycle.bounded_refresh`
+        (``asyncio.wait``, cancel without awaiting unwind -- not
+        ``wait_for``, which would still hang on a stuck
+        ``AsyncSession.__aexit__``). Budget expiry logs once at WARNING; any
+        other failure is logged and swallowed. Neither case fails or aborts
+        the task that triggered the refresh -- the previous snapshot stays in
+        effect. The interval stamp advances on every attempted due refresh so
+        a failing cycle cannot hammer the database on every subsequent
+        dispatch.
         """
         if not self._armed or self._proxies is None:
             return
@@ -183,22 +182,20 @@ class WorkerRefresher:
         if now - self._last_refresh < self._interval_seconds:
             return
         try:
-            self._loop_getter().run_until_complete(
-                asyncio.wait_for(
-                    refresh_all(
-                        self._session_maker_factory,
-                        self._proxies,
-                        self._callbacks,
-                    ),
-                    timeout=self._interval_seconds,
+            completed = self._loop_getter().run_until_complete(
+                bounded_refresh(
+                    self._session_maker_factory,
+                    self._proxies,
+                    self._interval_seconds,
+                    self._callbacks,
                 )
             )
-        except TimeoutError:
-            logger.warning(
-                "Settings-override boundary refresh exceeded its %.2fs budget; "
-                "keeping previous snapshot",
-                self._interval_seconds,
-            )
+            if not completed:
+                logger.warning(
+                    "Settings-override boundary refresh exceeded its %.2fs budget; "
+                    "keeping previous snapshot",
+                    self._interval_seconds,
+                )
         except Exception:
             logger.exception(
                 "Settings-override boundary refresh failed; keeping previous snapshot"

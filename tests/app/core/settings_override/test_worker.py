@@ -291,26 +291,21 @@ class TestWorkerRefresherStart:
         finally:
             refresher.stop()
 
-    def test_start_skips_bounded_seed_when_proc_alive_timeout_unset(
+    def test_start_passes_unbounded_seed_when_proc_alive_timeout_unset(
         self,
         loop: asyncio.AbstractEventLoop,
         session_maker: async_sessionmaker,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Leave the seed unbounded when no prefork deadline is supplied."""
-        calls: list[float] = []
-
-        async def _unexpected_seed(*_args: object, **_kwargs: object) -> bool:
-            calls.append(1.0)
-            return True
-
-        monkeypatch.setattr(BOUNDED_SEED, _unexpected_seed)
+        """Hand ``seed_timeout=None`` to ``bounded_seed`` when no deadline is set."""
+        recorded: dict[str, object] = {}
+        monkeypatch.setattr(BOUNDED_SEED, recording_bounded_seed(recorded))
         refresher = WorkerRefresher(lambda: loop, lambda: session_maker, _make_registry)
 
         refresher.start(INTERVAL, enabled=True)
 
         try:
-            assert calls == []
+            assert recorded["seed_timeout"] is None
             assert refresher._armed
         finally:
             refresher.stop()
@@ -443,6 +438,43 @@ class TestWorkerRefresherMaybeRefresh:
                 for record in caplog.records
             )
             assert not any(record.levelname == "ERROR" for record in caplog.records)
+        finally:
+            refresher.stop()
+
+    def test_budget_holds_when_refresh_hangs_on_unwind(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        session_maker: async_sessionmaker,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Cancel without awaiting unwind so a hung ``__aexit__`` cannot blow the budget.
+
+        ``asyncio.wait_for`` would await the cancelled coroutine's ``finally`` /
+        ``__aexit__`` and hang past the interval; ``bounded_refresh`` must not.
+        """
+        refresher = WorkerRefresher(lambda: loop, lambda: session_maker, _make_registry)
+        refresher.start(SHORT_INTERVAL, enabled=True)
+
+        async def _hang_on_unwind(*_args: object, **_kwargs: object) -> None:
+            try:
+                return
+            finally:
+                await asyncio.Event().wait()
+
+        # Patch after the inline seed so only the boundary refresh hangs on unwind.
+        monkeypatch.setattr(WORKER_REFRESH_ALL, _hang_on_unwind)
+        refresher._last_refresh = 0.0
+
+        with caplog.at_level("WARNING", logger="app.core.settings_override.worker"):
+            # A wait_for-based bound would hang here indefinitely on unwind.
+            refresher.maybe_refresh()
+
+        try:
+            assert any(
+                record.levelname == "WARNING" and "budget" in record.message
+                for record in caplog.records
+            )
         finally:
             refresher.stop()
 

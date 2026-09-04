@@ -45,8 +45,9 @@ START_REFRESH_TASK = "app.core.settings_override.worker.start_refresh_task"
 #: Importable path patched when tests replace ``bounded_seed``.
 BOUNDED_SEED = "app.core.settings_override.worker.bounded_seed"
 
-#: Importable path patched when tests replace ``refresh_all`` in the worker.
-WORKER_REFRESH_ALL = "app.core.settings_override.worker.refresh_all"
+#: Importable path patched when tests replace ``refresh_all`` under the worker
+#: boundary path (``bounded_refresh`` calls into lifecycle).
+WORKER_REFRESH_ALL = "app.core.settings_override.lifecycle.refresh_all"
 
 #: Storage tokens for ``SettingOverride.setting_class`` (SCREAMING_SNAKE).
 ALERT_SETTINGS_TOKEN = setting_class_token(AlertSettings)
@@ -124,7 +125,7 @@ def recording_bounded_seed(
     async def _fake_seed(
         session_maker_factory: object,
         proxies: object,
-        seed_timeout: float,
+        seed_timeout: float | None,
     ) -> bool:
         recorded["seed_timeout"] = seed_timeout
         return True
