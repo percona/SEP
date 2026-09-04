@@ -1352,9 +1352,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         moves the row out of RUNNING on that signal alone, because a row left
         RUNNING blocks every later dispatch of the same task, target and payload
         with a 409. While the job lives, a pending or running allocation is
-        simply still starting and is left alone. Once the job is dead nothing
-        will advance it, so any other status resolves to LOST: an allocation
-        that started no task produced no exit code to have earned SUCCESS.
+        simply still starting and is left alone until
+        ``PENDING_ALLOCATION_TIMEOUT_SECONDS`` elapses from ``started_at``, after
+        which the row escalates to LOST. Once the job is dead nothing will
+        advance it, so any other status resolves to LOST: an allocation that
+        started no task produced no exit code to have earned SUCCESS.
 
         :param queue_item: The task history record for tracking this execution.
         :param writer_session: The dedicated session to use for log chunk
@@ -1443,6 +1445,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         reported ``FAILED`` even when a stop lands in the same window, so the
         failure is not relabelled as an operator action.
 
+        When the allocation still has no task states and a non-terminal client
+        status, :meth:`_should_escalate_pending_allocation` may escalate the
+        row to LOST once ``PENDING_ALLOCATION_TIMEOUT_SECONDS`` has elapsed
+        since ``started_at``. The finish time is ``utc_now()`` rather than the
+        allocation's ``ModifyTime``, which may predate the timeout on a
+        never-placed allocation and would under-report ``duration``.
+
         :param queue_item: The running task history record to stamp.
         :param alloc: The current Nomad allocation dict.
         :param job: The Nomad job dict backing the allocation.
@@ -1499,6 +1508,35 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             )
             self._stamp_finished_at(queue_item, alloc)
             queue_item.status = dead_end_status
+        elif self._should_escalate_pending_allocation(queue_item):
+            logger.warning(
+                "Allocation %s of task history %s has remained without task "
+                "states past the pending-allocation timeout; marking LOST",
+                alloc["ID"],
+                queue_item.id,
+            )
+            queue_item.finished_at = utc_now()
+            queue_item.status = TaskHistoryStatusEnum.LOST
+
+    def _should_escalate_pending_allocation(self, queue_item: TaskHistory) -> bool:
+        """Return whether a TaskStates-less allocation has outlived the age bound.
+
+        Ages from ``queue_item.started_at`` so the bound does not reset across a
+        FollowupEvalID reschedule chain. A missing ``started_at`` never
+        escalates: the row has not entered RUNNING in a measurable way.
+
+        :param queue_item: The RUNNING task history row under sync.
+        :return: ``True`` when the configured bound has elapsed.
+        """
+        if queue_item.started_at is None:
+            return False
+        # Lazy import keeps app.tasks.config out of the nomad.models import
+        # chain (config imports NomadExecutor back from this package).
+        from app.tasks import config as tasks_config
+
+        bound = tasks_config.tasks_settings.PENDING_ALLOCATION_TIMEOUT_SECONDS
+        elapsed = utc_now() - make_datetime_utc(queue_item.started_at)
+        return elapsed.total_seconds() >= bound
 
     async def _persist_nomad_task_logs(
         self,

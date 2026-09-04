@@ -22,7 +22,7 @@ from base64 import b64encode
 from binascii import b2a_base64
 from collections import defaultdict
 from collections.abc import AsyncIterator, Callable, Iterator
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 from typing import Any
 from unittest.mock import AsyncMock, call, MagicMock, patch
 
@@ -113,6 +113,10 @@ DRAIN_SETTINGS_VARIANTS = [
 ]
 MOCK_LOG_STREAM_BODY_START_MONOTONIC = 1000.0
 STALENESS_THRESHOLD_OVERRIDE = 300
+PENDING_ALLOCATION_TIMEOUT_OVERRIDE = 60
+PENDING_ALLOCATION_WITHIN_BOUND_AGE = 30
+PENDING_ALLOCATION_BOUNDARY_AGE = 30
+PENDING_ALLOCATION_PAST_BOUND_AGE = 120
 MULTI_CHUNK_LOG_FIRST_OFFSET = 17
 MULTI_CHUNK_LOG_SECOND_OFFSET = 42
 EXPECTED_MULTI_CHUNK_LOG_COUNT = 2
@@ -1985,12 +1989,14 @@ class TestSyncTaskHistoryWithoutTaskStates:
         } | overrides
 
     @staticmethod
-    def _queue_item() -> TaskHistory:
+    def _queue_item(*, started_at: datetime | None = None) -> TaskHistory:
         """Return a RUNNING task history tracking ``alloc-1``/``job-1``.
 
+        :param started_at: Optional RUNNING entry time used by the pending-
+            allocation age bound.
         :return: The task history the sync under test starts from.
         """
-        return _build_queue_item(
+        queue_item = _build_queue_item(
             tracking={
                 "allocation_id": "alloc-1",
                 "evaluation_id": "eval-1",
@@ -1998,6 +2004,8 @@ class TestSyncTaskHistoryWithoutTaskStates:
             },
             status=TaskHistoryStatusEnum.RUNNING,
         )
+        queue_item.started_at = started_at
+        return queue_item
 
     @staticmethod
     def _backend(
@@ -2320,6 +2328,132 @@ class TestSyncTaskHistoryWithoutTaskStates:
         result = await executor._sync_task_history(self._queue_item())
 
         assert result.status == TaskHistoryStatusEnum.FAILED
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_pending_allocation_within_bound_stays_running(
+        self, mock_nomad_cls, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Assert a still-starting pending allocation is left RUNNING before the bound."""
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
+        )
+        self._backend(mock_nomad_cls, self._alloc())
+        executor = _build_executor()
+        started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_WITHIN_BOUND_AGE)
+
+        result = await executor._sync_task_history(
+            self._queue_item(started_at=started_at)
+        )
+
+        assert result.status == TaskHistoryStatusEnum.RUNNING
+        assert result.finished_at is None
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.utc_now")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_pending_allocation_exceeds_bound_escalates_to_lost(
+        self, mock_nomad_cls, mock_utc_now: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Assert a TaskStates-less pending allocation past the bound becomes LOST."""
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
+        )
+        self._backend(
+            mock_nomad_cls,
+            self._alloc(ModifyTime=1_700_000_000_000_000_000),
+        )
+        executor = _build_executor()
+        now = datetime(2026, 9, 1, 12, 0, 0, tzinfo=UTC)
+        mock_utc_now.return_value = now
+        started_at = now - timedelta(seconds=PENDING_ALLOCATION_PAST_BOUND_AGE)
+
+        result = await executor._sync_task_history(
+            self._queue_item(started_at=started_at)
+        )
+
+        assert result.status == TaskHistoryStatusEnum.LOST
+        assert result.finished_at == now
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_pending_allocation_escalation_is_logged(
+        self,
+        mock_nomad_cls,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Assert the age-bound escalation leaves a recoverable worker-log trace."""
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
+        )
+        self._backend(mock_nomad_cls, self._alloc())
+        executor = _build_executor()
+        started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_PAST_BOUND_AGE)
+
+        with caplog.at_level(logging.WARNING):
+            await executor._sync_task_history(self._queue_item(started_at=started_at))
+
+        assert "alloc-2" in caplog.text
+        assert "pending-allocation timeout" in caplog.text
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_pending_allocation_escalation_uses_configured_bound(
+        self, mock_nomad_cls, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Assert an age exactly equal to the configured bound escalates."""
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_BOUNDARY_AGE,
+        )
+        self._backend(mock_nomad_cls, self._alloc())
+        executor = _build_executor()
+        started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_BOUNDARY_AGE)
+
+        result = await executor._sync_task_history(
+            self._queue_item(started_at=started_at)
+        )
+
+        assert result.status == TaskHistoryStatusEnum.LOST
+        assert result.finished_at is not None
+
+    @pytest.mark.asyncio
+    async def test_should_escalate_pending_allocation_coerces_naive_started_at(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        session: AsyncSession,
+        created_task_with_history: TaskHistory,
+    ):
+        """Assert the age bound compares safely after an ORM load strips tzinfo.
+
+        ``DateTimeWithTimezone`` does not coerce on load; SQLite and MySQL return
+        ``started_at`` tz-naive. The sync path loads through ``get_or_404``, so the
+        predicate must tolerate that shape.
+        """
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
+        )
+        started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_PAST_BOUND_AGE)
+        queue_item = created_task_with_history
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        queue_item.started_at = started_at
+        await TaskHistoryManager.save(session, queue_item)
+
+        reloaded = await TaskHistoryManager.get_or_404(session, id=queue_item.id)
+        assert reloaded.started_at is not None
+        assert reloaded.started_at.tzinfo is None
+
+        assert _build_executor()._should_escalate_pending_allocation(reloaded) is True
 
 
 class TestStampFinishedAt:

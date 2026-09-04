@@ -81,7 +81,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 PLUGINS_DIR = _REPO_ROOT / "app" / "sep" / "apps"
 TESTS_DIR = _REPO_ROOT / "tests" / "app" / "sep" / "apps"
-SETTINGS_FILE = _REPO_ROOT / "settings.yaml"
+# ``SCAFFOLD_SETTINGS_FILE`` lets a subprocess (notably ``make startapp`` under
+# pytest-xdist) register into a private copy so the worktree ``settings.yaml``
+# is never poisoned for concurrent ``SEPSettings()`` constructions.
+SETTINGS_FILE = Path(
+    os.environ.get("SCAFFOLD_SETTINGS_FILE") or _REPO_ROOT / "settings.yaml"
+)
 
 # Stdlib-only mirrors of ServiceTypeEnum / NavIcon member names: importing the
 # real enums would pull pydantic/sqlalchemy (ServiceTypeEnum) or the framework

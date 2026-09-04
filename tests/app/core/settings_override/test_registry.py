@@ -501,6 +501,7 @@ def test_hot_field_names_tasks_settings() -> None:
             "LOG_STREAM_EVICTION_MAX_ROWS",
             "PRE_EXECUTION_CONNECTIVITY_CHECK",
             "STALENESS_THRESHOLD_SECONDS",
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
             "SYNC_LOCK_TTL",
             "LOG_RETENTION_DAYS",
             "LOG_PURGE_BATCH_SIZE",
@@ -606,6 +607,7 @@ def test_tasks_settings_not_marked_advanced(field_name: str) -> None:
     [
         "SYNC_LOCK_TTL",
         "STALENESS_THRESHOLD_SECONDS",
+        "PENDING_ALLOCATION_TIMEOUT_SECONDS",
         "LOG_RETENTION_DAYS",
         "LOG_PURGE_BATCH_SIZE",
         "LOG_STREAM_CAP_BYTES",
