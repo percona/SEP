@@ -42,6 +42,7 @@ from app.core.utils import json_serializer
 from app.tasks import celery as celery_module
 from app.tasks.anonymizer.config import anonymizer_settings, AnonymizerSettings
 from app.tasks.celery import (
+    refresh_tasks_overrides_if_due,
     start_settings_override_refresher,
     stop_settings_override_refresher,
     sync_running_items,
@@ -57,9 +58,9 @@ from app.tasks.models import (
 )
 from tests.app.core.settings_override.conftest import (
     ANONYMIZER_SETTINGS_TOKEN,
+    BOUNDED_SEED,
     HangingSession,
-    recording_start_refresh_task,
-    START_REFRESH_TASK,
+    recording_bounded_seed,
     TASKS_SETTINGS_TOKEN,
 )
 from tests.app.db_schema import apply_schema
@@ -116,7 +117,7 @@ def worker_loop_env(monkeypatch):
     """
     loop = asyncio.new_event_loop()
     monkeypatch.setattr(celery_module.celery, "loop", loop)
-    monkeypatch.setattr(celery_module._refresher, "task", None)
+    celery_module._refresher.stop()
     monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", True)
     engine = create_async_engine(
         "sqlite+aiosqlite://",
@@ -285,49 +286,50 @@ class TestSyncLockTtlPositivityGuard:
 class TestWorkerRefresherHandlers:
     """Test the worker_process_init / worker_process_shutdown refresher handlers."""
 
-    def test_disabled_resolves_proxy_and_starts_no_task(self, monkeypatch, mocker):
-        """Resolve the proxy but start no background task when disabled."""
+    def test_disabled_resolves_proxy_and_arms_nothing(self, monkeypatch, mocker):
+        """Resolve the proxy but arm nothing when disabled."""
         monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", False)
-        monkeypatch.setattr(celery_module._refresher, "task", None)
+        celery_module._refresher.stop()
         mock_anonymizer = MagicMock(spec=OverridableSettingsProxy)
         monkeypatch.setattr(celery_module, "anonymizer_settings", mock_anonymizer)
-        start = mocker.patch("app.core.settings_override.worker.start_refresh_task")
+        refresh = mocker.patch("app.core.settings_override.worker.refresh_all")
 
         start_settings_override_refresher()
 
         mock_anonymizer._resolve.assert_called_once_with()
-        start.assert_not_called()
-        assert celery_module._refresher.task is None
+        refresh.assert_not_called()
+        assert not celery_module._refresher._armed
 
     def test_shutdown_is_noop_when_not_started(self, monkeypatch):
         """Handle a never-started refresher as a no-op on shutdown."""
-        monkeypatch.setattr(celery_module._refresher, "task", None)
+        celery_module._refresher.stop()
         stop_settings_override_refresher()
-        assert celery_module._refresher.task is None
+        assert not celery_module._refresher._armed
 
     @pytest.mark.usefixtures("worker_loop_env")
-    def test_shutdown_cancels_and_drains_started_refresher(self):
-        """Stop and drain the started refresher, clearing the handle."""
+    def test_shutdown_disarms_started_refresher(self):
+        """Disarm the started refresher so further boundaries no-op."""
         start_settings_override_refresher()
-        task = celery_module._refresher.task
-        assert task is not None
+        assert celery_module._refresher._armed
 
         stop_settings_override_refresher()
 
-        assert celery_module._refresher.task is None
-        assert task.cancelled() or task.done()
+        assert not celery_module._refresher._armed
+        assert celery_module._refresher._proxies is None
 
     @pytest.mark.usefixtures("worker_loop_env")
-    def test_init_is_idempotent_when_already_running(self):
-        """Keep the running refresher and start no second task on re-entry."""
+    def test_init_is_idempotent_when_already_armed(self):
+        """Keep the armed refresher and skip a second seed on re-entry."""
         start_settings_override_refresher()
-        first_task = celery_module._refresher.task
-        assert first_task is not None
+        first_proxies = celery_module._refresher._proxies
+        first_stamp = celery_module._refresher._last_refresh
+        assert celery_module._refresher._armed
 
         start_settings_override_refresher()
 
-        assert celery_module._refresher.task is first_task
-        assert not first_task.done()
+        assert celery_module._refresher._armed
+        assert celery_module._refresher._proxies is first_proxies
+        assert celery_module._refresher._last_refresh == first_stamp
 
     def test_post_init_override_visible_after_loop_driven(self, worker_loop_env):
         """Expose an override inserted after init once the loop is driven again."""
@@ -352,7 +354,7 @@ class TestWorkerRefresherHandlers:
     ) -> None:
         """Derive the seed budget from Celery's prefork liveness deadline."""
         recorded: dict[str, object] = {}
-        monkeypatch.setattr(START_REFRESH_TASK, recording_start_refresh_task(recorded))
+        monkeypatch.setattr(BOUNDED_SEED, recording_bounded_seed(recorded))
         monkeypatch.setattr(celery_module.celery.conf, "worker_proc_alive_timeout", 6.0)
 
         start_settings_override_refresher()
@@ -360,11 +362,11 @@ class TestWorkerRefresherHandlers:
         assert recorded["seed_timeout"] == pytest.approx(6.0 * SEED_TIMEOUT_FRACTION)
 
     @pytest.mark.usefixtures("worker_loop_env")
-    def test_init_returns_with_a_running_refresher_when_the_seed_hangs(
+    def test_init_arms_when_the_seed_hangs(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Keep the periodic refresher after a hanging seed hits its budget."""
+        """Keep the child armed after a hanging seed hits its budget."""
         monkeypatch.setattr(
             celery_module, "get_async_session_maker", lambda: HangingSession
         )
@@ -372,8 +374,17 @@ class TestWorkerRefresherHandlers:
 
         start_settings_override_refresher()
 
-        assert celery_module._refresher.task is not None
-        assert not celery_module._refresher.task.done()
+        assert celery_module._refresher._armed
+        assert celery_module._refresher._last_refresh == 0.0
+
+    @pytest.mark.usefixtures("worker_loop_env")
+    def test_task_prerun_receiver_calls_maybe_refresh(self, mocker) -> None:
+        """Wire ``refresh_tasks_overrides_if_due`` to the boundary due-check."""
+        maybe = mocker.spy(celery_module._refresher, "maybe_refresh")
+
+        refresh_tasks_overrides_if_due()
+
+        maybe.assert_called_once_with()
 
 
 class TestSyncRunningItemsRespectsOverriddenTtl:
