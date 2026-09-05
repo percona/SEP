@@ -412,12 +412,13 @@ class ConnectionDetailsStep(RequestStep):
     :param query: Query-string parameters keyed by parameter name.
     :param details: JSON Pointers into the response, keyed by the display label
         the addressed value is reported under. The declaration order is the
-        order the resolved pairs are answered in.
+        order the resolved pairs are answered in. A label may not be empty, as
+        it is rendered verbatim and a blank one would name nothing.
     """
 
     headers: dict[str, ProbeValue] = {}
     query: dict[str, ProbeValue] = {}
-    details: dict[str, JsonPointerStr] = {}
+    details: dict[NonEmptyStr, JsonPointerStr] = {}
 
     @field_validator("path")
     @classmethod

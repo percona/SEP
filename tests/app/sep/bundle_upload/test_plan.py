@@ -749,6 +749,13 @@ class TestConnectionDetailsStepValidation:
         with pytest.raises(ValidationError):
             DeliveryPlan(**payload)
 
+    def test_an_empty_label_is_refused(self):
+        """Reject a blank display label, which would name nothing when rendered."""
+        payload = _connection_details_plan(details={"": "/result/account"})
+
+        with pytest.raises(ValidationError):
+            DeliveryPlan(**payload)
+
     def test_a_plan_without_connection_details_still_validates(self):
         """Leave every already-deployed plan valid, with no such step declared."""
         plan = DeliveryPlan(**_one_step_plan())
