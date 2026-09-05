@@ -2869,6 +2869,7 @@ class TestConnectionDetailsResponseConfidentiality:
                     details = await executor.read_connection_details()
 
         messages = [record.getMessage() for record in caplog.records]
+        assert _RESPONSE_LOG_MARKER in caplog.text
         assert details == _EXPECTED_DETAILS
         assert all("encrypted-token-blob" not in message for message in messages)
         assert all("hashed-token-blob" not in message for message in messages)

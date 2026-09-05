@@ -206,7 +206,10 @@ class TestDeliveryConnectionEndpoint:
         }
 
     def test_a_refused_reads_error_body_reaches_no_log_record(
-        self, admin_client: TestClient, configured_delivery: None, caplog
+        self,
+        admin_client: TestClient,
+        configured_delivery: None,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Keep an error body out of the log line the degraded read writes.
 
@@ -232,6 +235,9 @@ class TestDeliveryConnectionEndpoint:
             response.json()["status"] == DeliveryConnectionStatusEnum.FETCH_FAILED.value
         )
         assert "encrypted-token-blob" not in response.text
+        # The degraded read's own line is the positive control: without it, the
+        # sentinel assertion below would hold on a run that captured nothing.
+        assert "Diagnostics delivery connection read failed" in caplog.text
         # ``caplog.text``, not ``record.getMessage()``: the latter renders the
         # format string alone, so it cannot see a value carried in a traceback.
         assert "encrypted-token-blob" not in caplog.text
