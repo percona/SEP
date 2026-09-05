@@ -93,9 +93,14 @@ This ensures that your code adheres to our linting and formatting standards befo
 
 We enforce code style guidelines using [Ruff](https://docs.astral.sh/ruff/). The rules are defined in the [pyproject.toml](https://github.com/percona/SEP/blob/main/pyproject.toml) file.
 
-- **Type checking** (opt-in):
+- **Type checking**:
 
-Because the project is fully type-annotated, you can check the annotations locally with [`ty`](https://github.com/astral-sh/ty) (Astral's type checker) by running `make typecheck`. It is **not** enforced in CI or pre-commit yet, so it is safe to run on demand and will currently report a backlog of existing warning-severity diagnostics. Where enforcement will run and what it will read is decided and recorded in [docs/development/ty-policy.md](docs/development/ty-policy.md) under [Enforcement](docs/development/ty-policy.md#enforcement), alongside which trees are checked and what severity each diagnostic rule carries.
+Because the project is fully type-annotated, you can check the annotations locally with [`ty`](https://github.com/astral-sh/ty) (Astral's type checker) by running `make typecheck`. It is not part of pre-commit, and a local run reports a backlog of existing warning-severity diagnostics that it exits 0 on. Two CI checks read it, and they behave differently:
+
+- **`typecheck`** runs `make typecheck` over the whole tree and **blocks the merge**. It fails only on error-severity diagnostics, so keeping it green means not introducing one.
+- **`typecheck_diff`** reports the diagnostics your branch adds against its merge-base, with every rule held at `warn` promoted to `error` for the comparison, over changed files outside `tests/`. It is **advisory**: a surplus turns that one check red and leaves the merge button enabled. So "all checks passed" is no longer the norm on every PR — a red `typecheck_diff` beside a green `ci-success` means read the job's summary, which lists each new diagnostic. Reproduce it locally with `make typecheck-diff BASE_SHA=origin/main`.
+
+Which trees are checked, what severity each rule carries, and why enforcement is scoped this way are recorded in [docs/development/ty-policy.md](docs/development/ty-policy.md) under [Enforcement](docs/development/ty-policy.md#enforcement).
 
 - **Docstrings**:
 

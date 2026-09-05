@@ -169,7 +169,7 @@ exclude_dirs = [
 python-version = "3.11"
 [tool.ty.src]
 # The checked surface is defined here rather than by a path argument, so that this
-# list and `make typecheck` cannot drift apart: the target runs a bare `ty check`.
+# list and `make typecheck` cannot drift apart: the target passes no path arguments.
 # See docs/development/ty-policy.md.
 include = [
     "app",
