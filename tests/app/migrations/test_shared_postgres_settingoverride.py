@@ -44,6 +44,7 @@ from sqlalchemy import (
 from sqlalchemy import (
     Enum as EnumField,
 )
+from sqlalchemy.engine.interfaces import ReflectedColumn
 from sqlalchemy.exc import OperationalError
 
 from app.core.db.utils import (
@@ -545,7 +546,7 @@ def test_column_exists_on_real_postgres(postgres_sync_url):
         engine.dispose()
 
 
-def _updated_by_columns(sync_url) -> list[dict]:
+def _updated_by_columns(sync_url: str) -> list[ReflectedColumn]:
     """Return every reflected ``settingoverride`` column named ``updated_by``.
 
     :param sync_url: The sync URL of the shared database to inspect.
