@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 import fastapi.openapi.utils
+from cryptography.fernet import Fernet
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SPECS_DIR = REPO_ROOT / "frontend" / "packages" / "api" / "specs"
@@ -85,6 +86,15 @@ _CANONICAL_ENV = {
     "AUTH__PROVIDER__CASDOOR__CLIENT_ID": "test-client-id",
     "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET": "test-client-secret",
     "AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS": '["https://allowed-issuer.com"]',
+    # Minted per run, never pinned: `ENCRYPTION_KEY` is required at settings
+    # construction and has no default, and repointing `ENV_FILE` at the
+    # assignment-free dotenv above deliberately puts every developer-local
+    # source out of reach, so without this the dump aborts before importing
+    # the app, whatever the checkout supplies. A committed key is not the
+    # alternative: `tests/conftest.py` mints one for the same reason, and
+    # `test_no_key_is_committed` enforces that nothing ships one. The spec
+    # encrypts nothing, so the value is irrelevant as long as it is valid.
+    "ENCRYPTION_KEY": Fernet.generate_key().decode("ascii"),
 }
 
 
