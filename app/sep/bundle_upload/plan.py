@@ -17,12 +17,13 @@
 
 A delivery plan is an ordered list of HTTP resolution steps followed by exactly
 one terminal multipart upload step that carries the bundle file, plus optional
-sections that run outside a send: a connectivity probe and a support-case
-search. The schema is linear by construction: paths are literal strings, every
-value comes from one of six typed sources (a literal, a send input, a named
-secret, an earlier step's extracted output, one key of the send's manifest, or
-the caller's typed search term), each step kind admitting only the subset it can
-resolve, and no conditional, loop, or templating construct exists.
+sections that run outside a send: a connectivity probe, a support-case search,
+and a read of the facts describing the connection itself. The schema is linear
+by construction: paths are literal strings, every value comes from one of six
+typed sources (a literal, a send input, a named secret, an earlier step's
+extracted output, one key of the send's manifest, or the caller's typed search
+term), each step kind admitting only the subset it can resolve, and no
+conditional, loop, or templating construct exists.
 :class:`DeliveryPlanExecutor` runs a plan over a
 :class:`~app.core.requests.remote_api.RemoteAPI` transport and satisfies the
 :class:`~app.sep.bundle_upload.seam.BundleUploader` protocol.
@@ -39,6 +40,8 @@ __all__ = [
     "CaseMatch",
     "CaseSearchStep",
     "CaseSearchValue",
+    "ConnectionDetail",
+    "ConnectionDetailsStep",
     "DeliveryPlan",
     "DeliveryPlanError",
     "DeliveryPlanExecutor",
@@ -48,6 +51,7 @@ __all__ = [
     "PlanValue",
     "ProbeStep",
     "ProbeValue",
+    "RequestStep",
     "ResolutionStep",
     "SecretValue",
     "StepObserver",
@@ -198,9 +202,10 @@ PlanValue = Annotated[
     Field(discriminator="source"),
 ]
 
-#: One probe value. Narrower than :data:`PlanValue` by construction: a probe runs
-#: outside any send, so the three send-scoped sources have nothing to read and
-#: are refused when the plan is parsed rather than when the probe is issued.
+#: One value of a step that runs outside a send and takes no typed term.
+#: Narrower than :data:`PlanValue` by construction: with no send in flight the
+#: three send-scoped sources have nothing to read, and are refused when the plan
+#: is parsed rather than when the request is issued.
 ProbeValue = Annotated[LiteralValue | SecretValue, Field(discriminator="source")]
 
 #: One case-search value. Narrower than :data:`PlanValue` by construction: a
@@ -246,13 +251,34 @@ def _reject_off_origin_path(value: str, *, what: str) -> str:
     return value
 
 
-class ResolutionStep(BaseModel):
+class RequestStep(BaseModel):
+    """Describe one request the plan issues under its own endpoint.
+
+    Every step kind resolves a path against the plan's endpoint and carries a
+    query map, and this is where that shared contract is declared. The executor
+    factory rebases whatever a plan holds by testing for this type, so a step
+    kind added later is rebased without that function naming it.
+
+    Subclasses narrow ``query`` to the value union their own kind admits. The
+    base states only that the values are step values, which is what the
+    rebasing helper needs and all that it needs. It deliberately declares no
+    path validator: only some subclasses reject an off-origin path, and
+    reconciling that here would change which plans install.
+
+    :param path: The request path, resolved against the plan endpoint.
+    :param query: Query-string parameters keyed by parameter name.
+    """
+
+    path: NonEmptyStr
+    query: Mapping[str, AnyStepValue] = {}
+
+
+class ResolutionStep(RequestStep):
     """Describe one HTTP request whose response feeds later steps.
 
     :param name: The step's name, unique within the plan and cited by ``output``
         values.
     :param method: The HTTP method to issue.
-    :param path: The request path, resolved against the plan endpoint.
     :param headers: Request headers keyed by header name.
     :param query: Query-string parameters keyed by parameter name.
     :param body: A flat JSON object body keyed by field name.
@@ -261,17 +287,15 @@ class ResolutionStep(BaseModel):
 
     name: NonEmptyStr
     method: Literal["GET", "POST"]
-    path: NonEmptyStr
     headers: dict[str, PlanValue] = {}
     query: dict[str, PlanValue] = {}
     body: dict[str, PlanValue] = {}
     outputs: dict[str, JsonPointerStr] = {}
 
 
-class UploadStep(BaseModel):
+class UploadStep(RequestStep):
     """Describe the terminal multipart request that carries the bundle.
 
-    :param path: The request path, resolved against the plan endpoint.
     :param headers: Request headers keyed by header name.
     :param query: Query-string parameters keyed by parameter name.
     :param fields: Scalar multipart form fields keyed by field name.
@@ -281,7 +305,6 @@ class UploadStep(BaseModel):
         the value to surface as the upload reference; ``None`` extracts none.
     """
 
-    path: NonEmptyStr
     headers: dict[str, PlanValue] = {}
     query: dict[str, PlanValue] = {}
     fields: dict[str, PlanValue] = {}
@@ -290,7 +313,7 @@ class UploadStep(BaseModel):
     reference_pointer: JsonPointerStr | None = None
 
 
-class ProbeStep(BaseModel):
+class ProbeStep(RequestStep):
     """Describe the request that tests the receiver without sending anything.
 
     Carries no ``name``, so nothing here joins the resolution-step namespace and
@@ -298,12 +321,10 @@ class ProbeStep(BaseModel):
     is ``GET`` by construction, which is what lets the probe run against a
     receiver whose resolution steps mutate state.
 
-    :param path: The request path, resolved against the plan endpoint.
     :param headers: Request headers keyed by header name.
     :param query: Query-string parameters keyed by parameter name.
     """
 
-    path: NonEmptyStr
     headers: dict[str, ProbeValue] = {}
     query: dict[str, ProbeValue] = {}
 
@@ -319,7 +340,7 @@ class ProbeStep(BaseModel):
         return _reject_off_origin_path(value, what="Probe step")
 
 
-class CaseSearchStep(BaseModel):
+class CaseSearchStep(RequestStep):
     """Describe the request that searches the receiver for support cases.
 
     Carries no ``name``, as the probe does not, so nothing here joins the
@@ -327,7 +348,6 @@ class CaseSearchStep(BaseModel):
     what lets the search run against a receiver whose resolution steps mutate
     state.
 
-    :param path: The request path, resolved against the plan endpoint.
     :param headers: Request headers keyed by header name.
     :param query: Query-string parameters keyed by parameter name.
     :param term_pattern: A regular expression the whole typed term must match
@@ -340,7 +360,6 @@ class CaseSearchStep(BaseModel):
         case title to show beside the reference.
     """
 
-    path: NonEmptyStr
     headers: dict[str, CaseSearchValue] = {}
     query: dict[str, CaseSearchValue] = {}
     term_pattern: NonEmptyStr
@@ -375,6 +394,42 @@ class CaseSearchStep(BaseModel):
                 f"Case-search term pattern is not a valid regular expression: {err}"
             ) from None
         return value
+
+
+class ConnectionDetailsStep(RequestStep):
+    """Describe the request that reads the facts describing the connection.
+
+    Carries no ``name``, as the probe and the case search do not, so nothing
+    here joins the resolution-step namespace. The method is ``GET`` by
+    construction, which is what lets the step run against a receiver whose
+    resolution steps mutate state.
+
+    What the pointers address is the deployment's choice: this narrows what the
+    *request* may carry, never what the response may be asked for, so a pointer
+    naming a credential field the receiver returns is answered like any other.
+
+    :param headers: Request headers keyed by header name.
+    :param query: Query-string parameters keyed by parameter name.
+    :param details: JSON Pointers into the response, keyed by the display label
+        the addressed value is reported under. The declaration order is the
+        order the resolved pairs are answered in. A label may not be empty, as
+        it is rendered verbatim and a blank one would name nothing.
+    """
+
+    headers: dict[str, ProbeValue] = {}
+    query: dict[str, ProbeValue] = {}
+    details: dict[NonEmptyStr, JsonPointerStr] = {}
+
+    @field_validator("path")
+    @classmethod
+    def _validate_path(cls, value: str) -> str:
+        """Keep the connection-details read under the plan's own endpoint.
+
+        :param value: The configured connection-details path.
+        :return: The validated path.
+        :raises ValueError: When the path carries a scheme or an authority.
+        """
+        return _reject_off_origin_path(value, what="Connection-details step")
 
 
 def _check_value(
@@ -461,6 +516,8 @@ class DeliveryPlan(BaseModel):
         or ``None`` for a plan that declares no probe.
     :param case_search: The request that searches the receiver for support
         cases, or ``None`` for a plan that declares no case search.
+    :param connection_details: The request that reads the facts describing the
+        connection, or ``None`` for a plan that declares none.
     :param upload: The terminal step that carries the bundle file.
     """
 
@@ -470,6 +527,7 @@ class DeliveryPlan(BaseModel):
     resolution_steps: list[ResolutionStep] = []
     probe: ProbeStep | None = None
     case_search: CaseSearchStep | None = None
+    connection_details: ConnectionDetailsStep | None = None
     upload: UploadStep
 
     @model_validator(mode="after")
@@ -517,6 +575,16 @@ class DeliveryPlan(BaseModel):
                     _QUERY_MAP: self.case_search.query,
                 },
                 where_prefix="Case-search step",
+                secrets=self.secrets,
+                available_outputs={},
+            )
+        if self.connection_details is not None:
+            _check_value_maps(
+                {
+                    "headers": self.connection_details.headers,
+                    _QUERY_MAP: self.connection_details.query,
+                },
+                where_prefix="Connection-details step",
                 secrets=self.secrets,
                 available_outputs={},
             )
@@ -572,6 +640,21 @@ class CaseMatch:
     title: str
 
 
+@dataclass(frozen=True, slots=True)
+class ConnectionDetail:
+    """Report one fact about the connection, as the plan's pointer addressed it.
+
+    Carries only what the plan asked for, so no part of the receiver's response
+    the plan did not name reaches a caller.
+
+    :param label: The display label the plan declared the pointer under.
+    :param value: The scalar the plan's pointer addressed.
+    """
+
+    label: str
+    value: str
+
+
 #: A synchronous callback invoked once per step transition. It must not raise:
 #: a failure record is observed from inside an exception handler, so an observer
 #: that raises there replaces the exception the executor was propagating.
@@ -612,8 +695,8 @@ def _as_scalar(value: Any) -> str | None:
     """Return ``value`` in its JSON spelling when it is a scalar, else ``None``.
 
     A boolean renders as ``"true"`` / ``"false"`` rather than Python's ``"True"``
-    / ``"False"``, so a value read out of a JSON response reaches the receiver
-    spelled the way that receiver wrote it.
+    / ``"False"``, so a value keeps the spelling the JSON document used, whoever
+    reads it next.
 
     :param value: The value a JSON Pointer addressed.
     :return: The scalar as a string, or ``None`` for ``null`` and containers.
@@ -625,19 +708,20 @@ def _as_scalar(value: Any) -> str | None:
     return None
 
 
-def _row_scalar(row: Any, pointer: str) -> str | None:
-    """Return the scalar a per-row pointer addresses, or ``None`` when it misses.
+def _pointer_scalar(document: Any, pointer: str) -> str | None:
+    """Return the scalar a pointer addresses, or ``None`` when it misses.
 
     A pointer that does not resolve and one that lands on a container are the
-    same outcome to the caller: this row cannot be offered, and the rest still
+    same outcome to the caller: this pair cannot be offered, and the rest still
     can.
 
-    :param row: One row of a search response.
-    :param pointer: The per-row pointer the plan declares.
+    :param document: The JSON value the pointer is applied to: one row of a
+        search response, or a whole response body.
+    :param pointer: The pointer the plan declares.
     :return: The addressed scalar as a string, or ``None``.
     """
     try:
-        addressed = resolve_json_pointer(row, pointer)
+        addressed = resolve_json_pointer(document, pointer)
     except JsonPointerResolutionError:
         return None
     return _as_scalar(addressed)
@@ -838,8 +922,8 @@ class DeliveryPlanExecutor:
         matched = (
             CaseMatch(reference=reference, title=title)
             for row in rows
-            if (reference := _row_scalar(row, step.reference_pointer))
-            and (title := _row_scalar(row, step.title_pointer)) is not None
+            if (reference := _pointer_scalar(row, step.reference_pointer))
+            and (title := _pointer_scalar(row, step.title_pointer)) is not None
         )
         matches = list(unique_everseen(matched, lambda match: match.reference))
         if rows and not matches:
@@ -849,6 +933,85 @@ class DeliveryPlanExecutor:
                 len(rows),
             )
         return matches
+
+    async def read_connection_details(self) -> list[ConnectionDetail]:
+        """Read the facts the plan's connection-details step declares.
+
+        Runs none of the plan's resolution steps and records no step trail: a
+        connection-details read is not a send. Only the values the plan's
+        pointers address are returned; the rest of the response is discarded, so
+        no part of it the plan did not ask for reaches the caller.
+
+        The response body is withheld from the transport's debug log for the
+        duration of the call, on the same grounds: only the addressed values are
+        kept, so the rest must not outlive the request in a log line either.
+
+        :return: The resolved facts, in the plan's declaration order.
+        :raises DeliveryPlanError: When the plan declares no connection-details
+            step, or the response carries no body.
+        :raises HTTPException: Propagates the project exception ``RemoteAPI``
+            raises for an upstream error status, for a redirect the receiver
+            answered with, and for a success carrying a non-JSON body.
+        """
+        step = self._plan.connection_details
+        if step is None:
+            raise DeliveryPlanError(
+                "The delivery plan declares no connection-details step."
+            )
+        request_kwargs = remove_falsy_values_from_dict(
+            {
+                "headers": self._resolve_map(step.headers, {}, {}, {}),
+                "params": self._resolve_map(step.query, {}, {}, {}),
+            }
+        )
+        logger.debug("Delivery plan: reading the receiver's connection details.")
+        with (
+            self._api.redact_headers(_secret_valued_keys(step.headers)),
+            self._api.suppress_response_log(),
+        ):
+            response = await self._api.request(
+                "GET", step.path, allow_redirects=False, **request_kwargs
+            )
+        return self._extract_connection_details(step, response)
+
+    def _extract_connection_details(
+        self,
+        step: ConnectionDetailsStep,
+        response: dict[str, Any] | list[dict[str, Any]] | None,
+    ) -> list[ConnectionDetail]:
+        """Read the declared facts out of a response, then let it go.
+
+        A pointer that misses, or that lands on a container, omits its own pair
+        rather than failing the read: one drifted pointer must not blank a panel
+        the rest of the response can still fill. A response in which every
+        declared pointer missed is logged, since a plan whose pointers no longer
+        match the receiver's contract is otherwise indistinguishable from a
+        receiver with nothing to report.
+
+        A pointer resolving to an empty string keeps its pair, unlike a
+        case-search row whose empty reference identifies nothing: an empty value
+        is a fact the receiver reported.
+
+        :param step: The connection-details step whose pointers are applied.
+        :param response: The parsed response body, or ``None`` on HTTP 204.
+        :return: The resolved facts, in the plan's declaration order.
+        :raises DeliveryPlanError: When the response carries no body. No message
+            echoes the response.
+        """
+        if response is None:
+            raise DeliveryPlanError("The connection-details response carried no body.")
+        details = [
+            ConnectionDetail(label=label, value=value)
+            for label, pointer in step.details.items()
+            if (value := _pointer_scalar(response, pointer)) is not None
+        ]
+        if step.details and not details:
+            logger.warning(
+                "Delivery plan: the connection-details response carried none of "
+                "the %d pointers the plan declares.",
+                len(step.details),
+            )
+        return details
 
     def _check_bundle_size(self, size: int) -> None:
         """Reject an over-cap bundle before the transport is touched.

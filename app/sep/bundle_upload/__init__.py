@@ -16,12 +16,15 @@
 """Expose the bundle-upload seam and delivery-plan engine."""
 
 from app.sep.bundle_upload.plan import (
+    ConnectionDetail,
+    ConnectionDetailsStep,
     DeliveryPlan,
     DeliveryPlanError,
     DeliveryPlanExecutor,
     InputValue,
     LiteralValue,
     PlanValue,
+    RequestStep,
     ResolutionStep,
     SecretValue,
     StepOutputValue,
@@ -32,12 +35,15 @@ from app.sep.bundle_upload.seam import BundleSource, BundleUploader, UploadResul
 __all__ = [
     "BundleSource",
     "BundleUploader",
+    "ConnectionDetail",
+    "ConnectionDetailsStep",
     "DeliveryPlan",
     "DeliveryPlanError",
     "DeliveryPlanExecutor",
     "InputValue",
     "LiteralValue",
     "PlanValue",
+    "RequestStep",
     "ResolutionStep",
     "SecretValue",
     "StepOutputValue",

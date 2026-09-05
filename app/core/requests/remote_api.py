@@ -98,6 +98,9 @@ _SENSITIVE_HEADERS = frozenset(
 # logs. Compared case-insensitively against JSON/form body keys.
 _SENSITIVE_BODY_FIELDS = frozenset({"password", "secret", "token"})
 _REDACTED_VALUE = "****"
+# Stands in for a response body a caller withheld from the log, so the line
+# keeps naming the request that produced it.
+_WITHHELD_BODY = "<withheld>"
 
 # Stamped on the raised ``HTTPException`` when an error response has a non-JSON
 # body (e.g. an nginx HTML 502), letting callers tell a proxy/gateway failure
@@ -385,6 +388,9 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             "api_extra_sensitive_body_fields", default=frozenset()
         )
     )
+    _suppress_response_log: ContextVar[bool] = PrivateAttr(
+        default_factory=lambda: ContextVar("api_suppress_response_log", default=False)
+    )
 
     def __hash__(self) -> int:
         """Compute the hash based on the endpoint and SSL configuration.
@@ -583,6 +589,35 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             yield self
         finally:
             self._extra_sensitive_body_fields.reset(token)
+
+    @contextmanager
+    def suppress_response_log(self) -> Generator[Self]:
+        """Withhold the response body from the debug log for the call.
+
+        Register that the parsed response body must not reach the log for the
+        duration of the call. Use this where the caller keeps only the values it
+        names itself and the rest of the body is data it must neither retain nor
+        return, so the body must not outlive the request in a log line either.
+
+        Guards the two response-logging sites in :meth:`request` and nothing
+        else: :meth:`stream` logs no response body of its own, so a caller
+        wrapping it gains no guarantee here. The second of the two sites reports
+        a non-JSON response, and today renders a stream handle rather than the
+        content itself, so the substitution there is a placeholder against the
+        argument changing rather than a leak being closed.
+
+        Unlike :meth:`redact_headers` and :meth:`redact_body_fields`, which
+        accumulate onto the set an enclosing block registered, this flag has
+        nothing to union; an enclosing suppression survives an inner block's
+        exit unchanged.
+
+        :return: The instance with response logging withheld.
+        """
+        token = self._suppress_response_log.set(True)
+        try:
+            yield self
+        finally:
+            self._suppress_response_log.reset(token)
 
     @cached_property
     def logger(self) -> logging.Logger:
@@ -1016,6 +1051,7 @@ class RemoteAPI(BaseRemoteAPI):
                     response.status,
                     detail="The server answered with an unfollowed redirect.",
                 )
+            withhold_body = self._suppress_response_log.get()
             response_data: JSONBody = None
             try:
                 response_data = await response.json()
@@ -1025,18 +1061,17 @@ class RemoteAPI(BaseRemoteAPI):
                     method,
                     path,
                     response.status,
-                    response_data,
+                    _WITHHELD_BODY if withhold_body else response_data,
                 )
                 response.raise_for_status()
             except ContentTypeError as err:
-                response_content = response.content
                 self.logger.exception(
                     "RemoteAPI (%s): %s request to %s response content (%s): %s",
                     redact_credential_url(str(self.endpoint)),
                     method,
                     path,
                     response.status,
-                    response_content,
+                    _WITHHELD_BODY if withhold_body else response.content,
                 )
                 raise exception_for_status(
                     err.status,
