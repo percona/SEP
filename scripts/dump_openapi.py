@@ -29,6 +29,7 @@ import argparse
 import json
 import os
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -78,24 +79,54 @@ def _patch_deterministic_schema_names() -> None:
     fastapi.openapi.utils.get_model_name_map = _ordered_model_name_map
 
 
-# The same pins `[tool.pytest.ini_options].env` applies in ``pyproject.toml``,
-# so a dump and the freshness guard resolve identical settings. Keep both sites
-# in sync.
-_CANONICAL_ENV = {
-    "ENV_FILE": str(REPO_ROOT / "tests" / "pytest.env"),
-    "AUTH__PROVIDER__CASDOOR__CLIENT_ID": "test-client-id",
-    "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET": "test-client-secret",
-    "AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS": '["https://allowed-issuer.com"]',
-    # Minted per run, never pinned: `ENCRYPTION_KEY` is required at settings
-    # construction and has no default, and repointing `ENV_FILE` at the
-    # assignment-free dotenv above deliberately puts every developer-local
-    # source out of reach, so without this the dump aborts before importing
-    # the app, whatever the checkout supplies. A committed key is not the
-    # alternative: `tests/conftest.py` mints one for the same reason, and
-    # `test_no_key_is_committed` enforces that nothing ships one. The spec
-    # encrypts nothing, so the value is irrelevant as long as it is valid.
-    "ENCRYPTION_KEY": Fernet.generate_key().decode("ascii"),
-}
+#: Settings whose value cannot be pinned in a committed file.
+#:
+#: ``ENCRYPTION_KEY`` is required at settings construction and has no default,
+#: and pinning ``ENV_FILE`` at the assignment-free dotenv deliberately puts
+#: every developer-local source out of reach, so without a value here the dump
+#: aborts before importing the app whatever the checkout supplies. A committed
+#: key is not the alternative: ``tests/conftest.py`` mints one for the same
+#: reason and ``test_no_key_is_committed`` enforces that nothing ships one. The
+#: spec encrypts nothing, so the value is irrelevant as long as it is valid.
+_MINTED_ENV = {"ENCRYPTION_KEY": Fernet.generate_key().decode("ascii")}
+
+
+def _pytest_env_pins() -> dict[str, str]:
+    """Return the settings pins ``pyproject.toml`` applies to the test suite.
+
+    Read rather than duplicated. The freshness guard runs this script as a
+    subprocess *from* pytest, so it inherits those pins and the dump resolves
+    them whether or not this file lists them; a developer running the dump from
+    a shell inherits nothing. Two hand-maintained copies therefore produce a
+    spec that depends on how the dump was invoked, and the copies had already
+    drifted (four entries here against eight in ``pyproject.toml``) under a
+    comment asking a human to keep them in step.
+
+    ``ENV_FILE`` is resolved against the repository root: the pin is relative,
+    which pytest resolves from its rootdir, and this script can run from
+    anywhere.
+
+    :return: The pinned variables, in ``pyproject.toml`` order.
+    :raises RuntimeError: When the pins are missing or malformed.
+    """
+    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+    try:
+        entries = config["tool"]["pytest"]["ini_options"]["env"]
+    except KeyError as exc:
+        raise RuntimeError(
+            "[tool.pytest.ini_options] env is missing from pyproject.toml; the "
+            "dump derives its settings pins from it"
+        ) from exc
+
+    pins: dict[str, str] = {}
+    for entry in entries:
+        name, separator, value = entry.partition("=")
+        if not separator:
+            raise RuntimeError(f"pytest env pin is not NAME=value: {entry!r}")
+        pins[name] = value
+    if "ENV_FILE" in pins:
+        pins["ENV_FILE"] = str(REPO_ROOT / pins["ENV_FILE"])
+    return pins
 
 
 def _pin_canonical_settings_env() -> None:
@@ -120,7 +151,7 @@ def _pin_canonical_settings_env() -> None:
     """
     for key in [k for k in os.environ if k.startswith("AUTH__PROVIDER")]:
         del os.environ[key]
-    for key, value in _CANONICAL_ENV.items():
+    for key, value in {**_pytest_env_pins(), **_MINTED_ENV}.items():
         os.environ[key] = value
 
 
