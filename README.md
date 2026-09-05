@@ -336,8 +336,8 @@ echo -e "AUTH__PROVIDER__CASDOOR__CLIENT_ID=YOUR_CASDOOR_CLIENT_ID\nAUTH__PROVID
 
 #### `ENCRYPTION_KEY`
 
-`ENCRYPTION_KEY` is the key SEP encrypts stored values with. Nothing is
-encrypted yet — the key gates the encryption helper itself — but **every
+`ENCRYPTION_KEY` is the key SEP encrypts stored values with. Secret-typed
+settings-override values are encrypted with it at rest, and **every
 environment needs its own, local development included**: SEP refuses to start
 without one, and so do the Celery workers, the Alembic migrations, and the
 OpenAPI dump. It has no default, is never derived from
@@ -358,9 +358,11 @@ A deployment supplies the same value as an environment variable or as a file
 named `ENCRYPTION_KEY` under `SECRETS_DIR`.
 
 **Keep the value stable.** Ciphertext outlives the process that wrote it, so
-once values are encrypted, rotating or losing the key makes every
-already-encrypted row permanently unreadable. There is no recovery path and no
-rotation tooling.
+rotating or losing the key makes every already-encrypted row permanently
+unreadable. There is no recovery path and no rotation tooling. An override SEP
+cannot decrypt is logged and skipped, and the setting falls back to its
+YAML/env value — the deployment keeps starting, but the stored credential is
+gone.
 
 The test suite needs no action — it mints its own key per run.
 

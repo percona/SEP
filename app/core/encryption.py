@@ -32,8 +32,6 @@ from functools import lru_cache
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from app.core.config import settings
-
 _FERNET_VERSION = 0x80
 """The first byte of every decoded Fernet token, which is its version marker."""
 
@@ -60,6 +58,11 @@ def _get_fernet() -> Fernet:
 
     :return: The cached cipher.
     """
+    # circular-import: app.core.config imports app.core.settings_override.models,
+    # whose package __init__ imports cache, which imports app.core.encryption
+    # (this module).
+    from app.core.config import settings
+
     return Fernet(settings.ENCRYPTION_KEY.get_secret_value().encode())
 
 

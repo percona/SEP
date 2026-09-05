@@ -29,6 +29,7 @@ __all__ = [
     "MaterializerContext",
     "MaterializerPurpose",
     "ReloadClassification",
+    "annotation_contains_secret",
     "canonical_override_key",
     "chain_has_advanced",
     "chain_has_explicit_not_overridable",
@@ -1290,7 +1291,7 @@ def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
         seen.add(ident)
         yield current
         origin = typing.get_origin(current)
-        if origin in {Union, UnionType} or origin is not None:
+        if origin is not None:
             stack.extend(typing.get_args(current))
             continue
         if isinstance(current, type) and issubclass(current, BaseModel):
@@ -1304,21 +1305,34 @@ def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
 SECRET_STR_MASK = "**********"  # noqa: S105 # nosec B105
 
 
+def annotation_contains_secret(annotation: Any) -> bool:
+    """Return whether a Pydantic secret type is reachable from ``annotation``.
+
+    Walks the annotation recursively (nested models and imported concrete
+    subclasses of polymorphic bases), looking for
+    :class:`pydantic.SecretStr` or :class:`pydantic.SecretBytes`.
+
+    Public because the at-rest walker in
+    :mod:`app.core.settings_override.secret_storage` decides which leaves to
+    encrypt with this exact rule, and a second copy of it there would let the
+    two drift into disagreeing about which fields are credentials.
+
+    :param annotation: The type annotation to inspect.
+    :return: ``True`` when a secret type is reachable from the annotation.
+    """
+    return any(
+        isinstance(arg, type) and issubclass(arg, SecretStr | SecretBytes)
+        for arg in _iter_type_arguments(annotation)
+    )
+
+
 def _field_contains_secret(field_info: FieldInfo) -> bool:
     """Return whether ``field_info`` exposes a Pydantic secret anywhere in its annotation.
-
-    Walks the annotation recursively via :func:`_iter_type_arguments`
-    (nested models and imported concrete subclasses of polymorphic bases),
-    looking for :class:`pydantic.SecretStr` or :class:`pydantic.SecretBytes`.
 
     :param field_info: The Pydantic field metadata for the target attribute.
     :return: ``True`` when a secret type is reachable from the annotation.
     """
-    secret_types = (SecretStr, SecretBytes)
-    for arg in _iter_type_arguments(field_info.annotation):
-        if isinstance(arg, type) and issubclass(arg, secret_types):
-            return True
-    return False
+    return annotation_contains_secret(field_info.annotation)
 
 
 def _unwrap_secret_value(current: Any) -> str | bytes | None:

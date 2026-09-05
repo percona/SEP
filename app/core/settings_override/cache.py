@@ -26,6 +26,7 @@ from typing import Any, TYPE_CHECKING
 
 from pydantic import BaseModel, ValidationError
 
+from app.core.encryption import DecryptionError
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import setting_class_token, SettingOverride
 from app.core.settings_override.registry import (
@@ -37,6 +38,7 @@ from app.core.settings_override.registry import (
     materialize_override_value,
     MaterializerPurpose,
 )
+from app.core.settings_override.secret_storage import decrypt_secret_leaves
 from app.core.utils.pydantic import annotation_pydantic_class
 
 if TYPE_CHECKING:
@@ -149,12 +151,22 @@ def _apply_top_level_row(
         )
         return
     try:
+        raw = decrypt_secret_leaves(settings_cls, row.key, row.value)
         snapshot[row.key] = materialize_override_value(
             settings_cls,
             row.key,
             field_info,
-            row.value,
+            raw,
             purpose=MaterializerPurpose.SNAPSHOT,
+        )
+    # DecryptionError subclasses ValueError, so this clause must stay above the
+    # coercion one or an undecryptable row is reported as a bad type instead.
+    except DecryptionError as exc:
+        logger.warning(
+            "Override for %s.%s could not be decrypted: %s",
+            setting_class,
+            row.key,
+            exc,
         )
     except ValueError as exc:
         logger.warning(
@@ -212,7 +224,16 @@ def _apply_nested_group(
     sub_updates = {}
     for row in group:
         try:
-            chain, value = coerce_nested_field_value(settings_cls, row.key, row.value)
+            raw = decrypt_secret_leaves(settings_cls, row.key, row.value)
+            chain, value = coerce_nested_field_value(settings_cls, row.key, raw)
+        except DecryptionError as exc:
+            logger.warning(
+                "Nested override for %s.%s could not be decrypted: %s",
+                setting_class,
+                row.key,
+                exc,
+            )
+            continue
         except KeyError:
             logger.warning(
                 "Nested override for unknown or not-overridable field ignored: %s.%s",
