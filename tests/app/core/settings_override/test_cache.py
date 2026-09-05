@@ -46,15 +46,15 @@ from app.tasks.execution.executors.nomad import NomadExecutor
 from tests.app.core.settings_override.conftest import (
     ALERT_SETTINGS_TOKEN,
     insert_override_row,
+    PMM_API_KEY,
     PMM_ENDPOINT,
+    ROUTING_KEY,
     SEP_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
 
 _NOMAD_OVERRIDE_TIMEOUT = 30
-_PMM_API_KEY = "pmm-api-key"
-_ROUTING_KEY = "pd-routing-key"
 
 
 def _foreign_token(value: str = "written under another key") -> str:
@@ -830,10 +830,10 @@ async def test_secret_leaf_decrypted_before_materialization(
         session,
         setting_class=SETTINGS_TOKEN,
         key="PMM",
-        value={"endpoint": PMM_ENDPOINT, "api_key": encrypt(_PMM_API_KEY)},
+        value={"endpoint": PMM_ENDPOINT, "api_key": encrypt(PMM_API_KEY)},
     )
     snapshot = await build_snapshot(session, Settings)
-    assert snapshot["PMM"].api_key.get_secret_value() == _PMM_API_KEY
+    assert snapshot["PMM"].api_key.get_secret_value() == PMM_API_KEY
     assert snapshot["PMM"].endpoint == PMM_ENDPOINT
 
 
@@ -846,10 +846,10 @@ async def test_legacy_plaintext_secret_row_still_resolves(
         session,
         setting_class=SETTINGS_TOKEN,
         key="PMM",
-        value={"endpoint": PMM_ENDPOINT, "api_key": _PMM_API_KEY},
+        value={"endpoint": PMM_ENDPOINT, "api_key": PMM_API_KEY},
     )
     snapshot = await build_snapshot(session, Settings)
-    assert snapshot["PMM"].api_key.get_secret_value() == _PMM_API_KEY
+    assert snapshot["PMM"].api_key.get_secret_value() == PMM_API_KEY
 
 
 @pytest.mark.asyncio
@@ -887,10 +887,10 @@ async def test_nested_secret_row_decrypted(session: AsyncSession) -> None:
         session,
         setting_class=SETTINGS_TOKEN,
         key="PMM__API_KEY",
-        value=encrypt(_PMM_API_KEY),
+        value=encrypt(PMM_API_KEY),
     )
     snapshot = await build_snapshot(session, Settings)
-    assert snapshot["PMM"].api_key.get_secret_value() == _PMM_API_KEY
+    assert snapshot["PMM"].api_key.get_secret_value() == PMM_API_KEY
 
 
 @pytest.mark.asyncio
@@ -926,8 +926,8 @@ async def test_materializer_backed_provider_secret_decrypted(
         session,
         setting_class=ALERT_SETTINGS_TOKEN,
         key="PROVIDERS",
-        value=[{"PROVIDER": "pagerduty", "routing_key": encrypt(_ROUTING_KEY)}],
+        value=[{"PROVIDER": "pagerduty", "routing_key": encrypt(ROUTING_KEY)}],
     )
     snapshot = await build_snapshot(session, AlertSettings)
     provider = next(iter(snapshot["PROVIDERS"]))
-    assert provider.routing_key.get_secret_value() == _ROUTING_KEY
+    assert provider.routing_key.get_secret_value() == ROUTING_KEY
