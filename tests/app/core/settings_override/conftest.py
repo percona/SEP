@@ -51,6 +51,11 @@ SETTINGS_TOKEN = setting_class_token(Settings)
 SNIPPETS_SETTINGS_TOKEN = setting_class_token(SnippetsSettings)
 TASKS_SETTINGS_TOKEN = setting_class_token(TasksSettings)
 
+#: A username far longer than any bounded column would have allowed. Both the
+#: SQLite round-trip and its real-PostgreSQL sibling write one this long to
+#: prove ``settingoverride.updated_by`` carries no width.
+LONG_USERNAME_LENGTH = 512
+
 
 async def insert_override_row(
     session: AsyncSession, **kwargs: object

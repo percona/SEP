@@ -137,6 +137,11 @@ class SettingOverride(BaseSQLModel, table=True):
     :param value: The JSON-encoded raw value to apply at runtime.
     :param is_active: Whether this override row should be considered by the
         cache loader. Inactive rows are skipped.
+    :param updated_by: The username that last wrote this row, or ``None`` for a
+        row written before the column existed. Deliberately unbounded: the value
+        is copied from ``BaseUser.username``, which declares a minimum length and
+        no maximum, so any width chosen here would be a bound the identity
+        provider never agreed to.
     """
 
     __table_args__ = (
@@ -157,6 +162,7 @@ class SettingOverride(BaseSQLModel, table=True):
         sa_column=Column(AutoJSON, nullable=False),
     )
     is_active: bool = SQLField(default=True, nullable=False, index=True)
+    updated_by: str | None = SQLField(default=None, nullable=True)
 
     @field_validator("setting_class", mode="before")
     @classmethod

@@ -412,7 +412,7 @@ def test_settings_response_serializes_missing_mapping_segment_as_null() -> None:
         settings_cls=_SecretLeafParent,
         proxy=proxy,
         field_meta=leaf_meta,
-        has_override=False,
+        provenance=None,
     )
     assert response.value is None
     assert response.is_secret is True
@@ -433,7 +433,7 @@ def test_settings_response_serializes_present_none_secret_leaf_as_null() -> None
         settings_cls=_SecretLeafParent,
         proxy=proxy,
         field_meta=leaf_meta,
-        has_override=False,
+        provenance=None,
     )
     assert response.value is None
     assert response.is_secret is True

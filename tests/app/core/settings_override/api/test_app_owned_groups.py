@@ -106,6 +106,7 @@ def app_owned_client_fixture(
         classes=core_classes,
         session_dep=session_dep,
         admin_dep=Depends(allow_admin),
+        actor_dep=Annotated[str, Depends(lambda: "test-admin")],
         app_owned_classes=app_owned,
         resolve_app_metadata=_mock_resolve_app_metadata,
     )
@@ -139,6 +140,7 @@ def core_only_client_fixture(
         ],
         session_dep=session_dep,
         admin_dep=Depends(allow_admin),
+        actor_dep=Annotated[str, Depends(lambda: "test-admin")],
     )
     app = FastAPI()
     app.include_router(router, prefix="/settings")
@@ -192,6 +194,7 @@ class TestBuildSettingsRouterAppOwned:
                 classes=[],
                 session_dep=Annotated[AsyncSession, Depends(lambda: None)],
                 admin_dep=Depends(lambda: None),
+                actor_dep=Annotated[str, Depends(lambda: "test-admin")],
                 app_owned_classes=[
                     AppOwnedClassEntry(
                         setting_class=AlertsSettings.__name__,
@@ -215,6 +218,7 @@ class TestBuildSettingsRouterAppOwned:
                 ],
                 session_dep=Annotated[AsyncSession, Depends(lambda: None)],
                 admin_dep=Depends(lambda: None),
+                actor_dep=Annotated[str, Depends(lambda: "test-admin")],
                 app_owned_classes=[
                     AppOwnedClassEntry(
                         setting_class=AlertsSettings.__name__,
@@ -224,4 +228,22 @@ class TestBuildSettingsRouterAppOwned:
                     ),
                 ],
                 resolve_app_metadata=_mock_resolve_app_metadata,
+            )
+
+
+class TestBuildSettingsRouterWiring:
+    """Cover the factory's required-parameter contract, independent of app ownership."""
+
+    def test_missing_actor_dep_raises(self) -> None:
+        """Reject a router built without ``actor_dep`` rather than record no actor.
+
+        The parameter is deliberately source-breaking: a sub-app that forgets the
+        wiring fails where the router is built, at import, instead of serving
+        PATCHes that silently store no provenance.
+        """
+        with pytest.raises(TypeError, match="actor_dep"):
+            build_settings_router(
+                classes=[],
+                session_dep=Annotated[AsyncSession, Depends(lambda: None)],
+                admin_dep=Depends(lambda: None),
             )
