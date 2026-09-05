@@ -33,6 +33,7 @@ from app.core.requests.remote_api import (
     _iter_lines_from_chunks,
     _REDACTED_VALUE,
     _sanitize_request_kwargs,
+    _WITHHELD_BODY,
     as_json_array,
     as_json_object,
     is_non_json_success,
@@ -44,6 +45,9 @@ from app.core.requests.remote_api import (
 from tests.app.scan_recording import ScanRecordingBytearray
 
 _UPLOAD_URL = "http://localhost:8000/upload"
+_RESPONSE_URL = "http://localhost:8000/body"
+_BODY_SENTINEL = "sentinel-response-value"
+_LATER_BODY_SENTINEL = "later-response-value"
 
 
 @pytest.fixture
@@ -192,6 +196,90 @@ def test_redact_body_fields_nesting_unions_with_outer_context(remote_api):
 
     assert nested == frozenset({"outer_token", "inner_token"})
     assert restored == frozenset({"outer_token"})
+
+
+class TestSuppressResponseLog:
+    """Cover withholding a response body from the transport's debug log."""
+
+    @pytest.mark.asyncio
+    async def test_the_response_body_is_logged_by_default(self, remote_api, caplog):
+        """Log the parsed response body when no suppression is in effect."""
+        with aioresponses() as mock:
+            mock.get(_RESPONSE_URL, payload={"token": _BODY_SENTINEL})
+            with caplog.at_level("DEBUG", logger=remote_api.logger.name):
+                async with remote_api:
+                    await remote_api.get("body")
+
+        assert any(_BODY_SENTINEL in record.getMessage() for record in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_the_response_body_is_withheld_inside_the_block(
+        self, remote_api, caplog
+    ):
+        """Log the placeholder in place of the body inside the block."""
+        with aioresponses() as mock:
+            mock.get(_RESPONSE_URL, payload={"token": _BODY_SENTINEL})
+            with caplog.at_level("DEBUG", logger=remote_api.logger.name):
+                async with remote_api:
+                    with remote_api.suppress_response_log():
+                        await remote_api.get("body")
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert all(_BODY_SENTINEL not in message for message in messages)
+        assert any(_WITHHELD_BODY in message for message in messages)
+
+    @pytest.mark.asyncio
+    async def test_non_json_response_content_is_withheld(self, remote_api, caplog):
+        """Render the placeholder on the non-JSON exception line as well.
+
+        That line logs a stream handle rather than the content, so this pins the
+        substitution reaching both sites, not a leak being closed: the sentinel
+        assertion below holds on unguarded code too, and only the placeholder
+        assertion discriminates.
+        """
+        with aioresponses() as mock:
+            mock.get(
+                _RESPONSE_URL,
+                status=status.HTTP_200_OK,
+                body=_BODY_SENTINEL,
+                content_type="text/plain",
+            )
+            with caplog.at_level("DEBUG", logger=remote_api.logger.name):
+                async with remote_api:
+                    with remote_api.suppress_response_log():
+                        with pytest.raises(HTTPException):
+                            await remote_api.get("body")
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert all(_BODY_SENTINEL not in message for message in messages)
+        assert any(_WITHHELD_BODY in message for message in messages)
+
+    @pytest.mark.asyncio
+    async def test_a_later_call_logs_its_body_again(self, remote_api, caplog):
+        """Restore body logging for a call issued after the block exits."""
+        with aioresponses() as mock:
+            mock.get(_RESPONSE_URL, payload={"token": _BODY_SENTINEL})
+            mock.get(_RESPONSE_URL, payload={"token": _LATER_BODY_SENTINEL})
+            with caplog.at_level("DEBUG", logger=remote_api.logger.name):
+                async with remote_api:
+                    with remote_api.suppress_response_log():
+                        await remote_api.get("body")
+                    await remote_api.get("body")
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert all(_BODY_SENTINEL not in message for message in messages)
+        assert any(_LATER_BODY_SENTINEL in message for message in messages)
+
+    def test_nesting_restores_the_outer_suppression(self, remote_api):
+        """Leave an outer block's suppression standing when an inner one exits."""
+        with remote_api.suppress_response_log():
+            with remote_api.suppress_response_log():
+                pass
+            nested = remote_api._suppress_response_log.get()
+        after = remote_api._suppress_response_log.get()
+
+        assert nested is True
+        assert after is False
 
 
 class TestUpload:

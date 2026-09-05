@@ -29,6 +29,7 @@ from app.core.exceptions import HTTPBadGatewayException, HTTPConflictException
 from app.core.requests import RemoteAPI
 from app.sep.bundle_upload.plan import (
     CaseMatch,
+    ConnectionDetail,
     DeliveryPlan,
     DeliveryPlanError,
     DeliveryPlanExecutor,
@@ -42,8 +43,35 @@ _TICKET_URL = "http://localhost:8000/ticket_details"
 _ACCOUNT_URL = "http://localhost:8000/case_account"
 _PROBE_URL = "http://localhost:8000/health"
 _CASE_SEARCH_URL = "http://localhost:8000/case"
+_CONNECTION_DETAILS_URL = "http://localhost:8000/api_key"
 _MANIFEST: dict[str, Any] = {"bundle": "diag", "size": 12}
 _PLAN_LOGGER = "app.sep.bundle_upload.plan"
+
+#: A fragment of the transport's response-log line, used as the positive control
+#: in the confidentiality tests: without it, asserting that a sentinel is absent
+#: would hold just as well on a run that logged nothing at all.
+_RESPONSE_LOG_MARKER = "request to"
+
+#: A receiver record carrying every fact the connection-details plan declares,
+#: alongside the two credential fields the same row holds on Percona's instance.
+_CONNECTION_DETAILS_BODY: dict[str, Any] = {
+    "result": {
+        "expires_on": "2027-01-31",
+        "active": True,
+        "token": "encrypted-token-blob",
+        "token_hash": "hashed-token-blob",
+        "account": {"name": "Contrativa", "number": "ACC-42"},
+    }
+}
+
+#: What the connection-details plan's pointers resolve to over that body, in the
+#: order the plan declares them.
+_EXPECTED_DETAILS = [
+    ConnectionDetail(label="Access expires on", value="2027-01-31"),
+    ConnectionDetail(label="Account name", value="Contrativa"),
+    ConnectionDetail(label="Key active", value="true"),
+    ConnectionDetail(label="Account number", value="ACC-42"),
+]
 
 
 @pytest.fixture(name="api")
@@ -211,6 +239,32 @@ def _case_search_plan(**case_search_overrides: Any) -> dict[str, Any]:
     payload = _upload_only_plan()
     payload["secrets"] = {"api_key": "real-api-key"}
     payload["case_search"] = case_search
+    return payload
+
+
+def _connection_details_plan(**connection_details_overrides: Any) -> dict[str, Any]:
+    """Return an upload-only plan payload carrying a connection-details step.
+
+    The declared labels are deliberately not in alphabetical order, so a test
+    asserting declaration order cannot pass on a sorted answer.
+
+    :param connection_details_overrides: Connection-details-step keys replacing
+        the defaults below.
+    :return: The plan payload to validate.
+    """
+    connection_details = {
+        "path": "api_key",
+        "details": {
+            "Access expires on": "/result/expires_on",
+            "Account name": "/result/account/name",
+            "Key active": "/result/active",
+            "Account number": "/result/account/number",
+        },
+    }
+    connection_details.update(connection_details_overrides)
+    payload = _upload_only_plan()
+    payload["secrets"] = {"api_key": "real-api-key"}
+    payload["connection_details"] = connection_details
     return payload
 
 
@@ -605,6 +659,101 @@ class TestCaseSearchStepValidation:
         plan = DeliveryPlan(**_one_step_plan())
 
         assert plan.case_search is None
+
+
+class TestConnectionDetailsStepValidation:
+    """Cover the connection-details step's narrowed sources and same-origin path."""
+
+    def test_literal_and_secret_values_are_accepted(self):
+        """Accept the two sources the step can resolve with no send in flight."""
+        payload = _connection_details_plan(
+            headers={"x-sn-apikey": {"source": "secret", "name": "api_key"}},
+            query={"sysparm_fields": {"source": "literal", "value": "active"}},
+        )
+
+        plan = DeliveryPlan(**payload)
+
+        assert plan.connection_details.headers["x-sn-apikey"].name == "api_key"
+        assert plan.connection_details.query["sysparm_fields"].value == "active"
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            {"source": "input", "field": "case_ref"},
+            {"source": "manifest_key", "key": "collected_at"},
+            {"source": "output", "step": "lookup", "output": "sys_id"},
+            {"source": "term"},
+        ],
+        ids=["input", "manifest_key", "output", "term"],
+    )
+    def test_sources_outside_the_probe_union_are_refused(self, source: dict[str, Any]):
+        """Reject every source a read outside a send has nothing to resolve from."""
+        payload = _connection_details_plan(headers={"x-detail": source})
+
+        with pytest.raises(ValidationError, match="does not match any of the expected"):
+            DeliveryPlan(**payload)
+
+    def test_undeclared_secret_is_refused(self):
+        """Reject a step secret the plan never declares, as any other step's is."""
+        payload = _connection_details_plan(
+            headers={"x-detail": {"source": "secret", "name": "missing"}}
+        )
+
+        with pytest.raises(ValidationError, match="undefined secret 'missing'"):
+            DeliveryPlan(**payload)
+
+    def test_secret_in_the_query_map_is_refused(self):
+        """Keep the credential out of the query string, as every other step does."""
+        payload = _connection_details_plan(
+            query={"key": {"source": "secret", "name": "api_key"}}
+        )
+
+        with pytest.raises(ValidationError, match="may not use a secret"):
+            DeliveryPlan(**payload)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "https://attacker.example/api_key",
+            "//attacker.example/api_key",
+            "//",
+            "///api_key",
+        ],
+        ids=[
+            "absolute_url",
+            "network_path_reference",
+            "bare_authority_marker",
+            "empty_authority",
+        ],
+    )
+    def test_an_off_origin_path_is_refused(self, path: str):
+        """Reject every spelling that is not a path under the plan's endpoint."""
+        payload = _connection_details_plan(path=path)
+
+        with pytest.raises(ValidationError, match="must be relative"):
+            DeliveryPlan(**payload)
+
+    @pytest.mark.parametrize(
+        "path", ["api/now/table/x", "/api/now/table/x"], ids=["relative", "rooted"]
+    )
+    def test_ordinary_paths_are_accepted(self, path: str):
+        """Accept both spellings of a path that stays under the plan's endpoint."""
+        payload = _connection_details_plan(path=path)
+
+        assert DeliveryPlan(**payload).connection_details.path == path
+
+    def test_a_malformed_pointer_is_refused(self):
+        """Reject a declared pointer that is not a JSON Pointer, when parsed."""
+        payload = _connection_details_plan(details={"Account": "not-a-pointer"})
+
+        with pytest.raises(ValidationError):
+            DeliveryPlan(**payload)
+
+    def test_a_plan_without_connection_details_still_validates(self):
+        """Leave every already-deployed plan valid, with no such step declared."""
+        plan = DeliveryPlan(**_one_step_plan())
+
+        assert plan.connection_details is None
 
 
 @pytest.mark.asyncio
@@ -2376,3 +2525,450 @@ class TestDeliveryPlanCaseSearch:
             ]
 
         assert requested == [_CASE_SEARCH_URL]
+
+
+@pytest.mark.asyncio
+class TestDeliveryPlanConnectionDetails:
+    """Cover reading the facts describing the connection, sending no bundle."""
+
+    async def test_the_read_issues_one_get_carrying_the_resolved_secret(
+        self, api: RemoteAPI
+    ):
+        """Issue one request carrying the plan's own credential to the receiver."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(
+                **_connection_details_plan(
+                    headers={"x-sn-apikey": {"source": "secret", "name": "api_key"}}
+                )
+            ),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_200_OK,
+                payload=_CONNECTION_DETAILS_BODY,
+            )
+            async with api:
+                await executor.read_connection_details()
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert len(requests) == 1
+        assert requests[0].kwargs["headers"]["x-sn-apikey"] == "real-api-key"
+
+    async def test_the_read_sends_the_declared_query_parameters(self, api: RemoteAPI):
+        """Send the query pairs the plan declares, resolved to their values."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(
+                **_connection_details_plan(
+                    query={"sysparm_fields": {"source": "literal", "value": "active"}}
+                )
+            ),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(
+                re.compile(rf"{re.escape(_CONNECTION_DETAILS_URL)}.*"),
+                status=status.HTTP_200_OK,
+                payload=_CONNECTION_DETAILS_BODY,
+            )
+            async with api:
+                await executor.read_connection_details()
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert requests[0].kwargs["params"] == {"sysparm_fields": "active"}
+
+    async def test_the_read_sends_no_body_and_refuses_to_follow_redirects(
+        self, api: RemoteAPI
+    ):
+        """Keep the read a bare GET whose redirect is reported, never followed."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_connection_details_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_200_OK,
+                payload=_CONNECTION_DETAILS_BODY,
+            )
+            async with api:
+                await executor.read_connection_details()
+
+            requests = [req for reqs in mock.requests.values() for req in reqs]
+
+        assert requests[0].kwargs["allow_redirects"] is False
+        assert "json" not in requests[0].kwargs
+        assert "data" not in requests[0].kwargs
+
+    async def test_declared_pointers_resolve_in_declaration_order(self, api: RemoteAPI):
+        """Answer every declared pair, ordered as the plan declares them."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_connection_details_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_200_OK,
+                payload=_CONNECTION_DETAILS_BODY,
+            )
+            async with api:
+                details = await executor.read_connection_details()
+
+        assert details == _EXPECTED_DETAILS
+
+    async def test_the_order_is_the_same_on_every_read(self, api: RemoteAPI):
+        """Answer the same order on a second read of the same receiver."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_connection_details_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_200_OK,
+                payload=_CONNECTION_DETAILS_BODY,
+                repeat=True,
+            )
+            async with api:
+                first = await executor.read_connection_details()
+                second = await executor.read_connection_details()
+
+        assert first == _EXPECTED_DETAILS
+        assert second == _EXPECTED_DETAILS
+
+    async def test_only_the_declared_values_reach_the_caller(self, api: RemoteAPI):
+        """Answer the declared pairs alone, carrying no credential the row holds.
+
+        The receiver's row also carries ``token`` and ``token_hash``. Asserting
+        only their absence would pass on a regression that blanks the whole
+        projection, so the full expected list is asserted alongside.
+        """
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_connection_details_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_200_OK,
+                payload=_CONNECTION_DETAILS_BODY,
+            )
+            async with api:
+                details = await executor.read_connection_details()
+
+        values = [detail.value for detail in details]
+        assert details == _EXPECTED_DETAILS
+        assert "encrypted-token-blob" not in values
+        assert "hashed-token-blob" not in values
+
+    async def test_a_pointer_that_misses_omits_its_own_pair(
+        self, api: RemoteAPI, caplog
+    ):
+        """Drop one drifted pointer rather than blanking the pairs beside it.
+
+        A read that still resolved pairs is not the all-missed shape, so it must
+        not log the warning reserved for that case.
+        """
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_connection_details_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": {"expires_on": "2027-01-31", "active": True}},
+            )
+            with caplog.at_level("WARNING", logger=_PLAN_LOGGER):
+                async with api:
+                    details = await executor.read_connection_details()
+
+        assert details == [
+            ConnectionDetail(label="Access expires on", value="2027-01-31"),
+            ConnectionDetail(label="Key active", value="true"),
+        ]
+        assert caplog.records == []
+
+    async def test_a_pointer_landing_on_a_container_omits_its_own_pair(
+        self, api: RemoteAPI
+    ):
+        """Drop a pointer that lands on an object rather than a value."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(
+                **_connection_details_plan(
+                    details={
+                        "Account name": "/result/account",
+                        "Key active": "/result/active",
+                    }
+                )
+            ),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_200_OK,
+                payload=_CONNECTION_DETAILS_BODY,
+            )
+            async with api:
+                details = await executor.read_connection_details()
+
+        assert details == [ConnectionDetail(label="Key active", value="true")]
+
+    async def test_a_pointer_resolving_to_an_empty_string_keeps_its_pair(
+        self, api: RemoteAPI
+    ):
+        """Report an empty string the receiver sent, which is not a missed pointer."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(
+                **_connection_details_plan(details={"Account name": "/result/name"})
+            ),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": {"name": ""}},
+            )
+            async with api:
+                details = await executor.read_connection_details()
+
+        assert details == [ConnectionDetail(label="Account name", value="")]
+
+    @pytest.mark.parametrize(
+        "payload",
+        [{"result": {"unrelated": "value"}}, [], "text"],
+        ids=["no_declared_field", "list_root", "scalar_root"],
+    )
+    async def test_every_pointer_missing_answers_nothing_with_a_warning(
+        self, api: RemoteAPI, caplog, payload: Any
+    ):
+        """Flag a response matching no pointer, the shape a drifted plan takes.
+
+        :param api: The transport the read is issued over.
+        :param caplog: The log-capture fixture.
+        :param payload: A response body none of the declared pointers address.
+        """
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_connection_details_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL, status=status.HTTP_200_OK, payload=payload
+            )
+            with caplog.at_level("WARNING", logger=_PLAN_LOGGER):
+                async with api:
+                    details = await executor.read_connection_details()
+
+        assert details == []
+        assert any("carried none of" in r.getMessage() for r in caplog.records)
+
+    async def test_a_step_declaring_no_pointers_answers_nothing_quietly(
+        self, api: RemoteAPI, caplog
+    ):
+        """Stay quiet for a step that declared nothing for the response to miss."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(**_connection_details_plan(details={})), api
+        )
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_200_OK,
+                payload=_CONNECTION_DETAILS_BODY,
+            )
+            with caplog.at_level("WARNING", logger=_PLAN_LOGGER):
+                async with api:
+                    details = await executor.read_connection_details()
+
+        assert details == []
+        assert caplog.records == []
+
+    async def test_a_response_carrying_no_body_is_fatal(self, api: RemoteAPI):
+        """Refuse a body-less answer rather than reporting nothing to report."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_connection_details_plan()), api)
+        with aioresponses() as mock:
+            mock.get(_CONNECTION_DETAILS_URL, status=status.HTTP_204_NO_CONTENT)
+            async with api:
+                with pytest.raises(DeliveryPlanError, match="carried no body"):
+                    await executor.read_connection_details()
+
+    async def test_a_read_without_a_declared_step_raises(self, api: RemoteAPI):
+        """Refuse to guess a request for a plan that declares no such step."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
+
+        with pytest.raises(
+            DeliveryPlanError, match="declares no connection-details step"
+        ):
+            await executor.read_connection_details()
+
+    async def test_a_non_success_status_propagates(self, api: RemoteAPI):
+        """Let a refused credential reach the caller as the mapped exception."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_connection_details_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_401_UNAUTHORIZED,
+                payload={"error": "denied"},
+            )
+            async with api:
+                with pytest.raises(HTTPException):
+                    await executor.read_connection_details()
+
+    async def test_a_non_json_success_propagates(self, api: RemoteAPI):
+        """Refuse a non-JSON answer, unlike the probe, which declares no contract."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_connection_details_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_200_OK,
+                body="OK",
+                content_type="text/plain",
+            )
+            async with api:
+                with pytest.raises(HTTPException):
+                    await executor.read_connection_details()
+
+    async def test_the_read_runs_none_of_the_plans_resolution_steps(
+        self, api: RemoteAPI
+    ):
+        """Leave a mutating resolution step unrun, reaching only the read path."""
+        payload = _one_step_plan()
+        payload["connection_details"] = {
+            "path": "api_key",
+            "details": {"Key active": "/result/active"},
+        }
+        executor = DeliveryPlanExecutor(DeliveryPlan(**payload), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": {"active": True}},
+            )
+            async with api:
+                await executor.read_connection_details()
+
+            requested = [
+                str(key[1]) for key, calls in mock.requests.items() for _ in calls
+            ]
+
+        assert requested == [_CONNECTION_DETAILS_URL]
+
+
+@pytest.mark.asyncio
+class TestConnectionDetailsResponseConfidentiality:
+    """Cover keeping the receiver's response out of the transport's debug log."""
+
+    async def test_no_credential_the_row_carries_reaches_a_log_record(
+        self, api: RemoteAPI, caplog
+    ):
+        """Answer the declared pairs while the body reaches no log record."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_connection_details_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_200_OK,
+                payload=_CONNECTION_DETAILS_BODY,
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    details = await executor.read_connection_details()
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert details == _EXPECTED_DETAILS
+        assert all("encrypted-token-blob" not in message for message in messages)
+        assert all("hashed-token-blob" not in message for message in messages)
+
+    async def test_a_non_json_body_reaches_no_log_record(self, api: RemoteAPI, caplog):
+        """Keep a non-JSON answer's content out of every log record.
+
+        The transport's exception line reports a stream handle rather than the
+        content, so this pins the property rather than a leak being closed. The
+        response-log marker is asserted first as the positive control: without
+        it the sentinel assertion would hold on a run that logged nothing.
+        """
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_connection_details_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_200_OK,
+                body="encrypted-token-blob",
+                content_type="text/plain",
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    with pytest.raises(HTTPException):
+                        await executor.read_connection_details()
+
+        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert "encrypted-token-blob" not in caplog.text
+
+    async def test_an_error_response_body_reaches_no_log_record(
+        self, api: RemoteAPI, caplog
+    ):
+        """Withhold the body of a refused read, the path a leak matters most on.
+
+        The sentinel is planted under ``detail`` because that is the key
+        ``RemoteAPI`` lifts onto the exception it raises, so the same body
+        exercises this test and its route-level twin, where the exception is
+        what reaches a log line. ``caplog.text`` is asserted rather than
+        ``record.getMessage()``, which renders the format string alone and so
+        cannot see a value carried in a traceback.
+        """
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_connection_details_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_401_UNAUTHORIZED,
+                payload={"detail": "encrypted-token-blob"},
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    with pytest.raises(HTTPException):
+                        await executor.read_connection_details()
+
+        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert "encrypted-token-blob" not in caplog.text
+
+
+@pytest.mark.asyncio
+class TestConnectionDetailsSecretRedaction:
+    """Cover masking the step's own credential in the request log."""
+
+    async def test_the_secret_is_sent_but_masked_in_logs(self, api: RemoteAPI, caplog):
+        """Send the real API key on the wire while the debug log shows only a mask."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(
+                **_connection_details_plan(
+                    headers={"x-sn-apikey": {"source": "secret", "name": "api_key"}}
+                )
+            ),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_200_OK,
+                payload=_CONNECTION_DETAILS_BODY,
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    await executor.read_connection_details()
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("****" in message for message in messages)
+        assert all("real-api-key" not in message for message in messages)
+
+    async def test_the_secret_stays_masked_when_the_receiver_refuses(
+        self, api: RemoteAPI, caplog
+    ):
+        """Keep the credential masked on the failure path as on the success one."""
+        executor = DeliveryPlanExecutor(
+            DeliveryPlan(
+                **_connection_details_plan(
+                    headers={"x-sn-apikey": {"source": "secret", "name": "api_key"}}
+                )
+            ),
+            api,
+        )
+        with aioresponses() as mock:
+            mock.get(
+                _CONNECTION_DETAILS_URL,
+                status=status.HTTP_401_UNAUTHORIZED,
+                payload={"error": "denied"},
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    with pytest.raises(HTTPException):
+                        await executor.read_connection_details()
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("****" in message for message in messages)
+        assert all("real-api-key" not in message for message in messages)

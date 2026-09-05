@@ -378,6 +378,58 @@
         "title": "DashboardStatsResponse",
         "type": "object"
       },
+      "DeliveryConnectionDetail": {
+        "description": "Report one fact describing the delivery connection.\n\n:param label: The display label the plan declared, rendered verbatim. A\n    machine key would oblige the caller to carry receiver-specific names.\n:param value: The value that label reports.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "DeliveryConnectionDetail",
+        "type": "object"
+      },
+      "DeliveryConnectionResponse": {
+        "description": "Report the facts describing the delivery connection, or why there are none.\n\n:param status: Which of the five outcomes the read reached.\n:param details: The resolved pairs in the plan's declaration order. Empty\n    for every status other than ``available``, and empty under ``available``\n    when every declared pointer missed, so a caller draws from this alone\n    and consults ``status`` only to explain an empty list.",
+        "properties": {
+          "details": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DeliveryConnectionDetail"
+            },
+            "title": "Details",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DeliveryConnectionStatusEnum"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "DeliveryConnectionResponse",
+        "type": "object"
+      },
+      "DeliveryConnectionStatusEnum": {
+        "description": "Enumerate the mutually-exclusive outcomes of a connection-details read.",
+        "enum": [
+          "available",
+          "undeclared",
+          "not_configured",
+          "inputs_drifted",
+          "fetch_failed"
+        ],
+        "title": "DeliveryConnectionStatusEnum",
+        "type": "string"
+      },
       "ExecutionEvent": {
         "description": "Represent a single lifecycle event from a task executor (executor-agnostic shape).\n\n:param timestamp: When the event occurred (UTC).\n:param event_type: Executor-specific event category (for example a Nomad\n    task event type).\n:param description: Human-readable message for the event (no step prefix).\n:param step: Optional executor task/step name (for example a Nomad task\n    within the group).",
         "properties": {
@@ -19803,6 +19855,28 @@
           }
         },
         "summary": "Check Connectivity",
+        "tags": [
+          "sep"
+        ]
+      }
+    },
+    "/api/sep/admin/delivery-connection/": {
+      "get": {
+        "description": "Report the facts the delivery plan declares about its own connection.\n\nNo way the read can fail reaches the caller as an error: a deployment that\ndeclares no connection-details step, stored inputs that no longer fit the\nplan, a refused credential, an unreachable receiver and a read that outran\nits bound all answer 200 with the outcome that describes them, so a caller\nrenders a state rather than handling an error. The three configuration\noutcomes are decided before any request is issued; the read and the failure\noutcomes are decided only after one.\n\n:return: The resolved pairs in the plan's declaration order, or the outcome\n    explaining why there are none.",
+        "operationId": "sep_read_delivery_connection_api_sep_admin_delivery_connection__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Delivery Connection",
         "tags": [
           "sep"
         ]
