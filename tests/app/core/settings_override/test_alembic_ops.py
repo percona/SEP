@@ -341,6 +341,30 @@ def test_encrypted_rows_are_not_plaintext(engine: Engine) -> None:
     )
 
 
+def _secret_bearing_overridable_fields() -> set[tuple[type[BaseYamlSettings], str]]:
+    """Return every ``(settings class, key)`` an override row can hold a secret at.
+
+    :return: The overridable secret-bearing fields of every override-exposed class.
+    """
+    exposed = [
+        *(settings_cls for _token, settings_cls, _proxy in SEP_ADMIN_SETTINGS_CLASSES),
+        *(entry.settings_cls for entry in collect_app_owned_settings_classes()),
+        InventorySettings,
+        TasksSettings,
+        AnonymizerSettings,
+    ]
+    return {
+        (settings_cls, meta.key)
+        for settings_cls in exposed
+        for meta in iter_class_fields(settings_cls)
+        if annotation_contains_secret(meta.annotation)
+        and (
+            is_hot_reloadable(settings_cls, meta.key)
+            or is_nested_overridable_parent(settings_cls, meta.key)
+        )
+    }
+
+
 def test_migration_settings_classes_cover_every_secret_bearing_class() -> None:
     """Assert the three migrations' class lists reach every class that can hold a secret.
 
@@ -351,6 +375,13 @@ def test_migration_settings_classes_cover_every_secret_bearing_class() -> None:
     secret-bearing field overridable, the write path would encrypt new rows
     while no migration ever reached the existing ones. This test is the only
     place both sides can be compared.
+
+    Class membership is the whole of what it compares, which is what a database
+    reaching these revisions for the first time needs and nothing more. The
+    revisions keep no record of which fields they rewrote, and Alembic will not
+    re-run them where they have already applied, so a field turning secret-typed
+    on a class that is already listed passes this check untouched;
+    :func:`test_secret_bearing_overridable_fields_are_pinned` is what catches it.
     """
     revisions = sorted(
         BASE_DIR.glob("app/*/migrations/versions/*encrypt_secret_setting_overrides.py")
@@ -361,24 +392,29 @@ def test_migration_settings_classes_cover_every_secret_bearing_class() -> None:
         for revision in revisions
         for settings_cls in _load_revision(revision).SETTINGS_CLASSES
     }
-    exposed = [
-        *(settings_cls for _token, settings_cls, _proxy in SEP_ADMIN_SETTINGS_CLASSES),
-        *(entry.settings_cls for entry in collect_app_owned_settings_classes()),
-        InventorySettings,
-        TasksSettings,
-        AnonymizerSettings,
-    ]
-
     needs_migrating = {
-        settings_cls
-        for settings_cls in exposed
-        for meta in iter_class_fields(settings_cls)
-        if annotation_contains_secret(meta.annotation)
-        and (
-            is_hot_reloadable(settings_cls, meta.key)
-            or is_nested_overridable_parent(settings_cls, meta.key)
-        )
+        settings_cls for settings_cls, _key in _secret_bearing_overridable_fields()
     }
 
     assert needs_migrating, "the check is vacuous if no class can hold a secret"
     assert needs_migrating <= covered
+
+
+def test_secret_bearing_overridable_fields_are_pinned() -> None:
+    """Assert no overridable field turned secret-typed without its own data migration.
+
+    The re-encryption revisions rewrite a database once, the first time it
+    reaches them. Retyping an already-overridable field to a secret afterwards
+    leaves every row written for it in the clear wherever they have already
+    applied, and the class-level check above cannot see it because the class was
+    listed all along. Pinning the set is what turns that into a failure here.
+
+    Adding a field that is secret-typed from the start needs no rewrite -- no row
+    was ever stored for it -- so widening the set below is the whole fix. A field
+    that *changed* type needs a data migration shipped alongside it.
+    """
+    assert _secret_bearing_overridable_fields() == {
+        (Settings, "PMM"),
+        (AlertSettings, "PROVIDERS"),
+        (SEPSettings, "DIAGNOSTICS_DELIVERY_INPUTS"),
+    }

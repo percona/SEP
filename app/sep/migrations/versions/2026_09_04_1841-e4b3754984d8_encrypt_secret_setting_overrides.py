@@ -33,6 +33,13 @@ outside these classes. An app-owned class can be secret-bearing
 ``test_migration_settings_classes_cover_every_secret_bearing_class`` holds that
 invariant from the test side, where the registry *can* be imported.
 
+Completeness is claimed as of this revision only. Alembic never re-runs an
+applied revision, so a deployment already carrying this one is not covered by it
+when a field it did not reach turns up later — a secret-bearing class becoming
+overridable, or a plain field being retyped to a secret. Rows written for such a
+field before the change stay in the clear until a new data migration rewrites
+them.
+
 Downgrade restores the plaintext the previous release reads.
 """
 

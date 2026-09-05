@@ -25,8 +25,14 @@ can resolve, which the write path stored in the clear before this release.
 Neither ``TasksSettings`` nor ``AnonymizerSettings`` reaches a secret-typed
 field today, so this revision rewrites nothing on a database only Tasks writes
 to. It ships because ``settingoverride`` is a shared core model registered on
-all three tracks: the revision keeps the tracks symmetric, and covers any
-secret field either class gains later without a second migration.
+all three tracks: the revision keeps the tracks symmetric, and it re-encrypts
+whatever the classes reach on a database reaching this revision for the first
+time.
+
+That is the whole of its reach. Alembic never re-runs an applied revision, so a
+deployment that already carries this one is not covered by it when either class
+later gains a secret-typed field: rows written for that field before the
+retyping stay in the clear until a new data migration rewrites them.
 
 Downgrade restores the plaintext the previous release reads.
 """
