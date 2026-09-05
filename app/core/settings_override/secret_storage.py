@@ -184,7 +184,7 @@ def _positional_args(annotation: Any) -> list[Any]:
     stack = [annotation]
     while stack:
         current = stack.pop()
-        if current is None or current is type(None):
+        if current is type(None):
             continue
         if hasattr(current, "__metadata__"):
             stack.append(typing.get_args(current)[0])

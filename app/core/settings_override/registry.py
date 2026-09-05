@@ -1291,7 +1291,7 @@ def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
         seen.add(ident)
         yield current
         origin = typing.get_origin(current)
-        if origin in {Union, UnionType} or origin is not None:
+        if origin is not None:
             stack.extend(typing.get_args(current))
             continue
         if isinstance(current, type) and issubclass(current, BaseModel):
