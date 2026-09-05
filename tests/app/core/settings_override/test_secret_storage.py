@@ -32,6 +32,7 @@ from app.core.alerts.config import AlertSettings
 from app.core.config import BaseYamlSettings, Settings
 from app.core.encryption import decrypt, DecryptionError, encrypt, is_encrypted
 from app.core.settings_override.secret_storage import (
+    _positional_args,
     _transform_secret_leaves,
     decrypt_secret_leaves,
     encrypt_secret_leaves,
@@ -412,3 +413,18 @@ class TestAnnotationShapes:
         stored = self._encrypt(set[SecretStr], ["s1", "s2"])
 
         assert [decrypt(item) for item in stored] == ["s1", "s2"]
+
+    def test_union_members_reach_the_tie_break_in_declaration_order(self) -> None:
+        """Preserve a union's declared order through the positional flattening.
+
+        ``_first_secret_bearing`` resolves a contested position by taking the
+        first candidate that reaches a secret, so the order this returns *is*
+        the tie-break rule. A LIFO traversal that forgets to reverse silently
+        inverts it, and no live annotation has two secret-bearing candidates
+        today to fail on it.
+        """
+        assert _positional_args(dict[str, str] | list[int] | SecretStr) == [
+            dict[str, str],
+            list[int],
+            SecretStr,
+        ]

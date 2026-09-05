@@ -50,7 +50,6 @@ from app.core.settings_override.registry import (
     is_nested_overridable_parent,
     iter_class_fields,
 )
-from app.core.settings_override.secret_storage import annotation_contains_secret
 from app.core.utils import json_serializer
 from app.inventory.config import InventorySettings
 from app.sep.api.routes.settings import SEP_ADMIN_SETTINGS_CLASSES
@@ -357,7 +356,7 @@ def _secret_bearing_overridable_fields() -> set[tuple[type[BaseYamlSettings], st
         (settings_cls, meta.key)
         for settings_cls in exposed
         for meta in iter_class_fields(settings_cls)
-        if annotation_contains_secret(meta.annotation)
+        if meta.is_secret
         and (
             is_hot_reloadable(settings_cls, meta.key)
             or is_nested_overridable_parent(settings_cls, meta.key)
@@ -409,9 +408,9 @@ def test_secret_bearing_overridable_fields_are_pinned() -> None:
     applied, and the class-level check above cannot see it because the class was
     listed all along. Pinning the set is what turns that into a failure here.
 
-    Adding a field that is secret-typed from the start needs no rewrite -- no row
-    was ever stored for it -- so widening the set below is the whole fix. A field
-    that *changed* type needs a data migration shipped alongside it.
+    Adding a field that is secret-typed from the start needs no rewrite, because
+    no row was ever stored for it, so widening the set below is the whole fix. A
+    field that *changed* type needs a data migration shipped alongside it.
     """
     assert _secret_bearing_overridable_fields() == {
         (Settings, "PMM"),

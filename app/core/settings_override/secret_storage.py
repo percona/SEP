@@ -43,7 +43,6 @@ redacts it on every read surface.
 from __future__ import annotations
 
 __all__ = [
-    "annotation_contains_secret",
     "decrypt_secret_leaves",
     "encrypt_secret_leaves",
     "reencrypt_secret_leaves",
@@ -58,7 +57,7 @@ from pydantic import BaseModel, SecretBytes, SecretStr
 
 from app.core.encryption import decrypt, encrypt, is_encrypted
 from app.core.settings_override.registry import (
-    iter_type_arguments,
+    annotation_contains_secret,
     resolve_nested_field,
 )
 
@@ -164,16 +163,22 @@ def _annotation_for_key(settings_cls: type[BaseYamlSettings], key: str) -> Any:
 
 
 def _positional_args(annotation: Any) -> list[Any]:
-    """Return the types a value at this JSON position may take.
+    """Return the types a value at this JSON position may take, in declaration order.
 
     Strips :data:`~typing.Annotated` wrappers, flattens unions and drops
-    ``NoneType``. Unlike
-    :func:`~app.core.settings_override.registry.iter_type_arguments` this does
-    **not** descend through a model into its fields: a value at one position
-    cannot be an arbitrary attribute of a model reachable from it.
+    ``NoneType``. Unlike the recursive walk behind
+    :func:`~app.core.settings_override.registry.annotation_contains_secret`
+    this does **not** descend through a model into its fields: a value at one
+    position cannot be an arbitrary attribute of a model reachable from it.
+
+    Order is part of the contract rather than an accident of the traversal:
+    :func:`_first_secret_bearing` resolves a contested position by taking the
+    first candidate that reaches a secret, so a union's members have to arrive
+    in the order the annotation declares them. Pushing them reversed onto a
+    LIFO stack is what preserves that.
 
     :param annotation: The annotation to flatten.
-    :return: The candidate types for this position.
+    :return: The candidate types for this position, in declaration order.
     """
     flattened: list[Any] = []
     stack = [annotation]
@@ -185,28 +190,10 @@ def _positional_args(annotation: Any) -> list[Any]:
             stack.append(typing.get_args(current)[0])
             continue
         if typing.get_origin(current) in {Union, UnionType}:
-            stack.extend(typing.get_args(current))
+            stack.extend(reversed(typing.get_args(current)))
             continue
         flattened.append(current)
     return flattened
-
-
-def annotation_contains_secret(annotation: Any) -> bool:
-    """Return whether a Pydantic secret type is reachable from ``annotation``.
-
-    The annotation-level twin of
-    :func:`~app.core.settings_override.registry._field_contains_secret`, which
-    answers the same question about a ``FieldInfo``. Public so a conformance
-    guard can classify a field the same way the walker does, rather than
-    restating the rule and drifting from it.
-
-    :param annotation: The annotation to inspect.
-    :return: ``True`` when a secret leaf may exist anywhere below ``annotation``.
-    """
-    return any(
-        isinstance(arg, type) and issubclass(arg, _SECRET_TYPES)
-        for arg in iter_type_arguments(annotation)
-    )
 
 
 def _is_secret_position(positional: list[Any]) -> bool:

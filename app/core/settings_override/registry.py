@@ -29,6 +29,7 @@ __all__ = [
     "MaterializerContext",
     "MaterializerPurpose",
     "ReloadClassification",
+    "annotation_contains_secret",
     "canonical_override_key",
     "chain_has_advanced",
     "chain_has_explicit_not_overridable",
@@ -46,7 +47,6 @@ __all__ = [
     "is_nested_overridable_parent",
     "iter_class_fields",
     "iter_nested_leaf_keys",
-    "iter_type_arguments",
     "materialize_override_value",
     "materialize_template",
     "materialize_via_owning_model",
@@ -1266,7 +1266,7 @@ class FieldMetadata:
     is_advanced: bool = False
 
 
-def iter_type_arguments(annotation: Any) -> Iterator[Any]:
+def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
     """Yield every type argument referenced by ``annotation`` recursively.
 
     Walks unions, generic containers (``list[X]``, ``dict[K, V]``, etc.) and
@@ -1305,21 +1305,34 @@ def iter_type_arguments(annotation: Any) -> Iterator[Any]:
 SECRET_STR_MASK = "**********"  # noqa: S105 # nosec B105
 
 
+def annotation_contains_secret(annotation: Any) -> bool:
+    """Return whether a Pydantic secret type is reachable from ``annotation``.
+
+    Walks the annotation recursively (nested models and imported concrete
+    subclasses of polymorphic bases), looking for
+    :class:`pydantic.SecretStr` or :class:`pydantic.SecretBytes`.
+
+    Public because the at-rest walker in
+    :mod:`app.core.settings_override.secret_storage` decides which leaves to
+    encrypt with this exact rule, and a second copy of it there would let the
+    two drift into disagreeing about which fields are credentials.
+
+    :param annotation: The type annotation to inspect.
+    :return: ``True`` when a secret type is reachable from the annotation.
+    """
+    return any(
+        isinstance(arg, type) and issubclass(arg, SecretStr | SecretBytes)
+        for arg in _iter_type_arguments(annotation)
+    )
+
+
 def _field_contains_secret(field_info: FieldInfo) -> bool:
     """Return whether ``field_info`` exposes a Pydantic secret anywhere in its annotation.
-
-    Walks the annotation recursively via :func:`iter_type_arguments`
-    (nested models and imported concrete subclasses of polymorphic bases),
-    looking for :class:`pydantic.SecretStr` or :class:`pydantic.SecretBytes`.
 
     :param field_info: The Pydantic field metadata for the target attribute.
     :return: ``True`` when a secret type is reachable from the annotation.
     """
-    secret_types = (SecretStr, SecretBytes)
-    for arg in iter_type_arguments(field_info.annotation):
-        if isinstance(arg, type) and issubclass(arg, secret_types):
-            return True
-    return False
+    return annotation_contains_secret(field_info.annotation)
 
 
 def _unwrap_secret_value(current: Any) -> str | bytes | None:
@@ -1379,7 +1392,7 @@ def is_credential_url_field(field_info: FieldInfo) -> bool:
     """Return whether ``field_info`` serializes as a credential-bearing URL."""
     if _metadata_has_credential_url_serializer(field_info.metadata):
         return True
-    for arg in iter_type_arguments(field_info.annotation):
+    for arg in _iter_type_arguments(field_info.annotation):
         if _metadata_has_credential_url_serializer(getattr(arg, "__metadata__", ())):
             return True
     return False
@@ -1986,7 +1999,7 @@ def _field_is_complex(annotation: Any) -> bool:
         annotation (top-level or inside a union / generic container).
     :rtype: bool
     """
-    for arg in iter_type_arguments(annotation):
+    for arg in _iter_type_arguments(annotation):
         if isinstance(arg, type) and issubclass(arg, BaseModel):
             return True
     return False
