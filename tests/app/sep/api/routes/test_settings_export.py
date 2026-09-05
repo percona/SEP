@@ -34,8 +34,7 @@ from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPBadGatewayException
 from app.core.requests import RemoteAPI
-from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
 from app.core.utils.date_time import utc_now
 from app.sep.bundle_upload.plan import DeliveryPlan
@@ -47,7 +46,10 @@ from app.sep.deps import (
     require_bearer_for_unsafe_methods,
 )
 from app.sep.main import sep_app
-from tests.app.core.settings_override.conftest import SEP_SETTINGS_TOKEN
+from tests.app.core.settings_override.conftest import (
+    insert_override_row,
+    SEP_SETTINGS_TOKEN,
+)
 from tests.app.db_schema import apply_schema
 
 EXPORT_URL = "/api/sep/admin/settings/export"
@@ -248,19 +250,30 @@ class TestSepConfigExportYaml:
         must not alter a single byte of what an operator downloads. The seeded
         row stores ``SYNC_REFRESH_TIME``'s declared default, so any difference
         between the two exports would be the provenance rather than the value.
+
+        LIST is asserted first because it shares the export's row-loading path.
+        Without it an export that never saw the seeded row would satisfy the
+        byte-identity assertion just as well as one that saw it and dropped the
+        provenance.
         """
         before = api_admin_client.get(EXPORT_URL).text
-        await SettingsOverrideManager.create(
+        await insert_override_row(
             override_session,
-            SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
-                key="SYNC_REFRESH_TIME",
-                value=5,
-                updated_at=utc_now(),
-                updated_by="alice",
-            ),
+            setting_class=SEP_SETTINGS_TOKEN,
+            key="SYNC_REFRESH_TIME",
+            value=5,
+            updated_at=utc_now(),
+            updated_by="alice",
         )
 
+        seeded = next(
+            entry
+            for group in api_admin_client.get(SETTINGS_LIST_URL).json()["groups"]
+            for entry in group["settings"]
+            if entry["key"] == "SYNC_REFRESH_TIME"
+        )
+        assert seeded["has_override"] is True
+        assert seeded["updated_by"] == "alice"
         assert api_admin_client.get(EXPORT_URL).text == before
 
     async def test_export_keys_match_list_for_sep_classes(
