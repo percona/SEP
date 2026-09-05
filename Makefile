@@ -56,8 +56,18 @@ DARWIN_DYLD = if [ "$$(uname -s)" = "Darwin" ]; then \
 		done; \
 	fi;
 
+# `[ -d "${VENV}" ]` is what makes a caller-supplied VENV a *selector*. Without
+# it the guard tests the shell and ./venv but never the path the caller just
+# named, so `make VENV=<existing env> <target>` runs `python -m venv` over that
+# environment -- rewriting its pyvenv.cfg to whichever python3 is first on PATH
+# while bin/python stays on the interpreter it was built with. Every tool in it
+# then dies with ModuleNotFoundError: No module named 'encodings', one command
+# later, in something unrelated.
 venv: pyproject.toml poetry.lock
-	@[ ! -z "${VIRTUAL_ENV}" ] || [ -d "venv" ] || "${PYTHON}" -m venv "${VENV}"
+	@[ ! -z "${VIRTUAL_ENV}" ] || [ -d "${VENV}" ] || [ -d "venv" ] || { \
+		echo "venv: building ${VENV} with $$("${PYTHON}" -V) ($$(command -v "${PYTHON}"))"; \
+		"${PYTHON}" -m venv "${VENV}"; \
+	}
 	@"${PIP}" install --no-cache ${START_PKGS};
 	@source "${VENV_BIN}"/activate; "${POETRY}" install --all-extras --all-groups
 

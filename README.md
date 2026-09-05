@@ -345,11 +345,18 @@ OpenAPI dump. It has no default, is never derived from
 real third-party credentials, so a shared key would protect nothing from anyone
 who can read the source.
 
-Mint one and add it to your `.env`:
+Mint one and add it as `ENCRYPTION_KEY=<key>` to **the file `ENV_FILE` names**:
 
 ```shell
-echo "ENCRYPTION_KEY=$(make -s encryption-key)" >> .env
+make -s encryption-key
 ```
+
+That is `.env` by default, but not always: `ENV_FILE` is a supported
+indirection, and a checkout whose `.env` begins `ENV_FILE=.env.local` has the
+loader read `.env.local` instead — every other key in `.env` is then ignored, so
+appending there succeeds and changes nothing the application sees. If you are
+unsure which file is in play, start the app and read the error: it names the
+exact path it looked in.
 
 `openssl rand -base64 32` works too. Note that `openssl rand -hex 32` — the
 generator `SECRET_KEY` uses — does **not** produce a valid key.
