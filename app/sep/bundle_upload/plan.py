@@ -695,8 +695,8 @@ def _as_scalar(value: Any) -> str | None:
     """Return ``value`` in its JSON spelling when it is a scalar, else ``None``.
 
     A boolean renders as ``"true"`` / ``"false"`` rather than Python's ``"True"``
-    / ``"False"``, so a value read out of a JSON response reaches the receiver
-    spelled the way that receiver wrote it.
+    / ``"False"``, so a value keeps the spelling the JSON document used, whoever
+    reads it next.
 
     :param value: The value a JSON Pointer addressed.
     :return: The scalar as a string, or ``None`` for ``null`` and containers.

@@ -37,10 +37,11 @@ type checker, so the ``plan is None`` arm is what narrows the optional; the
 resolution's own exactly-one invariant is what makes that arm unreachable.
 
 The router registers ``IsApiAdmin`` alone, where its admin siblings register the
-bearer gate for unsafe methods beside it: this router declares only a ``GET``,
-the parent already carries that dependency, and repeating it would add an inert
-entry to the generated schema. A router that later declares an unsafe method
-needs it added.
+bearer gate for unsafe methods beside it. The parent ``api_router`` declares that
+gate in its own ``dependencies``, so every route beneath it inherits it whatever
+a child router declares, including an unsafe method added here later. Repeating
+it is therefore redundant at run time and changes the generated schema not at
+all; the siblings carry it as local explicitness.
 
 Nothing caps the answer. How many pairs come back is bounded by the plan's own
 ``details`` declaration rather than by anything the receiver controls, so the
