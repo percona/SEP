@@ -40,7 +40,7 @@ from app.core.settings_override.api import build_settings_router
 from app.core.settings_override.api import routes as settings_routes
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification, SECRET_STR_MASK
 from app.core.utils import json_serializer
 from app.core.utils.date_time import make_datetime_utc, utc_now
@@ -68,6 +68,7 @@ from app.sep.snippets.config import (
 )
 from tests.app.core.settings_override.conftest import (
     ALERT_SETTINGS_TOKEN,
+    insert_override_row,
     SEP_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
     SNIPPETS_SETTINGS_TOKEN,
@@ -2313,15 +2314,13 @@ class TestSepSettingsProvenance:
         an explicit assignment forces the UPDATE.
         """
         stale = utc_now() - timedelta(days=1)
-        await SettingsOverrideManager.create(
+        await insert_override_row(
             override_session,
-            SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
-                key="SYNC_REFRESH_TIME",
-                value=10,
-                updated_at=stale,
-                updated_by="someone-else",
-            ),
+            setting_class=SEP_SETTINGS_TOKEN,
+            key="SYNC_REFRESH_TIME",
+            value=10,
+            updated_at=stale,
+            updated_by="someone-else",
         )
 
         response = api_admin_client.patch(
@@ -2417,13 +2416,11 @@ class TestSepSettingsProvenance:
         self, api_admin_client: TestClient, override_session: AsyncSession
     ) -> None:
         """Report ``created_at`` for a row written before explicit stamping."""
-        row = await SettingsOverrideManager.create(
+        row = await insert_override_row(
             override_session,
-            SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
-                key="SYNC_REFRESH_TIME",
-                value=10,
-            ),
+            setting_class=SEP_SETTINGS_TOKEN,
+            key="SYNC_REFRESH_TIME",
+            value=10,
         )
         assert row.updated_at is None
 
@@ -2446,16 +2443,14 @@ class TestSepSettingsProvenance:
         declared default, so reporting provenance for one would tell the UI a
         field is overridden while showing it that default.
         """
-        await SettingsOverrideManager.create(
+        await insert_override_row(
             override_session,
-            SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
-                key="SYNC_REFRESH_TIME",
-                value=10,
-                is_active=False,
-                updated_at=utc_now(),
-                updated_by="someone-else",
-            ),
+            setting_class=SEP_SETTINGS_TOKEN,
+            key="SYNC_REFRESH_TIME",
+            value=10,
+            is_active=False,
+            updated_at=utc_now(),
+            updated_by="someone-else",
         )
 
         response = api_admin_client.get(

@@ -42,7 +42,10 @@ from app.sep.config import App, SEPSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
-from tests.app.core.settings_override.conftest import LONG_USERNAME_LENGTH
+from tests.app.core.settings_override.conftest import (
+    insert_override_row,
+    LONG_USERNAME_LENGTH,
+)
 
 #: Historical ``SettingClassEnum`` member names the database already stores.
 #: Includes the two app-owned classes this ticket removes from the enum, so a
@@ -145,14 +148,12 @@ async def test_long_updated_by_round_trips(session: AsyncSession) -> None:
     width chosen here would pass on SQLite and fail at commit on PostgreSQL.
     """
     actor = "a" * LONG_USERNAME_LENGTH
-    await SettingsOverrideManager.create(
+    await insert_override_row(
         session,
-        SettingOverride(
-            setting_class=SettingClassEnum.SEP_SETTINGS,
-            key="SYNC_REFRESH_TIME",
-            value=5,
-            updated_by=actor,
-        ),
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="SYNC_REFRESH_TIME",
+        value=5,
+        updated_by=actor,
     )
     session.expunge_all()
 

@@ -28,14 +28,16 @@ from app import main as main_module
 from app.api.deps import get_current_user, require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.settings_override.cache import build_snapshot
-from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.utils.date_time import utc_now
 from app.inventory.config import inventory_settings, InventorySettings
 from app.inventory.deps import get_session
 from app.inventory.main import inventory_app
-from tests.app.core.settings_override.conftest import INVENTORY_SETTINGS_TOKEN
+from tests.app.core.settings_override.conftest import (
+    insert_override_row,
+    INVENTORY_SETTINGS_TOKEN,
+)
 
 
 @pytest.fixture(name="admin_client")
@@ -89,14 +91,12 @@ class TestInventorySettingsBootstrap:
         leak into the snapshot -- the plumbing is wired but the field stays
         read-only until one is promoted.
         """
-        await SettingsOverrideManager.create(
+        await insert_override_row(
             session,
-            SettingOverride(
-                setting_class=INVENTORY_SETTINGS_TOKEN,
-                key="UVICORN_PORT",
-                value=9999,
-                is_active=True,
-            ),
+            setting_class=INVENTORY_SETTINGS_TOKEN,
+            key="UVICORN_PORT",
+            value=9999,
+            is_active=True,
         )
         snapshot = await build_snapshot(session, InventorySettings)
         assert "UVICORN_PORT" not in snapshot
@@ -195,15 +195,13 @@ class TestInventorySettingsRouter:
     ) -> None:
         """Report a seeded row's actor and write time on DETAIL."""
         written_at = utc_now()
-        await SettingsOverrideManager.create(
+        await insert_override_row(
             session,
-            SettingOverride(
-                setting_class=INVENTORY_SETTINGS_TOKEN,
-                key="UVICORN_PORT",
-                value=9999,
-                updated_at=written_at,
-                updated_by="alice",
-            ),
+            setting_class=INVENTORY_SETTINGS_TOKEN,
+            key="UVICORN_PORT",
+            value=9999,
+            updated_at=written_at,
+            updated_by="alice",
         )
 
         response = admin_client.get("/admin/settings/InventorySettings/UVICORN_PORT")
@@ -219,15 +217,13 @@ class TestInventorySettingsRouter:
     ) -> None:
         """Report a seeded row's actor and write time on LIST."""
         written_at = utc_now()
-        await SettingsOverrideManager.create(
+        await insert_override_row(
             session,
-            SettingOverride(
-                setting_class=INVENTORY_SETTINGS_TOKEN,
-                key="UVICORN_PORT",
-                value=9999,
-                updated_at=written_at,
-                updated_by="alice",
-            ),
+            setting_class=INVENTORY_SETTINGS_TOKEN,
+            key="UVICORN_PORT",
+            value=9999,
+            updated_at=written_at,
+            updated_by="alice",
         )
 
         groups = admin_client.get("/admin/settings/").json()["groups"]
