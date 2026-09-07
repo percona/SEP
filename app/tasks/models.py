@@ -710,9 +710,10 @@ class TaskExecuteRequest(BaseModel):
         return data
 
 
-#: Maximum stored length of ``TaskHistory.failure_reason``. Above the reasons
-#: SEP composes from fixed prose, so only the payload-resolution reason — which
-#: embeds a filesystem path and is unbounded at composition time — can reach it.
+#: Maximum stored length of ``TaskHistory.failure_reason``. Above every reason
+#: SEP composes from fixed prose alone; the bound is for the three that
+#: interpolate a value — the payload reference's error, a Nomad step name and
+#: the resolved callable path — none of which is bounded at composition time.
 MAX_FAILURE_REASON_LENGTH = 500
 
 

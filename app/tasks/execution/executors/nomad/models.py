@@ -447,6 +447,10 @@ def _failed_step_reason(alloc: dict[str, Any]) -> str | None:
     Nomad serialized them in, so a payload failure is reported ahead of a
     cleanup step that failed after it.
 
+    The exit code is read off the step's *last* ``Terminated`` event. A step
+    Nomad restarted carries one per attempt, oldest first, so the last is the
+    termination the allocation ended on rather than the first attempt's.
+
     A malformed allocation, task-state container or step state is skipped
     rather than raised on, so shape drift costs a reason rather than the whole
     sync.
@@ -465,7 +469,7 @@ def _failed_step_reason(alloc: dict[str, Any]) -> str | None:
         parts = [description]
         events = state.get("Events")
         if isinstance(events, list):
-            for event in events:
+            for event in reversed(events):
                 if not isinstance(event, dict):
                     continue
                 if event.get("Type") != "Terminated":

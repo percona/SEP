@@ -907,22 +907,55 @@ class TestFailedStepReason:
         alloc = {"TaskStates": {"run-script": {"Failed": False, "Events": []}}}
         assert _failed_step_reason(alloc) is None
 
+    def test_reports_the_last_termination_of_a_restarted_step(self):
+        """Assert a restarted step reports the code that decided its outcome.
+
+        Nomad appends one ``Terminated`` event per attempt, oldest first, so
+        the final one is the failure the allocation actually ended on.
+        """
+        alloc = {
+            "TaskStates": {
+                "run-script": {
+                    "Failed": True,
+                    "Events": [
+                        {"Type": "Terminated", "ExitCode": 1},
+                        {"Type": "Restarting"},
+                        {"Type": "Terminated", "ExitCode": 137},
+                    ],
+                },
+            },
+        }
+        assert _failed_step_reason(alloc) == "Step 'run-script' failed (exit code 137)."
+
     @pytest.mark.parametrize(
-        "alloc",
+        ("alloc", "expected"),
         [
-            {},
-            {"TaskStates": None},
-            {"TaskStates": []},
-            {"TaskStates": "broken"},
-            {"TaskStates": {"run-script": "not-a-dict"}},
-            {"TaskStates": {"run-script": {"Failed": True, "Events": "not-a-list"}}},
-            {"TaskStates": {"run-script": {"Failed": True, "Events": ["not-a-dict"]}}},
+            ({}, None),
+            ({"TaskStates": None}, None),
+            ({"TaskStates": []}, None),
+            ({"TaskStates": "broken"}, None),
+            ({"TaskStates": {"run-script": "not-a-dict"}}, None),
+            (
+                {
+                    "TaskStates": {
+                        "run-script": {"Failed": True, "Events": "not-a-list"}
+                    }
+                },
+                "Step 'run-script' failed.",
+            ),
+            (
+                {
+                    "TaskStates": {
+                        "run-script": {"Failed": True, "Events": ["not-a-dict"]}
+                    }
+                },
+                "Step 'run-script' failed.",
+            ),
         ],
     )
-    def test_tolerates_malformed_allocations(self, alloc):
-        """Assert shape drift degrades to a reason or None rather than raising."""
-        result = _failed_step_reason(alloc)
-        assert result is None or isinstance(result, str)
+    def test_tolerates_malformed_allocations(self, alloc, expected):
+        """Assert shape drift costs the exit code, not the reason or the sync."""
+        assert _failed_step_reason(alloc) == expected
 
 
 class TestDetectUnlaunchable:

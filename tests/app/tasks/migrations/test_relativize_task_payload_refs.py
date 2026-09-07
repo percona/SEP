@@ -17,13 +17,8 @@
 
 import json
 
-import pytest
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine
-
-from app.tasks.config import tasks_settings
-from tests.app.alembic_paths import ALEMBIC_INI
 
 # The head immediately before payload references are relativized.
 _PRE_RELATIVIZE_REVISION = "d25887ee3fea"
@@ -35,19 +30,6 @@ _INSERT_TASK = (
     "VALUES ('2026-01-01 00:00:00', '2026-01-01 00:00:00', ?, ?, "
     "'PROXY', 'BACKUPS', 0, 0, 0)"
 )
-
-
-@pytest.fixture
-def tasks_alembic_config(tmp_path, monkeypatch):
-    """Return an Alembic ``Config`` and sync URL pointing at a temp SQLite file."""
-    db_path = tmp_path / "test_tasks.sqlite"
-    sync_url = f"sqlite:///{db_path}"
-
-    monkeypatch.setattr(tasks_settings.DATABASE, "HOST", "")
-    monkeypatch.setattr(tasks_settings.DATABASE, "NAME", str(db_path))
-
-    cfg = Config(str(ALEMBIC_INI), ini_section="tasks")
-    return cfg, sync_url
 
 
 def _seed(conn, name, data):
