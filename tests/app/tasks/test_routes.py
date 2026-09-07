@@ -452,6 +452,9 @@ async def test_create_task_history_normalizes_failure_reason(
     field is settable over HTTP; the bound is a property of the column, not just
     of the reasons SEP composes. Driven as a real request because only an actual
     POST delivers the body to the handler the way FastAPI does.
+
+    The posted row carries ``failed`` so the fixture models a pair SEP's own
+    writers can produce.
     """
     response = test_client.post(
         "/history/",
@@ -461,6 +464,7 @@ async def test_create_task_history_normalizes_failure_reason(
                 "task": created_task_with_history.task.name,
                 "target": "node-1",
             },
+            "status": "failed",
             "failure_reason": "line one\n  line   two " + ("x" * 900),
         },
     )

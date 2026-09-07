@@ -483,9 +483,11 @@ def _terminal_status_reason(
 ) -> str | None:
     """Return the stored reason for a status the Nomad sync just resolved.
 
-    ``FAILED`` prefers the failing step and its exit code and falls back to the
-    status's own prose when the allocation names no failed producing step —
-    which is the shape a client-status-derived failure has. Every other status
+    ``FAILED`` reports the failing producing step and its exit code, and stores
+    ``None`` when the allocation names none — the shape a client-status-derived
+    failure has. Restating the status as "Failed." there would spend the
+    column's ``None`` on a value that adds nothing to the status, where ``None``
+    is what the column documents as "the reason is unknown". Every other status
     takes its prose from the enum, and a status carrying none stores ``None``.
 
     The enum's fragments are verb phrases written for the mid-sentence slot in
@@ -498,9 +500,7 @@ def _terminal_status_reason(
     :return: The reason to store, or ``None`` when the status carries none.
     """
     if status == TaskHistoryStatusEnum.FAILED:
-        step_reason = _failed_step_reason(alloc)
-        if step_reason is not None:
-            return step_reason
+        return _failed_step_reason(alloc)
     summary = status.operator_summary()
     return f"{summary[:1].upper()}{summary[1:]}." if summary else None
 

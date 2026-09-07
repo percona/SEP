@@ -300,6 +300,30 @@ class TestCeleryExecutorDispatchTask:
         assert result.failure_reason == "Task execution raised TypeError."
 
     @pytest.mark.asyncio
+    async def test_failed_dispatch_reason_omits_an_unvalidated_callable_value(
+        self, executor, session, celery_queue_item
+    ) -> None:
+        """Assert a callable value outside the allowed namespace is not echoed.
+
+        ``Task.data`` holds arbitrary JSON, so a stored ``callable`` can be a
+        mapping or a string carrying credentials. Neither may reach this
+        unmasked field.
+        """
+        celery_queue_item.task.data = {
+            "callable": {"dsn": "postgres://user:hunter2@db/prod"}
+        }
+        with patch.object(
+            executor,
+            "_run_callable",
+            new_callable=AsyncMock,
+            side_effect=AttributeError("'dict' object has no attribute 'rsplit'"),
+        ):
+            result = await executor.dispatch_task(session, celery_queue_item)
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
+        assert result.failure_reason == "Task execution raised AttributeError."
+
+    @pytest.mark.asyncio
     async def test_successful_dispatch_records_no_failure_reason(
         self, executor, session, celery_queue_item
     ) -> None:

@@ -2470,16 +2470,14 @@ class TestSyncTaskHistoryFailureReason:
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    async def test_failed_without_named_step_falls_back_to_status_prose(
-        self, mock_nomad_cls
-    ):
-        """Assert a failure naming no failed producing step stores the status prose."""
+    async def test_failed_without_named_step_stores_no_reason(self, mock_nomad_cls):
+        """Assert a failure naming no failed producing step records no reason."""
         self._backend(mock_nomad_cls, {"run-script": {"StartedAt": "1"}})
 
         result = await _build_executor()._sync_task_history(self._queue_item())
 
         assert result.status == TaskHistoryStatusEnum.FAILED
-        assert result.failure_reason == "Failed."
+        assert result.failure_reason is None
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
@@ -2560,7 +2558,7 @@ class TestSyncTaskHistoryFailureReason:
         result = await _build_executor()._sync_task_history(self._queue_item())
 
         assert result.status == TaskHistoryStatusEnum.FAILED
-        assert result.failure_reason == "Failed."
+        assert result.failure_reason is None
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
