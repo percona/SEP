@@ -559,6 +559,11 @@ the flag is inverted (a `no_drop_*` whose *enabled* state is the safe
 direction), or because what gets destroyed is a tool's own bookkeeping rather
 than user data.
 
+A field whose annotation is a discriminated union cannot carry the marker: it
+derives a one-of group rather than a field, and the group has nowhere to put
+the text. Declaring one raises at class creation — mark the destructive leaf
+inside each branch model instead, since the branches take their own `Ui`.
+
 ### `ArgFormat`
 
 `ArgFormat` marks a field as a command-line argument and controls how it is
