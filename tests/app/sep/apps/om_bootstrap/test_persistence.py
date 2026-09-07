@@ -19,7 +19,12 @@ import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
-from app.sep.apps.om_bootstrap.persistence import dump_host_states, parse_host_states
+from app.sep.apps.om_bootstrap.persistence import (
+    dump_host_states,
+    dump_run_steps,
+    parse_host_states,
+    parse_run_steps,
+)
 from app.sep.apps.om_bootstrap.strategy import (
     HostBootstrapState,
     InstallMethod,
@@ -84,6 +89,37 @@ class TestDumpAndParseHostStatesRoundTrip:
         assert running_step.task_history_id == RUNNING_STEP_TASK_HISTORY_ID
 
 
+def _run_steps() -> list[StepRecord]:
+    return [
+        StepRecord(name="rs_initiate", status=StepStatus.SUCCEEDED),
+        StepRecord(
+            name="create_pmm_monitoring_user",
+            status=StepStatus.RUNNING,
+            task_history_id=RUNNING_STEP_TASK_HISTORY_ID,
+        ),
+    ]
+
+
+class TestDumpAndParseRunStepsRoundTrip:
+    """Assert the plain-JSON shape run-level steps persist as survives the round trip."""
+
+    def test_round_trips_without_a_database(self) -> None:
+        """dump_run_steps then parse_run_steps returns equivalent typed state."""
+        original = _run_steps()
+
+        parsed = parse_run_steps(
+            BootstrapRun(
+                install_method=InstallMethod.PACKAGES,
+                os=OperatingSystem.UBUNTU,
+                mongodb_version="8.0",
+                replica_set_name="rs-test",
+                run_steps=dump_run_steps(original),
+            )
+        )
+
+        assert parsed == original
+
+
 class TestBootstrapRunPersistence:
     """Assert a run actually survives a database round trip, not just in memory."""
 
@@ -96,6 +132,7 @@ class TestBootstrapRunPersistence:
             mongodb_version="7.0",
             replica_set_name="rs-persisted",
             hosts=dump_host_states(_host_states()),
+            run_steps=dump_run_steps(_run_steps()),
         )
         session.add(run)
         await session.commit()
@@ -108,3 +145,4 @@ class TestBootstrapRunPersistence:
         assert reloaded.install_method == InstallMethod.PACKAGES
         assert reloaded.os == OperatingSystem.ROCKY
         assert parse_host_states(reloaded) == _host_states()
+        assert parse_run_steps(reloaded) == _run_steps()

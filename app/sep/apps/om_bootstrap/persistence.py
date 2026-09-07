@@ -34,11 +34,14 @@ from app.sep.apps.om_bootstrap.strategy import (
     HostBootstrapState,
     InstallMethod,
     OperatingSystem,
+    StepRecord,
 )
 
 __all__ = [
     "dump_host_states",
+    "dump_run_steps",
     "parse_host_states",
+    "parse_run_steps",
     "to_models_install_method",
     "to_models_os",
     "to_strategy_install_method",
@@ -147,3 +150,29 @@ def dump_host_states(states: list[HostBootstrapState]) -> list[dict[str, Any]]:
     :return: One plain-JSON dict per host, in the same order.
     """
     return [state.model_dump(mode="json") for state in states]
+
+
+def parse_run_steps(run: BootstrapRun) -> list[StepRecord]:
+    """Parse a run's persisted ``run_steps`` document back into typed records.
+
+    The run-level counterpart of :func:`parse_host_states` -- same shape, same
+    "read whole" treatment, just not scoped to any one host (see
+    :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.run_steps`'s own
+    docstring).
+
+    :param run: The run whose ``run_steps`` document to parse.
+    :return: One :class:`~app.sep.apps.om_bootstrap.strategy.StepRecord` per
+        persisted entry, in the order they were stored.
+    """
+    return [StepRecord.model_validate(entry) for entry in run.run_steps]
+
+
+def dump_run_steps(steps: list[StepRecord]) -> list[dict[str, Any]]:
+    """Dump typed run-level steps into the plain-JSON shape ``run_steps`` stores.
+
+    See :func:`dump_host_states` -- same ``mode="json"`` reasoning.
+
+    :param steps: The run-level steps to persist.
+    :return: One plain-JSON dict per step, in the same order.
+    """
+    return [step.model_dump(mode="json") for step in steps]
