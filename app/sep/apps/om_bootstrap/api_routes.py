@@ -33,7 +33,7 @@ register :attr:`~app.core.auth.models.UserRole.ADMIN` explicitly.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi import status as http_status
 from pydantic import BaseModel
 
@@ -268,14 +268,38 @@ async def _dispatch_and_record(
     :param step_name: The step's name.
     :param action: The step's built action.
     :param step: The step's current record, about to be dispatched.
-    :return: A new :class:`~app.sep.apps.om_bootstrap.strategy.StepRecord`,
-        ``RUNNING``, with :attr:`~app.sep.apps.om_bootstrap.strategy.StepRecord.attempt_count`
-        incremented -- PMM's stepper reads this to enforce Adamo's decided retry
-        policy (PMM-15347/questions.md Q8).
+    :return: A new :class:`~app.sep.apps.om_bootstrap.strategy.StepRecord`.
+        ``RUNNING`` when the Tasks API accepted the dispatch, with
+        :attr:`~app.sep.apps.om_bootstrap.strategy.StepRecord.attempt_count`
+        incremented either way -- PMM's stepper reads this to enforce Adamo's
+        decided retry policy (PMM-15347/questions.md Q8). ``FAILED``, also with
+        ``attempt_count`` incremented and ``detail`` set, when the Tasks API
+        itself rejected the dispatch (:class:`~fastapi.HTTPException`, e.g. an
+        unknown or unreachable executor target) or accepted it without
+        returning a history id (:class:`RuntimeError`) -- a dispatch that never
+        starts is as real an outcome as one that starts and later fails, and
+        recording it here is what lets the stepper's retry-then-rollback policy
+        see it at all. Without this, such a step stays ``PENDING`` forever:
+        nothing ever transitions it, so every tick looks like the very first
+        attempt, and the stepper retries indefinitely with no failure ever
+        reaching a caller.
     """
-    task_history_id = await dispatch_step(
-        tasks_api, request, run_id, target_host, step_name, action
-    )
+    try:
+        task_history_id = await dispatch_step(
+            tasks_api, request, run_id, target_host, step_name, action
+        )
+    except (HTTPException, RuntimeError) as exc:
+        detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        return step.model_copy(
+            update={
+                "status": StepStatus.FAILED,
+                "started_at": utc_now(),
+                "finished_at": utc_now(),
+                "detail": f"Failed to dispatch: {detail}",
+                "task_history_id": None,
+                "attempt_count": step.attempt_count + 1,
+            }
+        )
     return step.model_copy(
         update={
             "status": StepStatus.RUNNING,

@@ -31,7 +31,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from fastapi import APIRouter, FastAPI, status
+from fastapi import APIRouter, FastAPI, HTTPException, status
 from fastapi.testclient import TestClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -356,6 +356,78 @@ class TestDispatchRunStep:
         step = next(s for s in body["hosts"][0]["steps"] if s["name"] == "pre_check")
         assert step["status"] == "running"
         assert step["task_history_id"] == FAKE_TASK_HISTORY_ID
+
+    @pytest.mark.asyncio
+    async def test_records_a_dispatch_that_the_tasks_api_rejects(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A dispatch the Tasks API itself rejects becomes a FAILED step, not a 5xx.
+
+        Without this, a step the Tasks API never even accepts (an unknown or
+        unreachable executor target, most concretely) stays PENDING forever:
+        nothing ever transitions it, so the stepper's own retry-then-rollback
+        policy (Q8) never engages, and every tick looks identical to the very
+        first attempt.
+        """
+        run = await self._seed_run(session)
+
+        with (
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
+                AsyncMock(return_value=_fake_tasks_api()),
+            ),
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
+                AsyncMock(
+                    side_effect=HTTPException(
+                        status_code=400, detail="Target 'node00' is not available"
+                    )
+                ),
+            ),
+        ):
+            response = _client(regular_user, session).post(
+                f"{_BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
+            )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        body = response.json()
+        step = next(s for s in body["hosts"][0]["steps"] if s["name"] == "pre_check")
+        assert step["status"] == "failed"
+        assert step["attempt_count"] == 1
+        assert "not available" in step["detail"]
+        assert step["task_history_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_records_a_dispatch_the_tasks_api_accepts_without_an_id(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """The same treatment applies when dispatch_step's own contract is violated."""
+        run = await self._seed_run(session)
+
+        with (
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
+                AsyncMock(return_value=_fake_tasks_api()),
+            ),
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
+                AsyncMock(
+                    side_effect=RuntimeError(
+                        "Tasks API did not return a task history id"
+                    )
+                ),
+            ),
+        ):
+            response = _client(regular_user, session).post(
+                f"{_BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
+            )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        step = next(
+            s for s in response.json()["hosts"][0]["steps"] if s["name"] == "pre_check"
+        )
+        assert step["status"] == "failed"
+        assert step["attempt_count"] == 1
 
     @pytest.mark.asyncio
     async def test_404s_for_an_unknown_host(
