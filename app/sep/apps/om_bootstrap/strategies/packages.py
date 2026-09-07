@@ -193,20 +193,30 @@ class PackagesInstallStrategy:
             f"replication:\n  replSetName: {spec.replica_set_name}\n"
         )
         return StepAction(
-            command=["sh", "-c", f"cat > {CONFIG_PATH} <<'MONGOD_CONF'\n{config}MONGOD_CONF\n"],
+            command=[
+                "sh",
+                "-c",
+                f"cat > {CONFIG_PATH} <<'MONGOD_CONF'\n{config}MONGOD_CONF\n",
+            ],
             timeout_s=30,
         )
 
     def _start_service(self, spec: BootstrapSpec) -> StepAction:
         """Enable and start the ``mongod`` systemd unit."""
         del spec
-        return StepAction(command=["systemctl", "enable", "--now", "mongod"], timeout_s=60)
+        return StepAction(
+            command=["systemctl", "enable", "--now", "mongod"], timeout_s=60
+        )
 
     def _verify(self, spec: BootstrapSpec) -> StepAction:
         """Confirm ``mongod`` answers before declaring this host done."""
         del spec
         return StepAction(
-            command=["sh", "-c", "mongosh --quiet --eval \"db.adminCommand('ping').ok\""],
+            command=[
+                "sh",
+                "-c",
+                "mongosh --quiet --eval \"db.adminCommand('ping').ok\"",
+            ],
             timeout_s=60,
         )
 

@@ -16,8 +16,9 @@
 """Smoke-test the API-first surface of the OpenManager Bootstrap app.
 
 A ``BaseApp`` exposes a declared ``api_router`` rather than the derived task
-contract, so this mounts that router behind the production auth guard and asserts
-``GET /schema`` and the sample list route both answer.
+contract, so this mounts that router behind the production auth guard and
+asserts ``GET /schema`` answers. The real routes (``/runs`` and friends) have
+their own tests in ``test_api_routes.py``.
 """
 
 from fastapi import APIRouter, FastAPI, status
@@ -47,12 +48,5 @@ def _client(user: CasdoorUser) -> TestClient:
 def test_schema_200(regular_user: CasdoorUser) -> None:
     """Serve the plugin schema at ``GET /schema``."""
     response = _client(regular_user).get(f"{_BASE}/schema")
-
-    assert response.status_code == status.HTTP_200_OK
-
-
-def test_list_200(regular_user: CasdoorUser) -> None:
-    """Return 200 from the sample ``GET /`` list route."""
-    response = _client(regular_user).get(f"{_BASE}/")
 
     assert response.status_code == status.HTTP_200_OK

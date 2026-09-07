@@ -56,7 +56,9 @@ class TestPlanSteps:
     """Assert the step list is fixed and OS-independent for phase 1."""
 
     @pytest.mark.parametrize("os_", [OperatingSystem.UBUNTU, OperatingSystem.ROCKY])
-    def test_returns_the_fixed_step_names_regardless_of_os(self, os_: OperatingSystem) -> None:
+    def test_returns_the_fixed_step_names_regardless_of_os(
+        self, os_: OperatingSystem
+    ) -> None:
         """Ubuntu and Rocky get the same step names -- only build_step branches on OS."""
         assert PackagesInstallStrategy().plan_steps(_spec(os_)) == STEP_NAMES
 
@@ -67,7 +69,9 @@ class TestBuildStep:
     @pytest.mark.parametrize("step_name", STEP_NAMES)
     def test_every_planned_step_builds_without_raising(self, step_name: str) -> None:
         """Every name plan_steps returns is one build_step actually knows."""
-        PackagesInstallStrategy().build_step(step_name, "node00", _spec(OperatingSystem.UBUNTU))
+        PackagesInstallStrategy().build_step(
+            step_name, "node00", _spec(OperatingSystem.UBUNTU)
+        )
 
     def test_unknown_step_name_raises(self) -> None:
         """A name outside plan_steps' own list is a programming error, not a silent no-op."""

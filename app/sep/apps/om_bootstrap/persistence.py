@@ -36,7 +36,14 @@ from app.sep.apps.om_bootstrap.strategy import (
     OperatingSystem,
 )
 
-__all__ = ["dump_host_states", "parse_host_states"]
+__all__ = [
+    "dump_host_states",
+    "parse_host_states",
+    "to_models_install_method",
+    "to_models_os",
+    "to_strategy_install_method",
+    "to_strategy_os",
+]
 
 
 def _assert_enums_match() -> None:
@@ -64,6 +71,58 @@ def _assert_enums_match() -> None:
 
 
 _assert_enums_match()
+
+
+def to_strategy_install_method(value: models.InstallMethod) -> InstallMethod:
+    """Convert a persisted ``models.InstallMethod`` to ``strategy.py``'s real one.
+
+    A ``BootstrapRun.install_method`` read off a query is ``models.py``'s
+    spelled-again enum, not ``strategy.py``'s -- Pydantic coerces one into the
+    other by value silently at runtime (they are two distinct classes with the
+    same string values), which is precisely the kind of implicit conversion
+    worth making explicit and type-checked instead of relying on. Safe by
+    :func:`_assert_enums_match`'s own invariant: every value here is guaranteed
+    to be a valid member of both enums.
+
+    :param value: The persisted enum value.
+    :return: The equivalent ``strategy.py`` member.
+    """
+    return InstallMethod(value.value)
+
+
+def to_strategy_os(value: models.OperatingSystem) -> OperatingSystem:
+    """Convert a persisted ``models.OperatingSystem`` to ``strategy.py``'s real one.
+
+    See :func:`to_strategy_install_method` -- same reasoning, same guarantee.
+
+    :param value: The persisted enum value.
+    :return: The equivalent ``strategy.py`` member.
+    """
+    return OperatingSystem(value.value)
+
+
+def to_models_install_method(value: InstallMethod) -> models.InstallMethod:
+    """Convert a ``strategy.py`` install method to ``models.py``'s spelled-again one.
+
+    The reverse of :func:`to_strategy_install_method`, needed when constructing
+    a new :class:`BootstrapRun` from a request typed against ``strategy.py``'s
+    enum. Same by-value guarantee.
+
+    :param value: The strategy-typed value.
+    :return: The equivalent ``models.py`` member.
+    """
+    return models.InstallMethod(value.value)
+
+
+def to_models_os(value: OperatingSystem) -> models.OperatingSystem:
+    """Convert a ``strategy.py`` OS to ``models.py``'s spelled-again one.
+
+    See :func:`to_models_install_method` -- same reasoning, same guarantee.
+
+    :param value: The strategy-typed value.
+    :return: The equivalent ``models.py`` member.
+    """
+    return models.OperatingSystem(value.value)
 
 
 def parse_host_states(run: BootstrapRun) -> list[HostBootstrapState]:

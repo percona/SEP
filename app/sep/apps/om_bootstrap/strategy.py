@@ -181,7 +181,9 @@ class HostBootstrapState(BaseModel):
             return StepStatus.FAILED
         if StepStatus.RUNNING in statuses:
             return StepStatus.RUNNING
-        if all(status in (StepStatus.SUCCEEDED, StepStatus.SKIPPED) for status in statuses):
+        if all(
+            status in (StepStatus.SUCCEEDED, StepStatus.SKIPPED) for status in statuses
+        ):
             return StepStatus.SUCCEEDED
         if any(status != StepStatus.PENDING for status in statuses):
             return StepStatus.RUNNING
