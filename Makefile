@@ -276,12 +276,15 @@ changelog-list:
 # the value and embedded spaces/quotes stay intact; a literal `$` must be written
 # `$$` on the command line. $(if ...) gates presence. Recognised variables: NAME
 # TYPE DISPLAY_NAME DESCRIPTION GROUP SERVICE_TYPE NAV_ICON RUN_MODE COMMAND PAYLOAD
-# SCRIPT NO_INPUT ENABLE DERIVE_UPDATE DERIVE_DELETE.
+# SCRIPT NO_INPUT ENABLE DERIVE_UPDATE DERIVE_DELETE ITEM_DISPLAY_NAME
+# ITEM_DISPLAY_NAME_PLURAL.
 startapp:
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/sep/apps/framework/scaffold.py \
 		$(if $(NAME),--name "$$NAME") \
 		$(if $(TYPE),--type "$$TYPE") \
 		$(if $(DISPLAY_NAME),--display-name "$$DISPLAY_NAME") \
+		$(if $(ITEM_DISPLAY_NAME),--item-display-name "$$ITEM_DISPLAY_NAME") \
+		$(if $(ITEM_DISPLAY_NAME_PLURAL),--item-display-name-plural "$$ITEM_DISPLAY_NAME_PLURAL") \
 		$(if $(DESCRIPTION),--description "$$DESCRIPTION") \
 		$(if $(GROUP),--group "$$GROUP") \
 		$(if $(SERVICE_TYPE),--service-type "$$SERVICE_TYPE") \

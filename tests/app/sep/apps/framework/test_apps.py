@@ -1813,6 +1813,37 @@ class TestRelatedAppsKnob:
             )
 
 
+class TestItemDisplayNamesKnob:
+    """Cover ``item_display_name``/``item_display_name_plural`` rejection."""
+
+    def test_item_display_names_accepted_on_derived_schema_app(self) -> None:
+        """Accept the record names on a plain derived-schema definition."""
+        app_def = _synth_app(
+            item_display_name="widget", item_display_name_plural="widgets"
+        )
+
+        assert app_def.item_display_name == "widget"
+        assert app_def.item_display_name_plural == "widgets"
+
+    def test_item_display_names_rejected_on_script_source_app(self) -> None:
+        """Reject ``item_display_name`` on a ``script_source`` definition."""
+        with pytest.raises(
+            ValueError, match="script_source app declares its record names"
+        ):
+            synth_script_app(item_display_name="widget")
+
+    def test_item_display_names_rejected_on_schema_passthrough_app(self) -> None:
+        """Reject ``item_display_name_plural`` on a ``schema=`` passthrough definition."""
+        with pytest.raises(ValueError, match="schema= app carries its record names"):
+            _synth_app(
+                create_model=None,
+                task_spec_builder=None,
+                schema=_PASSTHROUGH_SCHEMA,
+                payload_builder=_passthrough_payload_builder,
+                item_display_name_plural="widgets",
+            )
+
+
 class TestRegistryBinding:
     """Cover that binding an activation entry preserves the prebuilt router."""
 

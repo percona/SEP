@@ -1209,6 +1209,55 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
         _cleanup(name)
 
 
+def test_makefile_forwards_item_display_names() -> None:
+    """Forward the record-name flags through ``make startapp``.
+
+    Exercises the real Makefile ``$$VAR`` shell-environment forwarding for
+    ``ITEM_DISPLAY_NAME`` and ``ITEM_DISPLAY_NAME_PLURAL``, the way
+    :func:`test_makefile_forwards_quoted_values` exercises ``DESCRIPTION``.
+    """
+    name = "_scaffold_ci_itemnameforward"
+    item_display_name = "gadget"
+    item_display_name_plural = "gadgets"
+    settings_backup = scaffold.SETTINGS_FILE.read_text()
+    venv_root = _venv_root()
+    try:
+        result = scaffold.subprocess.run(
+            [
+                "make",
+                "startapp",
+                f"NAME={name}",
+                "TYPE=task",
+                "NO_INPUT=1",
+                f"ITEM_DISPLAY_NAME={item_display_name}",
+                f"ITEM_DISPLAY_NAME_PLURAL={item_display_name_plural}",
+                f"VIRTUAL_ENV={venv_root}",
+            ],
+            cwd=scaffold._REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+        rendered = (scaffold.PLUGINS_DIR / name / "app.py").read_text()
+        # The values survive make → shell env → argv → json.dumps intact; ruff may
+        # normalise the literal's quote style, so assert on value content rather
+        # than a fixed quote form.
+        assert "item_display_name=" in rendered
+        assert (
+            f"item_display_name={json.dumps(item_display_name)}" in rendered
+            or f"item_display_name={item_display_name!r}" in rendered
+        )
+        assert (
+            f"item_display_name_plural={json.dumps(item_display_name_plural)}"
+            in rendered
+            or f"item_display_name_plural={item_display_name_plural!r}" in rendered
+        )
+    finally:
+        scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
+        _cleanup(name)
+
+
 @pytest.mark.parametrize("flavor", list(scaffold.Flavor))
 def test_record_display_names_default_to_the_display_name(
     flavor: scaffold.Flavor,

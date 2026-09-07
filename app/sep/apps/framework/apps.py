@@ -417,9 +417,10 @@ class TaskExecutionApp(BaseApp):
         mid-sentence form so a consumer capitalises the first character itself.
         Defaults to ``None``, which leaves the schema to fall back to
         ``display_name``. **Read only on the derived-schema path:** a
-        ``script_source`` app serves ``script_source.static_schema`` and never
-        reaches ``_resolve_plugin_schema``, so it declares its record names on
-        the source instead and setting them here would do nothing.
+        ``script_source`` app declares its record names on the source instead,
+        and a ``schema=`` app carries them on ``AppSchema`` directly, so setting
+        this on either is rejected at construction (see
+        :meth:`_validate_item_display_names`).
     :param item_display_name_plural: The name for several such records (for
         example ``backups``), threaded into
         ``AppSchema.item_display_name_plural`` under the same condition.
@@ -519,8 +520,8 @@ class TaskExecutionApp(BaseApp):
         :raises ValueError: When the schema source, the create-payload path, the
             connectivity references, the route knobs, the list-query wiring, the
             response/filter knobs, the ``response_model`` / ``response_builder``
-            agreement, the list-view columns, or the ``ArgFormat`` markers are
-            inconsistent (see the per-aspect helpers).
+            agreement, the list-view columns, the ``ArgFormat`` markers, or the
+            item display names are inconsistent (see the per-aspect helpers).
         """
         self._validate_schema_source()
         self._validate_create_path()
@@ -534,6 +535,7 @@ class TaskExecutionApp(BaseApp):
         self._validate_view_columns()
         self._validate_arg_formats()
         self._validate_related_apps()
+        self._validate_item_display_names()
 
     def _validate_related_apps(self) -> None:
         """Reject ``related_apps`` on definitions that do not derive a schema.
@@ -572,6 +574,35 @@ class TaskExecutionApp(BaseApp):
             raise ValueError(
                 "TaskExecutionApp: duplicate related_apps route_segment "
                 f"values {duplicates}"
+            )
+
+    def _validate_item_display_names(self) -> None:
+        """Reject item display names on definitions that do not derive a schema.
+
+        ``item_display_name`` and ``item_display_name_plural`` are schema
+        metadata read only on the derived-schema path (``_resolve_plugin_schema``);
+        a ``schema=`` passthrough app carries its record names on ``AppSchema``
+        directly, and a ``script_source`` app serves ``static_schema`` instead, so
+        setting either field on those definitions is silently ignored downstream.
+
+        :raises ValueError: When ``item_display_name`` or
+            ``item_display_name_plural`` is set on a ``schema=`` or
+            ``script_source`` app.
+        """
+        if self.item_display_name is None and self.item_display_name_plural is None:
+            return
+        if self.script_source is not None:
+            raise ValueError(
+                "TaskExecutionApp: item_display_name/item_display_name_plural are "
+                "schema metadata for a model-first app; a script_source app "
+                "declares its record names on the source — drop them from the "
+                "definition"
+            )
+        if self.app_schema is not None:
+            raise ValueError(
+                "TaskExecutionApp: a schema= app carries its record names on "
+                "AppSchema — drop item_display_name/item_display_name_plural "
+                "from the definition"
             )
 
     def _validate_connectivity_refs(self) -> None:
