@@ -495,6 +495,37 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/periodic/schedule/preview/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Preview Schedule
+     * @description Report the upcoming runs of a schedule without saving it.
+     *
+     *     Answers for an unsaved request body what
+     *     :class:`~app.tasks.periodic.models.PeriodicTaskResponse` answers for a stored
+     *     schedule, through the same code path, so a client can preview a cron
+     *     expression while it is still being typed.
+     *
+     *     Two path segments so no single-segment ``/{param}`` sibling can match it,
+     *     which is what keeps the SEP-side twin from reserving a task name.
+     *
+     *     :param preview: The schedule to preview. Persisted nowhere.
+     *     :return: The schedule's zone and its upcoming runs.
+     */
+    post: operations['periodic_preview_schedule_periodic_schedule_preview__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/periodic/{periodic_task_id}': {
     parameters: {
       query?: never;
@@ -866,24 +897,15 @@ export interface components {
      *     new periodic tasks.
      *
      *     :param task: The Celery task name.
-     *     :type task: str
      *     :param execute_request: The execution request details for the task.
-     *     :type execute_request: PeriodicTaskExecuteRequest | None
      *     :param interval: The interval schedule for the task. Defaults to None.
-     *     :type interval: IntervalSchedule | None
      *     :param crontab: The crontab schedule for the task. Defaults to None.
-     *     :type crontab: CrontabSchedule | None
      *     :param kwargs: A JSON string representing additional keyword arguments for the task.
-     *     :type kwargs: str
      *     :param name: The name of the periodic task. Defaults to an empty string, meaning
      *         the value will be automatically generated on create.
-     *     :type name: str
      *     :param start_time: The start time for the task execution. Defaults to None.
-     *     :type start_time:  UTCDatetime | None
      *     :param enabled: Whether the task is enabled. Defaults to True.
-     *     :type enabled: bool
      *     :param description: A description of the task. Defaults to an empty string.
-     *     :type description: str
      */
     PeriodicTaskCreate: {
       crontab?: components['schemas']['CrontabSchedule'] | null;
@@ -955,25 +977,15 @@ export interface components {
      *     last run time, total run count, and date changed.
      *
      *     :param name: The name of the periodic task.
-     *     :type name: str
      *     :param task: The SEP task name.
-     *     :type task: str
      *     :param start_time: The start time for the task execution.
-     *     :type start_time: UTCDatetime | None
      *     :param enabled: Whether the task is enabled.
-     *     :type enabled: bool
      *     :param description: A description of the task.
-     *     :type description: str
      *     :param execute_request: The execution request details for the task.
-     *     :type execute_request: PeriodicTaskExecuteRequest | None
      *     :param id: The unique identifier of the periodic task.
-     *     :type id: int
      *     :param last_run_at: The datetime of the last run.
-     *     :type last_run_at: UTCDatetime | None
      *     :param total_run_count: The total number of times the task has run.
-     *     :type total_run_count: int
      *     :param date_changed: The datetime when the task was last changed.
-     *     :type date_changed: UTCDatetime | None
      *     :param last_run_status: The result of this schedule's own most recent
      *         run, or ``None`` when the schedule has never run. Resolved as the
      *         earliest system-triggered history for this task name at or after the
@@ -981,10 +993,8 @@ export interface components {
      *         task name is not misattributed.
      *     :param interval: The interval schedule for the task. Defaults to None. This field
      *         is populated with the alias "model_intervalschedule".
-     *     :type interval: IntervalSchedule | None
      *     :param crontab: The crontab schedule for the task. Defaults to None. This field
      *         is populated with the alias "model_crontabschedule".
-     *     :type crontab: CrontabSchedule | None
      */
     PeriodicTaskResponse: {
       crontab?: components['schemas']['CrontabSchedule'] | null;
@@ -1007,17 +1017,25 @@ export interface components {
        * Next Run At
        * @description Compute the next scheduled execution time.
        *
-       *     Return the next execution time based on the task's schedule. For crontab
-       *     schedules, use `croniter` to compute the next fire time from the cron
-       *     expression in the schedule's timezone, converted to UTC. For interval
-       *     schedules, add the interval duration to `last_run_at`, falling back to
-       *     `start_time`, then the current time.
-       *
-       *     :return: The next scheduled execution time in UTC, or `None` if the task
-       *         is disabled.
-       *     :rtype: UTCDatetime | None
+       *     :return: The first of :attr:`next_runs`, or ``None`` when the task is
+       *         disabled.
        */
       readonly next_run_at: string | null;
+      /**
+       * Next Runs
+       * @description Compute the next scheduled execution times.
+       *
+       *     Report what Celery beat will do with this schedule, computed through the
+       *     scheduler's own schedule objects, so the API's account of the task and
+       *     the scheduler's behaviour cannot disagree.
+       *
+       *     Cached per instance so a page of schedules computes each row once rather
+       *     than once per computed field reading it.
+       *
+       *     :return: Up to :data:`~app.core.celery.schedules.NEXT_RUNS_PREVIEW_COUNT`
+       *         UTC execution times, empty when the task is disabled.
+       */
+      readonly next_runs: string[];
       /**
        * Period
        * @description Get the period string for the periodic task.
@@ -1026,13 +1044,25 @@ export interface components {
        *     an interval or crontab schedule.
        *
        *     :return: A string representing the task's period.
-       *     :rtype: str
        */
       readonly period: string;
       /** Start Time */
       start_time: string | null;
       /** Task */
       task: string;
+      /**
+       * Timezone
+       * @description Report the zone this task's schedule is defined in.
+       *
+       *     For a crontab schedule this is the crontab's own zone. For an interval
+       *     schedule it is ``UTC`` unconditionally, ``start_time`` set or not: an
+       *     interval's cadence is an absolute ``timedelta`` with no wall-clock
+       *     anchor, and ``start_time`` is a ``UTCDatetime``, which coerces away
+       *     whatever zone the client sent, so neither could carry another zone.
+       *
+       *     :return: The IANA zone name the schedule is defined in.
+       */
+      readonly timezone: string;
       /**
        * Total Run Count
        * @default 0
@@ -1101,6 +1131,43 @@ export interface components {
      * @enum {string}
      */
     ReloadClassification: 'hot' | 'nested_only' | 'not_overridable';
+    /**
+     * SchedulePreviewResponse
+     * @description Represent the upcoming runs of a schedule that has not been saved.
+     *
+     *     Uses the same field names and shapes as the matching computed fields on
+     *     :class:`PeriodicTaskResponse`, so a client renders a preview and a saved
+     *     schedule through one code path.
+     *
+     *     :param timezone: The zone the schedule is defined in.
+     *     :param next_run_at: The first upcoming run, or ``None`` when there is none.
+     *     :param next_runs: The upcoming runs, empty when there are none.
+     */
+    SchedulePreviewResponse: {
+      /** Next Run At */
+      next_run_at: string | null;
+      /** Next Runs */
+      next_runs: string[];
+      /** Timezone */
+      timezone: string;
+    };
+    /**
+     * SchedulePreviewWrite
+     * @description Define the schedule a preview is requested for.
+     *
+     *     Carries the schedule fields of a create request and nothing else: a preview
+     *     persists nothing, so it needs no task name, owner, or execution details.
+     *
+     *     :param interval: The interval schedule to preview. Defaults to None.
+     *     :param crontab: The crontab schedule to preview. Defaults to None.
+     *     :param start_time: The earliest time the schedule may fire. Defaults to None.
+     */
+    SchedulePreviewWrite: {
+      crontab?: components['schemas']['CrontabSchedule'] | null;
+      interval?: components['schemas']['IntervalSchedule'] | null;
+      /** Start Time */
+      start_time?: string | null;
+    };
     /**
      * SettingClassGroup
      * @description Group one settings class's fields for the LIST response.
@@ -2471,6 +2538,39 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['PaginatedResponse_PeriodicTaskResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  periodic_preview_schedule_periodic_schedule_preview__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SchedulePreviewWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SchedulePreviewResponse'];
         };
       };
       /** @description Validation Error */

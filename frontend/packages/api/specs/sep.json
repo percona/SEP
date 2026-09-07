@@ -20311,6 +20311,70 @@
         ]
       }
     },
+    "/api/sep/periodic-tasks/schedule/preview/": {
+      "post": {
+        "description": "Dispatch a schedule preview to the Tasks API.\n\nTwo path segments so the sibling ``POST /{task_name}/`` cannot match this\nroute: a single-segment ``/preview/`` would be ambiguous with it, resolvable\nonly by declaration order and only at the cost of reserving ``preview`` as a\ntask name nobody could schedule.\n\n:param tasks_api: The Tasks API client used to compute the preview.\n:param body: The ``SchedulePreviewWrite`` JSON body, forwarded verbatim.\n:return: The schedule preview as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "operationId": "tasks_preview_schedule_api_sep_periodic_tasks_schedule_preview__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Tasks Preview Schedule Api Sep Periodic Tasks Schedule Preview  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upstream Tasks API failure."
+          }
+        },
+        "summary": "Preview Schedule",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/sep/periodic-tasks/{periodic_task_id}": {
       "delete": {
         "description": "Dispatch deletion of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to delete.\n:param tasks_api: The Tasks API client used to delete the periodic task.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",

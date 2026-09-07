@@ -2993,6 +2993,39 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sep/periodic-tasks/schedule/preview/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Preview Schedule
+     * @description Dispatch a schedule preview to the Tasks API.
+     *
+     *     Two path segments so the sibling ``POST /{task_name}/`` cannot match this
+     *     route: a single-segment ``/preview/`` would be ambiguous with it, resolvable
+     *     only by declaration order and only at the cost of reserving ``preview`` as a
+     *     task name nobody could schedule.
+     *
+     *     :param tasks_api: The Tasks API client used to compute the preview.
+     *     :param body: The ``SchedulePreviewWrite`` JSON body, forwarded verbatim.
+     *     :return: The schedule preview as returned by the Tasks API.
+     *     :raises HTTPException: Re-raised unchanged for an upstream client error
+     *         (status < 500).
+     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+     *         or a connection-level ``OSError``.
+     */
+    post: operations['tasks_preview_schedule_api_sep_periodic_tasks_schedule_preview__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sep/periodic-tasks/{periodic_task_id}': {
     parameters: {
       query?: never;
@@ -14671,6 +14704,54 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['PaginatedResponse_ArbitraryMapping_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
+    };
+  };
+  tasks_preview_schedule_api_sep_periodic_tasks_schedule_preview__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */

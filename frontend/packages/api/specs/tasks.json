@@ -314,7 +314,7 @@
         "type": "string"
       },
       "PeriodicTaskCreate": {
-        "description": "Define the model for creating periodic tasks.\n\nExtends `PeriodicTaskWrite` and includes additional fields required for creating\nnew periodic tasks.\n\n:param task: The Celery task name.\n:type task: str\n:param execute_request: The execution request details for the task.\n:type execute_request: PeriodicTaskExecuteRequest | None\n:param interval: The interval schedule for the task. Defaults to None.\n:type interval: IntervalSchedule | None\n:param crontab: The crontab schedule for the task. Defaults to None.\n:type crontab: CrontabSchedule | None\n:param kwargs: A JSON string representing additional keyword arguments for the task.\n:type kwargs: str\n:param name: The name of the periodic task. Defaults to an empty string, meaning\n    the value will be automatically generated on create.\n:type name: str\n:param start_time: The start time for the task execution. Defaults to None.\n:type start_time:  UTCDatetime | None\n:param enabled: Whether the task is enabled. Defaults to True.\n:type enabled: bool\n:param description: A description of the task. Defaults to an empty string.\n:type description: str",
+        "description": "Define the model for creating periodic tasks.\n\nExtends `PeriodicTaskWrite` and includes additional fields required for creating\nnew periodic tasks.\n\n:param task: The Celery task name.\n:param execute_request: The execution request details for the task.\n:param interval: The interval schedule for the task. Defaults to None.\n:param crontab: The crontab schedule for the task. Defaults to None.\n:param kwargs: A JSON string representing additional keyword arguments for the task.\n:param name: The name of the periodic task. Defaults to an empty string, meaning\n    the value will be automatically generated on create.\n:param start_time: The start time for the task execution. Defaults to None.\n:param enabled: Whether the task is enabled. Defaults to True.\n:param description: A description of the task. Defaults to an empty string.",
         "properties": {
           "crontab": {
             "anyOf": [
@@ -456,7 +456,7 @@
         "type": "object"
       },
       "PeriodicTaskResponse": {
-        "description": "Represent a response for a periodic task API call.\n\nThis model extends `BasePeriodicTask` and includes additional fields such as ID,\nlast run time, total run count, and date changed.\n\n:param name: The name of the periodic task.\n:type name: str\n:param task: The SEP task name.\n:type task: str\n:param start_time: The start time for the task execution.\n:type start_time: UTCDatetime | None\n:param enabled: Whether the task is enabled.\n:type enabled: bool\n:param description: A description of the task.\n:type description: str\n:param execute_request: The execution request details for the task.\n:type execute_request: PeriodicTaskExecuteRequest | None\n:param id: The unique identifier of the periodic task.\n:type id: int\n:param last_run_at: The datetime of the last run.\n:type last_run_at: UTCDatetime | None\n:param total_run_count: The total number of times the task has run.\n:type total_run_count: int\n:param date_changed: The datetime when the task was last changed.\n:type date_changed: UTCDatetime | None\n:param last_run_status: The result of this schedule's own most recent\n    run, or ``None`` when the schedule has never run. Resolved as the\n    earliest system-triggered history for this task name at or after the\n    schedule's ``last_run_at``, so a later unrelated system run of the same\n    task name is not misattributed.\n:param interval: The interval schedule for the task. Defaults to None. This field\n    is populated with the alias \"model_intervalschedule\".\n:type interval: IntervalSchedule | None\n:param crontab: The crontab schedule for the task. Defaults to None. This field\n    is populated with the alias \"model_crontabschedule\".\n:type crontab: CrontabSchedule | None",
+        "description": "Represent a response for a periodic task API call.\n\nThis model extends `BasePeriodicTask` and includes additional fields such as ID,\nlast run time, total run count, and date changed.\n\n:param name: The name of the periodic task.\n:param task: The SEP task name.\n:param start_time: The start time for the task execution.\n:param enabled: Whether the task is enabled.\n:param description: A description of the task.\n:param execute_request: The execution request details for the task.\n:param id: The unique identifier of the periodic task.\n:param last_run_at: The datetime of the last run.\n:param total_run_count: The total number of times the task has run.\n:param date_changed: The datetime when the task was last changed.\n:param last_run_status: The result of this schedule's own most recent\n    run, or ``None`` when the schedule has never run. Resolved as the\n    earliest system-triggered history for this task name at or after the\n    schedule's ``last_run_at``, so a later unrelated system run of the same\n    task name is not misattributed.\n:param interval: The interval schedule for the task. Defaults to None. This field\n    is populated with the alias \"model_intervalschedule\".\n:param crontab: The crontab schedule for the task. Defaults to None. This field\n    is populated with the alias \"model_crontabschedule\".",
         "properties": {
           "crontab": {
             "anyOf": [
@@ -548,12 +548,22 @@
                 "type": "null"
               }
             ],
-            "description": "Compute the next scheduled execution time.\n\nReturn the next execution time based on the task's schedule. For crontab\nschedules, use `croniter` to compute the next fire time from the cron\nexpression in the schedule's timezone, converted to UTC. For interval\nschedules, add the interval duration to `last_run_at`, falling back to\n`start_time`, then the current time.\n\n:return: The next scheduled execution time in UTC, or `None` if the task\n    is disabled.\n:rtype: UTCDatetime | None",
+            "description": "Compute the next scheduled execution time.\n\n:return: The first of :attr:`next_runs`, or ``None`` when the task is\n    disabled.",
             "readOnly": true,
             "title": "Next Run At"
           },
+          "next_runs": {
+            "description": "Compute the next scheduled execution times.\n\nReport what Celery beat will do with this schedule, computed through the\nscheduler's own schedule objects, so the API's account of the task and\nthe scheduler's behaviour cannot disagree.\n\nCached per instance so a page of schedules computes each row once rather\nthan once per computed field reading it.\n\n:return: Up to :data:`~app.core.celery.schedules.NEXT_RUNS_PREVIEW_COUNT`\n    UTC execution times, empty when the task is disabled.",
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Next Runs",
+            "type": "array"
+          },
           "period": {
-            "description": "Get the period string for the periodic task.\n\nReturns a string representation of the task's schedule based on whether it uses\nan interval or crontab schedule.\n\n:return: A string representing the task's period.\n:rtype: str",
+            "description": "Get the period string for the periodic task.\n\nReturns a string representation of the task's schedule based on whether it uses\nan interval or crontab schedule.\n\n:return: A string representing the task's period.",
             "readOnly": true,
             "title": "Period",
             "type": "string"
@@ -574,6 +584,12 @@
             "title": "Task",
             "type": "string"
           },
+          "timezone": {
+            "description": "Report the zone this task's schedule is defined in.\n\nFor a crontab schedule this is the crontab's own zone. For an interval\nschedule it is ``UTC`` unconditionally, ``start_time`` set or not: an\ninterval's cadence is an absolute ``timedelta`` with no wall-clock\nanchor, and ``start_time`` is a ``UTCDatetime``, which coerces away\nwhatever zone the client sent, so neither could carry another zone.\n\n:return: The IANA zone name the schedule is defined in.",
+            "readOnly": true,
+            "title": "Timezone",
+            "type": "string"
+          },
           "total_run_count": {
             "default": 0,
             "title": "Total Run Count",
@@ -590,7 +606,9 @@
           "last_run_at",
           "date_changed",
           "period",
-          "next_run_at"
+          "next_runs",
+          "next_run_at",
+          "timezone"
         ],
         "title": "PeriodicTaskResponse",
         "type": "object"
@@ -681,6 +699,81 @@
         ],
         "title": "ReloadClassification",
         "type": "string"
+      },
+      "SchedulePreviewResponse": {
+        "description": "Represent the upcoming runs of a schedule that has not been saved.\n\nUses the same field names and shapes as the matching computed fields on\n:class:`PeriodicTaskResponse`, so a client renders a preview and a saved\nschedule through one code path.\n\n:param timezone: The zone the schedule is defined in.\n:param next_run_at: The first upcoming run, or ``None`` when there is none.\n:param next_runs: The upcoming runs, empty when there are none.",
+        "properties": {
+          "next_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Run At"
+          },
+          "next_runs": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "title": "Next Runs",
+            "type": "array"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timezone",
+          "next_run_at",
+          "next_runs"
+        ],
+        "title": "SchedulePreviewResponse",
+        "type": "object"
+      },
+      "SchedulePreviewWrite": {
+        "description": "Define the schedule a preview is requested for.\n\nCarries the schedule fields of a create request and nothing else: a preview\npersists nothing, so it needs no task name, owner, or execution details.\n\n:param interval: The interval schedule to preview. Defaults to None.\n:param crontab: The crontab schedule to preview. Defaults to None.\n:param start_time: The earliest time the schedule may fire. Defaults to None.",
+        "properties": {
+          "crontab": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CrontabSchedule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "interval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntervalSchedule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time"
+          }
+        },
+        "title": "SchedulePreviewWrite",
+        "type": "object"
       },
       "SettingClassGroup": {
         "description": "Group one settings class's fields for the LIST response.\n\n:param setting_class: The Pydantic class ``__name__`` this group represents.\n:param settings: The fields declared on the settings class, with their\n    current values and metadata.\n:param is_app_owned: Whether this group belongs to a SEP app under\n    ``app/sep/apps/`` rather than core SEP wiring.\n:param app_id: The owning app's registry key when ``is_app_owned`` is\n    ``True``; ``None`` for core groups.\n:param app_display_name: The owning app's human-facing label when\n    ``is_app_owned`` is ``True``; ``None`` for core groups.\n:param app_enabled: Whether the owning app is currently enabled when\n    ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled\n    apps remain listed so the frontend can hide them without a second\n    lookup.",
@@ -3100,6 +3193,55 @@
           }
         ],
         "summary": "List Periodic Tasks",
+        "tags": [
+          "periodic",
+          "schedule",
+          "tasks"
+        ]
+      }
+    },
+    "/periodic/schedule/preview/": {
+      "post": {
+        "description": "Report the upcoming runs of a schedule without saving it.\n\nAnswers for an unsaved request body what\n:class:`~app.tasks.periodic.models.PeriodicTaskResponse` answers for a stored\nschedule, through the same code path, so a client can preview a cron\nexpression while it is still being typed.\n\nTwo path segments so no single-segment ``/{param}`` sibling can match it,\nwhich is what keeps the SEP-side twin from reserving a task name.\n\n:param preview: The schedule to preview. Persisted nowhere.\n:return: The schedule's zone and its upcoming runs.",
+        "operationId": "periodic_preview_schedule_periodic_schedule_preview__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchedulePreviewWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchedulePreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Preview Schedule",
         "tags": [
           "periodic",
           "schedule",

@@ -15,9 +15,11 @@
 
 """Define models for Celery periodic tasks and schedules."""
 
-from typing import Annotated, Any
+from datetime import timedelta
+from typing import Annotated, Any, Self
 from zoneinfo import available_timezones
 
+from celery import schedules as celery_schedules
 from pydantic import (
     AfterValidator,
     BaseModel,
@@ -27,6 +29,12 @@ from pydantic import (
 )
 from sqlalchemy_celery_beat import CrontabSchedule as BaseCrontabSchedule
 from sqlalchemy_celery_beat.models import Period
+
+from app.core.utils.date_time import utc_now
+
+#: The cron fields ``sqlalchemy_celery_beat`` normalises and parses before it
+#: writes a crontab row.
+CRON_FIELDS = ("minute", "hour", "day_of_week", "day_of_month", "month_of_year")
 
 
 class IntervalSchedule(BaseModel):
@@ -63,6 +71,25 @@ class IntervalSchedule(BaseModel):
                 "period": period,
             }
         return data
+
+    @property
+    def schedule(self) -> celery_schedules.schedule:
+        """Return the celery schedule object beat consults for this interval.
+
+        Mirror ``sqlalchemy_celery_beat.models.IntervalSchedule.schedule``, whose
+        ORM row this model stands in for on the request and response paths.
+
+        Deliberately a bare :class:`property` rather than a
+        ``@computed_field``: this class is a settings field type, and a computed
+        field would add the schedule object to the serialised shape and JSON
+        schema of every settings field annotated with it.
+
+        :return: The ``celery.schedules.schedule`` for this interval's cadence.
+        :raises OverflowError: If ``every`` periods exceed
+            :class:`~datetime.timedelta`'s range. The periodic-task write and
+            preview models reject such an interval at the request boundary.
+        """
+        return celery_schedules.schedule(timedelta(**{self.period.value: self.every}))
 
     def __str__(self) -> str:
         """Return a string representation of the interval schedule.
@@ -176,3 +203,29 @@ class CrontabSchedule(BaseModel):
         if v not in available_timezones():
             raise ValueError(f"{v} is not a valid timezone")
         return v
+
+    @model_validator(mode="after")
+    def validate_scheduler_can_run_expression(self) -> Self:
+        """Normalise the cron fields and reject what the scheduler cannot run.
+
+        Replicate
+        ``sqlalchemy_celery_beat.models.CrontabSchedule.before_insert_or_update``
+        so an expression is decided by the scheduler's own parser at the request
+        boundary, rather than accepted here and failed at flush time. Raising
+        ``ValueError`` renders as a 422 locating the error at this schedule;
+        because the check needs every cron field at once it runs after field
+        validation, so the reported location is the schedule, not the single
+        field that carried the bad value.
+
+        :return: The validated schedule, with every cron field normalised to the
+            form the beat store holds.
+        :raises ValueError: If the scheduler cannot parse or satisfy the
+            expression.
+        """
+        for field in CRON_FIELDS:
+            setattr(self, field, BaseCrontabSchedule.cronexp(getattr(self, field)))
+        try:
+            BaseCrontabSchedule.aware_crontab(self).remaining_estimate(utc_now())
+        except Exception as exc:
+            raise ValueError(f"Could not parse cron {self}: {exc}") from exc
+        return self
