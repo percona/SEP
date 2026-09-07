@@ -26,6 +26,8 @@ add-and-drop round trip on the default engine, where ``batch_alter_table``
 recreates the table instead of altering it in place.
 """
 
+from typing import Any
+
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -44,8 +46,10 @@ from sqlalchemy import (
 from sqlalchemy import (
     Enum as EnumField,
 )
+from sqlalchemy.engine import URL
 from sqlalchemy.engine.interfaces import ReflectedColumn
 from sqlalchemy.exc import OperationalError
+from sqlmodel import select, Session
 
 from app.core.db.utils import (
     acquire_pg_advisory_xact_lock,
@@ -53,21 +57,48 @@ from app.core.db.utils import (
     check_constraint_name,
     column_exists,
 )
+from app.core.encryption import decrypt
 from app.core.settings_override.constants import (
     SETTINGOVERRIDE_MIGRATION_LOCK_KEY,
     SETTINGOVERRIDE_UPDATED_BY_COLUMN,
 )
+from app.core.settings_override.models import SettingOverride
+from app.core.utils import json_serializer
 from app.core.utils.fields import AsyncDatabaseEngine
 from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
 from app.tasks.config import tasks_settings
 from tests.app.alembic_paths import ALEMBIC_INI
-from tests.app.core.settings_override.conftest import LONG_USERNAME_LENGTH
+from tests.app.core.settings_override.conftest import (
+    ALERT_SETTINGS_TOKEN,
+    LONG_USERNAME_LENGTH,
+    PMM_API_KEY,
+    PMM_ENDPOINT,
+    ROUTING_KEY,
+    SETTINGS_TOKEN,
+    TASKS_SETTINGS_TOKEN,
+)
 
 _SETTING_CLASS_VARCHAR_LENGTH = 255
 #: The ``SYNC_REFRESH_TIME`` value seeded before a downgrade, read back through
 #: the JSONB column to prove the drop left the row's data intact.
 _SEEDED_OVERRIDE_VALUE = 5
+# The SEP revision immediately below the secret re-encryption one, so a test can
+# seed plaintext rows into the state a deployment carrying overrides upgrades from.
+_SEP_PRE_ENCRYPTION_REVISION = "c9880f0ac1bd"
+
+
+_SEED_ROWS = [
+    (SETTINGS_TOKEN, "PMM", {"endpoint": PMM_ENDPOINT, "api_key": PMM_API_KEY}),
+    (SETTINGS_TOKEN, "PMM__api_key", PMM_API_KEY),
+    (SETTINGS_TOKEN, "LOGGING", "DEBUG"),
+    (
+        ALERT_SETTINGS_TOKEN,
+        "PROVIDERS",
+        [{"PROVIDER": "pagerduty", "routing_key": ROUTING_KEY}],
+    ),
+    (TASKS_SETTINGS_TOKEN, "STALENESS_THRESHOLD_SECONDS", 7200),
+]
 
 # The SEP and Tasks revisions immediately below ``add_setting_override_table``
 # on each track — downgrading to them drops the shared table and runs the other
@@ -442,6 +473,104 @@ def test_shared_db_downgrade_either_order_is_clean(shared_postgres_db):
         assert not inspect(engine).has_table("settingoverride")
     finally:
         engine.dispose()
+
+
+def _seed_override_rows(sync_url: URL, rows: list[tuple[str, str, Any]]) -> None:
+    """Insert one ``settingoverride`` row per entry through a sync engine.
+
+    :param sync_url: The sync URL of the shared database.
+    :param rows: ``(setting_class, key, value)`` triples to persist.
+    """
+    engine = create_engine(sync_url, json_serializer=json_serializer)
+    try:
+        with Session(engine) as session:
+            for setting_class, key, value in rows:
+                session.add(
+                    SettingOverride(
+                        setting_class=setting_class,
+                        key=key,
+                        value=value,
+                        is_active=True,
+                    )
+                )
+            session.commit()
+    finally:
+        engine.dispose()
+
+
+def _stored_override_values(sync_url: URL) -> dict[tuple[str, str], Any]:
+    """Return every stored override value keyed by ``(setting_class, key)``.
+
+    :param sync_url: The sync URL of the shared database.
+    :return: The values as PostgreSQL's ``jsonb`` column returns them.
+    """
+    engine = create_engine(sync_url, json_serializer=json_serializer)
+    try:
+        with Session(engine) as session:
+            rows = session.exec(select(SettingOverride)).all()
+        return {(row.setting_class, row.key): row.value for row in rows}
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.xdist_group("shared_postgres_db")
+@pytest.mark.postgres
+def test_shared_db_secret_rows_are_encrypted_by_the_sep_track(shared_postgres_db):
+    """Encrypt the secret leaves of pre-existing rows when the SEP chain reaches them.
+
+    Seeds at the revision below the re-encryption one so the rows already exist
+    when it runs, which is the upgrade path a deployment carrying overrides
+    takes. The values come back through ``jsonb`` rather than SQLite's ``json``,
+    which is what makes this the dialect arm of the walker's coverage.
+
+    The Tasks chain then runs over the same physical table and must neither
+    re-encrypt what the SEP chain rewrote nor touch the rows whose
+    ``setting_class`` it cannot resolve.
+    """
+    sync_url = shared_postgres_db
+    sep_cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    tasks_cfg = Config(str(ALEMBIC_INI), ini_section="tasks")
+
+    command.upgrade(sep_cfg, _SEP_PRE_ENCRYPTION_REVISION)
+    _seed_override_rows(sync_url, _SEED_ROWS)
+    before = _stored_override_values(sync_url)
+
+    command.upgrade(sep_cfg, "heads")
+
+    stored = _stored_override_values(sync_url)
+    assert decrypt(stored[(SETTINGS_TOKEN, "PMM")]["api_key"]) == PMM_API_KEY
+    assert stored[(SETTINGS_TOKEN, "PMM")]["endpoint"] == PMM_ENDPOINT
+    assert decrypt(stored[(SETTINGS_TOKEN, "PMM__api_key")]) == PMM_API_KEY
+    provider = stored[(ALERT_SETTINGS_TOKEN, "PROVIDERS")][0]
+    assert decrypt(provider["routing_key"]) == ROUTING_KEY
+    assert provider["PROVIDER"] == "pagerduty"
+    assert stored[(SETTINGS_TOKEN, "LOGGING")] == before[(SETTINGS_TOKEN, "LOGGING")]
+    assert (
+        stored[(TASKS_SETTINGS_TOKEN, "STALENESS_THRESHOLD_SECONDS")]
+        == (before[(TASKS_SETTINGS_TOKEN, "STALENESS_THRESHOLD_SECONDS")])
+    )
+
+    after_sep = _stored_override_values(sync_url)
+    command.upgrade(tasks_cfg, "heads")
+    assert _stored_override_values(sync_url) == after_sep
+
+
+@pytest.mark.xdist_group("shared_postgres_db")
+@pytest.mark.postgres
+def test_shared_db_downgrade_restores_the_original_plaintext(shared_postgres_db):
+    """Return every secret leaf to the plaintext the previous release reads."""
+    sync_url = shared_postgres_db
+    sep_cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+
+    command.upgrade(sep_cfg, _SEP_PRE_ENCRYPTION_REVISION)
+    _seed_override_rows(sync_url, _SEED_ROWS)
+    before = _stored_override_values(sync_url)
+    command.upgrade(sep_cfg, "heads")
+    assert _stored_override_values(sync_url) != before
+
+    command.downgrade(sep_cfg, _SEP_PRE_ENCRYPTION_REVISION)
+
+    assert _stored_override_values(sync_url) == before
 
 
 @pytest.mark.postgres

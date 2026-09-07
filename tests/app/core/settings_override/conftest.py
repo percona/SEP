@@ -42,6 +42,13 @@ from tests.app.db_schema import apply_schema
 #: Importable path patched when tests replace ``start_refresh_task``.
 START_REFRESH_TASK = "app.core.settings_override.worker.start_refresh_task"
 
+#: Plaintext secrets the encrypt-at-rest suites seed and assert round trips for.
+#: Shared so the settings-override and migration suites cannot drift apart on the
+#: value a stored ciphertext is expected to decrypt back to.
+PMM_API_KEY = "pmm-api-key-at-rest"
+PMM_ENDPOINT = "https://pmm.example.com"
+ROUTING_KEY = "pagerduty-routing-key-at-rest"
+
 #: Storage tokens for ``SettingOverride.setting_class`` (SCREAMING_SNAKE).
 ALERT_SETTINGS_TOKEN = setting_class_token(AlertSettings)
 ANONYMIZER_SETTINGS_TOKEN = setting_class_token(AnonymizerSettings)
