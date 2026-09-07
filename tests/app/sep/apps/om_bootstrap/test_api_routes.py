@@ -41,7 +41,7 @@ from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.om_bootstrap.api_routes import dispatch_run_step, trigger_run
 from app.sep.apps.om_bootstrap.app import app as om_bootstrap_app
 from app.sep.apps.om_bootstrap.crud import BootstrapRunManager
-from app.sep.apps.om_bootstrap.models import BootstrapRun
+from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
 from app.sep.apps.om_bootstrap.persistence import dump_host_states
 from app.sep.apps.om_bootstrap.strategy import (
     HostBootstrapState,
@@ -161,6 +161,52 @@ class TestTriggerRun:
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+class TestListBootstrapRuns:
+    """Assert GET /runs discovers runs by status, newest first."""
+
+    async def _seed_run(
+        self, session: AsyncSession, run_status: BootstrapRunStatus
+    ) -> BootstrapRun:
+        return await BootstrapRunManager.save(
+            session,
+            BootstrapRun(
+                status=run_status,
+                install_method=InstallMethod.PACKAGES,
+                os=OperatingSystem.UBUNTU,
+                mongodb_version="8.0",
+                replica_set_name="rs-test",
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_filters_by_status(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A caller re-discovering in-flight runs sees only the running ones."""
+        running = await self._seed_run(session, BootstrapRunStatus.RUNNING)
+        await self._seed_run(session, BootstrapRunStatus.SUCCEEDED)
+
+        response = _client(regular_user, session).get(f"{_BASE}/runs?status=running")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert {run["id"] for run in body} == {str(running.id)}
+
+    @pytest.mark.asyncio
+    async def test_returns_every_status_when_unfiltered(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """Omitting ``status`` lists runs regardless of where they landed."""
+        first = await self._seed_run(session, BootstrapRunStatus.RUNNING)
+        second = await self._seed_run(session, BootstrapRunStatus.SUCCEEDED)
+
+        response = _client(regular_user, session).get(f"{_BASE}/runs")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert {run["id"] for run in body} == {str(first.id), str(second.id)}
 
 
 class TestGetBootstrapRun:

@@ -33,7 +33,7 @@ register :attr:`~app.core.auth.models.UserRole.ADMIN` explicitly.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi import status as http_status
 from pydantic import BaseModel
 
@@ -50,7 +50,7 @@ from app.core.security import require_internal_token
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import UTCDatetime
 from app.sep.apps.framework.api import schema_endpoint
-from app.sep.apps.om_bootstrap.crud import BootstrapRunManager, get_run
+from app.sep.apps.om_bootstrap.crud import BootstrapRunManager, get_run, list_runs
 from app.sep.apps.om_bootstrap.dispatch import dispatch_step
 from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
 from app.sep.apps.om_bootstrap.persistence import (
@@ -207,6 +207,33 @@ async def trigger_run(session: SessionDep, request: TriggerRunRequest) -> RunRes
         ),
     )
     return _run_response(run)
+
+
+@router.get("/runs")
+async def list_bootstrap_runs(
+    session: SessionDep,
+    status: BootstrapRunStatus | None = None,
+    limit: int = Query(default=100, ge=1, le=100),
+) -> list[RunResponse]:
+    """Return runs, newest first, optionally narrowed to one status.
+
+    The intended caller is PMM's HA-leader-only stepper (PMM-15347/plan.md §4
+    item 9): it does not persist its own copy of which runs exist or where
+    they are, so on every tick -- and especially right after a leader
+    failover -- it re-discovers every run still in flight from here
+    (``status=running``) rather than from any state of its own.
+
+    :param session: The database session.
+    :param status: Restrict to runs in this status. Omit for any status.
+    :param limit: How many to return.
+    :return: The runs. Does **not** reconcile in-flight steps -- unlike
+        :func:`get_bootstrap_run`, a caller polling a specific run for the
+        purpose of driving it forward should use that route instead.
+    """
+    return [
+        _run_response(run)
+        for run in await list_runs(session, status=status, limit=limit)
+    ]
 
 
 @router.get("/runs/{run_id}")

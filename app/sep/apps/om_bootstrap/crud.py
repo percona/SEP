@@ -27,11 +27,12 @@ design), so the manager's generic ``save``/``update`` need no override.
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col, select
 
 from app.core.db.crud import BaseSQLModelManager
-from app.sep.apps.om_bootstrap.models import BootstrapRun
+from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
 
-__all__ = ["BootstrapRunManager", "get_run"]
+__all__ = ["BootstrapRunManager", "get_run", "list_runs"]
 
 
 class BootstrapRunManager(BaseSQLModelManager):
@@ -51,3 +52,28 @@ async def get_run(session: AsyncSession, run_id: UUID) -> BootstrapRun | None:
     :return: The run, or ``None``.
     """
     return await session.get(BootstrapRun, run_id)
+
+
+async def list_runs(
+    session: AsyncSession,
+    *,
+    status: BootstrapRunStatus | None = None,
+    limit: int = 100,
+) -> list[BootstrapRun]:
+    """Return runs, newest first, optionally narrowed to one status.
+
+    The intended caller is PMM's HA-leader-only stepper (PMM-15347/plan.md §4
+    item 9): on every tick, and especially right after a leader failover, it
+    needs to discover every run still in flight by reading this API rather than
+    from any state of its own -- ``status=RUNNING`` is exactly that query.
+
+    :param session: The database session.
+    :param status: Restrict to runs in this status. ``None`` for any status.
+    :param limit: How many to return.
+    :return: The runs.
+    """
+    statement = select(BootstrapRun).order_by(col(BootstrapRun.started_at).desc())
+    if status is not None:
+        statement = statement.where(col(BootstrapRun.status) == status)
+    result = await session.exec(statement.limit(limit))
+    return list(result.all())
