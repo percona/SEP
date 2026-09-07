@@ -1851,7 +1851,7 @@ class TestItemDisplayNames:
     def test_declared_record_names_reach_the_served_schema(
         self, regular_user: CasdoorUser
     ) -> None:
-        """Thread both authoring fields into the derived ``GET /schema`` payload."""
+        """Carry both authoring fields into the derived ``GET /schema`` payload."""
         app_def = _synth_app(
             item_display_name="widget", item_display_name_plural="widgets"
         )

@@ -2736,7 +2736,7 @@ class TestAppSchemaRecordDisplayNames:
     """Cover the singular/plural record names carried beside ``display_name``."""
 
     def test_both_record_names_default_to_display_name(self) -> None:
-        """Fill both record names from ``display_name`` when neither is supplied."""
+        """Fall back to ``display_name`` for both record names when neither is supplied."""
         schema = AppSchema(
             name="minimal",
             display_name="MySQL Backups",

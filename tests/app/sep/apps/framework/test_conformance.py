@@ -67,6 +67,7 @@ from app.sep.apps.framework.schema import (
     DetailField,
     DetailSection,
     DetailView,
+    ITEM_DISPLAY_NAME_KEYS,
     ListView,
 )
 from app.sep.apps.framework.spec import ResolvedEntities, RunCommandSpec
@@ -858,12 +859,13 @@ def test_item_display_names_fire_once_per_name_left_equal_to_the_title():
 
     violations = check_item_display_names_declared(payload)
 
+    assert violations
     flagged = sorted(
         key
-        for key in ("item_display_name", "item_display_name_plural")
+        for key in ITEM_DISPLAY_NAME_KEYS
         if any(repr(key) in message for message in violations)
     )
-    assert flagged == ["item_display_name", "item_display_name_plural"]
+    assert flagged == sorted(ITEM_DISPLAY_NAME_KEYS)
     assert all("mysql_backups" in message for message in violations)
 
 
