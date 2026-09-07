@@ -611,7 +611,9 @@ def _derive_one_of_from_union(
     :return: The derived one-of group.
     :raises ValueError: When the field declares no discriminator key, the union
         has fewer than two branch models, a branch model omits the
-        discriminator or gives it no single value, or the field carries
+        discriminator or gives it no single value, a branch model field is
+        missing its ``Ui(...)`` marker, a branch model has no derivable leaf
+        fields besides the discriminator, or the field carries
         ``Ui(destructive=...)``.
     """
     disc_key = field_info.discriminator

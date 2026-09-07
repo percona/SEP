@@ -1319,7 +1319,7 @@ class TestBaseFieldDestructive:
     """Cover the opt-in ``destructive`` consequence text on ``BaseField``."""
 
     def test_default_is_absent_from_the_wire(self) -> None:
-        """An unmarked field keeps its pre-feature wire shape under ``exclude_none``.
+        """Keep the pre-feature wire shape for an unmarked field under ``exclude_none``.
 
         The discovery endpoint serialises with ``exclude_none=True``; typing the
         attribute optional (default ``None``) keeps it out of the payload so
@@ -1328,22 +1328,22 @@ class TestBaseFieldDestructive:
         field = BoolField(name="x", label="X")
 
         assert field.destructive is None
-        assert field.model_dump(exclude_none=True) == {
+        assert field.model_dump(by_alias=True, exclude_none=True) == {
             "name": "x",
             "label": "X",
             "required": False,
-            "field_type": "bool",
+            "type": "bool",
         }
 
     def test_marked_field_serialises_the_consequence_text(self) -> None:
-        """An opted-in field carries the consequence sentence on the wire."""
+        """Carry the consequence sentence on the wire for an opted-in field."""
         field = BoolField(
             name="overwrite_tables",
             label="Overwrite tables",
             destructive="Existing tables are dropped.",
         )
 
-        dumped = field.model_dump(exclude_none=True)
+        dumped = field.model_dump(by_alias=True, exclude_none=True)
 
         assert dumped["destructive"] == "Existing tables are dropped."
 

@@ -529,8 +529,14 @@ data, and its value is the consequence sentence a renderer shows in a
 confirmation. Presence is the mark — there is no separate boolean — so a blank
 or whitespace-only string is rejected at construction rather than published as
 a mark with nothing to display. Like everything else on `Ui` it is presentation
-only: the API accepts exactly the same bodies either way, and the attribute is
-omitted from the wire until a field opts in.
+only: the API accepts exactly the same bodies either way. Whether an unmarked
+field omits the key or publishes `destructive: null` depends on the route:
+those serialising with `response_model_exclude_none` drop it, while
+`GET /api/apps/atw/execution-schema/` and `GET /api/apps/dipper/form-schema`
+set no such posture and emit an explicit null on every field — the same way
+they already do for `description`, `requires` and `forbidden`. Consumers must
+treat an absent key and a null value identically and branch on the value,
+never on key presence.
 
 <!-- src: app/sep/apps/archives/models.py :: ArchivesCreate -->
 ```python
