@@ -1297,9 +1297,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         with a 409. While the job lives, a pending or running allocation is
         simply still starting and is left alone until
         ``PENDING_ALLOCATION_TIMEOUT_SECONDS`` elapses from ``started_at``, after
-        which the row escalates to LOST. Once the job is dead nothing will
-        advance it, so any other status resolves to LOST: an allocation that
-        started no task produced no exit code to have earned SUCCESS.
+        which the row escalates to LOST and the job is deregistered so Nomad
+        cannot still place it. Once the job is dead nothing will advance it, so
+        any other status resolves to LOST: an allocation that started no task
+        produced no exit code to have earned SUCCESS.
 
         :param queue_item: The task history record for tracking this execution.
         :param writer_session: The dedicated session to use for log chunk
@@ -1381,9 +1382,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         When the allocation still has no task states and a non-terminal client
         status, :meth:`_should_escalate_pending_allocation` may escalate the
         row to LOST once ``PENDING_ALLOCATION_TIMEOUT_SECONDS`` has elapsed
-        since ``started_at``. The finish time is ``utc_now()`` rather than the
-        allocation's ``ModifyTime``, which may predate the timeout on a
-        never-placed allocation and would under-report ``duration``.
+        since ``started_at``. The job is deregistered first so Nomad cannot
+        still place the allocation after the duplicate-dispatch guard drops; a
+        Nomad error is swallowed so a hiccup cannot leave the row RUNNING. The
+        finish time is ``utc_now()`` rather than the allocation's
+        ``ModifyTime``, which may predate the timeout on a never-placed
+        allocation and would under-report ``duration``.
 
         :param queue_item: The running task history record to stamp.
         :param alloc: The current Nomad allocation dict.
@@ -1445,6 +1449,16 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 alloc["ID"],
                 queue_item.id,
             )
+            try:
+                self.backend.job.deregister_job(job["ID"])
+            except BaseNomadException:
+                logger.warning(
+                    "Could not deregister job %s while escalating task history "
+                    "%s past the pending-allocation timeout; marking LOST anyway",
+                    job["ID"],
+                    queue_item.id,
+                    exc_info=True,
+                )
             queue_item.finished_at = utc_now()
             queue_item.status = TaskHistoryStatusEnum.LOST
 

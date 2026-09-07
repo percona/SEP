@@ -1836,7 +1836,7 @@ class TestSyncTaskHistoryWithoutTaskStates:
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_pending_allocation_stays_running(self, mock_nomad_cls):
         """Assert a still-starting allocation does not raise and remains RUNNING."""
-        self._backend(mock_nomad_cls, self._alloc())
+        mock_backend = self._backend(mock_nomad_cls, self._alloc())
         executor = _build_executor()
 
         result = await executor._sync_task_history(self._queue_item())
@@ -1845,6 +1845,7 @@ class TestSyncTaskHistoryWithoutTaskStates:
         assert result.finished_at is None
         assert result.execution_request.tracking["task_states"] == {}
         assert result.execution_request.tracking["allocation_id"] == "alloc-2"
+        mock_backend.job.deregister_job.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
@@ -2137,7 +2138,7 @@ class TestSyncTaskHistoryWithoutTaskStates:
             "PENDING_ALLOCATION_TIMEOUT_SECONDS",
             PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
         )
-        self._backend(mock_nomad_cls, self._alloc())
+        mock_backend = self._backend(mock_nomad_cls, self._alloc())
         executor = _build_executor()
         started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_WITHIN_BOUND_AGE)
 
@@ -2147,6 +2148,7 @@ class TestSyncTaskHistoryWithoutTaskStates:
 
         assert result.status == TaskHistoryStatusEnum.RUNNING
         assert result.finished_at is None
+        mock_backend.job.deregister_job.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.utc_now")
@@ -2160,7 +2162,7 @@ class TestSyncTaskHistoryWithoutTaskStates:
             "PENDING_ALLOCATION_TIMEOUT_SECONDS",
             PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
         )
-        self._backend(
+        mock_backend = self._backend(
             mock_nomad_cls,
             self._alloc(ModifyTime=1_700_000_000_000_000_000),
         )
@@ -2175,6 +2177,7 @@ class TestSyncTaskHistoryWithoutTaskStates:
 
         assert result.status == TaskHistoryStatusEnum.LOST
         assert result.finished_at == now
+        mock_backend.job.deregister_job.assert_called_once_with("job-1")
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
@@ -2211,7 +2214,7 @@ class TestSyncTaskHistoryWithoutTaskStates:
             "PENDING_ALLOCATION_TIMEOUT_SECONDS",
             PENDING_ALLOCATION_BOUNDARY_AGE,
         )
-        self._backend(mock_nomad_cls, self._alloc())
+        mock_backend = self._backend(mock_nomad_cls, self._alloc())
         executor = _build_executor()
         started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_BOUNDARY_AGE)
 
@@ -2221,6 +2224,44 @@ class TestSyncTaskHistoryWithoutTaskStates:
 
         assert result.status == TaskHistoryStatusEnum.LOST
         assert result.finished_at is not None
+        mock_backend.job.deregister_job.assert_called_once_with("job-1")
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_pending_allocation_escalation_deregister_failure_still_lands_lost(
+        self,
+        mock_nomad_cls,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Assert a Nomad hiccup on deregister still stamps LOST.
+
+        Swallowing keeps the duplicate-dispatch 409 from surviving a failed
+        reap; the job may still be placed, but that is logged rather than
+        re-blocking the row.
+        """
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
+        )
+        mock_backend = self._backend(mock_nomad_cls, self._alloc())
+        mock_backend.job.deregister_job.side_effect = BaseNomadException(
+            MagicMock(text="gone")
+        )
+        executor = _build_executor()
+        started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_PAST_BOUND_AGE)
+
+        with caplog.at_level(logging.WARNING):
+            result = await executor._sync_task_history(
+                self._queue_item(started_at=started_at)
+            )
+
+        assert result.status == TaskHistoryStatusEnum.LOST
+        assert result.finished_at is not None
+        mock_backend.job.deregister_job.assert_called_once_with("job-1")
+        assert "Could not deregister job job-1" in caplog.text
+        assert "marking LOST anyway" in caplog.text
 
     @pytest.mark.asyncio
     async def test_should_escalate_pending_allocation_coerces_naive_started_at(
