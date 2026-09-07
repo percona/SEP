@@ -70,3 +70,21 @@ class TestHostBootstrapStateStatus:
         state = _state(StepStatus.SUCCEEDED, StepStatus.FAILED, StepStatus.PENDING)
 
         assert state.status == StepStatus.FAILED
+
+    def test_pending_finalize_steps_do_not_make_a_succeeded_host_unfinished(
+        self,
+    ) -> None:
+        """Every finalize step stays pending until the run-level steps succeed.
+
+        A host whose forward steps all succeeded must still read as succeeded
+        even though its finalize_steps haven't started yet -- otherwise a
+        perfectly normal, still-in-progress run would never satisfy
+        nextRunStepAction's own "every host succeeded" gate.
+        """
+        state = HostBootstrapState(
+            host="node00",
+            steps=[StepRecord(name="only-step", status=StepStatus.SUCCEEDED)],
+            finalize_steps=[StepRecord(name="enable_auth")],
+        )
+
+        assert state.status == StepStatus.SUCCEEDED
