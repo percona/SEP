@@ -33,7 +33,7 @@ the table, needed the heavier imports.
 """
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import nonmember, StrEnum
 from typing import Any, Literal
 
 import yaml
@@ -49,11 +49,25 @@ UNKNOWN_SERVICE_SENTINEL = "-1"
 
 
 class BackupType(EnumFieldMixin, StrEnum):
-    """Backup types."""
+    """Represent the backup tools a run can be taken with.
+
+    :cvar LABELS: Display text for each stored value, keyed by the value rather
+        than the member so a row holding a code the enum no longer declares can
+        still be looked up. Wrapped in :func:`enum.nonmember` because ``enum``
+        would otherwise treat a class-body dict as a member candidate.
+    """
 
     MYDUMPER = "M"
     XTRABACKUP = "X"
     BINLOG = "B"
+
+    LABELS = nonmember(
+        {
+            "M": "Mydumper",
+            "X": "XtraBackup",
+            "B": "Binlog",
+        }
+    )
 
 
 class MysqlBackupRun(BaseSQLModel, table=True):

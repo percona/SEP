@@ -17,7 +17,7 @@
 
 from collections.abc import Iterator
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import HTTPException, status
@@ -648,3 +648,144 @@ class TestSepStopTaskHistoryEndpoint:
         response = api_admin_client_no_bearer.post("/api/sep/task-history/42/stop/")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         mock_task_api_dep.post.assert_not_awaited()
+
+
+ACTOR_CREATOR_ID = "11111111-1111-4111-8111-111111111111"
+ACTOR_UPDATER_ID = "22222222-2222-4222-8222-222222222222"
+ACTOR_EXECUTOR_ID = "33333333-3333-4333-8333-333333333333"
+ACTOR_UNKNOWN_ID = "99999999-9999-4999-8999-999999999999"
+ACTOR_USERNAME_MAP = {
+    ACTOR_CREATOR_ID: "alice",
+    ACTOR_UPDATER_ID: "bob",
+    ACTOR_EXECUTOR_ID: "carol",
+}
+
+
+def _actor_history_page(*, executed_by: str | None = ACTOR_EXECUTOR_ID) -> dict:
+    """Build a one-row upstream page whose three actor fields carry known ids."""
+    page = _history_page(
+        item_id=1, started_at="2026-01-01T10:00:00+00:00", task_name="backup"
+    )
+    item = page["items"][0]
+    item["executed_by"] = executed_by
+    item["task"]["created_by"] = ACTOR_CREATOR_ID
+    item["task"]["last_updated_by"] = ACTOR_UPDATER_ID
+    return page
+
+
+class TestSepTaskHistoryActorResolution:
+    """Cover actor resolution on both read paths of ``GET /api/sep/task-history/``."""
+
+    @pytest.fixture
+    def patched_username_map(self, mocker) -> Mock:
+        """Patch the mapping at the symbol the route resolves, not its definition."""
+        return mocker.patch(
+            "app.sep.api.routes.task_history.get_username_mapping",
+            new=AsyncMock(return_value=ACTOR_USERNAME_MAP),
+        )
+
+    def test_passthrough_resolves_all_three_actor_fields(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+        patched_username_map: Mock,
+    ) -> None:
+        """Resolve the executor and both nested task actors on the list-all path."""
+        mock_task_api_dep.get = AsyncMock(return_value=_actor_history_page())
+
+        response = test_client.get("/api/sep/task-history/")
+
+        assert response.status_code == status.HTTP_200_OK
+        row = response.json()["items"][0]
+        assert row["executed_by"] == "carol"
+        assert row["task"]["created_by"] == "alice"
+        assert row["task"]["last_updated_by"] == "bob"
+
+    def test_merge_path_resolves_all_three_actor_fields(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+        patched_username_map: Mock,
+    ) -> None:
+        """Resolve the same three fields on the ``task_names`` merge path."""
+        mock_task_api_dep.get = AsyncMock(return_value=_actor_history_page())
+
+        response = test_client.get(
+            "/api/sep/task-history/", params=[("task_names", "backup")]
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        row = response.json()["items"][0]
+        assert row["executed_by"] == "carol"
+        assert row["task"]["created_by"] == "alice"
+        assert row["task"]["last_updated_by"] == "bob"
+
+    def test_passthrough_renders_a_system_row(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+        patched_username_map: Mock,
+    ) -> None:
+        """Render the ``SYSTEM`` sentinel as its label on the list-all path."""
+        mock_task_api_dep.get = AsyncMock(
+            return_value=_actor_history_page(executed_by="SYSTEM")
+        )
+
+        response = test_client.get("/api/sep/task-history/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["executed_by"] == "System"
+
+    def test_merge_path_renders_a_system_row(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+        patched_username_map: Mock,
+    ) -> None:
+        """Render the ``SYSTEM`` sentinel as its label on the merge path."""
+        mock_task_api_dep.get = AsyncMock(
+            return_value=_actor_history_page(executed_by="SYSTEM")
+        )
+
+        response = test_client.get(
+            "/api/sep/task-history/", params=[("task_names", "backup")]
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["executed_by"] == "System"
+
+    def test_unresolvable_actor_degrades_to_the_raw_identifier(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+        patched_username_map: Mock,
+    ) -> None:
+        """Serve the stored identifier when the provider cannot resolve it."""
+        mock_task_api_dep.get = AsyncMock(
+            return_value=_actor_history_page(executed_by=ACTOR_UNKNOWN_ID)
+        )
+
+        response = test_client.get("/api/sep/task-history/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["executed_by"] == ACTOR_UNKNOWN_ID
+
+    def test_provider_failure_degrades_the_whole_page(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+        mocker,
+    ) -> None:
+        """Serve raw identifiers with ``200`` when the provider lookup returns none."""
+        mocker.patch(
+            "app.sep.api.routes.task_history.get_username_mapping",
+            new=AsyncMock(return_value={}),
+        )
+        mock_task_api_dep.get = AsyncMock(return_value=_actor_history_page())
+
+        response = test_client.get("/api/sep/task-history/")
+
+        assert response.status_code == status.HTTP_200_OK
+        row = response.json()["items"][0]
+        assert row["executed_by"] == ACTOR_EXECUTOR_ID
+        assert row["task"]["created_by"] == ACTOR_CREATOR_ID

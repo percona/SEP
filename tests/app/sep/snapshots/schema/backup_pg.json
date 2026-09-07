@@ -25,7 +25,10 @@
           },
           {
             "label": "Type",
-            "path": "backup_type"
+            "path": "backup_type",
+            "value_labels": {
+              "P": "pgBackRest"
+            }
           },
           {
             "label": "Created at",
@@ -224,7 +227,10 @@
         "format": "chip",
         "key": "backup_type",
         "label": "Type",
-        "sortable": false
+        "sortable": false,
+        "value_labels": {
+          "P": "pgBackRest"
+        }
       },
       {
         "format": "relative",

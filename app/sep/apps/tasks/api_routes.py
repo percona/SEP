@@ -27,6 +27,11 @@ from fastapi import APIRouter
 
 from app.core.pagination import build_proxied_page, PaginatedResponse, PaginationDep
 from app.core.requests import as_json_array, as_json_object
+from app.sep.api.task_history_actors import (
+    resolve_history_payload_actors,
+    resolve_task_actors,
+    SepTaskResponse,
+)
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.tasks.deps import TaskDep
 from app.sep.apps.tasks.models import (
@@ -41,7 +46,7 @@ from app.sep.deps import (
     get_username_mapping,
     TaskAPI,
 )
-from app.tasks.models import TaskBackendEnum, TaskResponse
+from app.tasks.models import TaskBackendEnum
 
 router = APIRouter(tags=["Task Manager"])
 schema_endpoint(router=router, plugin_schema=TASKS_PLUGIN_SCHEMA)
@@ -89,13 +94,11 @@ async def tasks_api_detail(
     """Return the per-task detail bundle for the read-only plugin UI.
 
     :param task: The task definition resolved by name.
-    :type task: Task
     :param tasks_api: Async client for the tasks sub-app.
-    :type tasks_api: TaskAPI
     :param executor_hosts_ctx: Executor hosts enriched with inventory labels.
-    :type executor_hosts_ctx: ExecutorHostsCtx
-    :return: Task definition, history, periodic schedules, and executor hosts.
-    :rtype: TaskDetailResponse
+    :return: Task definition, history, periodic schedules, and executor hosts,
+        with every actor identifier on the task and inside the history rows
+        resolved to the name a reader should see.
     """
     execution_history: dict[str, object] = {
         "items": [],
@@ -121,9 +124,15 @@ async def tasks_api_detail(
         for host in executor_hosts_ctx.as_template_list()
     ]
 
+    username_map = await get_username_mapping()
     return TaskDetailResponse(
-        task=TaskResponse.model_validate(task.model_dump(mode="json")),
-        execution_history=execution_history,
+        task=resolve_task_actors(
+            SepTaskResponse.model_validate(task.model_dump(mode="json")),
+            username_map,
+        ),
+        execution_history=resolve_history_payload_actors(
+            execution_history, username_map
+        ),
         periodic_summary=periodic_summary,
         executor_hosts=executor_hosts,
     )

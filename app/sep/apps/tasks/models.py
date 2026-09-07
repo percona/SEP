@@ -20,7 +20,8 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA, UTCDatetime
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskResponse
+from app.sep.api.task_history_actors import SepTaskResponse
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
 
 
 class TaskListResponse(BaseModel):
@@ -125,20 +126,19 @@ class TaskDetailResponse(BaseModel):
     Bundle the task definition, execution history, periodic schedules, and
     executor host metadata into a single response for the React detail page.
 
-    :param task: The task definition as returned by the tasks API.
-    :type task: TaskResponse
+    :param task: The task definition as returned by the tasks API, with its
+        actor fields carrying display names rather than user identifiers.
     :param execution_history: Paginated task history from the tasks API
-        (``items``, ``total``, ``offset``, ``limit``).
-    :type execution_history: dict[str, Any]
+        (``items``, ``total``, ``offset``, ``limit``), passed through
+        unvalidated so every upstream key survives. The actor fields inside are
+        resolved to display names in place.
     :param periodic_summary: Read-only summaries of periodic schedules
         attached to this task.
-    :type periodic_summary: list[PeriodicTaskSummary]
     :param executor_hosts: Executor hosts available for display, with
         inventory-resolved labels when possible.
-    :type executor_hosts: list[ExecutorHostMetadata]
     """
 
-    task: TaskResponse
+    task: SepTaskResponse
     execution_history: dict[str, Any] = Field(
         default_factory=lambda: {"items": [], "total": 0, "offset": 0, "limit": 0},
         json_schema_extra=ARBITRARY_ARGS_SCHEMA,

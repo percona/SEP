@@ -16,7 +16,7 @@
 """Define models for the Backups plugin."""
 
 import re
-from enum import StrEnum
+from enum import nonmember, StrEnum
 from typing import Annotated
 
 import yaml
@@ -57,7 +57,13 @@ OWNER = "BACKUP_MONGO"
 
 
 class BackupType(EnumFieldMixin, StrEnum):
-    """Backup types."""
+    """Represent the backup tools a run can be taken with.
+
+    :cvar LABELS: Display text for each stored value, keyed by the value rather
+        than the member so a row holding a code the enum no longer declares can
+        still be looked up. Wrapped in :func:`enum.nonmember` because ``enum``
+        would otherwise treat a class-body dict as a member candidate.
+    """
 
     PBM_LOGICAL = "pbm_logical"
     PBM_PHYSICAL = "pbm_physical"
@@ -65,6 +71,17 @@ class BackupType(EnumFieldMixin, StrEnum):
     PBM_SNAPSHOT = "pbm_snapshot"
     PBM_CONFIG = "pbm_config"
     PBM_STATUS = "pbm_status"
+
+    LABELS = nonmember(
+        {
+            "pbm_logical": "PBM Logical",
+            "pbm_physical": "PBM Physical",
+            "pbm_incremental": "PBM Incremental",
+            "pbm_snapshot": "PBM Snapshot",
+            "pbm_config": "PBM Config",
+            "pbm_status": "PBM Status",
+        }
+    )
 
 
 #: Database name portion of a selective namespace (before the first ``.``).

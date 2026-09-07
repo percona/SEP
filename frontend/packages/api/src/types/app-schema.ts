@@ -363,6 +363,8 @@ export interface ListColumn {
   label: string;
   sortable?: boolean;
   format?: 'text' | 'chip' | 'status' | 'date' | 'relative' | 'code' | 'actions' | 'schedule';
+  /** Optional map from a raw cell value to the text to display in its place. Absent when the app declares no labels; a value missing from the map renders as-is. */
+  value_labels?: Record<string, string>;
 }
 
 export interface ListView {
@@ -399,6 +401,8 @@ export interface DetailField {
   label: string;
   /** Optional syntax-highlighter hint; mirrors the backend ``DetailHighlightLanguage`` enum. */
   highlight?: 'sql' | 'json' | 'bash' | 'yaml';
+  /** Optional map from a raw resolved value to the text to display in its place. Absent when the app declares no labels; a value missing from the map renders as-is. */
+  value_labels?: Record<string, string>;
 }
 
 /** One titled section rendered on the task detail page. */

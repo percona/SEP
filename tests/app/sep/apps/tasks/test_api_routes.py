@@ -344,3 +344,153 @@ class TestTasksPluginDetailEndpoint:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         mock_task_api_dep.get.assert_awaited_once_with("/bad-task")
+
+
+DETAIL_CREATOR_ID = "11111111-1111-4111-8111-111111111111"
+DETAIL_UPDATER_ID = "22222222-2222-4222-8222-222222222222"
+DETAIL_EXECUTOR_ID = "33333333-3333-4333-8333-333333333333"
+DETAIL_UNKNOWN_ID = "99999999-9999-4999-8999-999999999999"
+DETAIL_USERNAME_MAP = {
+    DETAIL_CREATOR_ID: "alice",
+    DETAIL_UPDATER_ID: "bob",
+    DETAIL_EXECUTOR_ID: "carol",
+}
+
+
+class TestTasksPluginDetailActorResolution:
+    """Cover actor resolution on ``GET /api/apps/tasks/{task_name}``."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_username_mapping(self):
+        """Resolve actors from a fixed map instead of calling Casdoor."""
+        with patch(
+            "app.sep.apps.tasks.api_routes.get_username_mapping",
+            new_callable=AsyncMock,
+            return_value=DETAIL_USERNAME_MAP,
+        ):
+            yield
+
+    @staticmethod
+    def _history(**row_overrides: Any) -> dict:
+        """Build a one-row upstream history page carrying known actor ids."""
+        row = {
+            "id": 10,
+            "status": TaskHistoryStatusEnum.SUCCESS.value,
+            "executed_by": DETAIL_EXECUTOR_ID,
+            "task": {
+                "created_by": DETAIL_CREATOR_ID,
+                "last_updated_by": DETAIL_UPDATER_ID,
+            },
+        }
+        row.update(row_overrides)
+        return {"items": [row], "total": 1, "offset": 0, "limit": 50}
+
+    def _get_detail(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep, history: dict
+    ):
+        """Drive the detail route for a non-template task with the given history."""
+        task = build_task_payload(
+            name="detail-task",
+            created_by=DETAIL_CREATOR_ID,
+            last_updated_by=DETAIL_UPDATER_ID,
+        )
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[task, {"nomad-1": "10.0.0.1"}, [], history]
+        )
+        mock_inventory_api_dep.get = AsyncMock(return_value={"items": []})
+        return test_client.get(f"{API_BASE}/detail-task")
+
+    def test_task_actors_resolve_to_display_names(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Resolve both actor fields on the returned task definition."""
+        response = self._get_detail(
+            test_client, mock_task_api_dep, mock_inventory_api_dep, self._history()
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["task"]["created_by"] == "alice"
+        assert response.json()["task"]["last_updated_by"] == "bob"
+
+    def test_execution_history_rows_resolve_their_executor(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Resolve the executor on each row of the passthrough history page."""
+        response = self._get_detail(
+            test_client, mock_task_api_dep, mock_inventory_api_dep, self._history()
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        row = response.json()["execution_history"]["items"][0]
+        assert row["executed_by"] == "carol"
+
+    def test_nested_task_inside_history_resolves(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Resolve both actors on the task nested inside a history row."""
+        response = self._get_detail(
+            test_client, mock_task_api_dep, mock_inventory_api_dep, self._history()
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        nested = response.json()["execution_history"]["items"][0]["task"]
+        assert nested["created_by"] == "alice"
+        assert nested["last_updated_by"] == "bob"
+
+    def test_system_executed_history_row_renders_its_label(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Render a system-initiated history row's executor as its label."""
+        response = self._get_detail(
+            test_client,
+            mock_task_api_dep,
+            mock_inventory_api_dep,
+            self._history(executed_by=SYSTEM_USER),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        row = response.json()["execution_history"]["items"][0]
+        assert row["executed_by"] == "System"
+
+    def test_unresolvable_actor_degrades_to_the_raw_identifier(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Serve the stored identifier when the provider cannot resolve it."""
+        response = self._get_detail(
+            test_client,
+            mock_task_api_dep,
+            mock_inventory_api_dep,
+            self._history(executed_by=DETAIL_UNKNOWN_ID),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        row = response.json()["execution_history"]["items"][0]
+        assert row["executed_by"] == DETAIL_UNKNOWN_ID
+
+    def test_passthrough_keys_survive_resolution(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Keep an upstream key the typed history model does not declare."""
+        response = self._get_detail(
+            test_client,
+            mock_task_api_dep,
+            mock_inventory_api_dep,
+            self._history(future_field="kept"),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        row = response.json()["execution_history"]["items"][0]
+        assert row["future_field"] == "kept"
+
+    def test_template_task_keeps_its_empty_history_default(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """Pass a template task's empty history default through untouched."""
+        task = build_task_payload(name="template-task", is_template=True)
+        mock_task_api_dep.get = AsyncMock(side_effect=[task, {"nomad-1": "10.0.0.1"}])
+        mock_inventory_api_dep.get = AsyncMock(return_value={"items": []})
+
+        response = test_client.get(f"{API_BASE}/template-task")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["execution_history"]["items"] == []

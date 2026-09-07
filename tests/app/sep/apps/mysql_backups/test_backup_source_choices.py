@@ -30,7 +30,11 @@ from app.sep.apps.mysql_backups.backup_source_choices import (
     backup_source_value,
 )
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
-from app.sep.apps.mysql_backups.models import MysqlBackupRun, UNKNOWN_SERVICE_SENTINEL
+from app.sep.apps.mysql_backups.models import (
+    BackupType,
+    MysqlBackupRun,
+    UNKNOWN_SERVICE_SENTINEL,
+)
 from tests.app.sep.apps.mysql_backups.conftest import (
     authenticated_get,
     inventory_mock,
@@ -121,6 +125,39 @@ class TestBackupSourceMapper:
         assert "2026-07-29" in choice.label
         assert "1.0 GiB" in choice.label
         assert "/backups/mydumper/20240101" in choice.label
+
+    def test_choice_labels_every_declared_backup_type(self) -> None:
+        """Render each member's label from the enum's single label source."""
+        labels: dict[str, str] = {}
+        for member in BackupType:
+            run = MysqlBackupRun(
+                task_history_id=1,
+                service_name="svc",
+                backup_type=member,
+                location=f"/backups/{member.value}",
+            )
+            choice = backup_run_to_choice(run)
+            assert choice is not None
+            labels[member.value] = choice.label
+
+        for value, expected in BackupType.LABELS.items():
+            assert expected in labels[value]
+
+    def test_choice_falls_back_to_the_raw_value_when_unlabelled(self) -> None:
+        """Render a stored code the enum no longer declares as the code itself."""
+        run = MysqlBackupRun.model_construct(
+            task_history_id=1,
+            service_name="svc",
+            backup_type="Z",
+            location="/backups/legacy",
+            finished_at=None,
+            size_bytes=None,
+        )
+
+        choice = backup_run_to_choice(run)
+
+        assert choice is not None
+        assert choice.label.startswith("Z ")
 
 
 class TestBackupSourceChoicesRoute:
