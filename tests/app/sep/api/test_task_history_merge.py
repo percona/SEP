@@ -343,6 +343,39 @@ class TestFetchTaskHistoryWindow:
             )
 
     @pytest.mark.asyncio
+    async def test_strict_rejects_an_object_missing_both_page_keys(self) -> None:
+        """Reject ``{}``, which a defaulted lookup accepts as an exhausted page.
+
+        Reading ``items``/``total`` with a valid default makes an empty object
+        indistinguishable from a history that has been walked to its end, so a
+        Tasks service answering ``{}`` would surface as a task that never ran.
+        """
+        tasks_api = AsyncMock()
+        tasks_api.get = AsyncMock(return_value={})
+
+        with pytest.raises(HTTPBadGatewayException):
+            await fetch_task_history_window(
+                tasks_api,
+                "task-a",
+                window_size=DEFAULT_PAGINATION_LIMIT,
+                strict=True,
+            )
+
+    @pytest.mark.asyncio
+    async def test_strict_rejects_an_object_missing_only_total(self) -> None:
+        """Reject a page carrying rows but no ``total`` to bound the walk against."""
+        tasks_api = AsyncMock()
+        tasks_api.get = AsyncMock(return_value={"items": [{"id": 1}]})
+
+        with pytest.raises(HTTPBadGatewayException):
+            await fetch_task_history_window(
+                tasks_api,
+                "task-a",
+                window_size=DEFAULT_PAGINATION_LIMIT,
+                strict=True,
+            )
+
+    @pytest.mark.asyncio
     async def test_forwards_an_explicit_sort_upstream(self) -> None:
         """Send the requested sort key, rather than inheriting the upstream default."""
         tasks_api = AsyncMock()

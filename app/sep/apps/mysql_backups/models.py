@@ -212,7 +212,7 @@ class CatalogServiceKey:
 
 
 class BackupRunResponse(BaseModel):
-    """Expose one catalog record over the per-service query path.
+    """Expose one catalog record over the service-scoped and task-scoped queries.
 
     :param id: The record's primary key.
     :param service_name: The inventory service the backup was taken from.

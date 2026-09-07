@@ -72,26 +72,28 @@ def _merged_upstream_window_size(pagination: Pagination) -> int:
 def _strict_history_page(payload: JSONBody) -> dict[str, Any]:
     """Return ``payload`` as a usable history page, rejecting any other shape.
 
-    Being a JSON object is not enough. The walk reads ``items`` with ``extend``
-    and compares ``total`` numerically, so an object carrying a null ``items``
-    passes an object check and then reads as an exhausted history — the exact
+    Being a JSON object is not enough, and neither is type-checking whatever the
+    keys happen to hold. The walk reads ``items`` with ``extend`` and compares
+    ``total`` numerically, so an object *omitting* either key reads as an
+    exhausted history exactly as an object carrying a null ``items`` would — the
     "broken upstream looks like a task with no runs" outcome strict mode exists
-    to prevent — while a non-numeric ``total`` fails the comparison instead.
+    to prevent, and the one a lookup with a valid default still lets through.
+    Both keys are therefore required as well as well-typed.
 
     :param payload: The parsed body the Tasks API answered with.
     :return: The payload as a page whose ``items`` and ``total`` are usable.
     :raises HTTPBadGatewayException: If the payload is not a JSON object, or
-        carries an ``items`` that is not a list or a ``total`` that is not a
-        number.
+        omits ``items`` / ``total``, or carries an ``items`` that is not a list
+        or a ``total`` that is not a number.
     """
     page = as_json_object(payload)
-    if not isinstance(page.get("items", []), list):
+    if not isinstance(page.get("items"), list):
         raise HTTPBadGatewayException(
-            detail="The server answered with a history page whose items are not a list."
+            detail="The server answered with a history page with no usable items list."
         )
-    if not isinstance(page.get("total", 0), int):
+    if not isinstance(page.get("total"), int):
         raise HTTPBadGatewayException(
-            detail="The server answered with a history page whose total is not a number."
+            detail="The server answered with a history page with no usable total."
         )
     return page
 

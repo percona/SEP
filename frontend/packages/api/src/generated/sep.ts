@@ -9171,7 +9171,7 @@ export interface components {
     };
     /**
      * BackupRunResponse
-     * @description Expose one catalog record over the per-service query path.
+     * @description Expose one catalog record over the service-scoped and task-scoped queries.
      *
      *     :param id: The record's primary key.
      *     :param service_name: The inventory service the backup was taken from.

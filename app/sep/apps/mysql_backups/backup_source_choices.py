@@ -55,7 +55,7 @@ def backup_source_value(run: MysqlBackupRun) -> str | None:
     was recorded; otherwise uses the resolved on-disk ``location``. Blank
     strings are treated as unset. Rows with neither cannot become a
     ``Choice`` value (``NonEmptyStr``). The candidate is not shell-safety
-    checked here — :func:`~app.sep.apps.mysql_backups.backup_source.restore_valid_backup_source`
+    checked here — :func:`~app.sep.apps.mysql_backups.models.restore_valid_backup_source`
     is the one whose result the restore form accepts.
 
     :param run: A catalogued backup run.
