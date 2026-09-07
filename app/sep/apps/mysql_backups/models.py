@@ -245,17 +245,6 @@ class BackupRunResponse(BaseModel):
     started_at: UTCDatetime | None
     finished_at: UTCDatetime | None
 
-    @computed_field
-    @property
-    def backup_source(self) -> str | None:
-        """Return the run's restore-form-valid source, or ``None``.
-
-        Resolved server-side so no caller re-derives it from the raw fields.
-        ``None`` means the run recorded no usable source, or recorded one the
-        restore form rejects — either way it cannot seed a restore.
-        """
-        return restore_valid_backup_source(self.upload_destination, self.location)
-
     @field_validator("backup_type", mode="before")
     @classmethod
     def _coerce_backup_type(cls, value: object) -> object:
@@ -269,6 +258,17 @@ class BackupRunResponse(BaseModel):
         :return: ``value.value`` for a :class:`BackupType` member, else ``value``.
         """
         return value.value if isinstance(value, BackupType) else value
+
+    @computed_field
+    @property
+    def backup_source(self) -> str | None:
+        """Return the run's restore-form-valid source, or ``None``.
+
+        Resolved server-side so no caller re-derives it from the raw fields.
+        ``None`` means the run recorded no usable source, or recorded one the
+        restore form rejects — either way it cannot seed a restore.
+        """
+        return restore_valid_backup_source(self.upload_destination, self.location)
 
 
 def extract_backup_type_marker(task_data: dict[str, Any] | None) -> str | None:
