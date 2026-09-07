@@ -15,7 +15,7 @@
 
 """Define tests for the delivery-executor factory and endpoint splitting."""
 
-from typing import Any, TYPE_CHECKING
+from typing import Any, get_args, TYPE_CHECKING
 
 import pytest
 from aioresponses import aioresponses
@@ -25,8 +25,17 @@ from pytest_mock import MockerFixture
 from app.core.exceptions import HTTPConflictException
 from app.core.requests import RemoteAPI
 from app.core.requests.registry import ClientRegistry
-from app.sep.bundle_upload.factory import get_delivery_executor, split_endpoint
-from app.sep.bundle_upload.plan import DeliveryPlan, DeliveryPlanError, StepRecord
+from app.sep.bundle_upload.factory import (
+    _rebased_plan,
+    get_delivery_executor,
+    split_endpoint,
+)
+from app.sep.bundle_upload.plan import (
+    DeliveryPlan,
+    DeliveryPlanError,
+    RequestStep,
+    StepRecord,
+)
 from app.sep.bundle_upload.seam import BundleSource
 
 if TYPE_CHECKING:
@@ -98,6 +107,64 @@ def _case_search_plan(endpoint: str) -> DeliveryPlan:
         },
         upload={"path": "attachment/upload"},
     )
+
+
+def _connection_details_plan(endpoint: str) -> DeliveryPlan:
+    """Build a plan whose connection-details read carries a path and a query pair.
+
+    :param endpoint: The configured receiver endpoint.
+    :return: The validated plan.
+    """
+    return DeliveryPlan(
+        endpoint=endpoint,
+        connection_details={
+            "path": "api/now/table/x",
+            "query": {"sysparm_limit": {"source": "literal", "value": "1"}},
+            "details": {"Key active": "/result/active"},
+        },
+        upload={"path": "attachment/upload"},
+    )
+
+
+def _maximal_plan() -> dict[str, Any]:
+    """Return a plan payload declaring every optional step kind at once.
+
+    :return: The plan payload to validate.
+    """
+    return {
+        "endpoint": _ORIGIN,
+        "resolution_steps": [
+            {"name": "lookup", "method": "GET", "path": "ticket_details"}
+        ],
+        "probe": {"path": "health"},
+        "case_search": {
+            "path": "case",
+            "term_pattern": r"[A-Za-z0-9 ._-]+",
+            "results_pointer": "/result",
+            "reference_pointer": "/number",
+            "title_pointer": "/short_description",
+        },
+        "connection_details": {"path": "api_key"},
+        "upload": {"path": "attachment/upload"},
+    }
+
+
+def _request_step_field_names() -> set[str]:
+    """Return every ``DeliveryPlan`` field whose declared type is a request step.
+
+    Read off the annotations rather than off an instance, so a step kind the
+    maximal plan above forgets to declare is still named here.
+
+    :return: The field names carrying one or more request steps.
+    """
+    return {
+        name
+        for name, field in DeliveryPlan.model_fields.items()
+        if any(
+            isinstance(annotation, type) and issubclass(annotation, RequestStep)
+            for annotation in (field.annotation, *get_args(field.annotation))
+        )
+    }
 
 
 def _bundle(size: int | None = None) -> BundleSource:
@@ -277,6 +344,79 @@ class TestGetDeliveryExecutor:
 
         async with get_delivery_executor(plan) as executor:
             assert executor._plan.case_search is None
+
+    @pytest.mark.asyncio
+    async def test_origin_only_endpoint_leaves_the_details_path_untouched(self) -> None:
+        """Leave the connection-details path alone when the endpoint has no prefix."""
+        async with get_delivery_executor(_connection_details_plan(_ORIGIN)) as executor:
+            assert executor._plan.connection_details.path == "api/now/table/x"
+
+    @pytest.mark.asyncio
+    async def test_path_prefix_is_rebased_into_the_connection_details(self) -> None:
+        """Prefix the connection-details read with the endpoint's path.
+
+        A root endpoint hides a missing rebase entirely, because the unrebased
+        path is already correct there. Only a prefixed endpoint can tell the
+        two apart.
+        """
+        plan = _connection_details_plan(f"{_ORIGIN}/api/now")
+
+        async with get_delivery_executor(plan) as executor:
+            details = executor._plan.connection_details
+            assert details.path == "/api/now/api/now/table/x"
+
+    @pytest.mark.asyncio
+    async def test_endpoint_query_is_merged_into_the_connection_details(self) -> None:
+        """Carry the endpoint's query pairs onto the read without dropping its own."""
+        plan = _connection_details_plan(f"{_ORIGIN}/api?sysparm_view=full")
+
+        async with get_delivery_executor(plan) as executor:
+            assert set(executor._plan.connection_details.query) == {
+                "sysparm_limit",
+                "sysparm_view",
+            }
+
+    @pytest.mark.asyncio
+    async def test_a_plan_without_connection_details_rebases_without_them(self) -> None:
+        """Leave the read unset when rebasing a plan that declares none."""
+        plan = _plan(f"{_ORIGIN}/api/now")
+
+        async with get_delivery_executor(plan) as executor:
+            assert executor._plan.connection_details is None
+
+    def test_the_maximal_plan_declares_every_step_kind(self) -> None:
+        """Fail at the fixture when a step kind is added the maximal plan omits.
+
+        The rebase guard below reads its step kinds off an instance, so a kind
+        the maximal plan never declares would leave that guard asserting over a
+        smaller set and passing. This fails first, and names the missing field.
+        """
+        plan = DeliveryPlan(**_maximal_plan())
+
+        for name in _request_step_field_names():
+            assert getattr(plan, name), f"_maximal_plan() declares no {name!r}"
+
+    def test_every_declared_step_kind_is_rebased(self) -> None:
+        """Fail when a step kind is added to ``DeliveryPlan`` without being rebased.
+
+        The field set is read off the annotations rather than from an
+        ``isinstance`` sweep of the instance: that sweep is the predicate the
+        rebasing loop itself dispatches on, so a guard built from it could only
+        ratify the implementation, and a list-valued field would be invisible to
+        both at once.
+        """
+        plan = DeliveryPlan(**_maximal_plan())
+        declared = _request_step_field_names()
+
+        rebased = _rebased_plan(plan, path="/prefix", query={})
+
+        assert declared, "DeliveryPlan declares no request-step fields"
+        for name in declared:
+            value = getattr(rebased, name)
+            steps = value if isinstance(value, list) else [value]
+            assert steps, f"_maximal_plan() declares no {name!r}"
+            for step in steps:
+                assert step.path.startswith("/prefix/")
 
     @pytest.mark.asyncio
     async def test_the_configured_plan_is_left_unmodified(self) -> None:
