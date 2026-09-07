@@ -273,6 +273,40 @@ GROUPS: tuple[Group, ...] = (
         r"^Module `pygments\.lexers` has no member `TextLexer`",
         "`pygments.lexers` re-exports lazily, so its stub lists no member",
     ),
+    _group(
+        "predicate-dsl-comparison-operators",
+        "invalid-method-override",
+        r"^Invalid override of method `__(eq|ne)__`: Definition is incompatible "
+        r"with `object\.__(eq|ne)__`$",
+        "the override is `FieldExpr.__eq__`/`__ne__`, which return a `Predicate` "
+        'node so `F("field") == value` builds a rule the way SQLAlchemy builds '
+        "one for a column; `object.__eq__` is declared `-> bool` in typeshed and "
+        "cannot move, and the two are confined to the rules DSL module",
+        "app/sep/apps/framework/rules.py",
+    ),
+    _group(
+        "runtime-computed-model-in-type-position",
+        "invalid-type-form",
+        r"^Variable of type `type\[[\w.]+\]` is not allowed in a "
+        r"(return type annotation|parameter annotation|type expression)$",
+        "the annotation names a class chosen at runtime -- a provider-selected "
+        "user model, a `create_model` response model, a form model read back by "
+        "`get_type_hints` -- so no static form can name it; Python has no "
+        "spelling for `the class in this variable`, and the framework reads "
+        "these annotations back at request time",
+    ),
+    _group(
+        "factory-built-annotated-alias",
+        "invalid-type-form",
+        r"^Function calls are not allowed in type expressions$",
+        "the annotation is a call to a field-type factory returning an "
+        "`Annotated` alias, which pydantic resolves at model-build time; unlike "
+        "the group above, the message names no discriminant of its own -- it "
+        "reads identically for an ordinary call mistakenly written in a type "
+        "position -- so the group is confined to the module holding the only "
+        "such site",
+        "app/sep/apps/mysql_backups/forms.py",
+    ),
 )
 
 RETAINED: tuple[Retained, ...] = ()

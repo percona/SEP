@@ -22,18 +22,23 @@ import type { FormSection, RenderFieldOverride } from '../SchemaFormRenderer/typ
 /**
  * Everything a whole-form slot needs to render and submit a app form. The
  * framework still owns the route, page chrome (back navigation + title),
- * mutation wiring, and success / error snackbars; only the form body is
+ * mutation wiring, and the success snackbar; only the form body is
  * replaced. A slot composes {@link SchemaFormRenderer} internally with these
  * props, or builds its own form.
  *
  * Submit contract: the slot MUST call `onSubmit` (the framework submit handler)
- * rather than firing its own mutation, or the success / error snackbars and
- * post-submit navigation desync.
+ * rather than firing its own mutation, or the success snackbar and post-submit
+ * navigation desync. It MUST also render {@link AppFormSlotProps.submitError}
+ * (and, where it renders fields, {@link AppFormSlotProps.fieldErrors}): a failed
+ * submit is reported through those and nowhere else.
  */
 export interface AppFormSlotProps {
   /** Form sections to render (from the task / entity schema). */
   sections: FormSection[];
-  /** Framework submit handler — wires the create / update mutation, snackbars, and navigation. */
+  /**
+   * Framework submit handler — wires the create / update mutation, the success
+   * snackbar, failure state, and navigation.
+   */
   onSubmit: (data: Record<string, unknown>) => void;
   /** Whether the underlying mutation is in flight. */
   loading: boolean;
@@ -43,7 +48,11 @@ export interface AppFormSlotProps {
   capabilities?: AppCapabilities;
   /** Per-field override threaded through, so a composed renderer can honour it. */
   renderField?: RenderFieldOverride;
-  /** Form-level submit error banner (populated on a 422); pass to the composed renderer. */
+  /**
+   * Form-level submit error banner; pass to the composed renderer. Populated for
+   * every failed submit, not only a 422 — a slot that drops it reports nothing
+   * at all, since the framework raises no error toast alongside it.
+   */
   submitError?: string | null;
   /** Per-field validation errors (from a 422); pass to the composed renderer for inline display. */
   fieldErrors?: FieldValidationError[];
@@ -51,6 +60,6 @@ export interface AppFormSlotProps {
 
 /**
  * Whole-form slot override for the create / edit pages. Return custom form UI;
- * the framework keeps the surrounding chrome, mutation, and snackbars.
+ * the framework keeps the surrounding chrome, mutation, and success snackbar.
  */
 export type RenderFormSlot = (props: AppFormSlotProps) => ReactNode;

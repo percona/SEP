@@ -16,6 +16,7 @@
 """Tests for the reusable prefork-child settings-override refresher handle."""
 
 import asyncio
+from collections.abc import Iterator
 from contextlib import suppress
 from datetime import timedelta
 
@@ -54,14 +55,12 @@ def _make_registry() -> ProxyRegistry:
     """Compose a two-entry proxy registry over freshly-built proxies."""
     return {
         SettingClassEnum.SEP_SETTINGS: ProxyEntry(
-            OverridableSettingsProxy(
-                SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
-            ),
+            OverridableSettingsProxy(SEPSettings, setting_class=SEPSettings.__name__),
             SEPSettings,
         ),
         SettingClassEnum.TASKS_SETTINGS: ProxyEntry(
             OverridableSettingsProxy(
-                TasksSettings, setting_class=SettingClassEnum.TASKS_SETTINGS
+                TasksSettings, setting_class=TasksSettings.__name__
             ),
             TasksSettings,
         ),
@@ -93,7 +92,7 @@ def _unreachable_session_maker() -> async_sessionmaker:
 
 
 @pytest.fixture(name="loop")
-def loop_fixture() -> asyncio.AbstractEventLoop:
+def loop_fixture() -> Iterator[asyncio.AbstractEventLoop]:
     """Provide a dedicated event loop standing in for a prefork child's."""
     loop = asyncio.new_event_loop()
     yield loop
@@ -103,7 +102,7 @@ def loop_fixture() -> asyncio.AbstractEventLoop:
 @pytest.fixture(name="session_maker")
 def session_maker_fixture(
     loop: asyncio.AbstractEventLoop,
-) -> async_sessionmaker:
+) -> Iterator[async_sessionmaker]:
     """Provide an in-memory SQLite session maker driven through ``loop``."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",

@@ -656,6 +656,47 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/atw/case-search/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Case Search
+     * @description Search the configured delivery provider for support cases matching ``term``.
+     *
+     *     No way the search itself can fail reaches the caller as an error: a
+     *     deployment that declares no case-search section, stored inputs that no
+     *     longer fit the plan, a refused credential, an unreachable receiver and a
+     *     search that outran its bound all report the same unavailability, which the
+     *     caller renders as the plain text field rather than as a search that found
+     *     nothing.
+     *
+     *     Restricted to administrators, unlike the app's other reads. The router
+     *     resolves a minimum role for unsafe methods only, so a safe method carries
+     *     whatever guard it declares itself; this one issues the deployment's own
+     *     receiver credential, and the dialog that calls it is already offered to
+     *     administrators alone.
+     *
+     *     :param term: The caller's typed search term, the only input it accepts.
+     *         Surrounding whitespace is stripped, so a whitespace-only term is
+     *         refused rather than reaching the receiver as a match-everything
+     *         fragment.
+     *     :return: The matched cases, or that the search could not run. At most
+     *         ``MAX_CASE_SEARCH_MATCHES`` are offered, so a plan that declares no
+     *         provider-side limit still cannot hand the dialog an unbounded list.
+     */
+    get: operations['atw_atw_case_search_api_apps_atw_case_search__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/atw/config/': {
     parameters: {
       query?: never;
@@ -667,10 +708,11 @@ export interface paths {
      * Atw Config
      * @description Report whether the incident send action is available.
      *
-     *     Not gated by the send guard -- this endpoint is what reports that guard, so
+     *     Not gated by the send guard: this endpoint is what reports that guard, so
      *     it must answer whether or not a receiver is configured.
      *
-     *     :return: The reasons the send action is withheld; empty when it is offered.
+     *     :return: The reasons the send action is withheld, and whether the
+     *         case-reference field may search the receiver.
      */
     get: operations['atw_atw_config_api_apps_atw_config__get'];
     put?: never;
@@ -1515,9 +1557,7 @@ export interface paths {
      * @description Return the list of periodic task names for the Inventory plugin.
      *
      *     Hard-coded because the Inventory plugin's periodic tasks are a fixed pair
-     *     (``inventory-sync`` and ``inventory-collection``). The shape matches what the
-     *     React ``usePluginTasks('inventory')`` hook expects: a list of objects with at
-     *     minimum a ``name`` key.
+     *     (``inventory-sync`` and ``inventory-collection``).
      *
      *     :return: The plugin's periodic tasks, each with its name and display name.
      */
@@ -1555,59 +1595,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/apps/inventory/nodes/{node_id}/system-observation': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Inventory Node System Observation
-     * @description Proxy the host-level system observation for a node (read-only).
-     *
-     *     Forwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``
-     *     endpoint via ``InventoryAPI``. This three-segment literal path cannot
-     *     collide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An
-     *     upstream HTTP 404 propagates unchanged, along with the ``detail`` that tells
-     *     a node whose observation has not been collected yet — which the React panel
-     *     renders as an empty state — apart from a node that does not exist.
-     *
-     *     :param node_id: Primary key of the node.
-     *     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
-     *     :return: The host-level system observation payload.
-     */
-    get: operations['inventory_inventory_node_system_observation_api_apps_inventory_nodes__node_id__system_observation_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/apps/inventory/schema': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Schema
-     * @description Return the plugin schema captured at registration time.
-     *
-     *     :return: The plugin schema instance.
-     */
-    get: operations['inventory_get_schema_api_apps_inventory_schema_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/api/apps/inventory/services/{service_id}/check-connectivity/': {
     parameters: {
       query?: never;
@@ -1621,12 +1608,9 @@ export interface paths {
      * Inventory Service Check Connectivity
      * @description Run a database connectivity probe for a service from its executor host.
      *
-     *     Backs the React connectivity control on the service detail page. A probe
-     *     that ran but could not connect is reported as HTTP 200 with
+     *     A probe that ran but could not connect is reported as HTTP 200 with
      *     ``success=false`` and the upstream message in ``error``; only a probe that
-     *     could not be attempted at all is an error status. This three-segment
-     *     literal path cannot collide with the two-segment
-     *     ``/{entity}/{item_id:int}`` detail matcher.
+     *     could not be attempted at all is an error status.
      *
      *     :param service: The service to probe, resolved from the path id.
      *     :param tasks_api: Authenticated Tasks ``RemoteAPI`` client.
@@ -1638,37 +1622,6 @@ export interface paths {
      *         returns an unparseable body.
      */
     post: operations['inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/apps/inventory/services/{service_id}/system-observation': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Inventory Service System Observation
-     * @description Proxy the service-level system observation for a service (read-only).
-     *
-     *     Forwards to the inventory sub-app's
-     *     ``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.
-     *     An upstream HTTP 404 propagates unchanged, along with the ``detail`` that
-     *     tells a service whose observation has not been collected yet — which the
-     *     React panel renders as an empty state — apart from a service that does not
-     *     exist.
-     *
-     *     :param service_id: Primary key of the service.
-     *     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
-     *     :return: The service-level system observation payload.
-     */
-    get: operations['inventory_inventory_service_system_observation_api_apps_inventory_services__service_id__system_observation_get'];
-    put?: never;
-    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1728,61 +1681,13 @@ export interface paths {
      * Inventory Sync Status
      * @description Return whether an inventory-wide sync is running, plus recent run outcomes.
      *
-     *     Replaces the server-rendered ``sync_is_running`` template variable
-     *     used by the Jinja2 inventory page so the React control can poll the
-     *     same state without scraping HTML.
+     *     Lets an operator poll a sync they triggered through ``POST /sync/``
+     *     without scraping any rendered page.
      *
      *     :param session: SQLModel async session.
      *     :return: The running flag and the most recent runs, newest first.
      */
     get: operations['inventory_inventory_sync_status_api_apps_inventory_sync_status__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/apps/inventory/{entity}/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Inventory List Entity
-     * @description List inventory nodes, services, schemas, or tables.
-     *
-     *     :param request: Inbound request; its query string carries entity filters.
-     *     :param entity: Inventory entity type (nodes, services, schemas, tables).
-     *     :param inventory_api: Async client for the Inventory sub-app.
-     *     :param pagination: Validated offset/limit forwarded to the upstream call.
-     *     :param list_query: Allowlist-vetted sort/search for this entity.
-     *     :return: A paginated envelope echoing the requested window.
-     */
-    get: operations['inventory_inventory_list_entity_api_apps_inventory__entity___get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/apps/inventory/{entity}/{item_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Inventory Get Entity
-     * @description Retrieve a single inventory node, service, schema, or table.
-     */
-    get: operations['inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2833,10 +2738,16 @@ export interface paths {
      *     :param session: The sub-app's database session.
      *     :param remote_api: The client for remote settings classes (``None`` when
      *         the router wires none).
+     *     :param actor: The calling admin's username, recorded on every row the
+     *         batch writes and reported back on each response.
      *     :return: One :class:`SettingResponse` per applied key, in input order.
      *     :raises HTTPNotFoundException: If the class isn't exposed.
      *     :raises HTTPUnprocessableEntityException: If any key fails validation;
      *         no rows are written.
+     *     :raises HTTPBadGatewayException: For a remote class, when the owning
+     *         sub-app returns a server error (status >= 500) or is unreachable.
+     *     :raises IntegrityError: When the replay of a batch that lost the
+     *         unique-index race conflicts again, which leaves nothing written.
      */
     patch: operations['sep_patch_settings_api_sep_admin_settings__setting_class__patch'];
     trace?: never;
@@ -3677,7 +3588,10 @@ export interface components {
       | 'error'
       | 'unreachable'
       | 'ssl_error'
-      | 'timeout';
+      | 'timeout'
+      | 'not_configured'
+      | 'inputs_drifted'
+      | 'probe_undeclared';
     /**
      * DashboardStatsResponse
      * @description Represent aggregate counts for the four dashboard stat cards.
@@ -3810,11 +3724,23 @@ export interface components {
      *     :param retired_at: When the node stopped being reported upstream, or None while
      *         it is active.
      *     :param retirement_key: The discriminator carried inside every unique index.
+     *     :param last_synced_at: When a syncer last confirmed the node against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the node is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      *     :param services: A list of services associated with the node.
      */
     Node: {
       /** Address */
       address: string;
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -3824,11 +3750,17 @@ export interface components {
       external_id: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
       source: components['schemas']['SourceEnum'];
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /**
        * Type
        * @default generic
@@ -3836,17 +3768,6 @@ export interface components {
       type: string;
       /** Updated At */
       updated_at?: string | null;
-    };
-    /** PaginatedResponse[Any] */
-    PaginatedResponse_Any_: {
-      /** Items */
-      items: unknown[];
-      /** Limit */
-      limit: number;
-      /** Offset */
-      offset: number;
-      /** Total */
-      total: number;
     };
     /** PaginatedResponse[ArbitraryMapping] */
     PaginatedResponse_ArbitraryMapping_: {
@@ -3946,9 +3867,21 @@ export interface components {
      *     :param retired_at: When the schema stopped being reported upstream, or None
      *         while it is active.
      *     :param retirement_key: The discriminator carried inside every unique index.
+     *     :param last_synced_at: When a syncer last confirmed the schema against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the schema is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      *     :param tables: A list of tables within the schema.
      */
     Schema: {
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -3956,12 +3889,18 @@ export interface components {
       created_at?: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
       /** Service Id */
       service_id: number;
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -3970,7 +3909,7 @@ export interface components {
      * @description Enumerate the probeable services, used as stable ``service`` identifiers.
      * @enum {string}
      */
-    ServiceEnum: 'pmm' | 'inventory' | 'tasks' | 'nomad';
+    ServiceEnum: 'pmm' | 'inventory' | 'tasks' | 'nomad' | 'delivery';
     /**
      * ServiceResponse
      * @description Define the service API response.
@@ -3993,10 +3932,22 @@ export interface components {
      *     :param node: The node to which the service is associated.
      *     :param retired_at: When the service stopped being reported upstream, or None
      *         while it is active.
+     *     :param last_synced_at: When a syncer last confirmed the service against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the service is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      */
     ServiceResponse: {
       /** Cluster */
       cluster?: string | null;
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -4012,6 +3963,10 @@ export interface components {
       external_id: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       node: components['schemas']['Node'];
@@ -4025,6 +3980,8 @@ export interface components {
       retired_at?: string | null;
       /** Schemas */
       schemas: components['schemas']['Schema'][];
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       type: components['schemas']['ServiceTypeEnum'];
       /** Updated At */
       updated_at?: string | null;
@@ -4127,8 +4084,13 @@ export interface components {
      *         (``SecretStr`` / ``SecretBytes``) at any depth.
      *     :param is_complex: Whether the field's annotation is or contains a Pydantic
      *         ``BaseModel`` subclass (true for nested submodels).
-     *     :param has_override: Whether a row exists in the ``settingoverride`` table
-     *         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
+     *     :param has_override: Whether an **active** row in the ``settingoverride``
+     *         table applies to this ``(setting_class, key)`` pair. An inactive row is
+     *         skipped by the cache loader, so the served value falls back to the
+     *         declared default and reporting it as overridden would tell the UI a
+     *         field is overridden while showing it that default. A nested row also
+     *         marks every canonical prefix of its chain, so a parent reports ``True``
+     *         when only a deeper leaf carries a row.
      *     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
      *         present it separately from everyday settings. Display-only:
      *         it does not affect PATCH/DELETE eligibility.
@@ -4138,6 +4100,18 @@ export interface components {
      *         PATCH/DELETE server-side; the runtime gate is the real enforcement.
      *     :param options: Selectable enum members for dropdown UIs, or ``None`` when
      *         the field is not an ``Enum`` annotation. Aliased members are excluded.
+     *     :param updated_at: When the override applying to this key was last saved,
+     *         falling back to the row's creation time for a row written before the
+     *         stamp was recorded. ``None`` when ``has_override`` is ``False``.
+     *         Timestamps carry second granularity.
+     *     :param updated_by: The username that last saved that override, or ``None``
+     *         both when no override applies and when the row predates the actor
+     *         column. A key can draw on several rows (a nested parent reporting on its
+     *         leaves), in which case the pair comes from the row carrying the latest
+     *         timestamp. Two writes landing within the same second are
+     *         indistinguishable by timestamp, and the pair reported is then whichever
+     *         contributing row was created later, which need not be the one written
+     *         later.
      */
     SettingResponse: {
       /** Default Value */
@@ -4171,6 +4145,10 @@ export interface components {
       setting_class: string;
       /** Type */
       type: string;
+      /** Updated At */
+      updated_at?: string | null;
+      /** Updated By */
+      updated_by?: string | null;
       /** Value */
       value: unknown;
     };
@@ -4522,6 +4500,10 @@ export interface components {
      *     :cvar STALE: Enum value for tasks skipped because executor placement
      *         exceeded the configured staleness threshold (for example a Nomad
      *         allocation that never left the queue).
+     *     :cvar UNLAUNCHABLE: Enum value for tasks the executor node could not
+     *         launch at all, because some command in the invocation does not
+     *         resolve there. The payload never ran, so this is not a script
+     *         failure.
      * @enum {string}
      */
     TaskHistoryStatusEnum:
@@ -4531,7 +4513,8 @@ export interface components {
       | 'success'
       | 'stopped'
       | 'lost'
-      | 'stale';
+      | 'stale'
+      | 'unlaunchable';
     /**
      * TaskResponse
      * @description Represent a task API response.
@@ -5676,13 +5659,51 @@ export interface components {
       title: string;
     };
     /**
+     * AtwCaseMatch
+     * @description Represent one support case the delivery provider matched.
+     *
+     *     :param reference: The case reference to send diagnostics against.
+     *     :param title: The case title, shown beside the reference to tell two
+     *         similar references apart.
+     */
+    atw__AtwCaseMatch: {
+      /** Reference */
+      reference: string;
+      /** Title */
+      title: string;
+    };
+    /**
+     * AtwCaseSearchResponse
+     * @description Report the cases matching a typed term, or that the search could not run.
+     *
+     *     :param available: Whether the search ran at all. This is what keeps an
+     *         unavailable search distinct from an available one that matched nothing:
+     *         a caller must not render the first as the second.
+     *     :param matches: The matched cases, empty when there are none and when the
+     *         search could not run.
+     */
+    atw__AtwCaseSearchResponse: {
+      /** Available */
+      available: boolean;
+      /** Matches */
+      matches: components['schemas']['atw__AtwCaseMatch'][];
+    };
+    /**
      * AtwConfigResponse
      * @description Report whether the incident send action is available.
      *
      *     :param send_disabled_reasons: Why sending is unavailable; empty when the
      *         receiver is configured and the action is offered.
+     *     :param case_search_available: Whether the case-reference field may query the
+     *         receiver for matches. Defaults to ``False`` so a client built against
+     *         the response before this field existed keeps validating.
      */
     atw__AtwConfigResponse: {
+      /**
+       * Case Search Available
+       * @default false
+       */
+      case_search_available: boolean;
       /** Send Disabled Reasons */
       send_disabled_reasons: string[];
     };
@@ -7705,10 +7726,13 @@ export interface components {
      *
      *     :param field_type: The discriminator literal; always ``"host"`` for this
      *         class. Serialised as the JSON key ``"type"``.
-     *     :type field_type: Literal["host"]
      *     :param depends_on: Optional name of the field whose value drives the
      *         default executor selection. ``None`` (the default) omits the key from
      *         the wire so plugins that do not opt in stay byte-identical.
+     *     :param target_service: Optional service field for a non-blocking
+     *         co-location warning. Independent of ``depends_on`` (see
+     *         :class:`~app.sep.apps.framework.form_dsl.markers.HostRef`).
+     *         ``None`` (the default) omits the key from the wire.
      *     :param allow_custom: When ``True``, the selector also accepts a free-typed
      *         value alongside the inventory options. ``None`` (the default) omits the
      *         key from the wire so plugins that do not opt in stay byte-identical.
@@ -7735,6 +7759,8 @@ export interface components {
       required: boolean;
       /** Requires */
       requires?: components['schemas']['framework__FieldGate'][] | null;
+      /** Target Service */
+      target_service?: string | null;
       /**
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
@@ -7875,6 +7901,8 @@ export interface components {
      *     Cascade auto-select is single-host only (:class:`HostField`). ``depends_on``
      *     may still be emitted when ``Ui(depends_on=...)`` is set so derivation stays
      *     uniform, but the multi-host renderer does not honour it today.
+     *     ``target_service`` is mirrored the same way; the multi-host renderer
+     *     ignores it (no co-location warning).
      *
      *     :param field_type: The discriminator literal; always ``"multi_host"`` for
      *         this class. Serialised as the JSON key ``"type"``.
@@ -7882,6 +7910,9 @@ export interface components {
      *         ``Ui(depends_on=...)``. Emitted for wire uniformity with
      *         :class:`HostField`; the current multi-host renderer ignores it (no
      *         cascade). ``None`` (the default) omits the key from the wire.
+     *     :param target_service: Optional service field name mirrored for wire
+     *         uniformity with :class:`HostField`; ignored by the multi-host
+     *         renderer. ``None`` (the default) omits the key from the wire.
      *     :param allow_custom: When ``True``, the selector also accepts free-typed
      *         values alongside the inventory options. ``None`` (the default) omits the
      *         key from the wire so plugins that do not opt in stay byte-identical.
@@ -7908,6 +7939,8 @@ export interface components {
       required: boolean;
       /** Requires */
       requires?: components['schemas']['framework__FieldGate'][] | null;
+      /** Target Service */
+      target_service?: string | null;
       /**
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
@@ -8799,12 +8832,14 @@ export interface components {
      *     declaration order, so the derived section and field order matches the
      *     hand-written schema. The conditional gating that the legacy ``schema.py`` declared
      *     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
-     *     encryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are
-     *     independent encryption modes that both produce an encrypted backup;
-     *     ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside
-     *     ``post_run_encrypt`` so post-run takes precedence (matching the backend at
-     *     ``mydumper_payload``), and ``encryption_recipient`` is required iff either mode
-     *     is on — and the per-mode bool
+     *     encryption gates — ``encryption_format`` selects which encryption runs and the
+     *     rest of the section parameterises it: the key file is required by the
+     *     AES-bearing formats and forbidden outside them, a GPG-bearing format needs one
+     *     of the two independent timings (``encrypt`` in place, ``post_run_encrypt``
+     *     after), ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden
+     *     alongside ``post_run_encrypt`` so post-run takes precedence (matching the
+     *     backend at ``mydumper_payload``), and ``encryption_recipient`` is required iff
+     *     either timing is on — and the per-mode and encryption-format bool
      *     ``FailRule``s in
      *     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
      *     into the conditional-rule plan at class definition, so no
@@ -8812,8 +8847,9 @@ export interface components {
      *     (:class:`BackupConfigAll` and friends) stay the serialization target the
      *     payload builder populates, not this model's base class.
      *
-     *     :cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool
-     *         outside its mode fails validation with a per-field message.
+     *     :cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside
+     *         its mode, or a GPG timing outside a GPG ``encryption_format``, fails
+     *         validation with a per-field message, as does a GPG format with no timing.
      */
     mysql_backups__BackupCreate: {
       /**
@@ -8869,6 +8905,8 @@ export interface components {
        * @default false
        */
       encrypt_using_tmpdir: boolean;
+      /** @default none */
+      encryption_format: components['schemas']['mysql_backups__EncryptionFormat'];
       /** Encryption Recipient */
       encryption_recipient?: string | null;
       /** Gs Bucket */
@@ -9115,6 +9153,12 @@ export interface components {
      * @enum {string}
      */
     mysql_backups__CompressionAlgorithm: 'zstd' | 'lz4' | 'gzip' | 'quicklz';
+    /**
+     * EncryptionFormat
+     * @description Represent the backup-time encryption formats an operator can select.
+     * @enum {string}
+     */
+    mysql_backups__EncryptionFormat: 'none' | 'gpg' | 'aes256' | 'dual';
     /** PaginatedResponse[BackupRunResponse] */
     mysql_backups__PaginatedResponse_BackupRunResponse_: {
       /** Items */
@@ -11306,6 +11350,38 @@ export interface operations {
       };
     };
   };
+  atw_atw_case_search_api_apps_atw_case_search__get: {
+    parameters: {
+      query: {
+        /** @description The support case reference or title fragment to match. */
+        term: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['atw__AtwCaseSearchResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   atw_atw_config_api_apps_atw_config__get: {
     parameters: {
       query?: never;
@@ -12878,57 +12954,6 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_node_system_observation_api_apps_inventory_nodes__node_id__system_observation_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        node_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_get_schema_api_apps_inventory_schema_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['framework__AppSchema'];
-        };
-      };
-    };
-  };
   inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post: {
     parameters: {
       query?: never;
@@ -12947,37 +12972,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ConnectivityCheckResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_service_system_observation_api_apps_inventory_services__service_id__system_observation_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
         };
       };
       /** @description Validation Error */
@@ -13038,84 +13032,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['inventory__InventorySyncStatusResponse'];
-        };
-      };
-    };
-  };
-  inventory_inventory_list_entity_api_apps_inventory__entity___get: {
-    parameters: {
-      query?: {
-        offset?: number;
-        limit?: number;
-        /** @description Sort key; prefix with '-' for descending order. */
-        sort?:
-          | 'created_at'
-          | '-created_at'
-          | 'name'
-          | '-name'
-          | 'schema_id'
-          | '-schema_id'
-          | 'service_id'
-          | '-service_id';
-        /** @description Case-insensitive search across the searchable columns. */
-        search?: string | null;
-      };
-      header?: never;
-      path: {
-        entity: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PaginatedResponse_Any_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-        item_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

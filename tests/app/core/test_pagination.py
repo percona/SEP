@@ -16,6 +16,7 @@
 """Define tests for app.core.pagination."""
 
 import inspect
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -295,8 +296,8 @@ class TestFetchAllDictItems:
     async def test_fetch_all_dict_items_rejects_invalid_items(self) -> None:
         """Reject upstream pages whose ``items`` field is not a list."""
 
-        async def fetch_page(_pagination: Pagination) -> PaginatedDictPage:
-            return {"items": "not-a-list"}  # type: ignore[typeddict-item]
+        async def fetch_page(_pagination: Pagination) -> dict[str, Any]:
+            return {"items": "not-a-list"}
 
         with pytest.raises(ValidationError):
             await fetch_all_dict_items(fetch_page)

@@ -154,13 +154,14 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         """Serialize the encryption bools and dir_encrypt_config through the derived POST.
 
         Asserts the derived HTTP surface carries an encrypted selection into the
-        exact wire keys the backup backend consumes — the ``ENCRYPT`` /
-        ``POST_RUN_ENCRYPT`` / ``ENCRYPT_USING_TMPDIR`` booleans and the
-        ``DIR_ENCRYPT_CONFIG`` recipient block; full byte-identity of the spec path
-        is frozen by the payload snapshot matrix.
+        exact wire keys the backup backend consumes — the ``ENCRYPTION_FORMAT``
+        selector, the ``ENCRYPT`` / ``POST_RUN_ENCRYPT`` / ``ENCRYPT_USING_TMPDIR``
+        timing booleans, and the ``DIR_ENCRYPT_CONFIG`` recipient block; full
+        byte-identity of the spec path is frozen by the payload snapshot matrix.
         """
         body = _valid_body()
         body.update(
+            encryption_format="gpg",
             encrypt=True,
             post_run_encrypt=True,
             encryption_recipient="ops@example.com",
@@ -173,6 +174,7 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         config = yaml.safe_load(
             mock_task_api.last_create_payload["data"]["meta"]["config"]
         )
+        assert config["ALL_SERVERS"]["ENCRYPTION_FORMAT"] == "gpg"
         assert config["ALL_SERVERS"]["ENCRYPT"] is True
         assert config["ALL_SERVERS"]["POST_RUN_ENCRYPT"] is True
         assert config["ALL_SERVERS"]["ENCRYPT_USING_TMPDIR"] is False

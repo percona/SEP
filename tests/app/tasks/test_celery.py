@@ -60,7 +60,7 @@ from app.tasks.celery import (
     task_revoked_handler,
 )
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
-from app.tasks.execution.executors.nomad import NomadExecutor
+from app.tasks.execution.executors.nomad.models import NomadExecutor
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
@@ -78,6 +78,15 @@ from tests.app.db_schema import apply_schema
 from tests.app.factories import TaskFactory
 
 MODULE = "app.tasks.celery"
+# Derived rather than spelled out: ``_chain_on_failure`` chains on any terminal
+# status but SUCCESS, so a literal list silently stops covering the policy the
+# moment a terminal status is added -- which is exactly how the last one landed
+# with no test turning red.
+NON_SUCCESS_TERMINAL_STATUSES = sorted(
+    status
+    for status in TaskHistoryStatusEnum
+    if status.is_terminal() and status is not TaskHistoryStatusEnum.SUCCESS
+)
 EXPECTED_NOMAD_CERT_RESOLVE_CALLS = 2
 ANCHOR = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 
@@ -1324,6 +1333,7 @@ class TestPurgeTaskHistoryLogs:
                 await _purge_task_history_logs()
 
             mock_alert.assert_awaited_once()
+            assert mock_alert.await_args is not None
             alert = mock_alert.await_args[0][0]
             assert alert["severity"] == AlertSeverity.ERROR
             assert alert["dedup_key"] == "purge_task_history_logs"
@@ -1580,6 +1590,7 @@ class TestSyncQueueItem:
             result = await sync_queue_item(pending_item.id)
 
         mock_executor.sync_task_history.assert_awaited_once()
+        assert mock_executor.sync_task_history.await_args is not None
         called_args, called_kwargs = mock_executor.sync_task_history.await_args
         assert called_args == (running_item,)
         assert "writer_session" in called_kwargs
@@ -2067,15 +2078,7 @@ class TestSyncQueueItemChainDispatch:
         mock_chain.assert_not_awaited()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "status",
-        [
-            TaskHistoryStatusEnum.FAILED,
-            TaskHistoryStatusEnum.STOPPED,
-            TaskHistoryStatusEnum.LOST,
-            TaskHistoryStatusEnum.STALE,
-        ],
-    )
+    @pytest.mark.parametrize("status", NON_SUCCESS_TERMINAL_STATUSES)
     async def test_dispatches_chain_on_failure_with_flag(self, status) -> None:
         """Assert sync_queue_item dispatches chain on non-success terminal status with flag."""
         main_task = _make_chain_task("main-task")

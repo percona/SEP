@@ -91,11 +91,19 @@ ruff: venv
 	@"${VENV_BIN}"/ruff check .
 	@"${VENV_BIN}"/ruff format --check .
 
-# Opt-in, local-only static type checking (Astral ty). Deliberately NOT part of `lint`,
-# pre-commit, or CI: a non-zero exit from the existing type-error backlog is expected and
-# must not gate any automated check.
+# Static type checking (Astral ty); CI runs it as the blocking `typecheck` job.
+# Passes no paths, so `[tool.ty.src]` stays the single definition of the surface.
+# `--python` is load-bearing: VIRTUAL_ENV is never exported, so ty would resolve
+# imports against whichever interpreter is first on PATH.
+# See docs/development/ty-policy.md under `Enforcement`.
 typecheck: venv
-	@"${VENV_BIN}"/ty check
+	@"${VENV_BIN}"/ty check --python "${VENV}"
+
+# Report the ty diagnostics a branch adds against BASE_SHA, which reaches the
+# script through the recipe environment rather than being pasted into it.
+# Advisory in CI. See docs/development/ty-policy.md under `Enforcement`.
+typecheck-diff: venv
+	@"${VENV_BIN}"/python -m scripts.check_ty_diff $(if $(PER_FILE),--per-file,)
 
 lint: ruff
 
@@ -173,7 +181,7 @@ migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations
 	done
 
 checkmigrations: migrate
-	@"${VENV_BIN}"/python scripts/check_alembic_revision_tree.py
+	@"${VENV_BIN}"/python -m scripts.check_alembic_revision_tree
 	@ret=0; \
 	for app in $(APPS); do \
 	  echo "Checking migrations for $$app"; \
@@ -184,6 +192,10 @@ checkmigrations: migrate
 	  exit $$ret; \
 	fi
 	@echo "All migration checks passed."
+
+mergemigrations: venv alembic.ini
+	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
+	@"${VENV_BIN}"/python -m scripts.merge_alembic_heads
 
 test: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --dist ${PYTEST_DIST} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
@@ -217,6 +229,12 @@ check-nomad-payload-size: venv
 
 check-sidecar-purge: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/check_sidecar_purge.py $(ARGS)
+
+# A Fernet key is 32 random bytes in url-safe base64, so this needs neither the
+# venv nor cryptography: an operator runs it on a fresh checkout to copy the one
+# line it prints, and the venv bootstrap would both fail there and bury the key.
+encryption-key:
+	@$(PYTHON) -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
 
 changelog-add:
 ifndef TICKET
@@ -367,4 +385,4 @@ lint-pipelines:
 	done; \
 	if [ "$${failures}" -ne 0 ]; then exit 1; fi
 
-.PHONY: venv build pack builder image format ruff typecheck lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size check-sidecar-purge release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image format ruff typecheck typecheck-diff lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations mergemigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size check-sidecar-purge release-prep release-rc release-stable trigger-jenkins lint-pipelines encryption-key changelog-add changelog-check changelog-list startapp startapp-check

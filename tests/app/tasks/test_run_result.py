@@ -33,7 +33,7 @@ from app.tasks import hook_resolver
 from app.tasks.celery import dispatch_queue_item, sync_queue_item
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.execution.exceptions import TaskDataNotFoundInExecutorError
-from app.tasks.execution.executors.nomad import NomadExecutor
+from app.tasks.execution.executors.nomad.models import NomadExecutor
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.models import (
     Task,

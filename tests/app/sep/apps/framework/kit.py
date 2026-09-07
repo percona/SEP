@@ -37,6 +37,7 @@ from pydantic import BaseModel, Field
 
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.core.pagination import Pagination
+from app.core.requests import as_json_object
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import ConnectivityWarning
 from app.sep.apps.framework.apps import (
@@ -114,7 +115,7 @@ class MockTaskAPI:
         self._history: dict[str, list[dict[str, Any]]] = {}
         self._ids = count(1)
         self.create_count = 0
-        self.last_create_payload: dict[str, Any] | None = None
+        self.last_create_payload: dict[str, Any] = {}
         self.last_update_payload: dict[str, Any] | None = None
 
     def seed_task(
@@ -714,7 +715,7 @@ async def synth_reject_running_task(tasks_api: TaskAPI) -> None:
     :param tasks_api: The Tasks API client used to look up the owner's tasks.
     :raises HTTPConflictException: When any owned task's latest status is RUNNING.
     """
-    listing = await tasks_api.get("/", params={"owner": SYNTH_OWNER})
+    listing = as_json_object(await tasks_api.get("/", params={"owner": SYNTH_OWNER}))
     names = [item["name"] for item in listing["items"]]
     statuses = await batch_get_latest_statuses(tasks_api, names)
     if any(

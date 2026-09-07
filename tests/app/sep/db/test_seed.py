@@ -16,7 +16,7 @@
 """Cover SEP database seeding and system periodic-task contributions."""
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 import pytest_asyncio
@@ -64,7 +64,7 @@ def _registry_app(key: str, specs: list[AppPeriodicTask]) -> BaseApp:
 
 
 @pytest.fixture(autouse=True)
-def _clear_registry_cache() -> None:
+def _clear_registry_cache() -> Iterator[None]:
     """Rebuild the registry from each test's patched ``APPS``."""
     get_app_registry.cache_clear()
     yield
@@ -638,11 +638,8 @@ class TestAppScheduleContribution:
         app = get_app_registry().get("alerts")
         assert app is not None
         assert app.periodic_task_schedules is not None
-        contributed = (
-            app.periodic_task_schedules()
-            if callable(app.periodic_task_schedules)
-            else app.periodic_task_schedules
-        )
+        schedules = app.periodic_task_schedules
+        contributed = schedules if isinstance(schedules, list) else schedules()
         assert ALERTS_TASK in {spec.name for spec in contributed}
 
 

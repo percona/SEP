@@ -1281,7 +1281,7 @@ class TaskExecutionApp(BaseApp):
             status: TaskHistoryStatusEnum | None = None,
             last_executed_at: datetime | None = None,
             context: dict[str, str] | None = None,
-        ) -> response_model:
+        ) -> response_model:  # ty: ignore[invalid-type-form]
             mapping = context or {}
             return build_default_task_response(
                 response_model,
@@ -1351,7 +1351,7 @@ class TaskExecutionApp(BaseApp):
                 *,
                 status: TaskHistoryStatusEnum | None = None,
                 **_: Any,
-            ) -> create_response_model:
+            ) -> create_response_model:  # ty: ignore[invalid-type-form]
                 return build_default_task_response(create_response_model, task, status)
 
             return _builder
@@ -1395,7 +1395,9 @@ class TaskExecutionApp(BaseApp):
         alert_detail_builder = self.alert_detail_builder
         run_result_recorder = self.run_result_recorder
         body_marker = Form() if self.create_form_encoded else Body()
-        form_param = Annotated[self.create_model, body_marker]
+        form_param = Annotated[
+            self.create_model, body_marker  # ty: ignore[invalid-type-form]
+        ]
 
         async def _create_payload(
             form: form_param, inventory_api: InventoryAPI

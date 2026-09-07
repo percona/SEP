@@ -214,3 +214,90 @@ class TestRetrieveUnderAnOrgScopedGrafanaAccount:
         assert response.status_code == status.HTTP_403_FORBIDDEN
         grafana_mock.lookup_user.assert_not_awaited()
         grafana_mock.get_org_users.assert_not_awaited()
+
+
+class TestProviderFieldsSurviveTheResponseModel:
+    """Cover the fields only the configured provider's user class declares.
+
+    These routes annotate the static ``BaseUser`` and name the concrete class in
+    an explicit ``response_model=``. Without that kwarg FastAPI would derive the
+    response model from the return annotation and filter every provider-specific
+    field out of both the body and the published schema.
+
+    The expected set is derived rather than hardcoded, so it names whatever the
+    configured provider adds over ``BaseUser``. Each case asserts that set is
+    non-empty first: only Casdoor — the provider the suite runs under — adds
+    any, and without that control the subset assertions would pass vacuously
+    against a provider that adds none.
+    """
+
+    @staticmethod
+    def _provider_only_fields() -> set[str]:
+        """Return the serialized names the user class adds over ``BaseUser``.
+
+        Named by alias, since the provider models generate camelCase ones and
+        both the response body and the schema are keyed on those.
+        """
+        return {
+            field.alias or name
+            for name, field in User.model_fields.items()
+            if name not in BaseUser.model_fields
+        }
+
+    def test_listing_carries_them_on_every_element(
+        self, test_client, mocker, admin_user
+    ):
+        """Verify a listed user keeps the provider's own fields."""
+        app.dependency_overrides[get_current_user] = lambda: admin_user
+        mocker.patch.object(User, "get_users", new=AsyncMock(return_value=[admin_user]))
+
+        response = test_client.get("/api/users/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert self._provider_only_fields()
+        for item in response.json():
+            assert self._provider_only_fields() <= item.keys()
+
+    def test_current_user_carries_them(self, test_client, regular_user):
+        """Verify the self endpoint keeps the provider's own fields."""
+        app.dependency_overrides[get_current_user] = lambda: regular_user
+
+        response = test_client.get("/api/users/me")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert self._provider_only_fields()
+        assert self._provider_only_fields() <= response.json().keys()
+
+    def test_lookup_carries_them(self, test_client, mocker, admin_user, other_user):
+        """Verify the by-username endpoint keeps the provider's own fields."""
+        app.dependency_overrides[get_current_user] = lambda: admin_user
+        mocker.patch.object(User, "get_user", new=AsyncMock(return_value=other_user))
+
+        response = test_client.get(f"/api/users/{other_user.username}")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert self._provider_only_fields()
+        assert self._provider_only_fields() <= response.json().keys()
+
+    def test_published_schema_still_declares_them(self, test_client):
+        """Verify the fields survive in the OpenAPI schema, not just in a body.
+
+        A body assertion alone passes when a fixture happens to leave the field
+        unset, so the schema is the half that has to be checked separately.
+        """
+        schema = test_client.get("/openapi.json").json()
+        assert self._provider_only_fields()
+
+        for path, method in (
+            ("/api/users/", "get"),
+            ("/api/users/me", "get"),
+            ("/api/users/{username}", "get"),
+        ):
+            content = schema["paths"][path][method]["responses"]["200"]["content"]
+            body_schema = content["application/json"]["schema"]
+            ref = body_schema.get("$ref") or body_schema["items"]["$ref"]
+            component = schema["components"]["schemas"][ref.rsplit("/", 1)[-1]]
+
+            assert self._provider_only_fields() <= component["properties"].keys(), (
+                f"{method.upper()} {path} dropped provider fields from its schema"
+            )

@@ -48,9 +48,7 @@ const InventoryApp = lazy(() =>
   import('@sep/inventory').then((m) => ({ default: m.InventoryApp })),
 );
 const TasksApp = lazy(() => import('@sep/tasks').then((m) => ({ default: m.TasksApp })));
-const SnippetsAppLazy = lazy(() =>
-  import('@sep/snippets').then((m) => ({ default: m.SnippetsApp })),
-);
+const SnippetsApp = lazy(() => import('@sep/snippets').then((m) => ({ default: m.SnippetsApp })));
 const AtwAppLazy = lazy(() => import('@sep/atw').then((m) => ({ default: m.AtwApp })));
 const DipperApp = lazy(() => import('@sep/dipper').then((m) => ({ default: m.DipperApp })));
 const AlertsApp = lazy(() => import('@sep/alerts').then((m) => ({ default: m.AlertsApp })));
@@ -65,11 +63,6 @@ const BackupMongoApp = lazy(() =>
 );
 const ReportApp = lazy(() => import('@sep/report').then((m) => ({ default: m.ReportApp })));
 const TopologyApp = lazy(() => import('@sep/topology').then((m) => ({ default: m.TopologyApp })));
-
-function SnippetsApp() {
-  const { isAdmin } = useAuth();
-  return <SnippetsAppLazy isAdmin={isAdmin} />;
-}
 
 // ATW's delivery setup gate offers admins a link to the settings page that
 // fixes an unconfigured deployment; everyone else gets the explanation alone.

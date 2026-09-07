@@ -317,7 +317,7 @@ def field_for(parameter: SnippetMetaParameter) -> AnyField:
     if forbidden is not None:
         update["forbidden"] = forbidden
     if update:
-        field = cast(AnyField, field.model_copy(update=update))
+        field = field.model_copy(update=update)
     return field
 
 

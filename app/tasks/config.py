@@ -17,7 +17,7 @@
 
 from datetime import timedelta
 from enum import StrEnum
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, TYPE_CHECKING
 
 from annotated_types import Gt, Le
 from pydantic import AfterValidator, Field, PositiveInt
@@ -34,8 +34,15 @@ from app.core.settings_override.registry import (
     nested_overridable_field,
     not_overridable_field,
 )
-from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.hook_resolver import is_dotted_module_path
+
+if TYPE_CHECKING:
+    # The package export resolves through a PEP 562 __getattr__ that has to
+    # declare `object`, so import the class itself for annotations and keep the
+    # lazy path for the runtime binding that breaks the import cycle.
+    from app.tasks.execution.executors.nomad.models import NomadExecutor
+else:
+    from app.tasks.execution.executors.nomad import NomadExecutor
 
 MAX_LOG_RETENTION_DAYS = 365
 

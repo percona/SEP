@@ -20,6 +20,7 @@ from collections.abc import Iterable, Sequence
 from datetime import datetime
 from typing import Any
 
+from app.core.requests import as_json_object
 from app.sep.deps import TaskAPI
 from app.tasks.models import (
     LATEST_HISTORY_STATUS_NAMES_MAX,
@@ -94,7 +95,9 @@ async def get_task_latest_status(
     :raises HTTPException: Propagated from ``tasks_api.get()`` on an upstream
         error response; callers that must tolerate it guard the call site.
     """
-    response = await tasks_api.get(f"/{task_name}/history/", params=params)
+    response = as_json_object(
+        await tasks_api.get(f"/{task_name}/history/", params=params)
+    )
     return extract_latest_task_status(response["items"])
 
 
@@ -136,7 +139,9 @@ async def get_task_latest_history(
     :raises HTTPException: Propagated from ``tasks_api.get()`` on an upstream
         error response; callers that must tolerate it guard the call site.
     """
-    response = await tasks_api.get(f"/{task_name}/history/", params=params)
+    response = as_json_object(
+        await tasks_api.get(f"/{task_name}/history/", params=params)
+    )
     return extract_latest_history(response["items"])
 
 

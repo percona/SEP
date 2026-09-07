@@ -94,6 +94,19 @@ def diagnostics_send_disabled_reasons() -> list[str]:
     return []
 
 
+def diagnostics_case_search_available() -> bool:
+    """Report whether this deployment can search the receiver for cases.
+
+    Distinct from the send gate: delivery may be fully configured while the plan
+    declares no case-search section, in which case the case-reference field
+    stays the plain text input it has always been.
+
+    :return: Whether a case search can be issued.
+    """
+    resolution = resolve_delivery_plan()
+    return resolution.plan is not None and resolution.plan.case_search is not None
+
+
 async def require_diagnostics_send_configured() -> None:
     """Raise if diagnostics delivery is not configured.
 

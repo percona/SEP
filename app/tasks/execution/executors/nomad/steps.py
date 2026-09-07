@@ -34,6 +34,7 @@ class NomadStep(StrEnum):
     PREPARE_ENV = "prepare-env"
     CLEAN_UP = "clean-up"
     CHECK_STALENESS = "check-staleness"
+    CHECK_LAUNCHABLE = "check-launchable"
     LOG_CAPTURE_HOLD = "log-capture-hold"
     STEP1 = "step1"
 
@@ -92,9 +93,18 @@ NOMAD_STEP_ANONYMIZE: dict[NomadStep, bool] = {
     NomadStep.PREPARE_ENV: False,
     NomadStep.CLEAN_UP: False,
     NomadStep.CHECK_STALENESS: False,
+    NomadStep.CHECK_LAUNCHABLE: False,
     NomadStep.LOG_CAPTURE_HOLD: False,
     NomadStep.STEP1: True,
 }
+
+#: Exit code :attr:`NomadStep.CHECK_LAUNCHABLE` aborts with when a command in
+#: the launch chain does not resolve on the executor node, mapped to
+#: ``UNLAUNCHABLE`` by the Nomad executor the way 75 is mapped to ``STALE``.
+#: ``EX_CONFIG`` from ``sysexits.h``: the allocation was misconfigured for the
+#: node it landed on. Shared by the seeded job spec that emits it and the
+#: executor that reads it back, so the two cannot drift apart.
+LAUNCH_CHECK_EXIT_CODE = 78
 
 #: Hold duration a job dispatched without the meta key falls back to, in
 #: seconds. Spans three 30 s sync cadences so a beat delayed by worker backlog

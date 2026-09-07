@@ -55,7 +55,11 @@ def _gate_callables(route: APIRoute) -> set[Callable[..., Any]]:
     :return: One entry per dependency declared on the route or inherited from a
         router or app above it.
     """
-    return {dependency.call for dependency in route.dependant.dependencies}
+    return {
+        dependency.call
+        for dependency in route.dependant.dependencies
+        if dependency.call is not None
+    }
 
 
 def _resolved_callables(dependant: Dependant) -> Iterator[Callable[..., Any]]:
@@ -69,7 +73,8 @@ def _resolved_callables(dependant: Dependant) -> Iterator[Callable[..., Any]]:
     :return: One entry per dependency at any depth below the node.
     """
     for sub in dependant.dependencies:
-        yield sub.call
+        if sub.call is not None:
+            yield sub.call
         yield from _resolved_callables(sub)
 
 

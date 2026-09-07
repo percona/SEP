@@ -29,6 +29,7 @@ from app.inventory.models import (
     Schema,
     Service,
     ServiceSystemObservation,
+    SyncOutcomeEnum,
     Table,
 )
 from tests.app.factories import (
@@ -36,6 +37,12 @@ from tests.app.factories import (
     SchemaWriteFactory,
     ServiceSystemObservationWriteFactory,
     ServiceWriteFactory,
+)
+from tests.app.inventory.conftest import (
+    INVALID_SYNC_HEALTH_BODIES,
+    INVALID_SYNC_HEALTH_BODY_IDS,
+    sync_health_payload,
+    SYNC_HEALTH_RESPONSE_KEYS,
 )
 
 OFFSET_BEYOND_TOTAL = 999
@@ -981,3 +988,107 @@ class TestUpsertServiceSystemObservation:
             f"/services/{service.id}/system-observation", json=data
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+class TestRecordServiceSyncHealth:
+    """Test the POST /services/{service_id}/sync-health endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_success_outcome_clears_the_failure_state(
+        self, test_client: TestClient, session: AsyncSession, service: Service
+    ) -> None:
+        """Record the freshness and answer 204."""
+        response = test_client.post(
+            f"/services/{service.id}/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.SUCCESS),
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        await session.refresh(service)
+        assert service.last_synced_at is not None
+        assert service.last_sync_error is None
+        assert service.consecutive_failures == 0
+
+    @pytest.mark.asyncio
+    async def test_failure_outcome_opens_the_failure_run(
+        self, test_client: TestClient, session: AsyncSession, service: Service
+    ) -> None:
+        """Record the failure columns and answer 204."""
+        response = test_client.post(
+            f"/services/{service.id}/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.FAILURE, "boom"),
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        await session.refresh(service)
+        assert service.last_synced_at is None
+        assert service.last_sync_error == "boom"
+        assert service.sync_failing_since is not None
+        assert service.consecutive_failures == 1
+
+    @pytest.mark.parametrize(
+        "body", INVALID_SYNC_HEALTH_BODIES, ids=INVALID_SYNC_HEALTH_BODY_IDS
+    )
+    def test_rejects_an_inconsistent_or_incomplete_body(
+        self, test_client: TestClient, service: Service, body: dict[str, str]
+    ) -> None:
+        """Refuse every body shape the write model declares invalid."""
+        response = test_client.post(f"/services/{service.id}/sync-health", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_unknown_service_is_not_found(self, test_client: TestClient) -> None:
+        """Answer 404 when the addressed service does not exist."""
+        response = test_client.post(
+            "/services/99999/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.SUCCESS),
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_retired_service_still_records_the_outcome(
+        self,
+        test_client: TestClient,
+        session: AsyncSession,
+        retired_service: Service,
+    ) -> None:
+        """Record the attempt against a service retired concurrently with the sync."""
+        response = test_client.post(
+            f"/services/{retired_service.id}/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.FAILURE, "boom"),
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        await session.refresh(retired_service)
+        assert retired_service.consecutive_failures == 1
+
+
+class TestServiceSyncHealthReads:
+    """Test that the service read responses expose the sync-health columns."""
+
+    def test_detail_exposes_the_columns(
+        self, test_client: TestClient, service: Service, schema: Schema
+    ) -> None:
+        """Carry the four fields on the service detail response.
+
+        The nested schemas carry them through the table model the response
+        nests, so a schema read from inside a service reports the same state.
+        """
+        response = test_client.get(f"/services/{service.id}")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data.keys() >= SYNC_HEALTH_RESPONSE_KEYS
+        assert data["schemas"][0].keys() >= SYNC_HEALTH_RESPONSE_KEYS
+
+    def test_list_items_expose_the_columns(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Carry the four fields on every row of the paginated list."""
+        response = test_client.get("/services/")
+
+        assert response.status_code == status.HTTP_200_OK
+        items = response.json()["items"]
+        assert items, "the service fixture should have produced a row to read back"
+        assert items[0].keys() >= SYNC_HEALTH_RESPONSE_KEYS

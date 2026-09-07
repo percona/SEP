@@ -30,7 +30,7 @@ from typing import Any, cast
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, UUID4
 
-from app.core.requests import RemoteAPI
+from app.core.requests import as_json_object, RemoteAPI
 from app.core.utils.fields import (
     ARBITRARY_ARGS_SCHEMA,
     ArbitraryMapping,
@@ -400,7 +400,7 @@ async def fetch_task_history(
     :return: The upstream task-history payload, or an empty mapping on failure.
     """
     try:
-        return await tasks_api.get(f"/history/{task_history_id}")
+        return as_json_object(await tasks_api.get(f"/history/{task_history_id}"))
     except (HTTPException, OSError):
         logger.warning(ATW_HYDRATION_WARNING, task_history_id, exc_info=True)
         return {}

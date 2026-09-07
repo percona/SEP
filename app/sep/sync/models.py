@@ -19,12 +19,12 @@ import asyncio
 import json
 import logging
 from collections import defaultdict
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from functools import cached_property
 from types import TracebackType
-from typing import Annotated, Any, ClassVar, Final, NamedTuple, Self, TypeVar
+from typing import Annotated, Any, ClassVar, NamedTuple, Self, TypeVar
 from uuid import uuid4
 
 from aiohttp import ClientError
@@ -38,11 +38,12 @@ from app.core.alerts.config import alert_service
 from app.core.alerts.models import AlertSeverity
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.pagination import fetch_all_dict_items
-from app.core.requests import RemoteAPI
+from app.core.requests import as_json_object, RemoteAPI
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.db import get_async_session_maker
 from app.sep.inventory import (
     CreatedEntity,
+    CreatedEntityBase,
     CreatedNode,
     CreatedSchema,
     CreatedService,
@@ -61,23 +62,16 @@ from app.sep.models import (
     SyncItemWrite,
     SyncStatusEnum,
 )
+from app.sep.sync.constants import INVENTORY_PATH_SEGMENTS
 from app.sep.sync.exceptions import (
     ExecutorHostNotFoundError,
     SyncFailError,
     SyncItemAlreadyInProgressError,
 )
+from app.sep.sync.health import SyncHealthReporter
 from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
 logger = logging.getLogger(__name__)
-
-#: Inventory API path segment per entity type, for the routes that address one
-#: entity generically rather than through a per-level method.
-INVENTORY_PATH_SEGMENTS: Final = {
-    SyncInventoryEntityTypeEnum.NODE: "nodes",
-    SyncInventoryEntityTypeEnum.SERVICE: "services",
-    SyncInventoryEntityTypeEnum.SCHEMA: "schemas",
-    SyncInventoryEntityTypeEnum.TABLE: "tables",
-}
 
 #: Ties an identity map to the index it points into, so a schema index cannot be
 #: handed a table.
@@ -187,6 +181,13 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     APIs and abstract methods that can be overridden by subclasses.
 
     :cvar SYNC_TO_LIMIT: The upper limit for entity types that can be synchronized.
+    :cvar mirrors_entity_levels: The entity levels whose own fields this syncer
+        mirrors, and therefore whose sync-health columns its attempts write. A
+        level belongs here only where the syncer compares the entity against its
+        source and updates it — a syncer that merely traverses a level to reach
+        its children, or that writes a separate observation resource, owns
+        nothing there and must not refresh a freshness the mirroring syncer is
+        responsible for. Empty by default.
     :cvar reads_retired_entities: The entity levels whose inventory reads include
         retired entities. A level belongs here only if this syncer has a match
         site there — a point where an incoming report is matched against the local
@@ -215,6 +216,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
+    mirrors_entity_levels: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
+        frozenset()
+    )
     reads_retired_entities: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
         frozenset()
     )
@@ -264,9 +268,9 @@ class BaseSyncer(BaseCaseInsensitiveModel):
 
     async def __aexit__(
         self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         """Exit the asynchronous context manager.
 
@@ -303,14 +307,25 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         return self
 
     @cached_property
+    def sync_health(self) -> SyncHealthReporter:
+        """Build the reporter for this syncer's API client and mirrored levels.
+
+        :return: The reporter the ``sync_*`` boundaries record through.
+        """
+        return SyncHealthReporter(self.inventory_api, self.mirrors_entity_levels)
+
+    @cached_property
     def can_sync_mapping(
         self,
-    ) -> dict[SyncInventoryEntityTypeEnum, Callable[[CreatedEntity], bool]]:
+    ) -> dict[SyncInventoryEntityTypeEnum, Callable[[Any], bool]]:
         """Map entity types to their corresponding sync permission check methods.
+
+        Each check accepts only its own entity model, so the value type is the
+        widest one the heterogeneous table admits — the key is what makes a
+        lookup well-typed, and that correlation is not expressible here.
 
         :return: A dictionary mapping each SyncInventoryEntityTypeEnum to a method that
                  determines if that entity can be synchronized.
-        :rtype: dict[SyncInventoryEntityTypeEnum, Callable[[Any], bool]]
         """
         return {
             SyncInventoryEntityTypeEnum.NODE: self.can_sync_node,
@@ -379,19 +394,16 @@ class BaseSyncer(BaseCaseInsensitiveModel):
         self,
         entity_type: SyncInventoryEntityTypeEnum,
         created_entity: CreatedEntity | None,
-    ) -> list[CreatedEntity]:
+    ) -> Sequence[CreatedEntityBase]:
         """Retrieve child entities for a given entity type and entity.
 
         Depending on the entity type, this method fetches related child entities that
         need to be synchronized.
 
         :param entity_type: The type of the current entity.
-        :type entity_type: SyncInventoryEntityTypeEnum
         :param created_entity: The current entity instance, or None for top-level
             synchronization.
-        :type created_entity: CreatedEntity | None
         :return: A list of child entities to be synchronized.
-        :rtype: list[CreatedEntity].
         """
         if entity_type == SyncInventoryEntityTypeEnum.INVENTORY:
             return await self.get_inventory_nodes()
@@ -942,9 +954,14 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self.get_name(),
                 created_node.id,
             )
-            async with self.manage_sync_item(
-                SyncInventoryEntityTypeEnum.NODE,
-                created_node,
+            async with (
+                self.manage_sync_item(
+                    SyncInventoryEntityTypeEnum.NODE,
+                    created_node,
+                ),
+                self.sync_health.record(
+                    SyncInventoryEntityTypeEnum.NODE, created_node
+                ) as attempt,
             ):
                 updated_node = (
                     await self.fetch_node(created_node)
@@ -957,6 +974,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                         created_node.id,
                     )
                     return
+                attempt.mark_compared()
                 await self.perform_node_sync(created_node, updated_node)
             logger.info(
                 "Finished node synchronization (%s) for node %s",
@@ -1060,9 +1078,14 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self.get_name(),
                 created_service.id,
             )
-            async with self.manage_sync_item(
-                SyncInventoryEntityTypeEnum.SERVICE,
-                created_service,
+            async with (
+                self.manage_sync_item(
+                    SyncInventoryEntityTypeEnum.SERVICE,
+                    created_service,
+                ),
+                self.sync_health.record(
+                    SyncInventoryEntityTypeEnum.SERVICE, created_service
+                ) as attempt,
             ):
                 updated_service = (
                     await self.fetch_service(created_service)
@@ -1075,6 +1098,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                         created_service.id,
                     )
                     return
+                attempt.mark_compared()
                 await self.perform_service_sync(created_service, updated_service)
             logger.info(
                 "Finished service synchronization (%s) for service %s",
@@ -1177,15 +1201,21 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self.get_name(),
                 created_schema.id,
             )
-            async with self.manage_sync_item(
-                SyncInventoryEntityTypeEnum.SCHEMA,
-                created_schema,
+            async with (
+                self.manage_sync_item(
+                    SyncInventoryEntityTypeEnum.SCHEMA,
+                    created_schema,
+                ),
+                self.sync_health.record(
+                    SyncInventoryEntityTypeEnum.SCHEMA, created_schema
+                ) as attempt,
             ):
                 updated_schema = (
                     await self.fetch_schema(created_schema)
                     if updated_schema is None
                     else updated_schema
                 )
+                attempt.mark_compared()
                 await self.perform_schema_sync(created_schema, updated_schema)
             logger.info(
                 "Finished schema synchronization (%s) for schema %s",
@@ -1286,15 +1316,21 @@ class BaseSyncer(BaseCaseInsensitiveModel):
                 self.get_name(),
                 created_table.id,
             )
-            async with self.manage_sync_item(
-                SyncInventoryEntityTypeEnum.TABLE,
-                created_table,
+            async with (
+                self.manage_sync_item(
+                    SyncInventoryEntityTypeEnum.TABLE,
+                    created_table,
+                ),
+                self.sync_health.record(
+                    SyncInventoryEntityTypeEnum.TABLE, created_table
+                ) as attempt,
             ):
                 updated_table = (
                     await self.fetch_table(created_table)
                     if updated_table is None
                     else updated_table
                 )
+                attempt.mark_compared()
                 await self.perform_table_sync(created_table, updated_table)
             logger.info(
                 "Finished table synchronization (%s) for table %s",
@@ -1474,7 +1510,7 @@ class BaseTaskSyncer(BaseSyncer):
         :return: The available hosts.
         :rtype: dict[str, str]
         """
-        return await self.tasks_api.get("/hosts/")
+        return as_json_object(await self.tasks_api.get("/hosts/"))
 
     @alru_cache
     async def get_task_target(self, host: str, name: str | None = None) -> str:
@@ -1487,11 +1523,8 @@ class BaseTaskSyncer(BaseSyncer):
         set, or the first available host.
 
         :param host: The target host.
-        :type host: str
         :param name: The target name. Defaults to ``None``.
-        :type name: str | None
         :return: The target host for the task.
-        :rtype: str
         :raises ExecutorHostNotFoundError: If ``strict_executor_matching`` is enabled and
             no executor host matches the node's name or address.
         """
@@ -1546,9 +1579,11 @@ class BaseTaskSyncer(BaseSyncer):
         :raises TimeoutError: If the task times out.
         :raises ValueError: If the task fails.
         """
-        task_history = await self.tasks_api.post(
-            f"/execute/{task_name}",
-            json={"meta": meta, "payload": payload, "anonymize_mask": 0},
+        task_history = as_json_object(
+            await self.tasks_api.post(
+                f"/execute/{task_name}",
+                json={"meta": meta, "payload": payload, "anonymize_mask": 0},
+            )
         )
         task_history_id = task_history["id"]
         status = task_history["status"]
@@ -1560,7 +1595,9 @@ class BaseTaskSyncer(BaseSyncer):
             await asyncio.sleep(self.tasks_execution_wait_interval)
             time_waiting += self.tasks_execution_wait_interval
             try:
-                task_history = await self.tasks_api.get(f"/history/{task_history_id}")
+                task_history = as_json_object(
+                    await self.tasks_api.get(f"/history/{task_history_id}")
+                )
                 status = task_history["status"]
             except (HTTPException, ClientError):
                 logger.exception("Error getting task history")

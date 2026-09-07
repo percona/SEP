@@ -714,6 +714,7 @@ class DerivedRouterContractTests:
         response = post_create_body(contract_client, f"{base}/", self.app_def, body)
 
         assert response.status_code == status.HTTP_201_CREATED
+        assert body is not None
         meta = mock_task_api.last_create_payload["data"]["meta"]
         assert meta["target"] == body[host_field]
         assert meta["target"] != meta[CONNECTIVITY_META_HOST_KEY]

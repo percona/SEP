@@ -15,6 +15,8 @@
 
 """Tests for the SEP task-stats JSON API route at ``/api/sep/task-stats/{task_name}``."""
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
@@ -85,7 +87,7 @@ class TestSepTaskStatsAuth:
     """Tests for ``/api/sep/task-stats/{task_name}`` authentication enforcement."""
 
     @pytest.fixture
-    def unauthenticated_client(self) -> TestClient:
+    def unauthenticated_client(self) -> Iterator[TestClient]:
         """Yield a TestClient with no auth dependency overrides applied."""
         previous = sep_app.dependency_overrides
         sep_app.dependency_overrides = {}

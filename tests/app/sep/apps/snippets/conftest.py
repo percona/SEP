@@ -15,6 +15,8 @@
 
 """Define shared fixtures for the snippets plugin tests."""
 
+from collections.abc import AsyncGenerator, Iterator
+
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
@@ -39,8 +41,11 @@ from tests.app.db_schema import apply_schema
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an async database session backed by in-memory SQLite."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         json_serializer=json_serializer,
@@ -80,7 +85,9 @@ def snippets_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def admin_client(admin_user: CasdoorUser, session: AsyncSession) -> TestClient:
+def admin_client(
+    admin_user: CasdoorUser, session: AsyncSession
+) -> Iterator[TestClient]:
     """Return a TestClient authenticated as an admin with the real session."""
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
@@ -91,7 +98,9 @@ def admin_client(admin_user: CasdoorUser, session: AsyncSession) -> TestClient:
 
 
 @pytest.fixture
-def non_admin_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
+def non_admin_client(
+    regular_user: CasdoorUser, session: AsyncSession
+) -> Iterator[TestClient]:
     """Return a TestClient authenticated as a non-admin user."""
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
@@ -102,7 +111,9 @@ def non_admin_client(regular_user: CasdoorUser, session: AsyncSession) -> TestCl
 
 
 @pytest.fixture
-def api_admin_client(admin_user: CasdoorUser, session: AsyncSession) -> TestClient:
+def api_admin_client(
+    admin_user: CasdoorUser, session: AsyncSession
+) -> Iterator[TestClient]:
     """Return a TestClient authenticated as an admin via the JSON API auth path."""
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
@@ -115,7 +126,7 @@ def api_admin_client(admin_user: CasdoorUser, session: AsyncSession) -> TestClie
 @pytest.fixture
 def api_non_admin_client(
     regular_user: CasdoorUser, session: AsyncSession
-) -> TestClient:
+) -> Iterator[TestClient]:
     """Return a TestClient authenticated as a non-admin via the JSON API auth path."""
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
@@ -128,7 +139,7 @@ def api_non_admin_client(
 @pytest.fixture
 def api_admin_client_no_bearer(
     admin_user: CasdoorUser, session: AsyncSession
-) -> TestClient:
+) -> Iterator[TestClient]:
     """Return a cookie-auth API admin TestClient with the Bearer gate intact.
 
     Diverges from the central :func:`tests.app.sep.conftest.api_admin_client_no_bearer`
@@ -145,7 +156,7 @@ def api_admin_client_no_bearer(
 
 
 @pytest.fixture
-def api_unauthenticated_client(session: AsyncSession) -> TestClient:
+def api_unauthenticated_client(session: AsyncSession) -> Iterator[TestClient]:
     """Return a TestClient with no auth overrides — every JSON call should 401."""
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)

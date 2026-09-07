@@ -26,6 +26,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.core.pagination import build_proxied_page, PaginatedResponse, PaginationDep
+from app.core.requests import as_json_array, as_json_object
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.tasks.deps import TaskDep
 from app.sep.apps.tasks.models import (
@@ -56,8 +57,10 @@ async def tasks_api_list(
     :param pagination: Validated offset/limit forwarded to the upstream Tasks API.
     :return: A paginated envelope of task rows for the schema-driven list view.
     """
-    response = await tasks_api.get(
-        "/", params={"offset": pagination.offset, "limit": pagination.limit}
+    response = as_json_object(
+        await tasks_api.get(
+            "/", params={"offset": pagination.offset, "limit": pagination.limit}
+        )
     )
     user_id_to_username = await get_username_mapping()
     items = [
@@ -103,11 +106,15 @@ async def tasks_api_detail(
     periodic_summary: list[PeriodicTaskSummary] = []
 
     if not task.is_template:
-        periodic_response = await tasks_api.get(f"/{task.name}/periodic/")
+        periodic_response = as_json_array(
+            await tasks_api.get(f"/{task.name}/periodic/")
+        )
         periodic_summary = [
             PeriodicTaskSummary.model_validate(item) for item in periodic_response
         ]
-        execution_history = await tasks_api.get(f"/{task.name}/history/")
+        execution_history = as_json_object(
+            await tasks_api.get(f"/{task.name}/history/")
+        )
 
     executor_hosts = [
         ExecutorHostMetadata(value=host["value"], label=host["label"])

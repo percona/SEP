@@ -16,6 +16,7 @@
 """Define test fixtures for periodic task tests."""
 
 import json
+from collections.abc import AsyncGenerator, Iterator
 
 import pytest
 import pytest_asyncio
@@ -41,7 +42,9 @@ CELERY_TASK_NAME = "app.tasks.celery.execute_task_by_name"
 
 
 @pytest_asyncio.fixture
-async def postgres_celery_beat_session(postgres_engine: AsyncEngine) -> AsyncSession:
+async def postgres_celery_beat_session(
+    postgres_engine: AsyncEngine,
+) -> AsyncGenerator[AsyncSession, None]:
     """Create a real-PostgreSQL session for celery-beat tables.
 
     Real-PG sibling of ``celery_beat_session``. The celery-beat tables declare a
@@ -66,8 +69,11 @@ async def postgres_celery_beat_session(postgres_engine: AsyncEngine) -> AsyncSes
 
 
 @pytest_asyncio.fixture(name="tasks_session")
-async def tasks_session_fixture() -> AsyncSession:
+async def tasks_session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an async db session for tasks tables."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -89,7 +95,7 @@ def periodic_test_client(
     regular_user: CasdoorUser,
     celery_beat_session: AsyncSession,
     tasks_session: AsyncSession,
-) -> TestClient:
+) -> Iterator[TestClient]:
     """Create an authenticated test client with both celery beat and tasks sessions."""
     tasks_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
         lambda: None

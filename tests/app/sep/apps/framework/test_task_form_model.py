@@ -98,7 +98,9 @@ class TestTaskFormModelFields:
     def test_hostname_carries_hostref_and_ui(self) -> None:
         """Mark ``hostname`` as a ``HostRef`` executor selector in the Task section."""
         field = TaskFormModel.model_fields["hostname"]
-        assert _marker(field, HostRef) is not None
+        host_ref = _marker(field, HostRef)
+        assert host_ref is not None
+        assert host_ref.target_service == "service_id"
         ui = _marker(field, Ui)
         assert ui is not None
         assert ui.label == EXECUTION_HOST_LABEL
@@ -133,6 +135,7 @@ class TestTaskFormModelDerivation:
         assert fields[0].label == "Task Name"
         assert isinstance(fields[0], StringField)
         assert isinstance(fields[1], HostField)
+        assert fields[1].target_service == "service_id"
 
     def test_subclass_field_follows_inherited_identity_fields(self) -> None:
         """Place a subclass's own Task field after the inherited identity fields."""

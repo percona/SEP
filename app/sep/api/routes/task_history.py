@@ -28,6 +28,7 @@ from fastapi import APIRouter, Query
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
+from app.core.requests import as_json_object
 from app.core.utils.fields import ArbitraryMapping
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
 from app.sep.api.proxy import reraise_upstream_tasks_errors
@@ -118,4 +119,6 @@ async def stop_task_history(
         or a connection-level ``OSError``.
     """
     with reraise_upstream_tasks_errors():
-        return await tasks_api.post(f"/history/{task_history_id}/stop/")
+        return ArbitraryMapping(
+            as_json_object(await tasks_api.post(f"/history/{task_history_id}/stop/"))
+        )

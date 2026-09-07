@@ -1,26 +1,40 @@
 # ty Type-Checking Policy
 
-This document records two decisions about [`ty`](https://github.com/astral-sh/ty),
-the static type checker `make typecheck` runs: **which trees are checked**, and
-**what severity each diagnostic rule carries**. Both are expressed in
-`pyproject.toml` — `[tool.ty.src]` and `[tool.ty.rules]` — and this file is the
-rationale behind them.
+This document records three decisions about [`ty`](https://github.com/astral-sh/ty),
+the static type checker `make typecheck` runs: **which trees are checked**,
+**what severity each diagnostic rule carries**, and **where enforcement runs and
+what it reads**. The first two are expressed in `pyproject.toml` —
+`[tool.ty.src]` and `[tool.ty.rules]` — and this file is the rationale behind
+them. The third is expressed in `.github/workflows/`, and the reasoning behind
+it lives here: see *Enforcement* below.
 
-Type checking is opt-in and local-only. It is deliberately not part of `lint`,
-pre-commit, or CI, and `make typecheck` exits non-zero today because of an
-existing backlog of diagnostics. That is the expected state, not a regression.
+`make typecheck` exits **0** on the current tree. Every rule at `error` reports
+nothing, and the diagnostics that remain are all warning-severity. Enforcement
+runs in CI, in the two layers recorded under *Enforcement*: a blocking
+`typecheck` job over the whole tree, and an advisory `typecheck_diff` job over
+what a branch adds. Neither target is part of `lint` or pre-commit.
 
-All measurements below were taken with **ty 0.0.49**, the version pinned in the
-`typecheck` Poetry group, on branch commit `3eede0dd3` — `dafd2df1` plus the
-configuration this policy commits. The counts depend on `[tool.ty.rules]`, so
-they do not reproduce at `dafd2df1` alone.
+Every measurement below was taken with **ty 0.0.49**, the version pinned in the
+`typecheck` Poetry group, but the numbers fall into two classes that are read
+differently.
 
-Every number below — the recorded baseline, the two rule tables, and the
-sampling record — is a snapshot of that one tree at that one version, and is
-**not maintained** against later commits. No decision in this document turns on
-any of those values: severity was chosen from what a rule's diagnostics *say*,
-so a count that has since moved dates the evidence without reopening the call.
-Read the counts as how each call was reached, not as a figure anything checks.
+**Historical snapshots**, taken on branch commit `3eede0dd3` — `dafd2df1` plus
+the configuration this policy commits, so the counts depend on
+`[tool.ty.rules]` and do not reproduce at `dafd2df1` alone. The 3926 figure, the
+argument-list comparison, the two rule tables, and the sampling record are all
+of this kind: a snapshot of that one tree at that one version, **not
+maintained** against later commits. No decision turns on them — severity was
+chosen from what a rule's diagnostics *say*, so a count that has since moved
+dates the evidence without reopening the call. Read them as how each call was
+reached, not as a figure anything checks.
+
+**The maintained baseline and the enforcement evidence**, taken at
+`a157c146115c`: the current **3,287 — 0 error, 3,287 warning** split and the
+exit-status pair it comes from. These are current, and they are load-bearing —
+the two-layer enforcement decision under *Enforcement* rests on the error count
+being zero and on warnings not moving the exit status. *Changing this policy*
+requires re-measuring the baseline whenever ty is upgraded or diagnostics are
+cleared in bulk; it is the one figure kept current.
 
 ## The checked surface
 
@@ -42,8 +56,11 @@ it is added here**, deliberately.
 
 ## `[tool.ty.src]` is authoritative, and `make typecheck` passes no paths
 
-`make typecheck` runs a bare `ty check` with no path arguments, so the surface
-comes from `[tool.ty.src]` alone.
+`make typecheck` passes no *path* arguments, so the surface comes from
+`[tool.ty.src]` alone. Its only argument is `--python`, which names the
+environment imports resolve against and reads no files of its own; see
+*Installing the pinned group in CI* below for why leaving it off is not an
+option.
 
 The reason is that this leaves exactly **one** definition of the surface. A path
 argument in the Makefile and an `include` list in `pyproject.toml` are two places
@@ -107,14 +124,51 @@ make typecheck  ->  Found 3926 diagnostics   (358 error, 3568 warning), exit 2
 ty check        ->  Found 3926 diagnostics, exit 1
 ```
 
-The two agree because they now carry identical argument lists — none.
+The two agreed because they carried identical argument lists — none. They still
+agree on the surface, though `make typecheck` now also passes `--python`, which
+changes where imports resolve rather than which files are read; a bare
+`ty check` reproduces these counts only from a shell whose active environment is
+the project venv.
 
-That figure predates the artifact suppressions. Under the configuration as it
-now stands the same command reports **3,626**; the before/after split and what
-moved between them are in *Neutralized dependency-typing artifacts* below.
+That figure predates both the artifact suppressions and SEP-1908's first-party
+fixes. Under the tree as it now stands, measured at `a157c146115c` with the
+pinned `ty 0.0.49`, the same command reports **3,287 — 0 error, 3,287 warning**,
+and `make typecheck` exits **0**. The before/after split for the suppressions
+alone, and what moved between them, are in *Neutralized dependency-typing
+artifacts* below.
 
-The two exit codes differ because `make` reports its own status: `ty` exits 1
-when it finds diagnostics, and `make` turns any failed recipe into exit 2.
+Re-measured at `b97ee985f`, the branch point the enforcement jobs were written
+against: unchanged at **3,287**, exit **0** — the checked surface is
+byte-identical across that span, since everything merged between the two touches
+only `docs/`, `CONTRIBUTING.md` and a Makefile comment, none of it inside
+`[tool.ty.src].include`. The tree the jobs actually ship on reads **3,284 — 0
+error**, exit **0**, measured by the `typecheck` job itself — over a surface
+that is not the same one. It carries two further merges, and this branch adds
+`scripts/check_ty_diff.py` and `tests/scripts/test_check_ty_diff.py`, both
+inside `[tool.ty.src].include`. Checked on their own at the pinned `ty 0.0.49`
+those two report none, so the count moved with the merges rather than with them.
+
+**That job's figure is the one to quote.** A local run of the same commit
+reported 3,288: same ty, same tree, four diagnostics apart, because the two
+environments do not hold identical packages. The job installs from the lock and
+names its interpreter, so it is the reproducible measurement; a developer's
+working environment is not, and the gap is small only by luck — the same axis
+produced a 3,730 reading when the environment was wrong outright (see
+*Installing the pinned group in CI* below). Read a count as a property of
+(tree, ty version, environment), never of the tree alone.
+
+From here the `typecheck` job re-measures the exit status on every PR, so the
+figure that needs maintaining by hand is the count, not the status.
+
+The error count reaching zero is what SEP-1908 was for; the warning fleet is
+unchanged by design, because the nine rules at `warn` mix first-party defects
+with dependency-typing artifacts and clearing them is separate work.
+
+The two exit codes in that first pair differ because `make` reports its own
+status: `ty` exits 1 when it finds an **error-severity** diagnostic — the 358 in
+that run — and `make` turns any failed recipe into exit 2. Severity is what
+drives the status, not the diagnostic count, which is why the larger 3,287 above
+exits 0.
 
 They are **not** guaranteed to be the same binary, and the parity claim carries a
 precondition worth restating whenever it is re-checked: `make typecheck` runs
@@ -128,6 +182,297 @@ variable. A bare `ty check`, by contrast, runs whatever `ty` is first on
 evidence, confirm `command -v ty` resolves to the same `${VENV_BIN}/ty` and that
 `ty --version` reports the pinned version — otherwise the two numbers describe
 two different programs.
+
+## Enforcement
+
+### The decision
+
+Enforcement runs in **CI**, in two layers. Not pre-commit, and not local-only.
+
+| Layer | Scope | Reads | Job |
+|---|---|---|---|
+| 1 | the whole tree | the exit status of `make typecheck` | hold error severity at zero |
+| 2 | the changed non-test Python files | the diagnostics themselves | detect what the `warn` rules report |
+
+**Both layers run the pinned binary, never whatever `ty` is first on `PATH`.**
+Layer 1 gets that by invoking `make typecheck`, which runs `${VENV_BIN}/ty` — a
+bare `ty check` does not, and the two are only the same program under the parity
+precondition in *The recorded baseline* above. Layer 2, which cannot use the
+target because the target takes no paths, resolves the binary itself; that is
+constraint 5 below.
+
+The two layers do different jobs and neither substitutes for the other. Layer 1
+cannot reach a rule at `warn`; layer 2 cannot see a regression in a file the
+branch did not touch. Both are wired: layer 1 as the `typecheck` job in
+`.github/workflows/python.yaml`, layer 2 as the `typecheck_diff` job in
+`.github/workflows/ci.yml`, which runs `scripts/check_ty_diff.py` through the
+`typecheck-diff` Make target. *How the shipped gate is scoped* below records the
+three questions this decision deliberately left open.
+
+### Why scoping decides what enforcement catches
+
+`ty` moves its exit status on error-severity diagnostics only; a run holding
+nothing but warnings exits 0. Under the severity policy below every rule at
+`error` reports nothing on this tree, so a whole-tree run keyed on exit status
+passes. Measured at `a157c146115c`:
+
+```
+ty check                      ->  Found 3287 diagnostics, exit 0
+ty check --error-on-warning   ->  Found 3287 diagnostics, exit 1
+```
+
+Same tree, same count, different exit code. That contrast is what establishes
+that warning-severity diagnostics do not move the default exit status; the split
+behind the total is **0 error, 3287 warning**.
+
+Five defects are on record as caught by `ty` in this repository. Each was
+reported by a rule this document holds at `warn`, and each surfaced through a
+runner that read the diagnostics and filtered them to the lines a branch had
+added rather than through an exit code. The list is the recorded set, not an
+audit of every diagnostic ever acted on:
+
+- **PR #1408** — `unresolved-attribute` on a `type[RetirableSQLModel]`
+  annotation that did not carry the `.id` its callers read.
+- **PR #1412** — a nullable dereference on a line the branch was already
+  editing for a different type defect.
+- **PR #1436** — `record_sync_health` annotated `instance: SyncHealthBase`, a
+  base declaring only the four sync-health columns, while the body addressed the
+  row by `instance.id`. Branch-added diagnostics fell from 65 to 3 once the
+  annotation was corrected.
+- **PR #1436** — `len()` applied to a nullable column, as
+  `invalid-argument-type`.
+- **SEP-1908's own branch** — a signature widened to a `Service` type carrying
+  no `node_id` while the body read it, past a test that passed a same-named
+  class from another module that does carry the attribute.
+
+None of the five would have moved the exit status of a whole-tree run, so a gate
+reading that status could not have failed on account of any of them. That is why
+the scoping question is settled before the placement question, and why layer 2
+is the layer that detects anything.
+
+### Why layer 1 is kept anyway
+
+Layer 1 would have caught **none of those five**. It is a ratchet, not a
+detector. The property it defends is the one SEP-1908 bought — that no rule at
+`error` reports anything — and nothing currently protects it. That set is
+open-ended: `all = "error"` puts every rule not listed at `warn` or `ignore`
+there too, so the regression layer 1 guards against includes rules that arrive
+with a ty upgrade as well as rules that start firing after a code change.
+
+Error-severity rules do fire on real code here. `[tool.ty.src].exclude` drops
+`**/migrations/**`, and inside that tree
+`app/sep/migrations/versions/2024_10_07_1450-7f4dec8bc76a_create_sync_tables.py:40:25`
+reports `error[possibly-missing-submodule]` when checked directly. The zero is a
+property of the checked surface plus SEP-1908's work, not of there being nothing
+left for those rules to find — which is why a *new* error-severity diagnostic
+inside the surface fails layer 1 immediately.
+
+So layer 1 is insurance on an invariant whose regrowth rate has never been
+measured, and it is adopted **alongside** layer 2 rather than instead of it. On
+its own it is the cheap option that reads as progress while catching nothing
+this work exists to catch.
+
+### How a scoped invocation re-establishes the surface
+
+A path-scoped invocation does not read `[tool.ty.src]`, because the paths are
+the query — see *Tools that invoke ty with explicit paths* below.
+`--force-exclude` re-establishes it, and it restores **both** halves of that
+setting, `exclude` and `include`:
+
+| Invocation | Result |
+|---|---|
+| `ty check <a file under app/sep/migrations/>` | `error[possibly-missing-submodule]`, exit 1 |
+| the same path, `+ --force-exclude` | `WARN No python files found under the given path(s)`, exit 0 |
+| a `.py` file outside every `include` root, `+ --force-exclude` | dropped; reported without the flag |
+
+Layer 2 passes the flag. Without it, a branch touching a migration hands the
+gate a tree the surface deliberately drops, and the error-severity diagnostic
+above fails the gate on code no full check ever reads.
+
+The flag is opt-in, not the default, which is what keeps the editor case below
+working as it should; that section spells out which callers want the unscoped
+behaviour.
+
+### Severity without moving the baseline
+
+`[tool.ty.rules]` keeps its meaning as the repository baseline. Layer 2 raises
+severity **per invocation** instead, with `--error <RULE>`:
+
+```
+ty check --force-exclude app/api/deps.py                       ->  exit 0
+ty check --force-exclude --error invalid-argument-type \
+         --error unresolved-attribute app/api/deps.py           ->  exit 1
+```
+
+The set it promotes is **every rule this document holds at `warn`** — not the
+subset of them with hits on the day the gate is written. Derive it from the
+table at run time rather than transcribing it:
+
+```bash
+python3 -c "import tomllib,pathlib;r=tomllib.loads(pathlib.Path('pyproject.toml').read_text())['tool']['ty']['rules'];print(' '.join(f'--error {k}' for k,v in r.items() if v=='warn'))"
+```
+
+A hardcoded list, or a list drawn from what fires today, silently drops a rule
+that is configured at `warn` but currently reports nothing — `unresolved-import`
+is in exactly that position since SEP-1907 neutralized its artifacts. Such a
+rule would then stay unenforced the moment it starts reporting again, which is
+the failure `all = "error"` was set up to avoid, reintroduced one layer up.
+
+### The constraints the gate obeys
+
+Fixed by this decision before the gate existed, so that it would not rediscover
+them. `scripts/check_ty_diff.py` obeys all six:
+
+1. A working diff-scoped reference implementation existed **outside this
+   repository** and was ported repo-side. It is personal tooling rather than
+   a tracked artifact here, so it is described by behaviour rather than named by
+   path. Four of the constraints below exist because that reference gets them
+   wrong, so the port is not a transcription.
+2. **Reuse the in-repo parser** rather than writing a fresh regex.
+   `scripts/classify_ty_diagnostics.py` already ships `Diagnostic`,
+   `DIAGNOSTIC_RE` and `parse_diagnostics()`, and the last of these reconciles
+   the rows it parsed against ty's own `Found N diagnostics` trailer, raising
+   `ReconciliationError` when the two disagree or the trailer is absent. A
+   truncated or crashed run therefore cannot read as clean. The out-of-tree
+   reference implementation has no such reconciliation and silently drops rows
+   its regex does not match, which is the more dangerous behaviour in a
+   blocking gate.
+3. **Pass `--force-exclude`**, per the subsection above. The reference
+   implementation does not.
+4. **Derive the promoted rule set at run time**, per the subsection above.
+5. **Resolve the pinned binary** rather than whatever `ty` is first on `PATH`.
+   The parity precondition in *The recorded baseline* above says why. Layer 1
+   gets this from `make typecheck`; layer 2 has to do it itself, because the
+   target passes no paths and so cannot be the scoped invocation. The reference
+   implementation invokes a bare `ty` and would silently measure whatever CI
+   happens to have installed.
+6. **Treat the batching of changed paths as load-bearing, not an optimisation.**
+   *`[tool.ty.src]` is authoritative* above measures that paths passed together
+   as one argument list do **not** report the union of what they report
+   separately — `ty check app tests` returns 3916 where `app` and `tests` on
+   their own sum to 3918, and the two it drops are real diagnostics. A runner
+   that batches every changed file into one invocation inherits that, silently
+   and in the direction that loses findings. The reference implementation
+   batches.
+
+Diff base, the batching policy itself, and the attribution rule were left open
+here, as design for an artifact this decision did not ship. They are settled in
+the next subsection.
+
+### How the shipped gate is scoped
+
+**Attribution is a baseline delta, not the lines a change adds.** The runner
+checks the changed files twice — once at `HEAD`, once in a detached worktree at
+the merge-base — and reports the multiset difference over `Diagnostic.fingerprint`.
+Added-line attribution was measured and cannot work: reverting the
+`record_sync_health` annotation at `app/inventory/crud.py:301` reports two
+`unresolved-attribute` diagnostics at **:327 and :333**, so a rule keyed on the
+added line attributes neither and stays green. That is the shape of the defect
+class, not of the reconstruction — an annotation edit lands its consequences at
+call sites. The delta also leaves `app/api/deps.py` alone: its pre-existing
+`invalid-argument-type` at :296 is in both counters, so its surplus is zero.
+
+**The diff base is `github.event.pull_request.base.sha`, reduced to a
+merge-base.** A reusable workflow inherits the caller's event payload, and
+`ci.yml` is reached only from `pull_request`. Taking the merge-base rather than
+the branch tip keeps a base branch that has advanced since the branch point from
+leaking other PRs' lines into the file list. Layer 2's checkout therefore needs
+`fetch-depth: 0`; layer 1 does not.
+
+**Batching stays, because under a baseline delta the loss cancels.** Constraint 6
+is real and reproduces at whole-root granularity (`app tests` reports 3280 where
+the two roots separately sum to 3282). It never reproduced at file granularity.
+Both passes receive one file list and an identical batch composition, so a
+diagnostic that batching drops is absent from both counters. The cancellation is
+supported by measurement rather than proved, so the runner keeps a `--per-file`
+flag: the documented response if a batch-suppression miss is ever observed.
+
+**Layer 2 skips `tests/`, and is advisory.** Retro-run over all 37
+Python-touching merges since `a10ce9dbd`, the gate as first specified — 9 warn
+rules, whole surface — would have blocked 22 of them (59%). Excluding `tests/`
+takes that to 24%; 279 of the 363 surplus diagnostics were in test files.
+Narrowing the rule set on top moves the rate not at all, so all 9 rules stay
+promoted and constraint 4 is preserved. The 24% is measured against authors who
+were not trying to keep the gate green, so it is an upper bound of unknown
+tightness — the wrong number to make a required check turn on. `typecheck_diff`
+is therefore omitted from `ci-success`'s `needs`, which is the only required
+check on `main`: it shows a red X on the PR and leaves the merge button enabled.
+Promoting it is one line, and waits on a release cycle of observed surplus.
+
+### The bound the overrides place on any gate's reach
+
+`[[tool.ty.overrides]]` silences a rule across every expression in each listed
+file. A first-party diagnostic newly written into one of those (file, rule)
+pairs is never emitted, so **no** gate — layer 1 or layer 2 — can fail on it.
+Scope is not the only bound on reach.
+
+Layer 2's severity promotion does not reach past an override either. Measured on
+`tests/app/core/alerts/test_config.py`, which the first override block holds at
+`unresolved-attribute = "ignore"`, adding `--error unresolved-attribute` changes
+neither the diagnostics reported nor the exit status — the per-file override
+wins over the command-line severity. So the bound is a property of the
+configuration rather than of how a gate is invoked, and no flag lifts it.
+
+SEP-1950 owns narrowing the overrides; this decision records the bound rather
+than leaving it to be discovered after a gate ships.
+
+### Installing the pinned group in CI, and the upgrade cadence
+
+`ty` lives in an optional Poetry group pinned exactly at `0.0.49`, because a
+`0.0.x` beta carries breaking changes between any two versions.
+
+**The target names its Python environment explicitly, and must.** ty resolves
+imports against an environment it discovers, and its fallback is whichever
+interpreter is first on `PATH`. The Makefile's `VIRTUAL_ENV` is a *make*
+variable, never exported, so in any shell without the venv activated a bare
+`ty check` resolves against the wrong `site-packages`. That is the CI case:
+measured on the first run of this job, ty searched
+`/opt/hostedtoolcache/Python/3.11.9/x64/.../site-packages` — the runner's
+tool-cache Python — rather than the Poetry venv holding the project's
+dependencies. `typecheck` therefore passes `--python "${VENV}"`, which pins the
+environment without touching the surface: `[tool.ty.src]` still decides which
+files are read.
+
+The failure this prevents is quiet in the worst way. Nothing errors; the run
+reports *more* diagnostics than a correct one — 3,730 against 3,288, reproduced
+locally by taking the venv off `PATH` — and the surplus looks like findings.
+Worse, every `ty: ignore` directive covering a third-party shape stops
+suppressing anything and is reported as `unused-ignore-comment`, an
+error-severity rule, so the job fails while appearing to demand the deletion of
+189 suppressions that were doing their job. A reader who trusts the output
+deletes them and makes the tree worse.
+
+Two things generalise from it. First, **any tool that resolves imports must be
+told which environment to resolve against** — the same reasoning that makes
+layer 2 resolve the pinned binary rather than take one off `PATH`, applied to
+the environment instead of the executable. Second, **a diagnostic count that
+moves without the tree moving is an environment difference, not a finding**;
+compare the `unresolved-import` count before believing a surplus.
+
+For the same reason the job installs dependencies as its own step
+(`poetry sync --no-root --all-extras --all-groups`) rather than leaning on the
+`venv` prerequisite, matching what `test` and `test_postgres` already do. Prefer
+that full form over `--with typecheck`, which installs *fewer* groups than
+`make venv` intends: ty resolves imports against what is actually installed, so a
+thinner environment changes what it reports.
+
+The exact pin means ty's own behaviour cannot drift under the gate; what can
+drift is the tree beneath it. The SEP team owns the upgrade cadence a blocking
+gate creates, revisited each release cycle alongside the re-measure rule in
+*Changing this policy* below.
+
+### What was rejected, and the measurement that rejects it
+
+An unstated default is not a decision, so every placement not chosen is recorded
+with the measurement that rules it out.
+
+| Rejected | Why |
+|---|---|
+| Pre-commit, whole tree | Tens of seconds on every commit: 25 s measured twice on an unloaded machine, 62–70 s on a loaded one. Like the diagnostic counts, wall clock here is environment-dependent — the order of magnitude is the argument, not the figure. |
+| Pre-commit, path-scoped, promoted severity | Blocks on **pre-existing** diagnostics in a touched file, and the two highest-volume `warn` rules account for most of the 3,287 — so editing one line of an affected file would fail the commit. Only a comparison against a baseline fixes that — *How the shipped gate is scoped* above measures why attribution to added lines does not — and pre-commit's staged-file model supplies neither the base revision nor the second tree such a comparison reads. |
+| Pre-commit, path-scoped, default severity | Strictly weaker than layer 1: the same rules over fewer files. |
+| Whole tree, `--error-on-warning` | Fails on all 3,287 diagnostics today, as measured above. Reachable only after a cleanup that has not been chartered. |
+| Local-only | The gap this work exists to close, restated as a decision. |
 
 ## Severity policy
 
@@ -237,10 +582,12 @@ like the rest.
 ## `unresolved-attribute` stays reportable
 
 `unresolved-attribute` is deliberately **not** set to `ignore`. It is the rule
-that caught the only confirmed real defect found so far — four hard errors on a
-single pull request — and 382 of its 863 hits are genuine Optional narrowing of
-the `X | None` shape, which is exactly the class of latent `AttributeError` worth
-keeping visible.
+behind most of the defects `ty` is recorded as having caught here — see
+*Enforcement* above for the full list, which has grown since this section was
+written, and which begins with the four hard errors on the single pull request
+that first demonstrated the rule's value. 382 of its 863 hits are genuine
+Optional narrowing of the `X | None` shape, which is exactly the class of latent
+`AttributeError` worth keeping visible.
 
 Its remaining hits are test doubles patching private attributes and gaps in
 third-party stubs. Those are addressed by neutralizing the stub noise, not by
@@ -484,12 +831,23 @@ the query. Editors, LSP integrations, and any diff-scoped wrapper that checks
 only the files a change touches therefore read `[tool.ty.rules]` for severities
 but not `[tool.ty.src]` for scope.
 
-That asymmetry is inherent to a path-scoped query and is deliberate; it is not an
-inconsistency to be "fixed" by making such a tool read `include`. It does have
-one practical consequence worth knowing: because a rule set to `ignore`
-disappears from ty's output entirely, it also disappears from any such tool's
-report — which is why close calls in this table go to `warn` rather than
-`ignore`.
+That asymmetry is inherent to a path-scoped query, and for an editor or LSP
+integration it is the correct behaviour: a query about the file in front of you
+should answer about that file, whether or not `include` covers it. So the
+asymmetry is not an inconsistency to be "fixed" by making every such tool read
+`include`.
+
+A tool that *does* want the surface back can have it. `ty check --force-exclude`
+enforces the exclusions for paths given on the command line, and it honours the
+`include` half as well — a path outside every `include` root is dropped, not just
+one inside `exclude`. Because the flag is opt-in, the editor case above keeps
+the behaviour it needs. A gate is the case that wants it on; *Enforcement* above
+records why, and what fails without it.
+
+The asymmetry has one further consequence worth knowing, which no flag removes:
+because a rule set to `ignore` disappears from ty's output entirely, it also
+disappears from any such tool's report — which is why close calls in this table
+go to `warn` rather than `ignore`.
 
 ## Changing this policy
 
@@ -504,6 +862,13 @@ report — which is why close calls in this table go to `warn` rather than
   recorded baseline. Only that one figure is re-measured: the per-rule hit
   counts and the sampling record stay as they are, dated evidence for calls
   already made rather than values to keep current.
+- **Clearing diagnostics in bulk** — the same re-measure applies, for the same
+  reason and with the same limit. A change that drives a rule's count to zero,
+  or that narrows a first-party signature enough to reveal diagnostics standing
+  behind it, moves the recorded baseline; update that figure and nothing else.
+  Expect the total to rise before it falls: correcting an annotation ty was
+  giving up on exposes what it was hiding, so measure iteratively rather than
+  projecting a burn-down.
 - **Adding or removing a suppression** — never by hand. Add the shape to
   `GROUPS` in `scripts/classify_ty_diagnostics.py` with the discriminant it
   classifies on, then let `report` say which (file, rule) pairs take an override

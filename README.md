@@ -334,6 +334,36 @@ You can create a basic .env file template by running the following command in th
 echo -e "AUTH__PROVIDER__CASDOOR__CLIENT_ID=YOUR_CASDOOR_CLIENT_ID\nAUTH__PROVIDER__CASDOOR__CLIENT_SECRET=YOUR_CASDOOR_CLIENT_SECRET\n" > .env
 ```
 
+#### `ENCRYPTION_KEY`
+
+`ENCRYPTION_KEY` is the key SEP encrypts stored values with. Nothing is
+encrypted yet — the key gates the encryption helper itself — but **every
+environment needs its own, local development included**: SEP refuses to start
+without one, and so do the Celery workers, the Alembic migrations, and the
+OpenAPI dump. It has no default, is never derived from
+`SECRET_KEY`, and no value ships in the repository: the values it protects are
+real third-party credentials, so a shared key would protect nothing from anyone
+who can read the source.
+
+Mint one and add it to your `.env`:
+
+```shell
+echo "ENCRYPTION_KEY=$(make -s encryption-key)" >> .env
+```
+
+`openssl rand -base64 32` works too. Note that `openssl rand -hex 32` — the
+generator `SECRET_KEY` uses — does **not** produce a valid key.
+
+A deployment supplies the same value as an environment variable or as a file
+named `ENCRYPTION_KEY` under `SECRETS_DIR`.
+
+**Keep the value stable.** Ciphertext outlives the process that wrote it, so
+once values are encrypted, rotating or losing the key makes every
+already-encrypted row permanently unreadable. There is no recovery path and no
+rotation tooling.
+
+The test suite needs no action — it mints its own key per run.
+
 #### Supplying a setting as a mounted file
 
 Any setting can instead be supplied as a file inside the directory `SECRETS_DIR` names,
@@ -403,7 +433,7 @@ SEP supports multiple database engines for different components. Each component 
 ```yaml
 SEP:
   DATABASE:
-    ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
+    ENGINE: sqlite  # Database engine: sqlite, postgresql
     USER: null
     PASSWORD: null
     HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
@@ -429,18 +459,6 @@ TASKS:
     NAME: tasks.db
 ```
 
-#### MySQL/MariaDB Configuration
-```yaml
-SEP:
-  DATABASE:
-    ENGINE: mysql
-    USER: sep_user
-    PASSWORD: your_secure_password
-    HOST: localhost
-    PORT: 3306
-    NAME: sep_database
-```
-
 #### PostgreSQL Configuration
 ```yaml
 SEP:
@@ -455,7 +473,6 @@ SEP:
 
 Supported database engines:
 - `sqlite`: SQLite database (default for development)
-- `mysql`: MySQL/MariaDB database
 - `postgresql`: PostgreSQL database
 
 > [!NOTE]

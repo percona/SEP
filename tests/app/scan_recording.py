@@ -22,6 +22,13 @@ only in the arguments the search was called with. This recorder makes those
 arguments assertable, pinning the narrowing with a test instead of inspection.
 """
 
+from __future__ import annotations
+
+from typing import SupportsIndex, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from _typeshed import ReadableBuffer
+
 __all__ = ["ScanRecordingBytearray"]
 
 
@@ -36,13 +43,19 @@ class ScanRecordingBytearray(bytearray):
         super().__init__(*args)
         self.scans: list[tuple[int, int]] = []
 
-    def find(self, sub: bytes, start: int = 0, /, *args: int) -> int:
+    def find(
+        self,
+        sub: ReadableBuffer | SupportsIndex,
+        start: SupportsIndex | None = None,
+        end: SupportsIndex | None = None,
+        /,
+    ) -> int:
         """Log the scan window and delegate to ``bytearray.find``.
 
         :param sub: The byte sequence to search for.
         :param start: The offset the search starts from.
-        :param args: Any trailing ``end`` argument.
+        :param end: The offset the search stops at.
         :return: The index of the first occurrence, or ``-1``.
         """
-        self.scans.append((start, len(self)))
-        return super().find(sub, start, *args)
+        self.scans.append((int(start or 0), len(self)))
+        return super().find(sub, start, end)

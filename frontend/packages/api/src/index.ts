@@ -34,8 +34,19 @@ export type { MintedToken } from './client';
 export { createQueryClient, defaultQueryClientConfig } from './queryClient';
 
 // Errors
-export { ApiError, normalizeAxiosError, parseFieldErrors } from './errors';
+export { ApiError, normalizeAxiosError, normalizeBlobError, parseFieldErrors } from './errors';
 export type { ApiErrorDetails, ApiErrorKind, FieldValidationError } from './errors';
+
+// Auth context (provider lives in @sep/shell; the context lives here so the
+// framework and app packages can read it without depending on the shell)
+export {
+  ADMIN_SESSION,
+  AuthContext,
+  UNAUTHENTICATED_SESSION,
+  deriveCanMutate,
+  useAuth,
+} from './auth-context';
+export type { AuthSession, AuthState } from './auth-context';
 
 // Auth
 export {

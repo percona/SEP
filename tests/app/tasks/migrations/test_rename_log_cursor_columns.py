@@ -15,17 +15,13 @@
 
 """Tests for the executor-neutral log-cursor column rename migration."""
 
-from pathlib import Path
-
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect
 
 from app.tasks.config import tasks_settings
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
+from tests.app.alembic_paths import ALEMBIC_INI
 
 _PRE_RENAME_REVISION = "a19da5cf0bca"
 _RENAME_REVISION = "c8e4a2b91f70"

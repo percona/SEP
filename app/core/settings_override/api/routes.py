@@ -72,7 +72,7 @@ from app.core.settings_override.registry import (
     iter_class_fields,
     materialize_override_value,
     NESTED_VALUE_MISSING,
-    override_keys_for_rows,
+    override_provenance_for_rows,
     override_rows_for_key,
     preserve_patch_credential_url_value,
     ReloadClassification,
@@ -80,8 +80,10 @@ from app.core.settings_override.registry import (
     resolve_nested_field,
     resolve_nested_field_metadata,
     resolve_nested_value,
+    SettingProvenance,
     unwrap_secrets_for_storage,
 )
+from app.core.utils.date_time import utc_now
 
 ClassEntry = tuple[str, type[BaseYamlSettings], OverridableSettingsProxy]
 
@@ -319,7 +321,7 @@ async def collect_class_setting_responses(
     rows = await SettingsOverrideManager.list(
         session, setting_class=setting_class_token(settings_cls), is_active=True
     )
-    override_keys = override_keys_for_rows(settings_cls, rows)
+    provenance_by_key = override_provenance_for_rows(settings_cls, rows)
     return [
         response
         for field_meta in iter_class_fields(settings_cls)
@@ -328,7 +330,7 @@ async def collect_class_setting_responses(
             settings_cls=settings_cls,
             proxy=proxy,
             field_meta=field_meta,
-            override_keys=override_keys,
+            provenance_by_key=provenance_by_key,
             applicability=applicability,
         )
     ]
@@ -359,7 +361,7 @@ def _settings_response_from_field(
     settings_cls: type[BaseYamlSettings],
     proxy: OverridableSettingsProxy,
     field_meta: FieldMetadata,
-    has_override: bool,
+    provenance: SettingProvenance | None,
     applicability: ApplicabilityPredicate | None = None,
 ) -> SettingResponse:
     """Build a :class:`SettingResponse` for one field on a settings class.
@@ -369,8 +371,10 @@ def _settings_response_from_field(
     :param proxy: The proxy whose attribute access yields the field's current
         value (snapshot if present, else the wrapped Pydantic instance).
     :param field_meta: The introspected metadata for the field.
-    :param has_override: Whether a ``settingoverride`` row exists for this
-        ``(class, key)`` pair.
+    :param provenance: The last-written stamp for the active override applying
+        to this ``(class, key)`` pair, or ``None`` when none applies. Its
+        presence is what sets ``has_override``, so the flag and the stamps
+        cannot disagree.
     :param applicability: Optional predicate deciding whether the field applies
         under current runtime state; ``None`` marks the field applicable.
     :return: The structured response for the field.
@@ -401,7 +405,9 @@ def _settings_response_from_field(
         description=field_meta.description,
         is_secret=field_meta.is_secret,
         is_complex=field_meta.is_complex,
-        has_override=has_override,
+        has_override=provenance is not None,
+        updated_at=provenance.updated_at if provenance is not None else None,
+        updated_by=provenance.updated_by if provenance is not None else None,
         is_advanced=field_meta.is_advanced,
         is_applicable=(
             applicability(setting_class, field_meta)
@@ -418,7 +424,7 @@ def _field_responses(
     settings_cls: type[BaseYamlSettings],
     proxy: OverridableSettingsProxy,
     field_meta: FieldMetadata,
-    override_keys: set[str],
+    provenance_by_key: dict[str, SettingProvenance],
     applicability: ApplicabilityPredicate | None = None,
 ) -> list[SettingResponse]:
     """Return one response for a plain field, or one per leaf for a nested parent.
@@ -432,7 +438,8 @@ def _field_responses(
     :param settings_cls: The Pydantic settings class declaring ``field_meta``.
     :param proxy: The proxy whose attribute access yields current values.
     :param field_meta: The introspected metadata for the top-level field.
-    :param override_keys: The canonical keys (and prefixes) carrying an override.
+    :param provenance_by_key: The last-written stamp per canonical key (and
+        prefix) carrying an override; an absent key carries no override.
     :param applicability: Optional predicate deciding whether each field applies
         under current runtime state; ``None`` marks every field applicable.
     :return: One or more responses for the field.
@@ -445,7 +452,7 @@ def _field_responses(
                 settings_cls=settings_cls,
                 proxy=proxy,
                 field_meta=field_meta,
-                has_override=field_meta.key in override_keys,
+                provenance=provenance_by_key.get(field_meta.key),
                 applicability=applicability,
             )
         ]
@@ -460,7 +467,7 @@ def _field_responses(
                 settings_cls=settings_cls,
                 proxy=proxy,
                 field_meta=leaf_meta,
-                has_override=leaf_key in override_keys,
+                provenance=provenance_by_key.get(leaf_key),
                 applicability=applicability,
             )
         )
@@ -836,6 +843,7 @@ def build_settings_router(
     classes: list[ClassEntry],
     session_dep: Any,
     admin_dep: params.Depends,
+    actor_dep: Any,
     mutation_deps: list[params.Depends] | None = None,
     remote_classes: list[RemoteClassEntry] | None = None,
     remote_api_dep: Any = None,
@@ -864,6 +872,15 @@ def build_settings_router(
         admin users only (e.g. ``app.sep.deps.IsApiAdmin`` or
         ``app.api.deps.IsAdminDep``). Applied at the router level so every
         endpoint inherits the admin gate.
+    :param actor_dep: An ``Annotated[str, Depends(...)]`` type alias yielding the
+        calling admin's username, recorded on every override row PATCH writes
+        (e.g. ``app.sep.deps.ApiAdminUsername`` or
+        ``app.api.deps.AdminUsername``). Required rather than optional so a
+        sub-app that forgets the wiring fails at import instead of silently
+        recording no actor. Each in-tree alias resolves the same callable its
+        sub-app passes as ``admin_dep``, and FastAPI reuses a dependency's
+        result within a request, so binding the actor costs no second
+        auth-provider round-trip.
     :param mutation_deps: Optional list of FastAPI ``Depends(...)`` callables
         applied only to the state-changing endpoints (PATCH / DELETE). The
         SEP wiring passes ``[RequireBearerForUnsafeMethods]`` so cookie sessions cannot
@@ -982,13 +999,13 @@ def build_settings_router(
         rows = await SettingsOverrideManager.list(
             session, setting_class=setting_class_token(settings_cls), is_active=True
         )
-        override_keys = override_keys_for_rows(settings_cls, rows)
+        provenance_by_key = override_provenance_for_rows(settings_cls, rows)
         return _settings_response_from_field(
             setting_class=setting_class,
             settings_cls=settings_cls,
             proxy=proxy,
             field_meta=field_meta,
-            has_override=key in override_keys,
+            provenance=provenance_by_key.get(key),
             applicability=applicability,
         )
 
@@ -999,6 +1016,7 @@ def build_settings_router(
         body: SettingsPatch,
         session: session_dep,  # type: ignore[valid-type]
         remote_api: remote_dep,  # type: ignore[valid-type]
+        actor: actor_dep,  # type: ignore[valid-type]
     ) -> list[SettingResponse]:
         """Apply a batch of overrides for one settings class atomically.
 
@@ -1021,10 +1039,16 @@ def build_settings_router(
         :param session: The sub-app's database session.
         :param remote_api: The client for remote settings classes (``None`` when
             the router wires none).
+        :param actor: The calling admin's username, recorded on every row the
+            batch writes and reported back on each response.
         :return: One :class:`SettingResponse` per applied key, in input order.
         :raises HTTPNotFoundException: If the class isn't exposed.
         :raises HTTPUnprocessableEntityException: If any key fails validation;
             no rows are written.
+        :raises HTTPBadGatewayException: For a remote class, when the owning
+            sub-app returns a server error (status >= 500) or is unreachable.
+        :raises IntegrityError: When the replay of a batch that lost the
+            unique-index race conflicts again, which leaves nothing written.
         """
         if setting_class in remote_lookup:
             return await _remote_patch(
@@ -1034,10 +1058,11 @@ def build_settings_router(
         to_apply = _validate_patch_body(
             settings_cls=settings_cls, proxy=proxy, body=body
         )
-        await _persist_overrides(
+        provenance_by_key = await _persist_overrides(
             session=session,
             settings_cls=settings_cls,
             to_apply=to_apply,
+            actor=actor,
         )
         previous = proxy.get_snapshot()
         await publish_snapshot(proxy, session, settings_cls)
@@ -1049,7 +1074,7 @@ def build_settings_router(
                 settings_cls=settings_cls,
                 proxy=proxy,
                 field_meta=field_meta_by_key[key],
-                has_override=True,
+                provenance=provenance_by_key[key],
                 applicability=applicability,
             )
             for key, _ in to_apply
@@ -1291,7 +1316,8 @@ async def _persist_overrides(
     session: AsyncSession,
     settings_cls: type[BaseYamlSettings],
     to_apply: list[tuple[str, Any]],
-) -> None:
+    actor: str,
+) -> dict[str, SettingProvenance]:
     """Insert or update each ``(setting_class, key)`` row in a single transaction.
 
     Existing rows (resolved by canonicalizing the stored key) have ``value``
@@ -1318,22 +1344,29 @@ async def _persist_overrides(
         written to ``settingoverride.setting_class``, and against which each
         stored key is canonicalized.
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
+    :param actor: The username recorded on every row this call writes.
+    :return: The stamp written for each applied key. On the replay path this is
+        the second attempt's, since the first attempt's writes were rolled back.
+    :raises IntegrityError: When the replay conflicts as well; the batch is
+        rolled back once and retried exactly once, never further.
     """
     token = setting_class_token(settings_cls)
     try:
-        await _stage_and_commit_overrides(
+        return await _stage_and_commit_overrides(
             session=session,
             setting_class=token,
             settings_cls=settings_cls,
             to_apply=to_apply,
+            actor=actor,
         )
     except IntegrityError:
         await session.rollback()
-        await _stage_and_commit_overrides(
+        return await _stage_and_commit_overrides(
             session=session,
             setting_class=token,
             settings_cls=settings_cls,
             to_apply=to_apply,
+            actor=actor,
         )
 
 
@@ -1343,19 +1376,35 @@ async def _stage_and_commit_overrides(
     setting_class: str,
     settings_cls: type[BaseYamlSettings],
     to_apply: list[tuple[str, Any]],
-) -> None:
+    actor: str,
+) -> dict[str, SettingProvenance]:
     """Stage every matching (setting_class, key) row and commit the batch.
 
     Resolves existing rows by canonicalizing each stored key. A missing key
     is inserted; a matching set collapses to one row under the canonical
     ``key`` with the new value.
 
+    Every row the batch touches is stamped with ``actor`` and one shared
+    ``utc_now()``, on the insert branch as well as the update branch, so
+    ``updated_at`` means "when this override was last saved" on any row this
+    code has written. The assignment is what makes an idempotent re-PATCH
+    re-stamp: submitting the stored value leaves ``value`` and ``is_active``
+    unchanged, so without it the row is not dirty, no UPDATE is emitted, and the
+    column's ``onupdate`` never fires.
+
     :param session: The sub-app's database session.
     :param setting_class: The storage token written to
         ``settingoverride.setting_class``.
     :param settings_cls: The Pydantic settings class used to canonicalize keys.
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
+    :param actor: The username recorded on every row this call writes.
+    :return: The stamp written for each applied key.
     """
+    stamp = utc_now()
+    provenance = {
+        key: SettingProvenance(updated_at=stamp, updated_by=actor)
+        for key, _value in to_apply
+    }
     for key, value in to_apply:
         stored_value = unwrap_secrets_for_storage(value)
         existing_rows = await override_rows_for_key(
@@ -1371,6 +1420,8 @@ async def _stage_and_commit_overrides(
                     key=key,
                     value=stored_value,
                     is_active=True,
+                    updated_at=stamp,
+                    updated_by=actor,
                 )
             )
             continue
@@ -1386,5 +1437,8 @@ async def _stage_and_commit_overrides(
         keep.key = key
         keep.value = stored_value
         keep.is_active = True
+        keep.updated_at = stamp
+        keep.updated_by = actor
         session.add(keep)
     await session.commit()
+    return provenance

@@ -53,10 +53,12 @@ from app.inventory.models import (
     ServiceDetailResponse,
     ServiceIdentityCandidateResponse,
     ServiceResponse,
+    ServiceSystemObservation,
     ServiceSystemObservationResponse,
     ServiceSystemObservationWrite,
     ServiceTypeEnum,
     ServiceWrite,
+    SyncHealthWrite,
 )
 
 logger = logging.getLogger(__name__)
@@ -196,10 +198,37 @@ async def revive_service(session: SessionDep, service: RetirableServiceDep) -> N
     await ServiceManager.revive(session, service)
 
 
-@router.get("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])
+@router.post(
+    "/{service_id}/sync-health",
+    dependencies=[IsServicePrincipalDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def record_service_sync_health(
+    session: SessionDep,
+    service: RetirableServiceDep,
+    outcome: SyncHealthWrite,
+) -> None:
+    """Record the outcome of one syncer attempt on a Service.
+
+    Addresses the service whether retired or not: the attempt happened, and a
+    concurrent retirement must not turn bookkeeping into a failed sync item.
+
+    :param session: The async database session.
+    :param service: The service the outcome was observed for, retired or not.
+    :param outcome: What the syncer reported.
+    """
+    logger.debug("Recording %s sync health on service %s", outcome.outcome, service.id)
+    await ServiceManager.record_sync_health(session, service, outcome)
+
+
+@router.get(
+    "/{service_id}/system-observation",
+    dependencies=[IsAuthenticatedDep],
+    response_model=ServiceSystemObservationResponse,
+)
 async def retrieve_service_system_observation(
     observation: ServiceSystemObservationDep,
-) -> ServiceSystemObservationResponse:
+) -> ServiceSystemObservation:
     """Retrieve service system observation for a service."""
     return observation
 

@@ -323,12 +323,20 @@ def test_check_names_a_group_that_matched_nothing_in_the_baseline(tmp_path, caps
     The baseline is the only run where a zero means drift rather than a group
     doing its job, and naming it is the whole effect: a retired artifact class
     loses no first-party diagnostic, so there is nothing for the gate to reject.
+
+    The expected count is derived rather than written down: exactly one group
+    matches this fixture, so every other registered one is stale, and a literal
+    would fail the next time a group is added for a reason unrelated to this.
     """
     manifest = _manifest(tmp_path, _output(ARTIFACT_ROW, FIRST_PARTY_ROW))
 
     assert _check(tmp_path, manifest, _output(FIRST_PARTY_ROW)) == 0
     out = capsys.readouterr().out
-    assert "STALE groups (matched nothing in the baseline, advisory): 10" in out
+    stale_count = len(classify_ty_diagnostics.GROUPS) - 1
+    assert (
+        f"STALE groups (matched nothing in the baseline, advisory): {stale_count}"
+        in out
+    )
     assert "pydantic-settings-private-kwargs" not in out.split("STALE groups")[1]
 
 
@@ -346,3 +354,67 @@ def test_report_flags_a_line_holding_an_artifact_and_a_first_party_hit(
     out = capsys.readouterr().out
     assert "tests/app/sep/test_config.py:145" in out
     assert "Unsuppressable-by-comment sites: 1" in out
+
+
+def _claiming_groups(fingerprint):
+    """Return the names of every registered group claiming ``fingerprint``.
+
+    :param fingerprint: The ``(path, rule, message)`` identity to test.
+    :return: The claiming groups' names, in registration order.
+    """
+    return [
+        group.name
+        for group in classify_ty_diagnostics.GROUPS
+        if group.claims(fingerprint)
+    ]
+
+
+CALL_IN_TYPE_EXPRESSION = "Function calls are not allowed in type expressions"
+
+
+def test_factory_built_alias_group_claims_only_the_module_it_is_confined_to():
+    """Confine the call-in-type-expression group to the module holding that site.
+
+    The message names no discriminant: it reads the same for the field-type
+    factory the form DSL calls and for an ordinary call someone wrote into a type
+    position by mistake. Only the path separates them, so a hit anywhere else has
+    to stay first-party — otherwise ``check`` would accept a suppression over a
+    genuine defect.
+    """
+    confined = (
+        "app/sep/apps/mysql_backups/forms.py",
+        "invalid-type-form",
+        CALL_IN_TYPE_EXPRESSION,
+    )
+    elsewhere = (
+        "app/sep/routes/users.py",
+        "invalid-type-form",
+        CALL_IN_TYPE_EXPRESSION,
+    )
+
+    assert _claiming_groups(confined) == ["factory-built-annotated-alias"]
+    assert _claiming_groups(elsewhere) == []
+
+
+def test_runtime_computed_model_group_does_not_claim_a_bare_call():
+    """Keep the two ``invalid-type-form`` groups from overlapping.
+
+    The runtime-computed-model group matches on its own message, so it is not
+    path-confined; that only stays safe while its pattern refuses the call form,
+    which carries no evidence of a runtime-computed class.
+    """
+    fingerprint = (
+        "app/sep/apps/mysql_backups/forms.py",
+        "invalid-type-form",
+        CALL_IN_TYPE_EXPRESSION,
+    )
+    groups = {group.name: group for group in classify_ty_diagnostics.GROUPS}
+
+    assert not groups["runtime-computed-model-in-type-position"].claims(fingerprint)
+    assert groups["runtime-computed-model-in-type-position"].claims(
+        (
+            "app/api/routes/users.py",
+            "invalid-type-form",
+            "Variable of type `type[BaseUser]` is not allowed in a type expression",
+        )
+    )

@@ -74,6 +74,8 @@ def _build_pitr_config(form: BackupCreate) -> dict[str, Any]:
 
 def _build_storage_config(form: BackupCreate) -> dict[str, Any]:
     """Build storage configuration from form data."""
+    if form.storage_type is None:
+        raise ValueError("storage_type is required to build a storage config")
     storage_config = {}
     if form.storage_type == "s3":
         storage_config = {

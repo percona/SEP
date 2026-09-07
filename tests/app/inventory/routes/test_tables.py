@@ -15,12 +15,20 @@
 
 """Define tests for inventory table routes."""
 
+import pytest
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 from starlette.testclient import TestClient
 
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
-from app.inventory.models import Schema, Service, Table
+from app.inventory.models import Schema, Service, SyncOutcomeEnum, Table
 from tests.app.factories import SchemaWriteFactory, TableWriteFactory
+from tests.app.inventory.conftest import (
+    INVALID_SYNC_HEALTH_BODIES,
+    INVALID_SYNC_HEALTH_BODY_IDS,
+    sync_health_payload,
+    SYNC_HEALTH_RESPONSE_KEYS,
+)
 
 EXPECTED_TABLE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
@@ -394,3 +402,102 @@ class TestReviveTable:
             assert test_client.get(f"/{path}/{entity_id}").status_code == (
                 status.HTTP_200_OK
             )
+
+
+class TestRecordTableSyncHealth:
+    """Test the POST /tables/{table_id}/sync-health endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_success_outcome_clears_the_failure_state(
+        self, test_client: TestClient, session: AsyncSession, table: Table
+    ) -> None:
+        """Record the freshness and answer 204."""
+        response = test_client.post(
+            f"/tables/{table.id}/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.SUCCESS),
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        await session.refresh(table)
+        assert table.last_synced_at is not None
+        assert table.last_sync_error is None
+        assert table.consecutive_failures == 0
+
+    @pytest.mark.asyncio
+    async def test_failure_outcome_opens_the_failure_run(
+        self, test_client: TestClient, session: AsyncSession, table: Table
+    ) -> None:
+        """Record the failure columns and answer 204."""
+        response = test_client.post(
+            f"/tables/{table.id}/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.FAILURE, "boom"),
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        await session.refresh(table)
+        assert table.last_synced_at is None
+        assert table.last_sync_error == "boom"
+        assert table.sync_failing_since is not None
+        assert table.consecutive_failures == 1
+
+    @pytest.mark.parametrize(
+        "body", INVALID_SYNC_HEALTH_BODIES, ids=INVALID_SYNC_HEALTH_BODY_IDS
+    )
+    def test_rejects_an_inconsistent_or_incomplete_body(
+        self, test_client: TestClient, table: Table, body: dict[str, str]
+    ) -> None:
+        """Refuse every body shape the write model declares invalid."""
+        response = test_client.post(f"/tables/{table.id}/sync-health", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_unknown_table_is_not_found(self, test_client: TestClient) -> None:
+        """Answer 404 when the addressed table does not exist."""
+        response = test_client.post(
+            "/tables/99999/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.SUCCESS),
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_retired_table_still_records_the_outcome(
+        self,
+        test_client: TestClient,
+        session: AsyncSession,
+        retired_table: Table,
+    ) -> None:
+        """Record the attempt against a table retired concurrently with the sync."""
+        response = test_client.post(
+            f"/tables/{retired_table.id}/sync-health",
+            json=sync_health_payload(SyncOutcomeEnum.FAILURE, "boom"),
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        await session.refresh(retired_table)
+        assert retired_table.consecutive_failures == 1
+
+
+class TestTableSyncHealthReads:
+    """Test that the table read responses expose the sync-health columns."""
+
+    def test_detail_exposes_the_columns(
+        self, test_client: TestClient, table: Table
+    ) -> None:
+        """Carry the four fields on the table detail response."""
+        response = test_client.get(f"/tables/{table.id}")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data.keys() >= SYNC_HEALTH_RESPONSE_KEYS
+
+    def test_list_items_expose_the_columns(
+        self, test_client: TestClient, table: Table
+    ) -> None:
+        """Carry the four fields on every row of the paginated list."""
+        response = test_client.get("/tables/")
+
+        assert response.status_code == status.HTTP_200_OK
+        items = response.json()["items"]
+        assert items, "the table fixture should have produced a row to read back"
+        assert items[0].keys() >= SYNC_HEALTH_RESPONSE_KEYS

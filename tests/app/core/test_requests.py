@@ -120,6 +120,8 @@ async def test_request_methods(
                 response = await remote_api.patch(test_path, json=request_payload)
             elif method == "DELETE":
                 response = await remote_api.delete(test_path)
+            else:
+                raise AssertionError(f"unparametrized method: {method}")
 
             assert response == response_data
 

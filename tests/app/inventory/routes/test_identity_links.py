@@ -172,6 +172,7 @@ class TestDecideNodeIdentityLink:
         self, test_client: TestClient, node: Node
     ) -> None:
         """Answer 404 when the body names a row that does not exist."""
+        assert node.id is not None
         response = test_client.post(
             f"/nodes/{node.id}/identity-link",
             json={
@@ -204,6 +205,7 @@ class TestDecideNodeIdentityLink:
         self, test_client: TestClient, node: Node
     ) -> None:
         """Answer 422 on a decision outside the enum, the body model being real."""
+        assert node.id is not None
         response = test_client.post(
             f"/nodes/{node.id}/identity-link",
             json={"successor_id": node.id + 1, "decision": "deleted"},

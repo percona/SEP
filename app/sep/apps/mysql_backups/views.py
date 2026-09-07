@@ -21,8 +21,8 @@ and field-declaration order); what lives here is the part the model cannot
 express: the section titles, the collapse/whole-section-hide metadata, the list
 columns, and the UI capability flags. These feed the derived ``GET /schema`` and
 are carried over from the previous hand-written ``AppSchema``; the one addition
-is the Encryption section's group ``description`` that guides operators through
-the independent in-place and post-run encryption modes and their constraints.
+is the Encryption section's group ``description`` that guides operators from the
+explicit encryption format to the fields that parameterise it.
 """
 
 from app.sep.apps.framework.apps import Views
@@ -78,11 +78,14 @@ mysql_backups_views = Views(
                 title="Encryption",
                 collapsible=True,
                 description=(
-                    "GPG-encrypt the backup. In-place ('Encrypt backup', optionally "
-                    "with 'Encrypt using tmpdir') and post-run ('Encrypt after backup "
-                    "completes') are independent — enable either or both. 'Encrypt "
-                    "using tmpdir' and 'Encrypt after backup completes' are mutually "
-                    "exclusive. Either mode needs a recipient."
+                    "Pick an 'Encryption format' first; the fields below are that "
+                    "format's parameters. GPG timings are independent — in-place "
+                    "('Encrypt backup', optionally with 'Encrypt using tmpdir'), "
+                    "applied during upload, and post-run ('Encrypt after backup "
+                    "completes'), applied on the host; enable either or both, and "
+                    "either needs a recipient. 'Encrypt using tmpdir' and 'Encrypt "
+                    "after backup completes' are mutually exclusive. AES-256 needs "
+                    "a key file and is XtraBackup-only."
                 ),
             ),
             SectionLayout(key="Upload", title="Upload", collapsible=True),

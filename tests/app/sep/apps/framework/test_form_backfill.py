@@ -45,6 +45,7 @@ from app.sep.apps.framework.form_backfill_registry import (
     FormBackfillContext,
     FormBackfillEntry,
     FormReconstructor,
+    StampRepairer,
 )
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.tasks.models import Task, TaskBackendEnum
@@ -68,13 +69,17 @@ def _reconstructor_must_not_run(_task: Task, _ctx: FormBackfillContext) -> dict:
     raise AssertionError("reconstructor must not run")
 
 
-def _entry(reconstructor: FormReconstructor) -> FormBackfillEntry:
+def _entry(
+    reconstructor: FormReconstructor,
+    stamp_repairer: StampRepairer | None = None,
+) -> FormBackfillEntry:
     """Build a checksums-keyed backfill entry bound to ``reconstructor``."""
     return FormBackfillEntry(
         app_key="checksums",
         owner=OWNER,
         create_model=ChecksumsForm,
         reconstructor=reconstructor,
+        stamp_repairer=stamp_repairer,
     )
 
 
@@ -260,6 +265,36 @@ def test_backfill_single_task_skips_invalid_reconstructed_form():
     assert RESERVED_FORM_KEY not in task.data
 
 
+def test_an_invalid_reconstruction_is_logged_without_the_submitted_values(caplog):
+    """Keep the rejected values out of the log a reconstruction failure writes.
+
+    A form body can carry a GPG recipient or a key-file path, and pydantic attaches
+    the value that failed to every error it raises, so the errors reach the log
+    with the field names and messages but without the inputs.
+    """
+    task = _minimal_task(data={"meta": {}})
+    secret = "gpg-recipient@example.com"
+
+    def _invalid_body(_task: Task, _ctx: FormBackfillContext) -> dict:
+        return {
+            "task_name": "legacy-task",
+            "hostname": "executor-1",
+            "service_id": secret,
+        }
+
+    entry = _entry(_invalid_body)
+    ctx = FormBackfillContext(
+        log=logging.getLogger("test"), service_lookup=_EMPTY_SERVICE_LOOKUP
+    )
+
+    with caplog.at_level(logging.INFO, logger="test"):
+        outcome = _backfill_single_task(task, entry, ctx)
+
+    assert outcome.label == "skipped_invalid"
+    assert secret not in caplog.text
+    assert "service_id" in caplog.text
+
+
 def test_backfill_single_task_stamps_a_row_whose_hook_path_predates_the_allow_list():
     """Stamp a row whose stored hook path the write model would reject.
 
@@ -369,6 +404,39 @@ async def test_backfill_app_records_mixed_outcomes_without_aborting():
 
 
 @pytest.mark.asyncio
+async def test_backfill_app_counts_and_commits_a_repaired_stamp():
+    """A repaired stamp is persisted like a new one but counted separately.
+
+    The two are distinct operationally: a stamped count is legacy rows catching
+    up, where a repaired count is rows the current form has outgrown.
+    """
+    repaired_payload = {"meta": {}, RESERVED_FORM_KEY: {"task_name": "repaired"}}
+    session = MagicMock()
+    session.commit = AsyncMock()
+    session.flush = AsyncMock()
+    entry = _entry(lambda _t, _c: None)
+    ctx = FormBackfillContext(log=logging.getLogger("test"))
+
+    with (
+        patch(
+            "app.sep.apps.framework.form_backfill.TaskManager.list_active",
+            new_callable=AsyncMock,
+            return_value=[_minimal_task(data={"meta": {}})],
+        ),
+        patch(
+            "app.sep.apps.framework.form_backfill._backfill_single_task",
+            side_effect=[_TaskBackfillOutcome("repaired", repaired_payload)],
+        ),
+    ):
+        stats = await _backfill_app(session, entry, ctx)
+
+    assert stats.repaired == 1
+    assert stats.stamped == 0
+    assert stats.processed == 1
+    session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_backfill_app_dry_run_never_commits():
     """Dry-run mode must not commit even when tasks are stamped in memory."""
     stamped_payload = {"meta": {}, RESERVED_FORM_KEY: {"task_name": "dry-run"}}
@@ -470,3 +538,142 @@ def test_main_rejects_owner_outside_the_in_scope_set(value, capsys):
 
     assert exc_info.value.code == _ARGPARSE_USAGE_ERROR
     assert "unknown owner" in capsys.readouterr().err
+
+
+# A stamp that validates once the field a later form revision added is filled in.
+_STALE_STAMP = {
+    "task_name": "legacy-task",
+    "hostname": "executor-1",
+    "service_id": 1,
+}
+
+
+def _repairer_must_not_run(_form: dict, _task: Task, _ctx: FormBackfillContext) -> dict:
+    """Fail fast when the orchestrator invokes a repairer unexpectedly."""
+    raise AssertionError("stamp repairer must not run")
+
+
+class TestRepairExistingStamp:
+    """Repair stamps written against an earlier revision of an app's create model.
+
+    A stamp records the create body as the form looked when the task was saved, so
+    a field the form gained later is missing from every older stamp and the edit
+    form fills it from the schema default. Where that default is not what the task
+    runs, the repairer is the only thing standing between the operator and a save
+    that silently changes behaviour — so a repair that cannot be validated has to
+    leave the stored stamp exactly as it found it.
+    """
+
+    @staticmethod
+    def _ctx() -> FormBackfillContext:
+        return FormBackfillContext(
+            log=logging.getLogger("test"), service_lookup=_EMPTY_SERVICE_LOOKUP
+        )
+
+    def _run(self, stamp: object, repairer: StampRepairer | None) -> tuple:
+        task = _minimal_task(data={"meta": {}, RESERVED_FORM_KEY: stamp})
+        outcome = _backfill_single_task(
+            task, _entry(_reconstructor_must_not_run, repairer), self._ctx()
+        )
+        return outcome, task
+
+    def test_repairs_a_stamp_missing_a_later_field(self):
+        """Stamp the repaired body and leave the row's own ``data`` untouched."""
+        outcome, task = self._run(
+            dict(_STALE_STAMP),
+            lambda form, _t, _c: {**form, "recursion_method": "processlist"},
+        )
+
+        assert outcome.label == "repaired"
+        assert outcome.stamped_data is not None
+        assert (
+            outcome.stamped_data[RESERVED_FORM_KEY]["recursion_method"] == "processlist"
+        )
+        assert "recursion_method" not in task.data[RESERVED_FORM_KEY]
+
+    def test_a_declared_repairer_never_sees_the_stored_dict_itself(self):
+        """Hand the repairer a copy, so an in-place repair cannot leak unvalidated.
+
+        A repairer that mutates and returns its argument is the natural way to
+        write one; passing the stored dict would apply that mutation to the row
+        even down the paths that refuse to persist it.
+        """
+
+        def _mutate_in_place(form: dict, _task: Task, _ctx: FormBackfillContext):
+            form["service_id"] = "not-an-int"
+            return form
+
+        _, task = self._run(dict(_STALE_STAMP), _mutate_in_place)
+
+        assert task.data[RESERVED_FORM_KEY] == _STALE_STAMP
+
+    def test_an_app_declaring_no_repairer_keeps_the_stamp(self):
+        """Skip an already-stamped task when its app declares no repairer."""
+        outcome, task = self._run(dict(_STALE_STAMP), None)
+
+        assert outcome.label == "skipped_existing"
+        assert outcome.stamped_data is None
+        assert task.data[RESERVED_FORM_KEY] == _STALE_STAMP
+
+    def test_a_repairer_finding_nothing_to_do_keeps_the_stamp(self):
+        """Skip a stamp the repairer reports as already current.
+
+        This is what makes re-runs idempotent: a repaired task is indistinguishable
+        from one stamped by the current form, and neither is rewritten.
+        """
+        outcome, _ = self._run(dict(_STALE_STAMP), lambda _f, _t, _c: None)
+
+        assert outcome.label == "skipped_existing"
+        assert outcome.stamped_data is None
+
+    def test_a_repair_that_cannot_validate_keeps_the_stamp(self):
+        """Count an unvalidatable repair invalid rather than stamping it."""
+        outcome, task = self._run(
+            dict(_STALE_STAMP),
+            lambda form, _t, _c: {**form, "service_id": "not-an-int"},
+        )
+
+        assert outcome.label == "skipped_invalid"
+        assert outcome.stamped_data is None
+        assert task.data[RESERVED_FORM_KEY] == _STALE_STAMP
+
+    def test_an_invalid_repair_is_logged_without_the_stamped_values(self, caplog):
+        """Keep the rejected values out of the log an invalid repair writes.
+
+        The stamp is a whole submitted form, so the errors pydantic raises against
+        it carry every value the operator typed unless the input is suppressed.
+        """
+        secret = "gpg-recipient@example.com"
+
+        with caplog.at_level(logging.INFO, logger="test"):
+            outcome, _ = self._run(
+                dict(_STALE_STAMP),
+                lambda form, _t, _c: {**form, "service_id": secret},
+            )
+
+        assert outcome.label == "skipped_invalid"
+        assert secret not in caplog.text
+        assert "service_id" in caplog.text
+
+    def test_a_raising_repairer_costs_only_its_own_task(self):
+        """Count a raising repairer an error, leaving the stamp for the next run."""
+
+        def _boom(_form: dict, _task: Task, _ctx: FormBackfillContext) -> dict:
+            raise RuntimeError("repairer exploded")
+
+        outcome, task = self._run(dict(_STALE_STAMP), _boom)
+
+        assert outcome.label == "skipped_error"
+        assert outcome.stamped_data is None
+        assert task.data[RESERVED_FORM_KEY] == _STALE_STAMP
+
+    def test_a_stamp_that_is_not_a_mapping_is_never_repaired(self):
+        """Skip a stamp no repairer could read, without invoking one.
+
+        Nothing writes a non-mapping stamp, so reaching a repairer with one would
+        only turn a corrupt row into a repairer's ``AttributeError``.
+        """
+        outcome, _ = self._run(["not", "a", "form"], _repairer_must_not_run)
+
+        assert outcome.label == "skipped_existing"
+        assert outcome.stamped_data is None

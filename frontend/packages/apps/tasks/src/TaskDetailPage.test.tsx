@@ -24,7 +24,10 @@ import { useTaskDetail } from './hooks';
 import type { TaskDetailBundle, TaskDetailTask } from './types';
 
 const navigate = vi.fn();
-const { stopMutate } = vi.hoisted(() => ({ stopMutate: vi.fn() }));
+const { stopMutate, stopState } = vi.hoisted(() => ({
+  stopMutate: vi.fn(),
+  stopState: { error: null as unknown },
+}));
 
 vi.mock('react-router', async () => {
   const actual = await vi.importActual<typeof import('react-router')>('react-router');
@@ -83,7 +86,20 @@ vi.mock('@sep/framework', () => ({
   TaskLogViewer: ({ taskHistoryId }: { taskHistoryId: number }) => (
     <div data-testid="task-log-viewer">logs for {taskHistoryId}</div>
   ),
-  useStopTaskHistory: () => ({ mutate: stopMutate, isPending: false }),
+  useStopTaskHistory: () => ({
+    mutate: stopMutate,
+    isPending: false,
+    error: stopState.error,
+    reset: () => {
+      stopState.error = null;
+    },
+  }),
+  ActionErrorAlert: ({ error }: { error: unknown }) =>
+    error === null || error === undefined ? null : (
+      <div data-testid="action-error-alert">
+        {error instanceof Error ? error.message : String(error)}
+      </div>
+    ),
 }));
 
 const mockUseTaskDetail = vi.mocked(useTaskDetail);
@@ -173,6 +189,7 @@ function renderPage(taskName = 'monitor-task') {
 describe('TaskDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    stopState.error = null;
     mockUseTaskDetail.mockReturnValue({
       data: detailBundle,
       isLoading: false,
@@ -224,6 +241,18 @@ describe('TaskDetailPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Stop 11' }));
 
     expect(stopMutate).toHaveBeenCalledWith(11);
+    expect(screen.queryByTestId('action-error-alert')).not.toBeInTheDocument();
+  });
+
+  it("reports a failed stop with the server's own reason", () => {
+    stopState.error = new Error("You don't have permission to perform this action");
+
+    renderPage();
+
+    // One alert for both tables, so a single failure is reported once.
+    expect(screen.getByTestId('action-error-alert')).toHaveTextContent(
+      "You don't have permission to perform this action",
+    );
   });
 
   it('hides execution sections for template tasks', () => {

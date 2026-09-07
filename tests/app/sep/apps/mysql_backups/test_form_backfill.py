@@ -30,8 +30,9 @@ from app.sep.apps.mysql_backups.form_backfill import (
     _extract_upload_from_meta,
     FORM_BACKFILL_ENTRIES,
     reconstruct_mysql_backups_form,
+    repair_mysql_backups_stamp,
 )
-from app.sep.apps.mysql_backups.forms import BackupCreate
+from app.sep.apps.mysql_backups.forms import BackupCreate, EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.payload_variants import PROVIDERS
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
@@ -67,6 +68,12 @@ def _ctx(lookup: ServiceIdLookup) -> FormBackfillContext:
     )
 
 
+# The stamp repairer derives everything from the stamp itself, so neither of these
+# is read; they exist only to satisfy its signature.
+_TASK = None
+_CTX = None
+
+
 def _legacy_mysql_backup_task(
     *,
     name: str = "mysql-backup-legacy",
@@ -78,6 +85,7 @@ def _legacy_mysql_backup_task(
     backup_type: BackupType = BackupType.XTRABACKUP,
     upload: list[str] | None = None,
     all_servers: dict[str, object] | None = None,
+    server_extra: dict[str, object] | None = None,
     alert_on_fail: bool = False,
 ) -> Task:
     """Build a legacy mysql_backups task row without ``data['_form']``."""
@@ -86,6 +94,7 @@ def _legacy_mysql_backup_task(
         "HOST": service_host,
         "PORT": service_port,
         "BACKUP_TYPE": backup_type.value,
+        **(server_extra or {}),
     }
     if upload is not None:
         server_list_entry["UPLOAD"] = upload
@@ -371,3 +380,203 @@ class TestUploadBackfillDropsNothingSilently:
         assert [error["loc"] for error in excinfo.value.errors()] == [
             ("upload", extracted.index("azure"))
         ]
+
+
+class TestEncryptionFormatBackfill:
+    """Reconstruct the encryption format of tasks stamped before it existed.
+
+    A legacy task's encryption lived only in the fields the payload happened to
+    read. Stamping a form that lost that state would let the next save turn an
+    encrypted backup into a plaintext one, so each state has to survive the round
+    trip — or be refused outright when it cannot.
+    """
+
+    # The shape the create path actually stores: ``BackupConfigServer`` uppercases
+    # the outer key and ``DirEncryptConfig`` renames the recipient to the spelling
+    # the directory encryptor reads.
+    _RECIPIENT_BLOCK = {
+        "DIR_ENCRYPT_CONFIG": {"encryption recipient": "ops@example.com"}
+    }
+
+    @staticmethod
+    def _backfill(
+        all_servers: dict[str, object],
+        server_extra: dict[str, object] | None = None,
+    ):
+        service_id = 9
+        lookup = _lookup(
+            _service(service_id, name="mysql-prod", address="10.0.0.5", port=3306),
+        )
+        task = _legacy_mysql_backup_task(
+            name="mysql-encrypted",
+            upload=["RSYNC"],
+            all_servers={"RSYNC_PATH": "/remote/backups", **all_servers},
+            server_extra=server_extra,
+        )
+        return _backfill_single_task(task, FORM_BACKFILL_ENTRIES[0], _ctx(lookup))
+
+    def _stamped_form(
+        self, *args: dict[str, object] | None, **kwargs: dict[str, object] | None
+    ) -> dict:
+        outcome = self._backfill(*args, **kwargs)
+        assert outcome.label == "stamped"
+        return outcome.stamped_data[RESERVED_FORM_KEY]
+
+    def test_unencrypted_task_stamps_no_encryption(self):
+        """Stamp an unencrypted task as ``none`` rather than inventing a format."""
+        stamped_form = self._stamped_form({"ENCRYPT": False})
+        assert stamped_form["encryption_format"] == EncryptionFormat.NONE
+
+    def test_aes256_task_stamps_the_aes256_format(self):
+        """Stamp an AES-256 task as ``aes256`` and keep its key file."""
+        stamped_form = self._stamped_form(
+            {"ENCRYPT": False, "XTRABACKUP_AES256_KEYFILE": "/keys/aes.key"}
+        )
+        assert stamped_form["encryption_format"] == EncryptionFormat.AES256
+        assert stamped_form["xtrabackup_aes256_keyfile"] == "/keys/aes.key"
+
+    def test_post_run_gpg_task_stamps_the_gpg_format(self):
+        """Stamp a post-run GPG task as ``gpg`` with its timing intact."""
+        stamped_form = self._stamped_form(
+            {"ENCRYPT": False, "POST_RUN_ENCRYPT": True}, self._RECIPIENT_BLOCK
+        )
+        assert stamped_form["encryption_format"] == EncryptionFormat.GPG
+        assert stamped_form["post_run_encrypt"] is True
+        assert stamped_form["encryption_recipient"] == "ops@example.com"
+
+    def test_dual_task_stamps_the_dual_format(self):
+        """Stamp a task carrying both an AES-256 key file and GPG as ``dual``."""
+        stamped_form = self._stamped_form(
+            {
+                "ENCRYPT": False,
+                "POST_RUN_ENCRYPT": True,
+                "XTRABACKUP_AES256_KEYFILE": "/keys/aes.key",
+            },
+            self._RECIPIENT_BLOCK,
+        )
+        assert stamped_form["encryption_format"] == EncryptionFormat.DUAL
+
+    def test_gpg_task_without_a_recoverable_recipient_is_refused(self):
+        """Refuse to stamp a GPG task whose recipient cannot be read back.
+
+        The recipient is required by a GPG format, so a reconstruction that lost
+        it is invalid. Being counted invalid leaves the task un-stamped and its
+        encryption untouched, where stamping the form without the recipient — or
+        with no format at all — would let the next save drop the encryption.
+        """
+        outcome = self._backfill({"ENCRYPT": False, "POST_RUN_ENCRYPT": True})
+        assert outcome.label == "skipped_invalid"
+
+
+class TestEncryptionFormatStampRepair:
+    """Fill ``encryption_format`` into stamps written before the selector existed.
+
+    These tasks were created through the schema form, so they already carry a
+    ``_form`` and the legacy reconstruction never looks at them. Their stamp names
+    the GPG timings and the key file but not the format, and the edit form fills
+    that gap from the schema default — ``none`` — so an encrypted task reloads
+    looking unencrypted.
+    """
+
+    @staticmethod
+    def _stamp(**overrides: object) -> dict[str, object]:
+        """Return a stamped create body with no ``encryption_format`` key."""
+        return {
+            "task_name": "mysql-encrypted",
+            "hostname": "executor-1",
+            "service_id": 9,
+            "backup_type": BackupType.XTRABACKUP.value,
+            "alias": "db1-mysql",
+            "alert_on_fail": False,
+            **overrides,
+        }
+
+    def _repair(self, **overrides: object) -> dict[str, object] | None:
+        return repair_mysql_backups_stamp(self._stamp(**overrides), _TASK, _CTX)
+
+    def _repaired_format(self, **overrides: object) -> EncryptionFormat:
+        repaired = self._repair(**overrides)
+        assert repaired is not None
+        repaired_format = repaired["encryption_format"]
+        assert isinstance(repaired_format, EncryptionFormat)
+        return repaired_format
+
+    @pytest.mark.parametrize(
+        ("stamped_fields", "expected"),
+        [
+            ({}, EncryptionFormat.NONE),
+            ({"encrypt": True}, EncryptionFormat.GPG),
+            ({"post_run_encrypt": True}, EncryptionFormat.GPG),
+            (
+                {"xtrabackup_aes256_keyfile": "/keys/aes.key"},
+                EncryptionFormat.AES256,
+            ),
+            (
+                {"encrypt": True, "xtrabackup_aes256_keyfile": "/keys/aes.key"},
+                EncryptionFormat.DUAL,
+            ),
+        ],
+    )
+    def test_derives_the_format_the_stamp_already_implies(
+        self, stamped_fields: dict[str, object], expected: EncryptionFormat
+    ):
+        """Derive each format from the fields the older stamp does carry."""
+        assert self._repaired_format(**stamped_fields) == expected
+
+    def test_a_key_file_off_xtrabackup_adds_no_aes_pass(self):
+        """Ignore a key file on an engine with no AES-256 path.
+
+        Deriving ``aes256`` there would write a format the task's own backup type
+        rejects, so the repair could never validate and the stamp would stay
+        broken.
+        """
+        assert (
+            self._repaired_format(
+                backup_type=BackupType.MYDUMPER.value,
+                xtrabackup_aes256_keyfile="/keys/aes.key",
+            )
+            == EncryptionFormat.NONE
+        )
+
+    @pytest.mark.parametrize(
+        "stored_format", [EncryptionFormat.NONE.value, EncryptionFormat.DUAL.value]
+    )
+    def test_a_stamp_naming_a_format_is_left_alone(self, stored_format: str):
+        """Report nothing to repair once the stamp names a format.
+
+        Including ``none``: an operator who chose it must not have it re-derived
+        from a field an earlier config left behind.
+        """
+        assert (
+            self._repair(
+                encryption_format=stored_format,
+                encrypt=True,
+                xtrabackup_aes256_keyfile="/keys/aes.key",
+            )
+            is None
+        )
+
+    def test_the_repaired_stamp_validates_and_replaces_the_stored_one(self):
+        """Run the repair through the orchestrator, not just the derivation.
+
+        The derived format has to satisfy the form's own gates against the rest of
+        the stored body — a format is only a repair if the create model accepts it.
+        The body encrypts in place with no upload provider, the shape most of these
+        stamps carry, so a gate demanding a target would leave them un-repaired.
+        """
+        task = _legacy_mysql_backup_task(name="mysql-encrypted")
+        task.data[RESERVED_FORM_KEY] = self._stamp(
+            encrypt=True, encryption_recipient="ops@example.com"
+        )
+        lookup = _lookup(
+            _service(9, name="mysql-prod", address="10.0.0.5", port=3306),
+        )
+
+        outcome = _backfill_single_task(task, FORM_BACKFILL_ENTRIES[0], _ctx(lookup))
+
+        assert outcome.label == "repaired"
+        assert outcome.stamped_data is not None
+        assert (
+            outcome.stamped_data[RESERVED_FORM_KEY]["encryption_format"]
+            == EncryptionFormat.GPG
+        )

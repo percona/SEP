@@ -42,7 +42,7 @@ Concrete cases: `3306`/`5432` ports → `DEFAULT_MYSQL_PORT`/`DEFAULT_POSTGRESQL
 | `len(v) > 0` `field_validator` | `NonEmptyStr` |
 | `.strip().lower()` `field_validator` | `Annotated[str, StringConstraints(strip_whitespace=True, to_lower=True)]` or `LowercaseStr` |
 | `field_validator` doing a string-*shape* check (split on a separator, reject empty halves, reject stray whitespace) | `Annotated[str, StringConstraints(pattern=...)]` field type |
-| `.nulls_last()` on an `ORDER BY` term | `app/core/db/utils.py::NullsLastOrdering(column, *, descending=False)` — `.nulls_last()` emits SQL MySQL cannot parse. Pass the bare column plus `descending=`, never a pre-`desc()`-ed expression |
+| `.nulls_last()` on an `ORDER BY` term | `app/core/db/utils.py::NullsLastOrdering(column, *, descending=False)` — one shared cache-keyed construct; pass the bare column plus `descending=`, never a pre-`desc()`-ed expression (which would render `<expr> DESC ASC NULLS LAST`) |
 
 **Rule of thumb.** If a new decorator or class has 15+ lines of state management (timestamps, eviction, key hashing, TTL math), ask "why isn't this `@alru_cache` or `@ttl_cache`?" Flag as **Important**.
 

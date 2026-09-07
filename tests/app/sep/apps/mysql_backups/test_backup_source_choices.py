@@ -30,8 +30,7 @@ from app.sep.apps.mysql_backups.backup_source_choices import (
     backup_source_value,
 )
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
-from app.sep.apps.mysql_backups.models import MysqlBackupRun
-from app.sep.apps.mysql_backups.restore.deps import UNKNOWN_SERVICE_SENTINEL
+from app.sep.apps.mysql_backups.models import MysqlBackupRun, UNKNOWN_SERVICE_SENTINEL
 from tests.app.sep.apps.mysql_backups.conftest import (
     authenticated_get,
     inventory_mock,

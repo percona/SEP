@@ -19,7 +19,7 @@ import logging
 
 from fastapi import APIRouter, status
 
-from app.api.deps import IsAuthenticatedDep
+from app.api.deps import IsAuthenticatedDep, IsServicePrincipalDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import TableManager
@@ -30,7 +30,13 @@ from app.inventory.deps import (
     TableListQueryDep,
     TableScopeDep,
 )
-from app.inventory.models import Table, TableDetailResponse, TableResponse, TableWrite
+from app.inventory.models import (
+    SyncHealthWrite,
+    Table,
+    TableDetailResponse,
+    TableResponse,
+    TableWrite,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,3 +122,26 @@ async def revive_table(session: SessionDep, table: RetirableTableDep) -> None:
     """
     logger.debug("Reviving table %s", table.id)
     await TableManager.revive(session, table)
+
+
+@router.post(
+    "/{table_id}/sync-health",
+    dependencies=[IsServicePrincipalDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def record_table_sync_health(
+    session: SessionDep,
+    table: RetirableTableDep,
+    outcome: SyncHealthWrite,
+) -> None:
+    """Record the outcome of one syncer attempt on a Table.
+
+    Addresses the table whether retired or not: the attempt happened, and a
+    concurrent retirement must not turn bookkeeping into a failed sync item.
+
+    :param session: The async database session.
+    :param table: The table the outcome was observed for, retired or not.
+    :param outcome: What the syncer reported.
+    """
+    logger.debug("Recording %s sync health on table %s", outcome.outcome, table.id)
+    await TableManager.record_sync_health(session, table, outcome)

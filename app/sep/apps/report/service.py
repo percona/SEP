@@ -258,8 +258,8 @@ async def collect_advisors(
         if raw.get("disabled"):
             continue
         family = raw.get("family")
+        family_suffix = family.split("_")[-1] if family else ""
         if family:
-            family_suffix = family.split("_")[-1]
             if family_suffix.lower() not in active_service_types:
                 continue
         elif raw["name"].split("_")[0].lower() not in allowed:

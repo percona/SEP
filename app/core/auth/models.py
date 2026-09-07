@@ -367,14 +367,13 @@ class BaseUser(BaseModel, ABC):
 
     @classmethod
     @abstractmethod
-    async def get_users(cls) -> list[Self]:
+    async def get_users(cls) -> Sequence[Self]:
         """Retrieve all users.
 
         This method must be overridden in subclasses to provide specific logic for
         retrieving all users from the data store.
 
-        :return: A list of user instances.
-        :rtype: list[Self]
+        :return: A sequence of user instances.
         """
 
     @classmethod

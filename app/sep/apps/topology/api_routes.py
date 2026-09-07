@@ -45,7 +45,7 @@ from app.core.exceptions import (
     HTTPServiceUnavailableException,
 )
 from app.core.pagination.models import fetch_all_dict_items, Pagination
-from app.core.requests import RemoteAPI
+from app.core.requests import as_json_object, JSONBody, RemoteAPI
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.topology import payloads
@@ -102,7 +102,7 @@ async def _collect_mysql_host_entries(inventory_api: RemoteAPI) -> list[str]:
     :return: De-duplicated MySQL ``host:port`` entries in inventory order.
     """
 
-    async def _fetch_page(pagination: Pagination) -> dict[str, Any]:
+    async def _fetch_page(pagination: Pagination) -> JSONBody:
         return await inventory_api.get(
             "/services/",
             params={
@@ -248,7 +248,7 @@ def _parse_ids_param(ids: str) -> list[int]:
 async def _fetch_task_history(
     tasks_api: RemoteAPI, task_history_id: int
 ) -> dict[str, Any]:
-    return await tasks_api.get(f"/history/{task_history_id}")
+    return as_json_object(await tasks_api.get(f"/history/{task_history_id}"))
 
 
 def _is_topology_history(history: dict[str, Any], current_user_id: str) -> bool:

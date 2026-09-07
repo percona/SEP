@@ -95,11 +95,8 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
         if app.periodic_task_schedules is None:
             continue
         celery_module = app_celery_module_for(app.key)
-        specs = (
-            app.periodic_task_schedules()
-            if callable(app.periodic_task_schedules)
-            else app.periodic_task_schedules
-        )
+        schedules = app.periodic_task_schedules
+        specs = schedules if isinstance(schedules, list) else schedules()
         for spec in specs:
             if not spec.qualified and not celery_module:
                 continue

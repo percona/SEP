@@ -28,7 +28,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.alerts.config import AlertSettings
 from app.core.config import Settings
 from app.core.settings_override.cache import build_snapshot
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import (
     chain_is_locked,
     coerce_nested_field_value,
@@ -41,7 +40,12 @@ from app.core.settings_override.registry import (
 from app.sep.apps.alerts.config import AlertsSettings
 from app.sep.config import SEPSettings
 from app.tasks.config import TasksSettings
-from tests.app.core.settings_override.conftest import insert_override_row
+from tests.app.core.settings_override.conftest import (
+    insert_override_row,
+    SEP_SETTINGS_TOKEN,
+    SETTINGS_TOKEN,
+    TASKS_SETTINGS_TOKEN,
+)
 
 ANNOTATIONS_KEY = "Settings.PMM__annotations_enabled"
 _SYNC_REFRESH_OVERRIDE = 11
@@ -263,7 +267,7 @@ class TestSnapshotFiltering:
         restrict("SEPSettings.SYNC_REFRESH_TIME")
         await insert_override_row(
             session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SEP_SETTINGS_TOKEN,
             key="CONNECTIVITY_CHECK_DEFAULT",
             value=False,
             is_active=True,
@@ -280,7 +284,7 @@ class TestSnapshotFiltering:
         restrict("SEPSettings.SYNC_REFRESH_TIME")
         await insert_override_row(
             session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SEP_SETTINGS_TOKEN,
             key="SYNC_REFRESH_TIME",
             value=_SYNC_REFRESH_OVERRIDE,
             is_active=True,
@@ -324,7 +328,7 @@ class TestSnapshotFiltering:
         restrict(ANNOTATIONS_KEY)
         await insert_override_row(
             session,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="NOMAD__timeout",
             value=30,
             is_active=True,
@@ -347,7 +351,7 @@ class TestSnapshotFiltering:
         restrict(ANNOTATIONS_KEY)
         await insert_override_row(
             session,
-            setting_class=SettingClassEnum.SETTINGS,
+            setting_class=SETTINGS_TOKEN,
             key="PMM__endpoint",
             value="https://stale.example.com",
             is_active=True,
@@ -366,7 +370,7 @@ class TestSnapshotFiltering:
         restrict(ANNOTATIONS_KEY)
         await insert_override_row(
             session,
-            setting_class=SettingClassEnum.SETTINGS,
+            setting_class=SETTINGS_TOKEN,
             key="PMM__annotations_enabled",
             value=True,
             is_active=True,

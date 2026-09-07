@@ -19,7 +19,7 @@ import logging
 
 from fastapi import APIRouter, status
 
-from app.api.deps import IsAuthenticatedDep
+from app.api.deps import IsAuthenticatedDep, IsServicePrincipalDep
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.inventory.crud import (
@@ -40,6 +40,7 @@ from app.inventory.models import (
     SchemaDetailResponse,
     SchemaResponse,
     SchemaWrite,
+    SyncHealthWrite,
     Table,
     TableResponse,
     TableWrite,
@@ -137,6 +138,29 @@ async def revive_schema(session: SessionDep, schema: RetirableSchemaDep) -> None
     """
     logger.debug("Reviving schema %s", schema.id)
     await SchemaManager.revive(session, schema)
+
+
+@router.post(
+    "/{schema_id}/sync-health",
+    dependencies=[IsServicePrincipalDep],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def record_schema_sync_health(
+    session: SessionDep,
+    schema: RetirableSchemaDep,
+    outcome: SyncHealthWrite,
+) -> None:
+    """Record the outcome of one syncer attempt on a Schema.
+
+    Addresses the schema whether retired or not: the attempt happened, and a
+    concurrent retirement must not turn bookkeeping into a failed sync item.
+
+    :param session: The async database session.
+    :param schema: The schema the outcome was observed for, retired or not.
+    :param outcome: What the syncer reported.
+    """
+    logger.debug("Recording %s sync health on schema %s", outcome.outcome, schema.id)
+    await SchemaManager.record_sync_health(session, schema, outcome)
 
 
 @router.get("/{schema_id}/tables/", dependencies=[IsAuthenticatedDep])

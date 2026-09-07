@@ -71,10 +71,16 @@ export interface paths {
      *     :param session: The sub-app's database session.
      *     :param remote_api: The client for remote settings classes (``None`` when
      *         the router wires none).
+     *     :param actor: The calling admin's username, recorded on every row the
+     *         batch writes and reported back on each response.
      *     :return: One :class:`SettingResponse` per applied key, in input order.
      *     :raises HTTPNotFoundException: If the class isn't exposed.
      *     :raises HTTPUnprocessableEntityException: If any key fails validation;
      *         no rows are written.
+     *     :raises HTTPBadGatewayException: For a remote class, when the owning
+     *         sub-app returns a server error (status >= 500) or is unreachable.
+     *     :raises IntegrityError: When the replay of a batch that lost the
+     *         unique-index race conflicts again, which leaves nothing written.
      */
     patch: operations['settings_patch_settings_admin_settings__setting_class__patch'];
     trace?: never;
@@ -408,6 +414,33 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/nodes/{node_id}/sync-health': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Record Node Sync Health
+     * @description Record the outcome of one syncer attempt on a Node.
+     *
+     *     Addresses the node whether retired or not: the attempt happened, and a
+     *     concurrent retirement must not turn bookkeeping into a failed sync item.
+     *
+     *     :param session: The async database session.
+     *     :param node: The node the outcome was observed for, retired or not.
+     *     :param outcome: What the syncer reported.
+     */
+    post: operations['nodes_record_node_sync_health_nodes__node_id__sync_health_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/nodes/{node_id}/system-observation': {
     parameters: {
       query?: never;
@@ -519,6 +552,33 @@ export interface paths {
      *         key the revived schema would reclaim.
      */
     post: operations['schemas_revive_schema_schemas__schema_id__revive_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/schemas/{schema_id}/sync-health': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Record Schema Sync Health
+     * @description Record the outcome of one syncer attempt on a Schema.
+     *
+     *     Addresses the schema whether retired or not: the attempt happened, and a
+     *     concurrent retirement must not turn bookkeeping into a failed sync item.
+     *
+     *     :param session: The async database session.
+     *     :param schema: The schema the outcome was observed for, retired or not.
+     *     :param outcome: What the syncer reported.
+     */
+    post: operations['schemas_record_schema_sync_health_schemas__schema_id__sync_health_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -761,6 +821,33 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/services/{service_id}/sync-health': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Record Service Sync Health
+     * @description Record the outcome of one syncer attempt on a Service.
+     *
+     *     Addresses the service whether retired or not: the attempt happened, and a
+     *     concurrent retirement must not turn bookkeeping into a failed sync item.
+     *
+     *     :param session: The async database session.
+     *     :param service: The service the outcome was observed for, retired or not.
+     *     :param outcome: What the syncer reported.
+     */
+    post: operations['services_record_service_sync_health_services__service_id__sync_health_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/services/{service_id}/system-observation': {
     parameters: {
       query?: never;
@@ -881,6 +968,33 @@ export interface paths {
      *         key the revived table would reclaim.
      */
     post: operations['tables_revive_table_tables__table_id__revive_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/tables/{table_id}/sync-health': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Record Table Sync Health
+     * @description Record the outcome of one syncer attempt on a Table.
+     *
+     *     Addresses the table whether retired or not: the attempt happened, and a
+     *     concurrent retirement must not turn bookkeeping into a failed sync item.
+     *
+     *     :param session: The async database session.
+     *     :param table: The table the outcome was observed for, retired or not.
+     *     :param outcome: What the syncer reported.
+     */
+    post: operations['tables_record_table_sync_health_tables__table_id__sync_health_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1144,11 +1258,23 @@ export interface components {
      *     :param retired_at: When the node stopped being reported upstream, or None while
      *         it is active.
      *     :param retirement_key: The discriminator carried inside every unique index.
+     *     :param last_synced_at: When a syncer last confirmed the node against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the node is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      *     :param services: A list of services associated with the node.
      */
     Node: {
       /** Address */
       address: string;
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -1158,11 +1284,17 @@ export interface components {
       external_id: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
       source: components['schemas']['SourceEnum'];
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /**
        * Type
        * @default generic
@@ -1205,11 +1337,23 @@ export interface components {
      *     :param type: The type of the node (e.g., remote, generic).
      *     :param retired_at: When the node stopped being reported upstream, or None while
      *         it is active.
+     *     :param last_synced_at: When a syncer last confirmed the node against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the node is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      *     :param services: A list of services associated with the node.
      */
     NodeResponse: {
       /** Address */
       address: string;
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -1219,6 +1363,10 @@ export interface components {
       external_id: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
@@ -1226,6 +1374,8 @@ export interface components {
       /** Services */
       services: components['schemas']['Service'][];
       source: components['schemas']['SourceEnum'];
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /**
        * Type
        * @default generic
@@ -1400,9 +1550,21 @@ export interface components {
      *     :param retired_at: When the schema stopped being reported upstream, or None
      *         while it is active.
      *     :param retirement_key: The discriminator carried inside every unique index.
+     *     :param last_synced_at: When a syncer last confirmed the schema against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the schema is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      *     :param tables: A list of tables within the schema.
      */
     Schema: {
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -1410,12 +1572,18 @@ export interface components {
       created_at?: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
       /** Service Id */
       service_id: number;
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -1432,8 +1600,20 @@ export interface components {
      *     :param service_id: The unique identifier of the service to which the schema belongs.
      *     :param retired_at: When the schema stopped being reported upstream, or None while
      *         it is active.
+     *     :param last_synced_at: When a syncer last confirmed the schema against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the schema is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      */
     SchemaCompactResponse: {
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -1441,12 +1621,18 @@ export interface components {
       created_at?: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
       /** Service Id */
       service_id: number;
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -1465,12 +1651,21 @@ export interface components {
      */
     SchemaDetailResponse: {
       /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
+      /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
@@ -1478,6 +1673,8 @@ export interface components {
       service: components['schemas']['Service'];
       /** Service Id */
       service_id: number;
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /** Tables */
       tables: components['schemas']['Table'][];
       /** Updated At */
@@ -1496,9 +1693,21 @@ export interface components {
      *     :param service_id: The unique identifier of the service to which the schema belongs.
      *     :param retired_at: When the schema stopped being reported upstream, or None while
      *         it is active.
+     *     :param last_synced_at: When a syncer last confirmed the schema against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the schema is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      *     :param tables: A list of tables within the schema.
      */
     SchemaResponse: {
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -1506,12 +1715,18 @@ export interface components {
       created_at?: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
       /** Service Id */
       service_id: number;
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /** Tables */
       tables: components['schemas']['Table'][];
       /** Updated At */
@@ -1558,11 +1773,23 @@ export interface components {
      *     :param retired_at: When the service stopped being reported upstream, or None
      *         while it is active.
      *     :param retirement_key: The discriminator carried inside every unique index.
+     *     :param last_synced_at: When a syncer last confirmed the service against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the service is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      *     :param schemas: A list of schemas associated with the service.
      */
     Service: {
       /** Cluster */
       cluster?: string | null;
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -1578,6 +1805,10 @@ export interface components {
       external_id: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Node Id */
@@ -1588,6 +1819,8 @@ export interface components {
       replication_set?: string | null;
       /** Retired At */
       retired_at?: string | null;
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       type: components['schemas']['ServiceTypeEnum'];
       /** Updated At */
       updated_at?: string | null;
@@ -1617,6 +1850,11 @@ export interface components {
       /** Cluster */
       cluster?: string | null;
       /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
+      /**
        * Created At
        * Format: date-time
        */
@@ -1631,6 +1869,10 @@ export interface components {
       external_id: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       node: components['schemas']['Node'];
@@ -1644,6 +1886,8 @@ export interface components {
       retired_at?: string | null;
       /** Schemas */
       schemas: components['schemas']['Schema'][];
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       type: components['schemas']['ServiceTypeEnum'];
       /** Updated At */
       updated_at?: string | null;
@@ -1684,10 +1928,22 @@ export interface components {
      *     :param node: The node to which the service is associated.
      *     :param retired_at: When the service stopped being reported upstream, or None
      *         while it is active.
+     *     :param last_synced_at: When a syncer last confirmed the service against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the service is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      */
     ServiceResponse: {
       /** Cluster */
       cluster?: string | null;
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /**
        * Created At
        * Format: date-time
@@ -1703,6 +1959,10 @@ export interface components {
       external_id: string;
       /** Id */
       id: number | null;
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       node: components['schemas']['Node'];
@@ -1716,6 +1976,8 @@ export interface components {
       retired_at?: string | null;
       /** Schemas */
       schemas: components['schemas']['Schema'][];
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       type: components['schemas']['ServiceTypeEnum'];
       /** Updated At */
       updated_at?: string | null;
@@ -1915,8 +2177,13 @@ export interface components {
      *         (``SecretStr`` / ``SecretBytes``) at any depth.
      *     :param is_complex: Whether the field's annotation is or contains a Pydantic
      *         ``BaseModel`` subclass (true for nested submodels).
-     *     :param has_override: Whether a row exists in the ``settingoverride`` table
-     *         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
+     *     :param has_override: Whether an **active** row in the ``settingoverride``
+     *         table applies to this ``(setting_class, key)`` pair. An inactive row is
+     *         skipped by the cache loader, so the served value falls back to the
+     *         declared default and reporting it as overridden would tell the UI a
+     *         field is overridden while showing it that default. A nested row also
+     *         marks every canonical prefix of its chain, so a parent reports ``True``
+     *         when only a deeper leaf carries a row.
      *     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
      *         present it separately from everyday settings. Display-only:
      *         it does not affect PATCH/DELETE eligibility.
@@ -1926,6 +2193,18 @@ export interface components {
      *         PATCH/DELETE server-side; the runtime gate is the real enforcement.
      *     :param options: Selectable enum members for dropdown UIs, or ``None`` when
      *         the field is not an ``Enum`` annotation. Aliased members are excluded.
+     *     :param updated_at: When the override applying to this key was last saved,
+     *         falling back to the row's creation time for a row written before the
+     *         stamp was recorded. ``None`` when ``has_override`` is ``False``.
+     *         Timestamps carry second granularity.
+     *     :param updated_by: The username that last saved that override, or ``None``
+     *         both when no override applies and when the row predates the actor
+     *         column. A key can draw on several rows (a nested parent reporting on its
+     *         leaves), in which case the pair comes from the row carrying the latest
+     *         timestamp. Two writes landing within the same second are
+     *         indistinguishable by timestamp, and the pair reported is then whichever
+     *         contributing row was created later, which need not be the one written
+     *         later.
      */
     SettingResponse: {
       /** Default Value */
@@ -1959,6 +2238,10 @@ export interface components {
       setting_class: string;
       /** Type */
       type: string;
+      /** Updated At */
+      updated_at?: string | null;
+      /** Updated By */
+      updated_by?: string | null;
       /** Value */
       value: unknown;
     };
@@ -1997,6 +2280,39 @@ export interface components {
      */
     SourceEnum: 'pmm';
     /**
+     * SyncHealthWrite
+     * @description Define the body reporting one entity's sync outcome.
+     *
+     *     :param outcome: Whether the attempt succeeded or failed.
+     *     :param error: The failure's message, never empty. Required on FAILURE,
+     *         absent on SUCCESS.
+     *     :param attempted_at: When the syncer began this attempt. Stamped as
+     *         ``last_synced_at`` on success, and compared against the row's current
+     *         ``last_synced_at`` so a late-arriving report from an older attempt
+     *         cannot overwrite a newer one. Refused when it sits further ahead of this
+     *         service's clock than the tolerated skew, since nothing later could then
+     *         supersede it.
+     */
+    SyncHealthWrite: {
+      /**
+       * Attempted At
+       * Format: date-time
+       */
+      attempted_at: string;
+      /** Error */
+      error?: string | null;
+      outcome: components['schemas']['SyncOutcomeEnum'];
+    };
+    /**
+     * SyncOutcomeEnum
+     * @description Enumerate the outcomes a syncer reports for one entity's sync attempt.
+     *
+     *     :cvar SUCCESS: The entity was compared against its source and updated.
+     *     :cvar FAILURE: The attempt raised before the comparison completed.
+     * @enum {string}
+     */
+    SyncOutcomeEnum: 'success' | 'failure';
+    /**
      * Table
      * @description Represent a table within a schema.
      *
@@ -2013,9 +2329,21 @@ export interface components {
      *     :param retired_at: When the table stopped being reported upstream, or None while
      *         it is active.
      *     :param retirement_key: The discriminator carried inside every unique index.
+     *     :param last_synced_at: When a syncer last confirmed the table against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the table is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      *     :param database: The schema to which the table is associated.
      */
     Table: {
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /** Create */
       create: string;
       /**
@@ -2029,12 +2357,18 @@ export interface components {
       keys: {
         [key: string]: unknown;
       };
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
       /** Schema Id */
       schema_id: number;
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -2053,6 +2387,11 @@ export interface components {
      *     :param database: The table's schema.
      */
     TableDetailResponse: {
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /** Create */
       create: string;
       /**
@@ -2067,12 +2406,18 @@ export interface components {
       keys: {
         [key: string]: unknown;
       };
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
       /** Schema Id */
       schema_id: number;
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -2090,8 +2435,20 @@ export interface components {
      *     :param schema_id: The foreign key referencing the schema to which the table belongs.
      *     :param retired_at: When the table stopped being reported upstream, or None while
      *         it is active.
+     *     :param last_synced_at: When a syncer last confirmed the table against its
+     *         source, or None if that has never happened.
+     *     :param last_sync_error: The message from the most recent failed attempt, or
+     *         None while the table is syncing cleanly.
+     *     :param sync_failing_since: When the current run of failures began, or None
+     *         while not failing.
+     *     :param consecutive_failures: Failed attempts since the last success.
      */
     TableResponse: {
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
       /** Create */
       create: string;
       /**
@@ -2105,12 +2462,18 @@ export interface components {
       keys: {
         [key: string]: unknown;
       };
+      /** Last Sync Error */
+      last_sync_error?: string | null;
+      /** Last Synced At */
+      last_synced_at?: string | null;
       /** Name */
       name: string;
       /** Retired At */
       retired_at?: string | null;
       /** Schema Id */
       schema_id: number;
+      /** Sync Failing Since */
+      sync_failing_since?: string | null;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -2679,6 +3042,39 @@ export interface operations {
       };
     };
   };
+  nodes_record_node_sync_health_nodes__node_id__sync_health_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SyncHealthWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   nodes_retrieve_host_system_observation_nodes__node_id__system_observation_get: {
     parameters: {
       query?: never;
@@ -2889,6 +3285,39 @@ export interface operations {
       cookie?: never;
     };
     requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schemas_record_schema_sync_health_schemas__schema_id__sync_health_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SyncHealthWrite'];
+      };
+    };
     responses: {
       /** @description Successful Response */
       204: {
@@ -3321,6 +3750,39 @@ export interface operations {
       };
     };
   };
+  services_record_service_sync_health_services__service_id__sync_health_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SyncHealthWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   services_retrieve_service_system_observation_services__service_id__system_observation_get: {
     parameters: {
       query?: never;
@@ -3553,6 +4015,39 @@ export interface operations {
       cookie?: never;
     };
     requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tables_record_table_sync_health_tables__table_id__sync_health_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        table_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SyncHealthWrite'];
+      };
+    };
     responses: {
       /** @description Successful Response */
       204: {

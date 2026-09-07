@@ -29,6 +29,7 @@ from fastapi import APIRouter, Body, status
 
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
+from app.core.requests import as_json_object
 from app.core.utils.fields import ArbitraryMapping
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
 from app.sep.api.proxy import reraise_upstream_tasks_errors
@@ -83,7 +84,9 @@ async def create_periodic_task(
         or a connection-level ``OSError``.
     """
     with reraise_upstream_tasks_errors():
-        return await tasks_api.post(f"/{task_name}/periodic/", json=body)
+        return ArbitraryMapping(
+            as_json_object(await tasks_api.post(f"/{task_name}/periodic/", json=body))
+        )
 
 
 @router.put("/{periodic_task_id}", responses=UPSTREAM_TASKS_502_RESPONSE)
@@ -104,7 +107,11 @@ async def update_periodic_task(
         or a connection-level ``OSError``.
     """
     with reraise_upstream_tasks_errors():
-        return await tasks_api.put(f"/periodic/{periodic_task_id}", json=body)
+        return ArbitraryMapping(
+            as_json_object(
+                await tasks_api.put(f"/periodic/{periodic_task_id}", json=body)
+            )
+        )
 
 
 @router.delete(

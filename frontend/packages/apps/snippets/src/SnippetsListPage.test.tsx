@@ -18,6 +18,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
+import { useSnippetDownload } from '@sep/framework';
 import { SnippetsListPage } from './SnippetsListPage';
 import {
   useSnippets,
@@ -31,6 +32,16 @@ import {
 
 vi.mock('react-router', () => ({
   useNavigate: () => vi.fn(),
+}));
+
+/** Flipped per test to cover the read-only (non-admin) rendering. */
+let mockCanMutate = true;
+
+// Partial mock: only the auth reader is stubbed so the page's approval /
+// refresh gating can be driven per test.
+vi.mock('@sep/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sep/api')>()),
+  useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
 }));
 
 // The download button owns a mutation now (the SPA fetches the file through the
@@ -73,6 +84,18 @@ function serviceTypeFacet(service_types: string[], has_uncategorized: boolean) {
   return {
     data: { service_types, has_uncategorized },
   } as unknown as ReturnType<typeof useSnippetServiceTypes>;
+}
+
+// Default every test to a session that may mutate; the read-only cases opt out
+// through `renderReadOnly`.
+beforeEach(() => {
+  mockCanMutate = true;
+});
+
+/** Render the page as a session that may not mutate. */
+function renderReadOnly() {
+  mockCanMutate = false;
+  return render(<SnippetsListPage />);
 }
 
 function snippetsListResult(
@@ -148,13 +171,13 @@ describe('SnippetsListPage — ApproveButton', () => {
     });
 
     it('disables approval until the snippet has been downloaded', () => {
-      render(<SnippetsListPage isAdmin />);
+      render(<SnippetsListPage />);
 
       expect(screen.getByRole('button', { name: /approve/i })).toBeDisabled();
     });
 
     it('download action enables the approval confirmation flow', () => {
-      render(<SnippetsListPage isAdmin />);
+      render(<SnippetsListPage />);
 
       fireEvent.click(screen.getByRole('button', { name: /download/i }));
       fireEvent.click(screen.getByRole('button', { name: /approve/i }));
@@ -164,7 +187,7 @@ describe('SnippetsListPage — ApproveButton', () => {
     });
 
     it('dialog warns about approving without inspection', () => {
-      render(<SnippetsListPage isAdmin />);
+      render(<SnippetsListPage />);
 
       fireEvent.click(screen.getByRole('button', { name: /download/i }));
       fireEvent.click(screen.getByRole('button', { name: /approve/i }));
@@ -174,7 +197,7 @@ describe('SnippetsListPage — ApproveButton', () => {
     });
 
     it('dialog includes the snippet filename', () => {
-      render(<SnippetsListPage isAdmin />);
+      render(<SnippetsListPage />);
 
       fireEvent.click(screen.getByRole('button', { name: /download/i }));
       fireEvent.click(screen.getByRole('button', { name: /approve/i }));
@@ -183,7 +206,7 @@ describe('SnippetsListPage — ApproveButton', () => {
     });
 
     it('Cancel closes the dialog without approving', async () => {
-      render(<SnippetsListPage isAdmin />);
+      render(<SnippetsListPage />);
 
       fireEvent.click(screen.getByRole('button', { name: /download/i }));
       fireEvent.click(screen.getByRole('button', { name: /approve/i }));
@@ -198,7 +221,7 @@ describe('SnippetsListPage — ApproveButton', () => {
     });
 
     it('Confirm in dialog calls approve mutation', () => {
-      render(<SnippetsListPage isAdmin />);
+      render(<SnippetsListPage />);
 
       fireEvent.click(screen.getByRole('button', { name: /download/i }));
       fireEvent.click(screen.getByRole('button', { name: /approve/i }));
@@ -214,7 +237,7 @@ describe('SnippetsListPage — ApproveButton', () => {
     });
 
     it('fires remove mutation immediately without a dialog', () => {
-      render(<SnippetsListPage isAdmin />);
+      render(<SnippetsListPage />);
 
       fireEvent.click(screen.getByRole('button', { name: /remove/i }));
 
@@ -229,7 +252,7 @@ describe('SnippetsListPage — ApproveButton', () => {
     });
 
     it('opens a confirmation dialog instead of batch approving immediately', () => {
-      render(<SnippetsListPage isAdmin />);
+      render(<SnippetsListPage />);
 
       fireEvent.click(screen.getByRole('checkbox', { name: /select check\.sh/i }));
       fireEvent.click(screen.getByRole('button', { name: /batch approve/i }));
@@ -239,7 +262,7 @@ describe('SnippetsListPage — ApproveButton', () => {
     });
 
     it('confirming the batch dialog calls the batch mutation', () => {
-      render(<SnippetsListPage isAdmin />);
+      render(<SnippetsListPage />);
 
       fireEvent.click(screen.getByRole('checkbox', { name: /select check\.sh/i }));
       fireEvent.click(screen.getByRole('button', { name: /batch approve/i }));
@@ -249,7 +272,7 @@ describe('SnippetsListPage — ApproveButton', () => {
     });
 
     it('select all ignores already-approved snippets', () => {
-      render(<SnippetsListPage isAdmin />);
+      render(<SnippetsListPage />);
 
       fireEvent.click(screen.getByRole('checkbox', { name: /select all snippets/i }));
 
@@ -258,6 +281,137 @@ describe('SnippetsListPage — ApproveButton', () => {
       expect(screen.getByRole('checkbox', { name: /select approved\.sh/i })).toBeDisabled();
       expect(screen.getByRole('button', { name: /batch approve \(1\)/i })).toBeInTheDocument();
     });
+  });
+});
+
+describe('SnippetsListPage — row action failure reporting', () => {
+  const approveMutate = vi.fn();
+  const removeMutate = vi.fn();
+  const batchMutate = vi.fn();
+  const refusal = new ApiError({
+    kind: 'http',
+    status: 403,
+    message: "You don't have permission to perform this action",
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseApproveSnippet.mockReturnValue({
+      mutate: approveMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useApproveSnippet>);
+    mockUseRemoveSnippetApproval.mockReturnValue({
+      mutate: removeMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useRemoveSnippetApproval>);
+    mockUseBatchApproveSnippets.mockReturnValue({
+      mutate: batchMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useBatchApproveSnippets>);
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: false },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+    vi.mocked(useSnippetDownload).mockReturnValue({
+      mutate: (_params: unknown, callbacks?: { onSuccess?: () => void }) =>
+        callbacks?.onSuccess?.(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useSnippetDownload>);
+  });
+
+  it('reports a refused download', () => {
+    mockUseSnippets.mockReturnValue(snippetsListResult([unapprovedSnippet]));
+    vi.mocked(useSnippetDownload).mockReturnValue({
+      mutate: (_params: unknown, callbacks?: { onError?: (error: unknown) => void }) =>
+        callbacks?.onError?.(refusal),
+      isPending: false,
+    } as unknown as ReturnType<typeof useSnippetDownload>);
+
+    render(<SnippetsListPage />);
+    fireEvent.click(screen.getByRole('button', { name: /download/i }));
+
+    expect(screen.getByTestId('snippet-row-action-error')).toHaveTextContent(
+      "You don't have permission to perform this action",
+    );
+  });
+
+  it('reports a refused approve on the list the dialog closed over', async () => {
+    mockUseSnippets.mockReturnValue(snippetsListResult([unapprovedSnippet]));
+    approveMutate.mockImplementation((_vars, opts) => opts.onError?.(refusal));
+
+    render(<SnippetsListPage />);
+    fireEvent.click(screen.getByRole('button', { name: /download/i }));
+    fireEvent.click(screen.getByRole('button', { name: /approve/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^approve$/i }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('snippet-row-action-error')).toHaveTextContent(
+        "You don't have permission to perform this action",
+      ),
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('reports a refused remove-approval', () => {
+    mockUseSnippets.mockReturnValue(snippetsListResult([approvedSnippet]));
+    removeMutate.mockImplementation((_vars, opts) => opts.onError?.(refusal));
+
+    render(<SnippetsListPage />);
+    fireEvent.click(screen.getByRole('button', { name: /remove/i }));
+
+    expect(screen.getByTestId('snippet-row-action-error')).toHaveTextContent(
+      "You don't have permission to perform this action",
+    );
+  });
+
+  it('reports nothing when a row action succeeds', () => {
+    mockUseSnippets.mockReturnValue(snippetsListResult([approvedSnippet]));
+    removeMutate.mockImplementation((_vars, opts) => opts.onSuccess?.());
+
+    render(<SnippetsListPage />);
+    fireEvent.click(screen.getByRole('button', { name: /remove/i }));
+
+    expect(screen.queryByTestId('snippet-row-action-error')).not.toBeInTheDocument();
+  });
+
+  it('drops a previous row failure when the next row action is fired', () => {
+    // One alert serves every row, so a refusal from one attempt must not outlive
+    // the next attempt and read as its result.
+    mockUseSnippets.mockReturnValue(snippetsListResult([approvedSnippet]));
+    removeMutate.mockImplementationOnce((_vars, opts) => opts.onError?.(refusal));
+
+    render(<SnippetsListPage />);
+    fireEvent.click(screen.getByRole('button', { name: /remove/i }));
+    expect(screen.getByTestId('snippet-row-action-error')).toBeInTheDocument();
+
+    removeMutate.mockImplementation((_vars, opts) => opts.onSuccess?.());
+    fireEvent.click(screen.getByRole('button', { name: /remove/i }));
+
+    expect(screen.queryByTestId('snippet-row-action-error')).not.toBeInTheDocument();
+  });
+
+  it("reports a refused batch approve with the server's reason, not a 400-only string", () => {
+    mockUseSnippets.mockReturnValue(snippetsListResult([unapprovedSnippet]));
+    // The hook wraps every unstructured failure in an Error whose own message
+    // says nothing; the reason it carries is on `raw`.
+    const wrapped = Object.assign(new Error('Batch approval failed'), {
+      structured: false as const,
+      raw: refusal,
+    });
+    batchMutate.mockImplementation((_vars, opts) => opts.onError?.(wrapped));
+
+    render(<SnippetsListPage />);
+    fireEvent.click(screen.getByRole('checkbox', { name: /select check\.sh/i }));
+    fireEvent.click(screen.getByRole('button', { name: /batch approve/i }));
+    fireEvent.click(screen.getByRole('button', { name: /approve selected/i }));
+
+    expect(
+      screen.getByText("You don't have permission to perform this action"),
+    ).toBeInTheDocument();
   });
 });
 
@@ -285,35 +439,35 @@ describe('SnippetsListPage — RefreshButton', () => {
     } as unknown as ReturnType<typeof useRefreshSnippets>);
   });
 
-  it('hides refresh button when manual_sync_enabled is false (admin)', () => {
+  it('hides refresh button when manual_sync_enabled is false (may mutate)', () => {
     mockUseSnippetsCapabilities.mockReturnValue({
       data: { manual_sync_enabled: false },
       isLoading: false,
     } as unknown as ReturnType<typeof useSnippetsCapabilities>);
 
-    render(<SnippetsListPage isAdmin />);
+    render(<SnippetsListPage />);
 
     expect(screen.queryByRole('button', { name: /refresh snippets/i })).not.toBeInTheDocument();
   });
 
-  it('hides refresh button when user is not admin (sync enabled)', () => {
+  it('hides refresh button for a read-only session (sync enabled)', () => {
     mockUseSnippetsCapabilities.mockReturnValue({
       data: { manual_sync_enabled: true },
       isLoading: false,
     } as unknown as ReturnType<typeof useSnippetsCapabilities>);
 
-    render(<SnippetsListPage isAdmin={false} />);
+    renderReadOnly();
 
     expect(screen.queryByRole('button', { name: /refresh snippets/i })).not.toBeInTheDocument();
   });
 
-  it('shows refresh button when isAdmin and manual_sync_enabled', () => {
+  it('shows refresh button when the session may mutate and manual_sync_enabled', () => {
     mockUseSnippetsCapabilities.mockReturnValue({
       data: { manual_sync_enabled: true },
       isLoading: false,
     } as unknown as ReturnType<typeof useSnippetsCapabilities>);
 
-    render(<SnippetsListPage isAdmin />);
+    render(<SnippetsListPage />);
 
     expect(screen.getByRole('button', { name: /refresh snippets/i })).toBeInTheDocument();
   });
@@ -324,7 +478,7 @@ describe('SnippetsListPage — RefreshButton', () => {
       isLoading: false,
     } as unknown as ReturnType<typeof useSnippetsCapabilities>);
 
-    render(<SnippetsListPage isAdmin />);
+    render(<SnippetsListPage />);
     fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -340,7 +494,7 @@ describe('SnippetsListPage — RefreshButton', () => {
       isLoading: false,
     } as unknown as ReturnType<typeof useSnippetsCapabilities>);
 
-    render(<SnippetsListPage isAdmin />);
+    render(<SnippetsListPage />);
     fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
 
@@ -356,7 +510,7 @@ describe('SnippetsListPage — RefreshButton', () => {
       isLoading: false,
     } as unknown as ReturnType<typeof useSnippetsCapabilities>);
 
-    render(<SnippetsListPage isAdmin />);
+    render(<SnippetsListPage />);
     fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
     fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }));
 
@@ -373,7 +527,7 @@ describe('SnippetsListPage — RefreshButton', () => {
       isPending: true,
     } as unknown as ReturnType<typeof useRefreshSnippets>);
 
-    render(<SnippetsListPage isAdmin />);
+    render(<SnippetsListPage />);
 
     expect(screen.getByRole('button', { name: /refresh snippets/i })).toBeDisabled();
   });
@@ -390,7 +544,7 @@ describe('SnippetsListPage — RefreshButton', () => {
       isPending: false,
     } as unknown as ReturnType<typeof useRefreshSnippets>);
 
-    render(<SnippetsListPage isAdmin />);
+    render(<SnippetsListPage />);
     fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
     fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }));
 
@@ -416,7 +570,7 @@ describe('SnippetsListPage — RefreshButton', () => {
       isPending: false,
     } as unknown as ReturnType<typeof useRefreshSnippets>);
 
-    render(<SnippetsListPage isAdmin />);
+    render(<SnippetsListPage />);
     fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
     fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }));
 
@@ -437,7 +591,7 @@ describe('SnippetsListPage — RefreshButton', () => {
       isPending: false,
     } as unknown as ReturnType<typeof useRefreshSnippets>);
 
-    render(<SnippetsListPage isAdmin />);
+    render(<SnippetsListPage />);
     fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
     fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }));
 
@@ -459,7 +613,7 @@ describe('SnippetsListPage — RefreshButton', () => {
       isPending: false,
     } as unknown as ReturnType<typeof useRefreshSnippets>);
 
-    render(<SnippetsListPage isAdmin />);
+    render(<SnippetsListPage />);
 
     // Download enables the Approve button.
     fireEvent.click(screen.getByRole('button', { name: /download/i }));
@@ -488,7 +642,7 @@ describe('SnippetsListPage — RefreshButton', () => {
       isPending: false,
     } as unknown as ReturnType<typeof useRefreshSnippets>);
 
-    render(<SnippetsListPage isAdmin />);
+    render(<SnippetsListPage />);
 
     // Select the snippet.
     fireEvent.click(screen.getByRole('checkbox', { name: /select check\.sh/i }));
@@ -520,7 +674,7 @@ describe('SnippetsListPage — RefreshButton', () => {
       isPending: false,
     } as unknown as ReturnType<typeof useRefreshSnippets>);
 
-    render(<SnippetsListPage isAdmin />);
+    render(<SnippetsListPage />);
 
     // Narrow to the mysql service type.
     fireEvent.mouseDown(screen.getByLabelText('Filter by service type'));
@@ -821,7 +975,7 @@ describe('SnippetsListPage — server-driven filters', () => {
       }),
     );
 
-    const { rerender } = render(<SnippetsListPage isAdmin />);
+    const { rerender } = render(<SnippetsListPage />);
 
     // Select every visible unapproved row.
     fireEvent.click(screen.getByRole('checkbox', { name: /select all snippets/i }));
@@ -830,7 +984,7 @@ describe('SnippetsListPage — server-driven filters', () => {
     mockUseSnippets.mockReturnValue(
       snippetsListResult([mysqlUnapproved], { total: 1, offset: 0, limit: 50 }),
     );
-    rerender(<SnippetsListPage isAdmin />);
+    rerender(<SnippetsListPage />);
 
     fireEvent.click(screen.getByRole('button', { name: /batch approve/i }));
     fireEvent.click(screen.getByRole('button', { name: /approve selected/i }));
@@ -1061,5 +1215,36 @@ describe('SnippetsListPage — loading and error states', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Failed to load snippets: backend exploded',
     );
+  });
+});
+
+describe('SnippetsListPage — write access', () => {
+  beforeEach(() => {
+    mockUseSnippets.mockReturnValue(snippetsListResult([unapprovedSnippet]));
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+  });
+
+  it('renders selection, approval and refresh controls for a session that may mutate', () => {
+    render(<SnippetsListPage />);
+
+    expect(screen.getByRole('checkbox', { name: /select all snippets/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /refresh snippets/i })).toBeInTheDocument();
+  });
+
+  it('renders no selection, approval or refresh controls for a read-only session', () => {
+    renderReadOnly();
+
+    expect(
+      screen.queryByRole('checkbox', { name: /select all snippets/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('button', { name: /approve/i })).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /refresh snippets/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Actions')).not.toBeInTheDocument();
+    // The snippet list itself stays readable.
+    expect(screen.getByText('check.sh')).toBeInTheDocument();
   });
 });

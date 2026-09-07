@@ -25,7 +25,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.alerts.config import AlertSettings
 from app.core.alerts.models import BaseAlertProvider
 from app.core.alerts.providers.pagerduty import PagerDutyEventsAlertProvider
-from app.core.settings_override.models import setting_class_token, SettingClassEnum
 from app.core.settings_override.registry import (
     chain_has_advanced,
     dump_field_value,
@@ -55,7 +54,11 @@ from app.inventory.config import InventorySettings
 from app.sep.config import SEPSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.config import TasksSettings
-from tests.app.core.settings_override.conftest import insert_override_row
+from tests.app.core.settings_override.conftest import (
+    insert_override_row,
+    SEP_SETTINGS_TOKEN,
+    TASKS_SETTINGS_TOKEN,
+)
 
 
 def _ctx(settings_cls: type, field_name: str, raw: object) -> MaterializerContext:
@@ -822,7 +825,7 @@ async def test_override_rows_for_key_resolves_legacy_nested_casing(
     """Assert a mixed-case nested row is found under its canonical key."""
     await insert_override_row(
         session,
-        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        setting_class=TASKS_SETTINGS_TOKEN,
         key=_LEGACY_NESTED,
         value=30,
         is_active=True,
@@ -830,7 +833,7 @@ async def test_override_rows_for_key_resolves_legacy_nested_casing(
     rows = await override_rows_for_key(
         session,
         settings_cls=TasksSettings,
-        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        setting_class=TASKS_SETTINGS_TOKEN,
         key=_CANONICAL_NESTED,
     )
     assert [row.key for row in rows] == [_LEGACY_NESTED]
@@ -843,14 +846,14 @@ async def test_override_rows_for_key_returns_legacy_and_canonical_duplicates(
     """Assert every row that canonicalizes to the requested key is returned."""
     await insert_override_row(
         session,
-        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        setting_class=TASKS_SETTINGS_TOKEN,
         key=_LEGACY_NESTED,
         value=30,
         is_active=True,
     )
     await insert_override_row(
         session,
-        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        setting_class=TASKS_SETTINGS_TOKEN,
         key=_CANONICAL_NESTED,
         value=45,
         is_active=True,
@@ -858,7 +861,7 @@ async def test_override_rows_for_key_returns_legacy_and_canonical_duplicates(
     rows = await override_rows_for_key(
         session,
         settings_cls=TasksSettings,
-        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        setting_class=TASKS_SETTINGS_TOKEN,
         key=_CANONICAL_NESTED,
     )
     assert {row.key for row in rows} == {_LEGACY_NESTED, _CANONICAL_NESTED}
@@ -871,14 +874,14 @@ async def test_override_rows_for_key_excludes_other_setting_class(
     """Assert a matching stored key on another class is not returned."""
     await insert_override_row(
         session,
-        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        setting_class=TASKS_SETTINGS_TOKEN,
         key=_LEGACY_NESTED,
         value=30,
         is_active=True,
     )
     await insert_override_row(
         session,
-        setting_class=SettingClassEnum.SEP_SETTINGS,
+        setting_class=SEP_SETTINGS_TOKEN,
         key=_LEGACY_NESTED,
         value=99,
         is_active=True,
@@ -886,11 +889,11 @@ async def test_override_rows_for_key_excludes_other_setting_class(
     rows = await override_rows_for_key(
         session,
         settings_cls=TasksSettings,
-        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        setting_class=TASKS_SETTINGS_TOKEN,
         key=_CANONICAL_NESTED,
     )
     assert [row.key for row in rows] == [_LEGACY_NESTED]
-    assert rows[0].setting_class == setting_class_token(TasksSettings)
+    assert rows[0].setting_class == TASKS_SETTINGS_TOKEN
 
 
 @pytest.mark.asyncio
@@ -900,7 +903,7 @@ async def test_override_rows_for_key_includes_inactive_row(
     """Assert an inactive row is still resolved (write paths match on key alone)."""
     await insert_override_row(
         session,
-        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        setting_class=TASKS_SETTINGS_TOKEN,
         key=_LEGACY_NESTED,
         value=30,
         is_active=False,
@@ -908,7 +911,7 @@ async def test_override_rows_for_key_includes_inactive_row(
     rows = await override_rows_for_key(
         session,
         settings_cls=TasksSettings,
-        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        setting_class=TASKS_SETTINGS_TOKEN,
         key=_CANONICAL_NESTED,
     )
     assert [row.key for row in rows] == [_LEGACY_NESTED]
@@ -922,7 +925,7 @@ async def test_override_rows_for_key_returns_empty_for_no_match(
     """Assert a missing key or an unresolvable stored key yields no rows."""
     await insert_override_row(
         session,
-        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        setting_class=TASKS_SETTINGS_TOKEN,
         key="NOMAD__does_not_exist",
         value=1,
         is_active=True,
@@ -931,7 +934,7 @@ async def test_override_rows_for_key_returns_empty_for_no_match(
         await override_rows_for_key(
             session,
             settings_cls=TasksSettings,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=TASKS_SETTINGS_TOKEN,
             key=_CANONICAL_NESTED,
         )
         == []
@@ -940,7 +943,7 @@ async def test_override_rows_for_key_returns_empty_for_no_match(
         await override_rows_for_key(
             session,
             settings_cls=TasksSettings,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="NOMAD__unknown_leaf",
         )
         == []
@@ -953,19 +956,19 @@ async def test_override_rows_for_key_matches_top_level_case_insensitively(
 ) -> None:
     """Assert a top-level key also matches a mixed-case stored spelling.
 
-    Keeps DELETE/PATCH aligned with MySQL's historical case-insensitive
-    ``key`` lookups after the match moved from SQL into Python.
+    Keeps mixed-case stored keys reachable by DELETE/PATCH now that the ``key``
+    match moved from SQL into Python.
     """
     await insert_override_row(
         session,
-        setting_class=SettingClassEnum.SEP_SETTINGS,
+        setting_class=SEP_SETTINGS_TOKEN,
         key=_TOP_LEVEL,
         value="https://canonical.example.com",
         is_active=True,
     )
     await insert_override_row(
         session,
-        setting_class=SettingClassEnum.SEP_SETTINGS,
+        setting_class=SEP_SETTINGS_TOKEN,
         key=_TOP_LEVEL.lower(),
         value="https://legacy.example.com",
         is_active=True,
@@ -973,7 +976,7 @@ async def test_override_rows_for_key_matches_top_level_case_insensitively(
     rows = await override_rows_for_key(
         session,
         settings_cls=SEPSettings,
-        setting_class=SettingClassEnum.SEP_SETTINGS,
+        setting_class=SEP_SETTINGS_TOKEN,
         key=_TOP_LEVEL,
     )
     assert {row.key for row in rows} == {_TOP_LEVEL, _TOP_LEVEL.lower()}

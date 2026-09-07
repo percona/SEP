@@ -15,6 +15,8 @@
 
 """Define tests for the unsafe-method role gate on the Inventory sub-app."""
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
@@ -31,6 +33,7 @@ from app.inventory.models import (
     IdentityLinkDecisionEnum,
     Node,
     Service,
+    SyncOutcomeEnum,
     Table,
 )
 from tests.app.factories import (
@@ -40,13 +43,14 @@ from tests.app.factories import (
     ServiceSystemObservationWriteFactory,
     ServiceWriteFactory,
 )
+from tests.app.inventory.conftest import sync_health_payload
 
 BEARER_HEADERS = {"Authorization": "Bearer valid_token"}
 SERVICE_TOKEN = "supersecret"
 
 
 @pytest.fixture
-def bearer_client(session: AsyncSession, casdoor_mock) -> TestClient:
+def bearer_client(session: AsyncSession, casdoor_mock) -> Iterator[TestClient]:
     """Yield an Inventory TestClient that authenticates by Bearer token.
 
     No authentication dependency is overridden: the gate resolves the user
@@ -98,6 +102,10 @@ RESTRICTED_WRITES = [
     ("PUT", "/services/1"),
     ("DELETE", "/services/1"),
     ("POST", "/services/1/revive"),
+    ("POST", "/nodes/1/sync-health"),
+    ("POST", "/services/1/sync-health"),
+    ("POST", "/schemas/1/sync-health"),
+    ("POST", "/tables/1/sync-health"),
 ]
 RESTRICTED_WRITE_IDS = [
     "create_node",
@@ -108,6 +116,10 @@ RESTRICTED_WRITE_IDS = [
     "update_service",
     "retire_service",
     "revive_service",
+    "record_node_sync_health",
+    "record_service_sync_health",
+    "record_schema_sync_health",
+    "record_table_sync_health",
 ]
 
 
@@ -302,6 +314,40 @@ def test_the_service_principal_can_revive_a_node(
 
     response = bearer_client.post(
         f"/nodes/{retired_node.id}/revive",
+        headers={"Authorization": f"Bearer {SERVICE_TOKEN}"},
+    )
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
+@pytest.mark.parametrize(
+    ("plural", "fixture_name"),
+    [
+        ("nodes", "node"),
+        ("services", "service"),
+        ("schemas", "schema"),
+        ("tables", "table"),
+    ],
+)
+def test_the_service_principal_can_record_sync_health(
+    bearer_client: TestClient,
+    request: pytest.FixtureRequest,
+    mocker: MockerFixture,
+    plural: str,
+    fixture_name: str,
+) -> None:
+    """Record a sync outcome as the principal, at every level a syncer mirrors.
+
+    The write is the one the syncer issues after each per-entity attempt, so a
+    gate that refused it would leave the columns permanently unwritten while
+    every sync still reported success.
+    """
+    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    entity = request.getfixturevalue(fixture_name)
+
+    response = bearer_client.post(
+        f"/{plural}/{entity.id}/sync-health",
+        json=sync_health_payload(SyncOutcomeEnum.SUCCESS),
         headers={"Authorization": f"Bearer {SERVICE_TOKEN}"},
     )
 
