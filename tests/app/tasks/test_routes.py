@@ -61,6 +61,7 @@ from app.tasks.models import (
     DispatchLock,
     ExecutionEvent,
     LogCaptureStatusEnum,
+    MAX_FAILURE_REASON_LENGTH,
     SYSTEM_USER,
     Task,
     TaskBackendEnum,
@@ -406,6 +407,96 @@ async def test_list_task_history(test_client, created_task_with_history):
     assert data["limit"] == DEFAULT_PAGINATION_LIMIT
     assert len(data["items"]) == 1
     assert data["items"][0]["id"] == created_task_with_history.id
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_reports_null_failure_reason(
+    test_client, created_task_with_history
+):
+    """Assert a row with no recorded reason serializes the key as null, not absent.
+
+    A consumer has to distinguish "no reason recorded" from a missing field, so
+    the key is always present.
+    """
+    response = test_client.get("/history/")
+    assert response.status_code == status.HTTP_200_OK
+    item = response.json()["items"][0]
+    assert "failure_reason" in item
+    assert item["failure_reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_task_history_serializes_a_recorded_failure_reason(
+    test_client, session, created_task_with_history
+):
+    """Assert a recorded reason reaches both the list and retrieve payloads."""
+    created_task_with_history.set_failure_reason("Step 'run-script' failed.")
+    await TaskHistoryManager.save(session, created_task_with_history)
+
+    listed = test_client.get("/history/")
+    retrieved = test_client.get(f"/history/{created_task_with_history.id}")
+
+    assert listed.status_code == status.HTTP_200_OK
+    assert retrieved.status_code == status.HTTP_200_OK
+    assert listed.json()["items"][0]["failure_reason"] == "Step 'run-script' failed."
+    assert retrieved.json()["failure_reason"] == "Step 'run-script' failed."
+
+
+@pytest.mark.asyncio
+async def test_create_task_history_normalizes_failure_reason(
+    test_client, created_task_with_history
+):
+    """Assert a caller-supplied reason is collapsed to one line and bounded.
+
+    The create route takes the ``TaskHistory`` table model as its body, so the
+    field is settable over HTTP; the bound is a property of the column, not just
+    of the reasons SEP composes. Driven as a real request because only an actual
+    POST delivers the body to the handler the way FastAPI does.
+    """
+    response = test_client.post(
+        "/history/",
+        json={
+            "task_id": created_task_with_history.task.id,
+            "execution_request": {
+                "task": created_task_with_history.task.name,
+                "target": "node-1",
+            },
+            "failure_reason": "line one\n  line   two " + ("x" * 900),
+        },
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+    reason = response.json()["failure_reason"]
+    assert "\n" not in reason
+    assert reason.startswith("line one line two ")
+    assert len(reason) == MAX_FAILURE_REASON_LENGTH
+
+
+@pytest.mark.asyncio
+async def test_create_task_history_returns_a_serializable_row(
+    test_client, created_task_with_history
+):
+    """Assert the create response carries the joined task and execution request.
+
+    ``save`` re-defers ``execution_request``, so returning its result directly
+    made the response model attempt lazy IO from the async context.
+    """
+    response = test_client.post(
+        "/history/",
+        json={
+            "task_id": created_task_with_history.task.id,
+            "execution_request": {
+                "task": created_task_with_history.task.name,
+                "target": "node-1",
+            },
+        },
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+    body = response.json()
+    assert body["task"]["name"] == created_task_with_history.task.name
+    assert body["execution_request"]["target"] == "node-1"
+    assert body["failure_reason"] is None
 
 
 @pytest.mark.asyncio

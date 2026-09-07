@@ -4507,6 +4507,10 @@ export interface components {
      *         reports.
      *     :param display_name: A user-meaningful label derived from the task name or
      *         execution-request metadata. Read-only; computed on serialisation.
+     *     :param failure_reason: A single-line, operator-facing reason for the run's
+     *         outcome, or None when the run did not fail or the reason is unknown. A
+     *         historic row predating the column reports None, which means "unknown"
+     *         rather than "did not fail".
      */
     TaskHistoryResponse: {
       /** Anonymize Mask */
@@ -4542,6 +4546,8 @@ export interface components {
       /** Executed By */
       executed_by?: string | null;
       execution_request: components['schemas']['TaskExecutionRequest'];
+      /** Failure Reason */
+      failure_reason?: string | null;
       /** Finished At */
       finished_at?: string | null;
       /**

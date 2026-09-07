@@ -62,6 +62,7 @@ from app.core.utils.fields import (
     UTCDatetime,
 )
 from app.core.utils.path import resolve_payload_reference
+from app.core.utils.strings import shorten_text
 from app.tasks.alert_hooks import build_owner_alert_details
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.anonymizer.entities import PIIEntity
@@ -205,6 +206,28 @@ class TaskHistoryStatusEnum(StrEnum):
         :return: True if the status is ``PENDING`` or ``RUNNING``; False otherwise.
         """
         return self in self.active_statuses()
+
+    def operator_summary(self) -> str | None:
+        """Return the operator-facing prose for this status, if it has any.
+
+        The single source both :meth:`TaskHistory.alert_for_status` and the
+        ``failure_reason`` composers read, so the alert summary and the stored
+        reason cannot drift apart. Phrased as a sentence fragment because the
+        alert interpolates it mid-sentence.
+
+        :return: The prose fragment, or ``None`` for a status carrying none.
+        """
+        return {
+            TaskHistoryStatusEnum.FAILED: "failed",
+            TaskHistoryStatusEnum.LOST: "execution tracking lost",
+            TaskHistoryStatusEnum.STALE: (
+                "skipped as stale (executor placement delayed past threshold)"
+            ),
+            TaskHistoryStatusEnum.UNLAUNCHABLE: (
+                "could not be launched (the executor node cannot run the "
+                "requested command)"
+            ),
+        }.get(self)
 
 
 class TaskLogType(StrEnum):
@@ -687,6 +710,12 @@ class TaskExecuteRequest(BaseModel):
         return data
 
 
+#: Maximum stored length of ``TaskHistory.failure_reason``. Comfortably above
+#: the longest reason the dispatch checks compose, so the persisted string
+#: matches the one ``_persist_failed_dispatch`` receives on any ordinary failure.
+MAX_FAILURE_REASON_LENGTH = 500
+
+
 class TaskHistoryBase(SQLModel):
     """Define the base structure for a TaskHistory.
 
@@ -704,6 +733,10 @@ class TaskHistoryBase(SQLModel):
     :type anonymize_mask: int | None
     :param executed_by: The user ID of the user who executed the task.
     :type executed_by: str | None
+    :param failure_reason: A single-line, operator-facing reason for the run's
+        outcome, or None when the run did not fail or the reason is unknown.
+        Written only through :meth:`TaskHistory.set_failure_reason`.
+    :type failure_reason: str | None
     """
 
     execution_request: TaskExecutionRequest = SQLField(
@@ -727,6 +760,7 @@ class TaskHistoryBase(SQLModel):
     )
     anonymize_mask: AnonymizeMask | None = None
     executed_by: str | None = None
+    failure_reason: str | None = None
 
     @computed_field
     @property
@@ -761,6 +795,9 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         exists) to discard writes from a superseded producer. ``0`` is the
         legacy/unknown sentinel that is trusted unconditionally.
     :param executed_by: The user ID of the user who executed the task.
+    :param failure_reason: A single-line, operator-facing reason for the run's
+        outcome, or None when the run did not fail or the reason is unknown.
+        Written only through :meth:`set_failure_reason`.
     """
 
     __table_args__ = (
@@ -802,6 +839,27 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         """
         return PIIEntity.decode_selection(self.anonymize_mask)
 
+    def set_failure_reason(self, reason: str | None) -> None:
+        """Normalize and store an operator-facing reason for this run's outcome.
+
+        The single write path for :attr:`failure_reason`, so the stored value is
+        always one line and always bounded however the caller composed it.
+        Whitespace runs — including the newlines a multi-line composition can
+        introduce — collapse to single spaces, and a value that is blank once
+        stripped is stored as ``None`` rather than as an empty string.
+
+        :param reason: The composed reason, or ``None`` to clear it.
+        """
+        if reason is None:
+            self.failure_reason = None
+            return
+        collapsed = " ".join(reason.split())
+        self.failure_reason = (
+            shorten_text(collapsed, max_length=MAX_FAILURE_REASON_LENGTH)
+            if collapsed
+            else None
+        )
+
     async def alert_for_status(self) -> None:
         """Trigger or resolve an alert based on the task execution status.
 
@@ -824,30 +882,22 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
             return
 
         owner_details = None
+        summary_action = self.status.operator_summary()
         if self.status == TaskHistoryStatusEnum.FAILED:
             dedup_key = base_dedup_key
-            summary_action = "failed"
             severity = AlertSeverity.ERROR
             alert_class = "task_failure"
             owner_details = await build_owner_alert_details(self)
         elif self.status == TaskHistoryStatusEnum.LOST:
             dedup_key = base_dedup_key
-            summary_action = "execution tracking lost"
             severity = AlertSeverity.WARNING
             alert_class = "task_lost"
         elif self.status == TaskHistoryStatusEnum.STALE:
             dedup_key = f"{base_dedup_key}:stale"
-            summary_action = (
-                "skipped as stale (executor placement delayed past threshold)"
-            )
             severity = AlertSeverity.WARNING
             alert_class = "task_stale"
         elif self.status == TaskHistoryStatusEnum.UNLAUNCHABLE:
             dedup_key = f"{base_dedup_key}:unlaunchable"
-            summary_action = (
-                "could not be launched (the executor node cannot run the "
-                "requested command)"
-            )
             severity = AlertSeverity.WARNING
             alert_class = "task_unlaunchable"
         else:
@@ -1098,6 +1148,10 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
         reports.
     :param display_name: A user-meaningful label derived from the task name or
         execution-request metadata. Read-only; computed on serialisation.
+    :param failure_reason: A single-line, operator-facing reason for the run's
+        outcome, or None when the run did not fail or the reason is unknown. A
+        historic row predating the column reports None, which means "unknown"
+        rather than "did not fail".
     """
 
     task: TaskResponse

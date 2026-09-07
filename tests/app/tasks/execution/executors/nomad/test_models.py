@@ -60,6 +60,7 @@ from app.tasks.execution.executors.nomad.models import (
     _detect_capture_hold_ready,
     _detect_stale_skip,
     _detect_unlaunchable,
+    _failed_step_reason,
     _LAUNCH_CHECK_TASK_NAME,
     _NOMAD_LOG_STREAM_CLIENT_ERROR,
     _NOMAD_LOG_STREAM_SOCK_TIMEOUT,
@@ -840,6 +841,65 @@ class TestAllocStepState:
             )
 
         assert "non-mapping task states" in caplog.text
+
+
+class TestFailedStepReason:
+    """Test _failed_step_reason's composition and shape tolerance."""
+
+    def test_names_the_failed_step_and_exit_code(self):
+        """Assert the reason names the failing producing step and its exit code."""
+        alloc = {
+            "TaskStates": {
+                "run-script": {
+                    "Failed": True,
+                    "Events": [{"Type": "Terminated", "ExitCode": 1}],
+                },
+            },
+        }
+        assert _failed_step_reason(alloc) == "Step 'run-script' failed (exit code 1)."
+
+    def test_omits_exit_code_when_no_terminated_event(self):
+        """Assert a failed step with no Terminated event still names the step."""
+        alloc = {"TaskStates": {"run-script": {"Failed": True, "Events": []}}}
+        assert _failed_step_reason(alloc) == "Step 'run-script' failed."
+
+    def test_ignores_the_non_producing_hold_step(self):
+        """Assert a failed log-capture hold does not become the reason.
+
+        The hold is the one step ``NomadStep.is_persistable`` excludes, so a
+        failure of SEP's own capture machinery cannot be reported as the run's.
+        """
+        alloc = {
+            "TaskStates": {
+                "log-capture-hold": {
+                    "Failed": True,
+                    "Events": [{"Type": "Terminated", "ExitCode": 1}],
+                },
+            },
+        }
+        assert _failed_step_reason(alloc) is None
+
+    def test_returns_none_when_no_step_failed(self):
+        """Assert an allocation whose producing steps all succeeded has no reason."""
+        alloc = {"TaskStates": {"run-script": {"Failed": False, "Events": []}}}
+        assert _failed_step_reason(alloc) is None
+
+    @pytest.mark.parametrize(
+        "alloc",
+        [
+            {},
+            {"TaskStates": None},
+            {"TaskStates": []},
+            {"TaskStates": "broken"},
+            {"TaskStates": {"run-script": "not-a-dict"}},
+            {"TaskStates": {"run-script": {"Failed": True, "Events": "not-a-list"}}},
+            {"TaskStates": {"run-script": {"Failed": True, "Events": ["not-a-dict"]}}},
+        ],
+    )
+    def test_tolerates_malformed_allocations(self, alloc):
+        """Assert shape drift degrades to a reason or None rather than raising."""
+        result = _failed_step_reason(alloc)
+        assert result is None or isinstance(result, str)
 
 
 class TestDetectUnlaunchable:
@@ -2320,6 +2380,204 @@ class TestSyncTaskHistoryWithoutTaskStates:
         result = await executor._sync_task_history(self._queue_item())
 
         assert result.status == TaskHistoryStatusEnum.FAILED
+
+
+class TestSyncTaskHistoryFailureReason:
+    """Test the reason ``_sync_task_history`` stores alongside each terminal status."""
+
+    @staticmethod
+    def _queue_item() -> TaskHistory:
+        """Return a RUNNING task history tracking ``alloc-1``/``job-1``."""
+        return _build_queue_item(
+            tracking={
+                "allocation_id": "alloc-1",
+                "evaluation_id": "eval-1",
+                "job_id": "job-1",
+            },
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+
+    @staticmethod
+    def _backend(
+        mock_nomad_cls: MagicMock,
+        task_states: dict[str, Any] | None,
+        client_status: str = NomadAllocStatusEnum.FAILED,
+        *,
+        stop: bool = False,
+    ) -> None:
+        """Wire a backend returning a dead job and one allocation."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        alloc = {
+            "ID": "alloc-1",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "ClientStatus": client_status,
+            "ModifyTime": 1_700_000_000_000_000_000,
+        }
+        if task_states is not None:
+            alloc["TaskStates"] = task_states
+        mock_backend.allocation.get_allocation.return_value = alloc
+        mock_backend.allocations.get_allocations.return_value = [alloc]
+        mock_backend.client.stream_logs.stream.return_value = ""
+        mock_backend.job.get_job.return_value = {
+            "ID": "job-1",
+            "Status": NOMAD_DEAD_JOB_STATUS,
+            "Stop": stop,
+        }
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_failed_step_reason_is_stored(self, mock_nomad_cls):
+        """Assert a failed producing step becomes the stored reason."""
+        self._backend(
+            mock_nomad_cls,
+            {
+                "run-script": {
+                    "Failed": True,
+                    "Events": [{"Type": "Terminated", "ExitCode": 1}],
+                },
+            },
+        )
+
+        result = await _build_executor()._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
+        assert result.failure_reason == "Step 'run-script' failed (exit code 1)."
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_failed_without_named_step_falls_back_to_status_prose(
+        self, mock_nomad_cls
+    ):
+        """Assert a failure naming no failed producing step stores the status prose."""
+        self._backend(mock_nomad_cls, {"run-script": {"StartedAt": "1"}})
+
+        result = await _build_executor()._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
+        assert result.failure_reason == "The run failed."
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_stale_sentinel_stores_canned_prose(self, mock_nomad_cls):
+        """Assert a stale-skip sentinel stores the STALE prose."""
+        self._backend(
+            mock_nomad_cls,
+            {"check-staleness": {"Events": [{"Type": "Terminated", "ExitCode": 75}]}},
+        )
+
+        result = await _build_executor()._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.STALE
+        assert result.failure_reason == (
+            "The run skipped as stale (executor placement delayed past threshold)."
+        )
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_unlaunchable_sentinel_stores_canned_prose(self, mock_nomad_cls):
+        """Assert an unlaunchable sentinel stores the UNLAUNCHABLE prose."""
+        self._backend(
+            mock_nomad_cls,
+            {
+                _LAUNCH_CHECK_TASK_NAME: {
+                    "Events": [
+                        {"Type": "Terminated", "ExitCode": LAUNCH_CHECK_EXIT_CODE}
+                    ]
+                }
+            },
+        )
+
+        result = await _build_executor()._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.UNLAUNCHABLE
+        assert result.failure_reason == (
+            "The run could not be launched (the executor node cannot run the "
+            "requested command)."
+        )
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_success_stores_no_reason(self, mock_nomad_cls):
+        """Assert a successful sync leaves failure_reason unset."""
+        self._backend(
+            mock_nomad_cls,
+            {"run-script": {"StartedAt": "1", "FinishedAt": "2"}},
+            client_status=NomadAllocStatusEnum.COMPLETE,
+        )
+
+        result = await _build_executor()._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.SUCCESS
+        assert result.failure_reason is None
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_stopped_stores_no_reason(self, mock_nomad_cls):
+        """Assert a stopped run stores no reason."""
+        self._backend(
+            mock_nomad_cls,
+            {"run-script": {"StartedAt": "1", "FinishedAt": "2"}},
+            client_status=NomadAllocStatusEnum.COMPLETE,
+            stop=True,
+        )
+
+        result = await _build_executor()._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.STOPPED
+        assert result.failure_reason is None
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_malformed_allocation_does_not_break_the_sync(self, mock_nomad_cls):
+        """Assert shape drift costs a precise reason, not the sync itself."""
+        self._backend(mock_nomad_cls, None)
+
+        result = await _build_executor()._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
+        assert result.failure_reason == "The run failed."
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_allocation_less_failure_states_its_own_reason(self, mock_nomad_cls):
+        """Assert the allocation-less failure names the missing allocation."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.side_effect = URLNotFoundNomadException(
+            MagicMock(text="not found")
+        )
+        mock_backend.allocations.get_allocations.return_value = []
+        mock_backend.job.get_job.return_value = {"ID": "job-1"}
+        mock_backend.job.get_evaluations.return_value = [{"Status": "complete"}]
+
+        result = await _build_executor()._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
+        assert result.started_at is None
+        assert result.failure_reason == (
+            "The executor job produced no allocation and has no pending evaluation."
+        )
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_lost_job_stores_the_lost_prose(self, mock_nomad_cls):
+        """Assert a job that vanished stores the LOST prose."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.allocation.get_allocation.side_effect = URLNotFoundNomadException(
+            MagicMock(text="not found")
+        )
+        mock_backend.allocations.get_allocations.return_value = []
+        mock_backend.job.get_job.side_effect = URLNotFoundNomadException(
+            MagicMock(text="not found")
+        )
+
+        result = await _build_executor()._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.LOST
+        assert result.failure_reason == "The run execution tracking lost."
 
 
 class TestStampFinishedAt:

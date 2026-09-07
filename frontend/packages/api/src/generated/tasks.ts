@@ -252,6 +252,15 @@ export interface paths {
      *     row that was just created has no chunk-store entry, legacy tracking blob or
      *     capture verdict yet, so both fall back to their serialization defaults.
      *
+     *     A caller-supplied ``failure_reason`` is routed back through
+     *     :meth:`TaskHistory.set_failure_reason` so the single-line and length bounds
+     *     hold on every write path, not only on the reasons SEP composes itself.
+     *
+     *     The saved row is re-read with ``task`` joined and ``execution_request``
+     *     undeferred: ``save`` re-defers that column, and the response model requires
+     *     both, so serializing the save's own return value attempts lazy IO from an
+     *     async context.
+     *
      *     :param session: The SQLAlchemy asynchronous session.
      *     :param task: The task history to persist.
      *     :return: The saved task history record.
@@ -1382,6 +1391,9 @@ export interface components {
      *         exists) to discard writes from a superseded producer. ``0`` is the
      *         legacy/unknown sentinel that is trusted unconditionally.
      *     :param executed_by: The user ID of the user who executed the task.
+     *     :param failure_reason: A single-line, operator-facing reason for the run's
+     *         outcome, or None when the run did not fail or the reason is unknown.
+     *         Written only through :meth:`set_failure_reason`.
      */
     TaskHistory: {
       /** Anonymize Mask */
@@ -1394,6 +1406,8 @@ export interface components {
       /** Executed By */
       executed_by?: string | null;
       execution_request: components['schemas']['TaskExecutionRequest'];
+      /** Failure Reason */
+      failure_reason?: string | null;
       /** Finished At */
       finished_at?: string | null;
       /** Id */
@@ -1461,6 +1475,10 @@ export interface components {
      *         reports.
      *     :param display_name: A user-meaningful label derived from the task name or
      *         execution-request metadata. Read-only; computed on serialisation.
+     *     :param failure_reason: A single-line, operator-facing reason for the run's
+     *         outcome, or None when the run did not fail or the reason is unknown. A
+     *         historic row predating the column reports None, which means "unknown"
+     *         rather than "did not fail".
      */
     TaskHistoryResponse: {
       /** Anonymize Mask */
@@ -1496,6 +1514,8 @@ export interface components {
       /** Executed By */
       executed_by?: string | null;
       execution_request: components['schemas']['TaskExecutionRequest'];
+      /** Failure Reason */
+      failure_reason?: string | null;
       /** Finished At */
       finished_at?: string | null;
       /**

@@ -114,10 +114,18 @@ class CeleryExecutor(BaseExecutor):
             )
             stdout_buffer.write(f"\nResult: {result}\n")
             queue_item.status = TaskHistoryStatusEnum.SUCCESS
-        except Exception:
+        except Exception as exc:
             logger.exception("Celery task %s failed", task.name)
             stderr_buffer.write(f"\nError:\n{traceback.format_exc()}")
             queue_item.status = TaskHistoryStatusEnum.FAILED
+            callable_path = (
+                task.data.get("callable") if isinstance(task.data, dict) else None
+            )
+            queue_item.set_failure_reason(
+                f"Task callable {callable_path!r} raised {type(exc).__name__}."
+                if callable_path
+                else f"Task execution raised {type(exc).__name__}."
+            )
         finally:
             queue_item.finished_at = utc_now()
 

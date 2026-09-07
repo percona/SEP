@@ -689,6 +689,7 @@ async def sync_task_history(
                 "status",
                 "started_at",
                 "finished_at",
+                "failure_reason",
                 "sync_in_progress_started_at",
             ],
         )
@@ -725,12 +726,28 @@ async def create_task_history(session: SessionDep, task: TaskHistory) -> TaskHis
     row that was just created has no chunk-store entry, legacy tracking blob or
     capture verdict yet, so both fall back to their serialization defaults.
 
+    A caller-supplied ``failure_reason`` is routed back through
+    :meth:`TaskHistory.set_failure_reason` so the single-line and length bounds
+    hold on every write path, not only on the reasons SEP composes itself.
+
+    The saved row is re-read with ``task`` joined and ``execution_request``
+    undeferred: ``save`` re-defers that column, and the response model requires
+    both, so serializing the save's own return value attempts lazy IO from an
+    async context.
+
     :param session: The SQLAlchemy asynchronous session.
     :param task: The task history to persist.
     :return: The saved task history record.
     """
-    logger.debug("Creating task history %s", task.name)
-    return await TaskHistoryManager.save(session, task)
+    logger.debug("Creating task history for task %s", task.task_id)
+    task.set_failure_reason(task.failure_reason)
+    saved = await TaskHistoryManager.save(session, task)
+    return await TaskHistoryManager.get_or_404(
+        session,
+        select_related=(TaskHistory.task,),
+        query_options=[undefer(TaskHistory.execution_request)],
+        id=saved.id,
+    )
 
 
 @router.get("/stats/{task}", dependencies=[IsAuthenticatedDep])
