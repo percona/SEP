@@ -27,7 +27,6 @@ from app.sep.apps.mysql_backups.models import (
     BackupType,
     CatalogServiceKey,
     MysqlBackupRun,
-    preferred_backup_source,
     restore_valid_backup_source,
 )
 
@@ -46,23 +45,6 @@ _LABEL_PATH_TAIL = (_LABEL_PATH_MAX - 1) // 2
 # older valid backups, while still bounding DB work for a free-text-friendly
 # endpoint.
 _MAX_CHOICE_SCAN_PAGES = 10
-
-
-def backup_source_value(run: MysqlBackupRun) -> str | None:
-    """Return the preferred ``backup_source`` candidate for ``run``, or ``None``.
-
-    Prefers a configured upload destination (``s3://``, ``gs://``, …) when one
-    was recorded; otherwise uses the resolved on-disk ``location``. Blank
-    strings are treated as unset. Rows with neither cannot become a
-    ``Choice`` value (``NonEmptyStr``). The candidate is not shell-safety
-    checked here — :func:`~app.sep.apps.mysql_backups.models.restore_valid_backup_source`
-    is the one whose result the restore form accepts.
-
-    :param run: A catalogued backup run.
-    :return: The preferred location string, or ``None`` when neither field is
-        usable.
-    """
-    return preferred_backup_source(run.upload_destination, run.location)
 
 
 def _format_size(size_bytes: int | None) -> str:

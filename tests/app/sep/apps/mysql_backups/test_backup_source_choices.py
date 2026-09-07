@@ -25,10 +25,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
-from app.sep.apps.mysql_backups.backup_source_choices import (
-    backup_run_to_choice,
-    backup_source_value,
-)
+from app.sep.apps.mysql_backups.backup_source_choices import backup_run_to_choice
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.models import (
     MysqlBackupRun,
@@ -47,47 +44,6 @@ _URL = "/api/apps/mysql_backups/backup-sources/choices"
 
 class TestBackupSourceMapper:
     """Map catalog rows onto restore-valid ``Choice`` options."""
-
-    def test_value_prefers_upload_destination(self) -> None:
-        """Prefer the upload destination when one was configured."""
-        run = MysqlBackupRun(
-            task_history_id=1,
-            service_name="svc",
-            backup_type="X",
-            location="/backups/x/base",
-            upload_destination="s3://bucket/base",
-        )
-        assert backup_source_value(run) == "s3://bucket/base"
-
-    def test_value_falls_back_to_location(self) -> None:
-        """Fall back to the on-disk location when no upload destination exists."""
-        run = MysqlBackupRun(
-            task_history_id=1,
-            service_name="svc",
-            backup_type="M",
-            location="/backups/mydumper/20240101",
-        )
-        assert backup_source_value(run) == "/backups/mydumper/20240101"
-
-    def test_value_none_when_both_missing(self) -> None:
-        """Return ``None`` when neither location nor upload destination is set."""
-        run = MysqlBackupRun(
-            task_history_id=1,
-            service_name="svc",
-            backup_type="M",
-        )
-        assert backup_source_value(run) is None
-
-    def test_value_strips_and_ignores_blank_upload_destination(self) -> None:
-        """Strip whitespace and treat a blank upload destination as unset."""
-        run = MysqlBackupRun(
-            task_history_id=1,
-            service_name="svc",
-            backup_type="X",
-            location=" /data/xtrabackup/inc ",
-            upload_destination="  ",
-        )
-        assert backup_source_value(run) == "/data/xtrabackup/inc"
 
     def test_choice_skipped_when_no_usable_value(self) -> None:
         """Skip rows that cannot produce a non-empty Choice value."""
