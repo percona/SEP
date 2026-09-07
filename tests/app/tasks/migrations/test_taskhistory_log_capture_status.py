@@ -15,8 +15,6 @@
 
 """Tests for the Tasks-track taskhistory_log_state capture-status migration."""
 
-from pathlib import Path
-
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -26,9 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.tasks.config import tasks_settings
 from app.tasks.models import LogCaptureStatusEnum, TaskHistoryLogState
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
+from tests.app.alembic_paths import ALEMBIC_INI
 
 # The head immediately before capture_status is added. Cursor columns still
 # use the pre-rename names ``nomad_offset`` / ``allocation_epoch``.

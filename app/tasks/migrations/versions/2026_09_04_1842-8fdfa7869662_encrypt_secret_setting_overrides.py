@@ -16,7 +16,7 @@
 """encrypt secret setting overrides
 
 Revision ID: 8fdfa7869662
-Revises: 3a4dfc2a2be8
+Revises: 36a31fac9ef7
 Create Date: 2026-09-04 18:42:04.805530
 
 Re-encrypt the secret-typed leaves of every ``settingoverride`` row this track
@@ -46,7 +46,7 @@ from app.tasks.config import TasksSettings
 
 # revision identifiers, used by Alembic.
 revision = "8fdfa7869662"
-down_revision = "3a4dfc2a2be8"
+down_revision = "36a31fac9ef7"
 branch_labels = None
 depends_on = None
 

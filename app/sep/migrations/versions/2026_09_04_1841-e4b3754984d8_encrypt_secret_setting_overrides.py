@@ -16,7 +16,7 @@
 """encrypt secret setting overrides
 
 Revision ID: e4b3754984d8
-Revises: 867df844fe17
+Revises: c9880f0ac1bd
 Create Date: 2026-09-04 18:41:55.073171
 
 Re-encrypt the secret-typed leaves of every ``settingoverride`` row this track
@@ -54,7 +54,7 @@ from app.sep.snippets.config import SnippetsSettings
 
 # revision identifiers, used by Alembic.
 revision = "e4b3754984d8"
-down_revision = "867df844fe17"
+down_revision = "c9880f0ac1bd"
 branch_labels = None
 depends_on = None
 

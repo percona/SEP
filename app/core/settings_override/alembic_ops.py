@@ -27,6 +27,7 @@ from app.core.db.sql_types import AutoJSON
 from app.core.db.utils import (
     acquire_pg_advisory_xact_lock,
     check_constraint_name,
+    column_exists,
     table_exists,
 )
 from app.core.encryption import DecryptionError
@@ -34,6 +35,7 @@ from app.core.settings_override.constants import (
     SETTING_CLASS_CHECK_MEMBERS_LEGACY,
     SETTING_CLASS_MAX_LENGTH,
     SETTINGOVERRIDE_MIGRATION_LOCK_KEY,
+    SETTINGOVERRIDE_UPDATED_BY_COLUMN,
 )
 from app.core.settings_override.models import setting_class_token
 from app.core.settings_override.secret_storage import (
@@ -135,6 +137,39 @@ def downgrade_restore_setting_class_check() -> None:
             ),
             existing_nullable=False,
         )
+
+
+def upgrade_add_updated_by() -> None:
+    """Add the nullable ``updated_by`` column, once across all three tracks.
+
+    Idempotent on a shared PostgreSQL database: whichever of the ``sep``,
+    ``tasks`` and ``inventory`` tracks runs first adds the column and the other
+    two no-op. A missing table is also a no-op, matching the sibling
+    ``settingoverride`` guards.
+    """
+    bind = _locked_bind()
+    if bind is None:
+        return
+    if column_exists(bind, _TABLE, SETTINGOVERRIDE_UPDATED_BY_COLUMN):
+        return
+    with op.batch_alter_table(_TABLE, schema=None) as batch_op:
+        batch_op.add_column(sa.Column(SETTINGOVERRIDE_UPDATED_BY_COLUMN, sa.String()))
+
+
+def downgrade_drop_updated_by() -> None:
+    """Drop ``updated_by``, discarding every recorded actor.
+
+    The column is the only store of who last wrote each override, and the
+    information cannot be reconstructed from anything else, so this downgrade is
+    one-way for that data. The rows and their values survive untouched.
+    """
+    bind = _locked_bind()
+    if bind is None:
+        return
+    if not column_exists(bind, _TABLE, SETTINGOVERRIDE_UPDATED_BY_COLUMN):
+        return
+    with op.batch_alter_table(_TABLE, schema=None) as batch_op:
+        batch_op.drop_column(SETTINGOVERRIDE_UPDATED_BY_COLUMN)
 
 
 def upgrade_encrypt_secret_override_values(

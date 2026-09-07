@@ -326,6 +326,28 @@ def table_exists(bind: Connection, table_name: str) -> bool:
     return inspect(bind).has_table(table_name)
 
 
+def column_exists(bind: Connection, table_name: str, column_name: str) -> bool:
+    """Return whether ``table_name.column_name`` is present on the bound database.
+
+    The idempotent add-column guards need this the way the enum-widening guards
+    need :func:`table_exists`: on a shared PostgreSQL schema the second track
+    must see the column the first track already added. A missing table reports
+    ``False`` so a guard reading ``if column_exists(...): return`` still falls
+    through to its own :func:`table_exists` preflight.
+
+    :param bind: The migration's bound connection (``op.get_bind()``).
+    :param table_name: The table owning the column.
+    :param column_name: The column to test for.
+    :return: ``True`` when the table exists and declares the column.
+    """
+    inspector = inspect(bind)
+    if not inspector.has_table(table_name):
+        return False
+    return any(
+        column["name"] == column_name for column in inspector.get_columns(table_name)
+    )
+
+
 def _check_constraints_for_column(
     bind: Connection,
     table_name: str,

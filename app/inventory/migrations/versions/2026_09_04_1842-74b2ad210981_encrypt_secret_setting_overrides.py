@@ -16,7 +16,7 @@
 """encrypt secret setting overrides
 
 Revision ID: 74b2ad210981
-Revises: 9f2c14d6b8a7
+Revises: f7f329837258
 Create Date: 2026-09-04 18:42:01.820252
 
 Re-encrypt the secret-typed leaves of every ``settingoverride`` row this track
@@ -44,7 +44,7 @@ from app.inventory.config import InventorySettings
 
 # revision identifiers, used by Alembic.
 revision = "74b2ad210981"
-down_revision = "9f2c14d6b8a7"
+down_revision = "f7f329837258"
 branch_labels = None
 depends_on = None
 
