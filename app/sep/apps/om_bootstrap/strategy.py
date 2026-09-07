@@ -127,10 +127,17 @@ class StepAction(BaseModel):
 
 
 class StepRecord(BaseModel):
-    """One step's persisted-shape progress within a host's bootstrap.
+    """One step's persisted-shape progress -- a host's, or a run's.
 
-    :param name: One of the names :meth:`InstallStrategy.plan_steps` returned for
-        this host's spec -- not a fixed enum, since the step list itself is
+    The same shape serves both :attr:`HostBootstrapState.steps` (per-host) and
+    :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.run_steps` (run-level,
+    e.g. ``rs_initiate`` -- see :meth:`InstallStrategy.plan_run_steps`): neither
+    context needs a field the other doesn't, so one type covers both rather than
+    two near-duplicates.
+
+    :param name: One of the names :meth:`InstallStrategy.plan_steps` (or
+        :meth:`InstallStrategy.plan_run_steps`, or :meth:`InstallStrategy.plan_rollback_steps`)
+        returned for this spec -- not a fixed enum, since the step list itself is
         per-strategy and per-spec (see the module docstring).
     :param status: This step's current status.
     :param started_at: When the execution layer began this step, if it has.
@@ -142,6 +149,13 @@ class StepRecord(BaseModel):
         strategy concern. Still just data describing progress, so it lives here
         rather than in a separate persisted-only sibling type: one shape for
         planning, persistence, and API responses alike.
+    :param attempt_count: How many times this step has been dispatched.
+        Incremented on every dispatch, including the first -- PMM's stepper reads
+        this to enforce Adamo's decided retry policy (PMM-15347/questions.md Q8:
+        retry once, then roll back) without needing a counter of its own, which
+        would be lost on a leader failover. ``om_bootstrap`` only ever records the
+        fact that a dispatch happened; deciding whether *another* one should is
+        the stepper's call, not this field's.
     """
 
     name: str
@@ -150,6 +164,7 @@ class StepRecord(BaseModel):
     finished_at: datetime | None = None
     detail: str | None = None
     task_history_id: int | None = None
+    attempt_count: int = 0
 
 
 class HostBootstrapState(BaseModel):
@@ -158,10 +173,17 @@ class HostBootstrapState(BaseModel):
     :param host: The node name being bootstrapped.
     :param steps: This host's steps, in the order :meth:`InstallStrategy.plan_steps`
         returned them -- the full list is known before the first one starts.
+    :param rollback_steps: This host's teardown steps, in the order
+        :meth:`InstallStrategy.plan_rollback_steps` returned them -- planned
+        up front alongside ``steps`` so a fresh run already shows what rollback
+        would consist of, even before anything fails. Every entry stays
+        :attr:`StepStatus.PENDING` unless the stepper actually decides to roll
+        this host back.
     """
 
     host: str
     steps: list[StepRecord]
+    rollback_steps: list[StepRecord] = []
 
     @property
     def status(self) -> StepStatus:
@@ -194,17 +216,42 @@ class HostBootstrapState(BaseModel):
 class InstallStrategy(Protocol):
     """One way to get MongoDB installed and configured on a host.
 
-    A strategy owns *how*; the state machine (not yet built) owns *when*, *whether
-    the run as a whole should continue*, and *persisting progress* -- it does not
-    know or care which strategy is running, only that every strategy answers these
-    two questions the same way. This is PMM-15347/plan.md §4 item 5's "abstracted
-    pre-check/install/configure/test" requirement: the state machine iterates
-    :meth:`plan_steps`, calling :meth:`build_step` for each name in order, with no
-    strategy-specific branching of its own.
+    A strategy owns *how*; the state machine (PMM's ``om`` service, driving as the
+    HA-leader-only stepper) owns *when*, *whether the run as a whole should
+    continue*, and *persisting progress* -- it does not know or care which
+    strategy is running, only that every strategy answers these questions the
+    same way. This is PMM-15347/plan.md §4 item 5's "abstracted pre-check/
+    install/configure/test" requirement.
+
+    Three parallel step lists, not one:
+
+    - **Per-host** (:meth:`plan_steps`/:meth:`build_step`): everything a single
+      host's own install needs, run independently per host.
+    - **Run-level** (:meth:`plan_run_steps`/:meth:`build_run_step`): coordination
+      that only makes sense once, for the whole run -- ``rs.initiate`` and
+      creating PMM's monitoring user both need every member up first, and both
+      only need to run *once* (MongoDB replicates a created user to every member
+      automatically), not once per host. The stepper dispatches these to one
+      designated host from ``hosts`` (index 0 by convention -- see
+      :meth:`build_run_step`'s ``hosts`` parameter) once every per-host step has
+      succeeded.
+    - **Rollback** (:meth:`plan_rollback_steps`/:meth:`build_rollback_step`):
+      one host's teardown, planned up front alongside its forward steps so a
+      fresh run already shows what rolling back would do (Adamo's decided
+      partial-failure policy, PMM-15347/questions.md Q8), even before anything
+      fails.
+
+    ``build_step`` and ``build_run_step`` both take a ``params`` mapping for the
+    one thing a strategy cannot itself supply: per-run secrets (a keyFile's
+    content, a generated monitoring-user password). PMM-15347/questions.md Q7
+    decided these live durably in PMM's encrypted Postgres, not SEP's --
+    ``params`` is how the stepper hands one to a single dispatch, transiently,
+    without ``om_bootstrap`` ever persisting the plaintext in
+    :class:`StepRecord`/:class:`~app.sep.apps.om_bootstrap.models.BootstrapRun`.
     """
 
     def plan_steps(self, spec: BootstrapSpec) -> list[str]:
-        """Return this strategy's ordered step names for ``spec``.
+        """Return this strategy's ordered per-host step names for ``spec``.
 
         Computed from ``spec`` rather than fixed, so the step list a run actually
         follows can vary with what the spec asks for (see the module docstring).
@@ -215,8 +262,14 @@ class InstallStrategy(Protocol):
         """
         ...
 
-    def build_step(self, step_name: str, host: str, spec: BootstrapSpec) -> StepAction:
-        """Build the action for one step ``plan_steps`` named.
+    def build_step(
+        self,
+        step_name: str,
+        host: str,
+        spec: BootstrapSpec,
+        params: dict[str, str] | None = None,
+    ) -> StepAction:
+        """Build the action for one per-host step ``plan_steps`` named.
 
         Pure: given the same arguments, always returns the same action. Running it
         is the execution layer's job.
@@ -224,6 +277,65 @@ class InstallStrategy(Protocol):
         :param step_name: One of the names this strategy's own :meth:`plan_steps`
             returned for ``spec``.
         :param host: The node name being bootstrapped.
+        :param spec: The host's bootstrap spec.
+        :param params: Per-dispatch values a step needs but cannot compute itself
+            -- see the class docstring. ``None`` for a step that needs none.
+        :return: What the execution layer needs to run this step.
+        """
+        ...
+
+    def plan_run_steps(self, spec: BootstrapSpec) -> list[str]:
+        """Return this strategy's ordered run-level step names for ``spec``.
+
+        See the class docstring's "run-level" bullet. Called once, alongside
+        :meth:`plan_steps`, before any host is touched.
+
+        :param spec: The run's bootstrap spec.
+        :return: Step names, in execution order.
+        """
+        ...
+
+    def build_run_step(
+        self,
+        step_name: str,
+        hosts: list[str],
+        spec: BootstrapSpec,
+        params: dict[str, str] | None = None,
+    ) -> StepAction:
+        """Build the action for one run-level step ``plan_run_steps`` named.
+
+        :param step_name: One of the names this strategy's own
+            :meth:`plan_run_steps` returned for ``spec``.
+        :param hosts: Every host in this run, in the order the run was created
+            with. Index 0 is the designated target this action runs *on* (e.g.
+            ``rs.initiate``'s seed member) -- the same host every run-level step
+            targets, so a strategy needing to name every member (``rs.initiate``)
+            still has the full list to do so.
+        :param spec: The run's bootstrap spec.
+        :param params: See :meth:`build_step`.
+        :return: What the execution layer needs to run this step.
+        """
+        ...
+
+    def plan_rollback_steps(self, spec: BootstrapSpec) -> list[str]:
+        """Return this strategy's ordered per-host rollback step names for ``spec``.
+
+        See the class docstring's "rollback" bullet. Called once, alongside
+        :meth:`plan_steps`, before any host is touched.
+
+        :param spec: The host's bootstrap spec.
+        :return: Step names, in the order rollback should apply them.
+        """
+        ...
+
+    def build_rollback_step(
+        self, step_name: str, host: str, spec: BootstrapSpec
+    ) -> StepAction:
+        """Build the action for one rollback step ``plan_rollback_steps`` named.
+
+        :param step_name: One of the names this strategy's own
+            :meth:`plan_rollback_steps` returned for ``spec``.
+        :param host: The node name being rolled back.
         :param spec: The host's bootstrap spec.
         :return: What the execution layer needs to run this step.
         """
