@@ -52,7 +52,7 @@
 | app/core/pmm.py                                                                                                              |       51 |        1 |       10 |        1 |     97% |        53 |
 | app/core/requests/connectivity.py                                                                                            |       33 |        0 |        8 |        0 |    100% |           |
 | app/core/requests/registry.py                                                                                                |       64 |        5 |       22 |        5 |     88% |101, 112, 158, 169, 179 |
-| app/core/requests/remote\_api.py                                                                                             |      314 |        1 |       68 |        2 |     99% |337, 807-\>806 |
+| app/core/requests/remote\_api.py                                                                                             |      322 |        1 |       68 |        2 |     99% |340, 842-\>841 |
 | app/core/security.py                                                                                                         |       18 |        0 |        4 |        0 |    100% |           |
 | app/core/settings\_override/alembic\_ops.py                                                                                  |       97 |       10 |       30 |       11 |     83% |87, 90, 92, 94-\>96, 114, 116, 152, 154, 168, 170, 207 |
 | app/core/settings\_override/api/export.py                                                                                    |        9 |        0 |        0 |        0 |    100% |           |
@@ -124,12 +124,13 @@
 | app/sep/api/models.py                                                                                                        |       14 |        0 |        0 |        0 |    100% |           |
 | app/sep/api/openapi.py                                                                                                       |        4 |        0 |        0 |        0 |    100% |           |
 | app/sep/api/proxy.py                                                                                                         |       16 |        0 |        2 |        0 |    100% |           |
-| app/sep/api/router.py                                                                                                        |       39 |        0 |        4 |        0 |    100% |           |
+| app/sep/api/router.py                                                                                                        |       41 |        0 |        4 |        0 |    100% |           |
 | app/sep/api/routes/app\_info.py                                                                                              |        8 |        0 |        0 |        0 |    100% |           |
 | app/sep/api/routes/app\_state.py                                                                                             |       44 |       12 |       10 |        2 |     59% |180, 186, 188-195, 202, 208-209, 237-238, 243-244, 251 |
 | app/sep/api/routes/apps.py                                                                                                   |       22 |        3 |        2 |        1 |     83% |87, 107-108 |
 | app/sep/api/routes/connectivity\_check.py                                                                                    |       75 |        0 |       24 |        0 |    100% |           |
 | app/sep/api/routes/dashboard.py                                                                                              |       35 |        0 |        6 |        0 |    100% |           |
+| app/sep/api/routes/delivery\_connection.py                                                                                   |       36 |        0 |        4 |        0 |    100% |           |
 | app/sep/api/routes/hosts.py                                                                                                  |       22 |        0 |        0 |        0 |    100% |           |
 | app/sep/api/routes/periodic\_tasks.py                                                                                        |       30 |        0 |        2 |        0 |    100% |           |
 | app/sep/api/routes/schemas.py                                                                                                |        7 |        0 |        0 |        0 |    100% |           |
@@ -305,8 +306,8 @@
 | app/sep/apps/topology/models.py                                                                                              |      112 |        0 |        2 |        0 |    100% |           |
 | app/sep/apps/topology/topology.py                                                                                            |      173 |        7 |       58 |        8 |     94% |118-119, 122-\>114, 153, 156-157, 226-\>228, 229-\>231, 407, 491-\>501, 505 |
 | app/sep/artifact\_constants.py                                                                                               |        8 |        0 |        0 |        0 |    100% |           |
-| app/sep/bundle\_upload/factory.py                                                                                            |       30 |        1 |        4 |        1 |     94% |        67 |
-| app/sep/bundle\_upload/plan.py                                                                                               |      271 |        2 |       82 |        2 |     99% | 895, 1039 |
+| app/sep/bundle\_upload/factory.py                                                                                            |       37 |        1 |       10 |        1 |     96% |        71 |
+| app/sep/bundle\_upload/plan.py                                                                                               |      302 |        2 |       90 |        2 |     99% |1058, 1202 |
 | app/sep/bundle\_upload/resolver.py                                                                                           |       56 |        0 |       14 |        0 |    100% |           |
 | app/sep/bundle\_upload/seam.py                                                                                               |       12 |        0 |        0 |        0 |    100% |           |
 | app/sep/clients/pmm.py                                                                                                       |      292 |        2 |       74 |        3 |     99% |565, 567, 980-\>982 |
@@ -465,7 +466,7 @@
 | app/tasks/routes.py                                                                                                          |      238 |       21 |       46 |        4 |     90% |153-157, 240-246, 279, 329-338, 345, 435, 478, 493, 653, 667, 675, 701, 709-\>711, 732-733 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **28680** | **1744** | **7028** |  **657** | **92%** |           |
+| **TOTAL**                                                                                                                    | **28764** | **1744** | **7046** |  **657** | **92%** |           |
 
 
 ## Setup coverage badge
