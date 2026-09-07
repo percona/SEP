@@ -137,6 +137,11 @@ class StepRecord(BaseModel):
     :param finished_at: When this step reached a terminal status, if it has.
     :param detail: A human-readable outcome -- an error message on
         :attr:`StepStatus.FAILED`, or ``None`` while pending/running.
+    :param task_history_id: The Tasks API history id backing this step's dispatch,
+        while it is running -- the execution layer's own bookkeeping, not a
+        strategy concern. Still just data describing progress, so it lives here
+        rather than in a separate persisted-only sibling type: one shape for
+        planning, persistence, and API responses alike.
     """
 
     name: str
@@ -144,6 +149,7 @@ class StepRecord(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     detail: str | None = None
+    task_history_id: int | None = None
 
 
 class HostBootstrapState(BaseModel):
