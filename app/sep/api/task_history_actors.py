@@ -21,9 +21,9 @@ actor fields hold user identifiers and the docstrings say so. SEP resolves those
 identifiers to display names, so it publishes its own subclasses rather than a
 contract that describes an identifier and returns a name.
 
-Imports stay confined to ``app.api.deps``, ``app.core`` and ``app.tasks.models``
-so ``app.sep.apps.tasks.models`` can reach this module without pulling the SEP
-dependency graph into an app models module.
+The module deliberately does not import ``app.sep.deps``, so an app models module
+such as ``app.sep.apps.tasks.models`` can reach these types without acquiring an
+edge into the SEP request layer or a cycle back through it.
 """
 
 from collections.abc import Mapping
@@ -140,15 +140,37 @@ def resolve_task_history_actors(
     return page
 
 
+def _resolve_payload_actor_key(
+    row: dict[str, Any], key: str, username_map: Mapping[str, str]
+) -> None:
+    """Resolve one actor key of an unvalidated row in place.
+
+    Leave the value alone unless it is a string or ``None``: the row has not been
+    through model validation, so a key can hold any JSON shape, and an unhashable
+    one would raise from the map lookup rather than degrade.
+
+    :param row: The unvalidated row or nested task, rewritten in place.
+    :param key: The actor key to resolve, ignored when the row does not carry it.
+    :param username_map: The active provider's identifier-to-username map.
+    """
+    if key not in row:
+        return
+    value = row[key]
+    if value is not None and not isinstance(value, str):
+        return
+    row[key] = resolve_actor(value, username_map)
+
+
 def resolve_history_payload_actors(
     payload: dict[str, Any], username_map: Mapping[str, str]
 ) -> dict[str, Any]:
     """Rewrite actor identifiers inside an untyped task-history payload.
 
     Operate on the raw mapping rather than validating it, so a passthrough
-    surface keeps every upstream key it was given. Skip any row, or any nested
-    task, whose shape is not a mapping: an unexpected upstream shape degrades
-    that row to raw identifiers rather than failing the whole page.
+    surface keeps every upstream key it was given. Skip any row, any nested task,
+    and any actor value whose shape is not the expected one: an unexpected
+    upstream shape degrades that row to raw identifiers rather than failing the
+    whole page.
 
     :param payload: The upstream page, rewritten in place.
     :param username_map: The active provider's identifier-to-username map.
@@ -160,12 +182,10 @@ def resolve_history_payload_actors(
     for item in items:
         if not isinstance(item, dict):
             continue
-        if "executed_by" in item:
-            item["executed_by"] = resolve_actor(item["executed_by"], username_map)
+        _resolve_payload_actor_key(item, "executed_by", username_map)
         task = item.get("task")
         if not isinstance(task, dict):
             continue
         for key in ("created_by", "last_updated_by"):
-            if key in task:
-                task[key] = resolve_actor(task[key], username_map)
+            _resolve_payload_actor_key(task, key, username_map)
     return payload

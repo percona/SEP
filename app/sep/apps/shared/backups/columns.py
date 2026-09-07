@@ -30,9 +30,16 @@ def backup_type_column(value_labels: Mapping[str, str]) -> Column:
     The three backup apps store different ``BackupType`` vocabularies behind one
     shared column, so the labels cannot live on the constant itself.
 
+    Revalidate rather than ``model_copy(update=...)``, which would skip the
+    ``NonEmptyStr`` key and value constraints on a map this exported factory
+    accepts from any caller.
+
     :param value_labels: The declaring app's stored-value-to-display-text map,
         normally its ``BackupType.LABELS``.
     :return: A fresh column carrying a copy of the map; the shared constant is
         left untouched.
+    :raises ValidationError: When any key or value in ``value_labels`` is empty.
     """
-    return BACKUP_TYPE_COLUMN.model_copy(update={"value_labels": dict(value_labels)})
+    return Column.model_validate(
+        {**BACKUP_TYPE_COLUMN.model_dump(), "value_labels": dict(value_labels)}
+    )

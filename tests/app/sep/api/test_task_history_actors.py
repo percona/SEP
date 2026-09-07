@@ -272,6 +272,33 @@ class TestResolveHistoryPayloadActors:
 
         assert resolved["items"][0]["future_field"] == "kept"
 
+    @pytest.mark.parametrize(
+        "actor",
+        [
+            pytest.param({"nested": "object"}, id="unhashable-mapping"),
+            pytest.param(["a"], id="unhashable-list"),
+            pytest.param(42, id="number"),
+        ],
+    )
+    def test_leaves_a_non_string_actor_untouched(self, actor: Any):
+        """Degrade an actor of an unexpected type rather than failing the page."""
+        payload = {"items": [_history_payload(executed_by=actor)]}
+
+        resolved = resolve_history_payload_actors(payload, USERNAME_MAP)
+
+        assert resolved["items"][0]["executed_by"] == actor
+
+    def test_leaves_a_non_string_nested_actor_untouched(self):
+        """Apply the same tolerance to the actors on a nested task."""
+        row = _history_payload()
+        row["task"]["created_by"] = {"nested": "object"}
+        payload = {"items": [row]}
+
+        resolved = resolve_history_payload_actors(payload, USERNAME_MAP)
+
+        assert resolved["items"][0]["task"]["created_by"] == {"nested": "object"}
+        assert resolved["items"][0]["task"]["last_updated_by"] == "bob"
+
     def test_returns_the_same_mapping(self):
         """Rewrite in place so a call site can use the return as an expression."""
         payload = {"items": [_history_payload()]}

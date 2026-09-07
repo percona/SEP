@@ -10187,8 +10187,8 @@ export interface components {
      *         actor fields carrying display names rather than user identifiers.
      *     :param execution_history: Paginated task history from the tasks API
      *         (``items``, ``total``, ``offset``, ``limit``), passed through
-     *         unvalidated so every upstream key survives. The actor fields inside are
-     *         resolved to display names in place.
+     *         unvalidated so every upstream key survives. Carries whatever actor text
+     *         the constructing route supplied; the model itself imposes no shape.
      *     :param periodic_summary: Read-only summaries of periodic schedules
      *         attached to this task.
      *     :param executor_hosts: Executor hosts available for display, with

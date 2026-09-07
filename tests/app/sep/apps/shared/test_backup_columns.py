@@ -15,6 +15,9 @@
 
 """Cover the shared backup-family ``Type`` column factory."""
 
+import pytest
+from pydantic import ValidationError
+
 from app.sep.apps.shared.backups.columns import (
     BACKUP_TYPE_COLUMN,
     backup_type_column,
@@ -55,6 +58,15 @@ def test_backup_type_column_does_not_alias_across_calls():
     assert first is not second
     assert first.value_labels == {"M": "Mydumper"}
     assert second.value_labels == {"P": "pgBackRest"}
+
+
+def test_backup_type_column_rejects_an_empty_label():
+    """Enforce the column's non-empty key and value constraints on the map."""
+    with pytest.raises(ValidationError):
+        backup_type_column({"M": ""})
+
+    with pytest.raises(ValidationError):
+        backup_type_column({"": "Mydumper"})
 
 
 def test_backup_type_column_copies_the_caller_mapping():
