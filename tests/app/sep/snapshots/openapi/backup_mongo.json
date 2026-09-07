@@ -994,6 +994,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -1260,6 +1272,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -1433,6 +1457,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -1745,6 +1781,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -1830,6 +1878,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -2130,6 +2190,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -2227,6 +2299,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -2404,6 +2488,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -2513,6 +2609,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -2628,6 +2736,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -2725,6 +2845,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -2835,6 +2967,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -3164,6 +3308,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "endpoint_url": {
             "minLength": 1,
             "title": "Endpoint Url",
@@ -3272,6 +3428,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -3366,6 +3534,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "endpoint_url": {
             "minLength": 1,
@@ -3482,6 +3662,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -3575,6 +3767,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -3725,6 +3929,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -3882,6 +4098,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -3991,6 +4219,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [

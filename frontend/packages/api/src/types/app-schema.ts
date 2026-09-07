@@ -79,6 +79,15 @@ interface BaseField {
   label: string;
   required?: boolean;
   description?: string;
+  /**
+   * Consequence text for a field whose enabled or set state irreversibly
+   * destroys user data. Presence is the mark — there is no separate boolean,
+   * so `if (field.destructive)` is the check, and the string is what a
+   * confirmation displays. Unmarked fields either omit the key or send it as
+   * null, depending on whether the serving route excludes nulls, so test
+   * truthiness rather than presence.
+   */
+  destructive?: string | null;
   default?: unknown;
   /** Self-cardinality gates: when matched, the field is required. */
   requires?: FieldGate[];

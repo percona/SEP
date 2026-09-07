@@ -524,6 +524,35 @@ declaration order governs a section until a field pins an explicit `order`.
 Checksums' Advanced section uses `Ui(order=...)` to reorder a few fields away
 from their declaration order (see the model's docstring).
 
+`Ui(destructive=...)` marks a field whose value irreversibly destroys user
+data, and its value is the consequence sentence a renderer shows in a
+confirmation. Presence is the mark — there is no separate boolean — so a blank
+or whitespace-only string is rejected at construction rather than published as
+a mark with nothing to display. Like everything else on `Ui` it is presentation
+only: the API accepts exactly the same bodies either way, and the attribute is
+omitted from the wire until a field opts in.
+
+<!-- src: app/sep/apps/archives/models.py :: ArchivesCreate -->
+```python
+delete_data: Annotated[
+    bool | None,
+    Ui(
+        label="Delete Without Archiving",
+        section="Advanced",
+        destructive=(
+            "The matched source rows are deleted without being archived "
+            "anywhere. There is no copy to restore from."
+        ),
+    ),
+] = None
+```
+
+Mark a field when **enabling or setting it** is what causes the irreversible
+loss. Do not mark one because the surrounding operation is dangerous, because
+the flag is inverted (a `no_drop_*` whose *enabled* state is the safe
+direction), or because what gets destroyed is a tool's own bookkeeping rather
+than user data.
+
 ### `ArgFormat`
 
 `ArgFormat` marks a field as a command-line argument and controls how it is

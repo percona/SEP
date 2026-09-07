@@ -444,7 +444,12 @@ class _MultiRefModel(AppFormModel):
         int,
         ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
         SchemaRef(),
-        Ui(label="Target", section="s", depends_on="other"),
+        Ui(
+            label="Target",
+            section="s",
+            depends_on="other",
+            destructive="The selected target is dropped and rebuilt.",
+        ),
     ]
 
 
@@ -691,6 +696,19 @@ class TestReferenceFields:
         assert branches["schema"].fields[0].depends_on == "other"
         assert [field.name for field in sections[0].fields] == ["target"]
 
+    def test_multiple_ref_marker_branches_carry_destructive(self) -> None:
+        """Publish ``Ui(destructive=...)`` on every branch of a multi-reference one-of."""
+        sections = derive_form_sections(_MultiRefModel, _SINGLE_SECTION)
+        group = next(
+            field for field in sections[0].fields if isinstance(field, OneOfGroup)
+        )
+        assert {
+            branch.value: branch.fields[0].destructive for branch in group.branches
+        } == {
+            "service": "The selected target is dropped and rebuilt.",
+            "schema": "The selected target is dropped and rebuilt.",
+        }
+
     def test_allow_custom_requires_str_in_annotation(self) -> None:
         """Reject allow_custom on a field whose annotation cannot accept str."""
         with pytest.raises(ValueError, match="allow_custom"):
@@ -879,6 +897,91 @@ class TestUiDefaultTriState:
         """Honor ``Ui(default=None)`` as a form default of ``None`` over a value default."""
         assert _fields_by_name(_DefaultModel)["none_display"].default is None
         assert _DefaultModel.model_fields["none_display"].default == "body-default"
+
+
+class _DestructiveModel(AppFormModel):
+    wipe: Annotated[
+        bool,
+        Ui(label="Wipe", section="s", destructive="Existing rows are dropped."),
+    ] = False
+    strategy: Annotated[
+        str,
+        Ui(
+            label="Strategy",
+            section="s",
+            destructive="Choosing this recreates the table from scratch.",
+        ),
+    ] = ""
+    plain: Annotated[bool, Ui(label="Plain", section="s")] = False
+
+
+class _DestructiveBranchA(BaseModel):
+    mode: Literal["a"] = "a"
+    a_value: Annotated[str, Ui(label="A", section="s")] = ""
+
+
+class _DestructiveBranchB(BaseModel):
+    mode: Literal["b"] = "b"
+    b_value: Annotated[str, Ui(label="B", section="s")] = ""
+
+
+class TestUiDestructive:
+    """Cover the opt-in ``Ui(destructive=...)`` consequence notice."""
+
+    def test_marker_stores_the_consequence_text(self) -> None:
+        """Keep the consequence sentence verbatim on the marker."""
+        assert Ui(section="s", destructive="Drops tables.").destructive == (
+            "Drops tables."
+        )
+
+    def test_marker_is_unmarked_by_default(self) -> None:
+        """Leave ``destructive`` unset so an ordinary field carries no notice."""
+        assert Ui(section="s").destructive is None
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t\n"])
+    def test_marker_rejects_a_blank_consequence(self, blank: str) -> None:
+        """Reject a marker whose consequence text is empty or whitespace-only."""
+        with pytest.raises(ValueError, match="destructive"):
+            Ui(section="s", destructive=blank)
+
+    def test_bool_field_derives_the_consequence_text(self) -> None:
+        """Publish the notice on a derived ``bool`` field."""
+        assert (
+            _fields_by_name(_DestructiveModel)["wipe"].destructive
+            == "Existing rows are dropped."
+        )
+
+    def test_non_bool_field_derives_the_consequence_text(self) -> None:
+        """Publish the notice on a derived non-``bool`` field."""
+        assert _fields_by_name(_DestructiveModel)["strategy"].destructive == (
+            "Choosing this recreates the table from scratch."
+        )
+
+    def test_unmarked_field_derives_no_consequence_text(self) -> None:
+        """Leave an unmarked field's ``destructive`` at ``None``."""
+        assert _fields_by_name(_DestructiveModel)["plain"].destructive is None
+
+    def test_destructive_on_a_discriminated_union_is_rejected(self) -> None:
+        """Reject a mark on a discriminated union, which derives a group that cannot carry it.
+
+        A ``OneOfGroup`` is not a ``BaseField``, so it has no ``destructive``
+        and the branch leaves carry their own ``Ui``. Deriving silently would
+        drop the mark and leave the field looking safe, so the model is refused
+        as it is declared — ``AppFormModel`` builds the runtime schema in
+        ``__pydantic_init_subclass__``, so the failure lands at class creation.
+        """
+        with pytest.raises(ValueError, match="destructive"):
+
+            class _DestructiveOneOfModel(AppFormModel):
+                source: Annotated[
+                    _DestructiveBranchA | _DestructiveBranchB,
+                    Field(discriminator="mode"),
+                    Ui(
+                        label="Source",
+                        section="s",
+                        destructive="Everything is dropped.",
+                    ),
+                ] = Field(default_factory=_DestructiveBranchA)
 
 
 class TestHiddenExclusion:

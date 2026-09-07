@@ -233,6 +233,35 @@ class TestDipperFormSchemaEndpoint:
             "script_preview",
         } <= field_names
 
+    def test_unmarked_fields_carry_a_null_destructive_key(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """Emit ``destructive: null`` on every field of this route.
+
+        This route sets no ``response_model_exclude_none``, so an optional
+        ``BaseField`` attribute reaches the wire as an explicit null instead of
+        being dropped. That is the accepted shape here — consistent with the
+        ``description`` / ``requires`` / ``forbidden`` nulls the endpoint
+        already publishes — and this pins it rather than letting it drift
+        unobserved.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.MYSQL.value)
+        )
+        mock_task_api_dep.get = AsyncMock(return_value={})
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "environment"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        fields = [
+            field for section in response.json()["forms"] for field in section["fields"]
+        ]
+        assert fields
+        assert all(field["destructive"] is None for field in fields)
+
     def test_pmm_schema_contains_defaults(
         self, test_client, mock_inventory_api_dep, mock_task_api_dep
     ):

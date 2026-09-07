@@ -359,7 +359,16 @@ class RestoreCreate(TaskFormModel):
         NonEmptyStr | EmptyStrToNone, Ui(label="Local path", section="Mydumper")
     ] = None
     overwrite_tables: Annotated[
-        bool, Ui(label="Overwrite tables", section="Mydumper")
+        bool,
+        Ui(
+            label="Overwrite tables",
+            section="Mydumper",
+            destructive=(
+                "Existing tables in the target database are dropped before the "
+                "backup is loaded. Rows written since the backup was taken are "
+                "lost."
+            ),
+        ),
     ] = False
     myloader_threads: Annotated[
         int | EmptyStrToNone, Ui(label="Myloader threads", section="Mydumper")

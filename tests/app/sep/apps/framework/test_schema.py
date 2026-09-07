@@ -1315,6 +1315,50 @@ class TestChoiceDisabled:
         assert field.choices[1].disabled_reason == "Coming soon."
 
 
+class TestBaseFieldDestructive:
+    """Cover the opt-in ``destructive`` consequence text on ``BaseField``."""
+
+    def test_default_is_absent_from_the_wire(self) -> None:
+        """An unmarked field keeps its pre-feature wire shape under ``exclude_none``.
+
+        The discovery endpoint serialises with ``exclude_none=True``; typing the
+        attribute optional (default ``None``) keeps it out of the payload so
+        existing schema snapshots stay byte-identical.
+        """
+        field = BoolField(name="x", label="X")
+
+        assert field.destructive is None
+        assert field.model_dump(exclude_none=True) == {
+            "name": "x",
+            "label": "X",
+            "required": False,
+            "field_type": "bool",
+        }
+
+    def test_marked_field_serialises_the_consequence_text(self) -> None:
+        """An opted-in field carries the consequence sentence on the wire."""
+        field = BoolField(
+            name="overwrite_tables",
+            label="Overwrite tables",
+            destructive="Existing tables are dropped.",
+        )
+
+        dumped = field.model_dump(exclude_none=True)
+
+        assert dumped["destructive"] == "Existing tables are dropped."
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t\n"])
+    def test_blank_consequence_text_is_rejected(self, blank: str) -> None:
+        """Reject a mark carrying no consequence text, whatever the whitespace.
+
+        The ``Ui`` marker guard only sees the model-first DSL path; the apps that
+        construct schema fields directly never build a ``Ui``, so the wire model
+        has to refuse the half-marked state itself.
+        """
+        with pytest.raises(ValidationError):
+            BoolField(name="x", label="X", destructive=blank)
+
+
 class TestReferenceFieldAllowCustom:
     """Cover the opt-in ``allow_custom`` flag on the inventory reference fields."""
 

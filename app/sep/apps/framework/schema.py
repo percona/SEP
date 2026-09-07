@@ -222,34 +222,36 @@ class BaseField(SchemaBaseModel):
 
     :param name: The form-state key for the field; must match Python
         identifier rules, optionally with internal hyphens.
-    :type name: NonEmptyStr
     :param label: The human-readable label displayed next to the field.
-    :type label: NonEmptyStr
     :param required: Whether the field must be provided when the form is
         submitted. Defaults to ``False``.
-    :type required: bool
     :param description: Optional helper text rendered beneath the field.
         Defaults to ``None``.
-    :type description: NonEmptyStr | None
+    :param destructive: Optional consequence text marking the field as one
+        whose enabled or set state irreversibly destroys user data; presence
+        is the mark and the value is what a confirmation displays. Typed
+        optional so a route serialising with ``exclude_none`` drops it from the
+        wire until a field opts in, which is what keeps the discovery schemas
+        byte-identical; a route without that posture publishes it as an
+        explicit null alongside the other unset keys. Carries no validation
+        semantics — the API accepts exactly the same bodies either way.
     :param default: Optional default value pre-filled when the form is
         rendered. Typed permissively because consumer defaults may be
         scalars, lists, or dicts depending on the field type. Defaults to
         ``None``.
-    :type default: Any | None
     :param requires: Optional list of binary self-cardinality gates: when
         any gate's ``when`` predicate matches, the field must be present.
         Defaults to ``None``.
-    :type requires: list[FieldGate] | None
     :param forbidden: Optional list of binary self-cardinality gates: when
         any gate's ``when`` predicate matches, the field must be absent.
         Defaults to ``None``.
-    :type forbidden: list[FieldGate] | None
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
     label: NonEmptyStr
     required: bool = False
     description: NonEmptyStr | None = None
+    destructive: StrippedNonEmptyStr | None = None
     default: Any | None = None
     requires: list[FieldGate] | None = None
     forbidden: list[FieldGate] | None = None
