@@ -16,7 +16,6 @@
 """Tests for the Tasks-track relativize-task-payload-refs data migration."""
 
 import json
-from pathlib import Path
 
 import pytest
 from alembic import command
@@ -24,9 +23,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine
 
 from app.tasks.config import tasks_settings
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
+from tests.app.alembic_paths import ALEMBIC_INI
 
 # The head immediately before payload references are relativized.
 _PRE_RELATIVIZE_REVISION = "d25887ee3fea"

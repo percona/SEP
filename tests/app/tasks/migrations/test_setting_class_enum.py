@@ -15,8 +15,6 @@
 
 """Tests for the Tasks-track ``setting_class`` CHECK-drop migration."""
 
-from pathlib import Path
-
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -25,9 +23,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.db.utils import check_constraint_name
 from app.tasks.config import tasks_settings
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
+from tests.app.alembic_paths import ALEMBIC_INI
 
 # The add_setting_override_table revision on the Tasks track, before SETTINGS /
 # ALERT_SETTINGS were added to the setting_class CHECK constraint.

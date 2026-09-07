@@ -2618,6 +2618,37 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sep/admin/delivery-connection/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Delivery Connection
+     * @description Report the facts the delivery plan declares about its own connection.
+     *
+     *     No way the read can fail reaches the caller as an error: a deployment that
+     *     declares no connection-details step, stored inputs that no longer fit the
+     *     plan, a refused credential, an unreachable receiver and a read that outran
+     *     its bound all answer 200 with the outcome that describes them, so a caller
+     *     renders a state rather than handling an error. The three configuration
+     *     outcomes are decided before any request is issued; the read and the failure
+     *     outcomes are decided only after one.
+     *
+     *     :return: The resolved pairs in the plan's declaration order, or the outcome
+     *         explaining why there are none.
+     */
+    get: operations['sep_read_delivery_connection_api_sep_admin_delivery_connection__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sep/admin/settings/': {
     parameters: {
       query?: never;
@@ -2738,10 +2769,16 @@ export interface paths {
      *     :param session: The sub-app's database session.
      *     :param remote_api: The client for remote settings classes (``None`` when
      *         the router wires none).
+     *     :param actor: The calling admin's username, recorded on every row the
+     *         batch writes and reported back on each response.
      *     :return: One :class:`SettingResponse` per applied key, in input order.
      *     :raises HTTPNotFoundException: If the class isn't exposed.
      *     :raises HTTPUnprocessableEntityException: If any key fails validation;
      *         no rows are written.
+     *     :raises HTTPBadGatewayException: For a remote class, when the owning
+     *         sub-app returns a server error (status >= 500) or is unreachable.
+     *     :raises IntegrityError: When the replay of a batch that lost the
+     *         unique-index race conflicts again, which leaves nothing written.
      */
     patch: operations['sep_patch_settings_api_sep_admin_settings__setting_class__patch'];
     trace?: never;
@@ -3610,6 +3647,49 @@ export interface components {
       tasks: number;
     };
     /**
+     * DeliveryConnectionDetail
+     * @description Report one fact describing the delivery connection.
+     *
+     *     :param label: The display label the plan declared, rendered verbatim. A
+     *         machine key would oblige the caller to carry receiver-specific names.
+     *     :param value: The value that label reports.
+     */
+    DeliveryConnectionDetail: {
+      /** Label */
+      label: string;
+      /** Value */
+      value: string;
+    };
+    /**
+     * DeliveryConnectionResponse
+     * @description Report the facts describing the delivery connection, or why there are none.
+     *
+     *     :param status: Which of the five outcomes the read reached.
+     *     :param details: The resolved pairs in the plan's declaration order. Empty
+     *         for every status other than ``available``, and empty under ``available``
+     *         when every declared pointer missed, so a caller draws from this alone
+     *         and consults ``status`` only to explain an empty list.
+     */
+    DeliveryConnectionResponse: {
+      /**
+       * Details
+       * @default []
+       */
+      details: components['schemas']['DeliveryConnectionDetail'][];
+      status: components['schemas']['DeliveryConnectionStatusEnum'];
+    };
+    /**
+     * DeliveryConnectionStatusEnum
+     * @description Enumerate the mutually-exclusive outcomes of a connection-details read.
+     * @enum {string}
+     */
+    DeliveryConnectionStatusEnum:
+      | 'available'
+      | 'undeclared'
+      | 'not_configured'
+      | 'inputs_drifted'
+      | 'fetch_failed';
+    /**
      * ExecutionEvent
      * @description Represent a single lifecycle event from a task executor (executor-agnostic shape).
      *
@@ -4078,8 +4158,13 @@ export interface components {
      *         (``SecretStr`` / ``SecretBytes``) at any depth.
      *     :param is_complex: Whether the field's annotation is or contains a Pydantic
      *         ``BaseModel`` subclass (true for nested submodels).
-     *     :param has_override: Whether a row exists in the ``settingoverride`` table
-     *         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
+     *     :param has_override: Whether an **active** row in the ``settingoverride``
+     *         table applies to this ``(setting_class, key)`` pair. An inactive row is
+     *         skipped by the cache loader, so the served value falls back to the
+     *         declared default and reporting it as overridden would tell the UI a
+     *         field is overridden while showing it that default. A nested row also
+     *         marks every canonical prefix of its chain, so a parent reports ``True``
+     *         when only a deeper leaf carries a row.
      *     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
      *         present it separately from everyday settings. Display-only:
      *         it does not affect PATCH/DELETE eligibility.
@@ -4089,6 +4174,18 @@ export interface components {
      *         PATCH/DELETE server-side; the runtime gate is the real enforcement.
      *     :param options: Selectable enum members for dropdown UIs, or ``None`` when
      *         the field is not an ``Enum`` annotation. Aliased members are excluded.
+     *     :param updated_at: When the override applying to this key was last saved,
+     *         falling back to the row's creation time for a row written before the
+     *         stamp was recorded. ``None`` when ``has_override`` is ``False``.
+     *         Timestamps carry second granularity.
+     *     :param updated_by: The username that last saved that override, or ``None``
+     *         both when no override applies and when the row predates the actor
+     *         column. A key can draw on several rows (a nested parent reporting on its
+     *         leaves), in which case the pair comes from the row carrying the latest
+     *         timestamp. Two writes landing within the same second are
+     *         indistinguishable by timestamp, and the pair reported is then whichever
+     *         contributing row was created later, which need not be the one written
+     *         later.
      */
     SettingResponse: {
       /** Default Value */
@@ -4122,6 +4219,10 @@ export interface components {
       setting_class: string;
       /** Type */
       type: string;
+      /** Updated At */
+      updated_at?: string | null;
+      /** Updated By */
+      updated_by?: string | null;
       /** Value */
       value: unknown;
     };
@@ -14297,6 +14398,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_read_delivery_connection_api_sep_admin_delivery_connection__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeliveryConnectionResponse'];
         };
       };
     };

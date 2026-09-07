@@ -99,6 +99,7 @@ def client_fixture(override_session: AsyncSession) -> Iterator[TestClient]:
         classes=classes,
         session_dep=session_dep,
         admin_dep=Depends(allow_admin),
+        actor_dep=Annotated[str, Depends(lambda: "test-admin")],
     )
     app = FastAPI()
     app.include_router(router, prefix="/settings")
@@ -157,6 +158,7 @@ class TestRemotePassThrough:
             classes=[(SettingClassEnum.SETTINGS, Settings, settings)],
             session_dep=Annotated[AsyncSession, Depends(get_session)],
             admin_dep=Depends(lambda: None),
+            actor_dep=Annotated[str, Depends(lambda: "test-admin")],
             remote_classes=[(SettingClassEnum.TASKS_SETTINGS, "/admin/settings")],
             remote_api_dep=Annotated[_RefusingRemoteAPI, Depends(get_remote_api)],
         )

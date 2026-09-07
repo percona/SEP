@@ -378,6 +378,58 @@
         "title": "DashboardStatsResponse",
         "type": "object"
       },
+      "DeliveryConnectionDetail": {
+        "description": "Report one fact describing the delivery connection.\n\n:param label: The display label the plan declared, rendered verbatim. A\n    machine key would oblige the caller to carry receiver-specific names.\n:param value: The value that label reports.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "DeliveryConnectionDetail",
+        "type": "object"
+      },
+      "DeliveryConnectionResponse": {
+        "description": "Report the facts describing the delivery connection, or why there are none.\n\n:param status: Which of the five outcomes the read reached.\n:param details: The resolved pairs in the plan's declaration order. Empty\n    for every status other than ``available``, and empty under ``available``\n    when every declared pointer missed, so a caller draws from this alone\n    and consults ``status`` only to explain an empty list.",
+        "properties": {
+          "details": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DeliveryConnectionDetail"
+            },
+            "title": "Details",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DeliveryConnectionStatusEnum"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "DeliveryConnectionResponse",
+        "type": "object"
+      },
+      "DeliveryConnectionStatusEnum": {
+        "description": "Enumerate the mutually-exclusive outcomes of a connection-details read.",
+        "enum": [
+          "available",
+          "undeclared",
+          "not_configured",
+          "inputs_drifted",
+          "fetch_failed"
+        ],
+        "title": "DeliveryConnectionStatusEnum",
+        "type": "string"
+      },
       "ExecutionEvent": {
         "description": "Represent a single lifecycle event from a task executor (executor-agnostic shape).\n\n:param timestamp: When the event occurred (UTC).\n:param event_type: Executor-specific event category (for example a Nomad\n    task event type).\n:param description: Human-readable message for the event (no step prefix).\n:param step: Optional executor task/step name (for example a Nomad task\n    within the group).",
         "properties": {
@@ -1154,7 +1206,7 @@
         "type": "object"
       },
       "SettingResponse": {
-        "description": "Represent a single setting's metadata and current value.\n\n:param setting_class: The Pydantic class ``__name__`` the field belongs to.\n:param key: The field name on the settings class.\n:param key_path: Carry the canonical key segments for ``key`` such that\n    ``\"__\".join(key_path) == key``.\n:param value: The current value visible through the proxy, dumped to a\n    JSON-safe shape via the field's annotation. ``SecretStr`` fields are\n    redacted to ``\"**********\"``.\n:param default_value: The field's declared default value, dumped via the\n    same JSON serialiser. ``None`` when no default exists.\n:param type: A human-readable representation of the field's declared\n    annotation (for operator visibility; validation uses the actual\n    ``FieldInfo``).\n:param reload: The reload classification (HOT or NOT_OVERRIDABLE).\n:param description: The field's free-text description, or ``None``.\n:param is_secret: Whether the field's annotation contains a Pydantic secret\n    (``SecretStr`` / ``SecretBytes``) at any depth.\n:param is_complex: Whether the field's annotation is or contains a Pydantic\n    ``BaseModel`` subclass (true for nested submodels).\n:param has_override: Whether a row exists in the ``settingoverride`` table\n    for this ``(setting_class, key)`` pair, regardless of ``is_active``.\n:param is_advanced: Whether the setting is flagged ``advanced`` so the UI can\n    present it separately from everyday settings. Display-only:\n    it does not affect PATCH/DELETE eligibility.\n:param is_applicable: Whether the setting applies under current runtime state\n    (e.g. the active auth provider). ``False`` lets the UI present the field\n    as inert. Display-only, like ``is_advanced``: it does not block\n    PATCH/DELETE server-side; the runtime gate is the real enforcement.\n:param options: Selectable enum members for dropdown UIs, or ``None`` when\n    the field is not an ``Enum`` annotation. Aliased members are excluded.",
+        "description": "Represent a single setting's metadata and current value.\n\n:param setting_class: The Pydantic class ``__name__`` the field belongs to.\n:param key: The field name on the settings class.\n:param key_path: Carry the canonical key segments for ``key`` such that\n    ``\"__\".join(key_path) == key``.\n:param value: The current value visible through the proxy, dumped to a\n    JSON-safe shape via the field's annotation. ``SecretStr`` fields are\n    redacted to ``\"**********\"``.\n:param default_value: The field's declared default value, dumped via the\n    same JSON serialiser. ``None`` when no default exists.\n:param type: A human-readable representation of the field's declared\n    annotation (for operator visibility; validation uses the actual\n    ``FieldInfo``).\n:param reload: The reload classification (HOT or NOT_OVERRIDABLE).\n:param description: The field's free-text description, or ``None``.\n:param is_secret: Whether the field's annotation contains a Pydantic secret\n    (``SecretStr`` / ``SecretBytes``) at any depth.\n:param is_complex: Whether the field's annotation is or contains a Pydantic\n    ``BaseModel`` subclass (true for nested submodels).\n:param has_override: Whether an **active** row in the ``settingoverride``\n    table applies to this ``(setting_class, key)`` pair. An inactive row is\n    skipped by the cache loader, so the served value falls back to the\n    declared default and reporting it as overridden would tell the UI a\n    field is overridden while showing it that default. A nested row also\n    marks every canonical prefix of its chain, so a parent reports ``True``\n    when only a deeper leaf carries a row.\n:param is_advanced: Whether the setting is flagged ``advanced`` so the UI can\n    present it separately from everyday settings. Display-only:\n    it does not affect PATCH/DELETE eligibility.\n:param is_applicable: Whether the setting applies under current runtime state\n    (e.g. the active auth provider). ``False`` lets the UI present the field\n    as inert. Display-only, like ``is_advanced``: it does not block\n    PATCH/DELETE server-side; the runtime gate is the real enforcement.\n:param options: Selectable enum members for dropdown UIs, or ``None`` when\n    the field is not an ``Enum`` annotation. Aliased members are excluded.\n:param updated_at: When the override applying to this key was last saved,\n    falling back to the row's creation time for a row written before the\n    stamp was recorded. ``None`` when ``has_override`` is ``False``.\n    Timestamps carry second granularity.\n:param updated_by: The username that last saved that override, or ``None``\n    both when no override applies and when the row predates the actor\n    column. A key can draw on several rows (a nested parent reporting on its\n    leaves), in which case the pair comes from the row carrying the latest\n    timestamp. Two writes landing within the same second are\n    indistinguishable by timestamp, and the pair reported is then whichever\n    contributing row was created later, which need not be the one written\n    later.",
         "properties": {
           "default_value": {
             "title": "Default Value"
@@ -1227,6 +1279,29 @@
           "type": {
             "title": "Type",
             "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
           },
           "value": {
             "title": "Value"
@@ -19808,6 +19883,28 @@
         ]
       }
     },
+    "/api/sep/admin/delivery-connection/": {
+      "get": {
+        "description": "Report the facts the delivery plan declares about its own connection.\n\nNo way the read can fail reaches the caller as an error: a deployment that\ndeclares no connection-details step, stored inputs that no longer fit the\nplan, a refused credential, an unreachable receiver and a read that outran\nits bound all answer 200 with the outcome that describes them, so a caller\nrenders a state rather than handling an error. The three configuration\noutcomes are decided before any request is issued; the read and the failure\noutcomes are decided only after one.\n\n:return: The resolved pairs in the plan's declaration order, or the outcome\n    explaining why there are none.",
+        "operationId": "sep_read_delivery_connection_api_sep_admin_delivery_connection__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Delivery Connection",
+        "tags": [
+          "sep"
+        ]
+      }
+    },
     "/api/sep/admin/settings/": {
       "get": {
         "description": "List every exposed settings class with current values and metadata.\n\nLocal classes are read from their config singletons; remote classes\n(``remote_classes``) are fetched server-side from their owning sub-app\nand appended in declaration order; app-owned classes follow remote\ngroups with per-group app metadata. A failed remote fetch fails the\nwhole request with ``502`` -- the LIST never silently drops a remote\ngroup.\n\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:return: Grouped responses, one group per configured settings class.",
@@ -19901,7 +19998,7 @@
     },
     "/api/sep/admin/settings/{setting_class}": {
       "patch": {
-        "description": "Apply a batch of overrides for one settings class atomically.\n\nFor a remote class the batch is forwarded to the owning sub-app, which\nowns the validation and persistence; the upstream's per-field ``422``\n(and its ``detail``) is preserved so the UI can render inline messages.\n\nFor a local class: Phase A validates every key in ``body`` (existence on\nthe class, HOT classification, type/constraint coercion) and collects\nper-key errors. If any key fails, the whole batch is rejected with a\nstructured 422 and nothing is written. Phase B persists every valid entry\nin a single transaction, refreshes the proxy snapshot once, then fires\nthe rebind callbacks for any changed keys so a HOT target rebinds without\nwaiting for the next background refresh cycle.\n\n:param request: The incoming request; its ``app.state`` carries the\n    sub-app's rebind-callback registry.\n:param setting_class: The settings class the override targets.\n:param body: The batch of ``{key: value, ...}`` overrides.\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:return: One :class:`SettingResponse` per applied key, in input order.\n:raises HTTPNotFoundException: If the class isn't exposed.\n:raises HTTPUnprocessableEntityException: If any key fails validation;\n    no rows are written.",
+        "description": "Apply a batch of overrides for one settings class atomically.\n\nFor a remote class the batch is forwarded to the owning sub-app, which\nowns the validation and persistence; the upstream's per-field ``422``\n(and its ``detail``) is preserved so the UI can render inline messages.\n\nFor a local class: Phase A validates every key in ``body`` (existence on\nthe class, HOT classification, type/constraint coercion) and collects\nper-key errors. If any key fails, the whole batch is rejected with a\nstructured 422 and nothing is written. Phase B persists every valid entry\nin a single transaction, refreshes the proxy snapshot once, then fires\nthe rebind callbacks for any changed keys so a HOT target rebinds without\nwaiting for the next background refresh cycle.\n\n:param request: The incoming request; its ``app.state`` carries the\n    sub-app's rebind-callback registry.\n:param setting_class: The settings class the override targets.\n:param body: The batch of ``{key: value, ...}`` overrides.\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:param actor: The calling admin's username, recorded on every row the\n    batch writes and reported back on each response.\n:return: One :class:`SettingResponse` per applied key, in input order.\n:raises HTTPNotFoundException: If the class isn't exposed.\n:raises HTTPUnprocessableEntityException: If any key fails validation;\n    no rows are written.\n:raises HTTPBadGatewayException: For a remote class, when the owning\n    sub-app returns a server error (status >= 500) or is unreachable.\n:raises IntegrityError: When the replay of a batch that lost the\n    unique-index race conflicts again, which leaves nothing written.",
         "operationId": "sep_patch_settings_api_sep_admin_settings__setting_class__patch",
         "parameters": [
           {
