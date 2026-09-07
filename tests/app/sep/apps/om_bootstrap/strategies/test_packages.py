@@ -260,6 +260,23 @@ class TestBuildRunStep:
         assert "generated-secret" in command
         assert "clusterMonitor" in command
 
+    def test_create_pmm_monitoring_user_disables_the_atlas_cli_check(self) -> None:
+        """Mongosh's Atlas CLI local-deployment probe closes the localhost exception.
+
+        Confirmed against a real run where every attempt to create the first
+        user failed "not authorized" even though create_pmm_monitoring_user's
+        own command was correct -- the probe, not our command, burned it.
+        """
+        action = PackagesInstallStrategy().build_run_step(
+            "create_pmm_monitoring_user",
+            ["node00"],
+            _spec(OperatingSystem.UBUNTU),
+            params={"username": "pmm_monitor", "password": "generated-secret"},
+        )
+
+        command = " ".join(action.command)
+        assert "MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1" in command
+
 
 class TestPlanRollbackSteps:
     """Assert the rollback step list is fixed and OS-independent."""

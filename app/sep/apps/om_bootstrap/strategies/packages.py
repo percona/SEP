@@ -103,11 +103,30 @@ def _mongosh_eval(js: str) -> StepAction:
     quoting bugs that show up trying to nest a JS string literal inside a shell
     double-quoted one.
 
+    ``MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1`` matters specifically for
+    ``create_pmm_monitoring_user``, run against a freshly keyFile-secured member
+    with no user yet: mongosh probes ``admin.atlascli`` (Atlas CLI local-deployment
+    detection) as its first command on every connection, before anything in
+    ``js`` runs. That probe is not on MongoDB's localhost-exception allow-list, so
+    it gets rejected as unauthorized -- and confirmed against a real run, that
+    rejection closes the exception for the rest of the session, so the *intended*
+    first-user ``createUser`` then fails too with the same "not authorized" error,
+    even run as literally the next command. Harmless on ``rs_initiate``, which
+    doesn't need the exception (``replSetInitiate`` is separately allowed
+    unauthenticated whenever no replica set config exists yet) -- set here rather
+    than only on the one call site so no future ``_mongosh_eval`` caller inherits
+    the same trap.
+
     :param js: The JavaScript to evaluate.
     :return: The step action.
     """
     return StepAction(
-        command=["sh", "-c", f"mongosh --quiet --eval {shlex.quote(js)}"],
+        command=[
+            "sh",
+            "-c",
+            f"MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1 "
+            f"mongosh --quiet --eval {shlex.quote(js)}",
+        ],
         timeout_s=60,
     )
 
