@@ -19,14 +19,13 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from pathlib import Path
     from types import ModuleType
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
+from tests.app.alembic_paths import REPO_ROOT
 
 # The create_alert_backup_table revision: the head of the alerts branch, the
 # app the PMM-embedded side-car's allow-list strip removes.

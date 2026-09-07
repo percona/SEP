@@ -21,14 +21,16 @@ from datetime import timedelta
 
 import pytest
 import pytest_asyncio
+from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.encryption import encrypt
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.lifecycle import (
     fire_change_callbacks,
@@ -51,6 +53,7 @@ from app.tasks.main import _reconcile_nomad, tasks_app
 from tests.app.core.settings_override.conftest import (
     hanging_session_maker_factory,
     SEP_SETTINGS_TOKEN,
+    SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
 from tests.app.db_schema import apply_schema
@@ -139,6 +142,48 @@ async def test_refresh_all_swaps_snapshot(
 
     await refresh_all(lambda: session_maker, registry)
     assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_falls_back_when_a_row_becomes_undecryptable(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Serve the YAML/env value once a published override stops decrypting.
+
+    ``publish_snapshot`` replaces the snapshot wholesale, so a row that can no
+    longer be read is *absent* rather than stale, and the proxy defers to the
+    wrapped instance. Falling back to configuration beats serving a credential
+    the deployment can no longer verify.
+    """
+    proxy: OverridableSettingsProxy = OverridableSettingsProxy(
+        Settings, setting_class=Settings.__name__
+    )
+    registry = {SettingClassEnum.SETTINGS: ProxyEntry(proxy, Settings)}
+    api_key = "pmm-api-key-published"
+    async with session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SETTINGS_TOKEN,
+                key="PMM__api_key",
+                value=encrypt(api_key),
+            ),
+        )
+
+    await refresh_all(lambda: session_maker, registry)
+    published = proxy.PMM.api_key
+    assert published.get_secret_value() == api_key
+
+    foreign = Fernet(Fernet.generate_key()).encrypt(api_key.encode()).decode("ascii")
+    async with session_maker() as session:
+        stored = await SettingsOverrideManager.first(session, key="PMM__api_key")
+        stored.value = foreign
+        await SettingsOverrideManager.save(session, stored)
+
+    await refresh_all(lambda: session_maker, registry)
+
+    assert proxy.PMM.api_key != published
+    assert proxy.PMM.api_key == proxy._resolve().PMM.api_key
 
 
 @pytest.mark.asyncio
