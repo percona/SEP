@@ -73,14 +73,8 @@ async def list_service_backups(
         CatalogServiceKey(service_name=service.name, service_id=service.id),
         pagination=pagination,
     )
-    return PaginatedResponse[BackupRunResponse](
-        items=[
-            BackupRunResponse.model_validate(run, from_attributes=True)
-            for run in page.items
-        ],
-        total=page.total,
-        offset=page.offset,
-        limit=page.limit,
+    return page.map_items(
+        lambda run: BackupRunResponse.model_validate(run, from_attributes=True)
     )
 
 
@@ -115,14 +109,8 @@ async def list_task_backups(
     page = await MysqlBackupRunManager.list_for_history_ids(
         session, history_ids, pagination=pagination
     )
-    return PaginatedResponse[BackupRunResponse](
-        items=[
-            BackupRunResponse.model_validate(run, from_attributes=True)
-            for run in page.items
-        ],
-        total=page.total,
-        offset=page.offset,
-        limit=page.limit,
+    return page.map_items(
+        lambda run: BackupRunResponse.model_validate(run, from_attributes=True)
     )
 
 
