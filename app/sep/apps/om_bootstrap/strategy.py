@@ -179,11 +179,19 @@ class HostBootstrapState(BaseModel):
         would consist of, even before anything fails. Every entry stays
         :attr:`StepStatus.PENDING` unless the stepper actually decides to roll
         this host back.
+    :param finalize_steps: This host's post-coordination steps, in the order
+        :meth:`InstallStrategy.plan_finalize_steps` returned them -- planned up
+        front alongside ``steps``, but not dispatched until every run-level step
+        has succeeded (PMM's stepper's call, mirroring how it gates run-level
+        steps on every host's ``steps`` first -- see
+        :meth:`InstallStrategy.plan_finalize_steps`'s own docstring for why this
+        ordering exists at all).
     """
 
     host: str
     steps: list[StepRecord]
     rollback_steps: list[StepRecord] = []
+    finalize_steps: list[StepRecord] = []
 
     @property
     def status(self) -> StepStatus:
@@ -223,7 +231,7 @@ class InstallStrategy(Protocol):
     same way. This is PMM-15347/plan.md §4 item 5's "abstracted pre-check/
     install/configure/test" requirement.
 
-    Three parallel step lists, not one:
+    Four parallel step lists, not one:
 
     - **Per-host** (:meth:`plan_steps`/:meth:`build_step`): everything a single
       host's own install needs, run independently per host.
@@ -235,6 +243,20 @@ class InstallStrategy(Protocol):
       designated host from ``hosts`` (index 0 by convention -- see
       :meth:`build_run_step`'s ``hosts`` parameter) once every per-host step has
       succeeded.
+    - **Finalize** (:meth:`plan_finalize_steps`/:meth:`build_finalize_step`):
+      per-host work that has to happen *after* run-level coordination has
+      already succeeded, not before -- enabling MongoDB authorization is the
+      motivating case: creating the first user reliably requires authorization
+      to still be *off* everywhere at the time, because MongoDB's localhost
+      exception is unreliable once a replica set already has more than one
+      member (confirmed against a real multi-member run, not a theoretical
+      concern -- once any privileged op on it fails once, the exception closes
+      permanently for that mongod's whole lifetime, not just for one
+      connection). So ``configure_mongod`` never enables authorization, and each
+      host only turns it on for itself once ``create_pmm_monitoring_user`` has
+      actually succeeded. The stepper dispatches these once every run-level step
+      has succeeded -- the same per-host shape as :meth:`plan_steps`, just
+      running after run-level steps instead of before them.
     - **Rollback** (:meth:`plan_rollback_steps`/:meth:`build_rollback_step`):
       one host's teardown, planned up front alongside its forward steps so a
       fresh run already shows what rolling back would do (Adamo's decided
@@ -313,6 +335,37 @@ class InstallStrategy(Protocol):
             still has the full list to do so.
         :param spec: The run's bootstrap spec.
         :param params: See :meth:`build_step`.
+        :return: What the execution layer needs to run this step.
+        """
+        ...
+
+    def plan_finalize_steps(self, spec: BootstrapSpec) -> list[str]:
+        """Return this strategy's ordered per-host finalize step names for ``spec``.
+
+        See the class docstring's "finalize" bullet. Called once, alongside
+        :meth:`plan_steps`, before any host is touched -- planned up front the
+        same way rollback steps are, even though the stepper will not dispatch
+        any of them until every run-level step has succeeded.
+
+        :param spec: The host's bootstrap spec.
+        :return: Step names, in the order finalize should apply them.
+        """
+        ...
+
+    def build_finalize_step(
+        self,
+        step_name: str,
+        host: str,
+        spec: BootstrapSpec,
+        params: dict[str, str] | None = None,
+    ) -> StepAction:
+        """Build the action for one finalize step ``plan_finalize_steps`` named.
+
+        :param step_name: One of the names this strategy's own
+            :meth:`plan_finalize_steps` returned for ``spec``.
+        :param host: The node name being finalized.
+        :param spec: The host's bootstrap spec.
+        :param params: See :meth:`build_step`. ``None`` for a step that needs none.
         :return: What the execution layer needs to run this step.
         """
         ...

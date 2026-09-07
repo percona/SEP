@@ -94,6 +94,36 @@ def _psmdb_channel(mongodb_version: str) -> str:
     return f"psmdb-{mongodb_version.replace('.', '')}"
 
 
+def _mongod_config(spec: BootstrapSpec, *, with_auth: bool) -> str:
+    """Render ``mongod.conf``'s contents, with or without the security block.
+
+    Shared by :meth:`PackagesInstallStrategy._configure_mongod` (``with_auth=False``,
+    always -- see its own docstring for why) and
+    :meth:`PackagesInstallStrategy._enable_auth` (``with_auth=True``, turning it
+    on afterward): every other setting is identical between the two, so this is
+    the one place that has to stay in sync rather than two configs drifting
+    apart under maintenance.
+
+    :param spec: The host's bootstrap spec.
+    :param with_auth: Whether to include ``security.authorization``/``keyFile``.
+    :return: The full config file contents, including a trailing newline on the
+        last section.
+    """
+    security = (
+        f"security:\n  authorization: enabled\n  keyFile: {KEY_FILE_PATH}\n"
+        if with_auth
+        else ""
+    )
+    return (
+        f"net:\n  bindIp: 0.0.0.0\n"
+        f"storage:\n  dbPath: {DATA_PATH}\n"
+        f"{security}"
+        f"replication:\n  replSetName: {spec.replica_set_name}\n"
+        f"processManagement:\n  fork: true\n  pidFilePath: {PID_FILE_PATH}\n"
+        f"systemLog:\n  destination: file\n  path: {LOG_PATH}\n  logAppend: true\n"
+    )
+
+
 def _mongosh_eval(js: str) -> StepAction:
     """Build a ``StepAction`` running one ``mongosh --quiet --eval`` command.
 
@@ -103,30 +133,20 @@ def _mongosh_eval(js: str) -> StepAction:
     quoting bugs that show up trying to nest a JS string literal inside a shell
     double-quoted one.
 
-    ``MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1`` matters specifically for
-    ``create_pmm_monitoring_user``, run against a freshly keyFile-secured member
-    with no user yet: mongosh probes ``admin.atlascli`` (Atlas CLI local-deployment
-    detection) as its first command on every connection, before anything in
-    ``js`` runs. That probe is not on MongoDB's localhost-exception allow-list, so
-    it gets rejected as unauthorized -- and confirmed against a real run, that
-    rejection closes the exception for the rest of the session, so the *intended*
-    first-user ``createUser`` then fails too with the same "not authorized" error,
-    even run as literally the next command. Harmless on ``rs_initiate``, which
-    doesn't need the exception (``replSetInitiate`` is separately allowed
-    unauthenticated whenever no replica set config exists yet) -- set here rather
-    than only on the one call site so no future ``_mongosh_eval`` caller inherits
-    the same trap.
+    Every caller here runs before authorization is ever enabled (see
+    :meth:`PackagesInstallStrategy._configure_mongod`'s own docstring) --
+    deliberately, so this never has to route around MongoDB's localhost
+    exception at all: ``rs_initiate`` and ``create_pmm_monitoring_user`` both
+    just work, unauthenticated, on any member regardless of topology or
+    timing. ``enable_auth`` (:meth:`PackagesInstallStrategy._enable_auth`) is
+    what turns authorization on afterward, once the user this creates already
+    exists.
 
     :param js: The JavaScript to evaluate.
     :return: The step action.
     """
     return StepAction(
-        command=[
-            "sh",
-            "-c",
-            f"MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1 "
-            f"mongosh --quiet --eval {shlex.quote(js)}",
-        ],
+        command=["sh", "-c", f"mongosh --quiet --eval {shlex.quote(js)}"],
         timeout_s=60,
     )
 
@@ -281,10 +301,24 @@ class PackagesInstallStrategy:
         )
 
     def _configure_mongod(self, spec: BootstrapSpec) -> StepAction:
-        """Write ``mongod.conf`` enabling replication and keyFile auth.
+        """Write ``mongod.conf`` enabling replication, with authorization left off.
 
-        Assumes a keyFile already exists at :data:`KEY_FILE_PATH` -- planted by
-        ``distribute_keyfile``, immediately before this step.
+        Deliberately does **not** set ``security.authorization``/``keyFile`` here,
+        even though :data:`KEY_FILE_PATH` already exists on disk (planted by
+        ``distribute_keyfile``, immediately before this step): MongoDB's localhost
+        exception -- the unauthenticated window a fresh member normally uses to
+        bootstrap its first user -- is unreliable once a replica set already has
+        more than one member. Confirmed against a real multi-member run, not a
+        theoretical concern: 40 consecutive, freshly-connected ``createUser``
+        attempts all failed identically once the first one did, because the
+        exception closes *permanently* for that mongod's whole lifetime the
+        moment any privileged op on it fails once -- not just for the one
+        connection that failed it. Retrying, waiting for a stable primary, or
+        avoiding mongosh's own extra connections none of it helped; the only
+        reliable fix is to never need the exception at all. So authorization
+        stays off through ``rs_initiate``/``create_pmm_monitoring_user``, and
+        :meth:`_enable_auth` -- a finalize step, dispatched only once that user
+        already exists -- turns it on afterward, per host.
 
         Also creates :data:`DATA_PATH`, owned by ``mongod``, rather than
         assuming the package's own post-install already did -- confirmed
@@ -313,14 +347,7 @@ class PackagesInstallStrategy:
         in for this: those capture only the pre-fork parent, which prints
         nothing once mongod backgrounds itself.
         """
-        config = (
-            f"net:\n  bindIp: 0.0.0.0\n"
-            f"storage:\n  dbPath: {DATA_PATH}\n"
-            f"security:\n  authorization: enabled\n  keyFile: {KEY_FILE_PATH}\n"
-            f"replication:\n  replSetName: {spec.replica_set_name}\n"
-            f"processManagement:\n  fork: true\n  pidFilePath: {PID_FILE_PATH}\n"
-            f"systemLog:\n  destination: file\n  path: {LOG_PATH}\n  logAppend: true\n"
-        )
+        config = _mongod_config(spec, with_auth=False)
         command = (
             f"install -d -m 750 -o mongod -g mongod {DATA_PATH} && "
             f"cat > {CONFIG_PATH} <<'MONGOD_CONF'\n{config}MONGOD_CONF\n"
@@ -439,6 +466,66 @@ class PackagesInstallStrategy:
             f"}})"
         )
         return _mongosh_eval(command)
+
+    def plan_finalize_steps(self, spec: BootstrapSpec) -> list[str]:
+        """Return this strategy's fixed per-host finalize step names.
+
+        :param spec: The host's bootstrap spec.
+        :return: Step names, in execution order.
+        """
+        del spec  # Unused for now -- fixed regardless of spec, like plan_steps.
+        return ["enable_auth"]
+
+    def build_finalize_step(
+        self,
+        step_name: str,
+        host: str,
+        spec: BootstrapSpec,
+        params: dict[str, str] | None = None,
+    ) -> StepAction:
+        """Build the action for one of :meth:`plan_finalize_steps`' names.
+
+        :param step_name: One of :meth:`plan_finalize_steps`' names.
+        :param host: The node name being finalized. Unused -- see
+            :meth:`build_step`'s own docstring on why the signature carries it
+            anyway.
+        :param spec: The host's bootstrap spec.
+        :param params: Unused -- ``enable_auth`` needs no secret it doesn't
+            already have on disk (:data:`KEY_FILE_PATH`, planted by
+            ``distribute_keyfile``).
+        :return: What the execution layer needs to run this step.
+        :raises ValueError: If ``step_name`` is not one of
+            :meth:`plan_finalize_steps`' names.
+        """
+        del host, params
+        if step_name == "enable_auth":
+            return self._enable_auth(spec)
+        raise ValueError(
+            f"{step_name!r} is not a PackagesInstallStrategy finalize step; "
+            f"expected one of {self.plan_finalize_steps(spec)}"
+        )
+
+    def _enable_auth(self, spec: BootstrapSpec) -> StepAction:
+        """Turn MongoDB authorization on, now that the first user exists.
+
+        Rewrites the *same* :data:`CONFIG_PATH` :meth:`_configure_mongod` wrote,
+        adding exactly the ``security`` block that method left out -- see its own
+        docstring for why authorization has to stay off until now. Restarts
+        ``mongod`` to pick the new config up: unlike ``processManagement.fork``
+        or ``systemLog.path``, ``security.authorization`` cannot be changed on a
+        running server, only at startup.
+
+        A plain ``restart`` rather than ``stop`` then ``start``: systemd runs
+        them as one unit transaction either way, and a two-step version would
+        leave a window (however short) where ``mongod`` isn't running at all if
+        something between the two commands failed.
+        """
+        config = _mongod_config(spec, with_auth=True)
+        command = f"cat > {CONFIG_PATH} <<'MONGOD_CONF'\n{config}MONGOD_CONF\n"
+        return StepAction(
+            command=["sh", "-c", f"{command}systemctl restart mongod"],
+            timeout_s=90,
+        )
 
     def plan_rollback_steps(self, spec: BootstrapSpec) -> list[str]:
         """Return this strategy's fixed per-host rollback step names.
