@@ -2726,3 +2726,130 @@ class TestOneOfGroup:
             detail_view=_minimal_detail_view(),
         )
         assert schema.forms[0].fields[0].name == "source"
+
+
+# ── Record display names ────────────────────────────────────────────────
+
+
+class TestAppSchemaRecordDisplayNames:
+    """Cover the singular/plural record names carried beside ``display_name``."""
+
+    def test_both_record_names_default_to_display_name(self) -> None:
+        """Fill both record names from ``display_name`` when neither is supplied."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.item_display_name == "MySQL Backups"
+        assert schema.item_display_name_plural == "MySQL Backups"
+
+    def test_supplying_the_singular_leaves_the_plural_defaulted(self) -> None:
+        """Default the plural from ``display_name``, never from the singular."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            item_display_name="backup",
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.item_display_name == "backup"
+        assert schema.item_display_name_plural == "MySQL Backups"
+
+    def test_supplying_the_plural_leaves_the_singular_defaulted(self) -> None:
+        """Default the singular from ``display_name``, never from the plural."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            item_display_name_plural="backups",
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.item_display_name == "MySQL Backups"
+        assert schema.item_display_name_plural == "backups"
+
+    def test_declared_record_names_are_kept(self) -> None:
+        """Keep both record names when the author declares them."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            item_display_name="backup",
+            item_display_name_plural="backups",
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.item_display_name == "backup"
+        assert schema.item_display_name_plural == "backups"
+
+    @pytest.mark.parametrize(
+        "field_name", ["item_display_name", "item_display_name_plural"]
+    )
+    def test_empty_record_name_is_rejected(self, field_name: str) -> None:
+        """Reject an empty record name; defaulting does not weaken ``NonEmptyStr``."""
+        with pytest.raises(ValidationError, match="at least 1 character"):
+            AppSchema(
+                name="minimal",
+                display_name="Minimal",
+                list_view=_minimal_list_view(),
+                **{field_name: ""},
+            )
+
+    def test_dumped_payload_round_trips(self) -> None:
+        """Re-validate a dumped payload without the defaulting altering it."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            item_display_name="backup",
+            item_display_name_plural="backups",
+            list_view=_minimal_list_view(),
+        )
+
+        payload = schema.model_dump(mode="json", by_alias=True, exclude_none=True)
+        assert payload["item_display_name"] == "backup"
+        assert payload["item_display_name_plural"] == "backups"
+        assert AppSchema.model_validate(payload) == schema
+
+    def test_validating_an_instance_is_untouched(self) -> None:
+        """Pass a model instance through validation without the dict guard tripping."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            item_display_name="backup",
+            item_display_name_plural="backups",
+            list_view=_minimal_list_view(),
+        )
+
+        assert AppSchema.model_validate(schema) == schema
+
+    def test_entity_record_names_default_from_the_entity_display_name(self) -> None:
+        """Default an entity's record names from its own ``display_name``."""
+        entity = _minimal_entity_schema()
+
+        assert entity.item_display_name == "Things"
+        assert entity.item_display_name_plural == "Things"
+
+    def test_entity_record_names_are_independent_of_the_parent(self) -> None:
+        """Keep an entity's declared record names distinct from the app's."""
+        entity = AppEntitySchema(
+            name="nodes",
+            display_name="Nodes",
+            item_display_name="node",
+            item_display_name_plural="nodes",
+            forms=[
+                FormSection(
+                    title="T",
+                    fields=[StringField(name="title", label="Title", required=True)],
+                )
+            ],
+            list_view=_minimal_list_view(),
+        )
+        schema = AppSchema(
+            name="multi",
+            display_name="Inventory",
+            entities=[entity],
+        )
+
+        assert schema.item_display_name == "Inventory"
+        assert schema.entities is not None
+        assert schema.entities[0].item_display_name == "node"

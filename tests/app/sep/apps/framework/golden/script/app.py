@@ -31,6 +31,8 @@ from app.tasks.models import ANY_OWNER
 app = TaskExecutionApp(
     name="golden_script",
     display_name="Golden Script",
+    item_display_name="Golden Script",
+    item_display_name_plural="Golden Script",
     uri_path="/golden_script",
     description="TODO: describe what the Golden Script scripts do.",
     owner=ANY_OWNER,

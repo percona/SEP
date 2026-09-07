@@ -455,6 +455,8 @@
       "title": "Binlog"
     }
   ],
+  "item_display_name": "restore",
+  "item_display_name_plural": "restores",
   "list_view": {
     "columns": [
       {

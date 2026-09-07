@@ -1205,3 +1205,89 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
     finally:
         scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
         _cleanup(name)
+
+
+@pytest.mark.parametrize("flavor", list(scaffold.Flavor))
+def test_record_display_names_default_to_the_display_name(
+    flavor: scaffold.Flavor,
+) -> None:
+    """Seed both record names from the display name when the author supplies neither.
+
+    The default is deliberately the value the conformance detector rejects, so a
+    ``task``-flavored scaffold — the only flavor whose rendered app declares a
+    create form — cannot register until its author names the record. The other
+    two flavors render ``forms=[]`` at the app level and are skipped by the
+    detector, so for them the default just stands.
+    """
+    config = _config_from_args(["--name", "demo", "--type", flavor.value, "--no-input"])
+
+    assert config.item_display_name == config.display_name
+    assert config.item_display_name_plural == config.display_name
+
+
+@pytest.mark.parametrize("flavor", list(scaffold.Flavor))
+def test_record_display_name_flags_reach_the_config(flavor: scaffold.Flavor) -> None:
+    """Carry both CLI flags through to the resolved config."""
+    config = _config_from_args(
+        [
+            "--name",
+            "demo",
+            "--type",
+            flavor.value,
+            "--item-display-name",
+            "widget",
+            "--item-display-name-plural",
+            "widgets",
+            "--no-input",
+        ]
+    )
+
+    assert config.item_display_name == "widget"
+    assert config.item_display_name_plural == "widgets"
+
+
+@pytest.mark.parametrize("flavor", list(scaffold.Flavor))
+def test_record_display_names_rendered_into_every_declaration_site(
+    tmp_settings: Path, flavor: scaffold.Flavor
+) -> None:
+    """Emit both kwargs on exactly the constructors that accept them, and nowhere else.
+
+    ``BaseApp`` declares neither field and does not forbid extras, so a kwarg
+    rendered onto its constructor would be silently discarded rather than
+    rejected — dead configuration a scaffold author would read as load-bearing.
+    The expectation is therefore per-file, not "wherever ``display_name`` appears".
+    """
+    name = f"_scaffold_nouns_{flavor.value}"
+    expected_carriers = {
+        scaffold.Flavor.BASE: {"schema.py"},
+        scaffold.Flavor.TASK: {"app.py"},
+        scaffold.Flavor.SCRIPT: {"app.py", "source.py"},
+    }[flavor]
+    config = _config_from_args(
+        [
+            "--name",
+            name,
+            "--type",
+            flavor.value,
+            "--item-display-name",
+            "widget",
+            "--item-display-name-plural",
+            "widgets",
+            "--no-input",
+        ]
+    )
+
+    with _scaffolded_config(config) as result:
+        carriers = {
+            rendered.name
+            for rendered in result.written
+            if 'item_display_name="widget"' in rendered.read_text()
+        }
+        plural_carriers = {
+            rendered.name
+            for rendered in result.written
+            if 'item_display_name_plural="widgets"' in rendered.read_text()
+        }
+
+    assert carriers == expected_carriers
+    assert plural_carriers == expected_carriers

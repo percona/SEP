@@ -6840,6 +6840,18 @@ export interface components {
      *     :type name: NonEmptyStr
      *     :param display_name: Human-readable title for this entity's screens.
      *     :type display_name: NonEmptyStr
+     *     :param item_display_name: What **one** record of this entity is called (for
+     *         example ``node``), as opposed to ``display_name``, which names the
+     *         entity's screens. Stored in mid-sentence form so a consumer composing a
+     *         label capitalises the first character itself. Defaults to this entity's
+     *         own ``display_name`` — not the parent app's, and never inferred from
+     *         ``item_display_name_plural``.
+     *     :type item_display_name: NonEmptyStr
+     *     :param item_display_name_plural: What **several** records of this entity are
+     *         called (for example ``nodes``). An independent declaration under the
+     *         same mid-sentence convention; nothing derives it from
+     *         ``item_display_name``. Defaults to this entity's own ``display_name``.
+     *     :type item_display_name_plural: NonEmptyStr
      *     :param description: Optional helper text for this entity. Defaults to
      *         ``None``.
      *     :type description: NonEmptyStr | None
@@ -6873,6 +6885,10 @@ export interface components {
       fail_when?: components['schemas']['framework__FailRule'][] | null;
       /** Forms */
       forms: components['schemas']['framework__FormSection'][];
+      /** Item Display Name */
+      item_display_name: string;
+      /** Item Display Name Plural */
+      item_display_name_plural: string;
       list_view: components['schemas']['framework__ListView'];
       /** Name */
       name: string;
@@ -6886,6 +6902,21 @@ export interface components {
      *     :type name: NonEmptyStr
      *     :param display_name: The human-readable plugin title displayed in the UI.
      *     :type display_name: NonEmptyStr
+     *     :param item_display_name: What **one** record this plugin's create form
+     *         produces is called (for example ``backup``), as opposed to
+     *         ``display_name``, which names the plugin. Stored in mid-sentence form —
+     *         lowercase unless it opens with a proper noun — so a consumer composing a
+     *         label capitalises the first character itself. Defaults to
+     *         ``display_name``, and is never inferred from
+     *         ``item_display_name_plural``. Unlike the optional UI hints on this
+     *         model, both record names are required and non-nullable so the generated
+     *         client types them as ``string`` and no consumer needs a fallback.
+     *     :type item_display_name: NonEmptyStr
+     *     :param item_display_name_plural: What **several** of those records are
+     *         called (for example ``backups``). An independent declaration under the
+     *         same mid-sentence convention; nothing derives it from
+     *         ``item_display_name``. Defaults to ``display_name``.
+     *     :type item_display_name_plural: NonEmptyStr
      *     :param description: Optional helper text describing the plugin's
      *         purpose. Defaults to ``None``.
      *     :type description: NonEmptyStr | None
@@ -6954,6 +6985,10 @@ export interface components {
       fail_when?: components['schemas']['framework__FailRule'][] | null;
       /** Forms */
       forms?: components['schemas']['framework__FormSection'][];
+      /** Item Display Name */
+      item_display_name: string;
+      /** Item Display Name Plural */
+      item_display_name_plural: string;
       list_view?: components['schemas']['framework__ListView'] | null;
       /** Name */
       name: string;

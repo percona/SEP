@@ -51,6 +51,7 @@ __all__ = [
     "check_capability_route_consistency",
     "check_child_app_registration",
     "check_form_conformance",
+    "check_item_display_names_declared",
     "check_no_duplicate_capability_control",
     "check_route_collisions",
     "check_routes_documented",
@@ -118,6 +119,45 @@ def check_no_duplicate_capability_control(
         f"declares an explicit {field!r} form field (duplicate control)"
         for cap, field in CAPABILITY_RENDERED_CONTROLS.items()
         if capabilities.get(cap) and field in field_names
+    ]
+
+
+def check_item_display_names_declared(
+    schema_payload: Mapping[str, Any],
+) -> list[str]:
+    """Return violations where a create-form schema reuses its title as a record noun.
+
+    A schema that never had a record name declared serves its ``display_name``
+    under both record keys, so the renderer labels one record with the plural
+    title of the whole app ("New MySQL Backups"). Equality with ``display_name``
+    is the enforceable rule: Pydantic reports a validator-filled field as set, so
+    "was it declared?" cannot be asked of the payload. A name that merely differs
+    but is still not a mid-sentence record noun passes here and is left to review.
+
+    Each scope is judged against its own ``display_name`` and gated on its own
+    form sections, so an entities-mode schema — whose root ``forms`` are empty by
+    construction — is checked per entity and never at the root, which names no
+    record of its own.
+
+    :param schema_payload: A plugin schema's wire payload (the ``GET /schema``
+        body, or ``app_schema.model_dump(by_alias=True, exclude_none=True)``).
+    :return: One message per record name left equal to its ``display_name``;
+        empty when the schema declares no create form or names both records.
+    """
+    scopes = [(str(schema_payload.get("name")), schema_payload)]
+    scopes.extend(
+        (f"{schema_payload.get('name')}.{entity.get('name')}", entity)
+        for entity in schema_payload.get("entities") or ()
+    )
+    return [
+        f"schema {scope_label!r} leaves {key!r} equal to its display_name "
+        f"({display_name!r}); declare the record noun this form creates one of, "
+        f"in mid-sentence form"
+        for scope_label, scope in scopes
+        if any(section.get("fields") for section in scope.get("forms") or ())
+        for key in ("item_display_name", "item_display_name_plural")
+        if (display_name := scope.get("display_name")) is not None
+        and scope.get(key) == display_name
     ]
 
 

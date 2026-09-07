@@ -1507,6 +1507,33 @@ def _collect_fail_rule_errors(
         )
 
 
+_ITEM_DISPLAY_NAME_KEYS = ("item_display_name", "item_display_name_plural")
+
+
+def _fill_item_display_names(data: Any) -> Any:
+    """Fill either unset record name from the payload's own ``display_name``.
+
+    Backs the ``mode="before"`` validator on :class:`AppEntitySchema` and
+    :class:`AppSchema` so both fields can be declared bare and required while
+    staying optional for the author. Each key defaults independently: supplying
+    the singular never derives the plural, or the reverse.
+
+    :param data: The raw input passed to the model. Only a mapping is rewritten,
+        so re-validating an existing model instance passes through untouched.
+    :return: The input with either record name filled from ``display_name``, or
+        the input unchanged when both were supplied.
+    """
+    if not isinstance(data, dict):
+        return data
+    display_name = data.get("display_name")
+    if not isinstance(display_name, str):
+        return data
+    filled = {
+        key: display_name for key in _ITEM_DISPLAY_NAME_KEYS if data.get(key) is None
+    }
+    return {**data, **filled} if filled else data
+
+
 class AppEntitySchema(SchemaBaseModel):
     """Describe one CRUD entity for a multi-entity schema-driven plugin.
 
@@ -1519,6 +1546,18 @@ class AppEntitySchema(SchemaBaseModel):
     :type name: NonEmptyStr
     :param display_name: Human-readable title for this entity's screens.
     :type display_name: NonEmptyStr
+    :param item_display_name: What **one** record of this entity is called (for
+        example ``node``), as opposed to ``display_name``, which names the
+        entity's screens. Stored in mid-sentence form so a consumer composing a
+        label capitalises the first character itself. Defaults to this entity's
+        own ``display_name`` — not the parent app's, and never inferred from
+        ``item_display_name_plural``.
+    :type item_display_name: NonEmptyStr
+    :param item_display_name_plural: What **several** records of this entity are
+        called (for example ``nodes``). An independent declaration under the
+        same mid-sentence convention; nothing derives it from
+        ``item_display_name``. Defaults to this entity's own ``display_name``.
+    :type item_display_name_plural: NonEmptyStr
     :param description: Optional helper text for this entity. Defaults to
         ``None``.
     :type description: NonEmptyStr | None
@@ -1540,6 +1579,8 @@ class AppEntitySchema(SchemaBaseModel):
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
     display_name: NonEmptyStr
+    item_display_name: NonEmptyStr
+    item_display_name_plural: NonEmptyStr
     description: NonEmptyStr | None = None
     forms: list[FormSection]
     list_view: ListView
@@ -1548,6 +1589,12 @@ class AppEntitySchema(SchemaBaseModel):
     )
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_item_display_names(cls, data: Any) -> Any:
+        """Fill both record names from ``display_name`` when the author omits them."""
+        return _fill_item_display_names(data)
 
     @model_validator(mode="after")
     def _validate_unique_field_names(self) -> Self:
@@ -1564,6 +1611,21 @@ class AppSchema(SchemaBaseModel):
     :type name: NonEmptyStr
     :param display_name: The human-readable plugin title displayed in the UI.
     :type display_name: NonEmptyStr
+    :param item_display_name: What **one** record this plugin's create form
+        produces is called (for example ``backup``), as opposed to
+        ``display_name``, which names the plugin. Stored in mid-sentence form —
+        lowercase unless it opens with a proper noun — so a consumer composing a
+        label capitalises the first character itself. Defaults to
+        ``display_name``, and is never inferred from
+        ``item_display_name_plural``. Unlike the optional UI hints on this
+        model, both record names are required and non-nullable so the generated
+        client types them as ``string`` and no consumer needs a fallback.
+    :type item_display_name: NonEmptyStr
+    :param item_display_name_plural: What **several** of those records are
+        called (for example ``backups``). An independent declaration under the
+        same mid-sentence convention; nothing derives it from
+        ``item_display_name``. Defaults to ``display_name``.
+    :type item_display_name_plural: NonEmptyStr
     :param description: Optional helper text describing the plugin's
         purpose. Defaults to ``None``.
     :type description: NonEmptyStr | None
@@ -1618,6 +1680,8 @@ class AppSchema(SchemaBaseModel):
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
     display_name: NonEmptyStr
+    item_display_name: NonEmptyStr
+    item_display_name_plural: NonEmptyStr
     description: NonEmptyStr | None = None
     task_type: NonEmptyStr | None = None
     forms: list[FormSection] = Field(default_factory=list)
@@ -1630,6 +1694,12 @@ class AppSchema(SchemaBaseModel):
     derived: list[DerivedTask] | None = None
     predecessors: list[ChainedPredecessor] | None = None
     related_apps: list[RelatedApp] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_item_display_names(cls, data: Any) -> Any:
+        """Fill both record names from ``display_name`` when the author omits them."""
+        return _fill_item_display_names(data)
 
     @model_validator(mode="after")
     def _validate_detail_view_required_for_task_type(self) -> Self:

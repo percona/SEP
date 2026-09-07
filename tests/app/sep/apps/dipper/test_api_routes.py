@@ -203,6 +203,26 @@ class TestDipperListEndpoint:
 class TestDipperFormSchemaEndpoint:
     """Tests for ``GET /api/apps/dipper/form-schema``."""
 
+    def test_record_names_are_inherited_from_the_app_schema(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """Inherit the app-level record nouns rather than naming the record after the script."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.MYSQL.value)
+        )
+        mock_task_api_dep.get = AsyncMock(return_value={})
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "environment"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["item_display_name"] == "data collection"
+        assert body["item_display_name_plural"] == "data collections"
+        assert body["display_name"] != body["item_display_name"]
+
     def test_mysql_environment_schema_contains_payload_fields(
         self, test_client, mock_inventory_api_dep, mock_task_api_dep
     ):

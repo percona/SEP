@@ -411,6 +411,16 @@ class TaskExecutionApp(BaseApp):
         ``()``.
     :param description: The plugin description threaded into the derived
         ``GET /schema`` (``AppSchema.description``). Defaults to ``None``.
+    :param item_display_name: The name for one record this app's create form
+        produces (for example ``backup``), threaded into the derived
+        ``GET /schema`` (``AppSchema.item_display_name``). Written in
+        mid-sentence form so a consumer capitalises the first character itself.
+        Defaults to ``None``, which leaves the schema to fall back to
+        ``display_name``.
+    :param item_display_name_plural: The name for several such records (for
+        example ``backups``), threaded into
+        ``AppSchema.item_display_name_plural``. Declared independently of the
+        singular under the same convention. Defaults to ``None``.
     :param related_apps: Separately registered apps the React shell surfaces as
         sibling tabs under ``{route_base}/{route_segment}``. Threaded into the
         derived ``GET /schema`` (``AppSchema.related_apps``). Defaults to an
@@ -421,6 +431,8 @@ class TaskExecutionApp(BaseApp):
     """
 
     owner: str
+    item_display_name: str | None = None
+    item_display_name_plural: str | None = None
     create_model: type[AppFormModel] | None = None
     response_model: type[BaseModel] = BaseTaskResponse
     views: SkipValidation[Views] = Views()
@@ -1248,6 +1260,8 @@ class TaskExecutionApp(BaseApp):
             self.views.layout,
             name=self.name,
             display_name=self.display_name,
+            item_display_name=self.item_display_name,
+            item_display_name_plural=self.item_display_name_plural,
             description=self.description,
             capabilities=self.views.capabilities,
             list_view=self.views.list_view,
