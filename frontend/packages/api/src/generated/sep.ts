@@ -1557,9 +1557,7 @@ export interface paths {
      * @description Return the list of periodic task names for the Inventory plugin.
      *
      *     Hard-coded because the Inventory plugin's periodic tasks are a fixed pair
-     *     (``inventory-sync`` and ``inventory-collection``). The shape matches what the
-     *     React ``usePluginTasks('inventory')`` hook expects: a list of objects with at
-     *     minimum a ``name`` key.
+     *     (``inventory-sync`` and ``inventory-collection``).
      *
      *     :return: The plugin's periodic tasks, each with its name and display name.
      */
@@ -1597,59 +1595,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/apps/inventory/nodes/{node_id}/system-observation': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Inventory Node System Observation
-     * @description Proxy the host-level system observation for a node (read-only).
-     *
-     *     Forwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``
-     *     endpoint via ``InventoryAPI``. This three-segment literal path cannot
-     *     collide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An
-     *     upstream HTTP 404 propagates unchanged, along with the ``detail`` that tells
-     *     a node whose observation has not been collected yet — which the React panel
-     *     renders as an empty state — apart from a node that does not exist.
-     *
-     *     :param node_id: Primary key of the node.
-     *     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
-     *     :return: The host-level system observation payload.
-     */
-    get: operations['inventory_inventory_node_system_observation_api_apps_inventory_nodes__node_id__system_observation_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/apps/inventory/schema': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Schema
-     * @description Return the plugin schema captured at registration time.
-     *
-     *     :return: The plugin schema instance.
-     */
-    get: operations['inventory_get_schema_api_apps_inventory_schema_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/api/apps/inventory/services/{service_id}/check-connectivity/': {
     parameters: {
       query?: never;
@@ -1663,12 +1608,9 @@ export interface paths {
      * Inventory Service Check Connectivity
      * @description Run a database connectivity probe for a service from its executor host.
      *
-     *     Backs the React connectivity control on the service detail page. A probe
-     *     that ran but could not connect is reported as HTTP 200 with
+     *     A probe that ran but could not connect is reported as HTTP 200 with
      *     ``success=false`` and the upstream message in ``error``; only a probe that
-     *     could not be attempted at all is an error status. This three-segment
-     *     literal path cannot collide with the two-segment
-     *     ``/{entity}/{item_id:int}`` detail matcher.
+     *     could not be attempted at all is an error status.
      *
      *     :param service: The service to probe, resolved from the path id.
      *     :param tasks_api: Authenticated Tasks ``RemoteAPI`` client.
@@ -1680,37 +1622,6 @@ export interface paths {
      *         returns an unparseable body.
      */
     post: operations['inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/apps/inventory/services/{service_id}/system-observation': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Inventory Service System Observation
-     * @description Proxy the service-level system observation for a service (read-only).
-     *
-     *     Forwards to the inventory sub-app's
-     *     ``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.
-     *     An upstream HTTP 404 propagates unchanged, along with the ``detail`` that
-     *     tells a service whose observation has not been collected yet — which the
-     *     React panel renders as an empty state — apart from a service that does not
-     *     exist.
-     *
-     *     :param service_id: Primary key of the service.
-     *     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
-     *     :return: The service-level system observation payload.
-     */
-    get: operations['inventory_inventory_service_system_observation_api_apps_inventory_services__service_id__system_observation_get'];
-    put?: never;
-    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1770,61 +1681,13 @@ export interface paths {
      * Inventory Sync Status
      * @description Return whether an inventory-wide sync is running, plus recent run outcomes.
      *
-     *     Replaces the server-rendered ``sync_is_running`` template variable
-     *     used by the Jinja2 inventory page so the React control can poll the
-     *     same state without scraping HTML.
+     *     Lets an operator poll a sync they triggered through ``POST /sync/``
+     *     without scraping any rendered page.
      *
      *     :param session: SQLModel async session.
      *     :return: The running flag and the most recent runs, newest first.
      */
     get: operations['inventory_inventory_sync_status_api_apps_inventory_sync_status__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/apps/inventory/{entity}/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Inventory List Entity
-     * @description List inventory nodes, services, schemas, or tables.
-     *
-     *     :param request: Inbound request; its query string carries entity filters.
-     *     :param entity: Inventory entity type (nodes, services, schemas, tables).
-     *     :param inventory_api: Async client for the Inventory sub-app.
-     *     :param pagination: Validated offset/limit forwarded to the upstream call.
-     *     :param list_query: Allowlist-vetted sort/search for this entity.
-     *     :return: A paginated envelope echoing the requested window.
-     */
-    get: operations['inventory_inventory_list_entity_api_apps_inventory__entity___get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/apps/inventory/{entity}/{item_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Inventory Get Entity
-     * @description Retrieve a single inventory node, service, schema, or table.
-     */
-    get: operations['inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2755,6 +2618,37 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sep/admin/delivery-connection/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Delivery Connection
+     * @description Report the facts the delivery plan declares about its own connection.
+     *
+     *     No way the read can fail reaches the caller as an error: a deployment that
+     *     declares no connection-details step, stored inputs that no longer fit the
+     *     plan, a refused credential, an unreachable receiver and a read that outran
+     *     its bound all answer 200 with the outcome that describes them, so a caller
+     *     renders a state rather than handling an error. The three configuration
+     *     outcomes are decided before any request is issued; the read and the failure
+     *     outcomes are decided only after one.
+     *
+     *     :return: The resolved pairs in the plan's declaration order, or the outcome
+     *         explaining why there are none.
+     */
+    get: operations['sep_read_delivery_connection_api_sep_admin_delivery_connection__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sep/admin/settings/': {
     parameters: {
       query?: never;
@@ -2875,10 +2769,16 @@ export interface paths {
      *     :param session: The sub-app's database session.
      *     :param remote_api: The client for remote settings classes (``None`` when
      *         the router wires none).
+     *     :param actor: The calling admin's username, recorded on every row the
+     *         batch writes and reported back on each response.
      *     :return: One :class:`SettingResponse` per applied key, in input order.
      *     :raises HTTPNotFoundException: If the class isn't exposed.
      *     :raises HTTPUnprocessableEntityException: If any key fails validation;
      *         no rows are written.
+     *     :raises HTTPBadGatewayException: For a remote class, when the owning
+     *         sub-app returns a server error (status >= 500) or is unreachable.
+     *     :raises IntegrityError: When the replay of a batch that lost the
+     *         unique-index race conflicts again, which leaves nothing written.
      */
     patch: operations['sep_patch_settings_api_sep_admin_settings__setting_class__patch'];
     trace?: never;
@@ -3747,6 +3647,49 @@ export interface components {
       tasks: number;
     };
     /**
+     * DeliveryConnectionDetail
+     * @description Report one fact describing the delivery connection.
+     *
+     *     :param label: The display label the plan declared, rendered verbatim. A
+     *         machine key would oblige the caller to carry receiver-specific names.
+     *     :param value: The value that label reports.
+     */
+    DeliveryConnectionDetail: {
+      /** Label */
+      label: string;
+      /** Value */
+      value: string;
+    };
+    /**
+     * DeliveryConnectionResponse
+     * @description Report the facts describing the delivery connection, or why there are none.
+     *
+     *     :param status: Which of the five outcomes the read reached.
+     *     :param details: The resolved pairs in the plan's declaration order. Empty
+     *         for every status other than ``available``, and empty under ``available``
+     *         when every declared pointer missed, so a caller draws from this alone
+     *         and consults ``status`` only to explain an empty list.
+     */
+    DeliveryConnectionResponse: {
+      /**
+       * Details
+       * @default []
+       */
+      details: components['schemas']['DeliveryConnectionDetail'][];
+      status: components['schemas']['DeliveryConnectionStatusEnum'];
+    };
+    /**
+     * DeliveryConnectionStatusEnum
+     * @description Enumerate the mutually-exclusive outcomes of a connection-details read.
+     * @enum {string}
+     */
+    DeliveryConnectionStatusEnum:
+      | 'available'
+      | 'undeclared'
+      | 'not_configured'
+      | 'inputs_drifted'
+      | 'fetch_failed';
+    /**
      * ExecutionEvent
      * @description Represent a single lifecycle event from a task executor (executor-agnostic shape).
      *
@@ -3899,17 +3842,6 @@ export interface components {
       type: string;
       /** Updated At */
       updated_at?: string | null;
-    };
-    /** PaginatedResponse[Any] */
-    PaginatedResponse_Any_: {
-      /** Items */
-      items: unknown[];
-      /** Limit */
-      limit: number;
-      /** Offset */
-      offset: number;
-      /** Total */
-      total: number;
     };
     /** PaginatedResponse[ArbitraryMapping] */
     PaginatedResponse_ArbitraryMapping_: {
@@ -4226,8 +4158,13 @@ export interface components {
      *         (``SecretStr`` / ``SecretBytes``) at any depth.
      *     :param is_complex: Whether the field's annotation is or contains a Pydantic
      *         ``BaseModel`` subclass (true for nested submodels).
-     *     :param has_override: Whether a row exists in the ``settingoverride`` table
-     *         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
+     *     :param has_override: Whether an **active** row in the ``settingoverride``
+     *         table applies to this ``(setting_class, key)`` pair. An inactive row is
+     *         skipped by the cache loader, so the served value falls back to the
+     *         declared default and reporting it as overridden would tell the UI a
+     *         field is overridden while showing it that default. A nested row also
+     *         marks every canonical prefix of its chain, so a parent reports ``True``
+     *         when only a deeper leaf carries a row.
      *     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
      *         present it separately from everyday settings. Display-only:
      *         it does not affect PATCH/DELETE eligibility.
@@ -4237,6 +4174,18 @@ export interface components {
      *         PATCH/DELETE server-side; the runtime gate is the real enforcement.
      *     :param options: Selectable enum members for dropdown UIs, or ``None`` when
      *         the field is not an ``Enum`` annotation. Aliased members are excluded.
+     *     :param updated_at: When the override applying to this key was last saved,
+     *         falling back to the row's creation time for a row written before the
+     *         stamp was recorded. ``None`` when ``has_override`` is ``False``.
+     *         Timestamps carry second granularity.
+     *     :param updated_by: The username that last saved that override, or ``None``
+     *         both when no override applies and when the row predates the actor
+     *         column. A key can draw on several rows (a nested parent reporting on its
+     *         leaves), in which case the pair comes from the row carrying the latest
+     *         timestamp. Two writes landing within the same second are
+     *         indistinguishable by timestamp, and the pair reported is then whichever
+     *         contributing row was created later, which need not be the one written
+     *         later.
      */
     SettingResponse: {
       /** Default Value */
@@ -4270,6 +4219,10 @@ export interface components {
       setting_class: string;
       /** Type */
       type: string;
+      /** Updated At */
+      updated_at?: string | null;
+      /** Updated By */
+      updated_by?: string | null;
       /** Value */
       value: unknown;
     };
@@ -13075,57 +13028,6 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_node_system_observation_api_apps_inventory_nodes__node_id__system_observation_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        node_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_get_schema_api_apps_inventory_schema_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['framework__AppSchema'];
-        };
-      };
-    };
-  };
   inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post: {
     parameters: {
       query?: never;
@@ -13144,37 +13046,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ConnectivityCheckResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_service_system_observation_api_apps_inventory_services__service_id__system_observation_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
         };
       };
       /** @description Validation Error */
@@ -13235,84 +13106,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['inventory__InventorySyncStatusResponse'];
-        };
-      };
-    };
-  };
-  inventory_inventory_list_entity_api_apps_inventory__entity___get: {
-    parameters: {
-      query?: {
-        offset?: number;
-        limit?: number;
-        /** @description Sort key; prefix with '-' for descending order. */
-        sort?:
-          | 'created_at'
-          | '-created_at'
-          | 'name'
-          | '-name'
-          | 'schema_id'
-          | '-schema_id'
-          | 'service_id'
-          | '-service_id';
-        /** @description Case-insensitive search across the searchable columns. */
-        search?: string | null;
-      };
-      header?: never;
-      path: {
-        entity: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PaginatedResponse_Any_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-        item_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
@@ -14605,6 +14398,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_read_delivery_connection_api_sep_admin_delivery_connection__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeliveryConnectionResponse'];
         };
       };
     };

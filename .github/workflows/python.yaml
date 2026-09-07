@@ -30,6 +30,28 @@ jobs:
       - name: Run bandit
         run: make bandit
 
+  typecheck:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.11.9"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+        with:
+          python-version: ${{ matrix.python }}
+          cache: poetry
+      # Sync explicitly: the `venv` prerequisite no-ops against the runner's
+      # pre-seeded environment, and ty resolves imports against what is actually
+      # installed. See docs/development/ty-policy.md under `Enforcement`.
+      - name: Install dependencies
+        run: poetry sync --no-root --all-extras --all-groups
+      - name: Hold error-severity diagnostics at zero
+        run: make typecheck
+
   lock_check:
     strategy:
       matrix:
@@ -59,8 +81,11 @@ jobs:
         uses: ./.github/actions/setup-python-job
         with:
           python-version: ${{ matrix.python }}
+      # ENCRYPTION_KEY is required to construct settings and is minted per run
+      # rather than stored: migrations encrypt nothing, so the value only has to
+      # be a valid key, and nothing here needs it to outlive the job.
       - name: Check migrations
-        run: AUTH__PROVIDER__CASDOOR__CLIENT_SECRET=notatoken AUTH__PROVIDER__CASDOOR__CLIENT_ID=notatoken make checkmigrations
+        run: AUTH__PROVIDER__CASDOOR__CLIENT_SECRET=notatoken AUTH__PROVIDER__CASDOOR__CLIENT_ID=notatoken ENCRYPTION_KEY="$(make -s encryption-key)" make checkmigrations
 
   test:
     name: test (${{ matrix.python }})

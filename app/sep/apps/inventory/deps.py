@@ -18,14 +18,10 @@
 from collections.abc import Callable
 from typing import Annotated, Any
 
-from fastapi import Depends, Request
+from fastapi import Depends
 from pydantic import BaseModel, ConfigDict
 
 from app.core.config import settings
-from app.core.exceptions import (
-    HTTPBadGatewayException,
-    HTTPNotFoundException,
-)
 from app.core.requests import RemoteAPI
 from app.core.security import require_internal_token
 from app.core.utils import import_var
@@ -35,13 +31,6 @@ from app.sep.config import sep_settings, SyncOptions
 from app.sep.deps import InventoryClient, TasksClient
 from app.sep.sync.models import BaseSyncer
 from app.tasks.config import tasks_settings
-
-INVENTORY_PLUGIN_ENTITY_NAMES = frozenset({"nodes", "services", "schemas", "tables"})
-
-# Single source of truth for the read-only system-observation sub-resource
-# segment, shared by the proxy route decorators and the forwarded-path helper
-# so the inbound and forwarded paths cannot drift apart.
-SYSTEM_OBSERVATION_SEGMENT = "system-observation"
 
 
 class InventorySyncTriggerWrite(BaseModel):
@@ -311,98 +300,6 @@ async def get_syncers_standalone() -> list[BaseSyncer]:
             ),
         )
     return syncers
-
-
-def require_inventory_plugin_entity(entity: str) -> str:
-    """Normalize ``entity`` or raise HTTP 404 when it is not a known segment.
-
-    :param entity: URL segment under ``/api/apps/inventory/``.
-    :type entity: str
-    :return: The same value when it is one of ``nodes``, ``services``,
-        ``schemas``, or ``tables``.
-    :rtype: str
-    :raises HTTPNotFoundException: When ``entity`` is unknown.
-    """
-    if entity not in INVENTORY_PLUGIN_ENTITY_NAMES:
-        raise HTTPNotFoundException("Unknown entity")
-    return entity
-
-
-def unwrap_inventory_plugin_list_payload(data: Any) -> list[Any]:
-    """Return a list from an inventory list response (paginated or bare array).
-
-    :param data: JSON payload from the inventory list endpoint.
-    :type data: Any
-    :return: ``data["items"]`` when that key holds a list; otherwise ``data``
-        when it is already a list.
-    :rtype: list[Any]
-    :raises HTTPBadGatewayException: When the payload shape is unexpected.
-    """
-    if isinstance(data, dict) and "items" in data:
-        items = data["items"]
-        if isinstance(items, list):
-            return items
-    if isinstance(data, list):
-        return data
-    raise HTTPBadGatewayException("Unexpected inventory list response shape")
-
-
-def inventory_service_list_path(entity: str) -> str:
-    """Map a plugin entity name to the inventory service path for list GET.
-
-    :param entity: One of ``nodes``, ``services``, ``schemas``, or ``tables``.
-    :type entity: str
-    :return: Path relative to the inventory API root (``/nodes/`` for nodes).
-    :rtype: str
-    """
-    if entity == "nodes":
-        return "/nodes/"
-    return f"/{entity}/"
-
-
-def inventory_service_detail_path(entity: str, item_id: int) -> str:
-    """Map a plugin entity and id to the inventory path for detail GET/PUT/DELETE.
-
-    :param entity: One of ``nodes``, ``services``, ``schemas``, or ``tables``.
-    :type entity: str
-    :param item_id: Primary key of the row.
-    :type item_id: int
-    :return: Path relative to the inventory API root.
-    :rtype: str
-    """
-    if entity == "nodes":
-        return f"/nodes/{item_id}"
-    return f"/{entity}/{item_id}"
-
-
-def inventory_system_observation_path(entity: str, item_id: int) -> str:
-    """Map a plugin entity and id to the inventory system-observation sub-resource.
-
-    Built by appending ``/system-observation`` to the detail path from
-    ``inventory_service_detail_path`` so the sub-resource always tracks the
-    canonical detail mapping and the two cannot drift. Targets the read-only
-    system-observation endpoint exposed by the inventory sub-app. Only
-    ``nodes`` and ``services`` carry an observation; callers reach this helper
-    through the explicit per-entity proxy routes.
-
-    :param entity: ``nodes`` or ``services``.
-    :param item_id: Primary key of the node or service.
-    :return: Path relative to the inventory API root.
-    """
-    return (
-        f"{inventory_service_detail_path(entity, item_id)}/{SYSTEM_OBSERVATION_SEGMENT}"
-    )
-
-
-def inventory_plugin_query_params(request: Request) -> dict[str, Any]:
-    """Collect non-empty query string parameters from ``request``.
-
-    :param request: The inbound HTTP request.
-    :type request: Request
-    :return: Key/value pairs with empty string values omitted.
-    :rtype: dict[str, Any]
-    """
-    return {k: v for k, v in request.query_params.items() if v is not None and v != ""}
 
 
 InternalTokenDep = Annotated[str, Depends(require_internal_token)]

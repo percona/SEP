@@ -850,3 +850,70 @@ class TestTasksSettingsInlineRebind:
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
         nomad_callback_spy.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+class TestTasksSettingsProvenance:
+    """Cover ``updated_at`` / ``updated_by`` on the Tasks router's own dep wiring."""
+
+    async def test_patch_stamps_the_tasks_admin(
+        self, admin_test_client: TestClient, admin_user: CasdoorUser
+    ) -> None:
+        """Record the Tasks admin principal the router's own ``actor_dep`` resolves."""
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"STALENESS_THRESHOLD_SECONDS": 4242},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        entry = response.json()[0]
+        assert entry["updated_by"] == admin_user.username
+        assert entry["updated_at"] is not None
+
+    async def test_detail_reports_the_stamp_the_patch_returned(
+        self, admin_test_client: TestClient, admin_user: CasdoorUser
+    ) -> None:
+        """Serve the same stamp from DETAIL that the PATCH response carried."""
+        patched = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"STALENESS_THRESHOLD_SECONDS": 4242},
+        )
+
+        response = admin_test_client.get(
+            "/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["updated_by"] == admin_user.username
+        assert body["updated_at"] == patched.json()[0]["updated_at"]
+
+    async def test_list_reports_the_stamp_the_patch_returned(
+        self, admin_test_client: TestClient, admin_user: CasdoorUser
+    ) -> None:
+        """Serve the same stamp from LIST that the PATCH response carried."""
+        patched = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"STALENESS_THRESHOLD_SECONDS": 4242},
+        )
+
+        settings = admin_test_client.get("/admin/settings/").json()["groups"][0][
+            "settings"
+        ]
+
+        entry = next(s for s in settings if s["key"] == "STALENESS_THRESHOLD_SECONDS")
+        assert entry["updated_by"] == admin_user.username
+        assert entry["updated_at"] == patched.json()[0]["updated_at"]
+
+    async def test_key_without_an_override_reports_no_provenance(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """Report both fields as ``null`` for a key carrying no override row."""
+        response = admin_test_client.get(
+            "/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS"
+        )
+
+        body = response.json()
+        assert body["has_override"] is False
+        assert body["updated_at"] is None
+        assert body["updated_by"] is None

@@ -19,17 +19,7 @@
  * @sep/inventory — Inventory app entry point.
  *
  * Exports:
- * - InventoryApp: inventory-specific nested routes and drill-down UI.
+ * - InventoryApp: a husk that renders nothing; the app has no browser surface.
  */
 
 export { InventoryApp } from './InventoryApp';
-export type { InventoryAppProps } from './InventoryApp';
-export { InventoryBreadcrumbs, renderInventoryDetailChildren } from './InventoryAppNavigation';
-export {
-  inventoryMountPrefix,
-  parseFlatInventoryRoute,
-  parseNestedInventoryPath,
-  parseInventoryRoute,
-  pathThroughPairIndex,
-  pathToNestedInventoryParent,
-} from './inventoryNestedPaths';

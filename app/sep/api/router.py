@@ -39,6 +39,9 @@ from app.sep.api.routes.connectivity_check import (
     router as connectivity_check_router,
 )
 from app.sep.api.routes.dashboard import router as dashboard_router
+from app.sep.api.routes.delivery_connection import (
+    router as delivery_connection_router,
+)
 from app.sep.api.routes.hosts import router as hosts_router
 from app.sep.api.routes.periodic_tasks import router as periodic_tasks_router
 from app.sep.api.routes.schemas import router as schemas_router
@@ -119,6 +122,12 @@ api_router.include_router(
     prefix="/sep/admin/connectivity-check",
     tags=["sep"],
     dependencies=[IsApiAdmin, RequireBearerForUnsafeMethods],
+)
+api_router.include_router(
+    delivery_connection_router,
+    prefix="/sep/admin/delivery-connection",
+    tags=["sep"],
+    dependencies=[IsApiAdmin],
 )
 api_router.include_router(
     app_state_router,

@@ -315,3 +315,19 @@ def get_current_user_id(current_user: CurrentUser) -> str:
 
 
 CurrentUserID = Annotated[str, Depends(get_current_user_id)]
+
+
+async def get_current_admin_username(admin: Annotated[BaseUser, IsAdminDep]) -> str:
+    """Get the authenticated admin's username.
+
+    The settings router records it as the actor on each override row it writes.
+    It takes the username rather than the id because the id is a UUID a consumer
+    would have to resolve back through the auth provider to render.
+
+    :param admin: The current authenticated admin.
+    :return: The admin's username.
+    """
+    return admin.username
+
+
+AdminUsername = Annotated[str, Depends(get_current_admin_username)]

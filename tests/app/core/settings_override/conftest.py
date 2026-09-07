@@ -49,6 +49,13 @@ BOUNDED_SEED = "app.core.settings_override.worker.bounded_seed"
 #: boundary path (``bounded_refresh`` calls into lifecycle).
 WORKER_REFRESH_ALL = "app.core.settings_override.lifecycle.refresh_all"
 
+#: Plaintext secrets the encrypt-at-rest suites seed and assert round trips for.
+#: Shared so the settings-override and migration suites cannot drift apart on the
+#: value a stored ciphertext is expected to decrypt back to.
+PMM_API_KEY = "pmm-api-key-at-rest"
+PMM_ENDPOINT = "https://pmm.example.com"
+ROUTING_KEY = "pagerduty-routing-key-at-rest"
+
 #: Storage tokens for ``SettingOverride.setting_class`` (SCREAMING_SNAKE).
 ALERT_SETTINGS_TOKEN = setting_class_token(AlertSettings)
 ANONYMIZER_SETTINGS_TOKEN = setting_class_token(AnonymizerSettings)
@@ -57,6 +64,11 @@ SEP_SETTINGS_TOKEN = setting_class_token(SEPSettings)
 SETTINGS_TOKEN = setting_class_token(Settings)
 SNIPPETS_SETTINGS_TOKEN = setting_class_token(SnippetsSettings)
 TASKS_SETTINGS_TOKEN = setting_class_token(TasksSettings)
+
+#: A username far longer than any bounded column would have allowed. Both the
+#: SQLite round-trip and its real-PostgreSQL sibling write one this long to
+#: prove ``settingoverride.updated_by`` carries no width.
+LONG_USERNAME_LENGTH = 512
 
 
 async def insert_override_row(
