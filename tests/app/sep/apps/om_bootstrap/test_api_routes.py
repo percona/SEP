@@ -38,7 +38,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.api.deps import minimum_role_for
 from app.core.auth.models import UserRole
 from app.core.auth.providers.casdoor.models import CasdoorUser
-from app.sep.apps.om_bootstrap.api_routes import dispatch_run_step, trigger_run
+from app.sep.apps.om_bootstrap.api_routes import (
+    dispatch_rollback_step,
+    dispatch_run_run_step,
+    dispatch_run_step,
+    finish_run,
+    trigger_run,
+)
 from app.sep.apps.om_bootstrap.app import app as om_bootstrap_app
 from app.sep.apps.om_bootstrap.crud import BootstrapRunManager
 from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
@@ -103,6 +109,18 @@ class TestAdminGateIsRegistered:
     def test_dispatch_run_step_requires_admin(self) -> None:
         """Dispatching a step is literal root execution -- same admin-only gate."""
         assert minimum_role_for_endpoint(dispatch_run_step) == UserRole.ADMIN
+
+    def test_dispatch_run_run_step_requires_admin(self) -> None:
+        """A run-level dispatch (rs.initiate, user creation) is equally privileged."""
+        assert minimum_role_for_endpoint(dispatch_run_run_step) == UserRole.ADMIN
+
+    def test_dispatch_rollback_step_requires_admin(self) -> None:
+        """Tearing down a host is as privileged as building it up."""
+        assert minimum_role_for_endpoint(dispatch_rollback_step) == UserRole.ADMIN
+
+    def test_finish_run_requires_admin(self) -> None:
+        """Declaring a run failed/rolled back is the stepper's own privileged call."""
+        assert minimum_role_for_endpoint(finish_run) == UserRole.ADMIN
 
 
 def minimum_role_for_endpoint(endpoint: object) -> UserRole:
@@ -374,6 +392,302 @@ class TestDispatchRunStep:
 
         response = _client(regular_user, session).post(
             f"{_BASE}/runs/{run.id}/hosts/node00/steps/configure_repository:dispatch"
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    @pytest.mark.asyncio
+    async def test_increments_attempt_count_on_each_dispatch(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A retried step's attempt_count grows -- PMM's stepper reads this for Q8."""
+        run = await self._seed_run(session)
+
+        with (
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
+                AsyncMock(return_value=_fake_tasks_api()),
+            ),
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
+                AsyncMock(return_value=FAKE_TASK_HISTORY_ID),
+            ),
+        ):
+            response = _client(regular_user, session).post(
+                f"{_BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
+            )
+
+        step = next(
+            s for s in response.json()["hosts"][0]["steps"] if s["name"] == "pre_check"
+        )
+        assert step["attempt_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_forwards_body_params_to_build_step(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A caller-supplied secret (e.g. keyFile content) reaches the built action."""
+        run = await self._seed_run(session)
+        build_step = MagicMock(return_value=MagicMock(command=["true"], timeout_s=1))
+
+        with (
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
+                AsyncMock(return_value=_fake_tasks_api()),
+            ),
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
+                AsyncMock(return_value=FAKE_TASK_HISTORY_ID),
+            ),
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes.strategy_for",
+                return_value=MagicMock(build_step=build_step),
+            ),
+        ):
+            response = _client(regular_user, session).post(
+                f"{_BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch",
+                json={"params": {"key_file_content": "secret-bytes"}},
+            )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        build_step.assert_called_once()
+        assert build_step.call_args.args[-1] == {"key_file_content": "secret-bytes"}
+
+
+class TestDispatchRunRunStep:
+    """Assert POST .../run-steps/{name}:dispatch targets the seed host."""
+
+    async def _seed_run(self, session: AsyncSession) -> BootstrapRun:
+        return await BootstrapRunManager.save(
+            session,
+            BootstrapRun(
+                install_method=InstallMethod.PACKAGES,
+                os=OperatingSystem.UBUNTU,
+                mongodb_version="8.0",
+                replica_set_name="rs-test",
+                hosts=dump_host_states(
+                    [
+                        HostBootstrapState(
+                            host="node00",
+                            steps=[
+                                StepRecord(name="verify", status=StepStatus.SUCCEEDED)
+                            ],
+                        ),
+                        HostBootstrapState(
+                            host="node01",
+                            steps=[
+                                StepRecord(name="verify", status=StepStatus.SUCCEEDED)
+                            ],
+                        ),
+                    ]
+                ),
+                run_steps=[
+                    {"name": "rs_initiate", "status": "pending", "attempt_count": 0}
+                ],
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_dispatches_to_the_first_host(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """rs.initiate runs on hosts[0] -- the seed member, not any other host."""
+        run = await self._seed_run(session)
+        dispatch_step_mock = AsyncMock(return_value=FAKE_TASK_HISTORY_ID)
+
+        with (
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
+                AsyncMock(return_value=_fake_tasks_api()),
+            ),
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes.dispatch_step", dispatch_step_mock
+            ),
+        ):
+            response = _client(regular_user, session).post(
+                f"{_BASE}/runs/{run.id}/run-steps/rs_initiate:dispatch"
+            )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        assert dispatch_step_mock.call_args.args[3] == "node00"
+        run_step = response.json()["run_steps"][0]
+        assert run_step["status"] == "running"
+
+    @pytest.mark.asyncio
+    async def test_404s_for_an_unplanned_run_step(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A run-level name outside the run's own planned list is rejected."""
+        run = await self._seed_run(session)
+
+        response = _client(regular_user, session).post(
+            f"{_BASE}/runs/{run.id}/run-steps/create_pmm_monitoring_user:dispatch"
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_409s_for_a_run_step_already_running(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A run-level step already dispatching cannot be dispatched again."""
+        run = await BootstrapRunManager.save(
+            session,
+            BootstrapRun(
+                install_method=InstallMethod.PACKAGES,
+                os=OperatingSystem.UBUNTU,
+                mongodb_version="8.0",
+                replica_set_name="rs-test",
+                hosts=dump_host_states(
+                    [
+                        HostBootstrapState(
+                            host="node00", steps=[StepRecord(name="verify")]
+                        )
+                    ]
+                ),
+                run_steps=[
+                    {
+                        "name": "rs_initiate",
+                        "status": "running",
+                        "attempt_count": 1,
+                        "task_history_id": 1,
+                    }
+                ],
+            ),
+        )
+
+        response = _client(regular_user, session).post(
+            f"{_BASE}/runs/{run.id}/run-steps/rs_initiate:dispatch"
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+
+class TestDispatchRollbackStep:
+    """Assert POST .../rollback/{name}:dispatch validates and dispatches teardown."""
+
+    async def _seed_run(self, session: AsyncSession) -> BootstrapRun:
+        return await BootstrapRunManager.save(
+            session,
+            BootstrapRun(
+                install_method=InstallMethod.PACKAGES,
+                os=OperatingSystem.UBUNTU,
+                mongodb_version="8.0",
+                replica_set_name="rs-test",
+                hosts=dump_host_states(
+                    [
+                        HostBootstrapState(
+                            host="node00",
+                            steps=[
+                                StepRecord(
+                                    name="install_package", status=StepStatus.FAILED
+                                )
+                            ],
+                            rollback_steps=[StepRecord(name="stop_service")],
+                        )
+                    ]
+                ),
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_dispatches_a_pending_rollback_step(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A pending rollback step is dispatched and marked running."""
+        run = await self._seed_run(session)
+
+        with (
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
+                AsyncMock(return_value=_fake_tasks_api()),
+            ),
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
+                AsyncMock(return_value=FAKE_TASK_HISTORY_ID),
+            ),
+        ):
+            response = _client(regular_user, session).post(
+                f"{_BASE}/runs/{run.id}/hosts/node00/rollback/stop_service:dispatch"
+            )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        rollback_step = response.json()["hosts"][0]["rollback_steps"][0]
+        assert rollback_step["status"] == "running"
+
+    @pytest.mark.asyncio
+    async def test_404s_for_an_unplanned_rollback_step(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A forward step name is not a rollback step name."""
+        run = await self._seed_run(session)
+
+        response = _client(regular_user, session).post(
+            f"{_BASE}/runs/{run.id}/hosts/node00/rollback/install_package:dispatch"
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestFinishRun:
+    """Assert POST /runs/{id}:finish records the stepper's own terminal decision."""
+
+    async def _seed_run(
+        self,
+        session: AsyncSession,
+        run_status: BootstrapRunStatus = BootstrapRunStatus.RUNNING,
+    ) -> BootstrapRun:
+        return await BootstrapRunManager.save(
+            session,
+            BootstrapRun(
+                status=run_status,
+                install_method=InstallMethod.PACKAGES,
+                os=OperatingSystem.UBUNTU,
+                mongodb_version="8.0",
+                replica_set_name="rs-test",
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_marks_a_running_run_failed(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """The stepper declaring retries exhausted lands as FAILED, with its reason."""
+        run = await self._seed_run(session)
+
+        response = _client(regular_user, session).post(
+            f"{_BASE}/runs/{run.id}:finish",
+            json={"status": "failed", "error": "node00 exhausted retries"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["error"] == "node00 exhausted retries"
+        assert body["finished_at"] is not None
+
+    @pytest.mark.asyncio
+    async def test_rejects_succeeded_as_a_requested_status(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """SUCCEEDED is inferred by reconciliation, never requested through this route."""
+        run = await self._seed_run(session)
+
+        response = _client(regular_user, session).post(
+            f"{_BASE}/runs/{run.id}:finish", json={"status": "succeeded"}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @pytest.mark.asyncio
+    async def test_409s_for_an_already_terminal_run(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A run already FAILED/ROLLED_BACK/SUCCEEDED cannot be finished twice."""
+        run = await self._seed_run(session, BootstrapRunStatus.SUCCEEDED)
+
+        response = _client(regular_user, session).post(
+            f"{_BASE}/runs/{run.id}:finish", json={"status": "rolled_back"}
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
