@@ -24,6 +24,15 @@ run's current state through the API and decides what happens next.
 ``om_bootstrap`` only ever answers "is this step still running", mechanically,
 so PMM's driver has something true to read.
 
+One exception, not a contradiction of the above: :func:`reconcile_run` also
+flips a ``RUNNING`` run to :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.SUCCEEDED`
+once every host and every run-level step has actually succeeded. That is not a
+decision -- there is nothing left to decide once everything succeeded, only a
+fact to record -- unlike :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.FAILED`
+(retries exhausted) and :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.ROLLED_BACK`
+(rollback finished), both real calls only the stepper makes, which reach
+``run.status`` through ``api_routes.py``'s explicit ``:finish`` route instead.
+
 ``finished_at`` is stamped with the reconciliation's own clock, not read back
 from ``TaskHistory``: this runs on a polling interval, not a push, so the two
 times differ by at most that interval -- an acceptable approximation for a
@@ -39,12 +48,25 @@ module to exactly the one thing its docstring claims.
 from app.core.requests import RemoteAPI
 from app.core.utils.date_time import utc_now
 from app.sep.apps.om_bootstrap.dispatch import cleanup_step_script
-from app.sep.apps.om_bootstrap.models import BootstrapRun
-from app.sep.apps.om_bootstrap.persistence import dump_host_states, parse_host_states
-from app.sep.apps.om_bootstrap.strategy import StepRecord, StepStatus
+from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
+from app.sep.apps.om_bootstrap.persistence import (
+    dump_host_states,
+    dump_run_steps,
+    parse_host_states,
+    parse_run_steps,
+)
+from app.sep.apps.om_bootstrap.strategy import (
+    HostBootstrapState,
+    StepRecord,
+    StepStatus,
+)
 from app.tasks.models import TaskHistoryStatusEnum
 
 __all__ = ["reconcile_run", "reconcile_step"]
+
+#: Statuses that mean "nothing more to do here" for the purpose of deciding a
+#: run is fully done -- a skipped step is as final as a succeeded one.
+_DONE_STATUSES = frozenset({StepStatus.SUCCEEDED, StepStatus.SKIPPED})
 
 #: ``TaskHistory`` statuses that mean "still in flight" -- everything else is
 #: terminal, matching ``om_inventory/dispatch.py``'s own ``_wait_for_terminal``.
@@ -87,13 +109,18 @@ async def reconcile_step(tasks_api: RemoteAPI, step: StepRecord) -> StepRecord:
 
 
 async def reconcile_run(tasks_api: RemoteAPI, run: BootstrapRun) -> bool:
-    """Reconcile every running step across every host in ``run``, in place.
+    """Reconcile every running step across ``run`` -- per-host, rollback, and run-level.
 
-    Mutates ``run.hosts`` directly when anything changed; the caller is
-    responsible for committing the session. A finished step's scratch script
+    Mutates ``run.hosts``/``run.run_steps``/``run.status``/``run.finished_at``
+    directly when anything changed; the caller is responsible for committing the
+    session. A finished step's scratch script
     (:func:`~app.sep.apps.om_bootstrap.dispatch.cleanup_step_script`) is removed
     as part of reconciling it, win or lose -- nothing downstream needs it once
-    the dispatch that read it is done.
+    the dispatch that read it is done. The run-level steps' scripts are named
+    under the run's first host regardless of which host actually ran them --
+    see :func:`~app.sep.apps.om_bootstrap.dispatch.step_script_filename`, and
+    :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_run_step`'s
+    own docstring for why that host is always the target.
 
     :param tasks_api: The Tasks API client.
     :param run: The run to reconcile.
@@ -101,15 +128,91 @@ async def reconcile_run(tasks_api: RemoteAPI, run: BootstrapRun) -> bool:
         every step was still in flight.
     """
     states = parse_host_states(run)
-    changed = False
-    for state in states:
-        for index, step in enumerate(state.steps):
-            reconciled = await reconcile_step(tasks_api, step)
-            if reconciled is step:
-                continue
-            state.steps[index] = reconciled
-            changed = True
-            cleanup_step_script(str(run.id), state.host, step.name)
+    changed = await _reconcile_step_list_per_host(tasks_api, run, states)
     if changed:
         run.hosts = dump_host_states(states)
+
+    run_steps = parse_run_steps(run)
+    seed_host = states[0].host if states else None
+    run_steps_changed = await _reconcile_step_list(tasks_api, run, seed_host, run_steps)
+    if run_steps_changed:
+        run.run_steps = dump_run_steps(run_steps)
+
+    if run.status == BootstrapRunStatus.RUNNING and _fully_succeeded(states, run_steps):
+        run.status = BootstrapRunStatus.SUCCEEDED
+        run.finished_at = utc_now()
+        changed = True
+
+    return changed or run_steps_changed
+
+
+async def _reconcile_step_list_per_host(
+    tasks_api: RemoteAPI, run: BootstrapRun, states: list[HostBootstrapState]
+) -> bool:
+    """Reconcile every host's own ``steps`` and ``rollback_steps``, in place.
+
+    :param tasks_api: The Tasks API client.
+    :param run: The run these hosts belong to -- only read, for its id.
+    :param states: The parsed host states to reconcile, mutated in place.
+    :return: Whether anything changed.
+    """
+    changed = False
+    for state in states:
+        for step_list in (state.steps, state.rollback_steps):
+            if await _reconcile_step_list(tasks_api, run, state.host, step_list):
+                changed = True
     return changed
+
+
+async def _reconcile_step_list(
+    tasks_api: RemoteAPI,
+    run: BootstrapRun,
+    host: str | None,
+    steps: list[StepRecord],
+) -> bool:
+    """Reconcile one flat list of steps against their dispatches, in place.
+
+    Shared by every step list this module reconciles -- a host's forward steps,
+    its rollback steps, and the run's own run-level steps -- since all three are
+    the same shape and need the exact same treatment.
+
+    :param tasks_api: The Tasks API client.
+    :param run: The run these steps belong to -- only read, for its id.
+    :param host: The host whose scratch script directory a transitioned step's
+        cleanup targets. ``None`` when there is no host to target (an empty
+        run -- see :func:`reconcile_run`'s ``seed_host``), in which case cleanup
+        is skipped rather than guessing a name.
+    :param steps: The steps to reconcile, mutated in place.
+    :return: Whether anything changed.
+    """
+    changed = False
+    for index, step in enumerate(steps):
+        reconciled = await reconcile_step(tasks_api, step)
+        if reconciled is step:
+            continue
+        steps[index] = reconciled
+        changed = True
+        if host is not None:
+            cleanup_step_script(str(run.id), host, step.name)
+    return changed
+
+
+def _fully_succeeded(
+    states: list[HostBootstrapState], run_steps: list[StepRecord]
+) -> bool:
+    """Report whether every host and every run-level step actually succeeded.
+
+    Rollback steps are deliberately excluded from this check, not reconciled
+    into it: every host's ``rollback_steps`` are planned up front alongside its
+    forward steps (see :class:`~app.sep.apps.om_bootstrap.strategy.HostBootstrapState`'s
+    own docstring) and stay :attr:`~app.sep.apps.om_bootstrap.strategy.StepStatus.PENDING`
+    for the entire life of a run that never needed rollback -- counting them here
+    would mean a normal, fully-succeeded run could never satisfy this check.
+
+    :param states: Every host's current state.
+    :param run_steps: The run's current run-level steps.
+    :return: Whether the run, as a whole, has nothing left to do but succeed.
+    """
+    if not all(state.status == StepStatus.SUCCEEDED for state in states):
+        return False
+    return all(step.status in _DONE_STATUSES for step in run_steps)
