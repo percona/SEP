@@ -40,23 +40,24 @@ def load_script(name: str) -> ModuleType:
     """Return ``scripts/<name>.py`` as the one module object for that script.
 
     Delegates to :func:`importlib.import_module` under the package-qualified
-    name. The previous by-path load registered the bare name
-    (``sys.modules["classify_ty_diagnostics"]``), which Python treats as a
-    module unrelated to ``scripts.classify_ty_diagnostics``, so a test file
-    reaching one script both ways held two copies of every class in it,
-    exception classes included, and a ``pytest.raises`` reported ``DID NOT
-    RAISE`` against an exception the traceback showed being raised. The old
-    memo could not prevent that: it guarded the bare-name key, which is not the
-    key a package import claims.
+    name, so this helper and ``from scripts.<name> import X`` resolve to one
+    object. Do not reintroduce a by-path load: it registers a second module
+    under the bare name, whose classes then fail ``except`` and
+    ``pytest.raises`` against the package copy's.
+    ``tests/scripts/test_loader_identity.py`` pins the invariant.
 
     ``scripts`` is a package whose ``__init__`` is a licence header, so the
     delegation adds no import side effects.
 
     :param name: The script's module name, without the ``.py`` suffix.
     :return: The loaded module.
-    :raises RuntimeError: When the script cannot be imported from ``scripts/``.
+    :raises RuntimeError: When ``scripts/<name>.py`` itself is absent. An
+        ``ImportError`` raised by a module it imports propagates unchanged, so
+        the traceback names the module that actually failed.
     """
     try:
         return importlib.import_module(f"scripts.{name}")
     except ImportError as exc:
+        if exc.name != f"scripts.{name}":
+            raise
         raise RuntimeError(f"cannot load {SCRIPTS_DIR / f'{name}.py'}") from exc
