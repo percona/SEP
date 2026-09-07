@@ -351,12 +351,14 @@ Mint one and add it as `ENCRYPTION_KEY=<key>` to **the file `ENV_FILE` names**:
 make -s encryption-key
 ```
 
-That is `.env` by default, but not always: `ENV_FILE` is a supported
-indirection, and a checkout whose `.env` begins `ENV_FILE=.env.local` has the
-loader read `.env.local` instead — every other key in `.env` is then ignored, so
-appending there succeeds and changes nothing the application sees. If you are
-unsure which file is in play, start the app and read the error: it names the
-exact path it looked in.
+That is `.env` by default, but not always: `ENV_FILE` is read from the process
+environment — exported in your shell, set by `direnv`, or passed by your
+container runtime — and it redirects the loader to a different file, whose keys
+replace `.env`'s rather than adding to them. Setting `ENV_FILE` *inside* `.env`
+does nothing: it is resolved before the dotenv source is configured. So on a
+checkout that exports `ENV_FILE=.env.local`, appending to `.env` succeeds and
+changes nothing the application sees. If you are unsure which file is in play,
+start the app and read the error: it names the exact path it looked in.
 
 `openssl rand -base64 32` works too. Note that `openssl rand -hex 32` — the
 generator `SECRET_KEY` uses — does **not** produce a valid key.
