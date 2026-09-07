@@ -17,7 +17,10 @@
 
 import pytest
 
-from app.sep.apps.om_bootstrap.strategies.packages import PackagesInstallStrategy
+from app.sep.apps.om_bootstrap.strategies.packages import (
+    DATA_PATH,
+    PackagesInstallStrategy,
+)
 from app.sep.apps.om_bootstrap.strategy import (
     BootstrapSpec,
     InstallMethod,
@@ -145,6 +148,15 @@ class TestBuildStep:
         )
 
         assert "replSetName: rs-test" in " ".join(action.command)
+
+    def test_configure_mongod_creates_the_data_directory(self) -> None:
+        """Mongod exits immediately on first start if nobody creates this first."""
+        action = PackagesInstallStrategy().build_step(
+            "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert f"install -d -m 750 -o mongod -g mongod {DATA_PATH}" in command
 
     def test_distribute_keyfile_requires_params(self) -> None:
         """Without a keyFile to plant, this is a programming error, not a blank file."""

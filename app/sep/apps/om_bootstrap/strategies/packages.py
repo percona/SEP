@@ -254,6 +254,16 @@ class PackagesInstallStrategy:
 
         Assumes a keyFile already exists at :data:`KEY_FILE_PATH` -- planted by
         ``distribute_keyfile``, immediately before this step.
+
+        Also creates :data:`DATA_PATH`, owned by ``mongod``, rather than
+        assuming the package's own post-install already did -- confirmed
+        against a real failure that it does not: mongod exits immediately on
+        first start with ``NonExistentPath: Data directory /var/lib/mongo not
+        found``, and ``start_service`` (``systemctl enable --now``) reports
+        success regardless, since ``Type=forking`` only waits for the initial
+        fork, not for mongod's own startup logic to run. ``verify``, a step
+        later, is what actually surfaces the failure -- by then the run has
+        already reported ``start_service`` as done.
         """
         config = (
             f"net:\n  bindIp: 0.0.0.0\n"
@@ -261,12 +271,12 @@ class PackagesInstallStrategy:
             f"security:\n  authorization: enabled\n  keyFile: {KEY_FILE_PATH}\n"
             f"replication:\n  replSetName: {spec.replica_set_name}\n"
         )
+        command = (
+            f"install -d -m 750 -o mongod -g mongod {DATA_PATH} && "
+            f"cat > {CONFIG_PATH} <<'MONGOD_CONF'\n{config}MONGOD_CONF\n"
+        )
         return StepAction(
-            command=[
-                "sh",
-                "-c",
-                f"cat > {CONFIG_PATH} <<'MONGOD_CONF'\n{config}MONGOD_CONF\n",
-            ],
+            command=["sh", "-c", command],
             timeout_s=30,
         )
 
