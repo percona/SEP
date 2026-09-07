@@ -86,6 +86,23 @@ class TestRestoreContract(DerivedRouterContractTests):
         """
         return _valid_restore_body(task_name=task_name)
 
+    def test_schema_id_is_labelled_for_its_meaning(self, contract_client: Any) -> None:
+        """Serve the schema field under the database it targets, not the restore verb.
+
+        The field selects which database to restore *into*; the old label read as
+        the action itself and left operators guessing what to enter.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        fields = {
+            field["name"]: field
+            for form in response.json()["forms"]
+            for field in form["fields"]
+        }
+        assert fields["schema_id"]["label"] == "Target database"
+
     def test_create_201(self, contract_client: Any, mock_task_api: Any) -> None:
         """Create a task via a real JSON POST with a valid body, returning 201.
 

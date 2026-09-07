@@ -21,17 +21,19 @@ import asyncio
 from datetime import datetime
 from typing import Any
 
+from app.core.exceptions import HTTPBadGatewayException
 from app.core.pagination import (
     DEFAULT_PAGINATION_OFFSET,
     MAX_PAGINATION_LIMIT,
     PaginatedResponse,
     Pagination,
 )
-from app.core.requests.remote_api import RemoteAPI
+from app.core.requests.remote_api import as_json_object, JSONBody, RemoteAPI
 from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
 __all__ = [
     "fetch_merged_task_history",
+    "fetch_task_history_window",
     "merge_task_history_pages",
     "normalize_task_history_names",
 ]
@@ -67,12 +69,41 @@ def _merged_upstream_window_size(pagination: Pagination) -> int:
     return pagination.offset + pagination.limit
 
 
-async def _fetch_task_history_window(
+def _strict_history_page(payload: JSONBody) -> dict[str, Any]:
+    """Return ``payload`` as a usable history page, rejecting any other shape.
+
+    Being a JSON object is not enough. The walk reads ``items`` with ``extend``
+    and compares ``total`` numerically, so an object carrying a null ``items``
+    passes an object check and then reads as an exhausted history — the exact
+    "broken upstream looks like a task with no runs" outcome strict mode exists
+    to prevent — while a non-numeric ``total`` fails the comparison instead.
+
+    :param payload: The parsed body the Tasks API answered with.
+    :return: The payload as a page whose ``items`` and ``total`` are usable.
+    :raises HTTPBadGatewayException: If the payload is not a JSON object, or
+        carries an ``items`` that is not a list or a ``total`` that is not a
+        number.
+    """
+    page = as_json_object(payload)
+    if not isinstance(page.get("items", []), list):
+        raise HTTPBadGatewayException(
+            detail="The server answered with a history page whose items are not a list."
+        )
+    if not isinstance(page.get("total", 0), int):
+        raise HTTPBadGatewayException(
+            detail="The server answered with a history page whose total is not a number."
+        )
+    return page
+
+
+async def fetch_task_history_window(
     tasks_api: RemoteAPI,
     task_name: str,
     *,
     window_size: int,
     status: TaskHistoryStatusEnum | None = None,
+    sort: str | None = None,
+    strict: bool = False,
 ) -> dict[str, Any]:
     """Fetch the first ``window_size`` history rows for one task via the Tasks API.
 
@@ -81,20 +112,29 @@ async def _fetch_task_history_window(
     stay within upstream validation.
 
     :param tasks_api: The Tasks API client.
-    :type tasks_api: RemoteAPI
     :param task_name: Task whose history rows are fetched.
-    :type task_name: str
     :param window_size: Number of leading rows required before global merge.
-    :type window_size: int
     :param status: Optional exact status filter forwarded upstream.
-    :type status: TaskHistoryStatusEnum | None
+    :param sort: Optional explicit sort key forwarded upstream. Pass one when
+        *which* rows land inside ``window_size`` matters, rather than inheriting
+        whatever ordering the Tasks API currently defaults to.
+    :param strict: Whether an upstream body that is not a usable history page
+        raises instead of reading as an exhausted history. A caller whose result
+        answers "has this task ever produced X?" wants this; the merged-history
+        endpoint keeps the lenient default because degrading is its established
+        contract.
     :return: A paginated-response-shaped dict with accumulated items and
         upstream total.
-    :rtype: dict[str, Any]
+    :raises HTTPBadGatewayException: Under ``strict``, when the Tasks API answers
+        with a body :func:`_strict_history_page` cannot read as a page.
+    :raises HTTPException: The error the Tasks API itself answered with, mapped by
+        the remote client.
     """
     base_params: dict[str, Any] = {}
     if status is not None:
         base_params["status"] = status.value
+    if sort is not None:
+        base_params["sort"] = sort
 
     all_items: list[dict[str, Any]] = []
     upstream_offset = 0
@@ -109,7 +149,9 @@ async def _fetch_task_history_window(
                 "limit": page_limit,
             },
         )
-        if not isinstance(raw, dict):
+        if strict:
+            raw = _strict_history_page(raw)
+        elif not isinstance(raw, dict):
             raw = {}
         page_items = raw.get("items", [])
         if "total" in raw:
@@ -138,17 +180,14 @@ def merge_task_history_pages(
 
     Upstream callers should fetch each task from ``offset=0`` with a window
     large enough to cover the merged page (see
-    :func:`_merged_upstream_window_size` and :func:`_fetch_task_history_window`),
+    :func:`_merged_upstream_window_size` and :func:`fetch_task_history_window`),
     then pass the client pagination here so rows are sorted globally and sliced
     ``[offset : offset + limit]``. ``total`` is the sum of upstream totals;
     envelope ``offset`` / ``limit`` echo the client request.
 
     :param pages: Raw paginated payloads from ``GET /{task}/history/``.
-    :type pages: list[dict[str, Any]]
     :param pagination: Validated offset/limit window for the merged page.
-    :type pagination: Pagination
     :return: A paginated-response-shaped dict ready for validation.
-    :rtype: dict[str, Any]
     """
     items = sorted(
         (item for page in pages for item in page.get("items", [])),
@@ -188,7 +227,7 @@ async def fetch_merged_task_history(
     window_size = _merged_upstream_window_size(pagination)
     pages = await asyncio.gather(
         *(
-            _fetch_task_history_window(
+            fetch_task_history_window(
                 tasks_api,
                 name,
                 window_size=window_size,

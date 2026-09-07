@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.core.exceptions import HTTPBadGatewayException
 from app.core.pagination import (
     DEFAULT_PAGINATION_LIMIT,
     DEFAULT_PAGINATION_OFFSET,
@@ -28,6 +29,7 @@ from app.core.pagination import (
 )
 from app.sep.api.task_history_merge import (
     fetch_merged_task_history,
+    fetch_task_history_window,
     merge_task_history_pages,
 )
 from app.tasks.models import TaskBackendEnum
@@ -274,3 +276,117 @@ class TestFetchMergedTaskHistory:
         assert result.offset == LARGE_MERGED_OFFSET
         assert result.limit == LARGE_MERGED_LIMIT
         assert result.total == MERGED_UPSTREAM_TOTAL
+
+
+class TestFetchTaskHistoryWindow:
+    """Cover the promoted pager's opt-in strict envelope handling."""
+
+    @pytest.mark.asyncio
+    async def test_degrades_a_mis_shaped_body_to_an_empty_window_by_default(
+        self,
+    ) -> None:
+        """Keep the lenient default, which the merged-history endpoint relies on."""
+        tasks_api = AsyncMock()
+        tasks_api.get = AsyncMock(return_value=["not", "a", "page"])
+
+        window = await fetch_task_history_window(
+            tasks_api, "task-a", window_size=DEFAULT_PAGINATION_LIMIT
+        )
+
+        assert window["items"] == []
+
+    @pytest.mark.asyncio
+    async def test_strict_rejects_a_mis_shaped_body(self) -> None:
+        """Raise under ``strict``, so a broken upstream cannot read as empty history."""
+        tasks_api = AsyncMock()
+        tasks_api.get = AsyncMock(return_value=["not", "a", "page"])
+
+        with pytest.raises(HTTPBadGatewayException):
+            await fetch_task_history_window(
+                tasks_api,
+                "task-a",
+                window_size=DEFAULT_PAGINATION_LIMIT,
+                strict=True,
+            )
+
+    @pytest.mark.asyncio
+    async def test_strict_rejects_an_object_whose_items_are_not_a_list(self) -> None:
+        """Reject a page whose ``items`` is null rather than reading it as exhausted.
+
+        A null ``items`` is falsy, so the walk would stop on the first page and
+        report a task with no history — the answer strict mode exists to prevent,
+        and the one an object-shape check alone still lets through.
+        """
+        tasks_api = AsyncMock()
+        tasks_api.get = AsyncMock(return_value={"items": None, "total": 1})
+
+        with pytest.raises(HTTPBadGatewayException):
+            await fetch_task_history_window(
+                tasks_api,
+                "task-a",
+                window_size=DEFAULT_PAGINATION_LIMIT,
+                strict=True,
+            )
+
+    @pytest.mark.asyncio
+    async def test_strict_rejects_an_object_whose_total_is_not_a_number(self) -> None:
+        """Reject a page whose ``total`` cannot be compared against the offset."""
+        tasks_api = AsyncMock()
+        tasks_api.get = AsyncMock(return_value={"items": [{"id": 1}], "total": "many"})
+
+        with pytest.raises(HTTPBadGatewayException):
+            await fetch_task_history_window(
+                tasks_api,
+                "task-a",
+                window_size=DEFAULT_PAGINATION_LIMIT,
+                strict=True,
+            )
+
+    @pytest.mark.asyncio
+    async def test_forwards_an_explicit_sort_upstream(self) -> None:
+        """Send the requested sort key, rather than inheriting the upstream default."""
+        tasks_api = AsyncMock()
+        tasks_api.get = AsyncMock(
+            return_value={"items": [{"id": 1}], "total": 1, "offset": 0, "limit": 1}
+        )
+
+        await fetch_task_history_window(
+            tasks_api,
+            "task-a",
+            window_size=DEFAULT_PAGINATION_LIMIT,
+            sort="-created_at",
+        )
+
+        assert tasks_api.get.await_args.kwargs["params"]["sort"] == "-created_at"
+
+    @pytest.mark.asyncio
+    async def test_omits_sort_when_none_is_requested(self) -> None:
+        """Leave the sort key out entirely when the caller names none."""
+        tasks_api = AsyncMock()
+        tasks_api.get = AsyncMock(
+            return_value={"items": [{"id": 1}], "total": 1, "offset": 0, "limit": 1}
+        )
+
+        await fetch_task_history_window(
+            tasks_api, "task-a", window_size=DEFAULT_PAGINATION_LIMIT
+        )
+
+        assert "sort" not in tasks_api.get.await_args.kwargs["params"]
+
+    @pytest.mark.asyncio
+    async def test_strict_accepts_a_well_formed_page(self) -> None:
+        """Return the upstream rows unchanged when the envelope is a JSON object."""
+        tasks_api = AsyncMock()
+        tasks_api.get = AsyncMock(
+            return_value={"items": [{"id": 1}], "total": 1, "offset": 0, "limit": 1}
+        )
+
+        window = await fetch_task_history_window(
+            tasks_api,
+            "task-a",
+            window_size=DEFAULT_PAGINATION_LIMIT,
+            strict=True,
+        )
+
+        assert window["items"] == [{"id": 1}]
+        assert window["total"] == 1
