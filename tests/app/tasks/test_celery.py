@@ -3155,7 +3155,7 @@ class TestSyncQueueItemRegression:
                 item.set_failure_reason("Step 'run-script' failed (exit code 1).")
                 return item
 
-            fake_executor = MagicMock()
+            fake_executor = MagicMock(spec=BaseExecutor)
             fake_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
             mocker.patch(
                 "app.tasks.celery.get_executor_for_task", return_value=fake_executor

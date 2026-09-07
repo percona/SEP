@@ -443,16 +443,22 @@ def _failed_step_reason(alloc: dict[str, Any]) -> str | None:
     Reads the failing step off the allocation's task states: those carry a
     per-step ``Failed`` flag and the ``Terminated`` events holding exit codes,
     while :func:`_status_from_step_states` answers only failed-vs-success and
-    names no step. Shape drift degrades to ``None`` the way the sibling
-    allocation readers degrade, so a malformed allocation costs a reason rather
-    than the whole sync.
+    names no step. Steps are walked in execution order rather than the order
+    Nomad serialized them in, so a payload failure is reported ahead of a
+    cleanup step that failed after it.
+
+    A malformed allocation, task-state container or step state is skipped
+    rather than raised on, so shape drift costs a reason rather than the whole
+    sync.
 
     :param alloc: The allocation details from Nomad.
     :return: The reason, or ``None`` when no producing step reports a failure.
     """
-    for step, state in _alloc_task_states(alloc).items():
+    task_states = _alloc_task_states(alloc)
+    for step in sorted(task_states, key=lambda name: _alloc_step_sort_key(alloc, name)):
         if not NomadStep.is_persistable(step):
             continue
+        state = task_states.get(step)
         if not isinstance(state, dict) or not state.get("Failed"):
             continue
         description = f"Step {step!r} failed"
@@ -482,6 +488,11 @@ def _terminal_status_reason(
     which is the shape a client-status-derived failure has. Every other status
     takes its prose from the enum, and a status carrying none stores ``None``.
 
+    The enum's fragments are verb phrases written for the mid-sentence slot in
+    :meth:`~app.tasks.models.TaskHistory.alert_for_status`, so they are rendered
+    as standalone sentences here rather than given a subject: "The run
+    execution tracking lost" is not a sentence.
+
     :param status: The terminal status the sync resolved.
     :param alloc: The allocation details from Nomad.
     :return: The reason to store, or ``None`` when the status carries none.
@@ -491,7 +502,7 @@ def _terminal_status_reason(
         if step_reason is not None:
             return step_reason
     summary = status.operator_summary()
-    return f"The run {summary}." if summary else None
+    return f"{summary[:1].upper()}{summary[1:]}." if summary else None
 
 
 def _sortable_nomad_tracking_event(

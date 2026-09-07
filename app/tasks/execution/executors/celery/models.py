@@ -114,6 +114,7 @@ class CeleryExecutor(BaseExecutor):
             )
             stdout_buffer.write(f"\nResult: {result}\n")
             queue_item.status = TaskHistoryStatusEnum.SUCCESS
+            queue_item.set_failure_reason(None)
         except Exception as exc:
             logger.exception("Celery task %s failed", task.name)
             stderr_buffer.write(f"\nError:\n{traceback.format_exc()}")

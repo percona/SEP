@@ -879,6 +879,29 @@ class TestFailedStepReason:
         }
         assert _failed_step_reason(alloc) is None
 
+    def test_reports_the_earliest_failed_step_not_the_first_serialized(self):
+        """Assert the failing step is chosen by execution order, not key order.
+
+        Nomad serializes task states with the keys sorted, so ``clean-up`` is
+        emitted before ``run-script``. A payload that failed and a cleanup that
+        then failed after it must be reported against the payload.
+        """
+        alloc = {
+            "TaskStates": {
+                "clean-up": {
+                    "Failed": True,
+                    "StartedAt": "2026-01-01T10:05:00Z",
+                    "Events": [{"Type": "Terminated", "ExitCode": 7}],
+                },
+                "run-script": {
+                    "Failed": True,
+                    "StartedAt": "2026-01-01T10:00:00Z",
+                    "Events": [{"Type": "Terminated", "ExitCode": 2}],
+                },
+            },
+        }
+        assert _failed_step_reason(alloc) == "Step 'run-script' failed (exit code 2)."
+
     def test_returns_none_when_no_step_failed(self):
         """Assert an allocation whose producing steps all succeeded has no reason."""
         alloc = {"TaskStates": {"run-script": {"Failed": False, "Events": []}}}
@@ -2456,7 +2479,7 @@ class TestSyncTaskHistoryFailureReason:
         result = await _build_executor()._sync_task_history(self._queue_item())
 
         assert result.status == TaskHistoryStatusEnum.FAILED
-        assert result.failure_reason == "The run failed."
+        assert result.failure_reason == "Failed."
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
@@ -2471,7 +2494,7 @@ class TestSyncTaskHistoryFailureReason:
 
         assert result.status == TaskHistoryStatusEnum.STALE
         assert result.failure_reason == (
-            "The run skipped as stale (executor placement delayed past threshold)."
+            "Skipped as stale (executor placement delayed past threshold)."
         )
 
     @pytest.mark.asyncio
@@ -2493,7 +2516,7 @@ class TestSyncTaskHistoryFailureReason:
 
         assert result.status == TaskHistoryStatusEnum.UNLAUNCHABLE
         assert result.failure_reason == (
-            "The run could not be launched (the executor node cannot run the "
+            "Could not be launched (the executor node cannot run the "
             "requested command)."
         )
 
@@ -2537,7 +2560,7 @@ class TestSyncTaskHistoryFailureReason:
         result = await _build_executor()._sync_task_history(self._queue_item())
 
         assert result.status == TaskHistoryStatusEnum.FAILED
-        assert result.failure_reason == "The run failed."
+        assert result.failure_reason == "Failed."
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
@@ -2577,7 +2600,7 @@ class TestSyncTaskHistoryFailureReason:
         result = await _build_executor()._sync_task_history(self._queue_item())
 
         assert result.status == TaskHistoryStatusEnum.LOST
-        assert result.failure_reason == "The run execution tracking lost."
+        assert result.failure_reason == "Execution tracking lost."
 
 
 class TestStampFinishedAt:
