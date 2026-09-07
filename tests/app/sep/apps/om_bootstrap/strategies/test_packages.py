@@ -20,6 +20,7 @@ import pytest
 from app.sep.apps.om_bootstrap.strategies.packages import (
     DATA_PATH,
     PackagesInstallStrategy,
+    PID_FILE_PATH,
 )
 from app.sep.apps.om_bootstrap.strategy import (
     BootstrapSpec,
@@ -157,6 +158,20 @@ class TestBuildStep:
 
         command = " ".join(action.command)
         assert f"install -d -m 750 -o mongod -g mongod {DATA_PATH}" in command
+
+    def test_configure_mongod_forks(self) -> None:
+        """mongod.service is Type=forking.
+
+        Without fork: true it never satisfies systemd's readiness check and
+        gets killed once TimeoutStartSec elapses.
+        """
+        action = PackagesInstallStrategy().build_step(
+            "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert "fork: true" in command
+        assert f"pidFilePath: {PID_FILE_PATH}" in command
 
     def test_distribute_keyfile_requires_params(self) -> None:
         """Without a keyFile to plant, this is a programming error, not a blank file."""

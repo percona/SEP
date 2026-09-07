@@ -54,6 +54,11 @@ DATA_PATH = "/var/lib/mongo"
 #: Where the packaged mongod's own config file lives on both supported OSes.
 CONFIG_PATH = "/etc/mongod.conf"
 
+#: Matches the packaged ``mongod.service``'s own ``PIDFile=`` on both supported
+#: OSes. The unit is ``Type=forking``, so this has to agree with the systemd unit
+#: exactly -- see :meth:`PackagesInstallStrategy._configure_mongod`.
+PID_FILE_PATH = "/var/run/mongod.pid"
+
 #: Minimum free space at :data:`DATA_PATH` ``pre_check`` requires, in bytes.
 #: 5 GiB -- generous for phase-1's single-member/three-member replica sets, not a
 #: sized-for-production figure.
@@ -264,12 +269,22 @@ class PackagesInstallStrategy:
         fork, not for mongod's own startup logic to run. ``verify``, a step
         later, is what actually surfaces the failure -- by then the run has
         already reported ``start_service`` as done.
+
+        Sets ``processManagement.fork``/``pidFilePath`` for the same reason:
+        the packaged ``mongod.service`` is ``Type=forking``, so systemd waits for
+        mongod itself to daemonize and write :data:`PID_FILE_PATH`. Without
+        ``fork: true`` mongod runs in the foreground indefinitely -- confirmed
+        against a real run where mongod started and stayed healthy, but systemd's
+        default 90s ``TimeoutStartSec`` elapsed waiting for a fork that was never
+        coming and killed it, so ``verify`` found nothing listening on 27017 a
+        step later, again after ``start_service`` had already reported success.
         """
         config = (
             f"net:\n  bindIp: 0.0.0.0\n"
             f"storage:\n  dbPath: {DATA_PATH}\n"
             f"security:\n  authorization: enabled\n  keyFile: {KEY_FILE_PATH}\n"
             f"replication:\n  replSetName: {spec.replica_set_name}\n"
+            f"processManagement:\n  fork: true\n  pidFilePath: {PID_FILE_PATH}\n"
         )
         command = (
             f"install -d -m 750 -o mongod -g mongod {DATA_PATH} && "
