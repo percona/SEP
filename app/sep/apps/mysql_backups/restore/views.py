@@ -57,18 +57,21 @@ restore_views = Views(
                 key="Mydumper",
                 title="Mydumper",
                 collapsible=True,
+                collapsed_by_default=True,
                 forbidden=(FieldGate(when=F("backup_type") != "M"),),
             ),
             SectionLayout(
                 key="XtraBackup",
                 title="XtraBackup",
                 collapsible=True,
+                collapsed_by_default=True,
                 forbidden=(FieldGate(when=F("backup_type") != "X"),),
             ),
             SectionLayout(
                 key="Binlog",
                 title="Binlog",
                 collapsible=True,
+                collapsed_by_default=True,
                 forbidden=(FieldGate(when=F("backup_type") != "B"),),
             ),
         )

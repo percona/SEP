@@ -270,6 +270,36 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         )
         assert mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY] == expected
 
+    def test_schema_pins_section_collapse_posture(self, contract_client: Any) -> None:
+        """Pin every create-form section's collapse posture, section by section.
+
+        The form opens on what a backup needs: ``Task`` carries the required
+        fields and never collapses, and every expert section is collapsible *and*
+        collapsed, so the expanded-by-default wall of fields cannot come back and
+        a section added later without a posture decision fails here.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        posture = {
+            section["title"]: (
+                section["collapsible"],
+                section["collapsed_by_default"],
+            )
+            for section in response.json()["forms"]
+        }
+        assert posture == {
+            "Task": (False, False),
+            "General": (True, True),
+            "Mydumper": (True, True),
+            "XtraBackup": (True, True),
+            "Binlog": (True, True),
+            "Encryption": (True, True),
+            "Upload": (True, True),
+        }
+
     def test_update_round_trips_stored_form(
         self, contract_client: Any, mock_task_api: Any
     ) -> None:
