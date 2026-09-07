@@ -436,13 +436,14 @@ _INTERNAL_TOKEN_LABEL = b"sep-internal-token"
 def _encryption_key_error() -> str:
     """Return the remediation text for a missing or malformed key.
 
-    Names the resolved dotenv path rather than ``.env``. ``ENV_FILE`` is a
-    supported indirection and this repository's own checkouts use it, so prose
-    that hardcodes the default sends the reader to a file the loader never
-    reads: the append succeeds, the next start fails identically, and the
-    natural reading is a malformed key rather than an unread file. The path is
-    the one piece of state the reader cannot otherwise discover, and this
-    function is the only place that holds it at the moment of failure.
+    Names the absolute dotenv path rather than the default spelling.
+    ``ENV_FILE`` is a supported indirection and this repository's own checkouts
+    use it, so prose that hardcodes the default sends the reader to a file the
+    loader never reads: the append succeeds, the next start fails identically,
+    and the natural reading is a malformed key rather than an unread file. It
+    is resolved because the setting is a relative path by default, and a
+    process whose working directory is not the one the reader is standing in
+    would otherwise be told to edit ``.env`` without being told which.
 
     ``openssl rand -hex 32``, which ``SECRET_KEY``'s own message offers,
     produces 64 characters Fernet rejects, so the two remediations are
@@ -454,10 +455,9 @@ def _encryption_key_error() -> str:
         "ENCRYPTION_KEY must be set to a valid Fernet key (32 url-safe "
         "base64-encoded bytes). Generate one with `make encryption-key` or "
         "`openssl rand -base64 32`, then add it as ENCRYPTION_KEY=<key> to "
-        f"{pre_env_settings.ENV_FILE} (the file ENV_FILE names, which is not "
-        "necessarily .env), export it, or mount it as a file named "
-        "ENCRYPTION_KEY under SECRETS_DIR. It has no default and is never "
-        "derived from SECRET_KEY."
+        f"{pre_env_settings.ENV_FILE.resolve()} (the file ENV_FILE names), "
+        "export it, or mount it as a file named ENCRYPTION_KEY under "
+        "SECRETS_DIR. It has no default and is never derived from SECRET_KEY."
     )
 
 
