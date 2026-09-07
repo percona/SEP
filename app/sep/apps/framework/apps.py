@@ -416,11 +416,14 @@ class TaskExecutionApp(BaseApp):
         ``GET /schema`` (``AppSchema.item_display_name``). Written in
         mid-sentence form so a consumer capitalises the first character itself.
         Defaults to ``None``, which leaves the schema to fall back to
-        ``display_name``.
+        ``display_name``. **Read only on the derived-schema path:** a
+        ``script_source`` app serves ``script_source.static_schema`` and never
+        reaches ``_resolve_plugin_schema``, so it declares its record names on
+        the source instead and setting them here would do nothing.
     :param item_display_name_plural: The name for several such records (for
         example ``backups``), threaded into
-        ``AppSchema.item_display_name_plural``. Declared independently of the
-        singular under the same convention. Defaults to ``None``.
+        ``AppSchema.item_display_name_plural`` under the same condition.
+        Declared independently of the singular. Defaults to ``None``.
     :param related_apps: Separately registered apps the React shell surfaces as
         sibling tabs under ``{route_base}/{route_segment}``. Threaded into the
         derived ``GET /schema`` (``AppSchema.related_apps``). Defaults to an

@@ -131,14 +131,17 @@ class ScaffoldConfig:
     :param display_name: The human-facing label (title-cased from ``name`` unless
         overridden).
     :param item_display_name: The name for one record the app's create form
-        produces, in mid-sentence form. Defaults to ``display_name``, which the
-        conformance detector rejects for the ``task`` flavor — the only one whose
-        rendered app declares a create form — so an unedited task scaffold has to
-        name its record before it registers. The ``base`` and ``script`` flavors
-        render ``forms=[]`` at the app level, so the detector skips them and the
-        default stands until the author adds a form.
+        produces, in mid-sentence form. Defaults to ``display_name``, which
+        :func:`~app.sep.apps.framework.conformance.check_item_display_names_declared`
+        rejects for the ``task`` flavor — the only one whose rendered app declares
+        a create form — so an unedited task scaffold fails the conformance suite
+        until its author names the record. Nothing consults that detector at
+        registration time; it runs over the registry from the test suite. The
+        ``base`` and ``script`` flavors render ``forms=[]`` at the app level and
+        are skipped, and a ``script_source`` app's schema can never gain form
+        sections, so for it the app-level noun is unenforced rather than deferred.
     :param item_display_name_plural: The name for several such records, defaulted
-        the same way and enforced under the same limit.
+        the same way and enforced under the same limits.
     :param description: The plugin description; ``None`` for the ``base`` flavor,
         whose ``BaseApp`` has no description field.
     :param service_type: The ``ServiceTypeEnum`` member name for the task form's

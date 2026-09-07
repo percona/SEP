@@ -49,8 +49,8 @@ const mockUseTasksList = vi.mocked(useTasksList);
 const mockSchema: AppSchema = {
   name: 'tasks',
   display_name: 'Task Manager',
-  item_display_name: 'task manager',
-  item_display_name_plural: 'task managers',
+  item_display_name: 'Task Manager',
+  item_display_name_plural: 'Task Manager',
   description: 'View task definitions and execution history.',
   forms: [],
   list_view: {

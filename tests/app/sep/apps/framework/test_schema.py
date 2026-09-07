@@ -15,6 +15,7 @@
 
 """Unit tests for the plugin schema DSL."""
 
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -2810,17 +2811,33 @@ class TestAppSchemaRecordDisplayNames:
         assert payload["item_display_name_plural"] == "backups"
         assert AppSchema.model_validate(payload) == schema
 
-    def test_validating_an_instance_is_untouched(self) -> None:
-        """Pass a model instance through validation without the dict guard tripping."""
-        schema = AppSchema(
-            name="minimal",
-            display_name="MySQL Backups",
-            item_display_name="backup",
-            item_display_name_plural="backups",
-            list_view=_minimal_list_view(),
+    @pytest.mark.parametrize("payload", ["garbage", [1, 2], 7, None])
+    def test_non_mapping_input_is_reported_not_raised(self, payload: Any) -> None:
+        """Report non-mapping input as ``model_type`` rather than raising out of the validator.
+
+        This is what the ``before`` validator's mapping guard buys. Without it the
+        ``.get`` calls raise ``AttributeError``, which escapes as an unhandled
+        exception instead of a ``ValidationError`` a caller can catch.
+        """
+        with pytest.raises(ValidationError) as exc_info:
+            AppSchema.model_validate(payload)
+
+        assert {error["type"] for error in exc_info.value.errors()} == {"model_type"}
+
+    def test_a_read_only_mapping_defaults_like_a_dict(self) -> None:
+        """Default from any ``Mapping``, not only ``dict`` — the guard is not type-narrow."""
+        payload = MappingProxyType(
+            {
+                "name": "minimal",
+                "display_name": "MySQL Backups",
+                "list_view": _minimal_list_view(),
+            }
         )
 
-        assert AppSchema.model_validate(schema) == schema
+        schema = AppSchema.model_validate(payload)
+
+        assert schema.item_display_name == "MySQL Backups"
+        assert schema.item_display_name_plural == "MySQL Backups"
 
     def test_entity_record_names_default_from_the_entity_display_name(self) -> None:
         """Default an entity's record names from its own ``display_name``."""

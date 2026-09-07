@@ -342,6 +342,9 @@ def build_disk_script_source(
     :raises TypeError: When ``list_query_spec`` is not a ``ListQuerySpec``. Checked
         here, at wiring time, because the source replays it on every list call; a
         ``None`` slipped past the annotation would otherwise fail per request.
+    :raises pydantic.ValidationError: When ``display_name`` or either record name
+        is empty, from the unguarded ``static_schema`` construction below. Also a
+        wiring-time failure: the schema is built once, when the source is.
     """
     if not isinstance(list_query_spec, ListQuerySpec):
         raise TypeError(

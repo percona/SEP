@@ -62,7 +62,7 @@ __all__ = [
 ]
 
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from enum import auto, StrEnum
 from typing import Annotated, Any, Literal, Self
 
@@ -1507,7 +1507,8 @@ def _collect_fail_rule_errors(
         )
 
 
-_ITEM_DISPLAY_NAME_KEYS = ("item_display_name", "item_display_name_plural")
+ITEM_DISPLAY_NAME_KEYS = ("item_display_name", "item_display_name_plural")
+"""The two record-name keys, shared with the conformance detector that checks them."""
 
 
 def _fill_item_display_names(data: Any) -> Any:
@@ -1518,18 +1519,24 @@ def _fill_item_display_names(data: Any) -> Any:
     staying optional for the author. Each key defaults independently: supplying
     the singular never derives the plural, or the reverse.
 
-    :param data: The raw input passed to the model. Only a mapping is rewritten,
-        so re-validating an existing model instance passes through untouched.
-    :return: The input with either record name filled from ``display_name``, or
-        the input unchanged when both were supplied.
+    :param data: The raw input passed to the model, which Pydantic hands over
+        before field validation and therefore does not constrain — anything the
+        caller passed to ``model_validate`` arrives here. Non-mapping input is
+        returned untouched so Pydantic reports it as a ``model_type`` error
+        rather than this function raising ``AttributeError`` out of the
+        validator; input whose ``display_name`` is absent or not a string is
+        returned untouched for the same reason, leaving the two record names to
+        be reported ``missing`` alongside it.
+    :return: A mapping with either record name filled from ``display_name``, or
+        the input unchanged when both were supplied or nothing could be filled.
     """
-    if not isinstance(data, dict):
+    if not isinstance(data, Mapping):
         return data
     display_name = data.get("display_name")
     if not isinstance(display_name, str):
         return data
     filled = {
-        key: display_name for key in _ITEM_DISPLAY_NAME_KEYS if data.get(key) is None
+        key: display_name for key in ITEM_DISPLAY_NAME_KEYS if data.get(key) is None
     }
     return {**data, **filled} if filled else data
 

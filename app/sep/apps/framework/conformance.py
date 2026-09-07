@@ -40,7 +40,7 @@ from app.sep.apps.framework.form_dsl import (
     derive_form_sections,
 )
 from app.sep.apps.framework.responses import root_segment, serialized_field_names
-from app.sep.apps.framework.schema import Capabilities
+from app.sep.apps.framework.schema import Capabilities, ITEM_DISPLAY_NAME_KEYS
 
 if TYPE_CHECKING:
     from app.sep.apps.framework.apps import TaskExecutionApp
@@ -155,7 +155,7 @@ def check_item_display_names_declared(
         f"in mid-sentence form"
         for scope_label, scope in scopes
         if any(section.get("fields") for section in scope.get("forms") or ())
-        for key in ("item_display_name", "item_display_name_plural")
+        for key in ITEM_DISPLAY_NAME_KEYS
         if (display_name := scope.get("display_name")) is not None
         and scope.get(key) == display_name
     ]

@@ -50,11 +50,13 @@ from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.conformance import (
     check_capability_route_consistency,
+    check_item_display_names_declared,
     check_route_collisions,
     check_schema_derivation_succeeds,
     check_view_fields_reference_real_fields,
 )
 from app.sep.apps.framework.registry import build_app_registry
+from app.sep.apps.framework.schema import ITEM_DISPLAY_NAME_KEYS
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.config import App
 from app.sep.deps import get_current_user, IsApiAuthenticated
@@ -1215,9 +1217,9 @@ def test_record_display_names_default_to_the_display_name(
 
     The default is deliberately the value the conformance detector rejects, so a
     ``task``-flavored scaffold — the only flavor whose rendered app declares a
-    create form — cannot register until its author names the record. The other
-    two flavors render ``forms=[]`` at the app level and are skipped by the
-    detector, so for them the default just stands.
+    create form — fails the conformance suite until its author names the record.
+    The other two flavors render ``forms=[]`` at the app level and are skipped by
+    the detector, so for them the default just stands.
     """
     config = _config_from_args(["--name", "demo", "--type", flavor.value, "--no-input"])
 
@@ -1261,7 +1263,7 @@ def test_record_display_names_rendered_into_every_declaration_site(
     expected_carriers = {
         scaffold.Flavor.BASE: {"schema.py"},
         scaffold.Flavor.TASK: {"app.py"},
-        scaffold.Flavor.SCRIPT: {"app.py", "source.py"},
+        scaffold.Flavor.SCRIPT: {"source.py"},
     }[flavor]
     config = _config_from_args(
         [
@@ -1291,3 +1293,58 @@ def test_record_display_names_rendered_into_every_declaration_site(
 
     assert carriers == expected_carriers
     assert plural_carriers == expected_carriers
+
+
+def test_default_nouns_make_a_task_scaffold_fail_the_conformance_detector(
+    tmp_settings: Path,
+) -> None:
+    """Pin the enforcement the defaults exist to trigger, end to end.
+
+    The defaults are only useful if an unedited task scaffold actually trips
+    ``check_item_display_names_declared``. Asserting that the rendered source
+    carries the app title would only restate the template; this runs the detector
+    over the schema the generated app derives.
+    """
+    name = "_scaffold_detector_task"
+    config = _config_from_args(["--name", name, "--type", "task", "--no-input"])
+
+    with _scaffolded_config(config):
+        module = importlib.import_module(f"app.sep.apps.{name}")
+        payload = module.app._resolve_plugin_schema().model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        )
+
+    flagged = sorted(
+        key
+        for key in ITEM_DISPLAY_NAME_KEYS
+        if any(repr(key) in m for m in check_item_display_names_declared(payload))
+    )
+    assert flagged == sorted(ITEM_DISPLAY_NAME_KEYS)
+
+
+def test_declared_nouns_make_a_task_scaffold_pass_the_conformance_detector(
+    tmp_settings: Path,
+) -> None:
+    """Clear the detector once the author names the record, the remedy the default points at."""
+    name = "_scaffold_detector_task_named"
+    config = _config_from_args(
+        [
+            "--name",
+            name,
+            "--type",
+            "task",
+            "--item-display-name",
+            "widget",
+            "--item-display-name-plural",
+            "widgets",
+            "--no-input",
+        ]
+    )
+
+    with _scaffolded_config(config):
+        module = importlib.import_module(f"app.sep.apps.{name}")
+        payload = module.app._resolve_plugin_schema().model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        )
+
+    assert check_item_display_names_declared(payload) == []
