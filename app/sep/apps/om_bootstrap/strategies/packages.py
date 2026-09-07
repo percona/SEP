@@ -59,6 +59,13 @@ CONFIG_PATH = "/etc/mongod.conf"
 #: exactly -- see :meth:`PackagesInstallStrategy._configure_mongod`.
 PID_FILE_PATH = "/var/run/mongod.pid"
 
+#: Where mongod's own logs go once it forks. Not the same thing as the unit's
+#: ``STDOUT``/``STDERR`` redirects in ``/etc/default/mongod`` -- those capture
+#: only the pre-fork parent, which prints nothing once mongod backgrounds
+#: itself. ``/var/log/mongodb`` already exists, owned by ``mongod``, from the
+#: package's own post-install.
+LOG_PATH = "/var/log/mongodb/mongod.log"
+
 #: Minimum free space at :data:`DATA_PATH` ``pre_check`` requires, in bytes.
 #: 5 GiB -- generous for phase-1's single-member/three-member replica sets, not a
 #: sized-for-production figure.
@@ -278,6 +285,14 @@ class PackagesInstallStrategy:
         default 90s ``TimeoutStartSec`` elapsed waiting for a fork that was never
         coming and killed it, so ``verify`` found nothing listening on 27017 a
         step later, again after ``start_service`` had already reported success.
+
+        ``systemLog.path`` is required alongside ``fork: true`` -- mongod refuses
+        to start at all otherwise (``BadValue: --fork has to be used with
+        --logpath or --syslog``), confirmed against a real run once the
+        fork-without-a-logpath combination above was fixed. The unit's own
+        ``STDOUT``/``STDERR`` redirects in ``/etc/default/mongod`` do not stand
+        in for this: those capture only the pre-fork parent, which prints
+        nothing once mongod backgrounds itself.
         """
         config = (
             f"net:\n  bindIp: 0.0.0.0\n"
@@ -285,6 +300,7 @@ class PackagesInstallStrategy:
             f"security:\n  authorization: enabled\n  keyFile: {KEY_FILE_PATH}\n"
             f"replication:\n  replSetName: {spec.replica_set_name}\n"
             f"processManagement:\n  fork: true\n  pidFilePath: {PID_FILE_PATH}\n"
+            f"systemLog:\n  destination: file\n  path: {LOG_PATH}\n  logAppend: true\n"
         )
         command = (
             f"install -d -m 750 -o mongod -g mongod {DATA_PATH} && "

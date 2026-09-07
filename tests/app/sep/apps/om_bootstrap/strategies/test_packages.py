@@ -19,6 +19,7 @@ import pytest
 
 from app.sep.apps.om_bootstrap.strategies.packages import (
     DATA_PATH,
+    LOG_PATH,
     PackagesInstallStrategy,
     PID_FILE_PATH,
 )
@@ -172,6 +173,19 @@ class TestBuildStep:
         command = " ".join(action.command)
         assert "fork: true" in command
         assert f"pidFilePath: {PID_FILE_PATH}" in command
+
+    def test_configure_mongod_sets_a_logpath(self) -> None:
+        """Mongod refuses to start at all with fork: true and no logpath.
+
+        ``BadValue: --fork has to be used with --logpath or --syslog`` --
+        confirmed against a real run.
+        """
+        action = PackagesInstallStrategy().build_step(
+            "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert f"path: {LOG_PATH}" in command
 
     def test_distribute_keyfile_requires_params(self) -> None:
         """Without a keyFile to plant, this is a programming error, not a blank file."""
