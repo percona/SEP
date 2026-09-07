@@ -79,9 +79,10 @@ class TestWriteAndCleanupStepScript:
         try:
             content = path.read_text()
             assert content == dispatch.build_step_script(action)
-            assert digest == hashlib.md5(
-                content.encode(), usedforsecurity=False
-            ).hexdigest()
+            assert (
+                digest
+                == hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()
+            )
             assert path.parent == dispatch.step_scripts_dir()
         finally:
             dispatch.cleanup_step_script(run_id, host, step_name)

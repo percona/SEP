@@ -127,9 +127,7 @@ class TestReconcileRun:
             os=OperatingSystem.UBUNTU,
             mongodb_version="8.0",
             replica_set_name="rs-test",
-            hosts=dump_host_states(
-                [HostBootstrapState(host="node00", steps=steps)]
-            ),
+            hosts=dump_host_states([HostBootstrapState(host="node00", steps=steps)]),
         )
 
     @pytest.mark.asyncio
