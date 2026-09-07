@@ -19,6 +19,7 @@ import pytest
 
 from app.sep.apps.om_bootstrap.strategies.packages import (
     DATA_PATH,
+    KEY_FILE_PATH,
     LOG_PATH,
     PackagesInstallStrategy,
     PID_FILE_PATH,
@@ -41,6 +42,8 @@ STEP_NAMES = [
 ]
 
 RUN_STEP_NAMES = ["rs_initiate", "create_pmm_monitoring_user"]
+
+FINALIZE_STEP_NAMES = ["enable_auth"]
 
 ROLLBACK_STEP_NAMES = [
     "stop_service",
@@ -187,6 +190,23 @@ class TestBuildStep:
         command = " ".join(action.command)
         assert f"path: {LOG_PATH}" in command
 
+    def test_configure_mongod_leaves_authorization_off(self) -> None:
+        """Authorization has to stay off until the first user already exists.
+
+        MongoDB's localhost exception is unreliable once a replica set already
+        has more than one member -- confirmed against a real run where every
+        createUser attempt failed identically once the first one did.
+        enable_auth (a finalize step) turns authorization on afterward, once
+        create_pmm_monitoring_user has actually succeeded.
+        """
+        action = PackagesInstallStrategy().build_step(
+            "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert "authorization" not in command
+        assert "keyFile" not in command
+
     def test_distribute_keyfile_requires_params(self) -> None:
         """Without a keyFile to plant, this is a programming error, not a blank file."""
         with pytest.raises(ValueError, match="key_file_content"):
@@ -260,22 +280,58 @@ class TestBuildRunStep:
         assert "generated-secret" in command
         assert "clusterMonitor" in command
 
-    def test_create_pmm_monitoring_user_disables_the_atlas_cli_check(self) -> None:
-        """Mongosh's Atlas CLI local-deployment probe closes the localhost exception.
 
-        Confirmed against a real run where every attempt to create the first
-        user failed "not authorized" even though create_pmm_monitoring_user's
-        own command was correct -- the probe, not our command, burned it.
-        """
-        action = PackagesInstallStrategy().build_run_step(
-            "create_pmm_monitoring_user",
-            ["node00"],
-            _spec(OperatingSystem.UBUNTU),
-            params={"username": "pmm_monitor", "password": "generated-secret"},
+class TestPlanFinalizeSteps:
+    """Assert the finalize step list is fixed and OS-independent."""
+
+    def test_returns_the_fixed_finalize_step_names(self) -> None:
+        """enable_auth, the only finalize step phase 1 needs."""
+        spec = _spec(OperatingSystem.UBUNTU)
+        assert (
+            PackagesInstallStrategy().plan_finalize_steps(spec) == FINALIZE_STEP_NAMES
+        )
+
+
+class TestBuildFinalizeStep:
+    """Assert build_finalize_step rejects unknown names and enables auth correctly."""
+
+    def test_unknown_finalize_step_name_raises(self) -> None:
+        """A per-host forward step name is not a finalize step."""
+        with pytest.raises(
+            ValueError, match="not a PackagesInstallStrategy finalize step"
+        ):
+            PackagesInstallStrategy().build_finalize_step(
+                "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
+            )
+
+    def test_enable_auth_turns_authorization_on(self) -> None:
+        """The one thing configure_mongod deliberately left out."""
+        action = PackagesInstallStrategy().build_finalize_step(
+            "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
         )
 
         command = " ".join(action.command)
-        assert "MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1" in command
+        assert "authorization: enabled" in command
+        assert f"keyFile: {KEY_FILE_PATH}" in command
+
+    def test_enable_auth_restarts_mongod(self) -> None:
+        """security.authorization only takes effect on a fresh start."""
+        action = PackagesInstallStrategy().build_finalize_step(
+            "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        assert "systemctl restart mongod" in " ".join(action.command)
+
+    def test_enable_auth_keeps_the_replica_set_name(self) -> None:
+        """Rewriting the config must not lose settings configure_mongod wrote."""
+        action = PackagesInstallStrategy().build_finalize_step(
+            "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert "replSetName: rs-test" in command
+        assert "fork: true" in command
+        assert f"path: {LOG_PATH}" in command
 
 
 class TestPlanRollbackSteps:

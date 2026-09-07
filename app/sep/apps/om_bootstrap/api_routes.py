@@ -348,6 +348,9 @@ async def trigger_run(session: SessionDep, request: TriggerRunRequest) -> RunRes
             rollback_steps=[
                 StepRecord(name=name) for name in strategy.plan_rollback_steps(spec)
             ],
+            finalize_steps=[
+                StepRecord(name=name) for name in strategy.plan_finalize_steps(spec)
+            ],
         )
         for host in request.hosts
     ]
@@ -499,6 +502,68 @@ async def dispatch_run_step(
     tasks_api = await _tasks_api_client()
     with tasks_api.auth(require_internal_token()):
         host_state.steps[step_index] = await _dispatch_and_record(
+            tasks_api, request, str(run.id), host, step_name, action, step
+        )
+
+    run.hosts = dump_host_states(states)
+    run = await BootstrapRunManager.save(session, run)
+    return _run_response(run)
+
+
+@router.post(
+    "/runs/{run_id}/hosts/{host}/finalize/{step_name}:dispatch",
+    status_code=http_status.HTTP_202_ACCEPTED,
+)
+@require_minimum_role(UserRole.ADMIN)
+async def dispatch_finalize_step(
+    run_id: UUID,
+    host: str,
+    step_name: str,
+    session: SessionDep,
+    request: Request,
+    body: DispatchStepRequest | None = None,
+) -> RunResponse:
+    """Dispatch one host's named finalize step now.
+
+    Same fire-and-forget shape as :func:`dispatch_run_step` -- see its own
+    docstring; the only difference is which list on
+    :class:`~app.sep.apps.om_bootstrap.strategy.HostBootstrapState` this reads
+    and writes. This route does not check that every run-level step has
+    succeeded first -- deciding *when* it is safe to call this is PMM's
+    stepper's job, not this route's (see the module docstring, and
+    :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.plan_finalize_steps`'s
+    own docstring for why that ordering matters at all).
+
+    :param run_id: The run's id.
+    :param host: The host to dispatch the step on.
+    :param step_name: The finalize step to dispatch -- one of the names the run
+        was planned with.
+    :param session: The database session.
+    :param request: See :func:`dispatch_run_step`.
+    :param body: ``params`` this step needs -- see :class:`DispatchStepRequest`.
+    :raises HTTPNotFoundException: When there is no such run, host, or finalize step.
+    :raises HTTPConflictException: When the step is already running.
+    :return: The run, with the dispatched finalize step now ``running``.
+    """
+    run = await _get_run_or_404(session, run_id)
+
+    states = parse_host_states(run)
+    host_state = next((state for state in states if state.host == host), None)
+    if host_state is None:
+        raise HTTPNotFoundException(detail=f"Host {host!r} is not part of run {run_id}")
+    what = f"host {host!r}"
+    step_index = _find_step(host_state.finalize_steps, step_name, what=what)
+    step = host_state.finalize_steps[step_index]
+    _require_not_running(step, step_name, what=what)
+
+    strategy, spec = _spec_for(run)
+    action = strategy.build_finalize_step(
+        step_name, host, spec, body.params if body is not None else None
+    )
+
+    tasks_api = await _tasks_api_client()
+    with tasks_api.auth(require_internal_token()):
+        host_state.finalize_steps[step_index] = await _dispatch_and_record(
             tasks_api, request, str(run.id), host, step_name, action, step
         )
 

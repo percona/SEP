@@ -39,6 +39,7 @@ from app.api.deps import minimum_role_for
 from app.core.auth.models import UserRole
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.om_bootstrap.api_routes import (
+    dispatch_finalize_step,
     dispatch_rollback_step,
     dispatch_run_run_step,
     dispatch_run_step,
@@ -118,6 +119,10 @@ class TestAdminGateIsRegistered:
         """Tearing down a host is as privileged as building it up."""
         assert minimum_role_for_endpoint(dispatch_rollback_step) == UserRole.ADMIN
 
+    def test_dispatch_finalize_step_requires_admin(self) -> None:
+        """Enabling auth and restarting mongod is equally privileged."""
+        assert minimum_role_for_endpoint(dispatch_finalize_step) == UserRole.ADMIN
+
     def test_finish_run_requires_admin(self) -> None:
         """Declaring a run failed/rolled back is the stepper's own privileged call."""
         assert minimum_role_for_endpoint(finish_run) == UserRole.ADMIN
@@ -162,6 +167,8 @@ class TestTriggerRun:
         for host in body["hosts"]:
             assert host["steps"]
             assert all(step["status"] == "pending" for step in host["steps"])
+            assert host["finalize_steps"]
+            assert all(step["status"] == "pending" for step in host["finalize_steps"])
 
     def test_rejects_an_empty_host_list(
         self, regular_user: CasdoorUser, session: AsyncSession
@@ -699,6 +706,122 @@ class TestDispatchRollbackStep:
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestDispatchFinalizeStep:
+    """Assert POST .../finalize/{name}:dispatch validates and dispatches enable_auth."""
+
+    async def _seed_run(self, session: AsyncSession) -> BootstrapRun:
+        return await BootstrapRunManager.save(
+            session,
+            BootstrapRun(
+                install_method=InstallMethod.PACKAGES,
+                os=OperatingSystem.UBUNTU,
+                mongodb_version="8.0",
+                replica_set_name="rs-test",
+                hosts=dump_host_states(
+                    [
+                        HostBootstrapState(
+                            host="node00",
+                            steps=[
+                                StepRecord(name="verify", status=StepStatus.SUCCEEDED)
+                            ],
+                            finalize_steps=[StepRecord(name="enable_auth")],
+                        )
+                    ]
+                ),
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_dispatches_a_pending_finalize_step(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A pending finalize step is dispatched, marked running, and carries its task id."""
+        run = await self._seed_run(session)
+
+        with (
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
+                AsyncMock(return_value=_fake_tasks_api()),
+            ),
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
+                AsyncMock(return_value=FAKE_TASK_HISTORY_ID),
+            ),
+        ):
+            response = _client(regular_user, session).post(
+                f"{_BASE}/runs/{run.id}/hosts/node00/finalize/enable_auth:dispatch"
+            )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        finalize_step = response.json()["hosts"][0]["finalize_steps"][0]
+        assert finalize_step["status"] == "running"
+        assert finalize_step["task_history_id"] == FAKE_TASK_HISTORY_ID
+
+    @pytest.mark.asyncio
+    async def test_404s_for_an_unplanned_finalize_step(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A forward step name is not a finalize step name."""
+        run = await self._seed_run(session)
+
+        response = _client(regular_user, session).post(
+            f"{_BASE}/runs/{run.id}/hosts/node00/finalize/verify:dispatch"
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_404s_for_an_unknown_host(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A host outside this run cannot have a finalize step dispatched on it."""
+        run = await self._seed_run(session)
+
+        response = _client(regular_user, session).post(
+            f"{_BASE}/runs/{run.id}/hosts/node99/finalize/enable_auth:dispatch"
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_409s_for_a_finalize_step_already_running(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """Re-dispatching an in-flight finalize step is a conflict, not a second dispatch."""
+        run = await BootstrapRunManager.save(
+            session,
+            BootstrapRun(
+                install_method=InstallMethod.PACKAGES,
+                os=OperatingSystem.UBUNTU,
+                mongodb_version="8.0",
+                replica_set_name="rs-test",
+                hosts=dump_host_states(
+                    [
+                        HostBootstrapState(
+                            host="node00",
+                            steps=[
+                                StepRecord(name="verify", status=StepStatus.SUCCEEDED)
+                            ],
+                            finalize_steps=[
+                                StepRecord(
+                                    name="enable_auth",
+                                    status=StepStatus.RUNNING,
+                                    task_history_id=FAKE_TASK_HISTORY_ID,
+                                )
+                            ],
+                        )
+                    ]
+                ),
+            ),
+        )
+
+        response = _client(regular_user, session).post(
+            f"{_BASE}/runs/{run.id}/hosts/node00/finalize/enable_auth:dispatch"
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
 
 
 class TestFinishRun:
