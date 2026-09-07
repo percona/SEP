@@ -2372,7 +2372,7 @@ async def _seed_history(
 
 
 async def _set_history_running(async_session_maker, task_history_id: int) -> None:
-    """Flip a seeded TaskHistory to RUNNING so ``sync_queue_item`` syncs it."""
+    """Set a seeded TaskHistory to RUNNING so ``sync_queue_item`` syncs it."""
     async with async_session_maker() as session:
         await TaskHistoryManager.update_where(
             session,

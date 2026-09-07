@@ -450,11 +450,10 @@ def _failed_step_reason(alloc: dict[str, Any]) -> str | None:
     :param alloc: The allocation details from Nomad.
     :return: The reason, or ``None`` when no producing step reports a failure.
     """
-    for step in _alloc_task_states(alloc):
+    for step, state in _alloc_task_states(alloc).items():
         if not NomadStep.is_persistable(step):
             continue
-        state = _alloc_step_state(alloc, step)
-        if not state.get("Failed"):
+        if not isinstance(state, dict) or not state.get("Failed"):
             continue
         description = f"Step {step!r} failed"
         parts = [description]

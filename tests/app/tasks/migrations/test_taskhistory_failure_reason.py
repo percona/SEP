@@ -15,29 +15,11 @@
 
 """Tests for the Tasks-track taskhistory failure_reason column migration."""
 
-import pytest
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine
-
-from app.tasks.config import tasks_settings
-from tests.app.alembic_paths import ALEMBIC_INI
 
 _WITH_COLUMN_REVISION = "c4b8e1f7a2d9"
 _PRE_COLUMN_REVISION = "8fdfa7869662"
-
-
-@pytest.fixture
-def tasks_alembic_config(tmp_path, monkeypatch):
-    """Return an Alembic ``Config`` and sync URL pointing at a temp SQLite file."""
-    db_path = tmp_path / "test_tasks.sqlite"
-    sync_url = f"sqlite:///{db_path}"
-
-    monkeypatch.setattr(tasks_settings.DATABASE, "HOST", "")
-    monkeypatch.setattr(tasks_settings.DATABASE, "NAME", str(db_path))
-
-    cfg = Config(str(ALEMBIC_INI), ini_section="tasks")
-    return cfg, sync_url
 
 
 def _task_history_columns(sync_url: str) -> set[str]:
@@ -63,4 +45,6 @@ def test_downgrade_drops_failure_reason_column(tasks_alembic_config):
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, _WITH_COLUMN_REVISION)
     command.downgrade(cfg, _PRE_COLUMN_REVISION)
-    assert "failure_reason" not in _task_history_columns(sync_url)
+    remaining = _task_history_columns(sync_url)
+    assert remaining, "the taskhistory table should survive the downgrade"
+    assert "failure_reason" not in remaining
