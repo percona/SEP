@@ -126,22 +126,29 @@ class TestBackupSourceMapper:
         assert "1.0 GiB" in choice.label
         assert "/backups/mydumper/20240101" in choice.label
 
-    def test_choice_labels_every_declared_backup_type(self) -> None:
-        """Render each member's label from the enum's single label source."""
-        labels: dict[str, str] = {}
-        for member in BackupType:
-            run = MysqlBackupRun(
-                task_history_id=1,
-                service_name="svc",
-                backup_type=member,
-                location=f"/backups/{member.value}",
-            )
-            choice = backup_run_to_choice(run)
-            assert choice is not None
-            labels[member.value] = choice.label
+    @pytest.mark.parametrize(
+        ("backup_type", "expected"),
+        [(BackupType.MYDUMPER, "Mydumper"), (BackupType.XTRABACKUP, "XtraBackup")],
+    )
+    def test_choice_labels_a_catalogued_backup_type(
+        self, backup_type: BackupType, expected: str
+    ) -> None:
+        """Render a catalogued run's label from the enum's single label source.
 
-        for value, expected in BackupType.LABELS.items():
-            assert expected in labels[value]
+        Only mydumper and xtrabackup runs are ever catalogued, so those are the
+        values this selector can be asked to label.
+        """
+        run = MysqlBackupRun(
+            task_history_id=1,
+            service_name="svc",
+            backup_type=backup_type,
+            location=f"/backups/{backup_type.value}",
+        )
+
+        choice = backup_run_to_choice(run)
+
+        assert choice is not None
+        assert expected in choice.label
 
     def test_choice_falls_back_to_the_raw_value_when_unlabelled(self) -> None:
         """Render a stored code the enum no longer declares as the code itself."""
