@@ -97,19 +97,25 @@ def _pytest_env_pins() -> dict[str, str]:
     Read rather than duplicated. The freshness guard runs this script as a
     subprocess *from* pytest, so it inherits those pins and the dump resolves
     them whether or not this file lists them; a developer running the dump from
-    a shell inherits nothing. Two hand-maintained copies therefore produce a
-    spec that depends on how the dump was invoked, and the copies had already
-    drifted (four entries here against eight in ``pyproject.toml``) under a
-    comment asking a human to keep them in step.
+    a shell inherits nothing. A hand-maintained second copy therefore produces a
+    spec that depends on how the dump was invoked, so the list is derived and
+    the two cannot diverge.
 
     ``ENV_FILE`` is resolved against the repository root: the pin is relative,
     which pytest resolves from its rootdir, and this script can run from
     anywhere.
 
+    Only the plain ``NAME=value`` form is modelled. pytest-env also accepts
+    ``D:`` / ``R:`` flag prefixes and interpolates ``{VAR}`` in unprefixed
+    values, so reading an entry that uses either would reinstate the very
+    divergence this derivation removes, silently and one layer down. Such an
+    entry is rejected rather than half-read.
+
     :return: The pinned variables, in ``pyproject.toml`` order.
-    :raises RuntimeError: When the pins are missing or malformed.
+    :raises RuntimeError: When the pins are missing, malformed, or use
+        pytest-env syntax this function does not model.
     """
-    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     try:
         entries = config["tool"]["pytest"]["ini_options"]["env"]
     except KeyError as exc:
@@ -123,6 +129,15 @@ def _pytest_env_pins() -> dict[str, str]:
         name, separator, value = entry.partition("=")
         if not separator:
             raise RuntimeError(f"pytest env pin is not NAME=value: {entry!r}")
+        if not name.isidentifier():
+            raise RuntimeError(
+                f"pytest env pin uses a flag prefix this dump does not model: {entry!r}"
+            )
+        if "{" in value:
+            raise RuntimeError(
+                f"pytest env pin uses value interpolation this dump does not "
+                f"model: {entry!r}"
+            )
         pins[name] = value
     if "ENV_FILE" in pins:
         pins["ENV_FILE"] = str(REPO_ROOT / pins["ENV_FILE"])
@@ -148,6 +163,9 @@ def _pin_canonical_settings_env() -> None:
 
     Must be called before ``_load_apps()`` imports the application, since the
     settings object is constructed at import time.
+
+    :raises RuntimeError: When the pytest env pins are missing, malformed, or
+        use pytest-env syntax the derivation does not model.
     """
     for key in [k for k in os.environ if k.startswith("AUTH__PROVIDER")]:
         del os.environ[key]

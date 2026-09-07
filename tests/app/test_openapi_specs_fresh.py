@@ -91,10 +91,10 @@ def test_dump_pins_every_setting_the_suite_pins():
     ``pyproject.toml`` pins whether or not the script sets them; a developer
     running ``make regen-specs`` from a shell inherits nothing. A second
     hand-maintained copy therefore makes the generated spec depend on how the
-    dump was invoked, and the copies had drifted to four entries against eight.
-    Deriving them makes that divergence impossible; this pins the derivation.
+    dump was invoked. Deriving the list removes that divergence; this pins the
+    derivation.
     """
-    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     expected = {
         entry.split("=", 1)[0]
         for entry in config["tool"]["pytest"]["ini_options"]["env"]
@@ -133,13 +133,23 @@ def test_dump_mints_a_key_rather_than_reading_a_committed_one():
 
 
 def test_pinning_applies_every_derived_and_minted_variable(monkeypatch):
-    """Assert the pins actually reach the environment the app is imported under."""
-    for name in [*dump_openapi._pytest_env_pins(), *dump_openapi._MINTED_ENV]:
+    """Assert the pins actually reach the environment the app is imported under.
+
+    Every name the call will touch goes through ``monkeypatch`` first, including
+    the ``AUTH__PROVIDER*`` variables it clears with a bare ``del``. Those are
+    not all derivable from the pins - the suite pins three, and a developer may
+    export others - and one deleted without a monkeypatch record would stay
+    deleted for the rest of the session.
+    """
+    pins = dump_openapi._pytest_env_pins()
+    for name in [
+        *pins,
+        *dump_openapi._MINTED_ENV,
+        *[key for key in os.environ if key.startswith("AUTH__PROVIDER")],
+    ]:
         monkeypatch.delenv(name, raising=False)
 
     dump_openapi._pin_canonical_settings_env()
-
-    pins = dump_openapi._pytest_env_pins()
 
     assert pins, "no pins derived: the loop below would assert nothing"
     for name, value in pins.items():
@@ -162,4 +172,35 @@ def test_malformed_pin_is_rejected_rather_than_silently_dropped(monkeypatch, tmp
     monkeypatch.setattr(dump_openapi, "REPO_ROOT", tmp_path)
 
     with pytest.raises(RuntimeError, match="not NAME=value"):
+        dump_openapi._pytest_env_pins()
+
+
+@pytest.mark.parametrize(
+    ("entry", "expected"),
+    [
+        ('"D:ALLOWED_HOSTS=[]"', "flag prefix"),
+        ('"R:ALLOWED_HOSTS=[]"', "flag prefix"),
+        ('"D:R:ALLOWED_HOSTS=[]"', "flag prefix"),
+        ('"SEP_INTERNAL_TOKEN={HOME}/t"', "value interpolation"),
+    ],
+)
+def test_unmodelled_pytest_env_syntax_is_rejected(
+    monkeypatch, tmp_path, entry, expected
+):
+    """Assert pytest-env syntax the derivation does not model fails loudly.
+
+    pytest-env strips ``D:`` / ``R:`` prefixes and interpolates ``{VAR}`` in
+    unprefixed values. Read as plain ``NAME=value`` a prefixed entry yields the
+    name ``D:NAME`` - exporting a variable nothing reads and leaving the real
+    one unset - so pytest and the dump would apply different settings while
+    both reported success, which is the divergence deriving the list removes.
+    """
+    broken = tmp_path / "pyproject.toml"
+    broken.write_text(
+        f"[tool.pytest.ini_options]\nenv = [{entry}]\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(dump_openapi, "REPO_ROOT", tmp_path)
+
+    with pytest.raises(RuntimeError, match=expected):
         dump_openapi._pytest_env_pins()
