@@ -24,7 +24,7 @@ apart on a cron dialect or a DST transition.
 
 from collections.abc import Callable
 from datetime import datetime, timedelta, UTC
-from typing import Final
+from typing import cast, Final
 
 from celery.schedules import BaseSchedule
 from sqlalchemy_celery_beat import CrontabSchedule as BaseCrontabSchedule
@@ -169,7 +169,11 @@ def next_run_times(
     for _ in range(count):
         schedule.nowfun = _clock_reading(schedule, cursor)
         due, remaining = schedule.is_due(effective_last)
-        upcoming = cursor if due and not runs else cursor + timedelta(seconds=remaining)
+        upcoming = (
+            cursor
+            if due and not runs
+            else cursor + timedelta(seconds=cast("float", remaining))
+        )
         if runs and upcoming <= runs[-1]:
             break
         runs.append(upcoming)
