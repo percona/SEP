@@ -15,18 +15,28 @@
 
 """Define models for Celery periodic tasks and schedules."""
 
-from typing import Annotated, Any
-from zoneinfo import available_timezones
+from datetime import timedelta
+from typing import Annotated, Any, Self
+from zoneinfo import available_timezones, ZoneInfo
 
+from celery import schedules as celery_schedules
 from pydantic import (
     AfterValidator,
     BaseModel,
     field_validator,
     model_validator,
     PositiveInt,
+    ValidationInfo,
 )
 from sqlalchemy_celery_beat import CrontabSchedule as BaseCrontabSchedule
 from sqlalchemy_celery_beat.models import Period
+from sqlalchemy_celery_beat.tzcrontab import TzAwareCrontab
+
+from app.core.utils.date_time import utc_now
+
+#: The cron fields ``sqlalchemy_celery_beat`` normalises and parses before it
+#: writes a crontab row.
+CRON_FIELDS = ("minute", "hour", "day_of_week", "day_of_month", "month_of_year")
 
 
 class IntervalSchedule(BaseModel):
@@ -63,6 +73,25 @@ class IntervalSchedule(BaseModel):
                 "period": period,
             }
         return data
+
+    @property
+    def schedule(self) -> celery_schedules.schedule:
+        """Return the celery schedule object beat consults for this interval.
+
+        Mirror ``sqlalchemy_celery_beat.models.IntervalSchedule.schedule``, whose
+        ORM row this model stands in for on the request and response paths.
+
+        Deliberately a bare :class:`property` rather than a
+        ``@computed_field``: this class is a settings field type, and a computed
+        field would add the schedule object to the serialised shape and JSON
+        schema of every settings field annotated with it.
+
+        :return: The ``celery.schedules.schedule`` for this interval's cadence.
+        :raises OverflowError: If ``every`` periods exceed
+            :class:`~datetime.timedelta`'s range. The periodic-task write and
+            preview models reject such an interval at the request boundary.
+        """
+        return celery_schedules.schedule(timedelta(**{self.period.value: self.every}))
 
     def __str__(self) -> str:
         """Return a string representation of the interval schedule.
@@ -116,24 +145,18 @@ ManageableInterval = Annotated[
 
 
 class CrontabSchedule(BaseModel):
-    """Representing a crontab schedule.
+    """Represent a crontab schedule.
 
-    :param minute: Represents the minute component in cron format. Defaults to `"*"`.
-    :type minute: str
-    :param hour: Represents the hour component in cron format. Defaults to `"*"`.
-    :type hour: str
-    :param day_of_week: Represents the day of the week component in cron format.
-        Defaults to `"*"`.
-    :type day_of_week: str
-    :param day_of_month: Represents the day of the month component in cron format.
-        Defaults to `"*"`.
-    :type day_of_month: str
-    :param month_of_year: Represents the month component in cron format.
-        Defaults to `"*"`.
-    :type month_of_year: str
-    :param timezone: The timezone for the cron schedule. Defaults to "UTC". Must be a
-        valid timezone as returned in `available_timezones()`
-    :type timezone: str
+    :param minute: The minute component in cron format. Defaults to ``"*"``.
+    :param hour: The hour component in cron format. Defaults to ``"*"``.
+    :param day_of_week: The day of the week component in cron format.
+        Defaults to ``"*"``.
+    :param day_of_month: The day of the month component in cron format.
+        Defaults to ``"*"``.
+    :param month_of_year: The month component in cron format.
+        Defaults to ``"*"``.
+    :param timezone: The timezone for the cron schedule. Defaults to ``"UTC"``. Must
+        be a valid timezone as returned in ``available_timezones()``.
     """
 
     minute: str = "*"
@@ -176,3 +199,51 @@ class CrontabSchedule(BaseModel):
         if v not in available_timezones():
             raise ValueError(f"{v} is not a valid timezone")
         return v
+
+    @field_validator(*CRON_FIELDS)
+    @classmethod
+    def validate_scheduler_can_parse_field(cls, v: str, info: ValidationInfo) -> str:
+        """Normalise one cron field and reject what the scheduler cannot parse.
+
+        Hands the field to the scheduler's own parser with every other field
+        unrestricted, so a malformed value raises here rather than in
+        :meth:`validate_scheduler_can_run_expression` and the resulting 422
+        locates the error at the field that carried it.
+
+        :param v: The raw cron field value.
+        :param info: The validation context, naming the field being validated.
+        :return: The value normalised to the form the beat store holds.
+        :raises ValueError: If the scheduler cannot parse the field.
+        """
+        normalised = BaseCrontabSchedule.cronexp(v)
+        expression = {
+            field: normalised if field == info.field_name else "*"
+            for field in CRON_FIELDS
+        }
+        try:
+            TzAwareCrontab(tz=ZoneInfo("UTC"), **expression)
+        except Exception as exc:
+            raise ValueError(f"Could not parse cron field: {exc}") from exc
+        return normalised
+
+    @model_validator(mode="after")
+    def validate_scheduler_can_run_expression(self) -> Self:
+        """Reject a parseable expression the scheduler can never satisfy.
+
+        Replicate the satisfiability half of
+        ``sqlalchemy_celery_beat.models.CrontabSchedule.before_insert_or_update``
+        so an expression is decided by the scheduler's own parser at the request
+        boundary, rather than accepted here and failed at flush time. Each field
+        is parsed on its own by :meth:`validate_scheduler_can_parse_field`; what
+        is left is the combination, which ``0 2 30 2 *`` fails. Raising
+        ``ValueError`` renders as a 422 locating the error at this schedule,
+        which is where a combination that no field alone makes wrong belongs.
+
+        :return: The validated schedule.
+        :raises ValueError: If the scheduler cannot satisfy the expression.
+        """
+        try:
+            BaseCrontabSchedule.aware_crontab(self).remaining_estimate(utc_now())
+        except Exception as exc:
+            raise ValueError(f"Could not parse cron {self}: {exc}") from exc
+        return self
