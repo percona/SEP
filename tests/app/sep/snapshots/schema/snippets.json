@@ -9,6 +9,8 @@
   "description": "Discover and execute pre-approved support snippets against registered executor hosts.",
   "display_name": "Snippet Manager",
   "forms": [],
+  "item_display_name": "script",
+  "item_display_name_plural": "scripts",
   "list_view": {
     "columns": [
       {

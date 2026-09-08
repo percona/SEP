@@ -1910,6 +1910,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/mysql_backups/{task_name}/backups': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Task Backups
+     * @description Return a page of a backup task's catalogued runs, newest run first.
+     *
+     *     The ``task_name`` path parameter is resolved by
+     *     :data:`~app.sep.apps.mysql_backups.deps.CataloguedHistoryIds`, so a task that
+     *     does not exist or belongs to another app surfaces as a ``404`` while a known
+     *     task with no catalogued backup yields an empty page — keeping "this task has
+     *     never produced a backup" distinguishable from "this task does not exist".
+     *
+     *     The discovery walk behind that dependency is capped, so ``total`` counts the
+     *     runs within the scanned window rather than every run the task ever produced,
+     *     and carries no marker distinguishing a truncated page from a complete one.
+     *     A run older than the window is reachable through the per-service catalog
+     *     route, which is uncapped — but only while its inventory service still
+     *     resolves, and only for a caller that knows which service the run was recorded
+     *     under, which a task since re-pointed at another target no longer answers.
+     *
+     *     :param history_ids: The task's catalogued task-history ids, newest first.
+     *     :param session: The database session the catalog is queried on.
+     *     :param pagination: The requested offset/limit window.
+     *     :return: The requested page of the task's recorded backup runs, newest run
+     *         first.
+     */
+    get: operations['mysql_backups_list_task_backups_api_apps_mysql_backups__task_name__backups_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/mysql_backups/{task_name}/execute': {
     parameters: {
       query?: never;
@@ -2506,13 +2546,11 @@ export interface paths {
      * @description Return the per-task detail bundle for the read-only plugin UI.
      *
      *     :param task: The task definition resolved by name.
-     *     :type task: Task
      *     :param tasks_api: Async client for the tasks sub-app.
-     *     :type tasks_api: TaskAPI
      *     :param executor_hosts_ctx: Executor hosts enriched with inventory labels.
-     *     :type executor_hosts_ctx: ExecutorHostsCtx
-     *     :return: Task definition, history, periodic schedules, and executor hosts.
-     *     :rtype: TaskDetailResponse
+     *     :return: Task definition, history, periodic schedules, and executor hosts,
+     *         with every actor identifier on the task and inside the history rows
+     *         resolved to the name a reader should see.
      */
     get: operations['task_manager_tasks_api_detail_api_apps_tasks__task_name__get'];
     put?: never;
@@ -3187,7 +3225,8 @@ export interface paths {
      *     :param exclude_internal: When ``True``, forward the filter to the upstream
      *         list-all path so internal maintenance tasks are excluded before pagination.
      *         Not forwarded on the ``task_names`` merge path. Defaults to ``False``.
-     *     :return: Paginated task history, either the upstream list or the merged set.
+     *     :return: Paginated task history, either the upstream list or the merged set,
+     *         with every actor identifier resolved to the name a reader should see.
      *     :raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but
      *         every value is empty after trimming.
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -3856,6 +3895,17 @@ export interface components {
       /** Total */
       total: number;
     };
+    /** PaginatedResponse[SepTaskHistoryResponse] */
+    PaginatedResponse_SepTaskHistoryResponse_: {
+      /** Items */
+      items: components['schemas']['SepTaskHistoryResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[ServiceResponse] */
     PaginatedResponse_ServiceResponse_: {
       /** Items */
@@ -3871,17 +3921,6 @@ export interface components {
     PaginatedResponse_SnippetResponse_: {
       /** Items */
       items: components['schemas']['SnippetResponse'][];
-      /** Limit */
-      limit: number;
-      /** Offset */
-      offset: number;
-      /** Total */
-      total: number;
-    };
-    /** PaginatedResponse[TaskHistoryResponse] */
-    PaginatedResponse_TaskHistoryResponse_: {
-      /** Items */
-      items: components['schemas']['TaskHistoryResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -3975,6 +4014,148 @@ export interface components {
       service_id: number;
       /** Sync Failing Since */
       sync_failing_since?: string | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * SepTaskHistoryResponse
+     * @description Represent a task-history row as SEP serves it, with actors resolved.
+     *
+     *     :param task: The task this execution belongs to, carrying resolved actors.
+     *     :param executed_by: Display name for the actor that ran the task, or
+     *         ``None`` when none was recorded.
+     */
+    SepTaskHistoryResponse: {
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /**
+       * Display Name
+       * @description Return a user-meaningful display label for this task history row.
+       *
+       *     For normal tasks, returns ``task.name``. For generic executor templates
+       *     (``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a
+       *     ``"<source>/<filename> on <target>"`` label so otherwise-identical rows
+       *     are distinguishable: the filename comes from the snippet metadata or the
+       *     ``file://`` payload basename, the source directory from whichever of those
+       *     carries one, and the target from the execution request. Falls back to
+       *     ``"<task> on <target>"`` when no filename is available.
+       *
+       *     :return: The display label for the task history entry.
+       */
+      readonly display_name: string;
+      /**
+       * Duration
+       * @description Return the duration of the task execution in seconds.
+       *
+       *     :return: The duration in seconds, or None if not available.
+       *     :rtype: float | None
+       */
+      readonly duration: number | null;
+      /**
+       * Executed By
+       * @description Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.
+       */
+      executed_by?: string | null;
+      execution_request: components['schemas']['TaskExecutionRequest'];
+      /** Failure Reason */
+      failure_reason?: string | null;
+      /** Finished At */
+      finished_at?: string | null;
+      /**
+       * Has Logs
+       * @default false
+       */
+      has_logs: boolean;
+      /** Id */
+      id: number | null;
+      /** @default unknown */
+      log_capture: components['schemas']['LogCaptureStatusEnum'];
+      /** Started At */
+      started_at?: string | null;
+      /** @default pending */
+      status: components['schemas']['TaskHistoryStatusEnum'];
+      task: components['schemas']['SepTaskResponse'];
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * SepTaskResponse
+     * @description Represent a task definition as SEP serves it, with actors resolved.
+     *
+     *     Differ from :class:`~app.tasks.models.TaskResponse` only in what the two
+     *     actor fields carry.
+     *
+     *     :param created_by: Display name for the task's creator, or ``None`` when
+     *         none was recorded.
+     *     :param last_updated_by: Display name for the user who last modified the
+     *         task, or ``None`` when none was recorded.
+     */
+    SepTaskResponse: {
+      /** Alert Detail Builder */
+      alert_detail_builder?: string | null;
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
+      /** @default nomad */
+      backend: components['schemas']['TaskBackendEnum'];
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /**
+       * Created By
+       * @description Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.
+       */
+      created_by: string | null;
+      /** Data */
+      data: {
+        [key: string]: unknown;
+      };
+      /** Deleted At */
+      deleted_at: string | null;
+      /** Id */
+      id: number | null;
+      /**
+       * Is Template
+       * @default false
+       */
+      is_template: boolean;
+      /**
+       * Last Updated By
+       * @description Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.
+       */
+      last_updated_by: string | null;
+      /** Name */
+      name: string;
+      /** Output Files Path */
+      output_files_path?: string | null;
+      /**
+       * Owner
+       * @default ANY
+       */
+      owner: string;
+      /**
+       * Protected
+       * @default false
+       */
+      protected: boolean;
+      /** Run Result Recorder */
+      run_result_recorder?: string | null;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -4484,84 +4665,6 @@ export interface components {
       [key: string]: unknown;
     };
     /**
-     * TaskHistoryResponse
-     * @description Represent a task history API response.
-     *
-     *     :param execution_request: The request that triggered the task execution.
-     *     :param status: The status of the task execution.
-     *     :param started_at: The datetime when the task execution started.
-     *     :param finished_at: The datetime when the task execution finished.
-     *     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
-     *         logs and files generated by the execution. Defaults to None, meaning it uses
-     *         the value defined in the associated task's :attr:`Task.anonymize_mask`.
-     *     :param task: The task associated with this execution history.
-     *     :param executed_by: The user ID of the user who executed the task.
-     *     :param has_logs: Whether this task history has any readable log content --
-     *         either a chunk-store row or a legacy ``tracking["task_logs"]`` blob.
-     *         Populated by list/retrieve routes; defaults to ``False``.
-     *     :param log_capture: How completely SEP captured this execution's logs,
-     *         aggregated over its state rows: any incomplete stream reports
-     *         ``"incomplete"``, else any unknown reports ``"unknown"``, else
-     *         ``"complete"``. Populated by list/retrieve routes; defaults to
-     *         ``"unknown"``, which is also what a history carrying no state rows
-     *         reports.
-     *     :param display_name: A user-meaningful label derived from the task name or
-     *         execution-request metadata. Read-only; computed on serialisation.
-     */
-    TaskHistoryResponse: {
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at?: string;
-      /**
-       * Display Name
-       * @description Return a user-meaningful display label for this task history row.
-       *
-       *     For normal tasks, returns ``task.name``. For generic executor templates
-       *     (``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a
-       *     ``"<source>/<filename> on <target>"`` label so otherwise-identical rows
-       *     are distinguishable: the filename comes from the snippet metadata or the
-       *     ``file://`` payload basename, the source directory from whichever of those
-       *     carries one, and the target from the execution request. Falls back to
-       *     ``"<task> on <target>"`` when no filename is available.
-       *
-       *     :return: The display label for the task history entry.
-       */
-      readonly display_name: string;
-      /**
-       * Duration
-       * @description Return the duration of the task execution in seconds.
-       *
-       *     :return: The duration in seconds, or None if not available.
-       *     :rtype: float | None
-       */
-      readonly duration: number | null;
-      /** Executed By */
-      executed_by?: string | null;
-      execution_request: components['schemas']['TaskExecutionRequest'];
-      /** Finished At */
-      finished_at?: string | null;
-      /**
-       * Has Logs
-       * @default false
-       */
-      has_logs: boolean;
-      /** Id */
-      id: number | null;
-      /** @default unknown */
-      log_capture: components['schemas']['LogCaptureStatusEnum'];
-      /** Started At */
-      started_at?: string | null;
-      /** @default pending */
-      status: components['schemas']['TaskHistoryStatusEnum'];
-      task: components['schemas']['TaskResponse'];
-      /** Updated At */
-      updated_at?: string | null;
-    };
-    /**
      * TaskHistoryStatusEnum
      * @description Define status codes for task executions.
      *
@@ -4589,94 +4692,6 @@ export interface components {
       | 'lost'
       | 'stale'
       | 'unlaunchable';
-    /**
-     * TaskResponse
-     * @description Represent a task API response.
-     *
-     *     :param name: The name of the task.
-     *     :param data: The task data stored in JSON format.
-     *     :param backend: The backend used for task execution. Defaults to Nomad.
-     *     :param owner: The owner of the task. Defaults to ``"ANY"``.
-     *     :param is_template: Whether the task is a template. Defaults to False.
-     *     :param protected: Whether the task is protected from deletion. Defaults to False.
-     *     :param alert_on_fail: Whether to trigger an alert on task failure and
-     *         auto-resolve it on subsequent success. Defaults to False.
-     *     :param alert_detail_builder: The ``"module:function"`` path of a plugin
-     *         callable that enriches this task's failure alert, or None.
-     *     :param run_result_recorder: The ``"module:function"`` path of a plugin
-     *         callable that records this task's structured run result at terminal
-     *         status, or None.
-     *     :param output_files_path: The path, relative to the executor's working
-     *         directory, where output files generated by the task are expected, or
-     *         None.
-     *     :param deleted_at: The deletion timestamp, if applicable.
-     *     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
-     *         logs and files generated by the task. Defaults to 0 (no anonymization).
-     *     :param created_by: The user ID of the user who created the task.
-     *     :param last_updated_by: The user ID of the user who last modified the task.
-     *     :param anonymized_entities: Sorted list of PII entity names derived from
-     *         ``anonymize_mask`` (or from the owner's configured defaults when the
-     *         mask is ``None``). Each name is the raw ``PIIEntity`` member name
-     *         (e.g. ``"EMAIL_ADDRESS"``). Read-only; computed on serialisation.
-     */
-    TaskResponse: {
-      /** Alert Detail Builder */
-      alert_detail_builder?: string | null;
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      alert_on_fail: boolean;
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /**
-       * Anonymized Entities
-       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
-       */
-      readonly anonymized_entities: string[];
-      /** @default nomad */
-      backend: components['schemas']['TaskBackendEnum'];
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at?: string;
-      /** Created By */
-      created_by: string | null;
-      /** Data */
-      data: {
-        [key: string]: unknown;
-      };
-      /** Deleted At */
-      deleted_at: string | null;
-      /** Id */
-      id: number | null;
-      /**
-       * Is Template
-       * @default false
-       */
-      is_template: boolean;
-      /** Last Updated By */
-      last_updated_by: string | null;
-      /** Name */
-      name: string;
-      /** Output Files Path */
-      output_files_path?: string | null;
-      /**
-       * Owner
-       * @default ANY
-       */
-      owner: string;
-      /**
-       * Protected
-       * @default false
-       */
-      protected: boolean;
-      /** Run Result Recorder */
-      run_result_recorder?: string | null;
-      /** Updated At */
-      updated_at?: string | null;
-    };
     /** ValidationError */
     ValidationError: {
       /** Context */
@@ -6187,7 +6202,12 @@ export interface components {
     };
     /**
      * BackupType
-     * @description Backup types.
+     * @description Represent the backup tools a run can be taken with.
+     *
+     *     :cvar LABELS: Display text for each stored value, keyed as the value is
+     *         stored on the wire. A value with no entry is rendered as-is by the
+     *         caller. Wrapped in :func:`enum.nonmember` because ``enum`` would
+     *         otherwise treat a class-body dict as a member candidate.
      * @enum {string}
      */
     backup_mongo__BackupType:
@@ -6837,26 +6857,28 @@ export interface components {
      *     the root ``forms`` / ``list_view`` instead.
      *
      *     :param name: URL segment and API key for the entity (for example ``nodes``).
-     *     :type name: NonEmptyStr
      *     :param display_name: Human-readable title for this entity's screens.
-     *     :type display_name: NonEmptyStr
+     *     :param item_display_name: What **one** record of this entity is called (for
+     *         example ``node``), as opposed to ``display_name``, which names the
+     *         entity's screens. Stored in mid-sentence form so a consumer composing a
+     *         label capitalises the first character itself. Defaults to this entity's
+     *         own ``display_name`` — not the parent app's, and never inferred from
+     *         ``item_display_name_plural``.
+     *     :param item_display_name_plural: What **several** records of this entity are
+     *         called (for example ``nodes``). An independent declaration under the
+     *         same mid-sentence convention; nothing derives it from
+     *         ``item_display_name``. Defaults to this entity's own ``display_name``.
      *     :param description: Optional helper text for this entity. Defaults to
      *         ``None``.
-     *     :type description: NonEmptyStr | None
      *     :param forms: Form sections for create (and edit when the UI supports it).
-     *     :type forms: list[FormSection]
      *     :param list_view: Column configuration for this entity's list table.
-     *     :type list_view: ListView
      *     :param detail_highlights: Optional per-field syntax highlighter hints for
      *         detail pages. Keys are field names; values are highlighting languages.
      *         Defaults to an empty mapping.
-     *     :type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]
      *     :param cardinality_rules: Optional entity-wide cross-field cardinality
      *         constraints. Defaults to ``None``.
-     *     :type cardinality_rules: list[CardinalityRule] | None
      *     :param fail_when: Optional entity-wide predicate-only invariants.
      *         Defaults to ``None``.
-     *     :type fail_when: list[FailRule] | None
      */
     framework__AppEntitySchema: {
       /** Cardinality Rules */
@@ -6873,6 +6895,10 @@ export interface components {
       fail_when?: components['schemas']['framework__FailRule'][] | null;
       /** Forms */
       forms: components['schemas']['framework__FormSection'][];
+      /** Item Display Name */
+      item_display_name: string;
+      /** Item Display Name Plural */
+      item_display_name_plural: string;
       list_view: components['schemas']['framework__ListView'];
       /** Name */
       name: string;
@@ -6883,32 +6909,37 @@ export interface components {
      *
      *     :param name: The plugin identifier; must match Python identifier rules,
      *         optionally with internal hyphens.
-     *     :type name: NonEmptyStr
      *     :param display_name: The human-readable plugin title displayed in the UI.
-     *     :type display_name: NonEmptyStr
+     *     :param item_display_name: What **one** record this plugin's create form
+     *         produces is called (for example ``backup``), as opposed to
+     *         ``display_name``, which names the plugin. Stored in mid-sentence form —
+     *         lowercase unless it opens with a proper noun — so a consumer composing a
+     *         label capitalises the first character itself. Defaults to
+     *         ``display_name``, and is never inferred from
+     *         ``item_display_name_plural``. Unlike the optional UI hints on this
+     *         model, both record names are required and non-nullable so the generated
+     *         client types them as ``string`` and no consumer needs a fallback.
+     *     :param item_display_name_plural: What **several** of those records are
+     *         called (for example ``backups``). An independent declaration under the
+     *         same mid-sentence convention; nothing derives it from
+     *         ``item_display_name``. Defaults to ``display_name``.
      *     :param description: Optional helper text describing the plugin's
      *         purpose. Defaults to ``None``.
-     *     :type description: NonEmptyStr | None
      *     :param task_type: Optional task-type identifier used when creating tasks
      *         via the shared task API. Defaults to ``None``.
-     *     :type task_type: NonEmptyStr | None
      *     :param forms: Form sections for single-entity / task plugins. When
      *         ``entities`` is non-empty, root ``forms`` must be empty (declare
      *         forms on each entity instead); non-empty root ``forms`` are rejected
      *         at construction. Defaults to an empty list.
-     *     :type forms: list[FormSection]
      *     :param capabilities: Optional plugin-level feature flags. Defaults to
      *         ``None``.
-     *     :type capabilities: Capabilities | None
      *     :param list_view: List-view configuration when ``entities`` is unset
      *         (single-entity / task plugins). Ignored when ``entities`` is set.
-     *     :type list_view: ListView | None
      *     :param detail_view: Optional declarative layout for the task detail page's
      *         section cards (task-style plugins only; ignored when ``entities`` is
      *         set). Optional at the model layer for backwards compatibility. A
      *         forward-looking guard refuses to load a plugin that sets
      *         ``task_type`` without declaring ``detail_view``. Defaults to ``None``.
-     *     :type detail_view: DetailView | None
      *     :param entities: Optional list of CRUD entities for multi-resource plugins.
      *         When non-empty, the React shell renders one list/create/detail flow
      *         per entity. Defaults to ``None`` (legacy single-entity mode).
@@ -6916,26 +6947,21 @@ export interface components {
      *         constraints (task-style plugins only). Rejected at construction when
      *         ``entities`` is non-empty — declare rules on each entity instead.
      *         Defaults to ``None``.
-     *     :type cardinality_rules: list[CardinalityRule] | None
      *     :param fail_when: Optional plugin-wide predicate-only invariants (task-style
      *         plugins only). Rejected at construction when ``entities`` is non-empty —
      *         declare rules on each entity instead. Defaults to ``None``.
-     *     :type fail_when: list[FailRule] | None
      *     :param derived: Optional declarative specs for sibling tasks derived from
      *         the parent task on cascade. Consumed by
      *         :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE
      *         across the parent and N derived siblings. Defaults to ``None``.
-     *     :type derived: list[DerivedTask] | None
      *     :param predecessors: Optional declarative specs for tasks that must run
      *         before the parent. Consumed by
      *         :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE
      *         across the predecessors and the parent, including the chain wiring
      *         applied at execute time. Defaults to ``None``.
-     *     :type predecessors: list[ChainedPredecessor] | None
      *     :param related_apps: Optional separately registered apps the React shell
      *         surfaces as sibling tabs (for example a restore app nested under a
      *         backups parent). Defaults to ``None``.
-     *     :type related_apps: list[RelatedApp] | None
      */
     framework__AppSchema: {
       capabilities?: components['schemas']['framework__Capabilities'] | null;
@@ -6954,6 +6980,10 @@ export interface components {
       fail_when?: components['schemas']['framework__FailRule'][] | null;
       /** Forms */
       forms?: components['schemas']['framework__FormSection'][];
+      /** Item Display Name */
+      item_display_name: string;
+      /** Item Display Name Plural */
+      item_display_name_plural: string;
       list_view?: components['schemas']['framework__ListView'] | null;
       /** Name */
       name: string;
@@ -7328,16 +7358,17 @@ export interface components {
      * @description Represent one column in a plugin list view.
      *
      *     :param key: The task attribute path this column displays (for example,
-     *         ``"status"`` or ``"target.service"``).
-     *     :type key: NonEmptyStr
-     *     :param label: The human-readable column header.
-     *     :type label: NonEmptyStr
+     *         ``"status"`` or ``"target.service"``). Must be non-empty.
+     *     :param label: The human-readable column header. Must be non-empty.
      *     :param sortable: Whether the column can be used to sort the list.
      *         Defaults to ``False``.
-     *     :type sortable: bool
      *     :param format: Optional formatting hint applied when rendering the
      *         column values. Defaults to ``None``.
-     *     :type format: ColumnFormat | None
+     *     :param value_labels: Optional map from a raw cell value to the text a
+     *         renderer displays in its place. Defaults to ``None``, which the schema
+     *         route's ``exclude_none`` posture drops from the payload, so a column
+     *         declaring no labels stays byte-identical on the wire. A value absent
+     *         from the map is the consuming app's decision to render as-is.
      */
     framework__Column: {
       format?: components['schemas']['framework__ColumnFormat'] | null;
@@ -7350,6 +7381,10 @@ export interface components {
        * @default false
        */
       sortable: boolean;
+      /** Value Labels */
+      value_labels?: {
+        [key: string]: string;
+      } | null;
     };
     /**
      * ColumnFormat
@@ -7510,11 +7545,14 @@ export interface components {
      *     :param path: Dotted path into the task record (for example
      *         ``"data.meta.command"``). Each segment must be a Python identifier,
      *         optionally followed by one or more ``[N]`` array indices.
-     *     :type path: DetailPath
      *     :param label: Human-readable label rendered alongside the resolved value.
-     *     :type label: NonEmptyStr
+     *         Must be non-empty.
      *     :param highlight: Optional syntax-highlighter hint. Defaults to ``None``.
-     *     :type highlight: DetailHighlightLanguage | None
+     *     :param value_labels: Optional map from a raw resolved value to the text a
+     *         renderer displays in its place. Defaults to ``None``, which the schema
+     *         route's ``exclude_none`` posture drops from the payload, so a field
+     *         declaring no labels stays byte-identical on the wire. A value absent
+     *         from the map is the consuming app's decision to render as-is.
      */
     framework__DetailField: {
       highlight?: components['schemas']['framework__DetailHighlightLanguage'] | null;
@@ -7522,6 +7560,10 @@ export interface components {
       label: string;
       /** Path */
       path: string;
+      /** Value Labels */
+      value_labels?: {
+        [key: string]: string;
+      } | null;
     };
     /**
      * DetailHighlightLanguage
@@ -7534,11 +7576,9 @@ export interface components {
      * @description Declare one titled section inside a :class:`DetailView`.
      *
      *     :param title: Heading rendered above the section's fields.
-     *     :type title: NonEmptyStr
      *     :param fields: Ordered list of fields rendered inside the section. An
      *         empty list is valid; the frontend hides the section when every
      *         field resolves to an empty value.
-     *     :type fields: list[DetailField]
      */
     framework__DetailSection: {
       /** Fields */
@@ -7907,12 +7947,10 @@ export interface components {
      * @description Represent the list-view configuration for a plugin.
      *
      *     :param columns: The ordered list of columns displayed in the list view.
-     *     :type columns: list[Column]
      *     :param default_sort: Optional key of the column to sort by on first
      *         render. Prefix with ``-`` for descending order (for example,
      *         ``"-lastRun"``). The unprefixed key must match one of the declared
      *         column keys. Defaults to ``None``.
-     *     :type default_sort: NonEmptyStr | None
      *     :param server_side_query: Opt-in capability flag declaring that the list
      *         endpoint honors whole-result-set sort and search via server query
      *         params. When ``True`` and the list is also server-paginated, the React
@@ -7923,14 +7961,12 @@ export interface components {
      *         ``exclude_none`` posture drops it from the wire until a plugin opts
      *         in, keeping the addition byte-compatible with existing schemas.
      *         Defaults to ``None``.
-     *     :type server_side_query: bool | None
      *     :param overview_hidden_fields: Additional task-level keys to suppress
      *         from the auto-rendered "extras" loop on the plugin detail Overview
      *         tab. The framework always hides a baseline set of internal fields
      *         (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,
      *         ``last_updated_by``, ``connectivity_warning``); any keys listed here
      *         are merged with that baseline. Defaults to ``[]``.
-     *     :type overview_hidden_fields: list[str]
      */
     framework__ListView: {
       /** Columns */
@@ -9171,7 +9207,7 @@ export interface components {
     };
     /**
      * BackupRunResponse
-     * @description Expose one catalog record over the per-service query path.
+     * @description Expose one catalog record over the service-scoped and task-scoped queries.
      *
      *     :param id: The record's primary key.
      *     :param service_name: The inventory service the backup was taken from.
@@ -9186,8 +9222,20 @@ export interface components {
      *     :param size_bytes: The backup size in bytes, when the run reported it.
      *     :param started_at: When the run started.
      *     :param finished_at: When the run finished.
+     *     :param backup_source: The run's restore-form-valid source, derived from
+     *         ``upload_destination`` and ``location``; read-only, and absent from the
+     *         table this response is built from.
      */
     mysql_backups__BackupRunResponse: {
+      /**
+       * Backup Source
+       * @description Return the run's restore-form-valid source, or ``None``.
+       *
+       *     Resolved server-side so no caller re-derives it from the raw fields.
+       *     ``None`` means the run recorded no usable source, or recorded one the
+       *     restore form rejects — either way it cannot seed a restore.
+       */
+      readonly backup_source: string | null;
       /**
        * Backup Type
        * @enum {string}
@@ -9257,7 +9305,12 @@ export interface components {
     };
     /**
      * BackupType
-     * @description Backup types.
+     * @description Represent the backup tools a run can be taken with.
+     *
+     *     :cvar LABELS: Display text for each stored value, keyed as the value is
+     *         stored on the wire. A value with no entry is rendered as-is by the
+     *         caller. Wrapped in :func:`enum.nonmember` because ``enum`` would
+     *         otherwise treat a class-body dict as a member candidate.
      * @enum {string}
      */
     mysql_backups__BackupType: 'M' | 'X' | 'B';
@@ -10234,17 +10287,16 @@ export interface components {
      *     Bundle the task definition, execution history, periodic schedules, and
      *     executor host metadata into a single response for the React detail page.
      *
-     *     :param task: The task definition as returned by the tasks API.
-     *     :type task: TaskResponse
+     *     :param task: The task definition as returned by the tasks API, with its
+     *         actor fields carrying display names rather than user identifiers.
      *     :param execution_history: Paginated task history from the tasks API
-     *         (``items``, ``total``, ``offset``, ``limit``).
-     *     :type execution_history: dict[str, Any]
+     *         (``items``, ``total``, ``offset``, ``limit``), passed through
+     *         unvalidated so every upstream key survives. Carries whatever actor text
+     *         the constructing route supplied; the model itself imposes no shape.
      *     :param periodic_summary: Read-only summaries of periodic schedules
      *         attached to this task.
-     *     :type periodic_summary: list[PeriodicTaskSummary]
      *     :param executor_hosts: Executor hosts available for display, with
      *         inventory-resolved labels when possible.
-     *     :type executor_hosts: list[ExecutorHostMetadata]
      */
     tasks__TaskDetailResponse: {
       /** Execution History */
@@ -10255,25 +10307,21 @@ export interface components {
       executor_hosts?: components['schemas']['tasks__ExecutorHostMetadata'][];
       /** Periodic Summary */
       periodic_summary?: components['schemas']['tasks__PeriodicTaskSummary'][];
-      task: components['schemas']['TaskResponse'];
+      task: components['schemas']['SepTaskResponse'];
     };
     /**
      * TaskListResponse
      * @description Represent one task row in the read-only tasks plugin list API.
      *
      *     :param name: The unique name of the task.
-     *     :type name: str
      *     :param backend: The backend system used for task execution.
-     *     :type backend: TaskBackendEnum
      *     :param created_at: When the task was created, or ``None`` if unavailable.
-     *     :type created_at: UTCDatetime | None
-     *     :param created_by: Display name for the task creator (Casdoor username when
-     *         resolvable, otherwise the stored user id), or ``None`` if unknown.
-     *     :type created_by: str | None
+     *     :param created_by: Display name for the task creator: the provider's
+     *         username when resolvable, a system label for system-created tasks,
+     *         otherwise the stored user id. ``None`` if unknown.
      *     :param last_updated_by: Display name for the user who last updated the
-     *         task (Casdoor username when resolvable, otherwise the stored user id),
-     *         or ``None`` if unknown.
-     *     :type last_updated_by: str | None
+     *         task, resolved on the same terms as ``created_by``. ``None`` if
+     *         unknown.
      */
     tasks__TaskListResponse: {
       backend: components['schemas']['TaskBackendEnum'];
@@ -13617,6 +13665,40 @@ export interface operations {
       };
     };
   };
+  mysql_backups_list_task_backups_api_apps_mysql_backups__task_name__backups_get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['mysql_backups__PaginatedResponse_BackupRunResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   mysql_backups_mysql_backups_api_execute_api_apps_mysql_backups__task_name__execute_post: {
     parameters: {
       query?: never;
@@ -14995,7 +15077,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PaginatedResponse_TaskHistoryResponse_'];
+          'application/json': components['schemas']['PaginatedResponse_SepTaskHistoryResponse_'];
         };
       };
       /** @description Validation Error */

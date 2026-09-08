@@ -56,6 +56,8 @@
       "title": "Main"
     }
   ],
+  "item_display_name": "Multi Ref",
+  "item_display_name_plural": "Multi Ref",
   "list_view": {
     "columns": [
       {

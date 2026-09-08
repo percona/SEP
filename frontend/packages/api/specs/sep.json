@@ -701,6 +701,37 @@
         "title": "PaginatedResponse[ArbitraryMapping]",
         "type": "object"
       },
+      "PaginatedResponse_SepTaskHistoryResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SepTaskHistoryResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[SepTaskHistoryResponse]",
+        "type": "object"
+      },
       "PaginatedResponse_ServiceResponse_": {
         "properties": {
           "items": {
@@ -761,37 +792,6 @@
           "limit"
         ],
         "title": "PaginatedResponse[SnippetResponse]",
-        "type": "object"
-      },
-      "PaginatedResponse_TaskHistoryResponse_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/TaskHistoryResponse"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "limit": {
-            "title": "Limit",
-            "type": "integer"
-          },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "offset",
-          "limit"
-        ],
-        "title": "PaginatedResponse[TaskHistoryResponse]",
         "type": "object"
       },
       "RefreshResponse": {
@@ -919,6 +919,312 @@
           "id"
         ],
         "title": "Schema",
+        "type": "object"
+      },
+      "SepTaskHistoryResponse": {
+        "description": "Represent a task-history row as SEP serves it, with actors resolved.\n\n:param task: The task this execution belongs to, carrying resolved actors.\n:param executed_by: Display name for the actor that ran the task, or\n    ``None`` when none was recorded.",
+        "properties": {
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "Return a user-meaningful display label for this task history row.\n\nFor normal tasks, returns ``task.name``. For generic executor templates\n(``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a\n``\"<source>/<filename> on <target>\"`` label so otherwise-identical rows\nare distinguishable: the filename comes from the snippet metadata or the\n``file://`` payload basename, the source directory from whichever of those\ncarries one, and the target from the execution request. Falls back to\n``\"<task> on <target>\"`` when no filename is available.\n\n:return: The display label for the task history entry.",
+            "readOnly": true,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Return the duration of the task execution in seconds.\n\n:return: The duration in seconds, or None if not available.\n:rtype: float | None",
+            "readOnly": true,
+            "title": "Duration"
+          },
+          "executed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.",
+            "title": "Executed By"
+          },
+          "execution_request": {
+            "$ref": "#/components/schemas/TaskExecutionRequest"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "has_logs": {
+            "default": false,
+            "title": "Has Logs",
+            "type": "boolean"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "log_capture": {
+            "$ref": "#/components/schemas/LogCaptureStatusEnum",
+            "default": "unknown"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskHistoryStatusEnum",
+            "default": "pending"
+          },
+          "task": {
+            "$ref": "#/components/schemas/SepTaskResponse"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "id",
+          "execution_request",
+          "task",
+          "duration",
+          "display_name"
+        ],
+        "title": "SepTaskHistoryResponse",
+        "type": "object"
+      },
+      "SepTaskResponse": {
+        "description": "Represent a task definition as SEP serves it, with actors resolved.\n\nDiffer from :class:`~app.tasks.models.TaskResponse` only in what the two\nactor fields carry.\n\n:param created_by: Display name for the task's creator, or ``None`` when\n    none was recorded.\n:param last_updated_by: Display name for the user who last modified the\n    task, or ``None`` when none was recorded.",
+        "properties": {
+          "alert_detail_builder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alert Detail Builder"
+          },
+          "alert_on_fail": {
+            "default": false,
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/TaskBackendEnum",
+            "default": "nomad"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.",
+            "title": "Created By"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "is_template": {
+            "default": false,
+            "title": "Is Template",
+            "type": "boolean"
+          },
+          "last_updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.",
+            "title": "Last Updated By"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "output_files_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Files Path"
+          },
+          "owner": {
+            "default": "ANY",
+            "title": "Owner",
+            "type": "string"
+          },
+          "protected": {
+            "default": false,
+            "title": "Protected",
+            "type": "boolean"
+          },
+          "run_result_recorder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Result Recorder"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "data",
+          "deleted_at",
+          "created_by",
+          "last_updated_by",
+          "anonymized_entities"
+        ],
+        "title": "SepTaskResponse",
         "type": "object"
       },
       "ServiceEnum": {
@@ -1636,132 +1942,6 @@
         "title": "TaskExecutionRequest",
         "type": "object"
       },
-      "TaskHistoryResponse": {
-        "description": "Represent a task history API response.\n\n:param execution_request: The request that triggered the task execution.\n:param status: The status of the task execution.\n:param started_at: The datetime when the task execution started.\n:param finished_at: The datetime when the task execution finished.\n:param anonymize_mask: The bitmask representing PII entities to be anonymized in\n    logs and files generated by the execution. Defaults to None, meaning it uses\n    the value defined in the associated task's :attr:`Task.anonymize_mask`.\n:param task: The task associated with this execution history.\n:param executed_by: The user ID of the user who executed the task.\n:param has_logs: Whether this task history has any readable log content --\n    either a chunk-store row or a legacy ``tracking[\"task_logs\"]`` blob.\n    Populated by list/retrieve routes; defaults to ``False``.\n:param log_capture: How completely SEP captured this execution's logs,\n    aggregated over its state rows: any incomplete stream reports\n    ``\"incomplete\"``, else any unknown reports ``\"unknown\"``, else\n    ``\"complete\"``. Populated by list/retrieve routes; defaults to\n    ``\"unknown\"``, which is also what a history carrying no state rows\n    reports.\n:param display_name: A user-meaningful label derived from the task name or\n    execution-request metadata. Read-only; computed on serialisation.",
-        "properties": {
-          "anonymize_mask": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Anonymize Mask"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "display_name": {
-            "description": "Return a user-meaningful display label for this task history row.\n\nFor normal tasks, returns ``task.name``. For generic executor templates\n(``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a\n``\"<source>/<filename> on <target>\"`` label so otherwise-identical rows\nare distinguishable: the filename comes from the snippet metadata or the\n``file://`` payload basename, the source directory from whichever of those\ncarries one, and the target from the execution request. Falls back to\n``\"<task> on <target>\"`` when no filename is available.\n\n:return: The display label for the task history entry.",
-            "readOnly": true,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "duration": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Return the duration of the task execution in seconds.\n\n:return: The duration in seconds, or None if not available.\n:rtype: float | None",
-            "readOnly": true,
-            "title": "Duration"
-          },
-          "executed_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Executed By"
-          },
-          "execution_request": {
-            "$ref": "#/components/schemas/TaskExecutionRequest"
-          },
-          "finished_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Finished At"
-          },
-          "has_logs": {
-            "default": false,
-            "title": "Has Logs",
-            "type": "boolean"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "log_capture": {
-            "$ref": "#/components/schemas/LogCaptureStatusEnum",
-            "default": "unknown"
-          },
-          "started_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Started At"
-          },
-          "status": {
-            "$ref": "#/components/schemas/TaskHistoryStatusEnum",
-            "default": "pending"
-          },
-          "task": {
-            "$ref": "#/components/schemas/TaskResponse"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "id",
-          "execution_request",
-          "task",
-          "duration",
-          "display_name"
-        ],
-        "title": "TaskHistoryResponse",
-        "type": "object"
-      },
       "TaskHistoryStatusEnum": {
         "description": "Define status codes for task executions.\n\n:cvar FAILED: Enum value for failed tasks.\n:cvar PENDING: Enum value for pending tasks.\n:cvar RUNNING: Enum value for running tasks.\n:cvar SUCCESS: Enum value for successfully completed tasks.\n:cvar STOPPED: Enum value for stopped tasks.\n:cvar LOST: Enum value for tasks that are lost.\n:cvar STALE: Enum value for tasks skipped because executor placement\n    exceeded the configured staleness threshold (for example a Nomad\n    allocation that never left the queue).\n:cvar UNLAUNCHABLE: Enum value for tasks the executor node could not\n    launch at all, because some command in the invocation does not\n    resolve there. The payload never ran, so this is not a script\n    failure.",
         "enum": [
@@ -1776,172 +1956,6 @@
         ],
         "title": "TaskHistoryStatusEnum",
         "type": "string"
-      },
-      "TaskResponse": {
-        "description": "Represent a task API response.\n\n:param name: The name of the task.\n:param data: The task data stored in JSON format.\n:param backend: The backend used for task execution. Defaults to Nomad.\n:param owner: The owner of the task. Defaults to ``\"ANY\"``.\n:param is_template: Whether the task is a template. Defaults to False.\n:param protected: Whether the task is protected from deletion. Defaults to False.\n:param alert_on_fail: Whether to trigger an alert on task failure and\n    auto-resolve it on subsequent success. Defaults to False.\n:param alert_detail_builder: The ``\"module:function\"`` path of a plugin\n    callable that enriches this task's failure alert, or None.\n:param run_result_recorder: The ``\"module:function\"`` path of a plugin\n    callable that records this task's structured run result at terminal\n    status, or None.\n:param output_files_path: The path, relative to the executor's working\n    directory, where output files generated by the task are expected, or\n    None.\n:param deleted_at: The deletion timestamp, if applicable.\n:param anonymize_mask: The bitmask representing PII entities to be anonymized in\n    logs and files generated by the task. Defaults to 0 (no anonymization).\n:param created_by: The user ID of the user who created the task.\n:param last_updated_by: The user ID of the user who last modified the task.\n:param anonymized_entities: Sorted list of PII entity names derived from\n    ``anonymize_mask`` (or from the owner's configured defaults when the\n    mask is ``None``). Each name is the raw ``PIIEntity`` member name\n    (e.g. ``\"EMAIL_ADDRESS\"``). Read-only; computed on serialisation.",
-        "properties": {
-          "alert_detail_builder": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Alert Detail Builder"
-          },
-          "alert_on_fail": {
-            "default": false,
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "anonymize_mask": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Anonymize Mask"
-          },
-          "anonymized_entities": {
-            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
-            "items": {
-              "type": "string"
-            },
-            "readOnly": true,
-            "title": "Anonymized Entities",
-            "type": "array"
-          },
-          "backend": {
-            "$ref": "#/components/schemas/TaskBackendEnum",
-            "default": "nomad"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By"
-          },
-          "data": {
-            "additionalProperties": true,
-            "title": "Data",
-            "type": "object"
-          },
-          "deleted_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deleted At"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "is_template": {
-            "default": false,
-            "title": "Is Template",
-            "type": "boolean"
-          },
-          "last_updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Updated By"
-          },
-          "name": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "output_files_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Output Files Path"
-          },
-          "owner": {
-            "default": "ANY",
-            "title": "Owner",
-            "type": "string"
-          },
-          "protected": {
-            "default": false,
-            "title": "Protected",
-            "type": "boolean"
-          },
-          "run_result_recorder": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Run Result Recorder"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "data",
-          "deleted_at",
-          "created_by",
-          "last_updated_by",
-          "anonymized_entities"
-        ],
-        "title": "TaskResponse",
-        "type": "object"
       },
       "ValidationError": {
         "properties": {
@@ -4892,7 +4906,7 @@
         "type": "object"
       },
       "backup_mongo__BackupType": {
-        "description": "Backup types.",
+        "description": "Represent the backup tools a run can be taken with.\n\n:cvar LABELS: Display text for each stored value, keyed as the value is\n    stored on the wire. A value with no entry is rendered as-is by the\n    caller. Wrapped in :func:`enum.nonmember` because ``enum`` would\n    otherwise treat a class-body dict as a member candidate.",
         "enum": [
           "pbm_logical",
           "pbm_physical",
@@ -6523,7 +6537,7 @@
       },
       "framework__AppEntitySchema": {
         "additionalProperties": false,
-        "description": "Describe one CRUD entity for a multi-entity schema-driven plugin.\n\nUsed when a plugin exposes several independent resources (for example\ninventory nodes, services, schemas, and tables), each with its own list\nview and create/edit forms. Task-style plugins omit ``entities`` and use\nthe root ``forms`` / ``list_view`` instead.\n\n:param name: URL segment and API key for the entity (for example ``nodes``).\n:type name: NonEmptyStr\n:param display_name: Human-readable title for this entity's screens.\n:type display_name: NonEmptyStr\n:param description: Optional helper text for this entity. Defaults to\n    ``None``.\n:type description: NonEmptyStr | None\n:param forms: Form sections for create (and edit when the UI supports it).\n:type forms: list[FormSection]\n:param list_view: Column configuration for this entity's list table.\n:type list_view: ListView\n:param detail_highlights: Optional per-field syntax highlighter hints for\n    detail pages. Keys are field names; values are highlighting languages.\n    Defaults to an empty mapping.\n:type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]\n:param cardinality_rules: Optional entity-wide cross-field cardinality\n    constraints. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional entity-wide predicate-only invariants.\n    Defaults to ``None``.\n:type fail_when: list[FailRule] | None",
+        "description": "Describe one CRUD entity for a multi-entity schema-driven plugin.\n\nUsed when a plugin exposes several independent resources (for example\ninventory nodes, services, schemas, and tables), each with its own list\nview and create/edit forms. Task-style plugins omit ``entities`` and use\nthe root ``forms`` / ``list_view`` instead.\n\n:param name: URL segment and API key for the entity (for example ``nodes``).\n:param display_name: Human-readable title for this entity's screens.\n:param item_display_name: What **one** record of this entity is called (for\n    example ``node``), as opposed to ``display_name``, which names the\n    entity's screens. Stored in mid-sentence form so a consumer composing a\n    label capitalises the first character itself. Defaults to this entity's\n    own ``display_name`` — not the parent app's, and never inferred from\n    ``item_display_name_plural``.\n:param item_display_name_plural: What **several** records of this entity are\n    called (for example ``nodes``). An independent declaration under the\n    same mid-sentence convention; nothing derives it from\n    ``item_display_name``. Defaults to this entity's own ``display_name``.\n:param description: Optional helper text for this entity. Defaults to\n    ``None``.\n:param forms: Form sections for create (and edit when the UI supports it).\n:param list_view: Column configuration for this entity's list table.\n:param detail_highlights: Optional per-field syntax highlighter hints for\n    detail pages. Keys are field names; values are highlighting languages.\n    Defaults to an empty mapping.\n:param cardinality_rules: Optional entity-wide cross-field cardinality\n    constraints. Defaults to ``None``.\n:param fail_when: Optional entity-wide predicate-only invariants.\n    Defaults to ``None``.",
         "properties": {
           "cardinality_rules": {
             "anyOf": [
@@ -6584,6 +6598,16 @@
             "title": "Forms",
             "type": "array"
           },
+          "item_display_name": {
+            "minLength": 1,
+            "title": "Item Display Name",
+            "type": "string"
+          },
+          "item_display_name_plural": {
+            "minLength": 1,
+            "title": "Item Display Name Plural",
+            "type": "string"
+          },
           "list_view": {
             "$ref": "#/components/schemas/framework__ListView"
           },
@@ -6597,6 +6621,8 @@
         "required": [
           "name",
           "display_name",
+          "item_display_name",
+          "item_display_name_plural",
           "forms",
           "list_view"
         ],
@@ -6605,7 +6631,7 @@
       },
       "framework__AppSchema": {
         "additionalProperties": false,
-        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:type name: NonEmptyStr\n:param display_name: The human-readable plugin title displayed in the UI.\n:type display_name: NonEmptyStr\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:type task_type: NonEmptyStr | None\n:param forms: Form sections for single-entity / task plugins. When\n    ``entities`` is non-empty, root ``forms`` must be empty (declare\n    forms on each entity instead); non-empty root ``forms`` are rejected\n    at construction. Defaults to an empty list.\n:type forms: list[FormSection]\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:type capabilities: Capabilities | None\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:type list_view: ListView | None\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:type detail_view: DetailView | None\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only). Rejected at construction when\n    ``entities`` is non-empty — declare rules on each entity instead.\n    Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only). Rejected at construction when ``entities`` is non-empty —\n    declare rules on each entity instead. Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:type derived: list[DerivedTask] | None\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:type predecessors: list[ChainedPredecessor] | None\n:param related_apps: Optional separately registered apps the React shell\n    surfaces as sibling tabs (for example a restore app nested under a\n    backups parent). Defaults to ``None``.\n:type related_apps: list[RelatedApp] | None",
+        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:param display_name: The human-readable plugin title displayed in the UI.\n:param item_display_name: What **one** record this plugin's create form\n    produces is called (for example ``backup``), as opposed to\n    ``display_name``, which names the plugin. Stored in mid-sentence form —\n    lowercase unless it opens with a proper noun — so a consumer composing a\n    label capitalises the first character itself. Defaults to\n    ``display_name``, and is never inferred from\n    ``item_display_name_plural``. Unlike the optional UI hints on this\n    model, both record names are required and non-nullable so the generated\n    client types them as ``string`` and no consumer needs a fallback.\n:param item_display_name_plural: What **several** of those records are\n    called (for example ``backups``). An independent declaration under the\n    same mid-sentence convention; nothing derives it from\n    ``item_display_name``. Defaults to ``display_name``.\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:param forms: Form sections for single-entity / task plugins. When\n    ``entities`` is non-empty, root ``forms`` must be empty (declare\n    forms on each entity instead); non-empty root ``forms`` are rejected\n    at construction. Defaults to an empty list.\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only). Rejected at construction when\n    ``entities`` is non-empty — declare rules on each entity instead.\n    Defaults to ``None``.\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only). Rejected at construction when ``entities`` is non-empty —\n    declare rules on each entity instead. Defaults to ``None``.\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:param related_apps: Optional separately registered apps the React shell\n    surfaces as sibling tabs (for example a restore app nested under a\n    backups parent). Defaults to ``None``.",
         "properties": {
           "capabilities": {
             "anyOf": [
@@ -6707,6 +6733,16 @@
             "title": "Forms",
             "type": "array"
           },
+          "item_display_name": {
+            "minLength": 1,
+            "title": "Item Display Name",
+            "type": "string"
+          },
+          "item_display_name_plural": {
+            "minLength": 1,
+            "title": "Item Display Name Plural",
+            "type": "string"
+          },
           "list_view": {
             "anyOf": [
               {
@@ -6766,7 +6802,9 @@
         },
         "required": [
           "name",
-          "display_name"
+          "display_name",
+          "item_display_name",
+          "item_display_name_plural"
         ],
         "title": "AppSchema",
         "type": "object"
@@ -7475,7 +7513,7 @@
       },
       "framework__Column": {
         "additionalProperties": false,
-        "description": "Represent one column in a plugin list view.\n\n:param key: The task attribute path this column displays (for example,\n    ``\"status\"`` or ``\"target.service\"``).\n:type key: NonEmptyStr\n:param label: The human-readable column header.\n:type label: NonEmptyStr\n:param sortable: Whether the column can be used to sort the list.\n    Defaults to ``False``.\n:type sortable: bool\n:param format: Optional formatting hint applied when rendering the\n    column values. Defaults to ``None``.\n:type format: ColumnFormat | None",
+        "description": "Represent one column in a plugin list view.\n\n:param key: The task attribute path this column displays (for example,\n    ``\"status\"`` or ``\"target.service\"``). Must be non-empty.\n:param label: The human-readable column header. Must be non-empty.\n:param sortable: Whether the column can be used to sort the list.\n    Defaults to ``False``.\n:param format: Optional formatting hint applied when rendering the\n    column values. Defaults to ``None``.\n:param value_labels: Optional map from a raw cell value to the text a\n    renderer displays in its place. Defaults to ``None``, which the schema\n    route's ``exclude_none`` posture drops from the payload, so a column\n    declaring no labels stays byte-identical on the wire. A value absent\n    from the map is the consuming app's decision to render as-is.",
         "properties": {
           "format": {
             "anyOf": [
@@ -7501,6 +7539,21 @@
             "default": false,
             "title": "Sortable",
             "type": "boolean"
+          },
+          "value_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Labels"
           }
         },
         "required": [
@@ -7721,7 +7774,7 @@
       },
       "framework__DetailField": {
         "additionalProperties": false,
-        "description": "Declare one labelled field rendered inside a :class:`DetailSection`.\n\n:param path: Dotted path into the task record (for example\n    ``\"data.meta.command\"``). Each segment must be a Python identifier,\n    optionally followed by one or more ``[N]`` array indices.\n:type path: DetailPath\n:param label: Human-readable label rendered alongside the resolved value.\n:type label: NonEmptyStr\n:param highlight: Optional syntax-highlighter hint. Defaults to ``None``.\n:type highlight: DetailHighlightLanguage | None",
+        "description": "Declare one labelled field rendered inside a :class:`DetailSection`.\n\n:param path: Dotted path into the task record (for example\n    ``\"data.meta.command\"``). Each segment must be a Python identifier,\n    optionally followed by one or more ``[N]`` array indices.\n:param label: Human-readable label rendered alongside the resolved value.\n    Must be non-empty.\n:param highlight: Optional syntax-highlighter hint. Defaults to ``None``.\n:param value_labels: Optional map from a raw resolved value to the text a\n    renderer displays in its place. Defaults to ``None``, which the schema\n    route's ``exclude_none`` posture drops from the payload, so a field\n    declaring no labels stays byte-identical on the wire. A value absent\n    from the map is the consuming app's decision to render as-is.",
         "properties": {
           "highlight": {
             "anyOf": [
@@ -7743,6 +7796,21 @@
             "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\[\\d+\\])*(?:\\.[A-Za-z_][A-Za-z0-9_]*(?:\\[\\d+\\])*)*$",
             "title": "Path",
             "type": "string"
+          },
+          "value_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Labels"
           }
         },
         "required": [
@@ -7765,7 +7833,7 @@
       },
       "framework__DetailSection": {
         "additionalProperties": false,
-        "description": "Declare one titled section inside a :class:`DetailView`.\n\n:param title: Heading rendered above the section's fields.\n:type title: NonEmptyStr\n:param fields: Ordered list of fields rendered inside the section. An\n    empty list is valid; the frontend hides the section when every\n    field resolves to an empty value.\n:type fields: list[DetailField]",
+        "description": "Declare one titled section inside a :class:`DetailView`.\n\n:param title: Heading rendered above the section's fields.\n:param fields: Ordered list of fields rendered inside the section. An\n    empty list is valid; the frontend hides the section when every\n    field resolves to an empty value.",
         "properties": {
           "fields": {
             "items": {
@@ -8535,7 +8603,7 @@
       },
       "framework__ListView": {
         "additionalProperties": false,
-        "description": "Represent the list-view configuration for a plugin.\n\n:param columns: The ordered list of columns displayed in the list view.\n:type columns: list[Column]\n:param default_sort: Optional key of the column to sort by on first\n    render. Prefix with ``-`` for descending order (for example,\n    ``\"-lastRun\"``). The unprefixed key must match one of the declared\n    column keys. Defaults to ``None``.\n:type default_sort: NonEmptyStr | None\n:param server_side_query: Opt-in capability flag declaring that the list\n    endpoint honors whole-result-set sort and search via server query\n    params. When ``True`` and the list is also server-paginated, the React\n    list view enables manual sorting and filtering and drives them through\n    those params instead of sorting the loaded page; a capability-on list\n    rendered without pagination stays client-side.\n    Typed ``bool | None`` so the discovery endpoint's\n    ``exclude_none`` posture drops it from the wire until a plugin opts\n    in, keeping the addition byte-compatible with existing schemas.\n    Defaults to ``None``.\n:type server_side_query: bool | None\n:param overview_hidden_fields: Additional task-level keys to suppress\n    from the auto-rendered \"extras\" loop on the plugin detail Overview\n    tab. The framework always hides a baseline set of internal fields\n    (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,\n    ``last_updated_by``, ``connectivity_warning``); any keys listed here\n    are merged with that baseline. Defaults to ``[]``.\n:type overview_hidden_fields: list[str]",
+        "description": "Represent the list-view configuration for a plugin.\n\n:param columns: The ordered list of columns displayed in the list view.\n:param default_sort: Optional key of the column to sort by on first\n    render. Prefix with ``-`` for descending order (for example,\n    ``\"-lastRun\"``). The unprefixed key must match one of the declared\n    column keys. Defaults to ``None``.\n:param server_side_query: Opt-in capability flag declaring that the list\n    endpoint honors whole-result-set sort and search via server query\n    params. When ``True`` and the list is also server-paginated, the React\n    list view enables manual sorting and filtering and drives them through\n    those params instead of sorting the loaded page; a capability-on list\n    rendered without pagination stays client-side.\n    Typed ``bool | None`` so the discovery endpoint's\n    ``exclude_none`` posture drops it from the wire until a plugin opts\n    in, keeping the addition byte-compatible with existing schemas.\n    Defaults to ``None``.\n:param overview_hidden_fields: Additional task-level keys to suppress\n    from the auto-rendered \"extras\" loop on the plugin detail Overview\n    tab. The framework always hides a baseline set of internal fields\n    (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,\n    ``last_updated_by``, ``connectivity_warning``); any keys listed here\n    are merged with that baseline. Defaults to ``[]``.",
         "properties": {
           "columns": {
             "items": {
@@ -11415,8 +11483,21 @@
         "type": "object"
       },
       "mysql_backups__BackupRunResponse": {
-        "description": "Expose one catalog record over the per-service query path.\n\n:param id: The record's primary key.\n:param service_name: The inventory service the backup was taken from.\n:param service_id: The inventory id of that service, or ``None`` on a record\n    written before the id was stamped.\n:param hostname: The backup target host.\n:param backup_type: The backup tool, ``\"M\"`` (mydumper) or ``\"X\"`` (xtrabackup).\n    Narrower than :class:`BackupType`: binlog runs are never catalogued, so\n    ``\"B\"`` never appears here.\n:param location: The resolved on-disk directory the run produced.\n:param upload_destination: The upload destination when one was configured.\n:param size_bytes: The backup size in bytes, when the run reported it.\n:param started_at: When the run started.\n:param finished_at: When the run finished.",
+        "description": "Expose one catalog record over the service-scoped and task-scoped queries.\n\n:param id: The record's primary key.\n:param service_name: The inventory service the backup was taken from.\n:param service_id: The inventory id of that service, or ``None`` on a record\n    written before the id was stamped.\n:param hostname: The backup target host.\n:param backup_type: The backup tool, ``\"M\"`` (mydumper) or ``\"X\"`` (xtrabackup).\n    Narrower than :class:`BackupType`: binlog runs are never catalogued, so\n    ``\"B\"`` never appears here.\n:param location: The resolved on-disk directory the run produced.\n:param upload_destination: The upload destination when one was configured.\n:param size_bytes: The backup size in bytes, when the run reported it.\n:param started_at: When the run started.\n:param finished_at: When the run finished.\n:param backup_source: The run's restore-form-valid source, derived from\n    ``upload_destination`` and ``location``; read-only, and absent from the\n    table this response is built from.",
         "properties": {
+          "backup_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Return the run's restore-form-valid source, or ``None``.\n\nResolved server-side so no caller re-derives it from the raw fields.\n``None`` means the run recorded no usable source, or recorded one the\nrestore form rejects — either way it cannot seed a restore.",
+            "readOnly": true,
+            "title": "Backup Source"
+          },
           "backup_type": {
             "enum": [
               "M",
@@ -11530,7 +11611,8 @@
           "upload_destination",
           "size_bytes",
           "started_at",
-          "finished_at"
+          "finished_at",
+          "backup_source"
         ],
         "title": "BackupRunResponse",
         "type": "object"
@@ -11701,7 +11783,7 @@
         "type": "object"
       },
       "mysql_backups__BackupType": {
-        "description": "Backup types.",
+        "description": "Represent the backup tools a run can be taken with.\n\n:cvar LABELS: Display text for each stored value, keyed as the value is\n    stored on the wire. A value with no entry is rendered as-is by the\n    caller. Wrapped in :func:`enum.nonmember` because ``enum`` would\n    otherwise treat a class-body dict as a member candidate.",
         "enum": [
           "M",
           "X",
@@ -13408,7 +13490,7 @@
         "type": "object"
       },
       "tasks__TaskDetailResponse": {
-        "description": "Represent the aggregate payload for ``GET /api/apps/tasks/{task_name}``.\n\nBundle the task definition, execution history, periodic schedules, and\nexecutor host metadata into a single response for the React detail page.\n\n:param task: The task definition as returned by the tasks API.\n:type task: TaskResponse\n:param execution_history: Paginated task history from the tasks API\n    (``items``, ``total``, ``offset``, ``limit``).\n:type execution_history: dict[str, Any]\n:param periodic_summary: Read-only summaries of periodic schedules\n    attached to this task.\n:type periodic_summary: list[PeriodicTaskSummary]\n:param executor_hosts: Executor hosts available for display, with\n    inventory-resolved labels when possible.\n:type executor_hosts: list[ExecutorHostMetadata]",
+        "description": "Represent the aggregate payload for ``GET /api/apps/tasks/{task_name}``.\n\nBundle the task definition, execution history, periodic schedules, and\nexecutor host metadata into a single response for the React detail page.\n\n:param task: The task definition as returned by the tasks API, with its\n    actor fields carrying display names rather than user identifiers.\n:param execution_history: Paginated task history from the tasks API\n    (``items``, ``total``, ``offset``, ``limit``), passed through\n    unvalidated so every upstream key survives. Carries whatever actor text\n    the constructing route supplied; the model itself imposes no shape.\n:param periodic_summary: Read-only summaries of periodic schedules\n    attached to this task.\n:param executor_hosts: Executor hosts available for display, with\n    inventory-resolved labels when possible.",
         "properties": {
           "execution_history": {
             "additionalProperties": true,
@@ -13430,7 +13512,7 @@
             "type": "array"
           },
           "task": {
-            "$ref": "#/components/schemas/TaskResponse"
+            "$ref": "#/components/schemas/SepTaskResponse"
           }
         },
         "required": [
@@ -13440,7 +13522,7 @@
         "type": "object"
       },
       "tasks__TaskListResponse": {
-        "description": "Represent one task row in the read-only tasks plugin list API.\n\n:param name: The unique name of the task.\n:type name: str\n:param backend: The backend system used for task execution.\n:type backend: TaskBackendEnum\n:param created_at: When the task was created, or ``None`` if unavailable.\n:type created_at: UTCDatetime | None\n:param created_by: Display name for the task creator (Casdoor username when\n    resolvable, otherwise the stored user id), or ``None`` if unknown.\n:type created_by: str | None\n:param last_updated_by: Display name for the user who last updated the\n    task (Casdoor username when resolvable, otherwise the stored user id),\n    or ``None`` if unknown.\n:type last_updated_by: str | None",
+        "description": "Represent one task row in the read-only tasks plugin list API.\n\n:param name: The unique name of the task.\n:param backend: The backend system used for task execution.\n:param created_at: When the task was created, or ``None`` if unavailable.\n:param created_by: Display name for the task creator: the provider's\n    username when resolvable, a system label for system-created tasks,\n    otherwise the stored user id. ``None`` if unknown.\n:param last_updated_by: Display name for the user who last updated the\n    task, resolved on the same terms as ``created_by``. ``None`` if\n    unknown.",
         "properties": {
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -18891,6 +18973,72 @@
         ]
       }
     },
+    "/api/apps/mysql_backups/{task_name}/backups": {
+      "get": {
+        "description": "Return a page of a backup task's catalogued runs, newest run first.\n\nThe ``task_name`` path parameter is resolved by\n:data:`~app.sep.apps.mysql_backups.deps.CataloguedHistoryIds`, so a task that\ndoes not exist or belongs to another app surfaces as a ``404`` while a known\ntask with no catalogued backup yields an empty page — keeping \"this task has\nnever produced a backup\" distinguishable from \"this task does not exist\".\n\nThe discovery walk behind that dependency is capped, so ``total`` counts the\nruns within the scanned window rather than every run the task ever produced,\nand carries no marker distinguishing a truncated page from a complete one.\nA run older than the window is reachable through the per-service catalog\nroute, which is uncapped — but only while its inventory service still\nresolves, and only for a caller that knows which service the run was recorded\nunder, which a task since re-pointed at another target no longer answers.\n\n:param history_ids: The task's catalogued task-history ids, newest first.\n:param session: The database session the catalog is queried on.\n:param pagination: The requested offset/limit window.\n:return: The requested page of the task's recorded backup runs, newest run\n    first.",
+        "operationId": "mysql_backups_list_task_backups_api_apps_mysql_backups__task_name__backups_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_name",
+            "required": true,
+            "schema": {
+              "title": "Task Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/mysql_backups__PaginatedResponse_BackupRunResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Task Backups",
+        "tags": [
+          "mysql_backups"
+        ]
+      }
+    },
     "/api/apps/mysql_backups/{task_name}/execute": {
       "post": {
         "description": "Resolve, dispatch, and wrap a standard task execution.",
@@ -19933,7 +20081,7 @@
     },
     "/api/apps/tasks/{task_name}": {
       "get": {
-        "description": "Return the per-task detail bundle for the read-only plugin UI.\n\n:param task: The task definition resolved by name.\n:type task: Task\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: TaskAPI\n:param executor_hosts_ctx: Executor hosts enriched with inventory labels.\n:type executor_hosts_ctx: ExecutorHostsCtx\n:return: Task definition, history, periodic schedules, and executor hosts.\n:rtype: TaskDetailResponse",
+        "description": "Return the per-task detail bundle for the read-only plugin UI.\n\n:param task: The task definition resolved by name.\n:param tasks_api: Async client for the tasks sub-app.\n:param executor_hosts_ctx: Executor hosts enriched with inventory labels.\n:return: Task definition, history, periodic schedules, and executor hosts,\n    with every actor identifier on the task and inside the history rows\n    resolved to the name a reader should see.",
         "operationId": "task_manager_tasks_api_detail_api_apps_tasks__task_name__get",
         "parameters": [
           {
@@ -20954,7 +21102,7 @@
     },
     "/api/sep/task-history/": {
       "get": {
-        "description": "Return task-history rows, listing all of them or merging selected names.\n\nThree-way on ``task_names``:\n\n* **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already\n  paginated, forwarding the ``status`` filter, ``exclude_internal`` flag, and\n  client ``offset`` / ``limit``.\n* **provided, at least one non-blank name** -- query each name independently\n  against the Tasks API, then merge, sort newest-first, and paginate globally.\n* **provided, every name blank after trimming** -- reject with ``422``.\n\n:param tasks_api: The Tasks API client used to fetch upstream history.\n:param pagination: Validated offset/limit query parameters.\n:param task_names: Zero or more task names (repeat the query param); omit to\n    list all history.\n:param task_status: Optional exact status filter forwarded upstream.\n:param exclude_internal: When ``True``, forward the filter to the upstream\n    list-all path so internal maintenance tasks are excluded before pagination.\n    Not forwarded on the ``task_names`` merge path. Defaults to ``False``.\n:return: Paginated task history, either the upstream list or the merged set.\n:raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but\n    every value is empty after trimming.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``, on either the list-all passthrough or\n    the merged-history fan-out.",
+        "description": "Return task-history rows, listing all of them or merging selected names.\n\nThree-way on ``task_names``:\n\n* **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already\n  paginated, forwarding the ``status`` filter, ``exclude_internal`` flag, and\n  client ``offset`` / ``limit``.\n* **provided, at least one non-blank name** -- query each name independently\n  against the Tasks API, then merge, sort newest-first, and paginate globally.\n* **provided, every name blank after trimming** -- reject with ``422``.\n\n:param tasks_api: The Tasks API client used to fetch upstream history.\n:param pagination: Validated offset/limit query parameters.\n:param task_names: Zero or more task names (repeat the query param); omit to\n    list all history.\n:param task_status: Optional exact status filter forwarded upstream.\n:param exclude_internal: When ``True``, forward the filter to the upstream\n    list-all path so internal maintenance tasks are excluded before pagination.\n    Not forwarded on the ``task_names`` merge path. Defaults to ``False``.\n:return: Paginated task history, either the upstream list or the merged set,\n    with every actor identifier resolved to the name a reader should see.\n:raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but\n    every value is empty after trimming.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``, on either the list-all passthrough or\n    the merged-history fan-out.",
         "operationId": "tasks_list_merged_task_history_api_sep_task_history__get",
         "parameters": [
           {
@@ -21031,7 +21179,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse_TaskHistoryResponse_"
+                  "$ref": "#/components/schemas/PaginatedResponse_SepTaskHistoryResponse_"
                 }
               }
             },

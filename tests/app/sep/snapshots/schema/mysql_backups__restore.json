@@ -174,7 +174,7 @@
           "allow_custom": true,
           "depends_on": "service_id",
           "description": "--database myloader option (database to restore to)",
-          "label": "Restore to Database",
+          "label": "Target database",
           "name": "schema_id",
           "required": false,
           "type": "schema"
@@ -456,6 +456,8 @@
       "title": "Binlog"
     }
   ],
+  "item_display_name": "restore",
+  "item_display_name_plural": "restores",
   "list_view": {
     "columns": [
       {
@@ -473,7 +475,12 @@
         "format": "chip",
         "key": "backup_type",
         "label": "Type",
-        "sortable": false
+        "sortable": false,
+        "value_labels": {
+          "B": "Binlog",
+          "M": "Mydumper",
+          "X": "XtraBackup"
+        }
       },
       {
         "key": "hostname",

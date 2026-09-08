@@ -62,7 +62,7 @@ __all__ = [
 ]
 
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from enum import auto, StrEnum
 from typing import Annotated, Any, Literal, Self
 
@@ -900,34 +900,34 @@ class Column(SchemaBaseModel):
     """Represent one column in a plugin list view.
 
     :param key: The task attribute path this column displays (for example,
-        ``"status"`` or ``"target.service"``).
-    :type key: NonEmptyStr
-    :param label: The human-readable column header.
-    :type label: NonEmptyStr
+        ``"status"`` or ``"target.service"``). Must be non-empty.
+    :param label: The human-readable column header. Must be non-empty.
     :param sortable: Whether the column can be used to sort the list.
         Defaults to ``False``.
-    :type sortable: bool
     :param format: Optional formatting hint applied when rendering the
         column values. Defaults to ``None``.
-    :type format: ColumnFormat | None
+    :param value_labels: Optional map from a raw cell value to the text a
+        renderer displays in its place. Defaults to ``None``, which the schema
+        route's ``exclude_none`` posture drops from the payload, so a column
+        declaring no labels stays byte-identical on the wire. A value absent
+        from the map is the consuming app's decision to render as-is.
     """
 
     key: NonEmptyStr
     label: NonEmptyStr
     sortable: bool = False
     format: ColumnFormat | None = None
+    value_labels: dict[NonEmptyStr, NonEmptyStr] | None = None
 
 
 class ListView(SchemaBaseModel):
     """Represent the list-view configuration for a plugin.
 
     :param columns: The ordered list of columns displayed in the list view.
-    :type columns: list[Column]
     :param default_sort: Optional key of the column to sort by on first
         render. Prefix with ``-`` for descending order (for example,
         ``"-lastRun"``). The unprefixed key must match one of the declared
         column keys. Defaults to ``None``.
-    :type default_sort: NonEmptyStr | None
     :param server_side_query: Opt-in capability flag declaring that the list
         endpoint honors whole-result-set sort and search via server query
         params. When ``True`` and the list is also server-paginated, the React
@@ -938,14 +938,12 @@ class ListView(SchemaBaseModel):
         ``exclude_none`` posture drops it from the wire until a plugin opts
         in, keeping the addition byte-compatible with existing schemas.
         Defaults to ``None``.
-    :type server_side_query: bool | None
     :param overview_hidden_fields: Additional task-level keys to suppress
         from the auto-rendered "extras" loop on the plugin detail Overview
         tab. The framework always hides a baseline set of internal fields
         (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,
         ``last_updated_by``, ``connectivity_warning``); any keys listed here
         are merged with that baseline. Defaults to ``[]``.
-    :type overview_hidden_fields: list[str]
     """
 
     columns: list[Column]
@@ -1036,27 +1034,29 @@ class DetailField(SchemaBaseModel):
     :param path: Dotted path into the task record (for example
         ``"data.meta.command"``). Each segment must be a Python identifier,
         optionally followed by one or more ``[N]`` array indices.
-    :type path: DetailPath
     :param label: Human-readable label rendered alongside the resolved value.
-    :type label: NonEmptyStr
+        Must be non-empty.
     :param highlight: Optional syntax-highlighter hint. Defaults to ``None``.
-    :type highlight: DetailHighlightLanguage | None
+    :param value_labels: Optional map from a raw resolved value to the text a
+        renderer displays in its place. Defaults to ``None``, which the schema
+        route's ``exclude_none`` posture drops from the payload, so a field
+        declaring no labels stays byte-identical on the wire. A value absent
+        from the map is the consuming app's decision to render as-is.
     """
 
     path: DetailPath
     label: NonEmptyStr
     highlight: DetailHighlightLanguage | None = None
+    value_labels: dict[NonEmptyStr, NonEmptyStr] | None = None
 
 
 class DetailSection(SchemaBaseModel):
     """Declare one titled section inside a :class:`DetailView`.
 
     :param title: Heading rendered above the section's fields.
-    :type title: NonEmptyStr
     :param fields: Ordered list of fields rendered inside the section. An
         empty list is valid; the frontend hides the section when every
         field resolves to an empty value.
-    :type fields: list[DetailField]
     """
 
     title: NonEmptyStr
@@ -1509,6 +1509,40 @@ def _collect_fail_rule_errors(
         )
 
 
+ITEM_DISPLAY_NAME_KEYS = ("item_display_name", "item_display_name_plural")
+"""The two record-name keys, shared with the conformance detector that checks them."""
+
+
+def _fill_item_display_names(data: Any) -> Any:
+    """Fill either unset record name from the payload's own ``display_name``.
+
+    Backs the ``mode="before"`` validator on :class:`AppEntitySchema` and
+    :class:`AppSchema` so both fields can be declared bare and required while
+    staying optional for the author. Each key defaults independently: supplying
+    the singular never derives the plural, or the reverse.
+
+    :param data: The raw input passed to the model, which Pydantic hands over
+        before field validation and therefore does not constrain — anything the
+        caller passed to ``model_validate`` arrives here. Non-mapping input is
+        returned untouched so Pydantic reports it as a ``model_type`` error
+        rather than this function raising ``AttributeError`` out of the
+        validator; input whose ``display_name`` is absent or not a string is
+        returned untouched for the same reason, leaving the two record names to
+        be reported ``missing`` alongside it.
+    :return: A mapping with either record name filled from ``display_name``, or
+        the input unchanged when both were supplied or nothing could be filled.
+    """
+    if not isinstance(data, Mapping):
+        return data
+    display_name = data.get("display_name")
+    if not isinstance(display_name, str):
+        return data
+    filled = {
+        key: display_name for key in ITEM_DISPLAY_NAME_KEYS if data.get(key) is None
+    }
+    return {**data, **filled} if filled else data
+
+
 class AppEntitySchema(SchemaBaseModel):
     """Describe one CRUD entity for a multi-entity schema-driven plugin.
 
@@ -1518,30 +1552,34 @@ class AppEntitySchema(SchemaBaseModel):
     the root ``forms`` / ``list_view`` instead.
 
     :param name: URL segment and API key for the entity (for example ``nodes``).
-    :type name: NonEmptyStr
     :param display_name: Human-readable title for this entity's screens.
-    :type display_name: NonEmptyStr
+    :param item_display_name: What **one** record of this entity is called (for
+        example ``node``), as opposed to ``display_name``, which names the
+        entity's screens. Stored in mid-sentence form so a consumer composing a
+        label capitalises the first character itself. Defaults to this entity's
+        own ``display_name`` — not the parent app's, and never inferred from
+        ``item_display_name_plural``.
+    :param item_display_name_plural: What **several** records of this entity are
+        called (for example ``nodes``). An independent declaration under the
+        same mid-sentence convention; nothing derives it from
+        ``item_display_name``. Defaults to this entity's own ``display_name``.
     :param description: Optional helper text for this entity. Defaults to
         ``None``.
-    :type description: NonEmptyStr | None
     :param forms: Form sections for create (and edit when the UI supports it).
-    :type forms: list[FormSection]
     :param list_view: Column configuration for this entity's list table.
-    :type list_view: ListView
     :param detail_highlights: Optional per-field syntax highlighter hints for
         detail pages. Keys are field names; values are highlighting languages.
         Defaults to an empty mapping.
-    :type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]
     :param cardinality_rules: Optional entity-wide cross-field cardinality
         constraints. Defaults to ``None``.
-    :type cardinality_rules: list[CardinalityRule] | None
     :param fail_when: Optional entity-wide predicate-only invariants.
         Defaults to ``None``.
-    :type fail_when: list[FailRule] | None
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
     display_name: NonEmptyStr
+    item_display_name: NonEmptyStr
+    item_display_name_plural: NonEmptyStr
     description: NonEmptyStr | None = None
     forms: list[FormSection]
     list_view: ListView
@@ -1550,6 +1588,17 @@ class AppEntitySchema(SchemaBaseModel):
     )
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_item_display_names(cls, data: Any) -> Any:
+        """Fill both record names from ``display_name`` when the author omits them.
+
+        :param data: The raw input Pydantic passes before field validation.
+        :return: The input with either record name filled, or unchanged when both
+            were supplied or nothing could be filled.
+        """
+        return _fill_item_display_names(data)
 
     @model_validator(mode="after")
     def _validate_unique_field_names(self) -> Self:
@@ -1563,32 +1612,37 @@ class AppSchema(SchemaBaseModel):
 
     :param name: The plugin identifier; must match Python identifier rules,
         optionally with internal hyphens.
-    :type name: NonEmptyStr
     :param display_name: The human-readable plugin title displayed in the UI.
-    :type display_name: NonEmptyStr
+    :param item_display_name: What **one** record this plugin's create form
+        produces is called (for example ``backup``), as opposed to
+        ``display_name``, which names the plugin. Stored in mid-sentence form —
+        lowercase unless it opens with a proper noun — so a consumer composing a
+        label capitalises the first character itself. Defaults to
+        ``display_name``, and is never inferred from
+        ``item_display_name_plural``. Unlike the optional UI hints on this
+        model, both record names are required and non-nullable so the generated
+        client types them as ``string`` and no consumer needs a fallback.
+    :param item_display_name_plural: What **several** of those records are
+        called (for example ``backups``). An independent declaration under the
+        same mid-sentence convention; nothing derives it from
+        ``item_display_name``. Defaults to ``display_name``.
     :param description: Optional helper text describing the plugin's
         purpose. Defaults to ``None``.
-    :type description: NonEmptyStr | None
     :param task_type: Optional task-type identifier used when creating tasks
         via the shared task API. Defaults to ``None``.
-    :type task_type: NonEmptyStr | None
     :param forms: Form sections for single-entity / task plugins. When
         ``entities`` is non-empty, root ``forms`` must be empty (declare
         forms on each entity instead); non-empty root ``forms`` are rejected
         at construction. Defaults to an empty list.
-    :type forms: list[FormSection]
     :param capabilities: Optional plugin-level feature flags. Defaults to
         ``None``.
-    :type capabilities: Capabilities | None
     :param list_view: List-view configuration when ``entities`` is unset
         (single-entity / task plugins). Ignored when ``entities`` is set.
-    :type list_view: ListView | None
     :param detail_view: Optional declarative layout for the task detail page's
         section cards (task-style plugins only; ignored when ``entities`` is
         set). Optional at the model layer for backwards compatibility. A
         forward-looking guard refuses to load a plugin that sets
         ``task_type`` without declaring ``detail_view``. Defaults to ``None``.
-    :type detail_view: DetailView | None
     :param entities: Optional list of CRUD entities for multi-resource plugins.
         When non-empty, the React shell renders one list/create/detail flow
         per entity. Defaults to ``None`` (legacy single-entity mode).
@@ -1596,30 +1650,27 @@ class AppSchema(SchemaBaseModel):
         constraints (task-style plugins only). Rejected at construction when
         ``entities`` is non-empty — declare rules on each entity instead.
         Defaults to ``None``.
-    :type cardinality_rules: list[CardinalityRule] | None
     :param fail_when: Optional plugin-wide predicate-only invariants (task-style
         plugins only). Rejected at construction when ``entities`` is non-empty —
         declare rules on each entity instead. Defaults to ``None``.
-    :type fail_when: list[FailRule] | None
     :param derived: Optional declarative specs for sibling tasks derived from
         the parent task on cascade. Consumed by
         :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE
         across the parent and N derived siblings. Defaults to ``None``.
-    :type derived: list[DerivedTask] | None
     :param predecessors: Optional declarative specs for tasks that must run
         before the parent. Consumed by
         :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE
         across the predecessors and the parent, including the chain wiring
         applied at execute time. Defaults to ``None``.
-    :type predecessors: list[ChainedPredecessor] | None
     :param related_apps: Optional separately registered apps the React shell
         surfaces as sibling tabs (for example a restore app nested under a
         backups parent). Defaults to ``None``.
-    :type related_apps: list[RelatedApp] | None
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
     display_name: NonEmptyStr
+    item_display_name: NonEmptyStr
+    item_display_name_plural: NonEmptyStr
     description: NonEmptyStr | None = None
     task_type: NonEmptyStr | None = None
     forms: list[FormSection] = Field(default_factory=list)
@@ -1632,6 +1683,17 @@ class AppSchema(SchemaBaseModel):
     derived: list[DerivedTask] | None = None
     predecessors: list[ChainedPredecessor] | None = None
     related_apps: list[RelatedApp] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_item_display_names(cls, data: Any) -> Any:
+        """Fill both record names from ``display_name`` when the author omits them.
+
+        :param data: The raw input Pydantic passes before field validation.
+        :return: The input with either record name filled, or unchanged when both
+            were supplied or nothing could be filled.
+        """
+        return _fill_item_display_names(data)
 
     @model_validator(mode="after")
     def _validate_detail_view_required_for_task_type(self) -> Self:
