@@ -6843,26 +6843,28 @@ export interface components {
      *     the root ``forms`` / ``list_view`` instead.
      *
      *     :param name: URL segment and API key for the entity (for example ``nodes``).
-     *     :type name: NonEmptyStr
      *     :param display_name: Human-readable title for this entity's screens.
-     *     :type display_name: NonEmptyStr
+     *     :param item_display_name: What **one** record of this entity is called (for
+     *         example ``node``), as opposed to ``display_name``, which names the
+     *         entity's screens. Stored in mid-sentence form so a consumer composing a
+     *         label capitalises the first character itself. Defaults to this entity's
+     *         own ``display_name`` — not the parent app's, and never inferred from
+     *         ``item_display_name_plural``.
+     *     :param item_display_name_plural: What **several** records of this entity are
+     *         called (for example ``nodes``). An independent declaration under the
+     *         same mid-sentence convention; nothing derives it from
+     *         ``item_display_name``. Defaults to this entity's own ``display_name``.
      *     :param description: Optional helper text for this entity. Defaults to
      *         ``None``.
-     *     :type description: NonEmptyStr | None
      *     :param forms: Form sections for create (and edit when the UI supports it).
-     *     :type forms: list[FormSection]
      *     :param list_view: Column configuration for this entity's list table.
-     *     :type list_view: ListView
      *     :param detail_highlights: Optional per-field syntax highlighter hints for
      *         detail pages. Keys are field names; values are highlighting languages.
      *         Defaults to an empty mapping.
-     *     :type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]
      *     :param cardinality_rules: Optional entity-wide cross-field cardinality
      *         constraints. Defaults to ``None``.
-     *     :type cardinality_rules: list[CardinalityRule] | None
      *     :param fail_when: Optional entity-wide predicate-only invariants.
      *         Defaults to ``None``.
-     *     :type fail_when: list[FailRule] | None
      */
     framework__AppEntitySchema: {
       /** Cardinality Rules */
@@ -6879,6 +6881,10 @@ export interface components {
       fail_when?: components['schemas']['framework__FailRule'][] | null;
       /** Forms */
       forms: components['schemas']['framework__FormSection'][];
+      /** Item Display Name */
+      item_display_name: string;
+      /** Item Display Name Plural */
+      item_display_name_plural: string;
       list_view: components['schemas']['framework__ListView'];
       /** Name */
       name: string;
@@ -6889,32 +6895,37 @@ export interface components {
      *
      *     :param name: The plugin identifier; must match Python identifier rules,
      *         optionally with internal hyphens.
-     *     :type name: NonEmptyStr
      *     :param display_name: The human-readable plugin title displayed in the UI.
-     *     :type display_name: NonEmptyStr
+     *     :param item_display_name: What **one** record this plugin's create form
+     *         produces is called (for example ``backup``), as opposed to
+     *         ``display_name``, which names the plugin. Stored in mid-sentence form —
+     *         lowercase unless it opens with a proper noun — so a consumer composing a
+     *         label capitalises the first character itself. Defaults to
+     *         ``display_name``, and is never inferred from
+     *         ``item_display_name_plural``. Unlike the optional UI hints on this
+     *         model, both record names are required and non-nullable so the generated
+     *         client types them as ``string`` and no consumer needs a fallback.
+     *     :param item_display_name_plural: What **several** of those records are
+     *         called (for example ``backups``). An independent declaration under the
+     *         same mid-sentence convention; nothing derives it from
+     *         ``item_display_name``. Defaults to ``display_name``.
      *     :param description: Optional helper text describing the plugin's
      *         purpose. Defaults to ``None``.
-     *     :type description: NonEmptyStr | None
      *     :param task_type: Optional task-type identifier used when creating tasks
      *         via the shared task API. Defaults to ``None``.
-     *     :type task_type: NonEmptyStr | None
      *     :param forms: Form sections for single-entity / task plugins. When
      *         ``entities`` is non-empty, root ``forms`` must be empty (declare
      *         forms on each entity instead); non-empty root ``forms`` are rejected
      *         at construction. Defaults to an empty list.
-     *     :type forms: list[FormSection]
      *     :param capabilities: Optional plugin-level feature flags. Defaults to
      *         ``None``.
-     *     :type capabilities: Capabilities | None
      *     :param list_view: List-view configuration when ``entities`` is unset
      *         (single-entity / task plugins). Ignored when ``entities`` is set.
-     *     :type list_view: ListView | None
      *     :param detail_view: Optional declarative layout for the task detail page's
      *         section cards (task-style plugins only; ignored when ``entities`` is
      *         set). Optional at the model layer for backwards compatibility. A
      *         forward-looking guard refuses to load a plugin that sets
      *         ``task_type`` without declaring ``detail_view``. Defaults to ``None``.
-     *     :type detail_view: DetailView | None
      *     :param entities: Optional list of CRUD entities for multi-resource plugins.
      *         When non-empty, the React shell renders one list/create/detail flow
      *         per entity. Defaults to ``None`` (legacy single-entity mode).
@@ -6922,26 +6933,21 @@ export interface components {
      *         constraints (task-style plugins only). Rejected at construction when
      *         ``entities`` is non-empty — declare rules on each entity instead.
      *         Defaults to ``None``.
-     *     :type cardinality_rules: list[CardinalityRule] | None
      *     :param fail_when: Optional plugin-wide predicate-only invariants (task-style
      *         plugins only). Rejected at construction when ``entities`` is non-empty —
      *         declare rules on each entity instead. Defaults to ``None``.
-     *     :type fail_when: list[FailRule] | None
      *     :param derived: Optional declarative specs for sibling tasks derived from
      *         the parent task on cascade. Consumed by
      *         :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE
      *         across the parent and N derived siblings. Defaults to ``None``.
-     *     :type derived: list[DerivedTask] | None
      *     :param predecessors: Optional declarative specs for tasks that must run
      *         before the parent. Consumed by
      *         :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE
      *         across the predecessors and the parent, including the chain wiring
      *         applied at execute time. Defaults to ``None``.
-     *     :type predecessors: list[ChainedPredecessor] | None
      *     :param related_apps: Optional separately registered apps the React shell
      *         surfaces as sibling tabs (for example a restore app nested under a
      *         backups parent). Defaults to ``None``.
-     *     :type related_apps: list[RelatedApp] | None
      */
     framework__AppSchema: {
       capabilities?: components['schemas']['framework__Capabilities'] | null;
@@ -6960,6 +6966,10 @@ export interface components {
       fail_when?: components['schemas']['framework__FailRule'][] | null;
       /** Forms */
       forms?: components['schemas']['framework__FormSection'][];
+      /** Item Display Name */
+      item_display_name: string;
+      /** Item Display Name Plural */
+      item_display_name_plural: string;
       list_view?: components['schemas']['framework__ListView'] | null;
       /** Name */
       name: string;

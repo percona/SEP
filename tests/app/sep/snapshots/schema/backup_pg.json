@@ -202,6 +202,8 @@
       "title": "pgBackRest"
     }
   ],
+  "item_display_name": "backup",
+  "item_display_name_plural": "backups",
   "list_view": {
     "columns": [
       {

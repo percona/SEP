@@ -5,6 +5,8 @@
   },
   "display_name": "Alert Troubleshooting",
   "forms": [],
+  "item_display_name": "Alert Troubleshooting",
+  "item_display_name_plural": "Alert Troubleshooting",
   "list_view": {
     "columns": [
       {

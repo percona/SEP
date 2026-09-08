@@ -991,6 +991,8 @@ def derive_app_schema(
     *,
     name: str,
     display_name: str,
+    item_display_name: str | None = None,
+    item_display_name_plural: str | None = None,
     description: str | None = None,
     task_type: str | None = None,
     capabilities: Any = None,
@@ -1011,6 +1013,12 @@ def derive_app_schema(
     :param layout: The section layout for the create form.
     :param name: The plugin identifier.
     :param display_name: The human-readable plugin title.
+    :param item_display_name: Optional name for one record the create form
+        produces. Passed through as-is, so ``None`` leaves
+        :class:`~app.sep.apps.framework.schema.AppSchema` to default it from
+        ``display_name``. Defaults to ``None``.
+    :param item_display_name_plural: Optional name for several such records,
+        defaulted by the same route. Defaults to ``None``.
     :param description: Optional plugin description. Defaults to ``None``.
     :param task_type: Optional task-type identifier. Defaults to ``None``.
     :param capabilities: Optional plugin capabilities. Defaults to ``None``.
@@ -1027,6 +1035,8 @@ def derive_app_schema(
     return AppSchema(
         name=name,
         display_name=display_name,
+        item_display_name=item_display_name,
+        item_display_name_plural=item_display_name_plural,
         description=description,
         task_type=task_type,
         forms=derive_form_sections(model, layout),
