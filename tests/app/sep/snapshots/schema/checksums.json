@@ -236,6 +236,8 @@
       "title": "Advanced"
     }
   ],
+  "item_display_name": "checksum",
+  "item_display_name_plural": "checksums",
   "list_view": {
     "columns": [
       {

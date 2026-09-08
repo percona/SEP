@@ -990,3 +990,21 @@ async def test_widened_helpers_accept_non_snippet_basesnippet():
 
     execution_args = script.get_execution_model().model_construct(executor_host="host1")
     assert isinstance(evaluate_snippet_gates(script, execution_args), list)
+
+
+@pytest.mark.asyncio
+async def test_per_snippet_schema_names_the_record_a_run(create_snippet):
+    """Name the record a run of the script, not the script the title names."""
+    snippet = await create_snippet("hello.sh", approved=True)
+
+    schema = build_snippet_schema(snippet)
+
+    assert schema.display_name == snippet.title
+    assert schema.item_display_name == "run"
+    assert schema.item_display_name_plural == "runs"
+
+
+def test_snippets_plugin_schema_names_the_record_a_script():
+    """Name the app-level record a script, distinct from the app's own title."""
+    assert SNIPPETS_PLUGIN_SCHEMA.item_display_name == "script"
+    assert SNIPPETS_PLUGIN_SCHEMA.item_display_name_plural == "scripts"

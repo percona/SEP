@@ -74,6 +74,8 @@ function makeSchema(extraFields: FormSection['fields'] = []): AppSchema {
   return {
     name: 'snippets',
     display_name: 'Test Snippet',
+    item_display_name: 'test snippet',
+    item_display_name_plural: 'test snippets',
     forms: [
       {
         title: 'Execution',

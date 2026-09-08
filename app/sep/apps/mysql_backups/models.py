@@ -18,10 +18,19 @@
 This module is intentionally **self-contained** — it imports only from
 ``app.core``, ``pydantic``, ``sqlalchemy``, ``sqlmodel``, and ``yaml`` (for the
 shared config parser), never from ``app.inventory`` / ``app.tasks`` / the app
-framework's form DSL. The sep Alembic discovery loads it at migration time to
-register the table in the migration metadata, and pulling in those heavier
-modules would bleed their tables into the sep autogenerate comparison and break
-``make checkmigrations``.
+framework's form DSL, and **never from a sibling in its own package**. The sep
+Alembic discovery loads this file *by path* to register the table in the
+migration metadata, so a package-qualified sibling import executes
+``mysql_backups/__init__.py``, which imports the whole app and re-enters this
+module mid-initialisation — an ``ImportError`` that only ``make
+checkmigrations`` reproduces, however import-free the sibling itself is.
+Pulling in the heavier modules would additionally bleed their tables into the
+sep autogenerate comparison.
+
+That constraint is why the ``backup_source`` resolution below lives here rather
+than beside the restore form that also needs it: this module is the one both
+the catalog response and :mod:`app.sep.apps.mysql_backups.restore.models` can
+depend on, and the latter already imports ``BackupType`` from it.
 
 The split mirrors ``app.sep.apps.atw``, in the direction that matters: there,
 ``atw.models`` is the self-contained module and the one inventory-dependent
@@ -37,7 +46,7 @@ from enum import StrEnum
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, computed_field, ConfigDict, field_validator
 from sqlalchemy import BigInteger, Column
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
@@ -46,6 +55,75 @@ from app.core.db.models import BaseSQLModel, DateTimeWithTimezone
 from app.core.utils.fields import EnumFieldMixin, UTCDatetime
 
 UNKNOWN_SERVICE_SENTINEL = "-1"
+
+BACKUP_SOURCE_SHELLBACKTICK = "`"
+BACKUP_SOURCE_SHELL_FORBIDDEN = frozenset("$;|&()" + BACKUP_SOURCE_SHELLBACKTICK)
+
+
+def ensure_backup_source_shell_safe(value: str) -> str:
+    """Reject shell metacharacters in a backup-source path (defense in depth).
+
+    Shared by every model carrying ``backup_source`` so the create form and the
+    YAML-serialization config model enforce the same rule from one place.
+
+    :param value: The submitted backup-source path.
+    :return: The validated value, unchanged.
+    :raises ValueError: When ``value`` contains a newline or a shell metacharacter.
+    """
+    if not value:
+        return value
+    if "\n" in value or "\r" in value:
+        raise ValueError("backup_source must not contain newline characters")
+    if BACKUP_SOURCE_SHELL_FORBIDDEN.intersection(value):
+        raise ValueError(
+            "backup_source contains disallowed shell metacharacters; "
+            "remove special characters from the backup source field"
+        )
+    return value
+
+
+def preferred_backup_source(
+    upload_destination: str | None, location: str | None
+) -> str | None:
+    """Return the preferred backup-source candidate, stripped, or ``None``.
+
+    Prefer ``upload_destination`` when set and non-blank, otherwise ``location``.
+
+    :param upload_destination: The run's recorded upload destination.
+    :param location: The run's recorded on-disk location.
+    :return: The preferred candidate with surrounding whitespace removed, or
+        ``None`` when neither field holds a non-blank value.
+    """
+    for candidate in (upload_destination, location):
+        if candidate and (stripped := candidate.strip()):
+            return stripped
+    return None
+
+
+def restore_valid_backup_source(
+    upload_destination: str | None, location: str | None
+) -> str | None:
+    """Return a restore-form-valid ``backup_source``, or ``None``.
+
+    Judge shell-safety on the single candidate :func:`preferred_backup_source`
+    produced, never on the raw fields independently: a rejected candidate yields
+    ``None`` rather than falling back to the other field, so a caller is never
+    handed a source pointing at a different artifact than the one the run's own
+    preference names.
+
+    :param upload_destination: The run's recorded upload destination.
+    :param location: The run's recorded on-disk location.
+    :return: The restore-valid source, or ``None`` when absent, blank, or
+        rejected by :func:`ensure_backup_source_shell_safe`.
+    """
+    value = preferred_backup_source(upload_destination, location)
+    if value is None:
+        return None
+    try:
+        ensure_backup_source_shell_safe(value)
+    except ValueError:
+        return None
+    return value
 
 
 class BackupType(EnumFieldMixin, StrEnum):
@@ -134,7 +212,7 @@ class CatalogServiceKey:
 
 
 class BackupRunResponse(BaseModel):
-    """Expose one catalog record over the per-service query path.
+    """Expose one catalog record over the service-scoped and task-scoped queries.
 
     :param id: The record's primary key.
     :param service_name: The inventory service the backup was taken from.
@@ -149,6 +227,9 @@ class BackupRunResponse(BaseModel):
     :param size_bytes: The backup size in bytes, when the run reported it.
     :param started_at: When the run started.
     :param finished_at: When the run finished.
+    :param backup_source: The run's restore-form-valid source, derived from
+        ``upload_destination`` and ``location``; read-only, and absent from the
+        table this response is built from.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -177,6 +258,17 @@ class BackupRunResponse(BaseModel):
         :return: ``value.value`` for a :class:`BackupType` member, else ``value``.
         """
         return value.value if isinstance(value, BackupType) else value
+
+    @computed_field
+    @property
+    def backup_source(self) -> str | None:
+        """Return the run's restore-form-valid source, or ``None``.
+
+        Resolved server-side so no caller re-derives it from the raw fields.
+        ``None`` means the run recorded no usable source, or recorded one the
+        restore form rejects — either way it cannot seed a restore.
+        """
+        return restore_valid_backup_source(self.upload_destination, self.location)
 
 
 def extract_backup_type_marker(task_data: dict[str, Any] | None) -> str | None:

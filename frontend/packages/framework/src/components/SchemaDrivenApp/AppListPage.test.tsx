@@ -78,6 +78,8 @@ import { AppListPage } from './AppListPage';
 const schema: AppSchema = {
   name: 'sched',
   display_name: 'Sched',
+  item_display_name: 'sched',
+  item_display_name_plural: 'scheds',
   capabilities: { scheduling: true },
   list_view: { columns: [{ key: 'name', label: 'Name' }] },
 };
@@ -85,17 +87,23 @@ const schema: AppSchema = {
 const multiSchema: AppSchema = {
   name: 'inventory',
   display_name: 'Inventory',
+  item_display_name: 'inventory',
+  item_display_name_plural: 'inventories',
   capabilities: { scheduling: false },
   entities: [
     {
       name: 'nodes',
       display_name: 'Nodes',
+      item_display_name: 'node',
+      item_display_name_plural: 'nodes',
       forms: [],
       list_view: { columns: [{ key: 'name', label: 'Name' }] },
     },
     {
       name: 'services',
       display_name: 'Services',
+      item_display_name: 'service',
+      item_display_name_plural: 'services',
       forms: [],
       list_view: { columns: [{ key: 'name', label: 'Name' }] },
     },
@@ -274,10 +282,14 @@ describe('AppListPage — server-side query', () => {
   const serverSchema: AppSchema = {
     name: 'inventory',
     display_name: 'Inventory',
+    item_display_name: 'inventory',
+    item_display_name_plural: 'inventories',
     entities: [
       {
         name: 'nodes',
         display_name: 'Nodes',
+        item_display_name: 'node',
+        item_display_name_plural: 'nodes',
         forms: [],
         list_view: {
           columns: [{ key: 'name', label: 'Name', sortable: true }],
@@ -461,11 +473,15 @@ describe('AppListPage — write access', () => {
   const deletableEntitySchema: AppSchema = {
     name: 'inventory',
     display_name: 'Inventory',
+    item_display_name: 'inventory',
+    item_display_name_plural: 'inventories',
     capabilities: { scheduling: false },
     entities: [
       {
         name: 'nodes',
         display_name: 'Nodes',
+        item_display_name: 'node',
+        item_display_name_plural: 'nodes',
         forms: [],
         list_view: {
           columns: [
@@ -533,11 +549,15 @@ describe('AppListPage — delete failure reporting', () => {
   const deletableEntitySchema: AppSchema = {
     name: 'inventory',
     display_name: 'Inventory',
+    item_display_name: 'inventory',
+    item_display_name_plural: 'inventories',
     capabilities: { scheduling: false },
     entities: [
       {
         name: 'nodes',
         display_name: 'Nodes',
+        item_display_name: 'node',
+        item_display_name_plural: 'nodes',
         forms: [],
         list_view: {
           columns: [

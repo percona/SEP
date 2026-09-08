@@ -216,6 +216,27 @@ class TestSepTaskHistoryEndpoint:
         assert body["total"] == merged_total
         assert len(body["items"]) == page_two_limit
 
+    def test_failure_reason_survives_the_merge_path(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+    ) -> None:
+        """Assert an upstream failure_reason survives merge and re-validation."""
+        page = _history_page(
+            item_id=1, started_at="2026-01-01T10:00:00+00:00", task_name="parent"
+        )
+        page["items"][0]["failure_reason"] = "Step 'run-script' failed (exit code 1)."
+        mock_task_api_dep.get = AsyncMock(return_value=page)
+
+        response = test_client.get(
+            "/api/sep/task-history/", params=[("task_names", "parent")]
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["failure_reason"] == (
+            "Step 'run-script' failed (exit code 1)."
+        )
+
     def test_deduplicates_repeated_task_names(
         self,
         test_client: TestClient,
@@ -496,6 +517,60 @@ class TestSepTaskHistoryListAll:
                 "limit": DEFAULT_PAGINATION_LIMIT,
             },
         )
+
+    def test_failure_reason_survives_the_passthrough_path(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Assert an upstream failure_reason survives the no-merge passthrough.
+
+        Covered separately from the merge path: the two diverge, so a field
+        reaching one says nothing about the other.
+        """
+        item = _history_item(
+            item_id=7, started_at="2026-01-01T10:00:00+00:00", task_name="run-x"
+        )
+        item["failure_reason"] = "The run failed."
+        mock_task_api_dep.get.return_value = {
+            "items": [item],
+            "total": 1,
+            "offset": DEFAULT_PAGINATION_OFFSET,
+            "limit": DEFAULT_PAGINATION_LIMIT,
+        }
+
+        response = test_client.get("/api/sep/task-history/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["failure_reason"] == "The run failed."
+
+    def test_upstream_without_failure_reason_defaults_to_null(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Assert an older tasks service emitting no such key still validates.
+
+        The rolling-deploy direction: migration and code land apart, so SEP must
+        read a payload that predates the field.
+        """
+        mock_task_api_dep.get.return_value = {
+            "items": [
+                _history_item(
+                    item_id=7,
+                    started_at="2026-01-01T10:00:00+00:00",
+                    task_name="run-x",
+                )
+            ],
+            "total": 1,
+            "offset": DEFAULT_PAGINATION_OFFSET,
+            "limit": DEFAULT_PAGINATION_LIMIT,
+        }
+
+        response = test_client.get("/api/sep/task-history/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["failure_reason"] is None
 
     def test_forwards_status_and_pagination(
         self,
