@@ -83,8 +83,8 @@ def tmp_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return copy
 
 
-def _startapp_env(tmp_path: Path) -> dict[str, str]:
-    """Return a ``make startapp`` environment writing to a throwaway settings file.
+def _startapp_env(settings_copy: Path) -> dict[str, str]:
+    """Return a ``make startapp`` environment registering into ``settings_copy``.
 
     The subprocess tests below run the scaffolder in a child process, so they
     cannot redirect it with ``tmp_settings``'s monkeypatch. Left pointing at the
@@ -92,12 +92,11 @@ def _startapp_env(tmp_path: Path) -> dict[str, str]:
     test constructing ``SEPSettings()`` while the entry is live fails on the app
     module the entry names but the run has not written yet.
 
-    :param tmp_path: The test's temporary directory.
+    :param settings_copy: Path the throwaway ``settings.yaml`` is written to.
     :return: ``os.environ`` plus the settings-file redirect.
     """
-    copy = tmp_path / "settings.yaml"
-    copy.write_text(scaffold.SETTINGS_FILE.read_text())
-    return {**os.environ, "SEP_SCAFFOLD_SETTINGS_FILE": str(copy)}
+    settings_copy.write_text(scaffold.SETTINGS_FILE.read_text())
+    return {**os.environ, scaffold.SETTINGS_FILE_ENV_VAR: str(settings_copy)}
 
 
 def _cleanup(name: str) -> None:
@@ -1153,6 +1152,7 @@ def test_makefile_forwards_quoted_values(tmp_path: Path) -> None:
     """
     name = "_scaffold_ci_makeforward"
     description = 'describe the "cool" widget here'
+    settings_copy = tmp_path / "settings.yaml"
     venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
@@ -1166,7 +1166,7 @@ def test_makefile_forwards_quoted_values(tmp_path: Path) -> None:
                 f"VIRTUAL_ENV={venv_root}",
             ],
             cwd=scaffold._REPO_ROOT,
-            env=_startapp_env(tmp_path),
+            env=_startapp_env(settings_copy),
             capture_output=True,
             text=True,
             check=False,
@@ -1181,6 +1181,7 @@ def test_makefile_forwards_quoted_values(tmp_path: Path) -> None:
             f"description={json.dumps(description)}" in rendered
             or f"description={description!r}" in rendered
         )
+        assert f"MODULE_NAME: {name}" in settings_copy.read_text()
     finally:
         _cleanup(name)
 
@@ -1197,6 +1198,7 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
     name = "_scaffold_ci_scriptforward"
     script_src = tmp_path / "seed.sh"
     script_src.write_text("#!/usr/bin/env bash\necho hi\n")
+    settings_copy = tmp_path / "settings.yaml"
     venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
@@ -1210,7 +1212,7 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
                 f"VIRTUAL_ENV={venv_root}",
             ],
             cwd=scaffold._REPO_ROOT,
-            env=_startapp_env(tmp_path),
+            env=_startapp_env(settings_copy),
             capture_output=True,
             text=True,
             check=False,
@@ -1221,6 +1223,7 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
             snippets_dir / "seed.sh"
         ).read_text() == "#!/usr/bin/env bash\necho hi\n"
         assert not (snippets_dir / "sample.sh").exists()
+        assert f"MODULE_NAME: {name}" in settings_copy.read_text()
     finally:
         _cleanup(name)
 
@@ -1235,6 +1238,7 @@ def test_makefile_forwards_item_display_names(tmp_path: Path) -> None:
     name = "_scaffold_ci_itemnameforward"
     item_display_name = "gadget"
     item_display_name_plural = "gadgets"
+    settings_copy = tmp_path / "settings.yaml"
     venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
@@ -1249,7 +1253,7 @@ def test_makefile_forwards_item_display_names(tmp_path: Path) -> None:
                 f"VIRTUAL_ENV={venv_root}",
             ],
             cwd=scaffold._REPO_ROOT,
-            env=_startapp_env(tmp_path),
+            env=_startapp_env(settings_copy),
             capture_output=True,
             text=True,
             check=False,
@@ -1269,6 +1273,7 @@ def test_makefile_forwards_item_display_names(tmp_path: Path) -> None:
             in rendered
             or f"item_display_name_plural={item_display_name_plural!r}" in rendered
         )
+        assert f"MODULE_NAME: {name}" in settings_copy.read_text()
     finally:
         _cleanup(name)
 
