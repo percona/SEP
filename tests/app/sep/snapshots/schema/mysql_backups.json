@@ -390,6 +390,14 @@
           "name": "alias",
           "required": false,
           "type": "string"
+        },
+        {
+          "description": "Root directory on the database host where backups are written. XtraBackup adds a subdirectory per run, Mydumper one per day that a second run the same day writes into, and Binlog keeps its files directly under the server's own directory.",
+          "label": "Backup directory",
+          "min_length": 1,
+          "name": "backup_dir",
+          "required": true,
+          "type": "string"
         }
       ],
       "render_after_submit": false,
@@ -452,14 +460,6 @@
           "label": "Logging directory",
           "min_length": 1,
           "name": "logging_dir",
-          "required": false,
-          "type": "string"
-        },
-        {
-          "description": "Root directory on the database host where backups are written. XtraBackup adds a subdirectory per run, Mydumper one per day that a second run the same day writes into, and Binlog keeps its files directly under the server's own directory.",
-          "label": "Backup directory",
-          "min_length": 1,
-          "name": "backup_dir",
           "required": false,
           "type": "string"
         },

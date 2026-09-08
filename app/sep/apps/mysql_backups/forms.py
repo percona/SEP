@@ -158,6 +158,21 @@ _MYDUMPER_ONLY = Forbidden(when=F("backup_type") != "M")
 _XTRABACKUP_ONLY = Forbidden(when=F("backup_type") != "X")
 _BINLOG_ONLY = Forbidden(when=F("backup_type") != "B")
 
+#: Shared by ``BackupCreate`` and the backfill's lenient subclass, which
+#: redeclares the field with the older optionality: the two must not drift on
+#: label, section or description. Frozen (see :class:`Ui`), so this single
+#: instance is safe to reference directly.
+BACKUP_DIR_UI = Ui(
+    label="Backup directory",
+    section="Task",
+    description=(
+        "Root directory on the database host where backups are written. "
+        "XtraBackup adds a subdirectory per run, Mydumper one per day that a "
+        "second run the same day writes into, and Binlog keeps its files "
+        "directly under the server's own directory."
+    ),
+)
+
 # ``encryption_format`` is the signal for *which* encryption runs; the key file
 # and the GPG timing bools below are its format-specific parameters, unreachable
 # outside their format. Reused across those fields the way the ``_ONLY`` gates
@@ -388,6 +403,7 @@ class BackupCreate(TaskFormModel):
             ),
         ),
     ] = None
+    backup_dir: Annotated[NonEmptyStr, BACKUP_DIR_UI]
 
     hardlink: Annotated[
         bool,
@@ -468,19 +484,6 @@ class BackupCreate(TaskFormModel):
             label="Logging directory",
             section="General",
             description="Directory on the database host for this task's log files",
-        ),
-    ] = None
-    backup_dir: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        Ui(
-            label="Backup directory",
-            section="General",
-            description=(
-                "Root directory on the database host where backups are written. "
-                "XtraBackup adds a subdirectory per run, Mydumper one per day that a "
-                "second run the same day writes into, and Binlog keeps its files "
-                "directly under the server's own directory."
-            ),
         ),
     ] = None
     defaults_file: Annotated[

@@ -42,6 +42,7 @@ def _base_payload(backup_type: BackupType, **overrides) -> dict:
         "hostname": "host1",
         "service_id": 1,
         "backup_type": backup_type,
+        "backup_dir": "/backups",
         "upload": [UploadProvider.S3],
         "s3_bucket": "default-bucket",
     }
@@ -748,3 +749,28 @@ class TestEncryptionWithoutAnUploadTarget:
                 xtrabackup_aes256_keyfile="/keys/aes.key",
             )
         )
+
+
+class TestBackupDirectoryIsRequired:
+    """Reject a create body that names no backup directory.
+
+    The rejection is structural rather than a conditional rule, so it holds for a
+    request that never passed through the form as well as for one that did.
+    """
+
+    @pytest.mark.parametrize(
+        "backup_type", [BackupType.MYDUMPER, BackupType.XTRABACKUP, BackupType.BINLOG]
+    )
+    def test_omitted_backup_dir_is_rejected(self, backup_type: BackupType):
+        """Reject an omitted backup directory, for every backup type."""
+        payload = _base_payload(backup_type)
+        payload.pop("backup_dir", None)
+
+        with pytest.raises(ValidationError, match="backup_dir"):
+            BackupCreate(**payload)
+
+    @pytest.mark.parametrize("value", ["", None])
+    def test_blank_backup_dir_is_rejected(self, value: str | None):
+        """Reject an empty or null backup directory."""
+        with pytest.raises(ValidationError, match="backup_dir"):
+            BackupCreate(**_base_payload(BackupType.MYDUMPER, backup_dir=value))

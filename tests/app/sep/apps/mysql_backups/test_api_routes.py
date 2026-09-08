@@ -91,6 +91,7 @@ def build_backup_write_body(
         "hostname": hostname,
         "service_id": service_id,
         "backup_type": backup_type.value,
+        "backup_dir": "/backups",
         "upload": ["S3"],
         "s3_bucket": "bkt",
     }
@@ -391,6 +392,83 @@ class TestCreateEndpoint:
             "/api/apps/mysql_backups/", json={}, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "backup_type",
+        [BackupType.MYDUMPER, BackupType.XTRABACKUP, BackupType.BINLOG],
+    )
+    def test_create_rejects_omitted_backup_dir(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+        backup_type,
+    ):
+        """Refuse a body without a backup directory, whichever backup type it names.
+
+        Every create-path payload reads ``settings["BACKUP_DIR"]`` by direct
+        index, so a task accepted without one dies on the execution host. The
+        field carries no per-mode gate, so the rejection is type-independent.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        body = build_backup_write_body(
+            service_id=created_service.id, backup_type=backup_type
+        )
+        body.pop("backup_dir", None)
+
+        response = test_client.post(
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert ["body", "backup_dir"] in [
+            error["loc"] for error in response.json()["detail"]
+        ]
+        mock_task_api_dep.post.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("backup_dir", "expected_type"),
+        [
+            pytest.param("", "string_too_short", id="empty-string"),
+            pytest.param(None, "string_type", id="null"),
+        ],
+    )
+    def test_create_rejects_blank_backup_dir(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+        backup_dir,
+        expected_type,
+    ):
+        """Refuse an empty or null backup directory, with the error on the field.
+
+        An untouched text input submits ``""``, so this is the shape a form
+        submission actually sends; pinning the error to ``backup_dir`` is what
+        lets the SPA attach it to the input rather than to a form-level banner.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        body = build_backup_write_body(
+            service_id=created_service.id, backup_dir=backup_dir
+        )
+
+        response = test_client.post(
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert [
+            error["type"]
+            for error in response.json()["detail"]
+            if error["loc"] == ["body", "backup_dir"]
+        ] == [expected_type]
         mock_task_api_dep.post.assert_not_called()
 
     def test_create_rejects_empty_upload_list(

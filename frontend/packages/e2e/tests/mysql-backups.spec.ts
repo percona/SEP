@@ -797,3 +797,96 @@ test.describe('MySQL Backups — encryption_format POST body', () => {
     expect(posts[0]).toHaveProperty('encryption_recipient', 'ops@example.com');
   });
 });
+
+// ── Required Task-section field vs. a collapsed section ───────────────────────
+//
+// ``backup_dir`` is required and lives in ``Task`` precisely because ``General``
+// opens collapsed: a required field behind a collapse toggle is a form the
+// operator cannot complete without first discovering the toggle. This mirrors
+// the real schema's posture so the rendered side of that decision is covered;
+// which section the app actually declares is pinned server-side by
+// ``test_schema_pins_section_collapse_posture``.
+const MOCK_SCHEMA_WITH_COLLAPSED_GENERAL = {
+  ...MOCK_SCHEMA,
+  forms: [
+    {
+      ...MOCK_SCHEMA.forms[0],
+      fields: [
+        ...MOCK_SCHEMA.forms[0].fields,
+        { type: 'string', name: 'backup_dir', label: 'Backup directory', required: true },
+      ],
+    },
+    ...MOCK_SCHEMA.forms.slice(1),
+    {
+      title: 'General',
+      collapsible: true,
+      collapsed_by_default: true,
+      fields: [{ type: 'string', name: 'logging_dir', label: 'Logging directory' }],
+    },
+  ],
+};
+
+test.describe('MySQL Backups — required backup directory on the create form', () => {
+  const posts: Array<Record<string, unknown>> = [];
+
+  test.beforeEach(async ({ page }) => {
+    tasks.length = 0;
+    posts.length = 0;
+    await mockMysqlBackupsRoutes(page, { capturePosts: posts });
+    await page.route('**/api/apps/mysql_backups/schema', (route) =>
+      route.fulfill({ json: MOCK_SCHEMA_WITH_COLLAPSED_GENERAL }),
+    );
+  });
+
+  test('the backup directory is visible when the form opens, unlike a collapsed field', async ({
+    page,
+  }) => {
+    await page.goto('/apps/mysql_backups');
+    await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
+      timeout: 30_000,
+    });
+    await page
+      .getByRole('button', { name: /^New (MySQL Backups|task)/i })
+      .first()
+      .click();
+
+    const backupDir = page.getByLabel(/Backup directory/);
+    await expect(backupDir).toBeVisible();
+    await expect(backupDir).toHaveAttribute('required', '');
+    await expect(page.getByLabel(/Logging directory/)).not.toBeVisible();
+
+    await page.screenshot({
+      path: 'test-results/screenshots/backup-dir-visible-on-open.png',
+    });
+  });
+
+  test('submitting without a backup directory is refused and fires no POST', async ({ page }) => {
+    await openCreateFormAndFillRequired(page, 'needs-dir');
+    await page.getByLabel('S3 bucket').fill('my-bucket');
+
+    await page
+      .getByRole('button', { name: /submit|create|save/i })
+      .last()
+      .click();
+
+    await expect(page.getByText(/Backup directory is required/i)).toBeVisible();
+    expect(posts).toHaveLength(0);
+  });
+
+  test('a filled backup directory reaches the POST body', async ({ page }) => {
+    await openCreateFormAndFillRequired(page, 'has-dir');
+    await page.getByLabel('S3 bucket').fill('my-bucket');
+    await page.getByLabel(/Backup directory/).fill('/backups');
+
+    await page
+      .getByRole('button', { name: /submit|create|save/i })
+      .last()
+      .click();
+
+    await expect(page.getByRole('row', { name: /has-dir/ })).toBeVisible({
+      timeout: 15_000,
+    });
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toHaveProperty('backup_dir', '/backups');
+  });
+});
