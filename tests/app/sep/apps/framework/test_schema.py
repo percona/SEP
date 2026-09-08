@@ -792,6 +792,56 @@ def test_column_format_rejects_unknown_values():
         Column(key="x", label="X", format="nonsense")
 
 
+def test_column_value_labels_defaults_to_none():
+    """Leave ``Column.value_labels`` unset when a plugin declares no labels."""
+    assert Column(key="k", label="L").value_labels is None
+
+
+def test_column_value_labels_round_trips_through_json():
+    """Round-trip a populated ``Column.value_labels`` map through JSON output."""
+    column = Column(key="backup_type", label="Type", value_labels={"M": "Mydumper"})
+
+    dumped = column.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    assert dumped["value_labels"] == {"M": "Mydumper"}
+
+
+def test_column_without_value_labels_omits_the_key():
+    """Drop ``value_labels`` from the payload of a column that declares none."""
+    dumped = Column(key="k", label="L").model_dump(
+        mode="json", by_alias=True, exclude_none=True
+    )
+
+    assert dumped["key"] == "k"
+    assert "value_labels" not in dumped
+
+
+def test_detail_field_value_labels_defaults_to_none():
+    """Leave ``DetailField.value_labels`` unset when a plugin declares no labels."""
+    assert DetailField(path="backup_type", label="Type").value_labels is None
+
+
+def test_detail_field_value_labels_round_trips_through_json():
+    """Round-trip a populated ``DetailField.value_labels`` map through JSON."""
+    field = DetailField(
+        path="backup_type", label="Type", value_labels={"P": "pgBackRest"}
+    )
+
+    dumped = field.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    assert dumped["value_labels"] == {"P": "pgBackRest"}
+
+
+def test_detail_field_without_value_labels_omits_the_key():
+    """Drop ``value_labels`` from the payload of a detail field declaring none."""
+    dumped = DetailField(path="p", label="L").model_dump(
+        mode="json", by_alias=True, exclude_none=True
+    )
+
+    assert dumped["path"] == "p"
+    assert "value_labels" not in dumped
+
+
 def test_service_field_service_types_round_trip():
     """Round-trip ``ServiceField.service_types`` through JSON back to enum members."""
     field = ServiceField(name="svc", label="S", service_types=[ServiceTypeEnum.MYSQL])
@@ -2265,11 +2315,13 @@ def test_detail_view_round_trip_through_json():
                         "path": "data.meta.command",
                         "label": "Command",
                         "highlight": "sql",
+                        "value_labels": None,
                     },
                     {
                         "path": "data.meta.args",
                         "label": "Args",
                         "highlight": None,
+                        "value_labels": None,
                     },
                 ],
             },

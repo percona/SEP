@@ -42,7 +42,7 @@ the table, needed the heavier imports.
 """
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import nonmember, StrEnum
 from typing import Any, Literal
 
 import yaml
@@ -127,11 +127,25 @@ def restore_valid_backup_source(
 
 
 class BackupType(EnumFieldMixin, StrEnum):
-    """Backup types."""
+    """Represent the backup tools a run can be taken with.
+
+    :cvar LABELS: Display text for each stored value, keyed as the value is
+        stored on the wire. A value with no entry is rendered as-is by the
+        caller. Wrapped in :func:`enum.nonmember` because ``enum`` would
+        otherwise treat a class-body dict as a member candidate.
+    """
 
     MYDUMPER = "M"
     XTRABACKUP = "X"
     BINLOG = "B"
+
+    LABELS = nonmember(
+        {
+            "M": "Mydumper",
+            "X": "XtraBackup",
+            "B": "Binlog",
+        }
+    )
 
 
 class MysqlBackupRun(BaseSQLModel, table=True):
