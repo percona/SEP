@@ -355,6 +355,8 @@
       "title": "Advanced"
     }
   ],
+  "item_display_name": "archive",
+  "item_display_name_plural": "archives",
   "list_view": {
     "columns": [
       {

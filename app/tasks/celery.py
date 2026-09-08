@@ -346,6 +346,7 @@ async def _persist_failed_dispatch(
     target = task_history.execution_request.target
     alert_on_fail = task_history.task.alert_on_fail
     task_history.status = TaskHistoryStatusEnum.FAILED
+    task_history.set_failure_reason(reason)
     task_history.finished_at = utc_now()
 
     async_session = get_async_session_maker()
@@ -853,6 +854,7 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
                 "status",
                 "started_at",
                 "finished_at",
+                "failure_reason",
                 "sync_in_progress_started_at",
             ],
         )

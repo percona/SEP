@@ -46,6 +46,8 @@
       "title": "Source"
     }
   ],
+  "item_display_name": "One Of Fixture",
+  "item_display_name_plural": "One Of Fixture",
   "list_view": {
     "columns": [
       {

@@ -208,6 +208,8 @@
       "title": "Gated"
     }
   ],
+  "item_display_name": "Synthetic",
+  "item_display_name_plural": "Synthetic",
   "list_view": {
     "columns": [
       {

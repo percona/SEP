@@ -240,6 +240,8 @@
       "title": "Category Browser"
     }
   ],
+  "item_display_name": "diagnostic bundle",
+  "item_display_name_plural": "diagnostic bundles",
   "list_view": {
     "columns": [
       {

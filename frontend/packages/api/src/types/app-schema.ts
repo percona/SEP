@@ -422,6 +422,11 @@ export interface DetailView {
 export interface AppEntitySchema {
   name: string;
   display_name: string;
+  /** What one record of this entity is called, in mid-sentence form — capitalise
+   * the first character when it opens a label. */
+  item_display_name: string;
+  /** What several records of this entity are called, same convention. */
+  item_display_name_plural: string;
   description?: string;
   forms: FormSection[];
   list_view: ListView;
@@ -450,6 +455,11 @@ export interface RelatedApp {
 export interface AppSchema {
   name: string;
   display_name: string;
+  /** What one record this app's create form produces is called, in mid-sentence
+   * form — capitalise the first character when it opens a label. */
+  item_display_name: string;
+  /** What several such records are called, same convention. */
+  item_display_name_plural: string;
   description?: string;
   task_type?: string;
   /** Task-style single entity: forms + list_view (omit or leave entities unset). */

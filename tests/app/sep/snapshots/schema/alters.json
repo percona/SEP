@@ -331,6 +331,8 @@
       "title": "Advanced"
     }
   ],
+  "item_display_name": "schema change",
+  "item_display_name_plural": "schema changes",
   "list_view": {
     "columns": [
       {
