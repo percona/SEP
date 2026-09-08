@@ -48,13 +48,14 @@ by running ``baseline`` on the base branch and ``check --baseline`` on this one.
 """
 
 import argparse
+import ast
 import json
 import re
 import shutil
 import subprocess
 import sys
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -68,6 +69,32 @@ SUMMARY = (
 )
 
 Fingerprint = tuple[str, str, str]
+
+#: The classifier's own test module, read as a corpus of first-party
+#: fingerprints by :func:`corpus_fingerprints`. A test that leaves a diagnostic
+#: first-party is a standing claim that some group's pattern discriminates
+#: within that rule.
+CORPUS_TEST = (
+    Path(__file__).resolve().parents[1]
+    / "tests"
+    / "scripts"
+    / "test_classify_ty_diagnostics.py"
+)
+
+#: Elements in a ``(path, rule, message)`` tuple, so a corpus read does not
+#: mistake an unrelated pair or triple of strings for a fingerprint.
+FINGERPRINT_ARITY = 3
+
+#: A ty rule name, used to tell a fingerprint tuple from any other three
+#: strings sitting together in the corpus.
+RULE_RE = re.compile(r"[a-z0-9-]+")
+
+#: A backtick-quoted identifier inside a group's message pattern. Its presence
+#: is what lets a group tell its artifact from a first-party diagnostic of the
+#: same rule without a path constraint -- under ``unknown-argument``, the
+#: pydantic-settings ``_secrets_dir`` kwarg and a first-party ``PMM`` kwarg
+#: differ only in the symbol the message names.
+SYMBOL_RE = re.compile(r"`[^`]+`")
 
 
 class ReconciliationError(Exception):
@@ -365,6 +392,146 @@ def classify(fingerprint: Fingerprint) -> Group | None:
         if group.claims(fingerprint):
             return group
     return None
+
+
+def _module_strings(tree: ast.Module) -> dict[str, str]:
+    """Return the module-level ``NAME = "..."`` bindings of a parsed test module.
+
+    The corpus writes a fingerprint's message either inline or through a constant
+    (``CALL_IN_TYPE_EXPRESSION``), so a literal-only read of the tuples below
+    would silently miss whichever spelling the author preferred.
+
+    :param tree: The parsed corpus module.
+    :return: Every module-level name bound directly to a string.
+    """
+    bindings: dict[str, str] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Constant):
+            continue
+        if not isinstance(node.value.value, str):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                bindings[target.id] = node.value.value
+    return bindings
+
+
+def _tuple_fingerprint(node: ast.Tuple, bindings: dict[str, str]) -> Fingerprint | None:
+    """Return the fingerprint a three-string tuple literal spells, if it is one.
+
+    :param node: The tuple expression under test.
+    :param bindings: Module-level string constants from :func:`_module_strings`.
+    :return: The ``(path, rule, message)`` identity, or ``None``.
+    """
+    if len(node.elts) != FINGERPRINT_ARITY:
+        return None
+    parts: list[str] = []
+    for element in node.elts:
+        if isinstance(element, ast.Constant) and isinstance(element.value, str):
+            parts.append(element.value)
+        elif isinstance(element, ast.Name) and element.id in bindings:
+            parts.append(bindings[element.id])
+        else:
+            return None
+    path, rule, message = parts
+    if not RULE_RE.fullmatch(rule) or not message:
+        return None
+    return (path, rule, message)
+
+
+def corpus_fingerprints(source: Path | None = None) -> frozenset[Fingerprint]:
+    """Return every ``(path, rule, message)`` identity the classifier's tests name.
+
+    The suite is read as a corpus rather than executed: a test that leaves a
+    diagnostic first-party is a standing claim that some group's pattern
+    discriminates within that rule, which is what
+    :func:`group_constraint_failures` accepts in place of a path constraint. Both
+    spellings the suite uses are resolved -- a whole ty row, and a bare
+    three-string tuple whose message may arrive through a module constant.
+
+    An unreadable or absent corpus yields the empty set, which can only make the
+    audit stricter: every group then has to carry its own discriminant.
+
+    :param source: The corpus module, defaulting to the classifier's own tests.
+    :return: The fingerprints the suite names, in no particular order.
+    """
+    path = CORPUS_TEST if source is None else source
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (OSError, SyntaxError):
+        return frozenset()
+
+    bindings = _module_strings(tree)
+    found: set[Fingerprint] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Tuple):
+            fingerprint = _tuple_fingerprint(node, bindings)
+            if fingerprint is not None:
+                found.add(fingerprint)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            row = DIAGNOSTIC_RE.match(node.value)
+            if row is not None:
+                found.add((row["path"], row["rule"], row["message"]))
+    return frozenset(found)
+
+
+def group_constraint_failures(
+    groups: Sequence[Group] | None = None,
+    corpus: Iterable[Fingerprint] | None = None,
+) -> list[str]:
+    """Return one message per group claiming more than its discriminant proves.
+
+    A group suppresses first-party diagnostics if its predicate is wider than the
+    evidence separating an artifact from a defect sharing the rule. Three things
+    count as that evidence, and a group needs one:
+
+    * a **path** constraint, which settles the question the message cannot;
+    * a **symbol** the message names -- a backtick-quoted identifier in the
+      pattern, which is how twelve of the shipped groups tell an artifact from a
+      first-party hit under the same rule;
+    * a **negative corpus fingerprint** -- a diagnostic of the group's own rule
+      that the whole table leaves first-party, which demonstrates the pattern
+      discriminating rather than asserting it. The test must leave it claimed by
+      *nothing*: a fingerprint some sibling group claims is that sibling's
+      evidence, and reading it as this group's would let two groups pin each
+      other while neither is confined.
+
+    Without one, the group claims every diagnostic of its rules whose message
+    happens to match, anywhere in the tree. That is the shape this exists to
+    catch: ``factory-built-annotated-alias`` matches ``Function calls are not
+    allowed in type expressions``, which reads identically for the field-type
+    factory it means and for an ordinary call written into a type position by
+    mistake, so before the path constraint it would have classified a genuine
+    defect as suppressible.
+
+    :param groups: The table to audit, defaulting to :data:`GROUPS`.
+    :param corpus: Fingerprints tests pin as first-party, defaulting to
+        :func:`corpus_fingerprints`. Pass an empty iterable to audit the table
+        on its own constraints alone.
+    :return: A message per unconfined group, in table order.
+    """
+    table = GROUPS if groups is None else tuple(groups)
+    pinned = corpus_fingerprints() if corpus is None else tuple(corpus)
+
+    first_party = tuple(
+        fingerprint
+        for fingerprint in pinned
+        if not any(group.claims(fingerprint) for group in table)
+    )
+
+    failures: list[str] = []
+    for group in table:
+        if group.paths or SYMBOL_RE.search(group.pattern.pattern):
+            continue
+        if any(rule in group.rules for _, rule, _ in first_party):
+            continue
+        failures.append(
+            f"{group.name} claims every {'/'.join(sorted(group.rules))} diagnostic "
+            f"matching {group.pattern.pattern!r}, but names no symbol, is confined "
+            f"to no path, and no test pins a same-rule diagnostic it declines: "
+            f"its discriminant proves less than it claims"
+        )
+    return failures
 
 
 def _is_artifact(diagnostic: Diagnostic) -> bool:
@@ -698,6 +865,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     """
     baseline = _read_manifest(args.baseline)
     current = parse_diagnostics(load_output(args.source))
+    overclaims = group_constraint_failures()
     failures = check_manifest(baseline, current, RETAINED)
 
     before: Counter[str] = Counter(d.rule for d in baseline if _is_artifact(d))
@@ -713,10 +881,16 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"  {name}")
     _print_retained()
 
+    if overclaims:
+        print(f"\n{len(overclaims)} groups claim more than their discriminant proves:")
+        for overclaim in overclaims:
+            print(f"  {overclaim}")
+
     if failures:
         print(f"\n{len(failures)} reconciliation failures:")
         for failure in failures:
             print(f"  {failure}")
+    if failures or overclaims:
         return 1
     print("\nreconciled: every dropped fingerprint is a classified artifact")
     return 0
