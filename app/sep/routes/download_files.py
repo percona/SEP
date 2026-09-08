@@ -15,14 +15,16 @@
 
 """Define routes for listing and downloading files from tasks."""
 
+import json
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi import status as http_status
 from starlette.responses import StreamingResponse
+from starlette.types import Send
 
 from app.core.requests import as_json_object
 from app.sep.deps import (
@@ -37,6 +39,81 @@ from app.tasks.models import FileMetadata, TaskHistoryResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["tasks"])
+
+
+class ErrorPrimingStreamingResponse(StreamingResponse):
+    """StreamingResponse that checks for upstream errors before sending status.
+
+    Standard StreamingResponse sends HTTP 200 before iterating the body. This
+    subclass primes the generator first: if the first pull raises HTTPException,
+    it sends that error status instead of 200. This ensures upstream rejections
+    (401/403/410/500) propagate correctly rather than appearing as 200 with an
+    empty body. See SEP-1878.
+    """
+
+    async def stream_response(self, send: Send) -> None:
+        """Override to prime the body iterator before sending the start message."""
+        body_iter: AsyncIterator[Any] = aiter(self.body_iterator)
+
+        # Prime the generator to surface upstream errors before committing status
+        try:
+            first_chunk = await anext(body_iter)
+        except HTTPException as exc:
+            # Upstream rejected — send error response instead of 200
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": exc.status_code,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        *[
+                            (k.encode(), v.encode())
+                            for k, v in (exc.headers or {}).items()
+                        ],
+                    ],
+                }
+            )
+            detail = exc.detail or "An error occurred"
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": json.dumps({"detail": detail}).encode(),
+                    "more_body": False,
+                }
+            )
+            return
+        except StopAsyncIteration:
+            # Empty file — send normal 200 with empty body
+            first_chunk = None
+
+        # Success path — send 200 and stream body
+        await send(
+            {
+                "type": "http.response.start",
+                "status": self.status_code,
+                "headers": self.raw_headers,
+            }
+        )
+
+        if first_chunk is not None:
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": self.render(first_chunk),
+                    "more_body": True,
+                }
+            )
+
+        async for chunk in body_iter:
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": self.render(chunk),
+                    "more_body": True,
+                }
+            )
+
+        await send({"type": "http.response.body", "body": b"", "more_body": False})
 
 
 @router.get(
@@ -75,9 +152,9 @@ async def download_task_history_file(
 ) -> StreamingResponse:
     """Stream a task history's archived file as a binary download.
 
-    The generator is primed before constructing the response so that upstream
-    errors (401/403/410/500) surface as the real status code rather than a
-    misleading 200 with an empty body. See SEP-1878.
+    Uses ErrorPrimingStreamingResponse so that upstream errors (401/403/410/500)
+    surface as the real status code rather than a misleading 200 with an empty
+    body. See SEP-1878.
     """
     headers = dict(STREAMING_PROXY_HEADERS)
     path = request.query_params.get("path")
@@ -99,40 +176,10 @@ async def download_task_history_file(
             attachment = f"{filename}.tar.gz" if is_dir else filename
             headers["Content-Disposition"] = f'attachment; filename="{attachment}"'
 
-    stream = task_history_file_stream(
-        tasks_client, task_history.id, request, user.access_token
-    )
-
-    # Prime the generator to surface upstream errors before committing HTTP 200.
-    # Starlette's StreamingResponse sends http.response.start (status 200) before
-    # iterating the body, so an HTTPException raised on the first pull would
-    # otherwise arrive after the 200 is already committed to the client.
-    try:
-        first_chunk = await anext(stream)
-    except HTTPException:
-        # Upstream rejected the request — re-raise so FastAPI returns the real
-        # status (401/403/410/500) instead of a misleading 200.
-        raise
-    except StopAsyncIteration:
-        # Genuinely empty file — valid 200 with an empty body.
-        async def _empty_stream() -> AsyncGenerator[bytes, None]:
-            return
-            yield  # pragma: no cover — makes this an async generator
-
-        return StreamingResponse(
-            _empty_stream(),
-            media_type="application/octet-stream",
-            headers=headers,
-        )
-
-    # Success path: yield the primed first chunk followed by the rest.
-    async def _primed_stream() -> AsyncGenerator[bytes, None]:
-        yield first_chunk
-        async for chunk in stream:
-            yield chunk
-
-    return StreamingResponse(
-        _primed_stream(),
+    return ErrorPrimingStreamingResponse(
+        task_history_file_stream(
+            tasks_client, task_history.id, request, user.access_token
+        ),
         media_type="application/octet-stream",
         headers=headers,
     )

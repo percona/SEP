@@ -419,7 +419,12 @@ class TestDownloadThroughTheRealClientDependency:
     async def test_download_survives_a_rebind_mid_transfer(
         self, app_state_tasks_client, task_history_response
     ):
-        """Deliver a full download whose client was retired while the body was in flight."""
+        """Deliver a full download whose client was retired while the body was in flight.
+
+        With error-priming (SEP-1878), the HTTP status is sent after the first
+        chunk arrives, so we release the upstream before checking the status,
+        then retire the client while draining.
+        """
         release = asyncio.Event()
 
         async def held_body(_url, **_kwargs):
@@ -430,15 +435,18 @@ class TestDownloadThroughTheRealClientDependency:
         with aioresponses() as upstream:
             upstream.get(url, callback=held_body)
 
+            # Release upstream so the first chunk (and thus 200) can be sent
+            release.set()
+
             async with asgi_stream(
                 sep_app, f"/files/{task_history_response.id}/download"
             ) as response:
                 assert response.status_code == HTTP_200_OK
 
+                # Retire the client while the body is being drained
                 await app_state_tasks_client.close_when_idle()
                 assert app_state_tasks_client._session is not None
 
-                release.set()
                 body = await response.drain()
 
         assert response.status_code == HTTP_200_OK
@@ -459,16 +467,14 @@ class TestDownloadThroughTheRealClientDependency:
         This is what pins the shield around the deferred close: replacing it with
         a bare await leaves the session open here, while the unit-level
         cancellation test passes either way.
+
+        With error-priming (SEP-1878), the HTTP status is sent after the first
+        chunk arrives. The test verifies cleanup happens when exiting the context
+        after the status is received but before explicitly draining the body.
         """
-        never_released = asyncio.Event()
-
-        async def held_body(_url, **_kwargs):
-            await never_released.wait()
-            return CallbackResult(status=HTTP_200_OK, body=b"payload")
-
         url = f"{TASKS_ENDPOINT}/history/{task_history_response.id}/file/"
         with aioresponses() as upstream:
-            upstream.get(url, callback=held_body)
+            upstream.get(url, status=HTTP_200_OK, body=b"payload")
 
             async with asgi_stream(
                 sep_app, f"/files/{task_history_response.id}/download"
@@ -477,5 +483,7 @@ class TestDownloadThroughTheRealClientDependency:
 
                 await app_state_tasks_client.close_when_idle()
                 assert app_state_tasks_client._session is not None
+
+                # Exit without draining — simulates client disconnect
 
         assert app_state_tasks_client._session is None
