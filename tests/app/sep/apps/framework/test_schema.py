@@ -15,13 +15,16 @@
 
 """Unit tests for the plugin schema DSL."""
 
+import re
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.framework import schema as schema_module
 from app.sep.apps.framework.rules import CardinalityRule, FailRule, present
 from app.sep.apps.framework.schema import (
     AppEntitySchema,
@@ -2966,3 +2969,186 @@ class TestAppSchemaRecordDisplayNames:
         assert schema.item_display_name == "Inventory"
         assert schema.entities is not None
         assert schema.entities[0].item_display_name == "node"
+
+
+TS_MIRROR = (
+    Path(__file__).resolve().parents[5]
+    / "frontend"
+    / "packages"
+    / "api"
+    / "src"
+    / "types"
+    / "app-schema.ts"
+)
+
+_INTERFACE_RE = re.compile(
+    r"^(?:export )?interface (?P<name>\w+)(?: extends (?P<base>\w+))?\s*\{"
+    r"(?P<body>.*?)^\}",
+    re.MULTILINE | re.DOTALL,
+)
+_PROPERTY_RE = re.compile(r"^\s{2}(?P<name>\w+)\??\s*:", re.MULTILINE)
+
+#: Models whose mirror interface carries a different name. Kept explicit rather
+#: than inferred: a rule guessing at ``Column`` -> ``ListColumn`` would also
+#: pair anything else that happened to look close.
+MIRROR_NAMES = MappingProxyType(
+    {
+        "Capabilities": "AppCapabilities",
+        "Choice": "ChoiceOption",
+        "Column": "ListColumn",
+    }
+)
+
+#: Models the wire format never carries to a browser, with what consumes them
+#: instead. ``AppSchema.derived`` and ``.predecessors`` are typed by these two
+#: and are absent from the mirror for the same reason.
+BACKEND_ONLY_MODELS = MappingProxyType(
+    {
+        "DerivedTask": "cascade orchestration, consumed by framework.cascade",
+        "ChainedPredecessor": "cascade orchestration, consumed by framework.cascade",
+    }
+)
+
+#: Field names each side carries alone, as ``(python_only, typescript_only)``.
+#: Two kinds sit here and they are not equivalent. ``AppSchema``'s pair is
+#: deliberate -- both are cascade specs the renderer never sees. The other two
+#: are unreconciled drift, recorded so they cannot grow: the mirror is behind on
+#: ``AppEntitySchema``, and declares two constraints on ``MultiChoiceField``
+#: that no backend field backs.
+KNOWN_MIRROR_GAPS = MappingProxyType(
+    {
+        "AppSchema": (frozenset({"derived", "predecessors"}), frozenset()),
+        "AppEntitySchema": (frozenset({"cardinality_rules", "fail_when"}), frozenset()),
+        "MultiChoiceField": (frozenset(), frozenset({"min_items", "max_items"})),
+    }
+)
+
+
+def _ts_interfaces() -> dict[str, frozenset[str]]:
+    """Return each mirror interface's property names, with ``extends`` flattened.
+
+    :return: Interface name to the properties it carries, inherited included.
+    """
+    text = TS_MIRROR.read_text(encoding="utf-8")
+    declared: dict[str, tuple[str | None, set[str]]] = {}
+    for match in _INTERFACE_RE.finditer(text):
+        body = re.sub(r"/\*.*?\*/", "", match["body"], flags=re.DOTALL)
+        body = re.sub(r"//.*", "", body)
+        declared[match["name"]] = (match["base"], set(_PROPERTY_RE.findall(body)))
+
+    resolved: dict[str, frozenset[str]] = {}
+    for name, (base, properties) in declared.items():
+        inherited = set(properties)
+        parent = base
+        while parent is not None and parent in declared:
+            inherited |= declared[parent][1]
+            parent = declared[parent][0]
+        resolved[name] = frozenset(inherited)
+    return resolved
+
+
+def _wire_names(model: type[BaseModel]) -> frozenset[str]:
+    """Return the field names ``model`` serializes under.
+
+    The discriminator is declared as ``field_type`` and ships as ``type``, so
+    comparing attribute names against the mirror would disagree on every field
+    subclass while the wire format matches exactly.
+
+    :param model: The schema model to read.
+    :return: The names a client sees.
+    """
+    return frozenset(
+        info.serialization_alias or info.alias or name
+        for name, info in model.model_fields.items()
+    )
+
+
+def _mirrored_models() -> dict[str, type[BaseModel]]:
+    """Return every schema model carrying fields, keyed by class name."""
+    return {
+        name: obj
+        for name, obj in vars(schema_module).items()
+        if isinstance(obj, type)
+        and issubclass(obj, BaseModel)
+        and obj.model_fields
+        and obj.__module__ == schema_module.__name__
+    }
+
+
+class TestFrontendSchemaMirror:
+    """Bind ``app-schema.ts`` to the models it mirrors by hand.
+
+    ``frontend/packages/api/specs/sep.json`` is gated by
+    ``test_committed_openapi_specs_are_fresh`` and
+    ``frontend/packages/api/src/generated/sep.ts`` by the frontend workflow's
+    ``git diff --exit-code``. ``app-schema.ts`` is gated by neither: it mirrors
+    ``app/sep/apps/framework/schema.py`` by hand, so a backend field is free to
+    ship with no client type and nothing says so. ``value_labels`` had to be
+    hand-added to ``ListColumn`` and ``DetailField`` for exactly that reason.
+
+    The existing ``DetailHighlightLanguage`` guard pins one enum's values; these
+    pin every model's field set.
+    """
+
+    def test_every_schema_model_has_a_mirror_or_a_recorded_reason(self) -> None:
+        """Refuse a model that is neither mirrored nor declared backend-only.
+
+        This is what stops :data:`MIRROR_NAMES` and :data:`BACKEND_ONLY_MODELS`
+        going stale. A new model added to the schema fails here until its author
+        either mirrors it or says why it is not mirrored, which is the failure a
+        hand-maintained roster otherwise defers indefinitely.
+        """
+        interfaces = _ts_interfaces()
+
+        unaccounted = sorted(
+            name
+            for name in _mirrored_models()
+            if MIRROR_NAMES.get(name, name) not in interfaces
+            and name not in BACKEND_ONLY_MODELS
+        )
+
+        assert unaccounted == []
+
+    def test_every_mirrored_model_agrees_with_its_interface(self) -> None:
+        """Compare wire field sets, allowing only the recorded gaps."""
+        interfaces = _ts_interfaces()
+        disagreements: dict[str, tuple[list[str], list[str]]] = {}
+
+        for name, model in sorted(_mirrored_models().items()):
+            properties = interfaces.get(MIRROR_NAMES.get(name, name))
+            if name in BACKEND_ONLY_MODELS or properties is None:
+                continue
+            allowed_python, allowed_typescript = KNOWN_MIRROR_GAPS.get(
+                name, (frozenset(), frozenset())
+            )
+            python_only = _wire_names(model) - properties - allowed_python
+            typescript_only = properties - _wire_names(model) - allowed_typescript
+            if python_only or typescript_only:
+                disagreements[name] = (
+                    sorted(python_only),
+                    sorted(typescript_only),
+                )
+
+        assert disagreements == {}
+
+    def test_no_recorded_gap_has_silently_closed(self) -> None:
+        """Fail once a recorded gap is fixed, so the allowance is deleted with it.
+
+        A stale entry here is worse than none: it goes on excusing a field that
+        agrees, and would excuse the same name if it diverged again later.
+        """
+        interfaces = _ts_interfaces()
+        models = _mirrored_models()
+        stale: dict[str, list[str]] = {}
+
+        for name, (allowed_python, allowed_typescript) in KNOWN_MIRROR_GAPS.items():
+            properties = interfaces[MIRROR_NAMES.get(name, name)]
+            wire = _wire_names(models[name])
+            closed = sorted(
+                (allowed_python - (wire - properties))
+                | (allowed_typescript - (properties - wire))
+            )
+            if closed:
+                stale[name] = closed
+
+        assert stale == {}
