@@ -225,10 +225,27 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   is *built*, and `oraclelinux:9` is the one base here that does ship arm64, so
   without the pin an arm64 host builds natively and succeeds — having copied the
   pmm-client stage's amd64 binaries into an image that cannot execute them. Keep
-  all three pins across a repin. And treat an emulated run as evidence for
-  functional behaviour only: nothing timing-shaped survives QEMU, so backup and
-  restore durations, the start periods set here, and any Nomad scheduling race
-  are not measurable on such a host.
+  all three pins across a repin.
+
+  **The emulation must be Rosetta, not QEMU, or no task will ever run.** Nomad's
+  `raw_exec` spawns every task with `clone3(CLONE_INTO_CGROUP)` on cgroups v2
+  and Go has no fallback for that path, while QEMU 7.0 and later leave `clone3`
+  unimplemented. Under QEMU every dispatch therefore dies inside the executor
+  with `fork/exec /usr/bin/sh: function not implemented` before any script
+  output exists, so the run shows as failed with an empty log — and the node
+  still fingerprints `raw_exec` healthy and stays in SEP's executor list,
+  because that check reads only `enabled = true`. Measured on an M3 Pro
+  (2026-09-08): five for five backups and diagnostics failed exactly so.
+  `sep-mysql`'s entrypoint now probes `clone3` and refuses to start under such
+  an emulator, naming the fix. On Docker Desktop that is two settings under
+  **Settings → General**: Virtual Machine Manager = *Apple Virtualization
+  framework* (Docker VMM does not support Rosetta), then *Use Rosetta for
+  x86_64/amd64 emulation on Apple Silicon*, Apply & restart. Rosetta translates
+  instructions and hands syscalls to the real kernel, which has `clone3`. Even
+  then, treat an emulated run as evidence for functional behaviour only:
+  nothing timing-shaped survives translation, so backup and restore durations,
+  the start periods set here, and any Nomad scheduling race are not measurable
+  on such a host.
 - **pmm-server's start period is set by this compose file, not by the image.**
   The image ships 25 s with 3 retries at 4 s, so it is marked `unhealthy` around
   37 s while a cold start needs appreciably longer to first pass `readyz` — and

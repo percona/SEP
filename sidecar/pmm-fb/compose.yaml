@@ -35,6 +35,8 @@
 # platform index at all. The pins state that constraint instead of leaving an
 # arm64 host to discover it, as a pull failure for the two images and as a
 # quietly mis-built one for sep-mysql.
+# The emulation itself has to be Rosetta rather than QEMU: Nomad's raw_exec
+# spawns tasks with clone3, which QEMU lacks — README.md § Caveats.
 
 name: sep-pmm-fb
 
