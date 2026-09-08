@@ -21,11 +21,13 @@ apps are only partly described, so promoting it to a registry-wide conformance
 rule would fail them.
 """
 
+from collections import Counter
 from typing import Any
 
 from app.sep.apps.framework.form_dsl import TaskFormModel, Ui
 
 _RST_INLINE_CODE = "``"
+_SHARED_BASE_CHAIN = frozenset(TaskFormModel.__mro__)
 
 
 def _declared_names(create_model: type[TaskFormModel]) -> set[str]:
@@ -33,12 +35,23 @@ def _declared_names(create_model: type[TaskFormModel]) -> set[str]:
 
     Subtracts :class:`TaskFormModel`'s own fields rather than naming the
     inherited ones, so a field added to the shared base auto-exempts and a field
-    added to ``create_model`` is required to describe itself.
+    added to ``create_model`` is required to describe itself. A field re-declared
+    under an inherited name is then added back: re-declaring it is how a model
+    takes over its presentation, which makes it the model's to describe. The
+    annotations are read off every class the model adds above the shared base, so
+    splitting fields across mixins does not exempt them either.
 
     :param create_model: The form model to inspect.
     :return: The locally declared field names.
     """
-    return set(create_model.model_fields) - set(TaskFormModel.model_fields)
+    served = set(create_model.model_fields)
+    re_declared = {
+        name
+        for klass in create_model.__mro__
+        if klass not in _SHARED_BASE_CHAIN
+        for name in vars(klass).get("__annotations__", ())
+    }
+    return (served - set(TaskFormModel.model_fields)) | (re_declared & served)
 
 
 def _marker_descriptions(create_model: type[TaskFormModel]) -> dict[str, str]:
@@ -110,15 +123,25 @@ def assert_schema_serves_only_declared_descriptions(
 
     :param schema_payload: The decoded ``GET /schema`` response body.
     :param create_model: The form model the payload derives from.
-    :raises AssertionError: When the model declares no fields of its own, when a
-        declared field is absent from the schema, when its served text differs
-        from its marker text, or when an inherited field gained a description.
+    :raises AssertionError: When one field name is served more than once, so a
+        name-keyed comparison would silently read only the last entry; when the
+        model declares no fields of its own; when a declared field is absent from
+        the schema; when its served text differs from its marker text; or when an
+        inherited field gained a description.
     """
-    served = {
-        field["name"]: (field.get("description") or "")
+    entries = [
+        (field["name"], field.get("description") or "")
         for form in schema_payload["forms"]
         for field in form["fields"]
-    }
+    ]
+    repeated = sorted(
+        name
+        for name, count in Counter(name for name, _ in entries).items()
+        if count > 1
+    )
+    assert not repeated, f"fields served more than once: {repeated}"
+
+    served = dict(entries)
     declared = _marker_descriptions(create_model)
     assert declared, (
         f"{create_model.__name__} declares no fields of its own, so every check "
