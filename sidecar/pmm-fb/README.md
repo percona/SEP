@@ -243,8 +243,12 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   the released multi-arch client carries an aarch64 Nomad at the feature
   build's own version (2.0.5), Oracle Linux 9, Percona Server 8.4, XtraBackup
   8.4 and mydumper all publish EL9 aarch64 packages, and the executor then runs
-  without emulation. `pmm-server` and the side-car still run emulated, which
-  they tolerate — they are services, not executors. To run the amd64
+  without emulation. Verified 2026-09-08 on an arm64 Mac with a default Docker
+  Desktop: as shipped, a diagnostic and an XtraBackup both failed exactly as
+  above; with this change both succeeded on the native executor, the released
+  client having reconnected under the registration the feature-build client had
+  created. `pmm-server` and the side-car still run emulated, which they
+  tolerate — they are services, not executors. To run the amd64
   feature-build client under emulation instead, set `SEP_MYSQL_PLATFORM` to
   `linux/amd64` in `.env`; `bootstrap.sh` then probes the emulator for `clone3`
   and refuses under QEMU, and `sep-mysql`'s entrypoint probes it again at start
