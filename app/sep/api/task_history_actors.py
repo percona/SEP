@@ -127,8 +127,9 @@ def resolve_task_history_actors(
 ) -> PaginatedResponse[SepTaskHistoryResponse]:
     """Rewrite every actor identifier on a task-history page to display text.
 
-    Cover the row's own executor and both actors on its nested task, so a page
-    reaches the client with no identifier a reader cannot act on.
+    Cover the row's own executor and both actors on its nested task, so no
+    actor field is left unresolved where the provider can resolve it. An actor
+    the provider does not know keeps its stored identifier.
 
     :param page: The validated page, rewritten in place.
     :param username_map: The active provider's identifier-to-username map.

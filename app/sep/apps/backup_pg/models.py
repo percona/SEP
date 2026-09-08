@@ -43,10 +43,10 @@ OWNER = "BACKUP_PG"
 class BackupType(EnumFieldMixin, StrEnum):
     """Represent the backup tools a run can be taken with.
 
-    :cvar LABELS: Display text for each stored value, keyed by the value rather
-        than the member so a row holding a code the enum no longer declares can
-        still be looked up. Wrapped in :func:`enum.nonmember` because ``enum``
-        would otherwise treat a class-body dict as a member candidate.
+    :cvar LABELS: Display text for each stored value, keyed as the value is
+        stored on the wire. A value with no entry is rendered as-is by the
+        caller. Wrapped in :func:`enum.nonmember` because ``enum`` would
+        otherwise treat a class-body dict as a member candidate.
     """
 
     PGBACKREST = "P"

@@ -6162,10 +6162,10 @@ export interface components {
      * BackupType
      * @description Represent the backup tools a run can be taken with.
      *
-     *     :cvar LABELS: Display text for each stored value, keyed by the value rather
-     *         than the member so a row holding a code the enum no longer declares can
-     *         still be looked up. Wrapped in :func:`enum.nonmember` because ``enum``
-     *         would otherwise treat a class-body dict as a member candidate.
+     *     :cvar LABELS: Display text for each stored value, keyed as the value is
+     *         stored on the wire. A value with no entry is rendered as-is by the
+     *         caller. Wrapped in :func:`enum.nonmember` because ``enum`` would
+     *         otherwise treat a class-body dict as a member candidate.
      * @enum {string}
      */
     backup_mongo__BackupType:
@@ -9203,10 +9203,10 @@ export interface components {
      * BackupType
      * @description Represent the backup tools a run can be taken with.
      *
-     *     :cvar LABELS: Display text for each stored value, keyed by the value rather
-     *         than the member so a row holding a code the enum no longer declares can
-     *         still be looked up. Wrapped in :func:`enum.nonmember` because ``enum``
-     *         would otherwise treat a class-body dict as a member candidate.
+     *     :cvar LABELS: Display text for each stored value, keyed as the value is
+     *         stored on the wire. A value with no entry is rendered as-is by the
+     *         caller. Wrapped in :func:`enum.nonmember` because ``enum`` would
+     *         otherwise treat a class-body dict as a member candidate.
      * @enum {string}
      */
     mysql_backups__BackupType: 'M' | 'X' | 'B';
@@ -10210,18 +10210,14 @@ export interface components {
      * @description Represent one task row in the read-only tasks plugin list API.
      *
      *     :param name: The unique name of the task.
-     *     :type name: str
      *     :param backend: The backend system used for task execution.
-     *     :type backend: TaskBackendEnum
      *     :param created_at: When the task was created, or ``None`` if unavailable.
-     *     :type created_at: UTCDatetime | None
-     *     :param created_by: Display name for the task creator (Casdoor username when
-     *         resolvable, otherwise the stored user id), or ``None`` if unknown.
-     *     :type created_by: str | None
+     *     :param created_by: Display name for the task creator: the provider's
+     *         username when resolvable, a system label for system-created tasks,
+     *         otherwise the stored user id. ``None`` if unknown.
      *     :param last_updated_by: Display name for the user who last updated the
-     *         task (Casdoor username when resolvable, otherwise the stored user id),
-     *         or ``None`` if unknown.
-     *     :type last_updated_by: str | None
+     *         task, resolved on the same terms as ``created_by``. ``None`` if
+     *         unknown.
      */
     tasks__TaskListResponse: {
       backend: components['schemas']['TaskBackendEnum'];

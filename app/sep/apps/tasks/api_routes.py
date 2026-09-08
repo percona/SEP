@@ -28,6 +28,7 @@ from fastapi import APIRouter
 from app.core.pagination import build_proxied_page, PaginatedResponse, PaginationDep
 from app.core.requests import as_json_array, as_json_object
 from app.sep.api.task_history_actors import (
+    resolve_actor,
     resolve_history_payload_actors,
     resolve_task_actors,
     SepTaskResponse,
@@ -73,11 +74,9 @@ async def tasks_api_list(
             name=item["name"],
             backend=TaskBackendEnum(item["backend"]),
             created_at=item.get("created_at"),
-            created_by=user_id_to_username.get(
-                item.get("created_by"), item.get("created_by")
-            ),
-            last_updated_by=user_id_to_username.get(
-                item.get("last_updated_by"), item.get("last_updated_by")
+            created_by=resolve_actor(item.get("created_by"), user_id_to_username),
+            last_updated_by=resolve_actor(
+                item.get("last_updated_by"), user_id_to_username
             ),
         )
         for item in response["items"]

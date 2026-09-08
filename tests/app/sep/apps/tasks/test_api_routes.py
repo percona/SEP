@@ -220,7 +220,7 @@ class TestTasksPluginListEndpoint:
 
         assert response.status_code == status.HTTP_200_OK
         row = response.json()["items"][0]
-        assert row["created_by"] == SYSTEM_USER
+        assert row["created_by"] == "System"
         assert row["last_updated_by"] == "Admin"
 
 

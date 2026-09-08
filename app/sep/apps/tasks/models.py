@@ -28,18 +28,14 @@ class TaskListResponse(BaseModel):
     """Represent one task row in the read-only tasks plugin list API.
 
     :param name: The unique name of the task.
-    :type name: str
     :param backend: The backend system used for task execution.
-    :type backend: TaskBackendEnum
     :param created_at: When the task was created, or ``None`` if unavailable.
-    :type created_at: UTCDatetime | None
-    :param created_by: Display name for the task creator (Casdoor username when
-        resolvable, otherwise the stored user id), or ``None`` if unknown.
-    :type created_by: str | None
+    :param created_by: Display name for the task creator: the provider's
+        username when resolvable, a system label for system-created tasks,
+        otherwise the stored user id. ``None`` if unknown.
     :param last_updated_by: Display name for the user who last updated the
-        task (Casdoor username when resolvable, otherwise the stored user id),
-        or ``None`` if unknown.
-    :type last_updated_by: str | None
+        task, resolved on the same terms as ``created_by``. ``None`` if
+        unknown.
     """
 
     name: str
