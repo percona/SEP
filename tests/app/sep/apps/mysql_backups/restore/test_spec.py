@@ -25,7 +25,11 @@ from app.sep.apps.mysql_backups.payload_variants import (
     selections,
     variant_name,
 )
-from app.sep.apps.mysql_backups.restore.models import RestoreCreate
+from app.sep.apps.mysql_backups.restore.models import (
+    RestoreConfigAll,
+    RestoreCreate,
+    SourceTransport,
+)
 from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
     RestoreResolved,
@@ -98,6 +102,49 @@ def test_build_restore_spec_injects_resolved_destination_and_service_name():
         "requirements",
         "_service_name",
     ]
+
+
+def test_gated_off_fields_emit_the_config_defaults_they_replaced():
+    """Emit the same global config whether the gated fields are absent or explicit.
+
+    The three fields lost their form-level defaults so their gates could not
+    reject them, which leaves the config models as the only place the values are
+    declared. The task config the payload consumes has to come out unchanged.
+    """
+    gated_off = RestoreCreate(
+        hostname="restore-host",
+        task_name="restore-task",
+        backup_type=BackupType.MYDUMPER,
+        backup_source="/var/backups/latest",
+        datadir="/var/lib/mysql",
+        source_transport=SourceTransport.LOCAL,
+    )
+    spelled_out = RestoreCreate(
+        hostname="restore-host",
+        task_name="restore-task",
+        backup_type=BackupType.MYDUMPER,
+        backup_source="db01:/var/backups/latest",
+        datadir="/var/lib/mysql",
+        source_transport=SourceTransport.SSH,
+        ssh_user="percona",
+        ssh_port=22,
+    )
+
+    gated_config = yaml.safe_load(
+        build_restore_spec(gated_off, RestoreResolved()).data["meta"]["config"]
+    )["ALL_SERVERS"]
+    explicit_config = yaml.safe_load(
+        build_restore_spec(spelled_out, RestoreResolved()).data["meta"]["config"]
+    )["ALL_SERVERS"]
+
+    assert gated_config == explicit_config
+    for alias, field_name in (
+        ("SSH_USER", "ssh_user"),
+        ("SSH_PORT", "ssh_port"),
+        ("S3_TOOL", "s3_tool"),
+    ):
+        expected = RestoreConfigAll.model_fields[field_name].default
+        assert gated_config[alias] == getattr(expected, "value", expected), alias
 
 
 class TestRestoreUsesTheCanonicalPayload:
