@@ -95,10 +95,16 @@ export interface paths {
      *     :param session: The sub-app's database session.
      *     :param remote_api: The client for remote settings classes (``None`` when
      *         the router wires none).
+     *     :param actor: The calling admin's username, recorded on every row the
+     *         batch writes and reported back on each response.
      *     :return: One :class:`SettingResponse` per applied key, in input order.
      *     :raises HTTPNotFoundException: If the class isn't exposed.
      *     :raises HTTPUnprocessableEntityException: If any key fails validation;
      *         no rows are written.
+     *     :raises HTTPBadGatewayException: For a remote class, when the owning
+     *         sub-app returns a server error (status >= 500) or is unreachable.
+     *     :raises IntegrityError: When the replay of a batch that lost the
+     *         unique-index race conflicts again, which leaves nothing written.
      */
     patch: operations['settings_patch_settings_admin_settings__setting_class__patch'];
     trace?: never;
@@ -245,6 +251,15 @@ export interface paths {
      *     Neither ``has_logs`` nor ``log_capture`` is populated on this response — a
      *     row that was just created has no chunk-store entry, legacy tracking blob or
      *     capture verdict yet, so both fall back to their serialization defaults.
+     *
+     *     A caller-supplied ``failure_reason`` is routed back through
+     *     :meth:`TaskHistory.set_failure_reason` so the single-line and length bounds
+     *     hold on every write path, not only on the reasons SEP composes itself.
+     *
+     *     The saved row is re-read with ``task`` joined and ``execution_request``
+     *     undeferred: ``save`` re-defers that column, and the response model requires
+     *     both, so serializing the save's own return value attempts lazy IO from an
+     *     async context.
      *
      *     :param session: The SQLAlchemy asynchronous session.
      *     :param task: The task history to persist.
@@ -1165,8 +1180,13 @@ export interface components {
      *         (``SecretStr`` / ``SecretBytes``) at any depth.
      *     :param is_complex: Whether the field's annotation is or contains a Pydantic
      *         ``BaseModel`` subclass (true for nested submodels).
-     *     :param has_override: Whether a row exists in the ``settingoverride`` table
-     *         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
+     *     :param has_override: Whether an **active** row in the ``settingoverride``
+     *         table applies to this ``(setting_class, key)`` pair. An inactive row is
+     *         skipped by the cache loader, so the served value falls back to the
+     *         declared default and reporting it as overridden would tell the UI a
+     *         field is overridden while showing it that default. A nested row also
+     *         marks every canonical prefix of its chain, so a parent reports ``True``
+     *         when only a deeper leaf carries a row.
      *     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
      *         present it separately from everyday settings. Display-only:
      *         it does not affect PATCH/DELETE eligibility.
@@ -1176,6 +1196,18 @@ export interface components {
      *         PATCH/DELETE server-side; the runtime gate is the real enforcement.
      *     :param options: Selectable enum members for dropdown UIs, or ``None`` when
      *         the field is not an ``Enum`` annotation. Aliased members are excluded.
+     *     :param updated_at: When the override applying to this key was last saved,
+     *         falling back to the row's creation time for a row written before the
+     *         stamp was recorded. ``None`` when ``has_override`` is ``False``.
+     *         Timestamps carry second granularity.
+     *     :param updated_by: The username that last saved that override, or ``None``
+     *         both when no override applies and when the row predates the actor
+     *         column. A key can draw on several rows (a nested parent reporting on its
+     *         leaves), in which case the pair comes from the row carrying the latest
+     *         timestamp. Two writes landing within the same second are
+     *         indistinguishable by timestamp, and the pair reported is then whichever
+     *         contributing row was created later, which need not be the one written
+     *         later.
      */
     SettingResponse: {
       /** Default Value */
@@ -1209,6 +1241,10 @@ export interface components {
       setting_class: string;
       /** Type */
       type: string;
+      /** Updated At */
+      updated_at?: string | null;
+      /** Updated By */
+      updated_by?: string | null;
       /** Value */
       value: unknown;
     };
@@ -1355,6 +1391,9 @@ export interface components {
      *         exists) to discard writes from a superseded producer. ``0`` is the
      *         legacy/unknown sentinel that is trusted unconditionally.
      *     :param executed_by: The user ID of the user who executed the task.
+     *     :param failure_reason: A single-line, operator-facing reason for the run's
+     *         outcome, or None when the run did not fail or the reason is unknown.
+     *         Written only through :meth:`set_failure_reason`.
      */
     TaskHistory: {
       /** Anonymize Mask */
@@ -1367,6 +1406,8 @@ export interface components {
       /** Executed By */
       executed_by?: string | null;
       execution_request: components['schemas']['TaskExecutionRequest'];
+      /** Failure Reason */
+      failure_reason?: string | null;
       /** Finished At */
       finished_at?: string | null;
       /** Id */
@@ -1434,6 +1475,10 @@ export interface components {
      *         reports.
      *     :param display_name: A user-meaningful label derived from the task name or
      *         execution-request metadata. Read-only; computed on serialisation.
+     *     :param failure_reason: A single-line, operator-facing reason for the run's
+     *         outcome, or None when the run did not fail or the reason is unknown. A
+     *         historic row predating the column reports None, which means "unknown"
+     *         rather than "did not fail".
      */
     TaskHistoryResponse: {
       /** Anonymize Mask */
@@ -1469,6 +1514,8 @@ export interface components {
       /** Executed By */
       executed_by?: string | null;
       execution_request: components['schemas']['TaskExecutionRequest'];
+      /** Failure Reason */
+      failure_reason?: string | null;
       /** Finished At */
       finished_at?: string | null;
       /**

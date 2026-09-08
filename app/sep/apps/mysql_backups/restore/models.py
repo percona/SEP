@@ -32,33 +32,10 @@ from app.sep.apps.framework.form_dsl import (
     TaskFormModel,
     Ui,
 )
-from app.sep.apps.mysql_backups.models import BackupType
-
-BACKUP_SOURCE_SHELLBACKTICK = "`"
-BACKUP_SOURCE_SHELL_FORBIDDEN = frozenset("$;|&()" + BACKUP_SOURCE_SHELLBACKTICK)
-
-
-def ensure_backup_source_shell_safe(value: str) -> str:
-    """Reject shell metacharacters in a backup-source path (defense in depth).
-
-    Shared by every model carrying ``backup_source`` so the create form and the
-    YAML-serialization config model enforce the same rule from one place.
-
-    :param value: The submitted backup-source path.
-    :return: The validated value, unchanged.
-    :raises ValueError: When ``value`` contains a newline or a shell metacharacter.
-    """
-    if not value:
-        return value
-    if "\n" in value or "\r" in value:
-        raise ValueError("backup_source must not contain newline characters")
-    if BACKUP_SOURCE_SHELL_FORBIDDEN.intersection(value):
-        raise ValueError(
-            "backup_source contains disallowed shell metacharacters; "
-            "remove special characters from the backup source field"
-        )
-    return value
-
+from app.sep.apps.mysql_backups.models import (
+    BackupType,
+    ensure_backup_source_shell_safe,
+)
 
 OWNER = "RESTORES"
 
@@ -302,7 +279,7 @@ class RestoreCreate(TaskFormModel):
     service_id: Annotated[
         NonEmptyStr | EmptyStrToNone,
         ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), allow_custom=True),
-        Ui(label="Destination Database Service", section="General"),
+        Ui(label="Destination Database Service", section="Task"),
     ] = None
     backup_source: Annotated[
         NonEmptyStr,
@@ -311,7 +288,7 @@ class RestoreCreate(TaskFormModel):
             allow_custom=True,
         ),
         Ui(
-            section="General",
+            section="Task",
             depends_on="service_id",
             description=(
                 "Where the backup is stored. Select a database service above to "
@@ -349,7 +326,7 @@ class RestoreCreate(TaskFormModel):
         NonEmptyStr | EmptyStrToNone,
         SchemaRef(allow_custom=True),
         Ui(
-            label="Restore to Database",
+            label="Target database",
             section="Mydumper",
             depends_on="service_id",
             description="--database myloader option (database to restore to)",
@@ -359,7 +336,16 @@ class RestoreCreate(TaskFormModel):
         NonEmptyStr | EmptyStrToNone, Ui(label="Local path", section="Mydumper")
     ] = None
     overwrite_tables: Annotated[
-        bool, Ui(label="Overwrite tables", section="Mydumper")
+        bool,
+        Ui(
+            label="Overwrite tables",
+            section="Mydumper",
+            destructive=(
+                "Existing tables in the target database are dropped before the "
+                "backup is loaded. Rows written since the backup was taken are "
+                "lost."
+            ),
+        ),
     ] = False
     myloader_threads: Annotated[
         int | EmptyStrToNone, Ui(label="Myloader threads", section="Mydumper")

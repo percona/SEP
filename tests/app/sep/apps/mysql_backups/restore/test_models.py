@@ -44,12 +44,12 @@ def test_backup_source_is_remote_choice_cascading_on_service_id() -> None:
         section.title: {field.name: field for field in section.fields}
         for section in sections
     }
-    backup_source = fields_by_section["General"]["backup_source"]
+    backup_source = fields_by_section["Task"]["backup_source"]
     assert isinstance(backup_source, RemoteChoiceField)
     assert backup_source.endpoint_url == "/apps/mysql_backups/backup-sources/choices"
     assert backup_source.depends_on == "service_id"
     assert backup_source.allow_custom is True
-    assert "service_id" in fields_by_section["General"]
+    assert "service_id" in fields_by_section["Task"]
     assert "service_id" not in fields_by_section["Mydumper"]
 
 

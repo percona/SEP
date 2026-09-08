@@ -761,7 +761,7 @@
         "type": "object"
       },
       "SettingResponse": {
-        "description": "Represent a single setting's metadata and current value.\n\n:param setting_class: The Pydantic class ``__name__`` the field belongs to.\n:param key: The field name on the settings class.\n:param key_path: Carry the canonical key segments for ``key`` such that\n    ``\"__\".join(key_path) == key``.\n:param value: The current value visible through the proxy, dumped to a\n    JSON-safe shape via the field's annotation. ``SecretStr`` fields are\n    redacted to ``\"**********\"``.\n:param default_value: The field's declared default value, dumped via the\n    same JSON serialiser. ``None`` when no default exists.\n:param type: A human-readable representation of the field's declared\n    annotation (for operator visibility; validation uses the actual\n    ``FieldInfo``).\n:param reload: The reload classification (HOT or NOT_OVERRIDABLE).\n:param description: The field's free-text description, or ``None``.\n:param is_secret: Whether the field's annotation contains a Pydantic secret\n    (``SecretStr`` / ``SecretBytes``) at any depth.\n:param is_complex: Whether the field's annotation is or contains a Pydantic\n    ``BaseModel`` subclass (true for nested submodels).\n:param has_override: Whether a row exists in the ``settingoverride`` table\n    for this ``(setting_class, key)`` pair, regardless of ``is_active``.\n:param is_advanced: Whether the setting is flagged ``advanced`` so the UI can\n    present it separately from everyday settings. Display-only:\n    it does not affect PATCH/DELETE eligibility.\n:param is_applicable: Whether the setting applies under current runtime state\n    (e.g. the active auth provider). ``False`` lets the UI present the field\n    as inert. Display-only, like ``is_advanced``: it does not block\n    PATCH/DELETE server-side; the runtime gate is the real enforcement.\n:param options: Selectable enum members for dropdown UIs, or ``None`` when\n    the field is not an ``Enum`` annotation. Aliased members are excluded.",
+        "description": "Represent a single setting's metadata and current value.\n\n:param setting_class: The Pydantic class ``__name__`` the field belongs to.\n:param key: The field name on the settings class.\n:param key_path: Carry the canonical key segments for ``key`` such that\n    ``\"__\".join(key_path) == key``.\n:param value: The current value visible through the proxy, dumped to a\n    JSON-safe shape via the field's annotation. ``SecretStr`` fields are\n    redacted to ``\"**********\"``.\n:param default_value: The field's declared default value, dumped via the\n    same JSON serialiser. ``None`` when no default exists.\n:param type: A human-readable representation of the field's declared\n    annotation (for operator visibility; validation uses the actual\n    ``FieldInfo``).\n:param reload: The reload classification (HOT or NOT_OVERRIDABLE).\n:param description: The field's free-text description, or ``None``.\n:param is_secret: Whether the field's annotation contains a Pydantic secret\n    (``SecretStr`` / ``SecretBytes``) at any depth.\n:param is_complex: Whether the field's annotation is or contains a Pydantic\n    ``BaseModel`` subclass (true for nested submodels).\n:param has_override: Whether an **active** row in the ``settingoverride``\n    table applies to this ``(setting_class, key)`` pair. An inactive row is\n    skipped by the cache loader, so the served value falls back to the\n    declared default and reporting it as overridden would tell the UI a\n    field is overridden while showing it that default. A nested row also\n    marks every canonical prefix of its chain, so a parent reports ``True``\n    when only a deeper leaf carries a row.\n:param is_advanced: Whether the setting is flagged ``advanced`` so the UI can\n    present it separately from everyday settings. Display-only:\n    it does not affect PATCH/DELETE eligibility.\n:param is_applicable: Whether the setting applies under current runtime state\n    (e.g. the active auth provider). ``False`` lets the UI present the field\n    as inert. Display-only, like ``is_advanced``: it does not block\n    PATCH/DELETE server-side; the runtime gate is the real enforcement.\n:param options: Selectable enum members for dropdown UIs, or ``None`` when\n    the field is not an ``Enum`` annotation. Aliased members are excluded.\n:param updated_at: When the override applying to this key was last saved,\n    falling back to the row's creation time for a row written before the\n    stamp was recorded. ``None`` when ``has_override`` is ``False``.\n    Timestamps carry second granularity.\n:param updated_by: The username that last saved that override, or ``None``\n    both when no override applies and when the row predates the actor\n    column. A key can draw on several rows (a nested parent reporting on its\n    leaves), in which case the pair comes from the row carrying the latest\n    timestamp. Two writes landing within the same second are\n    indistinguishable by timestamp, and the pair reported is then whichever\n    contributing row was created later, which need not be the one written\n    later.",
         "properties": {
           "default_value": {
             "title": "Default Value"
@@ -834,6 +834,29 @@
           "type": {
             "title": "Type",
             "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
           },
           "value": {
             "title": "Value"
@@ -1026,7 +1049,7 @@
         "type": "object"
       },
       "TaskHistory": {
-        "description": "Represent a task execution history.\n\n:param execution_request: The request that triggered the task execution.\n:param status: The status of the task execution. Defaults to pending.\n:param started_at: The datetime when the task execution started.\n:param finished_at: The datetime when the task execution finished.\n:param anonymize_mask: The bitmask representing PII entities to be anonymized in\n    logs and files generated by the execution. Defaults to None, meaning it uses\n    the value defined in the associated task's :attr:`Task.anonymize_mask`.\n:param task_id: The ID of the task associated with the execution.\n:param task: The task associated with this execution history.\n:param sync_in_progress_started_at: Timestamp lock for a sync currently in progress.\n:param log_producer_epoch: Task-level high-water mark of the current\n    producer epoch (for example a Nomad allocation ``CreateIndex``), stamped\n    whenever the log frontier is reset. The log writer consults it on the\n    first-insert path (before any per-stream ``TaskHistoryLogState`` row\n    exists) to discard writes from a superseded producer. ``0`` is the\n    legacy/unknown sentinel that is trusted unconditionally.\n:param executed_by: The user ID of the user who executed the task.",
+        "description": "Represent a task execution history.\n\n:param execution_request: The request that triggered the task execution.\n:param status: The status of the task execution. Defaults to pending.\n:param started_at: The datetime when the task execution started.\n:param finished_at: The datetime when the task execution finished.\n:param anonymize_mask: The bitmask representing PII entities to be anonymized in\n    logs and files generated by the execution. Defaults to None, meaning it uses\n    the value defined in the associated task's :attr:`Task.anonymize_mask`.\n:param task_id: The ID of the task associated with the execution.\n:param task: The task associated with this execution history.\n:param sync_in_progress_started_at: Timestamp lock for a sync currently in progress.\n:param log_producer_epoch: Task-level high-water mark of the current\n    producer epoch (for example a Nomad allocation ``CreateIndex``), stamped\n    whenever the log frontier is reset. The log writer consults it on the\n    first-insert path (before any per-stream ``TaskHistoryLogState`` row\n    exists) to discard writes from a superseded producer. ``0`` is the\n    legacy/unknown sentinel that is trusted unconditionally.\n:param executed_by: The user ID of the user who executed the task.\n:param failure_reason: A single-line, operator-facing reason for the run's\n    outcome, or None when the run did not fail or the reason is unknown.\n    Written only through :meth:`set_failure_reason`.",
         "properties": {
           "anonymize_mask": {
             "anyOf": [
@@ -1057,6 +1080,17 @@
           },
           "execution_request": {
             "$ref": "#/components/schemas/TaskExecutionRequest"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
           },
           "finished_at": {
             "anyOf": [
@@ -1184,7 +1218,7 @@
         "type": "object"
       },
       "TaskHistoryResponse": {
-        "description": "Represent a task history API response.\n\n:param execution_request: The request that triggered the task execution.\n:param status: The status of the task execution.\n:param started_at: The datetime when the task execution started.\n:param finished_at: The datetime when the task execution finished.\n:param anonymize_mask: The bitmask representing PII entities to be anonymized in\n    logs and files generated by the execution. Defaults to None, meaning it uses\n    the value defined in the associated task's :attr:`Task.anonymize_mask`.\n:param task: The task associated with this execution history.\n:param executed_by: The user ID of the user who executed the task.\n:param has_logs: Whether this task history has any readable log content --\n    either a chunk-store row or a legacy ``tracking[\"task_logs\"]`` blob.\n    Populated by list/retrieve routes; defaults to ``False``.\n:param log_capture: How completely SEP captured this execution's logs,\n    aggregated over its state rows: any incomplete stream reports\n    ``\"incomplete\"``, else any unknown reports ``\"unknown\"``, else\n    ``\"complete\"``. Populated by list/retrieve routes; defaults to\n    ``\"unknown\"``, which is also what a history carrying no state rows\n    reports.\n:param display_name: A user-meaningful label derived from the task name or\n    execution-request metadata. Read-only; computed on serialisation.",
+        "description": "Represent a task history API response.\n\n:param execution_request: The request that triggered the task execution.\n:param status: The status of the task execution.\n:param started_at: The datetime when the task execution started.\n:param finished_at: The datetime when the task execution finished.\n:param anonymize_mask: The bitmask representing PII entities to be anonymized in\n    logs and files generated by the execution. Defaults to None, meaning it uses\n    the value defined in the associated task's :attr:`Task.anonymize_mask`.\n:param task: The task associated with this execution history.\n:param executed_by: The user ID of the user who executed the task.\n:param has_logs: Whether this task history has any readable log content --\n    either a chunk-store row or a legacy ``tracking[\"task_logs\"]`` blob.\n    Populated by list/retrieve routes; defaults to ``False``.\n:param log_capture: How completely SEP captured this execution's logs,\n    aggregated over its state rows: any incomplete stream reports\n    ``\"incomplete\"``, else any unknown reports ``\"unknown\"``, else\n    ``\"complete\"``. Populated by list/retrieve routes; defaults to\n    ``\"unknown\"``, which is also what a history carrying no state rows\n    reports.\n:param display_name: A user-meaningful label derived from the task name or\n    execution-request metadata. Read-only; computed on serialisation.\n:param failure_reason: A single-line, operator-facing reason for the run's\n    outcome, or None when the run did not fail or the reason is unknown. A\n    historic row predating the column reports None, which means \"unknown\"\n    rather than \"did not fail\".",
         "properties": {
           "anonymize_mask": {
             "anyOf": [
@@ -1234,6 +1268,17 @@
           },
           "execution_request": {
             "$ref": "#/components/schemas/TaskExecutionRequest"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
           },
           "finished_at": {
             "anyOf": [
@@ -1990,7 +2035,7 @@
     },
     "/admin/settings/{setting_class}": {
       "patch": {
-        "description": "Apply a batch of overrides for one settings class atomically.\n\nFor a remote class the batch is forwarded to the owning sub-app, which\nowns the validation and persistence; the upstream's per-field ``422``\n(and its ``detail``) is preserved so the UI can render inline messages.\n\nFor a local class: Phase A validates every key in ``body`` (existence on\nthe class, HOT classification, type/constraint coercion) and collects\nper-key errors. If any key fails, the whole batch is rejected with a\nstructured 422 and nothing is written. Phase B persists every valid entry\nin a single transaction, refreshes the proxy snapshot once, then fires\nthe rebind callbacks for any changed keys so a HOT target rebinds without\nwaiting for the next background refresh cycle.\n\n:param request: The incoming request; its ``app.state`` carries the\n    sub-app's rebind-callback registry.\n:param setting_class: The settings class the override targets.\n:param body: The batch of ``{key: value, ...}`` overrides.\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:return: One :class:`SettingResponse` per applied key, in input order.\n:raises HTTPNotFoundException: If the class isn't exposed.\n:raises HTTPUnprocessableEntityException: If any key fails validation;\n    no rows are written.",
+        "description": "Apply a batch of overrides for one settings class atomically.\n\nFor a remote class the batch is forwarded to the owning sub-app, which\nowns the validation and persistence; the upstream's per-field ``422``\n(and its ``detail``) is preserved so the UI can render inline messages.\n\nFor a local class: Phase A validates every key in ``body`` (existence on\nthe class, HOT classification, type/constraint coercion) and collects\nper-key errors. If any key fails, the whole batch is rejected with a\nstructured 422 and nothing is written. Phase B persists every valid entry\nin a single transaction, refreshes the proxy snapshot once, then fires\nthe rebind callbacks for any changed keys so a HOT target rebinds without\nwaiting for the next background refresh cycle.\n\n:param request: The incoming request; its ``app.state`` carries the\n    sub-app's rebind-callback registry.\n:param setting_class: The settings class the override targets.\n:param body: The batch of ``{key: value, ...}`` overrides.\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:param actor: The calling admin's username, recorded on every row the\n    batch writes and reported back on each response.\n:return: One :class:`SettingResponse` per applied key, in input order.\n:raises HTTPNotFoundException: If the class isn't exposed.\n:raises HTTPUnprocessableEntityException: If any key fails validation;\n    no rows are written.\n:raises HTTPBadGatewayException: For a remote class, when the owning\n    sub-app returns a server error (status >= 500) or is unreachable.\n:raises IntegrityError: When the replay of a batch that lost the\n    unique-index race conflicts again, which leaves nothing written.",
         "operationId": "settings_patch_settings_admin_settings__setting_class__patch",
         "parameters": [
           {
@@ -2397,7 +2442,7 @@
         ]
       },
       "post": {
-        "description": "Create a new task history.\n\nNeither ``has_logs`` nor ``log_capture`` is populated on this response — a\nrow that was just created has no chunk-store entry, legacy tracking blob or\ncapture verdict yet, so both fall back to their serialization defaults.\n\n:param session: The SQLAlchemy asynchronous session.\n:param task: The task history to persist.\n:return: The saved task history record.",
+        "description": "Create a new task history.\n\nNeither ``has_logs`` nor ``log_capture`` is populated on this response — a\nrow that was just created has no chunk-store entry, legacy tracking blob or\ncapture verdict yet, so both fall back to their serialization defaults.\n\nA caller-supplied ``failure_reason`` is routed back through\n:meth:`TaskHistory.set_failure_reason` so the single-line and length bounds\nhold on every write path, not only on the reasons SEP composes itself.\n\nThe saved row is re-read with ``task`` joined and ``execution_request``\nundeferred: ``save`` re-defers that column, and the response model requires\nboth, so serializing the save's own return value attempts lazy IO from an\nasync context.\n\n:param session: The SQLAlchemy asynchronous session.\n:param task: The task history to persist.\n:return: The saved task history record.",
         "operationId": "tasks_create_task_history_history__post",
         "requestBody": {
           "content": {

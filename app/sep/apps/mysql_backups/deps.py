@@ -24,11 +24,14 @@ from fastapi import Depends, Query
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
+from app.sep.api.task_history_merge import fetch_task_history_window
 from app.sep.apps.framework import build_default_task_response
+from app.sep.apps.framework.deps import make_task_dep
 from app.sep.apps.mysql_backups.forms import (
     BackupTaskResponse,
     encryption_format_for_passes,
     EncryptionFormat,
+    OWNER,
 )
 from app.sep.apps.mysql_backups.models import (
     BackupType,
@@ -37,11 +40,20 @@ from app.sep.apps.mysql_backups.models import (
     UNKNOWN_SERVICE_SENTINEL,
 )
 from app.sep.apps.shared.backups.edit_form import parse_server_list_config
-from app.sep.deps import InventoryAPI
+from app.sep.deps import InventoryAPI, TaskAPI
 from app.sep.inventory import CreatedService
 from app.tasks.models import Task, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
+
+# Bound the discovery walk so a task with thousands of runs costs the same order
+# of work as one with three.
+MAX_TASK_RUN_SCAN = 500
+
+# Requested rather than inherited: this ordering decides *which* runs land inside
+# the scan cap, so relying on the Tasks API's default sort would make a change to
+# that default silently select the oldest runs instead of the newest.
+_NEWEST_HISTORY_FIRST = "-created_at"
 
 
 def _infer_encryption_format(
@@ -240,6 +252,52 @@ async def resolve_optional_catalog_service_key(
 OptionalCatalogServiceKey = Annotated[
     CatalogServiceKey | None, Depends(resolve_optional_catalog_service_key)
 ]
+
+
+get_mysql_backups_task = make_task_dep(OWNER)
+MysqlBackupsTask = Annotated[Task, Depends(get_mysql_backups_task)]
+
+
+async def resolve_catalogued_history_ids(
+    task: MysqlBackupsTask, tasks_api: TaskAPI
+) -> list[int]:
+    """Return the ids of a task's most recent successful runs, newest first.
+
+    Walks at most :data:`MAX_TASK_RUN_SCAN` history rows. Only a ``SUCCESS``
+    history can have produced a catalog row, so filtering on it narrows the walk
+    without hiding a catalogued run.
+
+    Reads the window strictly: an upstream body that is not a usable history
+    page raises rather than reporting an empty history, so a broken Tasks service
+    cannot masquerade as a task that has never produced a backup. Individual rows are
+    still skipped rather than fatal — a row without an integer ``id`` cannot be
+    joined to a catalog record, and one odd row should not fail the whole page.
+
+    :param task: The resolved backup task, already checked for existence and
+        ownership.
+    :param tasks_api: The Tasks API client used to read the task's history.
+    :return: Task-history ids, newest first, capped at the scan limit.
+    :raises HTTPBadGatewayException: If the Tasks API answers with a body that
+        cannot be read as a history page.
+    :raises HTTPException: The error the Tasks API itself answered with, mapped by
+        the remote client and propagated rather than read as an empty history.
+    """
+    window = await fetch_task_history_window(
+        tasks_api,
+        task.name,
+        window_size=MAX_TASK_RUN_SCAN,
+        status=TaskHistoryStatusEnum.SUCCESS,
+        sort=_NEWEST_HISTORY_FIRST,
+        strict=True,
+    )
+    return [
+        item["id"]
+        for item in window["items"]
+        if isinstance(item, dict) and isinstance(item.get("id"), int)
+    ]
+
+
+CataloguedHistoryIds = Annotated[list[int], Depends(resolve_catalogued_history_ids)]
 
 
 def _extract_backup_type_from_task(task: Task) -> BackupType | None:

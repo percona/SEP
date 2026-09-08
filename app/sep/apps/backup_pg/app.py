@@ -57,6 +57,8 @@ from app.sep.apps.nav_icons import NavIcon
 app = TaskExecutionApp(
     name="backup_pg",
     display_name="PostgreSQL Backups",
+    item_display_name="backup",
+    item_display_name_plural="backups",
     uri_path="/backup_pg",
     css_class="backup_pg",
     group="backups",
