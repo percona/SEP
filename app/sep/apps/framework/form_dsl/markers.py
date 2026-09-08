@@ -107,6 +107,14 @@ class Ui:
     :param section: The layout-section key the field belongs to; must match a
         :attr:`SectionLayout.key` in the form layout.
     :param description: Optional helper text rendered beneath the field.
+    :param destructive: Opt-in notice that *setting or enabling* this field
+        causes irreversible loss of user data; the value is the consequence
+        sentence a confirmation surfaces. Presence is the mark — deliberately
+        one string rather than the ``disabled`` / ``disabled_reason`` pair used
+        by :class:`Option`, because a field marked destructive with no text
+        gives a renderer nothing to show, and one attribute makes that state
+        unrepresentable rather than merely invalid. A blank or whitespace-only
+        value is rejected at construction. Defaults to ``None`` (unmarked).
     :param depends_on: For a cascade reference (``SchemaRef`` / ``TableRef`` /
         ``HostRef``) or a :class:`RemoteChoices` field, the field name whose
         value drives this field's options or default selection. Required for
@@ -136,11 +144,25 @@ class Ui:
     label: str | None = None
     section: str
     description: str | None = None
+    destructive: str | None = None
     depends_on: str | None = None
     order: int = 0
     required: bool | None = None
     widget: FieldWidget | None = None
     default: Any = _UNSET
+
+    def __post_init__(self) -> None:
+        """Reject a destructive marker that carries no consequence text.
+
+        :raises ValueError: When ``destructive`` is set to a blank or
+            whitespace-only string.
+        """
+        if self.destructive is not None and not self.destructive.strip():
+            raise ValueError(
+                "Ui(destructive=...) must carry the consequence text a "
+                "confirmation shows; omit the keyword to leave the field "
+                "unmarked"
+            )
 
     @property
     def has_default(self) -> bool:

@@ -7133,6 +7133,8 @@ export interface components {
       default?: unknown | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -7330,6 +7332,8 @@ export interface components {
       default?: unknown | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -7454,6 +7458,8 @@ export interface components {
       default?: unknown | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -7668,6 +7674,8 @@ export interface components {
       default?: unknown | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -7709,6 +7717,8 @@ export interface components {
       default?: unknown | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Ge */
@@ -7860,6 +7870,8 @@ export interface components {
       depends_on?: string | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -7903,6 +7915,8 @@ export interface components {
       default?: unknown | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Ge */
@@ -7981,6 +7995,8 @@ export interface components {
       default?: unknown | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -8036,6 +8052,8 @@ export interface components {
       depends_on?: string | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -8082,6 +8100,8 @@ export interface components {
       depends_on: string;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -8124,6 +8144,8 @@ export interface components {
       default?: unknown | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -8170,6 +8192,8 @@ export interface components {
       depends_on: string;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -8379,6 +8403,8 @@ export interface components {
       depends_on?: string | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Endpoint Url */
       endpoint_url: string;
       /** Forbidden */
@@ -8434,6 +8460,8 @@ export interface components {
       depends_on: string;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -8534,6 +8562,8 @@ export interface components {
       depends_on?: string[];
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Endpoint Url */
       endpoint_url: string;
       /** Forbidden */
@@ -8604,6 +8634,8 @@ export interface components {
       default?: unknown | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -8650,6 +8682,8 @@ export interface components {
       default?: unknown | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -8711,6 +8745,8 @@ export interface components {
       depends_on: string;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -8777,6 +8813,8 @@ export interface components {
       default?: unknown | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */
@@ -8818,6 +8856,8 @@ export interface components {
       default?: unknown | null;
       /** Description */
       description?: string | null;
+      /** Destructive */
+      destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Label */

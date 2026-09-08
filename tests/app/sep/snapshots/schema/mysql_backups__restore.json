@@ -188,6 +188,7 @@
         },
         {
           "default": false,
+          "destructive": "Existing tables in the target database are dropped before the backup is loaded. Rows written since the backup was taken are lost.",
           "label": "Overwrite tables",
           "name": "overwrite_tables",
           "required": false,
