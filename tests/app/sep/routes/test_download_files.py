@@ -55,6 +55,12 @@ async def _mock_failing_file_stream():
     raise RuntimeError("upstream stream broke")
 
 
+async def _mock_rejected_file_stream(status_code: int):
+    """Raise HTTPException immediately, simulating upstream rejection before any bytes."""
+    raise HTTPException(status_code=status_code)
+    yield  # pragma: no cover — makes this an async generator
+
+
 @pytest.fixture
 def mock_tasks_api_dep(task_history_response):
     """Override the TaskAPI dependency with an AsyncMock."""
@@ -257,6 +263,35 @@ class TestDownloadTaskHistoryFile:
             'attachment; filename="backup.sql"'
         )
         assert response.content == b"partial-"
+
+    @pytest.mark.parametrize(
+        "upstream_status",
+        [
+            HTTP_400_BAD_REQUEST,
+            HTTP_500_INTERNAL_SERVER_ERROR,
+        ],
+    )
+    def test_upstream_rejection_before_any_chunk_returns_real_status(
+        self, test_client, mock_tasks_client_dep, task_history_response, upstream_status
+    ):
+        """Assert upstream rejection before any bytes returns the real status, not 200.
+
+        When the upstream rejects the request (401/403/410/500) before yielding any
+        bytes, the caller must receive that status — not a misleading 200 with an
+        empty body. This is the fix for SEP-1878.
+        """
+        mock_tasks_client_dep.get.return_value = {
+            "backup.sql": {"size": 2048, "is_dir": False}
+        }
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_rejected_file_stream(
+            upstream_status
+        )
+
+        response = test_client.get(
+            f"/files/{task_history_response.id}/download?path=backup.sql"
+        )
+
+        assert response.status_code == upstream_status
 
     def test_no_path_streams_without_headers(
         self, test_client, mock_tasks_client_dep, task_history_response
