@@ -4204,8 +4204,21 @@
         "type": "object"
       },
       "mysql_backups__BackupRunResponse": {
-        "description": "Expose one catalog record over the per-service query path.\n\n:param id: The record's primary key.\n:param service_name: The inventory service the backup was taken from.\n:param service_id: The inventory id of that service, or ``None`` on a record\n    written before the id was stamped.\n:param hostname: The backup target host.\n:param backup_type: The backup tool, ``\"M\"`` (mydumper) or ``\"X\"`` (xtrabackup).\n    Narrower than :class:`BackupType`: binlog runs are never catalogued, so\n    ``\"B\"`` never appears here.\n:param location: The resolved on-disk directory the run produced.\n:param upload_destination: The upload destination when one was configured.\n:param size_bytes: The backup size in bytes, when the run reported it.\n:param started_at: When the run started.\n:param finished_at: When the run finished.",
+        "description": "Expose one catalog record over the service-scoped and task-scoped queries.\n\n:param id: The record's primary key.\n:param service_name: The inventory service the backup was taken from.\n:param service_id: The inventory id of that service, or ``None`` on a record\n    written before the id was stamped.\n:param hostname: The backup target host.\n:param backup_type: The backup tool, ``\"M\"`` (mydumper) or ``\"X\"`` (xtrabackup).\n    Narrower than :class:`BackupType`: binlog runs are never catalogued, so\n    ``\"B\"`` never appears here.\n:param location: The resolved on-disk directory the run produced.\n:param upload_destination: The upload destination when one was configured.\n:param size_bytes: The backup size in bytes, when the run reported it.\n:param started_at: When the run started.\n:param finished_at: When the run finished.\n:param backup_source: The run's restore-form-valid source, derived from\n    ``upload_destination`` and ``location``; read-only, and absent from the\n    table this response is built from.",
         "properties": {
+          "backup_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Return the run's restore-form-valid source, or ``None``.\n\nResolved server-side so no caller re-derives it from the raw fields.\n``None`` means the run recorded no usable source, or recorded one the\nrestore form rejects — either way it cannot seed a restore.",
+            "readOnly": true,
+            "title": "Backup Source"
+          },
           "backup_type": {
             "enum": [
               "M",
@@ -4319,7 +4332,8 @@
           "upload_destination",
           "size_bytes",
           "started_at",
-          "finished_at"
+          "finished_at",
+          "backup_source"
         ],
         "title": "BackupRunResponse",
         "type": "object"
@@ -4993,6 +5007,72 @@
           }
         },
         "summary": "Update",
+        "tags": [
+          "mysql_backups"
+        ]
+      }
+    },
+    "/api/apps/mysql_backups/{task_name}/backups": {
+      "get": {
+        "description": "Return a page of a backup task's catalogued runs, newest run first.\n\nThe ``task_name`` path parameter is resolved by\n:data:`~app.sep.apps.mysql_backups.deps.CataloguedHistoryIds`, so a task that\ndoes not exist or belongs to another app surfaces as a ``404`` while a known\ntask with no catalogued backup yields an empty page — keeping \"this task has\nnever produced a backup\" distinguishable from \"this task does not exist\".\n\nThe discovery walk behind that dependency is capped, so ``total`` counts the\nruns within the scanned window rather than every run the task ever produced,\nand carries no marker distinguishing a truncated page from a complete one.\nA run older than the window is reachable through the per-service catalog\nroute, which is uncapped — but only while its inventory service still\nresolves, and only for a caller that knows which service the run was recorded\nunder, which a task since re-pointed at another target no longer answers.\n\n:param history_ids: The task's catalogued task-history ids, newest first.\n:param session: The database session the catalog is queried on.\n:param pagination: The requested offset/limit window.\n:return: The requested page of the task's recorded backup runs, newest run\n    first.",
+        "operationId": "mysql_backups_list_task_backups_api_apps_mysql_backups__task_name__backups_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_name",
+            "required": true,
+            "schema": {
+              "title": "Task Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/mysql_backups__PaginatedResponse_BackupRunResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Task Backups",
         "tags": [
           "mysql_backups"
         ]
