@@ -32,7 +32,7 @@ from sqlalchemy_celery_beat.models import PeriodicTask
 from app.core.celery.models import (
     CrontabSchedule,
     IntervalSchedule,
-    reject_unmanageable_period,
+    ManageableInterval,
 )
 from app.core.celery.schedules import (
     next_run_times,
@@ -79,24 +79,6 @@ class PeriodicTaskExecuteRequest(TaskExecuteRequest):
     def _force_eta_to_none(cls, _: datetime | EmptyStrToNone) -> None:
         """Force field eta to None."""
         return
-
-
-def reject_unschedulable_interval(
-    value: IntervalSchedule | None,
-) -> IntervalSchedule | None:
-    """Reject an interval the periodic-task write path cannot schedule.
-
-    Defers to :data:`app.core.celery.models.MANAGEABLE_PERIODS`, the same bound
-    the operator-settable interval fields annotate with, so a cadence accepted at
-    one boundary cannot be refused at the other.
-
-    :param value: The interval schedule to check, if set.
-    :return: The unchanged schedule.
-    :raises ValueError: If the period is outside ``MANAGEABLE_PERIODS``.
-    """
-    if value is None:
-        return value
-    return reject_unmanageable_period(value)
 
 
 def reject_schedule_that_cannot_produce_runs(
@@ -150,21 +132,13 @@ class BasePeriodicTask(BaseModel):
     """Define the base model for periodic tasks.
 
     :param name: The name of the periodic task.
-    :type name: str
     :param task: The task identifier.
-    :type task: str
     :param start_time: The start time for the task execution.
-    :type start_time: UTCDatetime | None
     :param enabled: Whether the task is enabled.
-    :type enabled: bool
     :param description: A description of the task.
-    :type description: str
     :param execute_request: The execution request details for the task.
-    :type execute_request: PeriodicTaskExecuteRequest | None
     :param interval: The interval schedule for the task. Defaults to None.
-    :type interval: IntervalSchedule | None
     :param crontab: The crontab schedule for the task. Defaults to None.
-    :type crontab: CrontabSchedule | None
     """
 
     name: str
@@ -301,9 +275,7 @@ class PeriodicTaskResponse(BasePeriodicTask):
         `execute_request` fields.
 
         :param data: The input data containing task execution details.
-        :type data: Any
         :return: The modified data with populated task fields.
-        :rtype: Any
         """
         if isinstance(data, PeriodicTask):
             data = data.__dict__
@@ -334,26 +306,19 @@ class PeriodicTaskWrite(BasePeriodicTask):
     creating or updating periodic tasks in the database.
 
     :param name: The name of the periodic task.
-    :type name: str
     :param task: The Celery task name.
-    :type task: str
     :param start_time: The start time for the task execution.
-    :type start_time: UTCDatetime
     :param enabled: Whether the task is enabled.
-    :type enabled: bool
     :param description: A description of the task.
-    :type description: str
     :param execute_request: The execution request details for the task.
-    :type execute_request: PeriodicTaskExecuteRequest | None
-    :param interval: The interval schedule for the task. Defaults to None.
-    :type interval: IntervalSchedule | None
+    :param interval: The interval schedule for the task. Narrowed to the periods
+        an operator can also manage from the UI. Defaults to None.
     :param crontab: The crontab schedule for the task. Defaults to None.
-    :type crontab: CrontabSchedule | None
     :param kwargs: A JSON string representing additional keyword arguments for the task.
-    :type kwargs: str
     """
 
     kwargs: str
+    interval: ManageableInterval | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -394,18 +359,6 @@ class PeriodicTaskWrite(BasePeriodicTask):
             return json.dumps(v)
         return v
 
-    @field_validator("interval")
-    @classmethod
-    def validate_min_interval(
-        cls, v: IntervalSchedule | None
-    ) -> IntervalSchedule | None:
-        """Ensure the interval is one the periodic-task write path can schedule.
-
-        :param v: The interval schedule to validate.
-        :return: The validated interval schedule.
-        """
-        return reject_unschedulable_interval(v)
-
     @model_validator(mode="after")
     def validate_schedule_can_produce_runs(self) -> Self:
         """Ensure the stored schedule will not overflow when its runs are read.
@@ -425,23 +378,14 @@ class PeriodicTaskUpdate(PeriodicTaskWrite):
     Extends `PeriodicTaskWrite` and adds validations specific to updating tasks.
 
     :param name: The name of the periodic task.
-    :type name: str
     :param task: The Celery task name.
-    :type task: str
     :param start_time: The start time for the task execution.
-    :type start_time: UTCDatetime | None
     :param enabled: Whether the task is enabled.
-    :type enabled: bool
     :param description: A description of the task.
-    :type description: str
     :param execute_request: The execution request details for the task.
-    :type execute_request: PeriodicTaskExecuteRequest | None
     :param interval: The interval schedule for the task. Defaults to None.
-    :type interval: IntervalSchedule | None
     :param crontab: The crontab schedule for the task. Defaults to None.
-    :type crontab: CrontabSchedule | None
     :param kwargs: A JSON string representing additional keyword arguments for the task.
-    :type kwargs: str
     """
 
     @field_validator("kwargs", mode="before")
@@ -498,21 +442,9 @@ class SchedulePreviewWrite(BaseModel):
     :param start_time: The earliest time the schedule may fire. Defaults to None.
     """
 
-    interval: IntervalSchedule | None = None
+    interval: ManageableInterval | None = None
     crontab: CrontabSchedule | None = None
     start_time: UTCDatetime | None = None
-
-    @field_validator("interval")
-    @classmethod
-    def validate_min_interval(
-        cls, v: IntervalSchedule | None
-    ) -> IntervalSchedule | None:
-        """Ensure a previewable interval is one that could also be created.
-
-        :param v: The interval schedule to validate.
-        :return: The validated interval schedule.
-        """
-        return reject_unschedulable_interval(v)
 
     @model_validator(mode="after")
     def validate_one_schedule_is_set(self) -> Self:
