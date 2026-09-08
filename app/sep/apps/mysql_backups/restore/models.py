@@ -273,13 +273,28 @@ class RestoreCreate(TaskFormModel):
     backup_type: Annotated[
         BackupType,
         Choices((("M", "Mydumper"), ("X", "XtraBackup"), ("B", "Binlog"))),
-        Ui(section="Task"),
+        Ui(
+            section="Task",
+            description=(
+                "Restore method for this task; it has to match how the backup was "
+                "taken, and it selects which sections below apply"
+            ),
+        ),
     ]
 
     service_id: Annotated[
         NonEmptyStr | EmptyStrToNone,
         ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), allow_custom=True),
-        Ui(label="Destination Database Service", section="Task"),
+        Ui(
+            label="Destination Database Service",
+            section="Task",
+            description=(
+                "Database service being restored into. A Mydumper restore needs an "
+                "existing MySQL service, whose address and port become the load "
+                "destination; an XtraBackup or Binlog restore only records the name, "
+                "so a typed one is accepted there."
+            ),
+        ),
     ] = None
     backup_source: Annotated[
         NonEmptyStr,
@@ -291,35 +306,98 @@ class RestoreCreate(TaskFormModel):
             section="Task",
             depends_on="service_id",
             description=(
-                "Where the backup is stored. Select a database service above to "
-                "list its completed backups, then pick one — or enter a local path "
+                "Where the backup is stored. Select a database service above to list "
+                "its completed backups, then pick one — or enter a local path "
                 "(/backups/mydumper/20240101), a remote host (db01:/path/to/backup), "
-                "s3://bucket/path, or gs://bucket/path. Add /latest to any of these "
-                "to restore the most recent backup. Avoid these characters: $ ; | & ( ) `"
+                "s3://bucket/path, or gs://bucket/path. Add /latest to any of these to "
+                "restore the most recent backup. Avoid these characters: $ ; | & ( ) `"
             ),
         ),
     ]
     logging_dir: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Logging directory", section="General")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Logging directory",
+            section="General",
+            description="Directory on the target host for this restore's log files",
+        ),
     ] = None
-    port: Annotated[int | None, Ui(section="General")] = None
+    port: Annotated[
+        int | None,
+        Ui(
+            section="General",
+            description=(
+                "Port SEP connects to on the target host when it queries the server "
+                "during an XtraBackup restore (defaults to 3306). A Mydumper restore "
+                "loads over the destination service's own address and a Binlog restore "
+                "replays through a local client, so neither uses it."
+            ),
+        ),
+    ] = None
     custom_mysql_init_command: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        Ui(label="Custom MySQL init command", section="General"),
+        Ui(
+            label="Custom MySQL init command",
+            section="General",
+            description=(
+                "Service command used to stop and start MySQL during an XtraBackup "
+                "restore, such as /usr/bin/systemctl; detected automatically when left "
+                "empty. Mydumper and Binlog restores never stop MySQL, so they ignore "
+                "it."
+            ),
+        ),
     ] = None
     ssh_user: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="SSH user", section="General")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="SSH user",
+            section="General",
+            description=(
+                "SSH user for fetching a backup stored on a remote host. Unused for a "
+                "local, S3 or Google Cloud Storage source."
+            ),
+        ),
     ] = Field(default="percona")
     ssh_port: Annotated[
-        int | EmptyStrToNone, Ui(label="SSH port", section="General")
+        int | EmptyStrToNone,
+        Ui(
+            label="SSH port",
+            section="General",
+            description="SSH port for fetching a backup stored on a remote host",
+        ),
     ] = Field(default=22)
     ssh_key: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="SSH key name", section="General")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="SSH key name",
+            section="General",
+            description=(
+                "Unused for the sources above: a local path, remote host, S3 or "
+                "Google Cloud Storage fetch always authenticates with the SSH "
+                "user's own id_rsa key."
+            ),
+        ),
     ] = None
-    s3_tool: Annotated[S3Tool, Ui(label="S3 tool", section="General")] = S3Tool.S3CMD
+    s3_tool: Annotated[
+        S3Tool,
+        Ui(
+            label="S3 tool",
+            section="General",
+            description=(
+                "Client used to download the backup. Only used for an s3:// source."
+            ),
+        ),
+    ] = S3Tool.S3CMD
     gpg_password_file: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        Ui(label="GPG password file", section="General"),
+        Ui(
+            label="GPG password file",
+            section="General",
+            description=(
+                "Path on the target host to the file holding the passphrase for a "
+                "GPG-encrypted backup"
+            ),
+        ),
     ] = None
 
     schema_id: Annotated[
@@ -329,17 +407,35 @@ class RestoreCreate(TaskFormModel):
             label="Target database",
             section="Mydumper",
             depends_on="service_id",
-            description="--database myloader option (database to restore to)",
+            description=(
+                "Database the backup is loaded into; pick one from inventory. Leave "
+                "empty to restore into the databases the backup came from. A name "
+                "typed here instead of picked is ignored and does the same."
+            ),
         ),
     ] = None
     local_path: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Local path", section="Mydumper")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Local path",
+            section="Mydumper",
+            description=(
+                "Staging directory on the target host where the backup is assembled "
+                "before it is loaded; the staging copy is removed once the load "
+                "succeeds, and left behind after a failure (defaults to /tmp)"
+            ),
+        ),
     ] = None
     overwrite_tables: Annotated[
         bool,
         Ui(
             label="Overwrite tables",
             section="Mydumper",
+            description=(
+                "Let the load replace tables that already exist in the target "
+                "database. Without it the load fails on the first table that is "
+                "already there."
+            ),
             destructive=(
                 "Existing tables in the target database are dropped before the "
                 "backup is loaded. Rows written since the backup was taken are "
@@ -348,101 +444,310 @@ class RestoreCreate(TaskFormModel):
         ),
     ] = False
     myloader_threads: Annotated[
-        int | EmptyStrToNone, Ui(label="Myloader threads", section="Mydumper")
+        int | EmptyStrToNone,
+        Ui(
+            label="Myloader threads",
+            section="Mydumper",
+            description="How many tables are loaded in parallel",
+        ),
     ] = Field(default=4)
     myloader_extra_args: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        Ui(label="Myloader extra args", section="Mydumper"),
+        Ui(
+            label="Myloader extra args",
+            section="Mydumper",
+            description="Extra arguments appended to the myloader command",
+        ),
     ] = None
     skip_databases: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Skip databases", section="Mydumper")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Skip databases",
+            section="Mydumper",
+            description=(
+                "Databases to leave out of the restore, comma-separated. They are "
+                "filtered out as the backup is fetched, by file name, and are ignored "
+                "for a Google Cloud Storage source."
+            ),
+        ),
     ] = None
     include_databases: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        Ui(label="Include databases", section="Mydumper"),
+        Ui(
+            label="Include databases",
+            section="Mydumper",
+            description=(
+                "Databases to restore, comma-separated, ignoring the rest of the "
+                "backup. Filtered as the backup is fetched, by file name, and ignored "
+                "for a Google Cloud Storage source."
+            ),
+        ),
     ] = None
     pre_script: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Pre-script", section="Mydumper")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Pre-script",
+            section="Mydumper",
+            description=(
+                "Path on the target host to a script run before the load. A .sql file "
+                "is executed against the target MySQL; anything else runs as a "
+                "command."
+            ),
+        ),
     ] = None
     post_script: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Post-script", section="Mydumper")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Post-script",
+            section="Mydumper",
+            description=(
+                "Path on the target host to a script run after the load. A .sql file "
+                "is executed against the target MySQL; anything else runs as a "
+                "command."
+            ),
+        ),
     ] = None
 
     skip_incrementals: Annotated[
-        bool, Ui(label="Skip incrementals", section="XtraBackup")
+        bool,
+        Ui(
+            label="Skip incrementals",
+            section="XtraBackup",
+            description=(
+                "Restore only the base backup and ignore the incrementals chained to it"
+            ),
+        ),
     ] = False
+    # The mark belongs on the field naming the target rather than on a toggle:
+    # the wipe is unconditional, and an empty entry aborts the restore instead of
+    # being autodetected, so every restore that runs sets this.
     datadir: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Data directory", section="XtraBackup")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Data directory",
+            section="XtraBackup",
+            description=(
+                "MySQL data directory the backup is restored into. Required: it has to "
+                "exist already, and everything currently in it is deleted."
+            ),
+            destructive=(
+                "The data directory is emptied before the backup is restored into "
+                "it. Whatever it holds now, including a live dataset, is lost."
+            ),
+        ),
     ] = None
-    kill_mysql: Annotated[bool, Ui(label="Kill MySQL", section="XtraBackup")] = False
+    kill_mysql: Annotated[
+        bool,
+        Ui(
+            label="Kill MySQL",
+            section="XtraBackup",
+            description=(
+                "MySQL is always stopped before the data directory is replaced, so "
+                "this setting changes nothing."
+            ),
+        ),
+    ] = False
     xb_prepare_memory: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        Ui(label="XtraBackup prepare memory", section="XtraBackup"),
+        Ui(
+            label="XtraBackup prepare memory",
+            section="XtraBackup",
+            description=(
+                "Memory the prepare step may use, as a size such as 2G (defaults to "
+                "100M)"
+            ),
+        ),
     ] = None
     xb_parallel: Annotated[
-        int | EmptyStrToNone, Ui(label="XtraBackup parallel", section="XtraBackup")
+        int | EmptyStrToNone,
+        Ui(
+            label="XtraBackup parallel",
+            section="XtraBackup",
+            description=(
+                "How many files are decrypted and decompressed in parallel (defaults "
+                "to 4). Clearing it leaves the decompression unbounded."
+            ),
+        ),
     ] = Field(default=4)
     xtrabackup_bin_cmd: Annotated[
         XtraBackupTool | EmptyStrToNone,
-        Ui(label="XtraBackup binary", section="XtraBackup"),
+        Ui(
+            label="XtraBackup binary",
+            section="XtraBackup",
+            description=(
+                "Which binary prepares the backup; pick the one matching the tool that "
+                "took it"
+            ),
+        ),
     ] = None
-    restore_mycnf: Annotated[bool, Ui(label="Restore my.cnf", section="XtraBackup")] = (
-        False
-    )
+    restore_mycnf: Annotated[
+        bool,
+        Ui(
+            label="Restore my.cnf",
+            section="XtraBackup",
+            description=(
+                "Restore the MySQL configuration files saved in the backup before "
+                "preparing it, rewriting server id to a fresh value. Choosing one that "
+                "is not already taken queries the replication source below."
+            ),
+        ),
+    ] = False
     incremental_dest_path: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        Ui(label="Incremental destination path", section="XtraBackup"),
+        Ui(
+            label="Incremental destination path",
+            section="XtraBackup",
+            description=(
+                "Directory where an incremental chain is assembled before it is "
+                "prepared (defaults to /tmp/pxb_incrementals)"
+            ),
+        ),
     ] = None
     xtrabackup_restore_args: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        Ui(label="XtraBackup restore args", section="XtraBackup"),
+        Ui(
+            label="XtraBackup restore args",
+            section="XtraBackup",
+            description="Extra arguments appended to the prepare command",
+        ),
     ] = None
     keyring_file_data: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        Ui(label="Keyring file data", section="XtraBackup"),
+        Ui(
+            label="Keyring file data",
+            section="XtraBackup",
+            description=(
+                "Keyring file the prepare needs for a backup with encrypted "
+                "tablespaces; read only when the backup binary above is xtrabackup. "
+                "Falls back to a path found in the configuration files stored inside "
+                "the backup when left empty."
+            ),
+        ),
     ] = None
     xtrabackup_aes256_keyfile: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        Ui(label="XtraBackup AES-256 keyfile", section="XtraBackup"),
+        Ui(
+            label="XtraBackup AES-256 keyfile",
+            section="XtraBackup",
+            description=(
+                "AES-256 key file the backup was encrypted with, needed to decrypt it "
+                "before the prepare"
+            ),
+        ),
     ] = None
     slave_from_master: Annotated[
-        bool, Ui(label="Slave from master", section="XtraBackup")
+        bool,
+        Ui(
+            label="Slave from master",
+            section="XtraBackup",
+            description=(
+                "Start replication once the restore finishes, using the coordinates "
+                "saved in the backup"
+            ),
+        ),
     ] = False
     wait_for_catchup: Annotated[
-        bool, Ui(label="Wait for catchup", section="XtraBackup")
+        bool,
+        Ui(
+            label="Wait for catchup",
+            section="XtraBackup",
+            description=(
+                "Wait for the restored replica to catch up and fail the task if it "
+                "does not. Needs replication to be started above."
+            ),
+        ),
     ] = False
     master_ip: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Master IP", section="XtraBackup")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Master IP",
+            section="XtraBackup",
+            description=(
+                "Replication source the restored instance connects to. Used when "
+                "replication is started above."
+            ),
+        ),
     ] = None
     master_port: Annotated[
-        int | EmptyStrToNone, Ui(label="Master port", section="XtraBackup")
+        int | EmptyStrToNone,
+        Ui(
+            label="Master port",
+            section="XtraBackup",
+            description=(
+                "Port used to query the replication source for an unused server id "
+                "when 'Restore my.cnf' is set. Starting replication itself uses the "
+                "port in the coordinates saved in the backup."
+            ),
+        ),
     ] = Field(default=3306)
     master_user: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Master user", section="XtraBackup")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Master user",
+            section="XtraBackup",
+            description="Account the restored instance replicates with",
+        ),
     ] = None
     master_password: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        Ui(label="Master password", section="XtraBackup"),
+        Ui(
+            label="Master password",
+            section="XtraBackup",
+            description="Password for the replication account",
+        ),
     ] = None
 
     start_file: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Start file", section="Binlog")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Start file",
+            section="Binlog",
+            description="First binlog file to replay",
+        ),
     ] = None
     start_position: Annotated[
-        int | EmptyStrToNone, Ui(label="Start position", section="Binlog")
+        int | EmptyStrToNone,
+        Ui(
+            label="Start position",
+            section="Binlog",
+            description="Position in the first file to start replaying from",
+        ),
     ] = None
     stop_file: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Stop file", section="Binlog")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Stop file",
+            section="Binlog",
+            description="Last binlog file to replay",
+        ),
     ] = None
     stop_position: Annotated[
-        int | EmptyStrToNone, Ui(label="Stop position", section="Binlog")
+        int | EmptyStrToNone,
+        Ui(
+            label="Stop position",
+            section="Binlog",
+            description="Position in the last file to stop replaying at",
+        ),
     ] = None
     use_sql_file: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Use SQL file", section="Binlog")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Use SQL file",
+            section="Binlog",
+            description=(
+                "Dump the binlog range to restore.sql in the staging directory first "
+                "and then apply that file, instead of piping the binlogs straight into "
+                "MySQL"
+            ),
+        ),
     ] = None
     binlog_restore_extra_args: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        Ui(label="Binlog restore extra args", section="Binlog"),
+        Ui(
+            label="Binlog restore extra args",
+            section="Binlog",
+            description="Extra arguments appended to the mysqlbinlog replay command",
+        ),
     ] = None
 
     @model_validator(mode="before")
