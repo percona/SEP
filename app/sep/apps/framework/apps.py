@@ -416,7 +416,7 @@ class TaskExecutionApp(BaseApp):
         ``GET /schema`` (``AppSchema.item_display_name``). Written in
         mid-sentence form so a consumer capitalises the first character itself.
         Defaults to ``None``, which leaves the schema to fall back to
-        ``display_name``. **Read only on the derived-schema path:** a
+        ``display_name``. Read only on the derived-schema path: a
         ``script_source`` app declares its record names on the source instead,
         and a ``schema=`` app carries them on ``AppSchema`` directly, so setting
         this on either is rejected at construction (see
