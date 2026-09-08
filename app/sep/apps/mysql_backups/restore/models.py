@@ -381,8 +381,8 @@ def normalize_source_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
             forbidden_fields.update(dict.fromkeys(_GPG_SOURCE_FIELDS, encryption))
 
     for field_name, declaration in forbidden_fields.items():
-        dropped = normalized.pop(field_name, None)
-        if dropped is not None and _holds_a_non_default(data, field_name):
+        normalized.pop(field_name, None)
+        if _holds_a_non_default(data, field_name):
             _log.info(
                 "Dropped %r from a restore form: the inferred %r cannot consume it",
                 field_name,

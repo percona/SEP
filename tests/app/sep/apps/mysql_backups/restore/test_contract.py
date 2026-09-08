@@ -34,7 +34,6 @@ from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.app import app as restore_app
 from app.sep.apps.mysql_backups.restore.models import (
-    RestoreConfigAll,
     S3Tool,
     SourceTransport,
 )
@@ -49,15 +48,10 @@ from tests.app.sep.apps.framework.kit import (
     SYNTH_SERVICE_HOST,
     SYNTH_SERVICE_PORT,
 )
+from tests.app.sep.apps.mysql_backups.restore.conftest import legacy_default
 
 _NEW_TASK_NAME = "contract-new-restore"
 _UNKNOWN_TASK_NAME = "contract-unknown-restore"
-
-
-def _legacy_default(field_name: str) -> Any:
-    """Return a gated field's pre-declaration default, read from the config model."""
-    default = RestoreConfigAll.model_fields[field_name].default
-    return getattr(default, "value", default)
 
 
 def _valid_restore_body(
@@ -317,7 +311,7 @@ class TestRestoreContract(DerivedRouterContractTests):
 
         response = contract_client.post(f"{base}/", json=body)
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY, (
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, (
             response.text
         )
 
@@ -382,7 +376,7 @@ class TestRestoreContract(DerivedRouterContractTests):
         legacy_form = {
             **mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY],
             **{
-                name: _legacy_default(name)
+                name: legacy_default(name)
                 for name in ("ssh_user", "ssh_port", "s3_tool")
             },
         }

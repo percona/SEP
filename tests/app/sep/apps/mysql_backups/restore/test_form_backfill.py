@@ -33,12 +33,12 @@ from app.sep.apps.mysql_backups.restore.form_backfill import (
     reconstruct_mysql_restores_form,
 )
 from app.sep.apps.mysql_backups.restore.models import (
-    RestoreConfigAll,
     RestoreCreate,
     SourceTransport,
 )
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
 from app.tasks.models import Task, TaskBackendEnum
+from tests.app.sep.apps.mysql_backups.restore.conftest import legacy_default
 
 
 def _service(
@@ -356,12 +356,6 @@ def _stamped_restore_task(stored_form: dict, *, name: str = "restore-stamped") -
     return task
 
 
-def _legacy_default(field_name: str) -> object:
-    """Return a gated field's pre-declaration default, read from the config model."""
-    default = RestoreConfigAll.model_fields[field_name].default
-    return getattr(default, "value", default)
-
-
 def _pre_declaration_stamp(**overrides: object) -> dict:
     """Return a stamp as it was written before the source controls existed."""
     stamp = {
@@ -370,9 +364,9 @@ def _pre_declaration_stamp(**overrides: object) -> dict:
         "backup_type": BackupType.MYDUMPER.value,
         "backup_source": "/backups/mydumper/latest",
         "service_id": "12",
-        "ssh_user": _legacy_default("ssh_user"),
-        "ssh_port": _legacy_default("ssh_port"),
-        "s3_tool": _legacy_default("s3_tool"),
+        "ssh_user": legacy_default("ssh_user"),
+        "ssh_port": legacy_default("ssh_port"),
+        "s3_tool": legacy_default("s3_tool"),
     }
     stamp.update(overrides)
     return stamp

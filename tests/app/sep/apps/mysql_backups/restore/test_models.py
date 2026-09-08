@@ -24,13 +24,12 @@ from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.models import (
     normalize_source_declaration,
-    RestoreConfigAll,
     RestoreConfigServer,
     RestoreCreate,
-    S3Tool,
     SourceTransport,
 )
 from app.sep.apps.mysql_backups.restore.views import restore_views
+from tests.app.sep.apps.mysql_backups.restore.conftest import legacy_default
 
 
 def _minimal_restore_create_body(**overrides: object) -> dict:
@@ -231,17 +230,6 @@ def test_empty_s3_tool_does_not_trip_its_gate() -> None:
     assert model.s3_tool is None
 
 
-def _legacy_default(field_name: str) -> object:
-    """Return a gated field's pre-declaration default, read from the config model.
-
-    The config models still declare ``percona`` / ``22`` / ``s3cmd``, so reading
-    them here keeps the tests from carrying a second copy of the table the
-    normalizer itself derives.
-    """
-    default = RestoreConfigAll.model_fields[field_name].default
-    return default.value if isinstance(default, S3Tool) else default
-
-
 def _legacy_stamp(**overrides: object) -> dict:
     """Return a full pre-declaration stamp, as ``stamp_form_input`` would have dumped it."""
     stamp = {
@@ -249,10 +237,10 @@ def _legacy_stamp(**overrides: object) -> dict:
         "hostname": "executor-1",
         "backup_type": BackupType.MYDUMPER.value,
         "backup_source": "/var/backups/latest",
-        "ssh_user": _legacy_default("ssh_user"),
-        "ssh_port": _legacy_default("ssh_port"),
+        "ssh_user": legacy_default("ssh_user"),
+        "ssh_port": legacy_default("ssh_port"),
         "ssh_key": None,
-        "s3_tool": _legacy_default("s3_tool"),
+        "s3_tool": legacy_default("s3_tool"),
         "gpg_password_file": None,
     }
     stamp.update(overrides)
@@ -316,6 +304,13 @@ def _legacy_stamp(**overrides: object) -> dict:
             {"ssh_user": "deploy"},
             ("s3_tool",),
             id="local-source-with-credentials-drops-contradicting-s3-tool",
+        ),
+        pytest.param(
+            {"s3_tool": "awscli"},
+            SourceTransport.S3,
+            {"s3_tool": "awscli"},
+            ("ssh_user", "ssh_port"),
+            id="stray-s3-tool-is-the-last-signal-standing",
         ),
     ],
 )
