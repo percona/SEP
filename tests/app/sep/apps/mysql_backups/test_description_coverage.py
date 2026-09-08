@@ -42,6 +42,14 @@ class _DeclaresViaMixin(_RedeclaresInheritedField):
     """Inherit a locally declared field from an intermediate base, declaring none."""
 
 
+class _DescribesARedeclaredInheritedField(TaskFormModel):
+    """Re-declare an inherited Task field and give it the description that earns."""
+
+    task_name: Annotated[
+        str, Ui(label="Job name", section="Task", description="Name for this task")
+    ]
+
+
 class _DescribesOneField(TaskFormModel):
     """Declare a single described field, so the served-schema checks have a subject."""
 
@@ -215,6 +223,22 @@ class TestServedSchemaExemptions:
             AssertionError, match=r"inherited fields described here: \['task_name'\]"
         ):
             assert_schema_serves_only_declared_descriptions(payload, _DescribesOneField)
+
+    def test_a_redeclared_inherited_field_may_carry_its_description(self) -> None:
+        """Serve a description on an inherited field the model re-declared.
+
+        The coverage half requires helper text on a re-declared field, so
+        rejecting it here would leave the two halves demanding opposite things of
+        the same model.
+        """
+        payload = _schema_payload(
+            {"name": "task_name", "description": "Name for this task"},
+            {"name": "hostname", "description": None},
+        )
+
+        assert_schema_serves_only_declared_descriptions(
+            payload, _DescribesARedeclaredInheritedField
+        )
 
     def test_a_model_declaring_no_fields_is_rejected(self) -> None:
         """Refuse to pass over an empty field set on the served-schema half too."""

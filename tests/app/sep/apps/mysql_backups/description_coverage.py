@@ -68,7 +68,7 @@ def _marker_descriptions(create_model: type[TaskFormModel]) -> dict[str, str]:
     :return: Declared field name to its description, ``""`` when the field
         carries no ``Ui`` marker or an unset description.
     """
-    descriptions = {}
+    descriptions: dict[str, str] = {}
     for name in _declared_names(create_model):
         marker = next(
             (
@@ -134,7 +134,7 @@ def assert_schema_serves_only_declared_descriptions(
         name-keyed comparison would silently read only the last entry; when the
         model declares no fields of its own; when a declared field is absent from
         the schema; when its served text differs from its marker text; or when an
-        inherited field gained a description.
+        inherited field the model did not re-declare gained a description.
     """
     entries = [
         (field["name"], field.get("description") or "")
@@ -162,6 +162,8 @@ def assert_schema_serves_only_declared_descriptions(
     assert not dropped, f"marker text not served on the wire: {sorted(dropped)}"
 
     inherited = {
-        name for name in set(served) & set(TaskFormModel.model_fields) if served[name]
+        name
+        for name in (set(served) & set(TaskFormModel.model_fields)) - set(declared)
+        if served[name]
     }
     assert not inherited, f"inherited fields described here: {sorted(inherited)}"
