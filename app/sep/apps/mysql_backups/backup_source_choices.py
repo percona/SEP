@@ -27,8 +27,8 @@ from app.sep.apps.mysql_backups.models import (
     BackupType,
     CatalogServiceKey,
     MysqlBackupRun,
+    restore_valid_backup_source,
 )
-from app.sep.apps.mysql_backups.restore.models import ensure_backup_source_shell_safe
 
 _TYPE_LABELS = {
     BackupType.MYDUMPER: "Mydumper",
@@ -45,24 +45,6 @@ _LABEL_PATH_TAIL = (_LABEL_PATH_MAX - 1) // 2
 # older valid backups, while still bounding DB work for a free-text-friendly
 # endpoint.
 _MAX_CHOICE_SCAN_PAGES = 10
-
-
-def backup_source_value(run: MysqlBackupRun) -> str | None:
-    """Return a restore-valid ``backup_source`` location for ``run``, or ``None``.
-
-    Prefers a configured upload destination (``s3://``, ``gs://``, …) when one
-    was recorded; otherwise uses the resolved on-disk ``location``. Blank
-    strings are treated as unset. Rows with neither cannot become a
-    ``Choice`` value (``NonEmptyStr``).
-
-    :param run: A catalogued backup run.
-    :return: The preferred location string, or ``None`` when neither field is
-        usable.
-    """
-    for candidate in (run.upload_destination, run.location):
-        if candidate and (stripped := candidate.strip()):
-            return stripped
-    return None
 
 
 def _format_size(size_bytes: int | None) -> str:
@@ -113,12 +95,8 @@ def backup_run_to_choice(run: MysqlBackupRun) -> Choice | None:
     :param run: A catalogued backup run.
     :return: A ``Choice`` whose ``value`` is restore-valid, or ``None``.
     """
-    value = backup_source_value(run)
+    value = restore_valid_backup_source(run.upload_destination, run.location)
     if value is None:
-        return None
-    try:
-        ensure_backup_source_shell_safe(value)
-    except ValueError:
         return None
     return Choice(value=value, label=backup_source_label(run, value=value))
 

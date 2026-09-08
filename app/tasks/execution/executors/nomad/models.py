@@ -437,6 +437,78 @@ def _append_exit_code_suffix(
         parts.append(f"(exit code {exit_code})")
 
 
+def _failed_step_reason(alloc: dict[str, Any]) -> str | None:
+    """Return prose naming the first producing step that failed, if any.
+
+    Reads the failing step off the allocation's task states: those carry a
+    per-step ``Failed`` flag and the ``Terminated`` events holding exit codes,
+    while :func:`_status_from_step_states` answers only failed-vs-success and
+    names no step. Steps are walked in execution order rather than the order
+    Nomad serialized them in, so a payload failure is reported ahead of a
+    cleanup step that failed after it.
+
+    The exit code is read off the step's *last* ``Terminated`` event. A step
+    Nomad restarted carries one per attempt, oldest first, so the last is the
+    termination the allocation ended on rather than the first attempt's.
+
+    A malformed allocation, task-state container or step state is skipped
+    rather than raised on, so shape drift costs a reason rather than the whole
+    sync.
+
+    :param alloc: The allocation details from Nomad.
+    :return: The reason, or ``None`` when no producing step reports a failure.
+    """
+    task_states = _alloc_task_states(alloc)
+    for step in sorted(task_states, key=lambda name: _alloc_step_sort_key(alloc, name)):
+        if not NomadStep.is_persistable(step):
+            continue
+        state = task_states.get(step)
+        if not isinstance(state, dict) or not state.get("Failed"):
+            continue
+        description = f"Step {step!r} failed"
+        parts = [description]
+        events = state.get("Events")
+        if isinstance(events, list):
+            for event in reversed(events):
+                if not isinstance(event, dict):
+                    continue
+                if event.get("Type") != "Terminated":
+                    continue
+                exit_code = _nomad_event_exit_code(event)
+                if exit_code is not None:
+                    _append_exit_code_suffix(parts, description, exit_code)
+                    break
+        return f"{' '.join(parts)}."
+    return None
+
+
+def _terminal_status_reason(
+    status: TaskHistoryStatusEnum, alloc: dict[str, Any]
+) -> str | None:
+    """Return the stored reason for a status the Nomad sync just resolved.
+
+    ``FAILED`` reports the failing producing step and its exit code, and stores
+    ``None`` when the allocation names none — the shape a client-status-derived
+    failure has. Restating the status as "Failed." there would spend the
+    column's ``None`` on a value that adds nothing to the status, where ``None``
+    is what the column documents as "the reason is unknown". Every other status
+    takes its prose from the enum, and a status carrying none stores ``None``.
+
+    The enum's fragments are verb phrases written for the mid-sentence slot in
+    :meth:`~app.tasks.models.TaskHistory.alert_for_status`, so they are rendered
+    as standalone sentences here rather than given a subject: "The run
+    execution tracking lost" is not a sentence.
+
+    :param status: The terminal status the sync resolved.
+    :param alloc: The allocation details from Nomad.
+    :return: The reason to store, or ``None`` when the status carries none.
+    """
+    if status == TaskHistoryStatusEnum.FAILED:
+        return _failed_step_reason(alloc)
+    summary = status.operator_summary()
+    return f"{summary[:1].upper()}{summary[1:]}." if summary else None
+
+
 def _sortable_nomad_tracking_event(
     task_name: str,
     list_index: int,
@@ -1310,12 +1382,19 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     queue_item.id,
                 )
                 queue_item.status = TaskHistoryStatusEnum.FAILED
+                queue_item.set_failure_reason(
+                    "The executor job produced no allocation and has no pending "
+                    "evaluation."
+                )
                 queue_item.started_at = None
         except JobNotFoundError:
             logger.warning(
                 "Lost job and allocation from task history %s", queue_item.id
             )
             queue_item.status = TaskHistoryStatusEnum.LOST
+            queue_item.set_failure_reason(
+                _terminal_status_reason(TaskHistoryStatusEnum.LOST, {})
+            )
         return None
 
     def _stamp_finished_at(
@@ -1382,6 +1461,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             job = self.get_job(job_id)
         except JobNotFoundError:
             queue_item.status = TaskHistoryStatusEnum.LOST
+            queue_item.set_failure_reason(
+                _terminal_status_reason(TaskHistoryStatusEnum.LOST, alloc)
+            )
         else:
             self._apply_terminal_status(
                 queue_item,
@@ -1458,17 +1540,20 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             self._stamp_finished_at(queue_item, alloc)
             if sentinel is not None:
                 queue_item.status = sentinel
+                queue_item.set_failure_reason(_terminal_status_reason(sentinel, alloc))
                 return
             status = _status_from_step_states(alloc)
             if job.get("Stop", False) and status is not TaskHistoryStatusEnum.FAILED:
                 status = TaskHistoryStatusEnum.STOPPED
             queue_item.status = status
+            queue_item.set_failure_reason(_terminal_status_reason(status, alloc))
             return
 
         if job["Status"] == NOMAD_DEAD_JOB_STATUS:
             self._stamp_finished_at(queue_item, alloc)
             if sentinel is not None:
                 queue_item.status = sentinel
+                queue_item.set_failure_reason(_terminal_status_reason(sentinel, alloc))
                 return
             status = self.get_task_history_status_from_alloc_status(
                 alloc.get("ClientStatus"),
@@ -1479,6 +1564,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 status
                 if task_states or status in _DEAD_END_ALLOC_STATUSES
                 else TaskHistoryStatusEnum.LOST
+            )
+            queue_item.set_failure_reason(
+                _terminal_status_reason(queue_item.status, alloc)
             )
             return
 
@@ -1499,6 +1587,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             )
             self._stamp_finished_at(queue_item, alloc)
             queue_item.status = dead_end_status
+            queue_item.set_failure_reason(
+                _terminal_status_reason(dead_end_status, alloc)
+            )
 
     async def _persist_nomad_task_logs(
         self,

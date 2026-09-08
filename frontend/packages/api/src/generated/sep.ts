@@ -1910,6 +1910,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/mysql_backups/{task_name}/backups': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Task Backups
+     * @description Return a page of a backup task's catalogued runs, newest run first.
+     *
+     *     The ``task_name`` path parameter is resolved by
+     *     :data:`~app.sep.apps.mysql_backups.deps.CataloguedHistoryIds`, so a task that
+     *     does not exist or belongs to another app surfaces as a ``404`` while a known
+     *     task with no catalogued backup yields an empty page — keeping "this task has
+     *     never produced a backup" distinguishable from "this task does not exist".
+     *
+     *     The discovery walk behind that dependency is capped, so ``total`` counts the
+     *     runs within the scanned window rather than every run the task ever produced,
+     *     and carries no marker distinguishing a truncated page from a complete one.
+     *     A run older than the window is reachable through the per-service catalog
+     *     route, which is uncapped — but only while its inventory service still
+     *     resolves, and only for a caller that knows which service the run was recorded
+     *     under, which a task since re-pointed at another target no longer answers.
+     *
+     *     :param history_ids: The task's catalogued task-history ids, newest first.
+     *     :param session: The database session the catalog is queried on.
+     *     :param pagination: The requested offset/limit window.
+     *     :return: The requested page of the task's recorded backup runs, newest run
+     *         first.
+     */
+    get: operations['mysql_backups_list_task_backups_api_apps_mysql_backups__task_name__backups_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/mysql_backups/{task_name}/execute': {
     parameters: {
       query?: never;
@@ -4540,6 +4580,10 @@ export interface components {
      *         reports.
      *     :param display_name: A user-meaningful label derived from the task name or
      *         execution-request metadata. Read-only; computed on serialisation.
+     *     :param failure_reason: A single-line, operator-facing reason for the run's
+     *         outcome, or None when the run did not fail or the reason is unknown. A
+     *         historic row predating the column reports None, which means "unknown"
+     *         rather than "did not fail".
      */
     TaskHistoryResponse: {
       /** Anonymize Mask */
@@ -4575,6 +4619,8 @@ export interface components {
       /** Executed By */
       executed_by?: string | null;
       execution_request: components['schemas']['TaskExecutionRequest'];
+      /** Failure Reason */
+      failure_reason?: string | null;
       /** Finished At */
       finished_at?: string | null;
       /**
@@ -6870,26 +6916,28 @@ export interface components {
      *     the root ``forms`` / ``list_view`` instead.
      *
      *     :param name: URL segment and API key for the entity (for example ``nodes``).
-     *     :type name: NonEmptyStr
      *     :param display_name: Human-readable title for this entity's screens.
-     *     :type display_name: NonEmptyStr
+     *     :param item_display_name: What **one** record of this entity is called (for
+     *         example ``node``), as opposed to ``display_name``, which names the
+     *         entity's screens. Stored in mid-sentence form so a consumer composing a
+     *         label capitalises the first character itself. Defaults to this entity's
+     *         own ``display_name`` — not the parent app's, and never inferred from
+     *         ``item_display_name_plural``.
+     *     :param item_display_name_plural: What **several** records of this entity are
+     *         called (for example ``nodes``). An independent declaration under the
+     *         same mid-sentence convention; nothing derives it from
+     *         ``item_display_name``. Defaults to this entity's own ``display_name``.
      *     :param description: Optional helper text for this entity. Defaults to
      *         ``None``.
-     *     :type description: NonEmptyStr | None
      *     :param forms: Form sections for create (and edit when the UI supports it).
-     *     :type forms: list[FormSection]
      *     :param list_view: Column configuration for this entity's list table.
-     *     :type list_view: ListView
      *     :param detail_highlights: Optional per-field syntax highlighter hints for
      *         detail pages. Keys are field names; values are highlighting languages.
      *         Defaults to an empty mapping.
-     *     :type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]
      *     :param cardinality_rules: Optional entity-wide cross-field cardinality
      *         constraints. Defaults to ``None``.
-     *     :type cardinality_rules: list[CardinalityRule] | None
      *     :param fail_when: Optional entity-wide predicate-only invariants.
      *         Defaults to ``None``.
-     *     :type fail_when: list[FailRule] | None
      */
     framework__AppEntitySchema: {
       /** Cardinality Rules */
@@ -6906,6 +6954,10 @@ export interface components {
       fail_when?: components['schemas']['framework__FailRule'][] | null;
       /** Forms */
       forms: components['schemas']['framework__FormSection'][];
+      /** Item Display Name */
+      item_display_name: string;
+      /** Item Display Name Plural */
+      item_display_name_plural: string;
       list_view: components['schemas']['framework__ListView'];
       /** Name */
       name: string;
@@ -6916,32 +6968,37 @@ export interface components {
      *
      *     :param name: The plugin identifier; must match Python identifier rules,
      *         optionally with internal hyphens.
-     *     :type name: NonEmptyStr
      *     :param display_name: The human-readable plugin title displayed in the UI.
-     *     :type display_name: NonEmptyStr
+     *     :param item_display_name: What **one** record this plugin's create form
+     *         produces is called (for example ``backup``), as opposed to
+     *         ``display_name``, which names the plugin. Stored in mid-sentence form —
+     *         lowercase unless it opens with a proper noun — so a consumer composing a
+     *         label capitalises the first character itself. Defaults to
+     *         ``display_name``, and is never inferred from
+     *         ``item_display_name_plural``. Unlike the optional UI hints on this
+     *         model, both record names are required and non-nullable so the generated
+     *         client types them as ``string`` and no consumer needs a fallback.
+     *     :param item_display_name_plural: What **several** of those records are
+     *         called (for example ``backups``). An independent declaration under the
+     *         same mid-sentence convention; nothing derives it from
+     *         ``item_display_name``. Defaults to ``display_name``.
      *     :param description: Optional helper text describing the plugin's
      *         purpose. Defaults to ``None``.
-     *     :type description: NonEmptyStr | None
      *     :param task_type: Optional task-type identifier used when creating tasks
      *         via the shared task API. Defaults to ``None``.
-     *     :type task_type: NonEmptyStr | None
      *     :param forms: Form sections for single-entity / task plugins. When
      *         ``entities`` is non-empty, root ``forms`` must be empty (declare
      *         forms on each entity instead); non-empty root ``forms`` are rejected
      *         at construction. Defaults to an empty list.
-     *     :type forms: list[FormSection]
      *     :param capabilities: Optional plugin-level feature flags. Defaults to
      *         ``None``.
-     *     :type capabilities: Capabilities | None
      *     :param list_view: List-view configuration when ``entities`` is unset
      *         (single-entity / task plugins). Ignored when ``entities`` is set.
-     *     :type list_view: ListView | None
      *     :param detail_view: Optional declarative layout for the task detail page's
      *         section cards (task-style plugins only; ignored when ``entities`` is
      *         set). Optional at the model layer for backwards compatibility. A
      *         forward-looking guard refuses to load a plugin that sets
      *         ``task_type`` without declaring ``detail_view``. Defaults to ``None``.
-     *     :type detail_view: DetailView | None
      *     :param entities: Optional list of CRUD entities for multi-resource plugins.
      *         When non-empty, the React shell renders one list/create/detail flow
      *         per entity. Defaults to ``None`` (legacy single-entity mode).
@@ -6949,26 +7006,21 @@ export interface components {
      *         constraints (task-style plugins only). Rejected at construction when
      *         ``entities`` is non-empty — declare rules on each entity instead.
      *         Defaults to ``None``.
-     *     :type cardinality_rules: list[CardinalityRule] | None
      *     :param fail_when: Optional plugin-wide predicate-only invariants (task-style
      *         plugins only). Rejected at construction when ``entities`` is non-empty —
      *         declare rules on each entity instead. Defaults to ``None``.
-     *     :type fail_when: list[FailRule] | None
      *     :param derived: Optional declarative specs for sibling tasks derived from
      *         the parent task on cascade. Consumed by
      *         :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE
      *         across the parent and N derived siblings. Defaults to ``None``.
-     *     :type derived: list[DerivedTask] | None
      *     :param predecessors: Optional declarative specs for tasks that must run
      *         before the parent. Consumed by
      *         :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE
      *         across the predecessors and the parent, including the chain wiring
      *         applied at execute time. Defaults to ``None``.
-     *     :type predecessors: list[ChainedPredecessor] | None
      *     :param related_apps: Optional separately registered apps the React shell
      *         surfaces as sibling tabs (for example a restore app nested under a
      *         backups parent). Defaults to ``None``.
-     *     :type related_apps: list[RelatedApp] | None
      */
     framework__AppSchema: {
       capabilities?: components['schemas']['framework__Capabilities'] | null;
@@ -6987,6 +7039,10 @@ export interface components {
       fail_when?: components['schemas']['framework__FailRule'][] | null;
       /** Forms */
       forms?: components['schemas']['framework__FormSection'][];
+      /** Item Display Name */
+      item_display_name: string;
+      /** Item Display Name Plural */
+      item_display_name_plural: string;
       list_view?: components['schemas']['framework__ListView'] | null;
       /** Name */
       name: string;
@@ -9164,7 +9220,7 @@ export interface components {
     };
     /**
      * BackupRunResponse
-     * @description Expose one catalog record over the per-service query path.
+     * @description Expose one catalog record over the service-scoped and task-scoped queries.
      *
      *     :param id: The record's primary key.
      *     :param service_name: The inventory service the backup was taken from.
@@ -9179,8 +9235,20 @@ export interface components {
      *     :param size_bytes: The backup size in bytes, when the run reported it.
      *     :param started_at: When the run started.
      *     :param finished_at: When the run finished.
+     *     :param backup_source: The run's restore-form-valid source, derived from
+     *         ``upload_destination`` and ``location``; read-only, and absent from the
+     *         table this response is built from.
      */
     mysql_backups__BackupRunResponse: {
+      /**
+       * Backup Source
+       * @description Return the run's restore-form-valid source, or ``None``.
+       *
+       *     Resolved server-side so no caller re-derives it from the raw fields.
+       *     ``None`` means the run recorded no usable source, or recorded one the
+       *     restore form rejects — either way it cannot seed a restore.
+       */
+      readonly backup_source: string | null;
       /**
        * Backup Type
        * @enum {string}
@@ -13598,6 +13666,40 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_list_task_backups_api_apps_mysql_backups__task_name__backups_get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['mysql_backups__PaginatedResponse_BackupRunResponse_'];
+        };
       };
       /** @description Validation Error */
       422: {

@@ -17,14 +17,11 @@
 
 import pytest
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.tasks.config import tasks_settings
 from app.tasks.models import LogCaptureStatusEnum, TaskHistoryLogState
-from tests.app.alembic_paths import ALEMBIC_INI
 
 # The head immediately before capture_status is added. Cursor columns still
 # use the pre-rename names ``nomad_offset`` / ``allocation_epoch``.
@@ -54,19 +51,6 @@ _SET_CAPTURE_STATUS = "UPDATE taskhistory_log_state SET capture_status = ?"
 # allocation was collected before the sync read it.
 _STRANDED_PRODUCER_OFFSET = 0
 _DRAINED_PRODUCER_OFFSET = 4096
-
-
-@pytest.fixture
-def tasks_alembic_config(tmp_path, monkeypatch):
-    """Return an Alembic ``Config`` and sync URL pointing at a temp SQLite file."""
-    db_path = tmp_path / "test_tasks.sqlite"
-    sync_url = f"sqlite:///{db_path}"
-
-    monkeypatch.setattr(tasks_settings.DATABASE, "HOST", "")
-    monkeypatch.setattr(tasks_settings.DATABASE, "NAME", str(db_path))
-
-    cfg = Config(str(ALEMBIC_INI), ini_section="tasks")
-    return cfg, sync_url
 
 
 def test_pre_existing_rows_are_classified_unknown(tasks_alembic_config):

@@ -1179,3 +1179,35 @@ class TestRemoteChoices:
         """Reject an empty (whitespace-only) endpoint at marker construction."""
         with pytest.raises(ValueError, match="endpoint"):
             RemoteChoices(endpoint="   ")
+
+
+class TestDeriveAppSchemaItemDisplayNames:
+    """Cover the record names threading through :func:`derive_app_schema`."""
+
+    def test_record_names_passed_through(self) -> None:
+        """Stamp both record names onto the derived schema unchanged."""
+        schema = derive_app_schema(
+            _ScopeModel,
+            _SINGLE_SECTION,
+            name="mysql_backups",
+            display_name="MySQL Backups",
+            list_view=_MINIMAL_LIST_VIEW,
+            item_display_name="backup",
+            item_display_name_plural="backups",
+        )
+
+        assert schema.item_display_name == "backup"
+        assert schema.item_display_name_plural == "backups"
+
+    def test_omitted_record_names_default_from_display_name(self) -> None:
+        """Leave the model's defaulting to fill both when the caller passes neither."""
+        schema = derive_app_schema(
+            _ScopeModel,
+            _SINGLE_SECTION,
+            name="mysql_backups",
+            display_name="MySQL Backups",
+            list_view=_MINIMAL_LIST_VIEW,
+        )
+
+        assert schema.item_display_name == "MySQL Backups"
+        assert schema.item_display_name_plural == "MySQL Backups"
