@@ -62,6 +62,34 @@ async def list_periodic_tasks(
     return PaginatedResponse[ArbitraryMapping].model_validate(payload)
 
 
+@router.post("/schedule/preview/", responses=UPSTREAM_TASKS_502_RESPONSE)
+async def preview_schedule(
+    tasks_api: TaskAPI,
+    body: Annotated[ArbitraryMapping, Body()],
+) -> ArbitraryMapping:
+    """Dispatch a schedule preview to the Tasks API.
+
+    Two path segments so the sibling ``POST /{task_name}/`` cannot match this
+    route: a single-segment ``/preview/`` would be ambiguous with it, resolvable
+    only by declaration order and only at the cost of reserving ``preview`` as a
+    task name nobody could schedule.
+
+    :param tasks_api: The Tasks API client used to compute the preview.
+    :param body: The ``SchedulePreviewWrite`` JSON body, forwarded verbatim.
+    :return: The schedule preview as returned by the Tasks API.
+    :raises HTTPException: Re-raised unchanged for an upstream client error
+        (status < 500).
+    :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+        or a connection-level ``OSError``.
+    """
+    with reraise_upstream_tasks_errors():
+        return ArbitraryMapping(
+            as_json_object(
+                await tasks_api.post("/periodic/schedule/preview/", json=body)
+            )
+        )
+
+
 @router.post(
     "/{task_name}/",
     status_code=status.HTTP_201_CREATED,
