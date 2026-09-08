@@ -170,8 +170,8 @@ _FMT_HAS_GPG = any_(_FMT == EncryptionFormat.GPG, _FMT == EncryptionFormat.DUAL)
 # rather than by a ``Forbidden`` like the mode gates above.
 _GPG_TIMING_FIELDS = ("encrypt", "post_run_encrypt")
 
-# The Mydumper and XtraBackup PXC toggles are the same switch on two backup
-# paths, so their copy is shared to keep the two in step.
+# Shared so the wording cannot drift between the backup paths that offer the
+# toggle.
 _DESYNC_PXC_DESCRIPTION = (
     "Desync the node from the PXC cluster while the backup runs, so flow "
     "control does not stall the cluster. Ignored on a non-PXC node."
@@ -360,7 +360,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Database Host",
             section="Task",
-            description="Database service to back up; SEP resolves its host and port from inventory",
+            description=(
+                "Database service to back up; SEP resolves its host and port from "
+                "inventory"
+            ),
         ),
     ]
     backup_type: Annotated[
@@ -368,7 +371,10 @@ class BackupCreate(TaskFormModel):
         Choices((("M", "Mydumper"), ("X", "XtraBackup"), ("B", "Binlog"))),
         Ui(
             section="Task",
-            description="Backup method for this task; it selects the tool that runs and which sections below apply",
+            description=(
+                "Backup method for this task; it selects the tool that runs and which "
+                "sections below apply"
+            ),
         ),
     ]
     alias: Annotated[
@@ -376,7 +382,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Server Alias",
             section="Task",
-            description="Name for this server in backup paths and reports (defaults to the service address)",
+            description=(
+                "Name for this server in backup paths and reports (defaults to the "
+                "service address)"
+            ),
         ),
     ] = None
 
@@ -400,7 +409,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Compress backup data",
             section="General",
-            description="Compress backup data as it is written, using the algorithm selected below",
+            description=(
+                "Compress backup data as it is written, using the algorithm selected "
+                "below"
+            ),
         ),
     ] = False
     check_disk_space: Annotated[
@@ -408,7 +420,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Check disk space first",
             section="General",
-            description="Fail before the backup starts when the target filesystem has too little free space",
+            description=(
+                "Fail before the backup starts when the target filesystem has too "
+                "little free space"
+            ),
         ),
     ] = False
     only_if_running_replica: Annotated[
@@ -416,7 +431,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Only if running replica",
             section="General",
-            description="Skip the host unless replication is running there, so the backup only runs on an active replica",
+            description=(
+                "Skip the host unless replication is running there, so the backup only "
+                "runs on an active replica"
+            ),
         ),
     ] = False
     only_if_read_only: Annotated[
@@ -432,7 +450,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="FTWRL guardian",
             section="General",
-            description="Watch for a FLUSH TABLES WITH READ LOCK that hangs during the backup and kill it. Mydumper backups only.",
+            description=(
+                "Watch for a FLUSH TABLES WITH READ LOCK that hangs during the backup "
+                "and kill it. Mydumper backups only."
+            ),
         ),
     ] = False
     logging_dir: Annotated[
@@ -448,7 +469,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Backup directory",
             section="General",
-            description="Root directory on the database host where backups are written, one dated subdirectory per run",
+            description=(
+                "Root directory on the database host where backups are written, one "
+                "dated subdirectory per run"
+            ),
         ),
     ] = None
     defaults_file: Annotated[
@@ -456,7 +480,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="MySQL defaults file",
             section="General",
-            description="MySQL defaults file the backup tool reads for its connection credentials",
+            description=(
+                "MySQL defaults file the backup tool reads for its connection "
+                "credentials"
+            ),
         ),
     ] = None
     compression_algorithm: Annotated[
@@ -464,7 +491,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Compression algorithm",
             section="General",
-            description="Algorithm used when compression is enabled; the available choices depend on the backup type",
+            description=(
+                "Algorithm used when compression is enabled; the available choices "
+                "depend on the backup type"
+            ),
         ),
     ] = None
 
@@ -507,7 +537,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Use NUMA",
             section="Mydumper",
-            description="Run mydumper under numactl --interleave=all, spreading its memory across NUMA nodes",
+            description=(
+                "Run mydumper under numactl --interleave=all, spreading its memory "
+                "across NUMA nodes"
+            ),
         ),
     ] = False
     mydumper_extra_args: Annotated[
@@ -535,7 +568,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Number of backup copies",
             section="XtraBackup",
-            description="How many backup copies to keep on the host before the oldest are deleted",
+            description=(
+                "How many backup copies to keep on the host before the oldest are "
+                "deleted"
+            ),
         ),
     ] = None
     xtrabackup_kill_queries: Annotated[
@@ -543,7 +579,9 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Kill blocking queries",
             section="XtraBackup",
-            description="Kill queries that block the backup's lock instead of waiting for them",
+            description=(
+                "Kill queries that block the backup's lock instead of waiting for them"
+            ),
         ),
     ] = False
     xtrabackup_kill_queries_timeout: Annotated[
@@ -552,7 +590,9 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Kill-queries timeout (s)",
             section="XtraBackup",
-            description="How long a blocking query may run before it is killed (seconds)",
+            description=(
+                "How long a blocking query may run before it is killed (seconds)"
+            ),
         ),
     ] = None
     xtrabackup_kill_query_type: Annotated[
@@ -562,7 +602,9 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Kill query type",
             section="XtraBackup",
-            description="Which blocking queries may be killed: SELECTs only, or any statement",
+            description=(
+                "Which blocking queries may be killed: SELECTs only, or any statement"
+            ),
         ),
     ] = None
     xtrabackup_verify: Annotated[
@@ -612,7 +654,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Use rsync",
             section="XtraBackup",
-            description="Copy non-InnoDB files with rsync to shorten the lock at the end of the backup. Unrelated to the Rsync upload provider.",
+            description=(
+                "Copy non-InnoDB files with rsync to shorten the lock at the end of "
+                "the backup. Unrelated to the Rsync upload provider."
+            ),
         ),
     ] = False
     xtrabackup_replica_info: Annotated[
@@ -620,7 +665,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Include replica info",
             section="XtraBackup",
-            description="Record the source's replication coordinates in the backup, so a restore can resume replication from it",
+            description=(
+                "Record the source's replication coordinates in the backup, so a "
+                "restore can resume replication from it"
+            ),
         ),
     ] = False
     xtrabackup_defaults_file: Annotated[
@@ -629,7 +677,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="XtraBackup defaults file",
             section="XtraBackup",
-            description="Defaults file passed to the backup binary, when it differs from the one used for connections",
+            description=(
+                "Defaults file passed to the backup binary, when it differs from the "
+                "one used for connections"
+            ),
         ),
     ] = None
     xtrabackup_extra_args: Annotated[
@@ -648,7 +699,12 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Incremental method",
             section="XtraBackup",
-            description="How incrementals are stored. 'Less space' chains each incremental to the one before it, which saves disk but has to be merged in order to restore. 'Fast restore' merges each incremental into the base, so the latest backup is always ready to restore.",
+            description=(
+                "How incrementals are stored. 'Less space' chains each incremental to "
+                "the one before it, which saves disk but has to be merged in order to "
+                "restore. 'Fast restore' merges each incremental into the base, so the "
+                "latest backup is always ready to restore."
+            ),
         ),
     ] = None
     # Vocabulary duplicated -- see the note on BackupConfigAll.xtrabackup_incremental_cycle.
@@ -684,7 +740,11 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Local SSH destination",
             section="XtraBackup",
-            description="SSH destination (user@host) the backup is streamed to when the database host is not the executor. Detected automatically when left empty.",
+            description=(
+                "SSH destination (user@host) the backup is streamed to when the "
+                "database host is not the executor. Detected automatically when left "
+                "empty."
+            ),
         ),
     ] = None
     xtrabackup_stop_replica: Annotated[
@@ -704,7 +764,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Lock DDL",
             section="XtraBackup",
-            description="Block DDL for the duration of the backup, so a schema change cannot corrupt it",
+            description=(
+                "Block DDL for the duration of the backup, so a schema change cannot "
+                "corrupt it"
+            ),
         ),
     ] = False
     xtrabackup_quiet: Annotated[
@@ -712,7 +775,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Quiet log (drop per-file copy lines)",
             section="XtraBackup",
-            description="Drop the per-file copy lines from the backup log, leaving progress and errors",
+            description=(
+                "Drop the per-file copy lines from the backup log, leaving progress "
+                "and errors"
+            ),
         ),
     ] = False
     xtrabackup_bin_cmd: Annotated[
@@ -721,7 +787,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Backup binary",
             section="XtraBackup",
-            description="Which backup binary to run; pick the one matching the server's fork and version",
+            description=(
+                "Which backup binary to run; pick the one matching the server's fork "
+                "and version"
+            ),
         ),
     ] = None
 
@@ -731,7 +800,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Binlog prefix",
             section="Binlog",
-            description="Base name of the server's binary logs, such as mysql-bin, used to find and purge this server's stored files",
+            description=(
+                "Base name of the server's binary logs, such as mysql-bin, used to "
+                "find and purge this server's stored files"
+            ),
         ),
     ] = None
     binlog_purge_days: Annotated[
@@ -758,7 +830,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Compress command",
             section="Binlog",
-            description="Command used to compress each completed binlog file, replacing the default",
+            description=(
+                "Command used to compress each completed binlog file, replacing the "
+                "default"
+            ),
         ),
     ] = None
     binlog_cmd: Annotated[
@@ -767,7 +842,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Binlog command",
             section="Binlog",
-            description="Path to the mysqlbinlog binary on the host, when it is not the packaged one",
+            description=(
+                "Path to the mysqlbinlog binary on the host, when it is not the "
+                "packaged one"
+            ),
         ),
     ] = None
     binlog_run_all: Annotated[
@@ -775,7 +853,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Run all binlog backups",
             section="Binlog",
-            description="Stream binlogs for every server in the config instead of only this task's server",
+            description=(
+                "Keep this on. The binlog backup streams every server in the task's "
+                "config, and refuses to start when the option is cleared."
+            ),
         ),
     ] = True
     binlog_alternative_host: Annotated[
@@ -784,7 +865,9 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Alternative binlog host",
             section="Binlog",
-            description="Pull binlogs from this host instead of the selected service's address",
+            description=(
+                "Pull binlogs from this host instead of the selected service's address"
+            ),
         ),
     ] = None
 
@@ -832,7 +915,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="AES-256 key file path",
             section="Encryption",
-            description="Path on the database host to the AES-256 key file. Required by the AES-256 formats, which are XtraBackup-only.",
+            description=(
+                "Path on the database host to the AES-256 key file. Required by the "
+                "AES-256 formats, which are XtraBackup-only."
+            ),
         ),
     ] = None
     encrypt: Annotated[
@@ -922,7 +1008,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Upload providers",
             section="Upload",
-            description="Where the finished backup is copied. Leave empty to keep it on the database host.",
+            description=(
+                "Where the finished backup is copied. Leave empty to keep it on the "
+                "database host."
+            ),
         ),
     ] = Field(default_factory=list)
     s3_bucket: Annotated[
@@ -931,7 +1020,9 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="S3 bucket",
             section="Upload",
-            description="Destination S3 bucket, optionally with a path prefix (bucket/path)",
+            description=(
+                "Destination S3 bucket, optionally with a path prefix (bucket/path)"
+            ),
         ),
     ] = None
     s3_storage_class: Annotated[
@@ -940,7 +1031,9 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="S3 storage class",
             section="Upload",
-            description="Storage class applied to uploaded objects (defaults to STANDARD)",
+            description=(
+                "Storage class applied to uploaded objects (defaults to STANDARD)"
+            ),
         ),
     ] = None
     skip_s3_safety_check: Annotated[
@@ -949,7 +1042,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Skip S3 safety check",
             section="Upload",
-            description="Upload even when the bucket allows public access, skipping the block-public-access check",
+            description=(
+                "Upload even when the bucket allows public access, skipping the "
+                "block-public-access check"
+            ),
         ),
     ] = False
     upload_quiet: Annotated[
@@ -957,7 +1053,9 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Quiet upload logs",
             section="Upload",
-            description="Drop routine progress lines from the upload log, leaving errors",
+            description=(
+                "Drop routine progress lines from the upload log, leaving errors"
+            ),
         ),
     ] = False
     awscli_s3_upload_extra_args: Annotated[
@@ -966,7 +1064,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="AWS S3 upload extra args",
             section="Upload",
-            description="Extra arguments appended to the AWS CLI upload command. XtraBackup backups only.",
+            description=(
+                "Extra arguments appended to the AWS CLI upload command. XtraBackup "
+                "backups only."
+            ),
         ),
     ] = None
     gs_bucket: Annotated[
@@ -975,7 +1076,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Google Cloud Storage bucket",
             section="Upload",
-            description="Destination Google Cloud Storage bucket, optionally with a path prefix (bucket/path)",
+            description=(
+                "Destination Google Cloud Storage bucket, optionally with a path "
+                "prefix (bucket/path)"
+            ),
         ),
     ] = None
     rsync_path: Annotated[

@@ -281,6 +281,7 @@
         },
         {
           "description": "MySQL data directory the backup is restored into. It has to exist already, and everything currently in it is deleted. Detected from the server when left empty.",
+          "destructive": "The data directory is emptied before the backup is restored into it. Whatever it holds now, including a live dataset, is lost.",
           "label": "Data directory",
           "min_length": 1,
           "name": "datadir",
@@ -289,7 +290,7 @@
         },
         {
           "default": false,
-          "description": "The restore always stops MySQL before it replaces the data directory, so this setting changes nothing",
+          "description": "MySQL is always stopped before the data directory is replaced, so this setting changes nothing.",
           "label": "Kill MySQL",
           "name": "kill_mysql",
           "required": false,

@@ -275,7 +275,10 @@ class RestoreCreate(TaskFormModel):
         Choices((("M", "Mydumper"), ("X", "XtraBackup"), ("B", "Binlog"))),
         Ui(
             section="Task",
-            description="Restore method for this task; it has to match how the backup was taken, and it selects which sections below apply",
+            description=(
+                "Restore method for this task; it has to match how the backup was "
+                "taken, and it selects which sections below apply"
+            ),
         ),
     ]
 
@@ -285,7 +288,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Destination Database Service",
             section="Task",
-            description="Database service being restored into; SEP resolves its address and port from inventory. Pick from inventory or type a name.",
+            description=(
+                "Database service being restored into; SEP resolves its address and "
+                "port from inventory. Pick from inventory or type a name."
+            ),
         ),
     ] = None
     backup_source: Annotated[
@@ -298,11 +304,11 @@ class RestoreCreate(TaskFormModel):
             section="Task",
             depends_on="service_id",
             description=(
-                "Where the backup is stored. Select a database service above to "
-                "list its completed backups, then pick one — or enter a local path "
+                "Where the backup is stored. Select a database service above to list "
+                "its completed backups, then pick one — or enter a local path "
                 "(/backups/mydumper/20240101), a remote host (db01:/path/to/backup), "
-                "s3://bucket/path, or gs://bucket/path. Add /latest to any of these "
-                "to restore the most recent backup. Avoid these characters: $ ; | & ( ) `"
+                "s3://bucket/path, or gs://bucket/path. Add /latest to any of these to "
+                "restore the most recent backup. Avoid these characters: $ ; | & ( ) `"
             ),
         ),
     ]
@@ -318,7 +324,10 @@ class RestoreCreate(TaskFormModel):
         int | None,
         Ui(
             section="General",
-            description="Port of the MySQL instance the restore connects to on the target host (defaults to 3306)",
+            description=(
+                "Port of the MySQL instance the restore connects to on the target host "
+                "(defaults to 3306)"
+            ),
         ),
     ] = None
     custom_mysql_init_command: Annotated[
@@ -326,7 +335,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Custom MySQL init command",
             section="General",
-            description="Service command used to stop and start MySQL during the restore, such as /usr/bin/systemctl. Detected automatically when left empty.",
+            description=(
+                "Service command used to stop and start MySQL during the restore, such "
+                "as /usr/bin/systemctl. Detected automatically when left empty."
+            ),
         ),
     ] = None
     ssh_user: Annotated[
@@ -334,7 +346,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="SSH user",
             section="General",
-            description="SSH user for fetching a backup stored on a remote host. Unused for a local, S3 or Google Cloud Storage source.",
+            description=(
+                "SSH user for fetching a backup stored on a remote host. Unused for a "
+                "local, S3 or Google Cloud Storage source."
+            ),
         ),
     ] = Field(default="percona")
     ssh_port: Annotated[
@@ -350,7 +365,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="SSH key name",
             section="General",
-            description="Name of the SSH key to authenticate with, not a path. Only used for a backup stored on a remote host.",
+            description=(
+                "Name of the SSH key to authenticate with, not a path. Only used for a "
+                "backup stored on a remote host."
+            ),
         ),
     ] = None
     s3_tool: Annotated[
@@ -358,7 +376,9 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="S3 tool",
             section="General",
-            description="Client used to download the backup. Only used for an s3:// source.",
+            description=(
+                "Client used to download the backup. Only used for an s3:// source."
+            ),
         ),
     ] = S3Tool.S3CMD
     gpg_password_file: Annotated[
@@ -366,7 +386,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="GPG password file",
             section="General",
-            description="Path on the target host to the file holding the passphrase for a GPG-encrypted backup",
+            description=(
+                "Path on the target host to the file holding the passphrase for a "
+                "GPG-encrypted backup"
+            ),
         ),
     ] = None
 
@@ -389,7 +412,11 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Local path",
             section="Mydumper",
-            description="Staging directory on the target host where the backup is assembled before it is loaded; it is removed once the restore finishes (defaults to /tmp)",
+            description=(
+                "Staging directory on the target host where the backup is assembled "
+                "before it is loaded; it is removed once the restore finishes "
+                "(defaults to /tmp)"
+            ),
         ),
     ] = None
     overwrite_tables: Annotated[
@@ -397,7 +424,11 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Overwrite tables",
             section="Mydumper",
-            description="Let the load replace tables that already exist in the target database. Without it the load fails on the first table that is already there.",
+            description=(
+                "Let the load replace tables that already exist in the target "
+                "database. Without it the load fails on the first table that is "
+                "already there."
+            ),
             destructive=(
                 "Existing tables in the target database are dropped before the "
                 "backup is loaded. Rows written since the backup was taken are "
@@ -434,7 +465,9 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Include databases",
             section="Mydumper",
-            description="Comma-separated databases to restore, ignoring the rest of the backup",
+            description=(
+                "Comma-separated databases to restore, ignoring the rest of the backup"
+            ),
         ),
     ] = None
     pre_script: Annotated[
@@ -442,7 +475,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Pre-script",
             section="Mydumper",
-            description="Path on the target host to a script run before the load. A .sql file is executed against the target MySQL; anything else runs as a command.",
+            description=(
+                "Path on the target host to a script run before the load. A .sql file "
+                "is executed against the target MySQL; anything else runs as a command."
+            ),
         ),
     ] = None
     post_script: Annotated[
@@ -450,7 +486,11 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Post-script",
             section="Mydumper",
-            description="Path on the target host to a script run after the load. A .sql file is executed against the target MySQL; anything else runs as a command.",
+            description=(
+                "Path on the target host to a script run after the load. A .sql file "
+                "is executed against the target MySQL; anything else runs as a "
+                "command."
+            ),
         ),
     ] = None
 
@@ -459,15 +499,28 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Skip incrementals",
             section="XtraBackup",
-            description="Restore only the base backup and ignore the incrementals chained to it",
+            description=(
+                "Restore only the base backup and ignore the incrementals chained to it"
+            ),
         ),
     ] = False
+    # Marked destructive even though the wipe does not depend on the value: an
+    # empty entry is autodetected and emptied just the same, so the mark belongs
+    # on the field that names the target rather than on a toggle.
     datadir: Annotated[
         NonEmptyStr | EmptyStrToNone,
         Ui(
             label="Data directory",
             section="XtraBackup",
-            description="MySQL data directory the backup is restored into. It has to exist already, and everything currently in it is deleted. Detected from the server when left empty.",
+            description=(
+                "MySQL data directory the backup is restored into. It has to exist "
+                "already, and everything currently in it is deleted. Detected from the "
+                "server when left empty."
+            ),
+            destructive=(
+                "The data directory is emptied before the backup is restored into "
+                "it. Whatever it holds now, including a live dataset, is lost."
+            ),
         ),
     ] = None
     kill_mysql: Annotated[
@@ -475,7 +528,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Kill MySQL",
             section="XtraBackup",
-            description="The restore always stops MySQL before it replaces the data directory, so this setting changes nothing",
+            description=(
+                "MySQL is always stopped before the data directory is replaced, so "
+                "this setting changes nothing."
+            ),
         ),
     ] = False
     xb_prepare_memory: Annotated[
@@ -483,7 +539,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="XtraBackup prepare memory",
             section="XtraBackup",
-            description="Memory the prepare step may use, as a size such as 2G (defaults to 100M)",
+            description=(
+                "Memory the prepare step may use, as a size such as 2G (defaults to "
+                "100M)"
+            ),
         ),
     ] = None
     xb_parallel: Annotated[
@@ -499,7 +558,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="XtraBackup binary",
             section="XtraBackup",
-            description="Which binary prepares the backup; pick the one matching the tool that took it",
+            description=(
+                "Which binary prepares the backup; pick the one matching the tool that "
+                "took it"
+            ),
         ),
     ] = None
     restore_mycnf: Annotated[
@@ -507,7 +569,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Restore my.cnf",
             section="XtraBackup",
-            description="Restore the MySQL configuration files saved in the backup before preparing it",
+            description=(
+                "Restore the MySQL configuration files saved in the backup before "
+                "preparing it"
+            ),
         ),
     ] = False
     incremental_dest_path: Annotated[
@@ -515,7 +580,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Incremental destination path",
             section="XtraBackup",
-            description="Directory where an incremental chain is assembled before it is prepared (defaults to /tmp/pxb_incrementals)",
+            description=(
+                "Directory where an incremental chain is assembled before it is "
+                "prepared (defaults to /tmp/pxb_incrementals)"
+            ),
         ),
     ] = None
     xtrabackup_restore_args: Annotated[
@@ -531,7 +599,11 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Keyring file data",
             section="XtraBackup",
-            description="Keyring file the prepare needs for a backup with encrypted tablespaces. Falls back to the path in the server's configuration when left empty.",
+            description=(
+                "Keyring file the prepare needs for a backup with encrypted "
+                "tablespaces. Falls back to the path in the server's configuration "
+                "when left empty."
+            ),
         ),
     ] = None
     xtrabackup_aes256_keyfile: Annotated[
@@ -539,7 +611,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="XtraBackup AES-256 keyfile",
             section="XtraBackup",
-            description="AES-256 key file the backup was encrypted with, needed to decrypt it before the prepare",
+            description=(
+                "AES-256 key file the backup was encrypted with, needed to decrypt it "
+                "before the prepare"
+            ),
         ),
     ] = None
     slave_from_master: Annotated[
@@ -547,7 +622,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Slave from master",
             section="XtraBackup",
-            description="Start replication once the restore finishes, using the coordinates saved in the backup",
+            description=(
+                "Start replication once the restore finishes, using the coordinates "
+                "saved in the backup"
+            ),
         ),
     ] = False
     wait_for_catchup: Annotated[
@@ -555,7 +633,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Wait for catchup",
             section="XtraBackup",
-            description="Wait for the restored replica to catch up and fail the task if it does not. Needs replication to be started above.",
+            description=(
+                "Wait for the restored replica to catch up and fail the task if it "
+                "does not. Needs replication to be started above."
+            ),
         ),
     ] = False
     master_ip: Annotated[
@@ -563,7 +644,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Master IP",
             section="XtraBackup",
-            description="Replication source the restored instance connects to. Used when replication is started above.",
+            description=(
+                "Replication source the restored instance connects to. Used when "
+                "replication is started above."
+            ),
         ),
     ] = None
     master_port: Annotated[
@@ -628,7 +712,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Use SQL file",
             section="Binlog",
-            description="Replay this SQL file from the staging directory instead of the binlog files themselves",
+            description=(
+                "Replay this SQL file from the staging directory instead of the binlog "
+                "files themselves"
+            ),
         ),
     ] = None
     binlog_restore_extra_args: Annotated[

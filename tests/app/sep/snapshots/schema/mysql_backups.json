@@ -1022,7 +1022,7 @@
         },
         {
           "default": true,
-          "description": "Stream binlogs for every server in the config instead of only this task's server",
+          "description": "Keep this on. The binlog backup streams every server in the task's config, and refuses to start when the option is cleared.",
           "label": "Run all binlog backups",
           "name": "binlog_run_all",
           "required": false,

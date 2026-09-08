@@ -119,7 +119,11 @@ class TestRestoreContract(DerivedRouterContractTests):
     def test_schema_serves_only_declared_descriptions(
         self, contract_client: Any
     ) -> None:
-        """Serve each declared field's description verbatim on the wire."""
+        """Serve each declared field's description verbatim, and only those.
+
+        The inherited Task fields have to stay undescribed here, because
+        describing them would move every other schema-driven app's schema too.
+        """
         base = app_base_url(self.app_def)
 
         response = contract_client.get(f"{base}/schema")

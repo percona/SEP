@@ -71,24 +71,30 @@ def assert_every_declared_field_is_described(
     write and a field added later cannot ship undescribed.
 
     :param create_model: The form model to inspect.
-    :raises AssertionError: When a declared field has no description, when the
-        text is blank once stripped, when it leads with a CLI flag the form
-        never shows, or when it carries rST inline-code markup the renderer
-        emits verbatim.
+    :raises AssertionError: When the model declares no fields of its own, when a
+        declared field has no description, when the text is blank once stripped,
+        when it leads with a CLI flag the form never shows, or when it carries
+        rST inline-code markup the renderer emits verbatim.
     """
     descriptions = _marker_descriptions(create_model)
+    assert descriptions, (
+        f"{create_model.__name__} declares no fields of its own, so every check "
+        "below would pass without inspecting anything"
+    )
 
-    missing = {name for name, text in descriptions.items() if not text.strip()}
+    missing: set[str] = set()
+    flag_led: set[str] = set()
+    marked_up: set[str] = set()
+    for name, text in descriptions.items():
+        if not text.strip():
+            missing.add(name)
+        if text.lstrip().startswith("--"):
+            flag_led.add(name)
+        if _RST_INLINE_CODE in text:
+            marked_up.add(name)
+
     assert not missing, f"fields with no description: {sorted(missing)}"
-
-    flag_led = {
-        name for name, text in descriptions.items() if text.lstrip().startswith("--")
-    }
     assert not flag_led, f"descriptions leading with a CLI flag: {sorted(flag_led)}"
-
-    marked_up = {
-        name for name, text in descriptions.items() if _RST_INLINE_CODE in text
-    }
     assert not marked_up, f"descriptions carrying rST markup: {sorted(marked_up)}"
 
 
@@ -104,9 +110,9 @@ def assert_schema_serves_only_declared_descriptions(
 
     :param schema_payload: The decoded ``GET /schema`` response body.
     :param create_model: The form model the payload derives from.
-    :raises AssertionError: When a declared field is absent from the schema,
-        when its served text differs from its marker text, or when an inherited
-        field gained a description.
+    :raises AssertionError: When the model declares no fields of its own, when a
+        declared field is absent from the schema, when its served text differs
+        from its marker text, or when an inherited field gained a description.
     """
     served = {
         field["name"]: (field.get("description") or "")
@@ -114,6 +120,10 @@ def assert_schema_serves_only_declared_descriptions(
         for field in form["fields"]
     }
     declared = _marker_descriptions(create_model)
+    assert declared, (
+        f"{create_model.__name__} declares no fields of its own, so every check "
+        "below would pass without inspecting anything"
+    )
 
     absent = set(declared) - set(served)
     assert not absent, f"declared but absent from the schema: {sorted(absent)}"
