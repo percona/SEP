@@ -824,9 +824,10 @@ def _upstream_detail(exc: Exception) -> str:
 def _reraise_upstream_errors(message: str) -> Iterator[None]:
     """Report an upstream Tasks-API failure raised in the block as a send failure.
 
-    Only the upstream families are mapped; a size-cap or decoding failure raised
-    inside the block is a local fault and propagates untouched, so it is never
-    misattributed to the Tasks API.
+    A size-cap or decoding failure raised inside the block propagates untouched,
+    so a local fault is not relabelled as an upstream one. ``OSError`` is the one
+    blurred edge: a disk failure during a zip write inside the block is caught
+    here too and reported against the Tasks API.
 
     :param message: What the block was trying to do, named for a support engineer.
     :return: Control to the wrapped block.

@@ -175,7 +175,7 @@ async def _ndjson(records: list[dict[str, Any] | bytes]) -> AsyncIterator[bytes]
 async def _ndjson_then_raise(
     records: list[dict[str, Any] | bytes], error: Exception
 ) -> AsyncIterator[bytes]:
-    """Yield each record as one line, then fail as a stream cut mid-group would.
+    """Yield each record as one line, then raise as a mid-group stream cut does.
 
     :param records: Log records to serialize before the failure.
     :param error: The exception to raise once the records are exhausted.
@@ -203,10 +203,10 @@ def _fake_tasks_api(
     mocker: MockerFixture,
     *,
     files: dict[str, Any] | None = None,
-    files_error: Exception | None = None,
-    entry_error: Exception | None = None,
+    files_listing_error: Exception | None = None,
+    file_stream_error: Exception | None = None,
     logs: list[dict[str, Any] | bytes] | None = None,
-    logs_error: Exception | None = None,
+    log_stream_error: Exception | None = None,
     status: str = TaskHistoryStatusEnum.SUCCESS.value,
 ) -> AsyncMock:
     """Provide a Tasks API client answering the status, files, and logs routes.
@@ -217,11 +217,11 @@ def _fake_tasks_api(
 
     :param mocker: The patching fixture.
     :param files: The output-files listing; two files by default.
-    :param files_error: Raised instead of answering the files listing.
-    :param entry_error: Raised instead of streaming an output file's bytes.
+    :param files_listing_error: Raised instead of answering the files listing.
+    :param file_stream_error: Raised instead of streaming an output file's bytes.
     :param logs: The records the log stream yields; one stdout and one stderr
         group by default.
-    :param logs_error: Raised instead of opening the log stream.
+    :param log_stream_error: Raised instead of opening the log stream.
     :param status: The status reported for every execution.
     :return: The faked client, for the caller to assert against.
     """
@@ -239,17 +239,21 @@ def _fake_tasks_api(
     def _get(path: str, **_kwargs: Any) -> dict[str, Any]:
         if not path.endswith("/files/"):
             return {"status": status}
-        if files_error is not None:
-            raise files_error
+        if files_listing_error is not None:
+            raise files_listing_error
         return listing
 
     api = AsyncMock(spec=RemoteAPI)
     api.get.side_effect = _get
     api.stream_chunks.side_effect = (
-        (lambda *_a, **_k: _chunks(b"data!")) if entry_error is None else entry_error
+        (lambda *_a, **_k: _chunks(b"data!"))
+        if file_stream_error is None
+        else file_stream_error
     )
     api.stream.side_effect = (
-        (lambda *_a, **_k: _ndjson(records)) if logs_error is None else logs_error
+        (lambda *_a, **_k: _ndjson(records))
+        if log_stream_error is None
+        else log_stream_error
     )
     return _patch_tasks_api(mocker, api)
 
@@ -1181,7 +1185,8 @@ class TestRunSendFailures:
     ) -> None:
         """Fail naming the execution whose output files are not ready."""
         _fake_tasks_api(
-            mocker, files_error=HTTPConflictException(detail="Task is still running")
+            mocker,
+            files_listing_error=HTTPConflictException(detail="Task is still running"),
         )
         row = await _seed_send_log(send_session)
 
@@ -1455,7 +1460,7 @@ class TestRunSendUpstreamFailures:
         _fake_tasks_api(
             mocker,
             files={"diag/report.txt": {"is_dir": False, "size": 7}},
-            entry_error=ClientError("connection reset"),
+            file_stream_error=ClientError("connection reset"),
         )
         row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
 
@@ -1473,7 +1478,7 @@ class TestRunSendUpstreamFailures:
     ) -> None:
         """Fail naming the execution whose logs the upstream refused."""
         _fake_tasks_api(
-            mocker, logs_error=HTTPBadRequestException(detail="Logs unavailable")
+            mocker, log_stream_error=HTTPBadRequestException(detail="Logs unavailable")
         )
         row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
 
