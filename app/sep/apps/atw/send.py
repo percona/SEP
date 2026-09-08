@@ -37,7 +37,8 @@ import json
 import logging
 import time
 import zipfile
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, cast
@@ -199,6 +200,15 @@ def _execution_prefix(execution: dict[str, Any]) -> str:
     return f"{execution['task_history_id']}-{execution['snippet_filename']}"
 
 
+def _execution_label(execution: dict[str, Any]) -> str:
+    """Name one execution the way every upstream-failure message names it.
+
+    :param execution: The selected execution descriptor.
+    :return: The execution's id and snippet filename, as the messages render them.
+    """
+    return f"execution {execution['task_history_id']} ({execution['snippet_filename']})"
+
+
 def _entry_arcname(prefix: str, path: str, *, is_dir: bool) -> str:
     """Return the archive entry name one upstream file is written under.
 
@@ -251,13 +261,10 @@ async def _execution_status(
     :raises AtwSendError: When the execution's status cannot be read.
     """
     task_history_id = execution["task_history_id"]
-    try:
+    with _reraise_upstream_errors(
+        f"Could not read the status of {_execution_label(execution)}"
+    ):
         payload = await tasks_api.get(f"/history/{task_history_id}") or {}
-    except (HTTPException, OSError, ClientError) as exc:
-        raise AtwSendError(
-            f"Could not read the status of execution {task_history_id} "
-            f"({execution['snippet_filename']}): {_upstream_detail(exc)}"
-        ) from exc
     status = payload.get("status")
     try:
         return TaskHistoryStatusEnum(status)
@@ -289,28 +296,22 @@ async def _add_execution_files(
         this execution's files push the bundle past the plan's cap.
     """
     task_history_id = execution["task_history_id"]
-    try:
+    with _reraise_upstream_errors(
+        f"Could not list output files for {_execution_label(execution)}"
+    ):
         listing = await tasks_api.get(f"/history/{task_history_id}/files/") or {}
-    except (HTTPException, OSError, ClientError) as exc:
-        raise AtwSendError(
-            f"Could not list output files for execution {task_history_id} "
-            f"({execution['snippet_filename']}): {_upstream_detail(exc)}"
-        ) from exc
 
     prefix = _execution_prefix(execution)
     written: list[dict[str, Any]] = []
     for path, metadata in listing.items():
         is_dir = bool(metadata.get("is_dir"))
         arcname = _entry_arcname(prefix, path, is_dir=is_dir)
-        try:
+        with _reraise_upstream_errors(
+            f"Could not read {path!r} from {_execution_label(execution)}"
+        ):
             size = await _write_entry(
                 archive, tasks_api, task_history_id, path, arcname
             )
-        except (HTTPException, OSError, ClientError) as exc:
-            raise AtwSendError(
-                f"Could not read {path!r} from execution {task_history_id} "
-                f"({execution['snippet_filename']}): {_upstream_detail(exc)}"
-            ) from exc
         written.append(
             {"path": path, "arcname": arcname, "size": size, "is_dir": is_dir}
         )
@@ -477,27 +478,25 @@ async def _add_execution_logs(
     total = 0
     member: _LogMember | None = None
     try:
-        async for line in tasks_api.stream(
-            f"/history/{task_history_id}/logs/", params={"step": step}
+        with _reraise_upstream_errors(
+            f"Could not read logs for {_execution_label(execution)}"
         ):
-            record = _decode_log_line(line, task_history_id)
-            if record is None:
-                continue
-            if not isinstance(msg := record.get("msg"), str) or not msg:
-                continue
-            group = (str(record.get("step", "")), str(record.get("type", "")))
-            if member is None or member.group != group:
-                if member is not None:
-                    entries.append(member.close())
-                member = _LogMember(archive, prefix, group)
-            total += member.write(msg)
-        if member is not None:
-            entries.append(member.close())
-    except (HTTPException, OSError, ClientError) as exc:
-        raise AtwSendError(
-            f"Could not read logs for execution {task_history_id} "
-            f"({execution['snippet_filename']}): {_upstream_detail(exc)}"
-        ) from exc
+            async for line in tasks_api.stream(
+                f"/history/{task_history_id}/logs/", params={"step": step}
+            ):
+                record = _decode_log_line(line, task_history_id)
+                if record is None:
+                    continue
+                if not isinstance(msg := record.get("msg"), str) or not msg:
+                    continue
+                group = (str(record.get("step", "")), str(record.get("type", "")))
+                if member is None or member.group != group:
+                    if member is not None:
+                        entries.append(member.close())
+                    member = _LogMember(archive, prefix, group)
+                total += member.write(msg)
+            if member is not None:
+                entries.append(member.close())
     finally:
         if member is not None:
             member.close()
@@ -819,6 +818,25 @@ def _upstream_detail(exc: Exception) -> str:
     """
     detail = getattr(exc, "detail", None)
     return str(detail) if detail else str(exc)
+
+
+@contextmanager
+def _reraise_upstream_errors(message: str) -> Iterator[None]:
+    """Report an upstream Tasks-API failure raised in the block as a send failure.
+
+    Only the upstream families are mapped; a size-cap or decoding failure raised
+    inside the block is a local fault and propagates untouched, so it is never
+    misattributed to the Tasks API.
+
+    :param message: What the block was trying to do, named for a support engineer.
+    :return: Control to the wrapped block.
+    :raises AtwSendError: When the block raises an upstream failure, carrying
+        ``message`` and the upstream's own detail.
+    """
+    try:
+        yield
+    except (HTTPException, OSError, ClientError) as exc:
+        raise AtwSendError(f"{message}: {_upstream_detail(exc)}") from exc
 
 
 def _error_message(exc: Exception, records: Sequence[StepRecord]) -> str:
