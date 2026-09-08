@@ -334,6 +334,35 @@ def test_reconstruction_accepts_a_body_the_create_model_refuses():
     assert [error["loc"] for error in excinfo.value.errors()] == [("backup_dir",)]
 
 
+def test_reconstruction_accepts_a_blank_stored_backup_directory():
+    """Accept a stored whitespace-only directory the create form used to write.
+
+    ``NonEmptyStr`` admitted a whitespace-only ``BACKUP_DIR`` before the create
+    form was tightened, and the payload joined it as a *relative* path, so those
+    tasks ran and reported success — which makes them exactly the population an
+    operator needs to reopen and repair. Stripping the value here instead would
+    fail ``min_length`` and skip the task, the outcome the lenient model exists to
+    prevent, so the leniency has to cover blankness and not only absence.
+    """
+    lookup = _lookup(
+        _service(1, name="mysql-prod", address="10.0.0.5", port=3306),
+    )
+    task = _legacy_mysql_backup_task(
+        upload=["S3"],
+        all_servers={"S3_BUCKET": "my-bucket", "BACKUP_DIR": "   "},
+    )
+
+    body = reconstruct_mysql_backups_form(task, _ctx(lookup))
+
+    assert body is not None
+    assert body["backup_dir"] == "   "
+    assert LegacyBackupCreate.model_validate(body).backup_dir == "   "
+
+    with pytest.raises(ValidationError) as excinfo:
+        BackupCreate.model_validate(body)
+    assert [error["loc"] for error in excinfo.value.errors()] == [("backup_dir",)]
+
+
 class TestUploadBackfillDropsNothingSilently:
     """Assert reconstruction never narrows a legacy task's upload selection unnoticed.
 

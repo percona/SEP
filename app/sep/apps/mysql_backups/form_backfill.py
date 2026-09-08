@@ -21,7 +21,7 @@ from typing import Annotated, Any, TYPE_CHECKING
 
 import yaml
 
-from app.core.utils.fields import EmptyStrToNone, StrippedNonEmptyStr
+from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
@@ -71,7 +71,7 @@ _PARSE_ONLY_KEYS = frozenset({"name", "host", "port"})
 
 
 class LegacyBackupCreate(BackupCreate):
-    """Validate a reconstructed form body with the create form's older optionality.
+    """Validate a reconstructed form body against the create form's older contract.
 
     A stored config written before the create form required a backup directory has
     no ``BACKUP_DIR`` key, so the reconstructed body omits ``backup_dir``.
@@ -81,11 +81,17 @@ class LegacyBackupCreate(BackupCreate):
     create and update routes, which keep
     :class:`~app.sep.apps.mysql_backups.forms.BackupCreate`.
 
-    :param backup_dir: The backup root directory; optional here, unlike on the
-        create model.
+    The field is declared exactly as the create model declared it before the
+    tightening, ``NonEmptyStr`` and not ``StrippedNonEmptyStr``: the older form
+    accepted a whitespace-only directory, the payload joined it as a relative path,
+    and those tasks ran and reported success, so they are part of the population
+    that has to reconstruct rather than be skipped.
+
+    :param backup_dir: The backup root directory; optional here and un-stripped,
+        unlike on the create model.
     """
 
-    backup_dir: Annotated[StrippedNonEmptyStr | EmptyStrToNone, BACKUP_DIR_UI] = None
+    backup_dir: Annotated[NonEmptyStr | EmptyStrToNone, BACKUP_DIR_UI] = None
 
 
 def _extract_upload_from_meta(meta: dict[str, Any]) -> list[str]:
