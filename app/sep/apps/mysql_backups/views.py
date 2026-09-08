@@ -84,13 +84,7 @@ mysql_backups_views = Views(
                 collapsed_by_default=True,
                 description=(
                     "Pick an 'Encryption format' first; the fields below are that "
-                    "format's parameters. GPG timings are independent — in-place "
-                    "('Encrypt backup', optionally with 'Encrypt using tmpdir'), "
-                    "applied during upload, and post-run ('Encrypt after backup "
-                    "completes'), applied on the host; enable either or both, and "
-                    "either needs a recipient. 'Encrypt using tmpdir' and 'Encrypt "
-                    "after backup completes' are mutually exclusive. AES-256 needs "
-                    "a key file and is XtraBackup-only."
+                    "format's parameters."
                 ),
             ),
             SectionLayout(

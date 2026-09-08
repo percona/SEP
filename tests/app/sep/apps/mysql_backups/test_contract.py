@@ -37,6 +37,7 @@ from pytest_mock import MockerFixture
 from app.sep.apps.framework import ConnectivityWarning
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.app import app as mysql_backups_app
+from app.sep.apps.mysql_backups.forms import BackupCreate
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY
 from tests.app.factories import MOCK_CREATED_SERVICE_ID
@@ -50,6 +51,10 @@ from tests.app.sep.apps.framework.kit import (
     MockTaskAPI,
     SEEDED_TASK_NAME,
     SYNTH_EXECUTOR_HOST,
+)
+from tests.app.sep.apps.mysql_backups.description_coverage import (
+    assert_every_declared_field_is_described,
+    assert_schema_serves_only_declared_descriptions,
 )
 
 _NEW_TASK_NAME = "contract-new-backup"
@@ -269,6 +274,26 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
             mode="json"
         )
         assert mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY] == expected
+
+    def test_every_declared_field_is_described(self) -> None:
+        """Require helper text on every field the create form declares itself.
+
+        A backup misconfigured from a guessed field is not caught at submit time
+        — it is caught at restore time, when the configuration can no longer be
+        changed.
+        """
+        assert_every_declared_field_is_described(BackupCreate)
+
+    def test_schema_serves_only_declared_descriptions(
+        self, contract_client: Any
+    ) -> None:
+        """Serve each declared field's description verbatim on the wire."""
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        assert_schema_serves_only_declared_descriptions(response.json(), BackupCreate)
 
     def test_schema_pins_section_collapse_posture(self, contract_client: Any) -> None:
         """Pin every create-form section's collapse posture and required fields.
