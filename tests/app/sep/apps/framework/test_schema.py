@@ -3068,9 +3068,7 @@ def _mirrored_models() -> dict[str, type[BaseModel]]:
     return {
         name: obj
         for name, obj in vars(schema_module).items()
-        if isinstance(obj, type)
-        and issubclass(obj, BaseModel)
-        and obj.model_fields
+        if isinstance(obj, type) and issubclass(obj, BaseModel) and obj.model_fields
     }
 
 
