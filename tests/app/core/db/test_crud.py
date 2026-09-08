@@ -1326,3 +1326,40 @@ class TestSaveDuplicatePrecheck:
         # detail, so its only message is the status phrase.
         with pytest.raises(HTTPBadRequestException):
             await UniqueKeyManager.save(session, row)
+
+
+@pytest.mark.postgres
+class TestSaveDuplicatePrecheckPostgres:
+    """Cover the duplicate precheck against a real PostgreSQL bind."""
+
+    @pytest.mark.asyncio
+    async def test_update_collision_raises_conflict_before_any_write(
+        self,
+        postgres_session: AsyncSession,
+    ) -> None:
+        """Reject a retarget with a conflict and leave the transaction usable.
+
+        The suppression is ORM-level, so the conflict itself is engine-independent.
+        What only a real PostgreSQL bind shows is that nothing reached the driver:
+        had the precheck flushed the colliding write, the failed statement would have
+        aborted the transaction and neither read below could run at all.
+        """
+        row = await _two_keyed_rows(postgres_session)
+        row.key = "alpha"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="UniqueKeyModel with the same key already exists",
+        ):
+            await UniqueKeyManager.save(postgres_session, row)
+
+        # The rejected change is still pending on the instance, so these reads
+        # suppress autoflush as well: flushing here would perform the very write
+        # the precheck refused, rather than exercise the state under test.
+        with postgres_session.no_autoflush:
+            assert (
+                await UniqueKeyManager.first(postgres_session, key="alpha") is not None
+            )
+            assert (
+                await UniqueKeyManager.first(postgres_session, key="beta") is not None
+            )

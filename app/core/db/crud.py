@@ -1171,22 +1171,17 @@ class BaseSQLModelManager(BaseManager):
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param instance: The model instance to be saved.
-        :type instance: T
         :param flag_modified_fields: Fields to be flagged as modified before saving.
-        :type flag_modified_fields: Sequence[str]
         :return: The saved instance.
-        :rtype: T
         :raises HTTPConflictException: If saving the instance would cause a duplicate
             entry database error.
         :raises HTTPBadRequestException: If a DatabaseError occurs during commit.
         """
-        # autoflush would flush this instance's own pending change before the
-        # lookup below runs. On the update path that flush is the colliding
-        # write itself, so IntegrityError escapes from inside first() -- ahead
-        # of both the duplicate check and save()'s DatabaseError handling, as a
-        # 500 rather than the 409 below.
+        # On the update path the write autoflush would perform here is the
+        # colliding one, so without the suppression IntegrityError escapes
+        # from inside first() -- ahead of both the duplicate check and
+        # save()'s DatabaseError handling, as a 500 rather than the 409 below.
         with session.no_autoflush:
             for index in inspect(cls.Model).local_table.indexes:
                 if index.unique:
