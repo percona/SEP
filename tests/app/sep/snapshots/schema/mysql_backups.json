@@ -488,7 +488,7 @@
       "title": "General"
     },
     {
-      "collapsed_by_default": false,
+      "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
         {
@@ -588,7 +588,7 @@
       "title": "Mydumper"
     },
     {
-      "collapsed_by_default": false,
+      "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
         {
@@ -896,7 +896,7 @@
       "title": "XtraBackup"
     },
     {
-      "collapsed_by_default": false,
+      "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
         {
@@ -1015,7 +1015,7 @@
       "title": "Binlog"
     },
     {
-      "collapsed_by_default": false,
+      "collapsed_by_default": true,
       "collapsible": true,
       "description": "Pick an 'Encryption format' first; the fields below are that format's parameters. GPG timings are independent — in-place ('Encrypt backup', optionally with 'Encrypt using tmpdir'), applied during upload, and post-run ('Encrypt after backup completes'), applied on the host; enable either or both, and either needs a recipient. 'Encrypt using tmpdir' and 'Encrypt after backup completes' are mutually exclusive. AES-256 needs a key file and is XtraBackup-only.",
       "fields": [
@@ -1172,7 +1172,7 @@
       "title": "Encryption"
     },
     {
-      "collapsed_by_default": false,
+      "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
         {
@@ -1334,7 +1334,12 @@
         "format": "chip",
         "key": "backup_type",
         "label": "Type",
-        "sortable": false
+        "sortable": false,
+        "value_labels": {
+          "B": "Binlog",
+          "M": "Mydumper",
+          "X": "XtraBackup"
+        }
       },
       {
         "key": "hostname",

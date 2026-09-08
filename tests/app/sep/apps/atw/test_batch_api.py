@@ -218,6 +218,30 @@ class TestAtwExecutionSchema:
         assert not any("field_type" in field for field in payload["shared"])
 
     @pytest.mark.asyncio
+    async def test_unmarked_fields_carry_a_null_destructive_key(
+        self, api_client: TestClient, create_snippet: Callable[..., Awaitable[Snippet]]
+    ) -> None:
+        """Emit ``destructive: null`` on every unmarked field of this route.
+
+        This route sets no ``response_model_exclude_none``, so an optional
+        ``BaseField`` attribute reaches the wire as an explicit null. That is
+        the accepted shape here — consistent with the ``description`` /
+        ``requires`` / ``forbidden`` nulls the endpoint already publishes — and
+        this pins it rather than letting it drift unobserved.
+        """
+        await create_snippet("a.sh", parameters=[_DEFAULTS_FILE_PARAM])
+        await create_snippet("b.sh", parameters=[_DEFAULTS_FILE_PARAM])
+
+        response = api_client.get(
+            SCHEMA_URL, params={"snippet_filename": ["a.sh", "b.sh"]}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["shared"]
+        assert all(field["destructive"] is None for field in payload["shared"])
+
+    @pytest.mark.asyncio
     async def test_execution_host_is_always_shared(
         self, api_client: TestClient, create_snippet: Callable[..., Awaitable[Snippet]]
     ) -> None:

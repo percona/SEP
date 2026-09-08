@@ -122,6 +122,22 @@ class _SyntheticForm(AppFormModel):
         ServiceRef(service_types=[ServiceTypeEnum.MYSQL], allow_custom=True),
         Ui(label="Free Service", section="main"),
     ]
+    a_destructive_bool: Annotated[
+        bool,
+        Ui(
+            label="Destructive Bool",
+            section="main",
+            destructive="Existing rows are dropped before the load.",
+        ),
+    ] = False
+    a_destructive_string: Annotated[
+        str,
+        Ui(
+            label="Destructive String",
+            section="main",
+            destructive="The named directory is emptied before the run.",
+        ),
+    ] = ""
     gated_field: Annotated[
         str,
         Forbidden(when=truthy("a_string")),
@@ -194,6 +210,23 @@ def test_synthetic_fixture_attributes_rules_by_scope():
     assert schema.fail_when is not None
     assert len(schema.fail_when) == 1
     assert schema.cardinality_rules is None
+
+
+def test_synthetic_fixture_marks_only_the_destructive_fields():
+    """Assert the golden carries ``destructive`` on the two marked fields and no others."""
+    schema = _build_synthetic_schema()
+
+    marked = {
+        field.name: field.destructive
+        for section in schema.forms
+        for field in section.fields
+        if getattr(field, "destructive", None) is not None
+    }
+
+    assert marked == {
+        "a_destructive_bool": "Existing rows are dropped before the load.",
+        "a_destructive_string": "The named directory is emptied before the run.",
+    }
 
 
 class _GoldenSourceBySchema(BaseModel):

@@ -197,6 +197,39 @@ class TestRestoreContract(DerivedRouterContractTests):
         )
         assert mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY] == expected
 
+    def test_schema_pins_section_collapse_posture(self, contract_client: Any) -> None:
+        """Pin every restore-form section's collapse posture and the visible fields.
+
+        Under incident pressure the form must be completable from what is on
+        screen: ``Task`` stays expanded and now carries the required
+        ``backup_source`` together with the ``service_id`` it depends on, while
+        every expert section is collapsible *and* collapsed. Section order is
+        pinned too, since it derives from field first-appearance on the model.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        sections = response.json()["forms"]
+        assert [
+            (
+                section["title"],
+                section["collapsible"],
+                section["collapsed_by_default"],
+            )
+            for section in sections
+        ] == [
+            ("Task", False, False),
+            ("General", True, True),
+            ("Mydumper", True, True),
+            ("XtraBackup", True, True),
+            ("Binlog", True, True),
+        ]
+        task_fields = [field["name"] for field in sections[0]["fields"]]
+        assert "service_id" in task_fields
+        assert "backup_source" in task_fields
+
     def test_update_round_trips_stored_form(
         self, contract_client: Any, mock_task_api: Any
     ) -> None:

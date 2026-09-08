@@ -79,6 +79,15 @@ interface BaseField {
   label: string;
   required?: boolean;
   description?: string;
+  /**
+   * Consequence text for a field whose enabled or set state irreversibly
+   * destroys user data. Presence is the mark — there is no separate boolean,
+   * so `if (field.destructive)` is the check, and the string is what a
+   * confirmation displays. Unmarked fields either omit the key or send it as
+   * null, depending on whether the serving route excludes nulls, so test
+   * truthiness rather than presence.
+   */
+  destructive?: string | null;
   default?: unknown;
   /** Self-cardinality gates: when matched, the field is required. */
   requires?: FieldGate[];
@@ -363,6 +372,8 @@ export interface ListColumn {
   label: string;
   sortable?: boolean;
   format?: 'text' | 'chip' | 'status' | 'date' | 'relative' | 'code' | 'actions' | 'schedule';
+  /** Optional map from a raw cell value to the text to display in its place. Absent when the app declares no labels; a value missing from the map renders as-is. */
+  value_labels?: Record<string, string>;
 }
 
 export interface ListView {
@@ -399,6 +410,8 @@ export interface DetailField {
   label: string;
   /** Optional syntax-highlighter hint; mirrors the backend ``DetailHighlightLanguage`` enum. */
   highlight?: 'sql' | 'json' | 'bash' | 'yaml';
+  /** Optional map from a raw resolved value to the text to display in its place. Absent when the app declares no labels; a value missing from the map renders as-is. */
+  value_labels?: Record<string, string>;
 }
 
 /** One titled section rendered on the task detail page. */
