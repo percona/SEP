@@ -81,20 +81,24 @@ CORPUS_TEST = (
     / "test_classify_ty_diagnostics.py"
 )
 
-#: Elements in a ``(path, rule, message)`` tuple, so a corpus read does not
-#: mistake an unrelated pair or triple of strings for a fingerprint.
+#: Elements in a ``(path, rule, message)`` tuple. Arity discriminates almost
+#: nothing on its own — ``("a", "b", "c")`` is three strings too — so a corpus
+#: read also holds the first two elements against the patterns below.
 FINGERPRINT_ARITY = 3
 
-#: A ty rule name, used to tell a fingerprint tuple from any other three
-#: strings sitting together in the corpus.
+#: A repo-relative Python path, the first element of a fingerprint tuple.
+PATH_RE = re.compile(r"[\w./-]+\.py")
+
+#: A ty rule name, the second element of a fingerprint tuple.
 RULE_RE = re.compile(r"[a-z0-9-]+")
 
-#: A backtick-quoted identifier inside a group's message pattern. Its presence
-#: is what lets a group tell its artifact from a first-party diagnostic of the
-#: same rule without a path constraint -- under ``unknown-argument``, the
-#: pydantic-settings ``_secrets_dir`` kwarg and a first-party ``PMM`` kwarg
-#: differ only in the symbol the message names.
-SYMBOL_RE = re.compile(r"`[^`]+`")
+#: A backtick-quoted span in a group's message pattern.
+SYMBOL_SPAN_RE = re.compile(r"`([^`]*)`")
+
+#: The literal identifier run a quoted span must contain to name a symbol. A
+#: span holding only wildcards (``.+``, ``\w+``, ``[\w.]+``) quotes nothing a
+#: reader could grep and narrows its rule no better than the bare rule does.
+SYMBOL_LITERAL_RE = re.compile(r"[A-Za-z_]{2,}")
 
 
 class ReconciliationError(Exception):
@@ -399,18 +403,26 @@ def _module_strings(tree: ast.Module) -> dict[str, str]:
 
     The corpus writes a fingerprint's message either inline or through a constant
     (``CALL_IN_TYPE_EXPRESSION``), so a literal-only read of the tuples below
-    would silently miss whichever spelling the author preferred.
+    would silently miss whichever spelling the author preferred. Annotated
+    bindings count for the same reason: adding a ``: str`` to a constant the
+    corpus already has must not drop the fingerprint it feeds.
 
     :param tree: The parsed corpus module.
     :return: Every module-level name bound directly to a string.
     """
     bindings: dict[str, str] = {}
     for node in tree.body:
-        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Constant):
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        if not isinstance(node.value, ast.Constant):
             continue
         if not isinstance(node.value.value, str):
             continue
-        for target in node.targets:
+        for target in targets:
             if isinstance(target, ast.Name):
                 bindings[target.id] = node.value.value
     return bindings
@@ -418,6 +430,11 @@ def _module_strings(tree: ast.Module) -> dict[str, str]:
 
 def _tuple_fingerprint(node: ast.Tuple, bindings: dict[str, str]) -> Fingerprint | None:
     """Return the fingerprint a three-string tuple literal spells, if it is one.
+
+    A false positive here is not inert: a spurious fingerprint enters the pinned
+    corpus, and one whose rule matches an unconfined group's would *clear* that
+    group in :func:`group_constraint_failures`. So the shape of all three
+    elements is checked, not just their count.
 
     :param node: The tuple expression under test.
     :param bindings: Module-level string constants from :func:`_module_strings`.
@@ -434,7 +451,7 @@ def _tuple_fingerprint(node: ast.Tuple, bindings: dict[str, str]) -> Fingerprint
         else:
             return None
     path, rule, message = parts
-    if not RULE_RE.fullmatch(rule) or not message:
+    if not PATH_RE.fullmatch(path) or not RULE_RE.fullmatch(rule) or not message:
         return None
     return (path, rule, message)
 
@@ -446,11 +463,13 @@ def corpus_fingerprints(source: Path | None = None) -> frozenset[Fingerprint]:
     diagnostic first-party is a standing claim that some group's pattern
     discriminates within that rule, which is what
     :func:`group_constraint_failures` accepts in place of a path constraint. Both
-    spellings the suite uses are resolved -- a whole ty row, and a bare
+    spellings the suite uses are resolved — a whole ty row, and a bare
     three-string tuple whose message may arrive through a module constant.
 
     An unreadable or absent corpus yields the empty set, which can only make the
-    audit stricter: every group then has to carry its own discriminant.
+    audit stricter: every group then has to carry its own discriminant. Three
+    things count as unreadable — the file is missing, it does not decode as
+    UTF-8, or it does not parse.
 
     :param source: The corpus module, defaulting to the classifier's own tests.
     :return: The fingerprints the suite names, in no particular order.
@@ -458,7 +477,7 @@ def corpus_fingerprints(source: Path | None = None) -> frozenset[Fingerprint]:
     path = CORPUS_TEST if source is None else source
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    except (OSError, SyntaxError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError, SyntaxError):
         return frozenset()
 
     bindings = _module_strings(tree)
@@ -475,8 +494,32 @@ def corpus_fingerprints(source: Path | None = None) -> frozenset[Fingerprint]:
     return frozenset(found)
 
 
+def _names_symbol(pattern: str) -> bool:
+    """Return whether ``pattern`` quotes an identifier rather than a wildcard.
+
+    Naming a symbol is what lets a group tell its artifact from a first-party
+    diagnostic of the same rule without a path constraint — under
+    ``unknown-argument``, the pydantic-settings ``_secrets_dir`` kwarg and a
+    first-party ``PMM`` kwarg differ only in the symbol the message names. The
+    backticks alone do not establish that: ``^Object of type `.+` has no
+    attribute `.+`$`` quotes two wildcards and so claims every diagnostic of
+    its rule, which is the shape :func:`group_constraint_failures` exists to
+    reject.
+
+    Spans are matched pairwise rather than by searching the whole pattern,
+    because the prose *between* two quoted spans is itself letters and would
+    satisfy the run on its own.
+
+    :param pattern: The group's message pattern, as written.
+    :return: ``True`` when some quoted span holds a literal identifier run.
+    """
+    return any(
+        SYMBOL_LITERAL_RE.search(span) for span in SYMBOL_SPAN_RE.findall(pattern)
+    )
+
+
 def group_constraint_failures(
-    groups: Sequence[Group] | None = None,
+    groups: Iterable[Group] | None = None,
     corpus: Iterable[Fingerprint] | None = None,
 ) -> list[str]:
     """Return one message per group claiming more than its discriminant proves.
@@ -486,15 +529,20 @@ def group_constraint_failures(
     count as that evidence, and a group needs one:
 
     * a **path** constraint, which settles the question the message cannot;
-    * a **symbol** the message names -- a backtick-quoted identifier in the
-      pattern, which is how most shipped groups tell an artifact from a
-      first-party hit under the same rule;
-    * a **negative corpus fingerprint** -- a diagnostic of the group's own rule
-      that the whole table leaves first-party, which demonstrates the pattern
-      discriminating rather than asserting it. The test must leave it claimed by
-      *nothing*: a fingerprint some sibling group claims is that sibling's
-      evidence, and reading it as this group's would let two groups pin each
-      other while neither is confined.
+    * a **symbol** the message names, per :func:`_names_symbol` — a
+      backtick-quoted identifier in the pattern, which is how most of the
+      shipped groups tell an artifact from a first-party hit under the same
+      rule;
+    * a **negative corpus fingerprint** for *every* rule the group claims — a
+      diagnostic of that rule which the whole table leaves first-party,
+      demonstrating the pattern discriminating rather than asserting it. Two
+      conditions make it evidence, and dropping either one lets a group through
+      unconfined. The test must leave it claimed by *nothing*: a fingerprint
+      some sibling group claims is that sibling's evidence, and reading it as
+      this group's would let two groups pin each other while neither is
+      confined. And it must cover the group's whole rule set: a group claiming
+      two rules with a declined fingerprint under only one of them is still
+      unconfined under the other.
 
     Without one, the group claims every diagnostic of its rules whose message
     happens to match, anywhere in the tree. That is the shape this exists to
@@ -513,23 +561,23 @@ def group_constraint_failures(
     table = GROUPS if groups is None else tuple(groups)
     pinned = corpus_fingerprints() if corpus is None else tuple(corpus)
 
-    first_party = tuple(
-        fingerprint
-        for fingerprint in pinned
-        if not any(group.claims(fingerprint) for group in table)
-    )
+    declined_rules = {
+        rule
+        for path, rule, message in pinned
+        if not any(group.claims((path, rule, message)) for group in table)
+    }
 
     failures: list[str] = []
     for group in table:
-        if group.paths or SYMBOL_RE.search(group.pattern.pattern):
+        if group.paths or _names_symbol(group.pattern.pattern):
             continue
-        if any(rule in group.rules for _, rule, _ in first_party):
+        if group.rules <= declined_rules:
             continue
         failures.append(
             f"{group.name} claims every {'/'.join(sorted(group.rules))} diagnostic "
             f"matching {group.pattern.pattern!r}, but names no symbol, is confined "
-            f"to no path, and no test pins a same-rule diagnostic it declines: "
-            f"its discriminant proves less than it claims"
+            "to no path, and no test pins a declined diagnostic under every rule "
+            "it claims: its discriminant proves less than it claims"
         )
     return failures
 
@@ -724,6 +772,18 @@ def _print_retained() -> None:
         print(f"  {_render(entry.fingerprint)}\n        {entry.reason}")
 
 
+def _print_overclaims(overclaims: Sequence[str]) -> None:
+    """Print the groups whose discriminant proves less than they claim.
+
+    :param overclaims: What :func:`group_constraint_failures` returned.
+    """
+    if not overclaims:
+        return
+    print(f"\n{len(overclaims)} groups claim more than their discriminant proves:")
+    for overclaim in overclaims:
+        print(f"  {overclaim}")
+
+
 def _drop_failures(
     before: Counter[Fingerprint],
     removed: Counter[Fingerprint],
@@ -825,6 +885,7 @@ def cmd_report(args: argparse.Namespace) -> int:
     _print_mechanisms(diagnostics)
     _print_collisions(diagnostics)
     _print_retained()
+    _print_overclaims(group_constraint_failures())
     return 0
 
 
@@ -849,18 +910,25 @@ def cmd_baseline(args: argparse.Namespace) -> int:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    """Report the verdict of reconciling a run against its baseline manifest.
+    """Report two verdicts: the run against its baseline, and the group table.
 
-    The STALE list is advisory and does not move the exit status. A group that
-    matches nothing in the baseline is either drift — in which case the
-    diagnostics it used to claim are unclassified, and suppressing them already
-    fails the reconciliation below — or an artifact class a dependency upgrade
-    retired, which leaves a run that lost no first-party diagnostic and so has
-    nothing to fail. Naming the group is what points at the mechanism to remove;
-    failing on it would red a clean run.
+    Both gate. The reconciliation is per-run; the table audit
+    (:func:`group_constraint_failures`) is a static property of :data:`GROUPS`,
+    so it can fail a run whose fingerprints reconcile perfectly — an
+    over-claiming group is what makes a suppression untrustworthy in the first
+    place, and there is no run against which it is benign.
+
+    The STALE list is the one thing here that does *not* move the exit status. A
+    group that matches nothing in the baseline is either drift — in which case
+    the diagnostics it used to claim are unclassified, and suppressing them
+    already fails the reconciliation below — or an artifact class a dependency
+    upgrade retired, which leaves a run that lost no first-party diagnostic and
+    so has nothing to fail. Naming the group is what points at the mechanism to
+    remove; failing on it would red a clean run.
 
     :param args: Parsed arguments carrying ``source`` and ``baseline``.
-    :return: ``0`` when the run reconciles, ``1`` otherwise.
+    :return: ``0`` when the run reconciles and no group over-claims, ``1``
+        otherwise.
     :raises ReconciliationError: When the ty run cannot be trusted.
     """
     baseline = _read_manifest(args.baseline)
@@ -881,10 +949,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"  {name}")
     _print_retained()
 
-    if overclaims:
-        print(f"\n{len(overclaims)} groups claim more than their discriminant proves:")
-        for overclaim in overclaims:
-            print(f"  {overclaim}")
+    _print_overclaims(overclaims)
 
     if failures:
         print(f"\n{len(failures)} reconciliation failures:")
