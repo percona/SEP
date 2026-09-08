@@ -158,9 +158,9 @@ def next_run_times(
         :class:`~datetime.datetime`'s range. The periodic-task write and preview
         models reject such a schedule at the request boundary.
     """
-    schedule = celery_schedule(interval, crontab)
     if not enabled:
         return []
+    schedule = celery_schedule(interval, crontab)
     now = now or utc_now()
     effective_last = last_run_at
     if effective_last is None:

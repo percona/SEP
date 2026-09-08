@@ -229,6 +229,20 @@ class TestNextRunTimes:
             == []
         )
 
+    def test_disabled_schedule_with_an_unbuildable_cadence_has_no_runs(self):
+        """Assert a disabled schedule short-circuits before its cadence is built.
+
+        ``every=2_000_000_000`` days can't even be expressed as a
+        ``timedelta``, so the disabled check has to run before
+        ``celery_schedule`` does, or this raises ``OverflowError`` instead of
+        honoring the empty-list contract.
+        """
+        interval = IntervalSchedule(every=2_000_000_000, period=Period.DAYS)
+        assert (
+            next_run_times(interval=interval, crontab=None, enabled=False, now=NOW)
+            == []
+        )
+
     def test_runs_are_strictly_increasing_utc(self):
         """Assert the reported runs advance and are all UTC."""
         crontab = CrontabSchedule(minute="0", hour="*/1", timezone="Asia/Tokyo")
