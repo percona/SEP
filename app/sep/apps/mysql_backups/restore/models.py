@@ -372,8 +372,9 @@ class RestoreCreate(TaskFormModel):
             label="SSH key name",
             section="General",
             description=(
-                "Unused: fetching a backup from a remote host always authenticates "
-                "with the SSH user's own id_rsa key."
+                "Unused for the sources above: a local path, remote host, S3 or "
+                "Google Cloud Storage fetch always authenticates with the SSH "
+                "user's own id_rsa key."
             ),
         ),
     ] = None

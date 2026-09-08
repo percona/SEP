@@ -139,7 +139,7 @@
           "type": "integer"
         },
         {
-          "description": "Unused: fetching a backup from a remote host always authenticates with the SSH user's own id_rsa key.",
+          "description": "Unused for the sources above: a local path, remote host, S3 or Google Cloud Storage fetch always authenticates with the SSH user's own id_rsa key.",
           "label": "SSH key name",
           "min_length": 1,
           "name": "ssh_key",
