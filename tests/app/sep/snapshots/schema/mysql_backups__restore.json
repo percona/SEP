@@ -87,6 +87,58 @@
           "name": "backup_source",
           "required": true,
           "type": "remote_choice"
+        },
+        {
+          "choices": [
+            {
+              "label": "Local path",
+              "value": "local"
+            },
+            {
+              "label": "Remote host over SSH",
+              "value": "ssh"
+            },
+            {
+              "label": "S3-compatible object storage",
+              "value": "s3"
+            },
+            {
+              "label": "Google Cloud Storage",
+              "value": "gcs"
+            }
+          ],
+          "default": "local",
+          "description": "How the backup above is reached. Selecting a transport reveals only the credentials that transport uses.",
+          "label": "Backup location",
+          "name": "source_transport",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            {
+              "label": "No encryption",
+              "value": "none"
+            },
+            {
+              "label": "GPG",
+              "value": "gpg"
+            },
+            {
+              "label": "AES-256 (XtraBackup only)",
+              "value": "aes256"
+            },
+            {
+              "label": "AES-256 + GPG (XtraBackup only)",
+              "value": "dual"
+            }
+          ],
+          "default": "none",
+          "description": "Which encryption the backup being restored was written with. The GPG formats reveal the password file used to decrypt it.",
+          "label": "Backup encryption",
+          "name": "source_encryption",
+          "required": false,
+          "type": "choice"
         }
       ],
       "render_after_submit": false,
@@ -117,7 +169,16 @@
           "type": "string"
         },
         {
-          "default": "percona",
+          "description": "Defaults to percona when left blank.",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "ssh"
+                }
+              }
+            }
+          ],
           "label": "SSH user",
           "min_length": 1,
           "name": "ssh_user",
@@ -125,13 +186,31 @@
           "type": "string"
         },
         {
-          "default": 22,
+          "description": "Defaults to 22 when left blank.",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "ssh"
+                }
+              }
+            }
+          ],
           "label": "SSH port",
           "name": "ssh_port",
           "required": false,
           "type": "integer"
         },
         {
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "ssh"
+                }
+              }
+            }
+          ],
           "label": "SSH key name",
           "min_length": 1,
           "name": "ssh_key",
@@ -149,13 +228,53 @@
               "value": "awscli"
             }
           ],
-          "default": "s3cmd",
+          "description": "Defaults to s3cmd when left blank.",
+          "forbidden": [
+            {
+              "when": {
+                "not": {
+                  "any": [
+                    {
+                      "equals": {
+                        "source_transport": "s3"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "source_transport": "gcs"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
           "label": "S3 tool",
           "name": "s3_tool",
           "required": false,
           "type": "choice"
         },
         {
+          "forbidden": [
+            {
+              "when": {
+                "not": {
+                  "any": [
+                    {
+                      "equals": {
+                        "source_encryption": "gpg"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "source_encryption": "dual"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
           "label": "GPG password file",
           "min_length": 1,
           "name": "gpg_password_file",

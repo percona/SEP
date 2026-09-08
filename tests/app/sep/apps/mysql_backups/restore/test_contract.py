@@ -30,8 +30,14 @@ from typing import Any
 from fastapi import status
 
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
+from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.app import app as restore_app
+from app.sep.apps.mysql_backups.restore.models import (
+    RestoreConfigAll,
+    S3Tool,
+    SourceTransport,
+)
 from tests.app.factories import MOCK_CREATED_SERVICE_ID
 from tests.app.sep.apps.framework.contract_suite import (
     app_base_url,
@@ -46,6 +52,12 @@ from tests.app.sep.apps.framework.kit import (
 
 _NEW_TASK_NAME = "contract-new-restore"
 _UNKNOWN_TASK_NAME = "contract-unknown-restore"
+
+
+def _legacy_default(field_name: str) -> Any:
+    """Return a gated field's pre-declaration default, read from the config model."""
+    default = RestoreConfigAll.model_fields[field_name].default
+    return getattr(default, "value", default)
 
 
 def _valid_restore_body(
@@ -248,3 +260,180 @@ class TestRestoreContract(DerivedRouterContractTests):
         assert (
             mock_task_api.last_update_payload["data"][RESERVED_FORM_KEY] == stored_form
         )
+
+    def test_create_local_restore_stamps_no_transport_values(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Stamp a local restore without the SSH and object-store values it never uses.
+
+        The three fields used to submit ``percona`` / ``22`` / ``s3cmd`` on every
+        restore; declaring the source is what lets them stay out of the stamp.
+        """
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+        body["source_transport"] = SourceTransport.LOCAL.value
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+        stamped = mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY]
+        assert stamped["ssh_user"] is None
+        assert stamped["ssh_port"] is None
+        assert stamped["s3_tool"] is None
+
+    def test_create_accepts_ssh_credentials_under_an_ssh_source(
+        self, contract_client: Any
+    ) -> None:
+        """Accept the SSH trio when the declared source is reached over SSH."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+        body.update(
+            source_transport=SourceTransport.SSH.value,
+            ssh_user="deploy",
+            ssh_port=2222,
+            ssh_key="prod-key",
+        )
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+
+    def test_create_accepts_s3_tool_under_a_gcs_source(
+        self, contract_client: Any
+    ) -> None:
+        """Accept ``s3_tool`` for a GCS source, which the payload still reads it for."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+        body.update(
+            backup_source="gs://bucket/backups/latest",
+            source_transport=SourceTransport.GCS.value,
+            s3_tool=S3Tool.AWSCLI.value,
+        )
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+
+    def test_create_accepts_a_cleared_s3_tool_select(
+        self, contract_client: Any
+    ) -> None:
+        """Accept an emptied ``s3_tool`` select, which submits ``""`` rather than a value."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+        body.update(
+            backup_source="s3://bucket/backups/latest",
+            source_transport=SourceTransport.S3.value,
+            s3_tool="",
+        )
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+
+    def test_create_422_on_ssh_credentials_under_a_local_source(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Reject SSH credentials a local source cannot consume, before any POST."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+        body.update(source_transport=SourceTransport.LOCAL.value, ssh_user="deploy")
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert mock_task_api.create_count == 0
+
+    def test_create_422_on_gpg_password_file_without_gpg(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Reject a GPG password file on a restore declaring no GPG pass."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+        body.update(
+            source_encryption=EncryptionFormat.NONE.value,
+            gpg_password_file="/etc/gpg.pass",
+        )
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert mock_task_api.create_count == 0
+
+    def test_update_round_trips_a_stamp_predating_the_source_controls(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Accept an edit of a restore stamped before the source controls existed.
+
+        A stored stamp is a full model dump, so every pre-existing one carries
+        ``percona`` / ``22`` / ``s3cmd`` and the derived ``PUT`` re-submits it
+        verbatim. Editing such a restore must not 422 while waiting for the
+        manual backfill command to run.
+        """
+        base = app_base_url(self.app_def)
+        task_name = "contract-legacy-restore"
+        contract_client.post(f"{base}/", json=_valid_restore_body(task_name=task_name))
+        legacy_form = {
+            **mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY],
+            **{
+                name: _legacy_default(name)
+                for name in ("ssh_user", "ssh_port", "s3_tool")
+            },
+        }
+        del legacy_form["source_transport"]
+        del legacy_form["source_encryption"]
+
+        response = contract_client.put(f"{base}/{task_name}", json=legacy_form)
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        restamped = mock_task_api.last_update_payload["data"][RESERVED_FORM_KEY]
+        assert restamped["source_transport"] == SourceTransport.LOCAL.value
+        assert restamped["ssh_user"] is None
+
+    def test_schema_gates_transport_and_decryption_fields(
+        self, contract_client: Any
+    ) -> None:
+        """Serve the source controls ungated and every field they govern gated.
+
+        The gates use only ``equals`` / ``any`` / ``not``, which the renderer
+        already evaluates, so no new predicate reaches a consumer.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        sections = response.json()["forms"]
+        fields = {field["name"]: field for form in sections for field in form["fields"]}
+        task_fields = [field["name"] for field in sections[0]["fields"]]
+        assert "source_transport" in task_fields
+        assert "source_encryption" in task_fields
+        assert "forbidden" not in fields["source_transport"]
+        assert "forbidden" not in fields["source_encryption"]
+        for name in ("ssh_user", "ssh_port", "ssh_key"):
+            assert fields[name]["forbidden"] == [
+                {"when": {"not_equals": {"source_transport": "ssh"}}}
+            ], name
+        assert fields["s3_tool"]["forbidden"] == [
+            {
+                "when": {
+                    "not": {
+                        "any": [
+                            {"equals": {"source_transport": "s3"}},
+                            {"equals": {"source_transport": "gcs"}},
+                        ]
+                    }
+                }
+            }
+        ]
+        assert fields["gpg_password_file"]["forbidden"] == [
+            {
+                "when": {
+                    "not": {
+                        "any": [
+                            {"equals": {"source_encryption": "gpg"}},
+                            {"equals": {"source_encryption": "dual"}},
+                        ]
+                    }
+                }
+            }
+        ]

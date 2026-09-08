@@ -11908,7 +11908,7 @@
         "type": "object"
       },
       "mysql_backups__RestoreCreate": {
-        "description": "Declare the model-first create/update body and ``GET /schema`` source for Restores.\n\nDeclares every restore form field once, in section order (Task, General,\nMydumper, XtraBackup, Binlog), with the DSL markers driving the derived\nschema. The previously-inherited config models (:class:`RestoreConfigAll` and\n:class:`BaseRestoreConfigServer`) stay the YAML-serialization targets the\npayload builder populates via ``extract_model_from_instance``; this model\nre-declares their fields directly so it can also carry presentation metadata.\n\nThe per-``backup_type`` section visibility is expressed in the view layout\n(``restore/views.py``), not as field-level gates: several mode-specific config\nfields carry non-``None`` defaults (``myloader_threads``, ``xb_parallel``,\n``master_port``), so a field-level ``Forbidden`` gate would reject those\ndefaults on a cross-mode restore. Keeping the model permissive preserves the\nlegacy payload contract byte-for-byte.\n\n``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying\nthe ``\"-1\"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``\nmarkers drive only the ``GET /schema`` widgets, while the conditional,\n404-tolerant resolution lives in ``deps.resolve_restore_entities``.",
+        "description": "Declare the model-first create/update body and ``GET /schema`` source for Restores.\n\nDeclares every restore form field once, in section order (Task, General,\nMydumper, XtraBackup, Binlog), with the DSL markers driving the derived\nschema. The previously-inherited config models (:class:`RestoreConfigAll` and\n:class:`BaseRestoreConfigServer`) stay the YAML-serialization targets the\npayload builder populates via ``extract_model_from_instance``; this model\nre-declares their fields directly so it can also carry presentation metadata.\n\nThe per-``backup_type`` section visibility is expressed in the view layout\n(``restore/views.py``), not as field-level gates: several mode-specific config\nfields carry non-``None`` defaults (``myloader_threads``, ``xb_parallel``,\n``master_port``), so a field-level ``Forbidden`` gate would reject those\ndefaults on a cross-mode restore. Keeping the model permissive preserves the\nlegacy payload contract byte-for-byte.\n\nThe transport and decryption fields are the exception, and they pay that\nprice deliberately: ``source_transport`` and ``source_encryption`` declare\nwhere the backup lives and how it was encrypted, and the five fields those\ndeclarations govern are gated on them. Because a field-level ``Forbidden``\nrejects a field that is merely *present*, ``ssh_user`` / ``ssh_port`` /\n``s3_tool`` had to give up their defaults; :class:`RestoreConfigAll` still\ndeclares them and ``build_restore_spec`` applies them from there, so the\nemitted config is unchanged.\n\n``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying\nthe ``\"-1\"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``\nmarkers drive only the ``GET /schema`` widgets, while the conditional,\n404-tolerant resolution lives in ``deps.resolve_restore_entities``.",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -12159,8 +12159,15 @@
             "type": "boolean"
           },
           "s3_tool": {
-            "$ref": "#/components/schemas/mysql_backups__S3Tool",
-            "default": "s3cmd"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/mysql_backups__S3Tool"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "S3 Tool"
           },
           "schema_id": {
             "anyOf": [
@@ -12208,6 +12215,14 @@
             "title": "Slave From Master",
             "type": "boolean"
           },
+          "source_encryption": {
+            "$ref": "#/components/schemas/mysql_backups__EncryptionFormat",
+            "default": "none"
+          },
+          "source_transport": {
+            "$ref": "#/components/schemas/mysql_backups__SourceTransport",
+            "default": "local"
+          },
           "ssh_key": {
             "anyOf": [
               {
@@ -12229,7 +12244,6 @@
                 "type": "null"
               }
             ],
-            "default": 22,
             "title": "Ssh Port"
           },
           "ssh_user": {
@@ -12242,7 +12256,6 @@
                 "type": "null"
               }
             ],
-            "default": "percona",
             "title": "Ssh User"
           },
           "start_file": {
@@ -12576,6 +12589,17 @@
           "awscli"
         ],
         "title": "S3Tool",
+        "type": "string"
+      },
+      "mysql_backups__SourceTransport": {
+        "description": "Declare where the backup being restored is stored.",
+        "enum": [
+          "local",
+          "ssh",
+          "s3",
+          "gcs"
+        ],
+        "title": "SourceTransport",
         "type": "string"
       },
       "mysql_backups__UploadProvider": {

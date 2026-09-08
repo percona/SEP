@@ -20,11 +20,13 @@ import pytest
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.deps import (
+    build_restore_api_task_response,
     build_restore_payload,
     resolve_restore_entities,
 )
-from app.sep.apps.mysql_backups.restore.models import RestoreCreate
+from app.sep.apps.mysql_backups.restore.models import RestoreCreate, SourceTransport
 from app.sep.inventory import CreatedService
+from app.tasks.models import Task, TaskBackendEnum
 
 
 @pytest.mark.asyncio
@@ -82,3 +84,84 @@ async def test_build_restore_payload_stamps_form_without_new_secret_exposure(
 
     assert task_payload.data[RESERVED_FORM_KEY]["master_password"] == "s3cret-pw"
     assert "s3cret-pw" in task_payload.data["meta"]["config"]
+
+
+_NON_DEFAULT_SSH_PORT = 2222
+
+
+def _restore_task(stored_form: dict | None) -> Task:
+    """Build a restore task row, optionally carrying a stored form stamp."""
+    data = {
+        "task": "run-python",
+        "meta": {"target": "executor-1", "config": ""},
+    }
+    if stored_form is not None:
+        data[RESERVED_FORM_KEY] = stored_form
+    return Task(
+        name="restore-task",
+        owner="RESTORES",
+        backend=TaskBackendEnum.PROXY,
+        data=data,
+        protected=False,
+        alert_on_fail=False,
+    )
+
+
+def test_served_stamp_declares_the_source_its_stored_values_imply():
+    """Serve a pre-declaration stamp with the transport its own values imply.
+
+    The edit form seeds a field the stamp does not carry from the schema default,
+    so serving such a stamp untouched would open the form on ``local`` and hide
+    the SSH credentials. A hidden field is dropped from the submission, so the
+    next save would discard them.
+    """
+    task = _restore_task(
+        {
+            "task_name": "restore-task",
+            "hostname": "executor-1",
+            "backup_type": BackupType.XTRABACKUP.value,
+            "backup_source": "db01:/backups/xb/latest",
+            "ssh_user": "deploy",
+            "ssh_port": _NON_DEFAULT_SSH_PORT,
+            "ssh_key": "prod-key",
+            "s3_tool": "s3cmd",
+        }
+    )
+
+    served = build_restore_api_task_response(task).data[RESERVED_FORM_KEY]
+
+    assert served["source_transport"] == SourceTransport.SSH.value
+    assert served["ssh_user"] == "deploy"
+    assert served["ssh_port"] == _NON_DEFAULT_SSH_PORT
+    assert served["ssh_key"] == "prod-key"
+
+
+def test_served_stamp_keeps_a_declaration_the_operator_already_made():
+    """Leave a stamp that already declares its source untouched."""
+    stored_form = {
+        "task_name": "restore-task",
+        "hostname": "executor-1",
+        "backup_type": BackupType.MYDUMPER.value,
+        "backup_source": "/backups/mydumper/latest",
+        "source_transport": SourceTransport.LOCAL.value,
+    }
+
+    served = build_restore_api_task_response(_restore_task(stored_form)).data
+
+    assert served[RESERVED_FORM_KEY] == stored_form
+
+
+def test_an_unvalidatable_stamp_is_served_rather_than_failing_the_route():
+    """Serve a stamp that cannot validate unchanged, so one bad task cannot break the list."""
+    stored_form = {"task_name": "restore-task", "backup_source": "$(id)"}
+
+    served = build_restore_api_task_response(_restore_task(stored_form)).data
+
+    assert served[RESERVED_FORM_KEY] == stored_form
+
+
+def test_a_task_without_a_stamp_is_served_unchanged():
+    """Leave a legacy task carrying no stamp alone."""
+    served = build_restore_api_task_response(_restore_task(None)).data
+
+    assert RESERVED_FORM_KEY not in served
