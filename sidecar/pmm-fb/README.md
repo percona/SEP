@@ -141,8 +141,9 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
 
 ## How the pieces connect
 
-- `bootstrap.sh` generates the gitignored `.env`, which now holds only the three
-  `sep-mysql` passwords — test-fixture credentials for the `mysql` profile, not
+- `bootstrap.sh` generates the gitignored `.env`, which holds the three
+  `sep-mysql` passwords and, on an arm64 engine, the two executor slots
+  described under Caveats — test-fixture credentials for the `mysql` profile, not
   anything the pair needs, so a bring-up without that profile can skip it
   entirely. `sep-mysql`'s entrypoint refuses to start without them; `compose.yaml`
   deliberately does not, because Compose interpolates every service at parse time
@@ -216,50 +217,60 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
 
 ## Caveats
 
-- **The topology is `linux/amd64` throughout, and every service pins it.** No
-  arm64 variant is published for the pmm-server or pmm-client feature builds,
-  for the released `percona/pmm-server`, or for the side-car image — whose
-  manifest carries no platform index at all. On an Apple Silicon or other arm64
-  host the pins are what let the harness come up, under emulation, rather than
-  failing the pull. `sep-mysql` is the one that needs its pin most: that service
-  is *built*, and `oraclelinux:9` is the one base here that does ship arm64, so
-  without the pin an arm64 host builds natively and succeeds — having copied the
-  pmm-client stage's amd64 binaries into an image that cannot execute them. Keep
-  all three pins across a repin.
+- **`pmm-server` and the side-car are `linux/amd64` only and pin it; the
+  executor's platform follows the engine.** No arm64 variant is published for
+  the pmm-server or pmm-client feature builds, for the released
+  `percona/pmm-server`, or for the side-car image — whose manifest carries no
+  platform index at all. Those two pins are what let the services come up on an
+  arm64 engine, under emulation, rather than failing the pull; keep them across
+  a repin. `sep-mysql` is different: it is *built*, Oracle Linux 9 ships arm64,
+  and so do Percona Server 8.4, XtraBackup 8.4, mydumper and percona-toolkit.
+  So on an arm64 engine `bootstrap.sh` writes `SEP_MYSQL_PLATFORM=linux/arm64`
+  and `SEP_MYSQL_PMM_CLIENT_IMAGE=docker.io/percona/pmm-client:3.9.1` into
+  `.env`, and the executor builds and runs natively — no Docker Desktop setting
+  is involved. It decides by the engine's architecture, not the shell's.
 
-  **On an arm64 host the executor is built natively, and that is the supported
-  path.** `sep-mysql` is the only service whose work — Nomad `raw_exec` — cannot
-  survive emulation: Nomad spawns every task with `clone3(CLONE_INTO_CGROUP)`
-  on cgroups v2, Go has no fallback for that path, and QEMU 7.0 and later leave
-  `clone3` unimplemented. Under QEMU every dispatch dies inside the executor
-  with `fork/exec /usr/bin/sh: function not implemented` before any script
-  output exists, so the run shows as failed with an empty log — while the node
-  still fingerprints `raw_exec` healthy and stays in SEP's executor list,
-  because that check reads only `enabled = true`. Measured on an M3 Pro
-  (2026-09-08): five for five backups and diagnostics failed exactly so.
+  **Why the executor must not be emulated.** Nomad's `raw_exec` spawns every
+  task with `clone3(CLONE_INTO_CGROUP)` on cgroups v2, Go has no fallback on
+  that path, and QEMU 7.0 and later leave `clone3` unimplemented. Under QEMU
+  every dispatch therefore dies inside the executor with `fork/exec
+  /usr/bin/sh: function not implemented` before any script output exists — the
+  run shows as failed with an empty log — while the node still fingerprints
+  `raw_exec` healthy and stays in SEP's executor list, because that check reads
+  only `enabled = true`. Measured on an M3 Pro (2026-09-08): five for five
+  backups and diagnostics failed exactly so, and so did SEP's own background
+  `mysql-sync` and `system-facts-sync` dispatches. Verified the same day on
+  another arm64 Mac with a default Docker Desktop: as shipped, a diagnostic and
+  an XtraBackup both failed that way; with this harness both succeeded on the
+  native executor, the released client having reconnected under the
+  registration the feature-build client had created. `pmm-server`'s own Nomad
+  client is not affected — it runs as uid 1000, Nomad places no cgroup then,
+  and it spawns with plain `clone` — but it remains the non-root, sudo-less
+  node it always was, where the builtin snippets that require sudo end
+  `unlaunchable`; it is no substitute for `sep-mysql`.
 
-  So `bootstrap.sh` on an arm64 host writes `SEP_MYSQL_PLATFORM=linux/arm64`
-  and `SEP_MYSQL_PMM_CLIENT_IMAGE=docker.io/percona/pmm-client:3.9.1` into `.env`:
-  the released multi-arch client carries an aarch64 Nomad at the feature
-  build's own version (2.0.5) — repin that client only after checking its
-  `tools/nomad version` still matches — Oracle Linux 9, Percona Server 8.4, XtraBackup
-  8.4 and mydumper all publish EL9 aarch64 packages, and the executor then runs
-  without emulation. Verified 2026-09-08 on an arm64 Mac with a default Docker
-  Desktop: as shipped, a diagnostic and an XtraBackup both failed exactly as
-  above; with this change both succeeded on the native executor, the released
-  client having reconnected under the registration the feature-build client had
-  created. `pmm-server` and the side-car still run emulated, which they
-  tolerate — they are services, not executors. To run the amd64
-  feature-build client under emulation instead, set `SEP_MYSQL_PLATFORM` to
-  `linux/amd64` in `.env`; `bootstrap.sh` then probes the emulator for `clone3`
-  and refuses under QEMU, and `sep-mysql`'s entrypoint probes it again at start
-  (`SEP_FB_SKIP_CLONE3_CHECK=1` overrides both). The emulation that passes is
-  Rosetta — Docker Desktop → **Settings → General**: Virtual Machine Manager =
-  *Apple Virtualization framework* (Docker VMM does not support Rosetta), then
-  *Use Rosetta for x86_64/amd64 emulation on Apple Silicon*. Either way, treat
-  an emulated `pmm-server` as evidence for functional behaviour only: nothing
-  timing-shaped survives translation, so the start periods set here and any
-  Nomad scheduling race are not measurable on such a host.
+  **What the released client does and does not stand in for.** Its aarch64
+  `tools/nomad` is the feature build's own Nomad version, and the build asserts
+  that (`NOMAD_VERSION` in `compose.yaml`, edited together with `PMM_FB_TAG` on
+  a repin; a client whose Nomad disagrees fails to build). Its `pmm-agent` is
+  the released one, not the feature build's, so a change on the client side of
+  the feature build — `pmm-agent`, the Nomad client configuration — is **not**
+  exercised on an arm64 engine. Validate those on amd64.
+
+  **Running the amd64 feature-build client under emulation instead.** Set
+  `SEP_MYSQL_PLATFORM=linux/amd64` in `.env` and re-run `./bootstrap.sh`: it
+  blanks the client-image slot so the feature-build client is used, and probes
+  the emulator for `clone3` before the build, refusing under QEMU. The only
+  emulation that passes is Rosetta — Docker Desktop → **Settings → General**:
+  Virtual Machine Manager = *Apple Virtualization framework* (Docker VMM does
+  not support Rosetta), then *Use Rosetta for x86_64/amd64 emulation on Apple
+  Silicon*, Apply & restart. `sep-mysql`'s entrypoint probes again at container
+  start, since Docker's default seccomp profile also answers `clone3` with
+  `ENOSYS` on an unprivileged container. `SEP_FB_SKIP_CLONE3_CHECK=1`, in the
+  shell or in `.env`, skips both probes. Either way, treat an emulated
+  `pmm-server` as evidence for functional behaviour only: nothing timing-shaped
+  survives translation, so the start periods set here and any Nomad scheduling
+  race are not measurable on such a host.
 - **pmm-server's start period is set by this compose file, not by the image.**
   The image ships 25 s with 3 retries at 4 s, so it is marked `unhealthy` around
   37 s while a cold start needs appreciably longer to first pass `readyz` — and

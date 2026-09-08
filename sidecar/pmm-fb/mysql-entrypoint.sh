@@ -41,6 +41,7 @@ need_cmd mysqladmin
 need_cmd pmm-agent
 need_cmd pmm-admin
 need_cmd install
+need_cmd python3
 
 usage() {
     cat << 'EOF'
@@ -97,27 +98,30 @@ require_secrets() {
 without_xtrace require_secrets
 
 # Nomad's raw_exec spawns every task with clone3(CLONE_INTO_CGROUP) on cgroups
-# v2, and Go's os/exec has no fallback for that path. An emulator without
-# clone3 — QEMU 7.0 and later, which is what Docker Desktop uses on Apple
-# Silicon unless Rosetta is on — therefore fails every dispatch inside the
-# executor with `fork/exec …: function not implemented`, while the node still
-# fingerprints raw_exec healthy and stays selectable in SEP. Probe the syscall
-# the way the executor will hit it and refuse to become that node. A size below
-# the kernel's minimum makes a real kernel answer EINVAL without forking.
+# v2, and Go's os/exec has no fallback for that path, so ask the syscall the way
+# the executor will before becoming a node that registers, looks healthy, and
+# fails every dispatch with `fork/exec …: function not implemented`. ENOSYS has
+# two known sources: Docker's default seccomp profile on an unprivileged
+# container (compose.yaml runs this one privileged), and QEMU, which does not
+# implement clone3 — what an arm64 engine uses for amd64 images unless Rosetta
+# is on. Only the probe's printed verdict decides; anything else is reported.
 require_clone3() {
     [[ ${SEP_FB_SKIP_CLONE3_CHECK:-0} == "1" ]] && return 0
-    python3 - << 'PY' && return 0
-import ctypes
-import sys
-
-libc = ctypes.CDLL(None, use_errno=True)
-libc.syscall(435, ctypes.c_void_p(0), ctypes.c_size_t(8))
-sys.exit(1 if ctypes.get_errno() == 38 else 0)
-PY
-    error 'clone3 is unimplemented here (ENOSYS): Nomad cannot launch a single task on this node'
-    error 'Apple Silicon: Docker Desktop → Settings → General → Virtual Machine Manager = "Apple Virtualization framework", then enable "Use Rosetta for x86_64/amd64 emulation on Apple Silicon", Apply & restart'
-    error 'SEP_FB_SKIP_CLONE3_CHECK=1 starts the node anyway (MySQL and inventory work; task execution will not)'
-    exit 1
+    local out
+    out="$(python3 /usr/local/bin/clone3_probe.py 2>&1)" || true
+    case "${out}" in
+        CLONE3_OK) return 0 ;;
+        CLONE3_ENOSYS)
+            error 'clone3 is unimplemented here (ENOSYS): Nomad cannot launch a single task on this node'
+            error 'Unprivileged container? compose.yaml runs sep-mysql privileged; a plain docker run needs --privileged or --security-opt seccomp=unconfined'
+            error 'Emulated amd64 on an arm64 engine? Set SEP_MYSQL_PLATFORM=linux/arm64 in .env and re-run ./bootstrap.sh to build this node natively, or enable Rosetta (Docker Desktop → Settings → General → "Apple Virtualization framework" + "Use Rosetta for x86_64/amd64 emulation")'
+            error 'SEP_FB_SKIP_CLONE3_CHECK=1 starts the node anyway (MySQL and inventory work; task execution will not)'
+            exit 3
+            ;;
+        *)
+            info "clone3 probe gave no verdict (${out:-no output}); continuing"
+            ;;
+    esac
 }
 
 require_clone3
