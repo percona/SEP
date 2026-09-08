@@ -487,7 +487,7 @@ def group_constraint_failures(
 
     * a **path** constraint, which settles the question the message cannot;
     * a **symbol** the message names -- a backtick-quoted identifier in the
-      pattern, which is how twelve of the shipped groups tell an artifact from a
+      pattern, which is how most shipped groups tell an artifact from a
       first-party hit under the same rule;
     * a **negative corpus fingerprint** -- a diagnostic of the group's own rule
       that the whole table leaves first-party, which demonstrates the pattern
