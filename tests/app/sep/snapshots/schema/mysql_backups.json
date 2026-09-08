@@ -1334,7 +1334,12 @@
         "format": "chip",
         "key": "backup_type",
         "label": "Type",
-        "sortable": false
+        "sortable": false,
+        "value_labels": {
+          "B": "Binlog",
+          "M": "Mydumper",
+          "X": "XtraBackup"
+        }
       },
       {
         "key": "hostname",

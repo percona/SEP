@@ -15,7 +15,7 @@
 
 """Define models for the Backups plugin."""
 
-from enum import StrEnum
+from enum import nonmember, StrEnum
 from typing import Annotated, Any, Literal
 
 from annotated_types import Ge
@@ -41,9 +41,17 @@ OWNER = "BACKUP_PG"
 
 
 class BackupType(EnumFieldMixin, StrEnum):
-    """Backup types."""
+    """Represent the backup tools a run can be taken with.
+
+    :cvar LABELS: Display text for each stored value, keyed as the value is
+        stored on the wire. A value with no entry is rendered as-is by the
+        caller. Wrapped in :func:`enum.nonmember` because ``enum`` would
+        otherwise treat a class-body dict as a member candidate.
+    """
 
     PGBACKREST = "P"
+
+    LABELS = nonmember({"P": "pgBackRest"})
 
 
 class PgBackRestBackupType(EnumFieldMixin, StrEnum):

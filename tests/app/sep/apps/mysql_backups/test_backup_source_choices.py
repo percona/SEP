@@ -28,6 +28,7 @@ from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.sep.apps.mysql_backups.backup_source_choices import backup_run_to_choice
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.models import (
+    BackupType,
     MysqlBackupRun,
     preferred_backup_source,
     restore_valid_backup_source,
@@ -98,6 +99,46 @@ class TestBackupSourceMapper:
         assert "2026-07-29" in choice.label
         assert "1.0 GiB" in choice.label
         assert "/backups/mydumper/20240101" in choice.label
+
+    @pytest.mark.parametrize(
+        ("backup_type", "expected"),
+        [(BackupType.MYDUMPER, "Mydumper"), (BackupType.XTRABACKUP, "XtraBackup")],
+    )
+    def test_choice_labels_a_catalogued_backup_type(
+        self, backup_type: BackupType, expected: str
+    ) -> None:
+        """Render a catalogued run's label from the enum's single label source.
+
+        Only mydumper and xtrabackup runs are ever catalogued, so those are the
+        values this selector can be asked to label.
+        """
+        run = MysqlBackupRun(
+            task_history_id=1,
+            service_name="svc",
+            backup_type=backup_type,
+            location=f"/backups/{backup_type.value}",
+        )
+
+        choice = backup_run_to_choice(run)
+
+        assert choice is not None
+        assert expected in choice.label
+
+    def test_choice_falls_back_to_the_raw_value_when_unlabelled(self) -> None:
+        """Render a stored code the enum no longer declares as the code itself."""
+        run = MysqlBackupRun.model_construct(
+            task_history_id=1,
+            service_name="svc",
+            backup_type="Z",
+            location="/backups/legacy",
+            finished_at=None,
+            size_bytes=None,
+        )
+
+        choice = backup_run_to_choice(run)
+
+        assert choice is not None
+        assert choice.label.startswith("Z ")
 
 
 class TestBackupSourceResolvers:

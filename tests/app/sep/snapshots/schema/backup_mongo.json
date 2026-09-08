@@ -391,7 +391,15 @@
         "format": "chip",
         "key": "backup_type",
         "label": "Type",
-        "sortable": false
+        "sortable": false,
+        "value_labels": {
+          "pbm_config": "PBM Config",
+          "pbm_incremental": "PBM Incremental",
+          "pbm_logical": "PBM Logical",
+          "pbm_physical": "PBM Physical",
+          "pbm_snapshot": "PBM Snapshot",
+          "pbm_status": "PBM Status"
+        }
       },
       {
         "format": "relative",

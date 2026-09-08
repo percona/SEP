@@ -898,34 +898,34 @@ class Column(SchemaBaseModel):
     """Represent one column in a plugin list view.
 
     :param key: The task attribute path this column displays (for example,
-        ``"status"`` or ``"target.service"``).
-    :type key: NonEmptyStr
-    :param label: The human-readable column header.
-    :type label: NonEmptyStr
+        ``"status"`` or ``"target.service"``). Must be non-empty.
+    :param label: The human-readable column header. Must be non-empty.
     :param sortable: Whether the column can be used to sort the list.
         Defaults to ``False``.
-    :type sortable: bool
     :param format: Optional formatting hint applied when rendering the
         column values. Defaults to ``None``.
-    :type format: ColumnFormat | None
+    :param value_labels: Optional map from a raw cell value to the text a
+        renderer displays in its place. Defaults to ``None``, which the schema
+        route's ``exclude_none`` posture drops from the payload, so a column
+        declaring no labels stays byte-identical on the wire. A value absent
+        from the map is the consuming app's decision to render as-is.
     """
 
     key: NonEmptyStr
     label: NonEmptyStr
     sortable: bool = False
     format: ColumnFormat | None = None
+    value_labels: dict[NonEmptyStr, NonEmptyStr] | None = None
 
 
 class ListView(SchemaBaseModel):
     """Represent the list-view configuration for a plugin.
 
     :param columns: The ordered list of columns displayed in the list view.
-    :type columns: list[Column]
     :param default_sort: Optional key of the column to sort by on first
         render. Prefix with ``-`` for descending order (for example,
         ``"-lastRun"``). The unprefixed key must match one of the declared
         column keys. Defaults to ``None``.
-    :type default_sort: NonEmptyStr | None
     :param server_side_query: Opt-in capability flag declaring that the list
         endpoint honors whole-result-set sort and search via server query
         params. When ``True`` and the list is also server-paginated, the React
@@ -936,14 +936,12 @@ class ListView(SchemaBaseModel):
         ``exclude_none`` posture drops it from the wire until a plugin opts
         in, keeping the addition byte-compatible with existing schemas.
         Defaults to ``None``.
-    :type server_side_query: bool | None
     :param overview_hidden_fields: Additional task-level keys to suppress
         from the auto-rendered "extras" loop on the plugin detail Overview
         tab. The framework always hides a baseline set of internal fields
         (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,
         ``last_updated_by``, ``connectivity_warning``); any keys listed here
         are merged with that baseline. Defaults to ``[]``.
-    :type overview_hidden_fields: list[str]
     """
 
     columns: list[Column]
@@ -1034,27 +1032,29 @@ class DetailField(SchemaBaseModel):
     :param path: Dotted path into the task record (for example
         ``"data.meta.command"``). Each segment must be a Python identifier,
         optionally followed by one or more ``[N]`` array indices.
-    :type path: DetailPath
     :param label: Human-readable label rendered alongside the resolved value.
-    :type label: NonEmptyStr
+        Must be non-empty.
     :param highlight: Optional syntax-highlighter hint. Defaults to ``None``.
-    :type highlight: DetailHighlightLanguage | None
+    :param value_labels: Optional map from a raw resolved value to the text a
+        renderer displays in its place. Defaults to ``None``, which the schema
+        route's ``exclude_none`` posture drops from the payload, so a field
+        declaring no labels stays byte-identical on the wire. A value absent
+        from the map is the consuming app's decision to render as-is.
     """
 
     path: DetailPath
     label: NonEmptyStr
     highlight: DetailHighlightLanguage | None = None
+    value_labels: dict[NonEmptyStr, NonEmptyStr] | None = None
 
 
 class DetailSection(SchemaBaseModel):
     """Declare one titled section inside a :class:`DetailView`.
 
     :param title: Heading rendered above the section's fields.
-    :type title: NonEmptyStr
     :param fields: Ordered list of fields rendered inside the section. An
         empty list is valid; the frontend hides the section when every
         field resolves to an empty value.
-    :type fields: list[DetailField]
     """
 
     title: NonEmptyStr
