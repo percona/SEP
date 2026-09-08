@@ -61,6 +61,12 @@ async def _mock_rejected_file_stream(status_code: int):
     yield  # pragma: no cover — makes this an async generator
 
 
+async def _mock_empty_file_stream():
+    """Yield nothing, simulating a genuinely empty upstream file."""
+    return
+    yield  # pragma: no cover — makes this an async generator
+
+
 @pytest.fixture
 def mock_tasks_api_dep(task_history_response):
     """Override the TaskAPI dependency with an AsyncMock."""
@@ -292,6 +298,30 @@ class TestDownloadTaskHistoryFile:
         )
 
         assert response.status_code == upstream_status
+
+    def test_empty_upstream_file_returns_200_with_empty_body(
+        self, test_client, mock_tasks_client_dep, task_history_response
+    ):
+        """Assert a genuinely empty upstream file returns 200 with an empty body.
+
+        When the upstream fetch succeeds but the file is 0 bytes (the generator
+        raises StopAsyncIteration on the first pull, no HTTPException), the caller
+        must still receive 200 — this is not an error.
+        """
+        mock_tasks_client_dep.get.return_value = {
+            "empty.txt": {"size": 0, "is_dir": False}
+        }
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_empty_file_stream()
+
+        response = test_client.get(
+            f"/files/{task_history_response.id}/download?path=empty.txt"
+        )
+
+        assert response.status_code == HTTP_200_OK
+        assert response.headers["content-disposition"] == (
+            'attachment; filename="empty.txt"'
+        )
+        assert response.content == b""
 
     def test_no_path_streams_without_headers(
         self, test_client, mock_tasks_client_dep, task_history_response
